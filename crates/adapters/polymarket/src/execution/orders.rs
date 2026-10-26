@@ -59,8 +59,9 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE},
+        consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE, MARKET_VERSION_KEY},
         enums::{PolymarketOrderSide, PolymarketOrderType},
+        parse::validate_market_version,
     },
     http::{
         error::{Error as HttpError, sanitize_error_text},
@@ -523,7 +524,15 @@ impl PolymarketExecutionClient {
             .cloned();
 
         match instrument {
-            Some(i) => Some(i),
+            Some(i) => {
+                let version = i.info().and_then(|info| info.get_str(MARKET_VERSION_KEY));
+                if let Err(e) = validate_market_version(version) {
+                    self.emitter.emit_order_denied(order, &e.to_string());
+                    return None;
+                }
+
+                Some(i)
+            }
             None => {
                 self.emitter.emit_order_denied(
                     order,
@@ -944,17 +953,26 @@ impl PolymarketExecutionClient {
             return;
         };
 
-        let price = cmd.price.or_else(|| order.price()).unwrap();
-        if let Err(reason) =
-            PolymarketOrderBuilder::validate_limit_price_value(price, instrument.price_increment())
-        {
-            reject(&reason.to_string());
-            return;
-        }
+        let version = instrument
+            .info()
+            .and_then(|info| info.get_str(MARKET_VERSION_KEY));
 
-        if let Err(reason) =
-            PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
-        {
+        let price = cmd.price.or_else(|| order.price()).unwrap();
+
+        let validation = validate_market_version(version)
+            .and_then(|()| {
+                PolymarketOrderBuilder::validate_limit_price_value(
+                    price,
+                    instrument.price_increment(),
+                )
+                .map_err(anyhow::Error::from)
+            })
+            .and_then(|()| {
+                PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
+                    .map_err(anyhow::Error::from)
+            });
+
+        if let Err(reason) = validation {
             reject(&reason.to_string());
             return;
         }

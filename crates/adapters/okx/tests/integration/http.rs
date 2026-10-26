@@ -3728,7 +3728,7 @@ async fn test_request_bars_range_mode_pagination(
     };
 
     assert_eq!(bars, expected);
-    assert_eq!(response.data, expected);
+    assert_eq!(response.data.as_ref(), &expected);
 }
 
 #[rstest]

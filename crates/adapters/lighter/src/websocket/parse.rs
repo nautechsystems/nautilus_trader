@@ -1115,7 +1115,7 @@ pub fn parse_ws_position_status_report(
         Some(position.avg_entry_price)
     };
 
-    Ok(PositionStatusReport::new(
+    let mut report = PositionStatusReport::new(
         account_id,
         instrument.id(),
         position_side,
@@ -1125,7 +1125,9 @@ pub fn parse_ws_position_status_report(
         Some(UUID4::new()),
         None, // venue_position_id: NETTING, Nautilus identifies by instrument
         avg_px_open,
-    ))
+    );
+    report.liquidation_price = Some(position.liquidation_price);
+    Ok(report)
 }
 
 /// Builds the per-asset [`AccountBalance`] for one Lighter wallet entry.
@@ -1371,7 +1373,7 @@ mod tests {
     use std::str::FromStr;
 
     use nautilus_model::{
-        enums::{BarAggregation, PriceType},
+        enums::{AvgPxReconciliation, BarAggregation, PriceType},
         identifiers::{InstrumentId, StrategyId, Symbol, Venue},
         instruments::CryptoPerpetual,
         types::{Price, Quantity, currency::Currency},
@@ -2533,7 +2535,7 @@ mod tests {
             position_value: Decimal::from_str("3525.15").unwrap(),
             unrealized_pnl: Decimal::from_str("3.45").unwrap(),
             realized_pnl: Decimal::ZERO,
-            liquidation_price: Decimal::from_str("1900.00").unwrap(),
+            liquidation_price: Decimal::from_str("1900.123456789123456789").unwrap(),
             total_funding_paid_out: Some(Decimal::from_str("0.05").unwrap()),
             margin_mode: 0,
             allocated_margin: Decimal::from_str("176.25").unwrap(),
@@ -2545,7 +2547,7 @@ mod tests {
             &instrument,
             account_id(),
             UnixNanos::from(50),
-            UnixNanos::from(50),
+            UnixNanos::from(70),
         )
         .unwrap();
 
@@ -2553,7 +2555,20 @@ mod tests {
         assert_eq!(report.quantity, Quantity::from("1.5000"));
         assert_eq!(report.signed_decimal_qty, Decimal::new(15, 1));
         assert_eq!(report.avg_px_open, Some(Decimal::new(235010, 2)));
-        assert!(report.venue_position_id.is_none());
+        assert_eq!(report.account_id, account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(report.ts_last, UnixNanos::from(50));
+        assert_eq!(report.ts_init, UnixNanos::from(70));
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::Match
+        );
+        assert_eq!(report.avg_px_open_precision, None);
+        assert_eq!(
+            report.liquidation_price,
+            Some(Decimal::from_str("1900.123456789123456789").unwrap()),
+        );
     }
 
     #[rstest]
@@ -2591,6 +2606,18 @@ mod tests {
         assert_eq!(report.position_side, PositionSide::Short);
         assert_eq!(report.quantity, Quantity::from("0.7500"));
         assert_eq!(report.signed_decimal_qty, Decimal::new(-75, 2));
+        assert_eq!(report.account_id, account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(report.ts_last, UnixNanos::default());
+        assert_eq!(report.ts_init, UnixNanos::default());
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.avg_px_open, Some(Decimal::new(240000, 2)));
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::Match
+        );
+        assert_eq!(report.avg_px_open_precision, None);
+        assert_eq!(report.liquidation_price, Some(Decimal::new(300000, 2)));
     }
 
     #[rstest]
@@ -2629,6 +2656,17 @@ mod tests {
         assert!(report.quantity.is_zero());
         assert_eq!(report.signed_decimal_qty, Decimal::ZERO);
         assert!(report.avg_px_open.is_none());
+        assert_eq!(report.account_id, account_id());
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(report.ts_last, UnixNanos::default());
+        assert_eq!(report.ts_init, UnixNanos::default());
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(
+            report.avg_px_open_reconciliation,
+            AvgPxReconciliation::Match
+        );
+        assert_eq!(report.avg_px_open_precision, None);
+        assert_eq!(report.liquidation_price, Some(Decimal::ZERO));
     }
 
     #[rstest]

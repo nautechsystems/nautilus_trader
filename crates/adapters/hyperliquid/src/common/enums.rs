@@ -1433,6 +1433,10 @@ mod tests {
             OrderStatus::from(HyperliquidOrderStatus::OutcomeSettledCanceled),
             OrderStatus::Canceled
         );
+        assert_eq!(
+            OrderStatus::from(HyperliquidOrderStatus::ScheduledCancel),
+            OrderStatus::Canceled
+        );
 
         // Test specific reject reasons map to Rejected
         assert_eq!(
@@ -1478,6 +1482,10 @@ mod tests {
             outcome_settled_canceled,
             HyperliquidOrderStatus::OutcomeSettledCanceled
         );
+
+        let scheduled_cancel: HyperliquidOrderStatus =
+            serde_json::from_str(r#""scheduledCancel""#).unwrap();
+        assert_eq!(scheduled_cancel, HyperliquidOrderStatus::ScheduledCancel);
 
         let tick_rejected: HyperliquidOrderStatus =
             serde_json::from_str(r#""tickRejected""#).unwrap();

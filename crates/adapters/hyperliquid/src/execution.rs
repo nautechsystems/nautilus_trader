@@ -127,6 +127,18 @@ pub struct HyperliquidExecutionClient {
 }
 
 impl HyperliquidExecutionClient {
+    /// Arms, replaces, or clears the account-wide scheduled cancellation of all open orders.
+    ///
+    /// See [`HyperliquidHttpClient::schedule_cancel`] for timestamp and lifecycle requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`HyperliquidHttpClient::schedule_cancel`] fails.
+    pub async fn schedule_cancel(&self, time: Option<u64>) -> anyhow::Result<()> {
+        self.http_client.schedule_cancel(time).await?;
+        Ok(())
+    }
+
     /// Returns a reference to the configuration.
     pub fn config(&self) -> &HyperliquidExecutionClientConfig {
         &self.config
@@ -377,11 +389,13 @@ impl HyperliquidExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if either the HTTP or WebSocket client fail to construct.
+    /// Returns an error if the configuration is invalid or either transport fails to construct.
     pub fn new(
         core: ExecutionClientCore,
         config: HyperliquidExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let secrets = Secrets::resolve(
             config
                 .private_key
@@ -632,6 +646,56 @@ impl HyperliquidExecutionClient {
                 false
             }
         }
+    }
+
+    async fn start_scheduled_cancel(&self) -> anyhow::Result<()> {
+        let Some(timeout_secs) = self.config.scheduled_cancel_timeout_secs else {
+            return Ok(());
+        };
+
+        let timeout = Duration::from_secs(timeout_secs);
+        let refresh_interval = timeout / 3;
+        refresh_scheduled_cancel(&self.http_client, self.clock, timeout, refresh_interval)
+            .await
+            .context("failed to arm Hyperliquid scheduled cancellation")?;
+
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
+        let clock = self.clock;
+        let cancellation = self.session_tasks.cancellation_token();
+
+        self.session_tasks.spawn(async move {
+            let mut interval = tokio::time::interval_at(
+                tokio::time::Instant::now() + refresh_interval,
+                refresh_interval,
+            );
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    _ = interval.tick() => {}
+                }
+
+                if !ws_client.is_active() {
+                    continue;
+                }
+
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    result = refresh_scheduled_cancel(&http_client, clock, timeout, refresh_interval) => {
+                        if let Err(e) = result {
+                            log::error!("Scheduled cancellation refresh failed; the last deadline may expire: {e:#}");
+                        }
+                    }
+                }
+            }
+        })?;
+
+        log::info!("Scheduled cancellation armed: timeout_secs={timeout_secs}");
+        Ok(())
     }
 
     fn start_outcome_settlement_poll(&self) -> anyhow::Result<()> {
@@ -1993,7 +2057,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.ensure_instruments_initialized_async().await?;
         let ready_bracket_parents = self.restore_staged_brackets();
 
-        if let Err(e) = self.start_ws_stream().await {
+        let setup = async {
+            self.start_scheduled_cancel().await?;
+            self.start_ws_stream().await
+        }
+        .await;
+
+        if let Err(e) = setup {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
                     "Hyperliquid execution startup teardown failed: {teardown_error}"
@@ -2205,6 +2275,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let history_capped =
             historical_orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT || fills_capped;
 
+        let history_start = if history_capped {
+            fills_response
+                .iter()
+                .map(|fill| UnixNanos::from(fill.time * 1_000_000))
+                .min()
+        } else {
+            None
+        };
+
         if history_capped {
             log::warn!(
                 "Mass-status history response at venue cap ({HYPERLIQUID_RECENT_HISTORY_LIMIT}): \
@@ -2279,7 +2358,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             ts_init,
             None,
         );
-        mass_status.set_report_window(lookback_start, reports_complete);
+        mass_status.set_report_window(lookback_start.or(history_start), reports_complete);
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
@@ -2678,6 +2757,8 @@ impl HyperliquidExecutionClient {
             // Venue time of the latest delivered report (the stream start before any), so a
             // stalled stream cannot push the recovery window past events lost after it.
             let mut ts_last_report = clock.get_time_ns();
+            let mut recovery_window: Option<RecoveryWindow> = None;
+            let mut reconnect_generation = 0;
             let mut recovered_reports = None;
             let (follow_up_tx, mut follow_up_rx) =
                 tokio::sync::mpsc::unbounded_channel::<FollowUpHistory>();
@@ -2685,6 +2766,7 @@ impl HyperliquidExecutionClient {
             loop {
                 let event = next_execution_event(
                     &mut recovered_reports,
+                    &mut recovery_window,
                     &mut follow_up_rx,
                     &mut ws_client,
                     &http_client,
@@ -2867,12 +2949,22 @@ impl HyperliquidExecutionClient {
                         NautilusWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
 
+                            reconnect_generation += 1;
+
+                            let window = RecoveryWindow {
+                                ts_start: recovery_window
+                                    .map_or(ts_last_report, |window| window.ts_start),
+                                generation: reconnect_generation,
+                            };
+
+                            recovery_window = Some(window);
+
                             recovered_reports = fetch_reconnect_reports(
                                 &ws_client,
                                 &http_client,
                                 &dispatch_state,
                                 &subscription_address,
-                                ts_last_report,
+                                window.ts_start,
                             )
                             .await
                             .inspect(|reports| {
@@ -2891,7 +2983,7 @@ impl HyperliquidExecutionClient {
                             spawn_follow_up_history_read(
                                 &http_client,
                                 &subscription_address,
-                                ts_last_report,
+                                window,
                                 follow_up_tx.clone(),
                                 &session_spawner,
                             );
@@ -2923,8 +3015,30 @@ impl HyperliquidExecutionClient {
     }
 }
 
+async fn refresh_scheduled_cancel(
+    http_client: &HyperliquidHttpClient,
+    clock: &AtomicTime,
+    timeout: Duration,
+    refresh_interval: Duration,
+) -> anyhow::Result<()> {
+    let timeout_ms = u64::try_from(timeout.as_millis())?;
+    let deadline = clock
+        .get_time_ms()
+        .checked_add(timeout_ms)
+        .context("scheduled cancellation deadline overflows milliseconds")?;
+
+    tokio::time::timeout(
+        refresh_interval,
+        http_client.schedule_cancel(Some(deadline)),
+    )
+    .await
+    .context("scheduled cancellation request timed out")??;
+    Ok(())
+}
+
 async fn next_execution_event(
     recovered_reports: &mut Option<Vec<ExecutionReport>>,
+    recovery_window: &mut Option<RecoveryWindow>,
     follow_up_rx: &mut tokio::sync::mpsc::UnboundedReceiver<FollowUpHistory>,
     ws_client: &mut HyperliquidWebSocketClient,
     http_client: &HyperliquidHttpClient,
@@ -2945,16 +3059,21 @@ async fn next_execution_event(
                 released.into_iter().map(ExecutionReport::Order).collect(),
             ))
         }
-        Some((orders, fills, ts_last_report)) = follow_up_rx.recv() => {
+        Some((orders, fills, window)) = follow_up_rx.recv() => {
             let reports = reconnect_reports_from_history(
                 fills,
                 orders,
-                ts_last_report.saturating_sub(RECONNECT_RECOVERY_MARGIN),
+                window.ts_start.saturating_sub(RECONNECT_RECOVERY_MARGIN),
                 ws_client,
                 http_client,
                 dispatch_state,
             )
             .inspect(|reports| {
+                // An older read cannot settle a gap reopened by a newer reconnect
+                if *recovery_window == Some(window) {
+                    *recovery_window = None;
+                }
+
                 log::info!(
                     "Recovered {} execution reports in the follow-up history read",
                     reports.len(),
@@ -3012,18 +3131,24 @@ async fn fetch_reconnect_reports(
     )
 }
 
-// Raw history a follow-up read fetched, with the last report time that bounds its window
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RecoveryWindow {
+    ts_start: UnixNanos,
+    generation: u64,
+}
+
+// Raw history a follow-up read fetched, with the recovery window it can settle
 type FollowUpHistory = (
     Vec<HyperliquidOrderStatusEntry>,
     HyperliquidFills,
-    UnixNanos,
+    RecoveryWindow,
 );
 
 // The stream loop builds and replays the reports, so a slow read never holds back stream updates
 fn spawn_follow_up_history_read(
     http_client: &HyperliquidHttpClient,
     account_address: &str,
-    ts_last_report: UnixNanos,
+    window: RecoveryWindow,
     sender: tokio::sync::mpsc::UnboundedSender<FollowUpHistory>,
     task_spawner: &TaskSpawner,
 ) {
@@ -3035,7 +3160,7 @@ fn spawn_follow_up_history_read(
 
         match read_history(&http_client, &account_address).await {
             Ok((orders, fills)) => {
-                let _ = sender.send((orders, fills, ts_last_report));
+                let _ = sender.send((orders, fills, window));
             }
             Err(e) => log::error!("Failed the follow-up history read: {e:#}"),
         }

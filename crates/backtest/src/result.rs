@@ -568,11 +568,10 @@ fn canonical_position(position: &Position) -> anyhow::Result<Value> {
         "position_id".to_string(),
         Value::String(position.id.to_string()),
     );
-    set_f64(object, "avg_px_close", position.avg_px_close);
-    set_f64(object, "avg_px_open", Some(position.avg_px_open));
+    set_decimal(object, "avg_px_close", position.avg_px_close);
+    set_decimal(object, "avg_px_open", Some(position.avg_px_open));
     set_f64(object, "realized_return", Some(position.realized_return));
-    set_f64(object, "signed_qty", Some(position.signed_qty));
-
+    set_decimal(object, "signed_qty", Some(position.signed_qty));
     if let Some(adjustments) = object.get_mut("adjustments").and_then(Value::as_array_mut) {
         for (source, encoded) in position.adjustments.iter().zip(adjustments) {
             patch_position_adjustment(source, encoded)?;

@@ -31,9 +31,9 @@ use nautilus_model::{
     enums::{AssetClass, PriceType},
     identifiers::InstrumentId,
     instruments::Instrument,
-    types::{Currency, Money},
+    types::{Currency, Money, Price},
 };
-use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use serde::Serialize;
 
 use super::{
@@ -82,21 +82,8 @@ pub struct InterestRateRecord {
     pub location: String,
     /// Time period key (e.g., "2024-01" for monthly, "2024-Q1" for quarterly).
     pub time: String,
-    /// Interest rate value as a percentage (e.g., 5.25 means 5.25%). Must be finite.
-    pub value: f64,
-}
-
-impl InterestRateRecord {
-    pub(crate) fn validate(&self) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            self.value.is_finite(),
-            "Interest rate for location '{}' at '{}' must be finite, was {}",
-            self.location,
-            self.time,
-            self.value
-        );
-        Ok(())
-    }
+    /// Interest rate value as a percentage (e.g., 5.25 means 5.25%).
+    pub value: Decimal,
 }
 
 /// Calculates overnight rollover interest rates for FX currency pairs.
@@ -106,7 +93,7 @@ impl InterestRateRecord {
 #[derive(Debug, Clone)]
 pub struct RolloverInterestCalculator {
     // currency code -> {time_key -> rate_percentage}
-    rates: AHashMap<String, AHashMap<String, f64>>,
+    rates: AHashMap<String, AHashMap<String, Decimal>>,
 }
 
 impl RolloverInterestCalculator {
@@ -114,19 +101,14 @@ impl RolloverInterestCalculator {
     ///
     /// Records with unsupported location codes are ignored. "CHN" supplies both CNY and CNH;
     /// later records replace earlier records for the same currency and time.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any interest rate is not finite.
-    pub fn new(records: Vec<InterestRateRecord>) -> anyhow::Result<Self> {
+    #[must_use]
+    pub fn new(records: Vec<InterestRateRecord>) -> Self {
         let location_to_currency: AHashMap<&str, &str> =
             LOCATION_CURRENCY_MAP.iter().copied().collect();
 
-        let mut rates: AHashMap<String, AHashMap<String, f64>> = AHashMap::new();
+        let mut rates: AHashMap<String, AHashMap<String, Decimal>> = AHashMap::new();
 
         for record in records {
-            record.validate()?;
-
             // CHN maps to both CNY and CNH
             if record.location == "CHN" {
                 rates
@@ -143,7 +125,7 @@ impl RolloverInterestCalculator {
             }
         }
 
-        Ok(Self { rates })
+        Self { rates }
     }
 
     /// Calculates the overnight interest rate differential for a currency pair.
@@ -152,12 +134,12 @@ impl RolloverInterestCalculator {
     ///
     /// # Errors
     ///
-    /// Returns an error if rate data is missing for either currency.
+    /// Returns an error if the symbol is malformed, rate data is missing, or arithmetic overflows.
     pub fn calc_overnight_rate(
         &self,
         instrument_id: InstrumentId,
         date: Date,
-    ) -> anyhow::Result<f64> {
+    ) -> anyhow::Result<Decimal> {
         let symbol = instrument_id.symbol.as_str();
         if symbol.len() < 6 {
             anyhow::bail!("FX symbol must be at least 6 characters: {symbol}");
@@ -169,10 +151,13 @@ impl RolloverInterestCalculator {
         let base_rate = self.lookup_rate(base_currency, date)?;
         let quote_rate = self.lookup_rate(quote_currency, date)?;
 
-        Ok((base_rate - quote_rate) / 365.0 / 100.0)
+        base_rate
+            .checked_sub(quote_rate)
+            .and_then(|rate| rate.checked_div(Decimal::from(36_500)))
+            .ok_or_else(|| anyhow::anyhow!("overnight interest rate calculation overflow"))
     }
 
-    fn lookup_rate(&self, currency: &str, date: Date) -> anyhow::Result<f64> {
+    fn lookup_rate(&self, currency: &str, date: Date) -> anyhow::Result<Decimal> {
         let currency_rates = self
             .rates
             .get(currency)
@@ -217,8 +202,8 @@ pub struct FXRolloverInterestModule {
     calculator: RolloverInterestCalculator,
     rollover_completed: Cell<bool>,
     rollover_day: RefCell<Option<RolloverDayState>>,
-    rollover_totals: RefCell<AHashMap<Currency, f64>>,
-    unapplied_rollover_totals: RefCell<AHashMap<Currency, f64>>,
+    rollover_totals: RefCell<AHashMap<Currency, Decimal>>,
+    unapplied_rollover_totals: RefCell<AHashMap<Currency, Decimal>>,
 }
 
 #[derive(Debug, Clone)]
@@ -310,18 +295,15 @@ impl FXRolloverInterestModule {
     /// Creates a new FX rollover interest module.
     ///
     /// Records with unsupported location codes are ignored.
-    ///
-    /// # Errors
-    ///
-    /// Returns an error if any interest rate is not finite.
-    pub fn new(records: Vec<InterestRateRecord>) -> anyhow::Result<Self> {
-        Ok(Self {
-            calculator: RolloverInterestCalculator::new(records)?,
+    #[must_use]
+    pub fn new(records: Vec<InterestRateRecord>) -> Self {
+        Self {
+            calculator: RolloverInterestCalculator::new(records),
             rollover_completed: Cell::new(false),
             rollover_day: RefCell::new(None),
             rollover_totals: RefCell::new(AHashMap::new()),
             unapplied_rollover_totals: RefCell::new(AHashMap::new()),
-        })
+        }
     }
 
     fn initialize_rollover_day(&self, date: Date) {
@@ -449,41 +431,53 @@ impl FXRolloverInterestModule {
                 return RolloverCalculationOutcome::Retry;
             };
             let book = matching_engine.get_book();
-            let mid = if let Some(mid) = book.midpoint() {
-                mid
-            } else if let Some(price) = book.best_bid_price() {
-                price.as_f64()
-            } else if let Some(price) = book.best_ask_price() {
-                price.as_f64()
-            } else {
-                self.log_calculation_failure(
-                    date,
-                    instrument_id,
-                    RolloverFailureKind::Price,
-                    &format!("Cannot calculate rollover for {instrument_id}: no market price"),
-                );
-                return RolloverCalculationOutcome::Retry;
+
+            let mid = match (book.best_bid_price(), book.best_ask_price()) {
+                (Some(bid), Some(ask)) => price_decimal(bid).and_then(|bid| {
+                    let ask = price_decimal(ask)?;
+                    bid.checked_add(ask)
+                        .and_then(|sum| sum.checked_div(Decimal::TWO))
+                        .ok_or_else(|| anyhow::anyhow!("rollover midpoint overflow"))
+                }),
+                (Some(price), None) | (None, Some(price)) => price_decimal(price),
+                (None, None) => Err(anyhow::anyhow!("no market price")),
             };
 
-            let net_qty: f64 = positions.iter().map(|p| p.signed_qty).sum();
+            let mid = match mid {
+                Ok(mid) => mid,
+                Err(e) => {
+                    self.log_calculation_failure(
+                        date,
+                        instrument_id,
+                        RolloverFailureKind::Price,
+                        &format!("Cannot calculate rollover for {instrument_id}: {e}"),
+                    );
+                    return RolloverCalculationOutcome::Retry;
+                }
+            };
 
-            let mut rollover = net_qty * mid * interest_rate;
+            let net_qty = positions.iter().try_fold(Decimal::ZERO, |total, position| {
+                total.checked_add(position.signed_qty)
+            });
 
-            // Triple for Wednesday (T+2 settlement) and Friday (weekend)
+            let mut rollover = net_qty
+                .and_then(|qty| qty.checked_mul(mid))
+                .and_then(|value| value.checked_mul(interest_rate));
+
             if iso_weekday == 3 || iso_weekday == 5 {
-                rollover *= 3.0;
+                rollover = rollover.and_then(|value| value.checked_mul(Decimal::from(3)));
             }
 
             let currency = if let Some(base) = ctx.base_currency {
-                // Rollover math is still f64; convert the Decimal rate at the boundary
                 let xrate_result = ctx.cache.try_get_xrate(
                     ctx.venue,
                     instrument.quote_currency(),
                     base,
                     PriceType::Mid,
                 );
+
                 let xrate = match xrate_result {
-                    Ok(Some(rate)) => rate.to_f64(),
+                    Ok(Some(rate)) => Some(rate),
                     Ok(None) => None,
                     Err(e) => {
                         self.log_calculation_failure(
@@ -510,13 +504,18 @@ impl FXRolloverInterestModule {
                     );
                     return RolloverCalculationOutcome::Retry;
                 };
-                rollover *= xrate;
+
+                rollover = rollover.and_then(|value| value.checked_mul(xrate));
                 base
             } else {
                 instrument.quote_currency()
             };
 
-            let adjustment = match Money::new_checked(rollover, currency) {
+            let adjustment = rollover
+                .ok_or_else(|| anyhow::anyhow!("rollover interest arithmetic overflow"))
+                .and_then(|value| Money::from_decimal(value, currency).map_err(Into::into));
+
+            let adjustment = match adjustment {
                 Ok(adjustment) => adjustment,
                 Err(e) => {
                     let kind = RolloverFailureKind::Money;
@@ -543,6 +542,15 @@ impl FXRolloverInterestModule {
 
         RolloverCalculationOutcome::Completed(adjustments)
     }
+}
+
+fn price_decimal(price: Price) -> anyhow::Result<Decimal> {
+    let value = price.as_decimal();
+    anyhow::ensure!(
+        Price::from_decimal_dp(value, price.precision)?.raw() == price.raw(),
+        "rollover price exceeds exact Decimal representation"
+    );
+    Ok(value)
 }
 
 impl SimulationModule for FXRolloverInterestModule {
@@ -690,8 +698,12 @@ impl SimulationModule for FXRolloverInterestModule {
             for (adjustment, outcome) in adjustments.into_iter().zip(outcomes) {
                 match outcome {
                     AccountAdjustmentOutcome::Applied => {
-                        let total = totals.entry(adjustment.amount.currency).or_insert(0.0);
-                        *total += adjustment.amount.as_f64();
+                        let total = totals
+                            .entry(adjustment.amount.currency)
+                            .or_insert(Decimal::ZERO);
+                        *total = total
+                            .checked_add(adjustment.amount.as_decimal())
+                            .ok_or_else(|| anyhow::anyhow!("rollover diagnostic total overflow"))?;
                     }
                     AccountAdjustmentOutcome::Failed(error) => {
                         let kind = AccountAdjustmentFailureKind::from(error);
@@ -736,8 +748,12 @@ impl SimulationModule for FXRolloverInterestModule {
                                 }
                                 let total = unapplied_totals
                                     .entry(adjustment.amount.currency)
-                                    .or_insert(0.0);
-                                *total += adjustment.amount.as_f64();
+                                    .or_insert(Decimal::ZERO);
+                                *total = total
+                                    .checked_add(adjustment.amount.as_decimal())
+                                    .ok_or_else(|| {
+                                        anyhow::anyhow!("rollover diagnostic total overflow")
+                                    })?;
                             }
                         }
                     }
@@ -775,19 +791,21 @@ impl SimulationModule for FXRolloverInterestModule {
 
     fn log_diagnostics(&self) -> anyhow::Result<()> {
         let totals = self.rollover_totals.borrow();
+
         let parts: Vec<String> = totals
             .iter()
             .map(|(currency, total)| {
-                Money::new_checked(*total, *currency).map(|money| money.to_string())
+                Money::from_decimal_exact(*total, *currency).map(|money| money.to_string())
             })
             .collect::<Result<_, _>>()?;
         log::info!("Rollover interest (totals): {}", parts.join(", "));
 
         let unapplied_totals = self.unapplied_rollover_totals.borrow();
+
         let unapplied_parts: Vec<String> = unapplied_totals
             .iter()
             .map(|(currency, total)| {
-                Money::new_checked(*total, *currency).map(|money| money.to_string())
+                Money::from_decimal_exact(*total, *currency).map(|money| money.to_string())
             })
             .collect::<Result<_, _>>()?;
         log::info!(
@@ -813,6 +831,7 @@ mod tests {
     use nautilus_common::cache::Cache;
     use nautilus_model::identifiers::{InstrumentId, Venue};
     use rstest::rstest;
+    use rust_decimal_macros::dec;
     use serde_json::json;
 
     use super::*;
@@ -822,22 +841,22 @@ mod tests {
             InterestRateRecord {
                 location: "AUS".into(),
                 time: "2020-Q1".into(),
-                value: 0.75,
+                value: dec!(0.75),
             },
             InterestRateRecord {
                 location: "USA".into(),
                 time: "2020-Q1".into(),
-                value: 1.50,
+                value: dec!(1.50),
             },
             InterestRateRecord {
                 location: "JPN".into(),
                 time: "2020-Q1".into(),
-                value: -0.10,
+                value: dec!(-0.10),
             },
             InterestRateRecord {
                 location: "USA".into(),
                 time: "2020-01".into(),
-                value: 1.55,
+                value: dec!(1.55),
             },
         ]
     }
@@ -861,7 +880,7 @@ mod tests {
         let record = InterestRateRecord {
             location: "AUS".into(),
             time: "2020-Q1".into(),
-            value: 0.75,
+            value: dec!(0.75),
         };
 
         let value = serde_json::to_value(&record).unwrap();
@@ -871,40 +890,40 @@ mod tests {
             json!({
                 "location": "AUS",
                 "time": "2020-Q1",
-                "value": 0.75,
+                "value": "0.75",
             })
         );
     }
 
     #[rstest]
     fn test_calculator_quarterly_lookup() {
-        let calc = RolloverInterestCalculator::new(sample_records()).unwrap();
+        let calc = RolloverInterestCalculator::new(sample_records());
         let date = Date::new(2020, 2, 15).unwrap();
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
 
         let rate = calc.calc_overnight_rate(instrument_id, date).unwrap();
 
         // (0.75 - 1.50) / 365 / 100 = -0.00002054...
-        let expected = (0.75 - 1.50) / 365.0 / 100.0;
-        assert!((rate - expected).abs() < 1e-12);
+        let expected = (dec!(0.75) - dec!(1.50)) / dec!(36500);
+        assert_eq!(rate, expected);
     }
 
     #[rstest]
     fn test_calculator_monthly_preferred_over_quarterly() {
-        let calc = RolloverInterestCalculator::new(sample_records()).unwrap();
+        let calc = RolloverInterestCalculator::new(sample_records());
         let date = Date::new(2020, 1, 15).unwrap();
         let instrument_id = InstrumentId::from("USDJPY.SIM");
 
         let rate = calc.calc_overnight_rate(instrument_id, date).unwrap();
 
         // Monthly USD rate (1.55) preferred over quarterly (1.50)
-        let expected = (1.55 - (-0.10)) / 365.0 / 100.0;
-        assert!((rate - expected).abs() < 1e-12);
+        let expected = (dec!(1.55) - (dec!(-0.10))) / dec!(36500);
+        assert_eq!(rate, expected);
     }
 
     #[rstest]
     fn test_calculator_missing_currency() {
-        let calc = RolloverInterestCalculator::new(sample_records()).unwrap();
+        let calc = RolloverInterestCalculator::new(sample_records());
         let date = Date::new(2020, 1, 15).unwrap();
         let instrument_id = InstrumentId::from("EURGBP.SIM");
 
@@ -914,17 +933,17 @@ mod tests {
 
     #[rstest]
     fn test_module_reset() {
-        let module = FXRolloverInterestModule::new(sample_records()).unwrap();
+        let module = FXRolloverInterestModule::new(sample_records());
         module.initialize_rollover_day(Date::new(2020, 1, 15).unwrap());
         module.rollover_completed.set(true);
         module
             .rollover_totals
             .borrow_mut()
-            .insert(Currency::USD(), 100.0);
+            .insert(Currency::USD(), dec!(100.0));
         module
             .unapplied_rollover_totals
             .borrow_mut()
-            .insert(Currency::AUD(), 20.0);
+            .insert(Currency::AUD(), dec!(20.0));
 
         module.reset().unwrap();
 
@@ -936,7 +955,7 @@ mod tests {
 
     #[rstest]
     fn test_calculation_failure_dedupe_is_keyed_per_booking_date() {
-        let module = FXRolloverInterestModule::new(sample_records()).unwrap();
+        let module = FXRolloverInterestModule::new(sample_records());
         let date = Date::new(2020, 1, 15).unwrap();
         let next_date = Date::new(2020, 1, 16).unwrap();
         let instrument_id = InstrumentId::from("AUDUSD.SIM");
@@ -971,44 +990,55 @@ mod tests {
             InterestRateRecord {
                 location: location.to_string(),
                 time: "2020-Q1".to_string(),
-                value: 2.0,
+                value: dec!(2.0),
             },
             InterestRateRecord {
                 location: "USA".to_string(),
                 time: "2020-Q1".to_string(),
-                value: 1.5,
+                value: dec!(1.5),
             },
         ];
-        let calc = RolloverInterestCalculator::new(records).unwrap();
+        let calc = RolloverInterestCalculator::new(records);
         let date = Date::new(2020, 2, 15).unwrap();
 
         let rate = calc
             .calc_overnight_rate(InstrumentId::from(symbol), date)
             .unwrap();
-        let expected = (2.0 - 1.5) / 365.0 / 100.0;
+        let expected = (dec!(2.0) - dec!(1.5)) / dec!(36500);
 
-        assert!((rate - expected).abs() < f64::EPSILON);
+        assert_eq!(rate, expected);
     }
 
     #[rstest]
-    #[case(f64::NAN)]
-    #[case(f64::INFINITY)]
-    #[case(f64::NEG_INFINITY)]
-    fn test_calculator_rejects_non_finite_rate(#[case] value: f64) {
-        let records = vec![InterestRateRecord {
-            location: "USA".to_string(),
-            time: "2020-Q1".to_string(),
-            value,
-        }];
-
-        let error = RolloverInterestCalculator::new(records).unwrap_err();
-
-        assert!(error.to_string().contains("must be finite"));
+    fn test_calculator_rejects_rate_difference_overflow() {
+        let records = vec![
+            InterestRateRecord {
+                location: "AUS".to_string(),
+                time: "2020-Q1".to_string(),
+                value: Decimal::MAX,
+            },
+            InterestRateRecord {
+                location: "USA".to_string(),
+                time: "2020-Q1".to_string(),
+                value: Decimal::MIN,
+            },
+        ];
+        let calculator = RolloverInterestCalculator::new(records);
+        let error = calculator
+            .calc_overnight_rate(
+                InstrumentId::from("AUDUSD.SIM"),
+                Date::new(2020, 1, 15).unwrap(),
+            )
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "overnight interest rate calculation overflow"
+        );
     }
 
     #[rstest]
     fn test_transient_adjustment_failure_retries_only_failed_adjustments() {
-        let module = FXRolloverInterestModule::new(sample_records()).unwrap();
+        let module = FXRolloverInterestModule::new(sample_records());
         let date = Date::new(2020, 1, 15).unwrap();
         let attempt_time = utc_nanos(date, 22, 1);
         module.initialize_rollover_day(date);
@@ -1044,7 +1074,7 @@ mod tests {
         );
         assert_eq!(
             module.rollover_totals.borrow().get(&Currency::USD()),
-            Some(&10.0)
+            Some(&dec!(10.0))
         );
         assert!(
             !module
@@ -1103,11 +1133,11 @@ mod tests {
         assert!(module.rollover_completed.get());
         assert_eq!(
             module.rollover_totals.borrow().get(&Currency::USD()),
-            Some(&10.0)
+            Some(&dec!(10.0))
         );
         assert_eq!(
             module.rollover_totals.borrow().get(&Currency::AUD()),
-            Some(&20.0)
+            Some(&dec!(20.0))
         );
         assert_eq!(
             module
@@ -1123,7 +1153,7 @@ mod tests {
 
     #[rstest]
     fn test_permanent_adjustment_failure_completes_batch() {
-        let module = FXRolloverInterestModule::new(sample_records()).unwrap();
+        let module = FXRolloverInterestModule::new(sample_records());
         let date = Date::new(2020, 1, 15).unwrap();
         let attempt_time = utc_nanos(date, 22, 1);
         module.initialize_rollover_day(date);
@@ -1165,7 +1195,7 @@ mod tests {
                 .unapplied_rollover_totals
                 .borrow()
                 .get(&Currency::AUD()),
-            Some(&50.0)
+            Some(&dec!(50.0))
         );
         assert!(
             !module
@@ -1212,7 +1242,7 @@ mod tests {
 
     #[rstest]
     fn test_acknowledgement_count_error_preserves_pending_batch() {
-        let module = FXRolloverInterestModule::new(sample_records()).unwrap();
+        let module = FXRolloverInterestModule::new(sample_records());
         let date = Date::new(2020, 1, 15).unwrap();
         module.initialize_rollover_day(date);
         {

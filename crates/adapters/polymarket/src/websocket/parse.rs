@@ -88,7 +88,7 @@ pub(crate) fn verify_book_snapshot_hash(
     Ok(true)
 }
 
-fn book_snapshot_hash(
+pub(crate) fn book_snapshot_hash(
     snap: &PolymarketBookSnapshot,
     min_order_size: Option<&str>,
     neg_risk: Option<bool>,

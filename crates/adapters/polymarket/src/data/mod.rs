@@ -94,7 +94,7 @@ use crate::{
     },
     polybolt::{PolymarketPolyBoltFeed, is_supported_polybolt_data_type},
     providers::PolymarketInstrumentProvider,
-    resolve::{PendingResolution, ResolveContext, ResolveWatchEntry, StrictResolvedMarket},
+    resolve::{PendingResolution, ResolveContext, ResolveWatchlist, StrictResolvedMarket},
     websocket::{POLYBOLT_STREAMS_ENDPOINT, pool::PolymarketMarketConnectionPool},
 };
 
@@ -125,7 +125,7 @@ pub struct PolymarketDataClient {
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     subscriptions: DataSubscriptions,
     instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
-    resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
+    resolve_poll_watchlist: Arc<ResolveWatchlist>,
     resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
@@ -216,7 +216,7 @@ impl PolymarketDataClient {
         let cancellation_token = tasks.cancellation_token();
 
         let instruments = Arc::new(AtomicMap::new());
-        let resolve_poll_watchlist = Arc::new(AtomicMap::new());
+        let resolve_poll_watchlist = Arc::new(ResolveWatchlist::default());
         let resolve_watch_apply_mutex = Arc::new(Mutex::new(()));
         let deferred_resolutions = Arc::new(AtomicMap::new());
 
@@ -473,6 +473,12 @@ impl PolymarketDataClient {
                     snapshot_timeout,
                     &spawner,
                 );
+            } else if !was_open {
+                resolve_ctx.subscriptions.monitor_book_snapshot(
+                    instrument_id,
+                    snapshot_timeout,
+                    &spawner,
+                );
             }
         };
 
@@ -538,8 +544,7 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        request_instrument(self, request);
-        Ok(())
+        request_instrument(self, request)
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {

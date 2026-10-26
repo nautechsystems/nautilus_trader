@@ -195,7 +195,7 @@ where
     deserializer.deserialize_map(SpenderAllowancesVisitor)
 }
 
-/// CLOB protocol version response from `GET /version`.
+/// CLOB service version response from `GET /version`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
 pub struct ClobVersionResponse {
     pub version: u8,

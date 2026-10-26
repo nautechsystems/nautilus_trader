@@ -39,8 +39,9 @@ use nautilus_common::{
     messages::{
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-            DataCommand, DataResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, OptionChainReferencePriceResponse, QuotesResponse, TradesResponse,
+            DataCommand, DataResponse, DataResponseEnvelope, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, OptionChainReferencePriceResponse,
+            QuotesResponse, TradesResponse,
         },
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecutionReport,
@@ -192,6 +193,8 @@ pub const PAYLOAD_TYPE_OPTION_CHAIN_REFERENCE_PRICE_RESPONSE: &str =
     "OptionChainReferencePriceResponse";
 /// The canonical `payload_type` tag for [`BarsResponse`].
 pub const PAYLOAD_TYPE_BARS_RESPONSE: &str = "BarsResponse";
+/// The canonical `payload_type` tag for [`DataResponseEnvelope`].
+pub const PAYLOAD_TYPE_DATA_RESPONSE_ENVELOPE: &str = "DataResponseEnvelope";
 
 // Wrapper-level fallback tag reached only when a dispatcher returns an
 // `EncodedPayload` without an override. Every current variant stamps its own
@@ -269,6 +272,7 @@ pub(crate) const DEFAULT_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_FUNDING_RATES_RESPONSE,
     PAYLOAD_TYPE_OPTION_CHAIN_REFERENCE_PRICE_RESPONSE,
     PAYLOAD_TYPE_BARS_RESPONSE,
+    PAYLOAD_TYPE_DATA_RESPONSE_ENVELOPE,
 ];
 
 /// Returns an [`EncoderRegistry`] preloaded with the default encoders.
@@ -348,17 +352,14 @@ pub fn register_default(registry: &mut EncoderRegistry) {
         encode_data_response,
     );
 
+    registry.register::<DataResponseEnvelope, _>(
+        payload_type(PAYLOAD_TYPE_DATA_RESPONSE_ENVELOPE),
+        encode_response_envelope,
+    );
     register_default_headers(registry);
     register_default_identities(registry);
 }
 
-/// Attaches header extractors for every type that carries `correlation_id` or
-/// `causation_id` today.
-///
-/// Header propagation lands incrementally per the SPEC's workstream A: extractors only
-/// exist for types whose underlying struct has grown the fields. Other types fall back to
-/// the registry's no-op extractor, which yields [`Headers::empty`]; capture still works
-/// for them, the entry just carries no correlation metadata until the field set arrives.
 fn register_default_headers(registry: &mut EncoderRegistry) {
     registry.register_headers::<SubmitOrder, _>(extract_submit_order_headers);
     registry.register_headers::<SubmitOrderList, _>(extract_submit_order_list_headers);
@@ -372,6 +373,9 @@ fn register_default_headers(registry: &mut EncoderRegistry) {
     registry.register_headers::<TradingCommand, _>(extract_trading_command_headers);
     registry.register_headers::<DataCommand, _>(extract_data_command_headers);
     registry.register_headers::<DataResponse, _>(extract_data_response_headers);
+    registry.register_headers::<DataResponseEnvelope, _>(|response| {
+        headers_from_fields(Some(*response.correlation_id()), None)
+    });
 }
 
 /// Attaches identity extractors for the types production dispatch pushes through more
@@ -1359,6 +1363,33 @@ pub fn encode_data_response(response: &DataResponse) -> Result<EncodedPayload, E
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+pub(crate) struct ResponseEnvelopeCapture {
+    pub(crate) correlation_id: UUID4,
+    pub(crate) completed: bool,
+    pub(crate) sub_correlation_id: Option<UUID4>,
+    pub(crate) failure_reason: Option<String>,
+    pub(crate) payload_type: Option<PayloadType>,
+    pub(crate) payload: Option<Bytes>,
+}
+
+fn encode_response_envelope(
+    response: &DataResponseEnvelope,
+) -> Result<EncodedPayload, EncodeError> {
+    let payload = response.response().map(encode_data_response).transpose()?;
+
+    let capture = ResponseEnvelopeCapture {
+        correlation_id: *response.correlation_id(),
+        completed: response.completed(),
+        sub_correlation_id: response.sub_correlation_id(),
+        failure_reason: response.failure_reason().map(str::to_owned),
+        payload_type: payload.as_ref().and_then(|value| value.payload_type),
+        payload: payload.map(|value| value.payload),
+    };
+
+    Ok(EncodedPayload::without_indices(encode_serde(&capture)?))
+}
+
 fn encode_custom_data_response(
     response: &CustomDataResponse,
 ) -> Result<EncodedPayload, EncodeError> {
@@ -1743,6 +1774,10 @@ mod tests {
             (
                 "send_data_response / DataResponse",
                 registry.contains::<DataResponse>(),
+            ),
+            (
+                "send_response_envelope / DataResponseEnvelope",
+                registry.contains::<DataResponseEnvelope>(),
             ),
         ];
         let missing: Vec<&str> = expected
@@ -2814,12 +2849,12 @@ mod tests {
             opening_order_id: opening_order_id(),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 1.0,
+            signed_qty: 1.into(),
             quantity: Quantity::from("1"),
             last_qty: Quantity::from("1"),
             last_px: Price::from("100.00"),
             currency: Currency::USDT(),
-            avg_px_open: 100.0,
+            avg_px_open: 100.into(),
             realized_pnl: Some(Money::new(-0.1, Currency::USDT())),
             event_id: UUID4::new(),
             ts_event: UnixNanos::from(70),
@@ -2837,13 +2872,13 @@ mod tests {
             opening_order_id: opening_order_id(),
             entry: OrderSide::Buy,
             side: PositionSide::Long,
-            signed_qty: 2.0,
+            signed_qty: 2.into(),
             quantity: Quantity::from("2"),
             peak_quantity: Quantity::from("2"),
             last_qty: Quantity::from("1"),
             last_px: Price::from("101.00"),
             currency: Currency::USDT(),
-            avg_px_open: 100.5,
+            avg_px_open: "100.5".parse().unwrap(),
             avg_px_close: None,
             realized_return: 0.0,
             realized_pnl: None,
@@ -2866,14 +2901,14 @@ mod tests {
             closing_order_id: Some(closing_order_id()),
             entry: OrderSide::Buy,
             side: PositionSide::Flat,
-            signed_qty: 0.0,
+            signed_qty: 0.into(),
             quantity: Quantity::from("0"),
             peak_quantity: Quantity::from("2"),
             last_qty: Quantity::from("2"),
             last_px: Price::from("102.00"),
             currency: Currency::USDT(),
-            avg_px_open: 100.5,
-            avg_px_close: Some(102.0),
+            avg_px_open: "100.5".parse().unwrap(),
+            avg_px_close: Some(102.into()),
             realized_return: 0.015,
             realized_pnl: Some(Money::new(3.0, Currency::USDT())),
             unrealized_pnl: Money::new(0.0, Currency::USDT()),
@@ -3200,7 +3235,7 @@ mod tests {
         match (decoded, request) {
             (RequestCommand::Quotes(decoded), RequestCommand::Quotes(expected)) => {
                 assert_eq!(decoded.request_id, expected.request_id);
-                assert_eq!(decoded.instrument_id, expected.instrument_id);
+                assert_eq!(decoded.instrument_ids, expected.instrument_ids);
             }
             other => panic!("expected RequestCommand::Quotes round trip, was {other:?}"),
         }
@@ -3675,7 +3710,7 @@ mod tests {
         let decoded: BookDepthResponse = rmp_serde::from_slice(&encoded.payload).expect("decode");
         assert_eq!(decoded.correlation_id, response.correlation_id);
         assert_eq!(decoded.instrument_id, response.instrument_id);
-        assert_eq!(decoded.data, response.data);
+        assert_eq!(decoded.data.as_ref(), response.data.as_ref());
     }
 
     #[rstest]
@@ -3692,8 +3727,8 @@ mod tests {
 
         let decoded: QuotesResponse = rmp_serde::from_slice(&encoded.payload).expect("decode");
         assert_eq!(decoded.correlation_id, response.correlation_id);
-        assert_eq!(decoded.instrument_id, response.instrument_id);
-        assert_eq!(decoded.data, response.data);
+        assert_eq!(decoded.instrument_ids, response.instrument_ids);
+        assert_eq!(decoded.data.as_ref(), response.data.as_ref());
     }
 
     #[rstest]
@@ -4088,7 +4123,7 @@ mod tests {
 
     fn make_quotes_request() -> RequestQuotes {
         RequestQuotes {
-            instrument_id: InstrumentId::from("EUR/USD.SIM"),
+            instrument_ids: vec![InstrumentId::from("EUR/USD.SIM")],
             start: None,
             end: None,
             limit: None,

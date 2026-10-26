@@ -114,8 +114,10 @@ struct TestServerState {
     exchange_request_count: Arc<tokio::sync::Mutex<usize>>,
     info_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     ws_connections: Arc<AtomicUsize>,
+    reject_ws_connections: Arc<std::sync::atomic::AtomicBool>,
     ws_subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     last_exchange_action: Arc<tokio::sync::Mutex<Option<Value>>>,
+    scheduled_cancel_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     reject_next_order: Arc<std::sync::atomic::AtomicBool>,
     /// Returns a `status="ok"` envelope whose inner `statuses[0]` carries a
     /// per-order `error` object on the next exchange call. This exercises
@@ -153,6 +155,7 @@ struct TestServerState {
     /// Fail `userFills` info calls with a non-retryable error (400) while positive,
     /// decrementing once per call.
     fail_user_fills_count: Arc<AtomicUsize>,
+    fail_historical_orders_count: Arc<AtomicUsize>,
     /// Optional override for `userFills` info responses; defaults to `[]`.
     user_fills_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     /// Optional override for `historicalOrders` info responses; defaults to `[]`.
@@ -187,8 +190,10 @@ impl Default for TestServerState {
             exchange_request_count: Arc::new(tokio::sync::Mutex::new(0)),
             info_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             ws_connections: Arc::new(AtomicUsize::new(0)),
+            reject_ws_connections: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             ws_subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             last_exchange_action: Arc::new(tokio::sync::Mutex::new(None)),
+            scheduled_cancel_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             reject_next_order: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             inner_order_error_next: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             cancel_response_override: Arc::new(tokio::sync::Mutex::new(None)),
@@ -204,6 +209,7 @@ impl Default for TestServerState {
             perp_clearinghouse_dex_responses: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             last_clearinghouse_user: Arc::new(tokio::sync::Mutex::new(None)),
             fail_user_fills_count: Arc::new(AtomicUsize::new(0)),
+            fail_historical_orders_count: Arc::new(AtomicUsize::new(0)),
             user_fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             historical_orders_response: Arc::new(tokio::sync::Mutex::new(None)),
             all_perp_metas_response: Arc::new(tokio::sync::Mutex::new(None)),
@@ -450,6 +456,18 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
         }
         "userFills" => handle_info_user_fills(&state).await,
         "historicalOrders" => {
+            if state
+                .fail_historical_orders_count
+                .try_update(Ordering::Relaxed, Ordering::Relaxed, |n| n.checked_sub(1))
+                .is_ok()
+            {
+                return (
+                    axum::http::StatusCode::BAD_REQUEST,
+                    Json(json!({"error": "historical orders rejected"})),
+                )
+                    .into_response();
+            }
+
             if let Some(body) = state.historical_orders_response.lock().await.clone() {
                 Json(body).into_response()
             } else {
@@ -586,6 +604,13 @@ async fn handle_exchange(
 
     if let Some(action) = request_body.get("action") {
         *state.last_exchange_action.lock().await = Some(action.clone());
+        if action["type"] == "scheduleCancel" {
+            state
+                .scheduled_cancel_requests
+                .lock()
+                .await
+                .push(request_body.clone());
+        }
     }
 
     // Validate signed request format
@@ -692,6 +717,9 @@ async fn handle_exchange(
             }))
             .into_response()
         }
+        Some("scheduleCancel") => {
+            Json(load_json("schedule_cancel.json")["success"].clone()).into_response()
+        }
         Some("modify") => Json(json!({
             "status": "ok",
             "response": {
@@ -730,6 +758,10 @@ async fn handle_health() -> impl IntoResponse {
 }
 
 async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
+    if state.reject_ws_connections.load(Ordering::Relaxed) {
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     state.ws_connections.fetch_add(1, Ordering::Relaxed);
     ws.on_upgrade(move |socket| handle_ws_socket(socket, state))
 }
@@ -2357,6 +2389,45 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
     cache.borrow_mut().add_account(account).unwrap();
 }
 
+#[tokio::test]
+async fn test_execution_schedule_cancel_arm_replace_clear() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+    let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ms();
+
+    for time in [Some(now + 60_000), Some(now + 120_000), None] {
+        client.schedule_cancel(time).await.unwrap();
+
+        let expected = match time {
+            Some(time) => json!({"type": "scheduleCancel", "time": time}),
+            None => json!({"type": "scheduleCancel"}),
+        };
+
+        assert_eq!(*state.last_exchange_action.lock().await, Some(expected));
+    }
+
+    assert_eq!(*state.exchange_request_count.lock().await, 3);
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+}
+
+#[tokio::test]
+async fn test_execution_schedule_cancel_rejection() {
+    let state = TestServerState::default();
+    state.reject_next_order.store(true, Ordering::Relaxed);
+    let addr = start_mock_server(state.clone()).await;
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    let error = client.schedule_cancel(None).await.unwrap_err();
+
+    assert!(
+        error
+            .to_string()
+            .contains("Order rejected: insufficient margin")
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_exec_client_creation() {
@@ -2425,7 +2496,7 @@ async fn test_execution_info_retry_configuration(
 #[tokio::test(flavor = "multi_thread")]
 async fn test_exec_client_connect_disconnect() {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
     replace_system_event_sender(system_tx);
     let registry = SocketReconnectRegistry::default();
@@ -2463,6 +2534,213 @@ async fn test_exec_client_connect_disconnect() {
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
     assert!(registry.handle(*HYPERLIQUID_CLIENT_ID, endpoint).is_none());
+    assert_eq!(*state.exchange_request_count.lock().await, 0);
+    assert_eq!(
+        *state.scheduled_cancel_requests.lock().await,
+        Vec::<Value>::new()
+    );
+}
+
+#[rstest]
+#[case::rejected(false)]
+#[case::transport_error(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_startup_failure_and_retry(#[case] transport_error: bool) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    state
+        .reject_next_order
+        .store(!transport_error, Ordering::Relaxed);
+    state
+        .fail_next_exchange
+        .store(transport_error, Ordering::Relaxed);
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    let error = client.connect().await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "failed to arm Hyperliquid scheduled cancellation"
+    );
+    assert!(!client.is_connected());
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+
+    let requests = state.scheduled_cancel_requests.lock().await;
+    assert_eq!(requests.len(), 2);
+    assert!(
+        requests
+            .iter()
+            .all(|request| request["action"]["time"].is_u64())
+    );
+    assert_eq!(*state.exchange_request_count.lock().await, 2);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_startup_request_timeout() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    state.pause_next_exchange.store(true, Ordering::Relaxed);
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let (mut client, _rx, _cache) = create_test_execution_client_from_config(config);
+
+    let error = client.connect().await.unwrap_err();
+    state.pause_release.notify_one();
+
+    assert_eq!(
+        error.to_string(),
+        "failed to arm Hyperliquid scheduled cancellation"
+    );
+    assert_eq!(error.root_cause().to_string(), "deadline has elapsed");
+    assert!(!client.is_connected());
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_pauses_during_websocket_outage() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_system_event_sender(system_tx);
+    let registry = SocketReconnectRegistry::default();
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let (mut client, _rx, cache) =
+        registry.scope(|| create_test_execution_client_from_config(config));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let connected = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(connected) = connected;
+    assert_eq!(connected.state, SocketState::Connected);
+    state.reject_ws_connections.store(true, Ordering::Relaxed);
+    let handle = registry
+        .handle(
+            *HYPERLIQUID_CLIENT_ID,
+            Ustr::from("hyperliquid-user-streams"),
+        )
+        .unwrap();
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted
+    );
+    let disconnected = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let SystemEvent::SocketState(disconnected) = disconnected;
+    assert_eq!(disconnected.state, SocketState::Disconnected);
+
+    tokio::time::sleep(Duration::from_millis(5_200)).await;
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+    state.reject_ws_connections.store(false, Ordering::Relaxed);
+    wait_until_async(
+        || async { state.scheduled_cancel_requests.lock().await.len() >= 2 },
+        Duration::from_secs(20),
+    )
+    .await;
+    client.disconnect().await.unwrap();
+
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 2);
+    assert_eq!(state.scheduled_cancel_requests.lock().await.len(), 2);
+    assert_eq!(*state.exchange_request_count.lock().await, 2);
+}
+
+#[rstest]
+#[case::disconnect(false)]
+#[case::stop(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_refresh_retry_and_shutdown(#[case] stop: bool) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let vault = "0x1111111111111111111111111111111111111111";
+    config.vault_address = Some(vault.to_string());
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+
+    let before = get_atomic_clock_realtime().get_time_ms();
+    client.connect().await.unwrap();
+    let after = get_atomic_clock_realtime().get_time_ms();
+    client.connect().await.unwrap();
+    assert_eq!(*state.exchange_request_count.lock().await, 1);
+    state.fail_next_exchange.store(true, Ordering::Relaxed);
+    wait_until_async(
+        || async { state.scheduled_cancel_requests.lock().await.len() == 3 },
+        Duration::from_secs(13),
+    )
+    .await;
+
+    if stop {
+        client.stop().unwrap();
+    } else {
+        client.disconnect().await.unwrap();
+    }
+
+    tokio::time::sleep(Duration::from_millis(5_200)).await;
+
+    let requests = state.scheduled_cancel_requests.lock().await.clone();
+    assert!(!client.is_connected());
+    assert_eq!(requests.len(), 3);
+    assert_eq!(*state.exchange_request_count.lock().await, 3);
+    let first_deadline = requests[0]["action"]["time"].as_u64().unwrap();
+    assert!((before + 15_000..=after + 15_000).contains(&first_deadline));
+
+    for request in &requests {
+        let deadline = request["action"]["time"].as_u64().unwrap();
+        assert_eq!(
+            request["action"],
+            json!({"type": "scheduleCancel", "time": deadline})
+        );
+        assert_eq!(request["vaultAddress"], vault);
+    }
+
+    for pair in requests.windows(2) {
+        assert!(
+            pair[1]["action"]["time"].as_u64().unwrap()
+                > pair[0]["action"]["time"].as_u64().unwrap()
+        );
+        assert!(pair[1]["nonce"].as_u64().unwrap() > pair[0]["nonce"].as_u64().unwrap());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_reconnect_rearms_once() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let mut config = create_test_exec_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(15);
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.connect().await.unwrap();
+    client.disconnect().await.unwrap();
+    client.connect().await.unwrap();
+    client.connect().await.unwrap();
+    assert_eq!(*state.exchange_request_count.lock().await, 2);
+
+    wait_until_async(
+        || async { state.scheduled_cancel_requests.lock().await.len() >= 3 },
+        Duration::from_secs(8),
+    )
+    .await;
+    client.disconnect().await.unwrap();
+
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 2);
+    assert_eq!(state.scheduled_cancel_requests.lock().await.len(), 3);
+    assert_eq!(*state.exchange_request_count.lock().await, 3);
 }
 
 #[rstest]
@@ -2669,13 +2947,25 @@ async fn test_reconnect_reads_history_after_subscription_wait_times_out() {
 }
 
 #[rstest]
+#[case::follow_up(1, false)]
+#[case::later_reconnect(2, false)]
+#[case::historical_orders(2, true)]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_reconnect_recovers_after_failed_history_read() {
-    // A failed history read leaves the stream running, so the next reconnect
-    // recovers the fill the first attempt could not read.
+async fn test_reconnect_recovers_after_failed_history_read(
+    #[case] failed_reads: usize,
+    #[case] fail_orders: bool,
+) {
     let state = TestServerState::default();
     let user_fills = state.user_fills_response.clone();
-    let fail_user_fills_count = state.fail_user_fills_count.clone();
+    let historical_orders = state.historical_orders_response.clone();
+    let failures = if fail_orders {
+        state.fail_historical_orders_count.clone()
+    } else {
+        state.fail_user_fills_count.clone()
+    };
+
+    let stream_frames = state.stream_frames.clone();
+    let frame_after_user_events_ack = state.frame_after_user_events_ack.clone();
     let addr = start_mock_server(state).await;
     let registry = SocketReconnectRegistry::default();
     let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
@@ -2684,27 +2974,272 @@ async fn test_reconnect_recovers_after_failed_history_read() {
     client.connect().await.unwrap();
     let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-003").await;
 
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    let cloid = Cloid::from_client_order_id(order.client_order_id()).to_hex();
     let mut fill = user_fill("BTC", 12345);
     fill["px"] = json!("56730.0");
-    fill["sz"] = json!("0.0001");
-    fill["time"] = json!(get_atomic_clock_realtime().get_time_ns().as_millis());
-    fill["cloid"] = json!(Cloid::from_client_order_id(order.client_order_id()).to_hex());
+    fill["sz"] = json!("0.00005");
+    fill["time"] = json!(ts_ms);
+    fill["cloid"] = json!(cloid);
+    let mut canceled = historical_order("BTC", 12345);
+    canceled["order"]["limitPx"] = json!("56730.0");
+    canceled["order"]["origSz"] = json!("0.0001");
+    canceled["order"]["sz"] = json!("0.00005");
+    canceled["order"]["timestamp"] = json!(ts_ms - 1);
+    canceled["order"]["cloid"] = json!(cloid);
+    canceled["status"] = json!("canceled");
+    canceled["statusTimestamp"] = json!(ts_ms + 1);
     *user_fills.lock().await = Some(json!([fill]));
-    fail_user_fills_count.store(1, Ordering::Relaxed);
+    *historical_orders.lock().await = Some(json!([canceled]));
+    failures.store(failed_reads, Ordering::Relaxed);
 
     request_user_streams_reconnect(&registry);
     wait_until_async(
         || {
-            let fail_user_fills_count = fail_user_fills_count.clone();
-            async move { fail_user_fills_count.load(Ordering::Relaxed) == 0 }
+            let failures = failures.clone();
+            async move { failures.load(Ordering::Relaxed) == failed_reads - 1 }
         },
         Duration::from_secs(10),
     )
     .await;
 
+    // A later stream report advances the cursor beyond the recovery margin
+    stream_frames
+        .send(order_updates_frame(&[external_canceled_order(
+            998,
+            ts_ms + 60_000,
+        )]))
+        .unwrap();
+    let before_recovery = recv_order_report(&mut rx, "998").await;
+
+    if failed_reads == 2 {
+        wait_until_async(
+            || {
+                let failures = failures.clone();
+                async move { failures.load(Ordering::Relaxed) == 0 }
+            },
+            Duration::from_secs(10),
+        )
+        .await;
+
+        request_user_streams_reconnect(&registry);
+    }
+
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Canceled(_))).await;
+
+    // A marker queued behind the next recovery bounds the duplicate check
+    *frame_after_user_events_ack.lock().await =
+        Some(order_updates_frame(&[external_canceled_order(
+            999,
+            ts_ms + 60_001,
+        )]));
+    request_user_streams_reconnect(&registry);
+    let replayed = recv_order_report(&mut rx, "999").await;
+
+    let [
+        OrderEventAny::Accepted(accepted),
+        OrderEventAny::Filled(filled),
+        OrderEventAny::Canceled(canceled),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    assert_eq!(before_recovery, vec![]);
+    assert_eq!(accepted.client_order_id, order.client_order_id());
+    assert_eq!(filled.client_order_id, order.client_order_id());
+    assert_eq!(filled.venue_order_id, VenueOrderId::from("12345"));
+    assert_eq!(
+        filled.last_qty.as_decimal(),
+        rust_decimal_macros::dec!(0.00005)
+    );
+    assert_eq!(
+        filled.last_px.as_decimal(),
+        rust_decimal_macros::dec!(56730)
+    );
+    assert_eq!(canceled.client_order_id, order.client_order_id());
+    assert_eq!(canceled.venue_order_id, Some(VenueOrderId::from("12345")));
+    assert_eq!(replayed, vec![]);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_follow_up_recovers_retained_window_after_lagging_initial_read() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-RETAINED").await;
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+
+    *state.frame_after_user_events_ack.lock().await =
+        Some(order_updates_frame(&[external_canceled_order(996, ts_ms)]));
+    state.pause_next_user_fills.store(true, Ordering::Release);
+    request_user_streams_reconnect(&registry);
+    tokio::time::timeout(Duration::from_secs(10), state.info_started.notified())
+        .await
+        .unwrap();
+
+    // Arm the follow-up pause before letting the empty initial read succeed
+    state.pause_next_user_fills.store(true, Ordering::Release);
+    state.info_release.notify_one();
+    let initial = recv_order_report(&mut rx, "996").await;
+    tokio::time::timeout(Duration::from_secs(10), state.info_started.notified())
+        .await
+        .unwrap();
+    state.fail_user_fills_count.store(2, Ordering::Relaxed);
+    state.info_release.notify_one();
+    wait_until_async(
+        || async { state.fail_user_fills_count.load(Ordering::Relaxed) == 1 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    state
+        .stream_frames
+        .send(order_updates_frame(&[external_canceled_order(
+            998,
+            ts_ms + 60_000,
+        )]))
+        .unwrap();
+    let before_recovery = recv_order_report(&mut rx, "998").await;
+    let mut fill = user_fill("BTC", 12345);
+    fill["px"] = json!("56730.0");
+    fill["sz"] = json!("0.0001");
+    fill["time"] = json!(ts_ms);
+    fill["cloid"] = json!(Cloid::from_client_order_id(order.client_order_id()).to_hex());
+    *state.user_fills_response.lock().await = Some(json!([fill]));
+
+    // The reused window must survive another initial failure and reach its follow-up
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || async { state.fail_user_fills_count.load(Ordering::Relaxed) == 0 },
+        Duration::from_secs(10),
+    )
+    .await;
+    let events =
+        recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Filled(_))).await;
+    *state.frame_after_user_events_ack.lock().await =
+        Some(order_updates_frame(&[external_canceled_order(
+            999,
+            ts_ms + 60_001,
+        )]));
+    request_user_streams_reconnect(&registry);
+    let replayed = recv_order_report(&mut rx, "999").await;
+
+    let [
+        OrderEventAny::Accepted(accepted),
+        OrderEventAny::Filled(filled),
+    ] = events.as_slice()
+    else {
+        panic!("unexpected recovered events: {events:?}");
+    };
+
+    assert_eq!(initial, vec![]);
+    assert_eq!(before_recovery, vec![]);
+    assert_eq!(accepted.client_order_id, order.client_order_id());
+    assert_eq!(filled.client_order_id, order.client_order_id());
+    assert_eq!(filled.venue_order_id, VenueOrderId::from("12345"));
+    assert_eq!(
+        filled.last_qty.as_decimal(),
+        rust_decimal_macros::dec!(0.0001)
+    );
+    assert_eq!(
+        filled.last_px.as_decimal(),
+        rust_decimal_macros::dec!(56730)
+    );
+    assert_eq!(replayed, vec![]);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_reconnect_older_follow_up_preserves_newer_failed_window() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let order = submit_resting_limit_order(&client, &mut rx, &cache, "O-RECONNECT-OVERLAP").await;
+    let ts_ms = get_atomic_clock_realtime().get_time_ns().as_millis();
+    state.fail_user_fills_count.store(1, Ordering::Relaxed);
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || async { state.fail_user_fills_count.load(Ordering::Relaxed) == 0 },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    // Hold the older follow-up after its order snapshot, then fail both newer reads
+    *state.historical_orders_response.lock().await =
+        Some(json!([external_canceled_order(998, ts_ms + 60_000),]));
+    state.pause_next_user_fills.store(true, Ordering::Release);
+    tokio::time::timeout(Duration::from_secs(10), state.info_started.notified())
+        .await
+        .unwrap();
+    state
+        .stream_frames
+        .send(order_updates_frame(&[external_canceled_order(
+            997,
+            ts_ms + 60_001,
+        )]))
+        .unwrap();
+    recv_order_report(&mut rx, "997").await;
+    state.fail_user_fills_count.store(2, Ordering::Relaxed);
+    request_user_streams_reconnect(&registry);
+    wait_until_async(
+        || async { state.fail_user_fills_count.load(Ordering::Relaxed) == 0 },
+        Duration::from_secs(10),
+    )
+    .await;
+    state.info_release.notify_one();
+    recv_order_report(&mut rx, "998").await;
+
+    let mut fill = user_fill("BTC", 12345);
+    fill["px"] = json!("56730.0");
+    fill["sz"] = json!("0.0001");
+    fill["time"] = json!(ts_ms);
+    fill["cloid"] = json!(Cloid::from_client_order_id(order.client_order_id()).to_hex());
+    *state.user_fills_response.lock().await = Some(json!([fill]));
+    *state.historical_orders_response.lock().await = Some(json!([]));
     request_user_streams_reconnect(&registry);
     let events =
         recv_order_events_until(&mut rx, |event| matches!(event, OrderEventAny::Filled(_))).await;
+
+    // A report unique to this follow-up proves it applies before the next reconnect
+    *state.historical_orders_response.lock().await =
+        Some(json!([external_canceled_order(999, ts_ms + 60_002),]));
+    recv_order_report(&mut rx, "999").await;
+    *state.historical_orders_response.lock().await =
+        Some(json!([external_canceled_order(1000, ts_ms + 1),]));
+    *state.frame_after_user_events_ack.lock().await =
+        Some(order_updates_frame(&[external_canceled_order(
+            1001,
+            ts_ms + 60_003,
+        )]));
+    request_user_streams_reconnect(&registry);
+    let mut replayed = Vec::new();
+    tokio::time::timeout(Duration::from_secs(10), async {
+        while let Some(event) = rx.recv().await {
+            if let ExecutionEvent::Report(ExecutionReport::Order(report)) = event {
+                replayed.push(report.venue_order_id);
+                if report.venue_order_id == VenueOrderId::from("1001") {
+                    break;
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
 
     let [
         OrderEventAny::Accepted(accepted),
@@ -2721,6 +3256,11 @@ async fn test_reconnect_recovers_after_failed_history_read() {
         filled.last_qty.as_decimal(),
         rust_decimal_macros::dec!(0.0001)
     );
+    assert_eq!(
+        filled.last_px.as_decimal(),
+        rust_decimal_macros::dec!(56730)
+    );
+    assert_eq!(replayed, vec![VenueOrderId::from("1001")]);
 
     client.disconnect().await.unwrap();
 }
@@ -6729,8 +7269,8 @@ fn assert_query_recovery_cache(
     assert_eq!(positions[0].side, PositionSide::Long);
     assert_eq!(positions[0].quantity, Quantity::from("0.00100"));
     assert_eq!(
-        rust_decimal::Decimal::try_from(positions[0].avg_px_open)
-            .unwrap()
+        positions[0]
+            .avg_px_open
             .round_dp(u32::from(positions[0].price_precision)),
         dec!(90600)
     );
@@ -10925,6 +11465,10 @@ async fn test_generate_mass_status_falls_back_for_saturated_history(
         !mass.reports_complete(),
         "a venue-capped history response cannot prove coverage",
     );
+    assert_eq!(
+        mass.lookback_start(),
+        (!saturate_historical_orders).then_some(UnixNanos::from(1_700_000_000_000_000_000)),
+    );
     assert!(
         mass.order_reports()
             .contains_key(&VenueOrderId::from("9999"))
@@ -10961,6 +11505,220 @@ async fn test_generate_mass_status_falls_back_for_saturated_history(
 }
 
 #[rstest]
+#[case::fills_below_cap(false, 1_999)]
+#[case::fills_at_cap(false, 2_000)]
+#[case::historical_orders_below_cap(true, 1_999)]
+#[case::historical_orders_at_cap(true, 2_000)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_mass_status_declares_capped_history_window(
+    #[case] saturate_historical_orders: bool,
+    #[case] response_len: u64,
+    #[values(false, true)] usable_edge: bool,
+) {
+    let state = TestServerState::default();
+    let edge_ms = 1_754_000_000_001u64;
+
+    let fill_count = if saturate_historical_orders {
+        4
+    } else {
+        response_len
+    };
+
+    let mut fills: Vec<_> = (1..=fill_count)
+        .map(|oid| {
+            let mut fill = user_fill("BTC", oid);
+            fill["time"] = json!(edge_ms + 20);
+            fill
+        })
+        .collect();
+
+    for fill in &mut fills[1..3] {
+        fill["time"] = json!(edge_ms);
+        if !usable_edge {
+            fill["coin"] = json!("NOCOIN");
+        }
+    }
+
+    let history_count = if saturate_historical_orders {
+        response_len
+    } else {
+        4
+    };
+
+    let historical_orders: Vec<_> = (1..=history_count)
+        .map(|oid| {
+            let mut order = historical_order("BTC", oid);
+            order["statusTimestamp"] = json!(edge_ms + 20);
+            order
+        })
+        .collect();
+
+    *state.user_fills_response.lock().await = Some(Value::Array(fills));
+    *state.historical_orders_response.lock().await = Some(Value::Array(historical_orders));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+
+    let edge = UnixNanos::from(1_754_000_000_001_000_000);
+    let fill_reports = mass.fill_reports();
+    let order_reports = mass.order_reports();
+    let spanning_order = &order_reports[&VenueOrderId::from("1")];
+    let capped = response_len == 2_000;
+
+    assert_eq!(mass.lookback_start(), capped.then_some(edge));
+    assert_eq!(mass.reports_complete(), !capped && usable_edge);
+    assert_eq!(
+        fill_reports.values().map(Vec::len).sum::<usize>(),
+        usize::try_from(fill_count).unwrap() - if usable_edge { 0 } else { 2 },
+    );
+    assert_eq!(
+        fill_reports
+            .values()
+            .flatten()
+            .filter(|fill| fill.ts_event == edge)
+            .count(),
+        if usable_edge { 2 } else { 0 },
+    );
+    assert_eq!(spanning_order.order_status, OrderStatus::Filled);
+    assert_eq!(spanning_order.filled_qty, Quantity::from("0.10000"));
+    assert_eq!(
+        spanning_order.ts_accepted,
+        UnixNanos::from(1_700_000_000_000_000_000),
+    );
+    assert_eq!(
+        spanning_order.ts_last,
+        UnixNanos::from(1_754_000_000_021_000_000),
+    );
+}
+
+#[rstest]
+#[case::complete(false, false, false)]
+#[case::capped(true, false, false)]
+#[case::complete_cached(false, true, false)]
+#[case::capped_cached(true, true, false)]
+#[case::capped_cached_flat(true, true, true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_mass_status_capped_history_projects_fills_order_only(
+    #[case] capped: bool,
+    #[case] cached: bool,
+    #[case] explicit_flat: bool,
+) {
+    let state = TestServerState::default();
+    let mut opening_order = historical_order("BTC", 1);
+    opening_order["order"]["orderType"] = json!("Market");
+    opening_order["order"]["tif"] = json!("Ioc");
+    *state.user_fills_response.lock().await = Some(json!([user_fill("BTC", 1)]));
+    *state.historical_orders_response.lock().await = Some(json!([opening_order.clone()]));
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    add_test_perp_instrument_to_cache(&cache);
+    client.connect().await.unwrap();
+    let initial_mass = if cached {
+        client.generate_mass_status(None).await.unwrap()
+    } else {
+        None
+    };
+
+    let mut closing_fill = user_fill("BTC", 2);
+    closing_fill["side"] = json!("A");
+    closing_fill["time"] = json!(1_700_000_001_000u64);
+    closing_fill["startPosition"] = json!("0.10000");
+    closing_fill["dir"] = json!("Close Long");
+    let mut closing_order = historical_order("BTC", 2);
+    closing_order["order"]["side"] = json!("A");
+    closing_order["order"]["orderType"] = json!("Market");
+    closing_order["order"]["tif"] = json!("Ioc");
+    closing_order["statusTimestamp"] = json!(1_700_000_001_001u64);
+    let mut fills = vec![closing_fill];
+    let mut orders = vec![closing_order];
+
+    if capped {
+        fills.extend((3..2_002).map(|oid| {
+            let mut fill = user_fill("ETH", oid);
+            fill["time"] = json!(1_700_000_002_000u64);
+            fill
+        }));
+    } else {
+        fills.insert(0, user_fill("BTC", 1));
+        orders.insert(0, opening_order);
+    }
+
+    *state.user_fills_response.lock().await = Some(Value::Array(fills));
+    *state.historical_orders_response.lock().await = Some(Value::Array(orders));
+
+    *state.perp_clearinghouse_response.lock().await = if explicit_flat {
+        let mut position = clearinghouse_position("BTC");
+        position["assetPositions"][0]["position"]["szi"] = json!("0");
+        Some(position)
+    } else {
+        None
+    };
+
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let engine = RefCell::new(engine);
+    let mut manager =
+        ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default()).unwrap();
+
+    if let Some(initial_mass) = initial_mass {
+        let result = manager.reconcile_execution_mass_status(&initial_mass, &engine);
+        assert!(result.unresolved_positions.is_empty());
+        assert_eq!(
+            cache
+                .borrow()
+                .positions_open(None, None, None, None, None)
+                .len(),
+            1,
+        );
+    }
+
+    let result = manager.reconcile_execution_mass_status(&mass, &engine);
+    let cache = cache.borrow();
+    let order = cache.order(&ClientOrderId::from("2")).unwrap();
+    let positions = cache.positions(None, None, None, None, None);
+    let retains_position = capped && cached && !explicit_flat;
+
+    assert_eq!(positions.len(), usize::from(cached || !capped));
+    assert_eq!(
+        mass.lookback_start(),
+        capped.then_some(UnixNanos::from(1_700_000_001_000_000_000)),
+    );
+    assert_eq!(mass.reports_complete(), !capped);
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("0.10000"));
+
+    for position in positions {
+        assert_eq!(
+            position.side,
+            if retains_position {
+                PositionSide::Long
+            } else {
+                PositionSide::Flat
+            },
+        );
+        assert_eq!(
+            position.quantity,
+            if retains_position {
+                Quantity::from("0.10000")
+            } else {
+                Quantity::zero(5)
+            },
+        );
+    }
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_mass_status_propagates_saturated_dex_discovery_error() {
     let state = TestServerState::default();
@@ -10989,7 +11747,9 @@ async fn test_generate_mass_status_propagates_saturated_dex_discovery_error() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_mass_status_lookback_filters_only_fills() {
+async fn test_generate_mass_status_lookback_filters_only_fills(
+    #[values(false, true)] capped: bool,
+) {
     // generate_mass_status applies the lookback only to fills. Open orders and
     // positions must always be returned in full so reconciliation has the
     // complete current state. A regression that applies the cutoff to other
@@ -11001,7 +11761,7 @@ async fn test_generate_mass_status_lookback_filters_only_fills() {
             "oid": 200001u64, "timestamp": 1u64, "origSz": "0.001",
         },
     ]));
-    *state.user_fills_response.lock().await = Some(json!([
+    let fills = json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
             "time": 1u64, "startPosition": "0",
@@ -11009,7 +11769,11 @@ async fn test_generate_mass_status_lookback_filters_only_fills() {
             "oid": 200001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
             "feeToken": "USDC",
         },
-    ]));
+    ]);
+    let fill = fills[0].clone();
+
+    let fill_count = if capped { 2_000 } else { 1 };
+    *state.user_fills_response.lock().await = Some(Value::Array(vec![fill; fill_count]));
     let addr = start_mock_server(state).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
@@ -11032,6 +11796,11 @@ async fn test_generate_mass_status_lookback_filters_only_fills() {
         mass.fill_reports().is_empty(),
         "old fills must be excluded from the lookback window",
     );
+    assert_eq!(
+        mass.lookback_start(),
+        Some(UnixNanos::from(mass.ts_init.as_u64() - 60_000_000_000)),
+    );
+    assert_eq!(mass.reports_complete(), !capped);
 
     client.disconnect().await.unwrap();
 }
@@ -11373,6 +12142,7 @@ async fn test_generate_mass_status_marks_unusable_fill_row_incomplete() {
         !mass.reports_complete(),
         "an unresolvable fill row must mark the snapshot incomplete",
     );
+    assert_eq!(mass.lookback_start(), None);
 
     client.disconnect().await.unwrap();
 }
@@ -11435,6 +12205,7 @@ async fn test_generate_mass_status_preserves_valid_rows_when_rows_unusable() {
         !mass.reports_complete(),
         "an unresolvable row must mark the snapshot incomplete",
     );
+    assert_eq!(mass.lookback_start(), None);
 
     client.disconnect().await.unwrap();
 }
@@ -11468,6 +12239,7 @@ async fn test_generate_mass_status_marks_unusable_historical_row_incomplete() {
         !mass.reports_complete(),
         "an unresolvable historical row must mark the snapshot incomplete",
     );
+    assert_eq!(mass.lookback_start(), None);
 
     client.disconnect().await.unwrap();
 }
@@ -11547,6 +12319,7 @@ async fn test_generate_mass_status_marks_unusable_spot_balance_incomplete() {
         !mass.reports_complete(),
         "an empty snapshot with an unresolvable spot balance is incomplete, not authoritatively clean",
     );
+    assert_eq!(mass.lookback_start(), None);
 
     client.disconnect().await.unwrap();
 }

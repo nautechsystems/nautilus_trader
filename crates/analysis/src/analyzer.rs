@@ -1109,7 +1109,7 @@ mod tests {
             closing_order_id: None,
             entry: OrderSide::Buy,
             side: PositionSide::Flat,
-            signed_qty: 0.0,
+            signed_qty: 0.into(),
             quantity: Quantity::default(),
             peak_qty: Quantity::default(),
             price_precision: 2,
@@ -1126,7 +1126,7 @@ mod tests {
             ts_last: UnixNanos::default(),
             ts_closed: Some(UnixNanos::from(1_706_659_200_000_000_000)),
             duration_ns: DurationNanos::new(2),
-            avg_px_open: 0.0,
+            avg_px_open: 0.into(),
             avg_px_close: None,
             realized_return,
             realized_pnl: Some(Money::new(realized_pnl, currency)),
@@ -1134,6 +1134,10 @@ mod tests {
             buy_qty: Quantity::default(),
             sell_qty: Quantity::default(),
             commissions: IndexMap::new(),
+            cost_open: 0.into(),
+            cost_close: 0.into(),
+            qty_closed: 0.into(),
+            realized_pnl_remainder: 0.into(),
         }
     }
 

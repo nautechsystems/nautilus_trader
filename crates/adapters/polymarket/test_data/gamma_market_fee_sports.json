@@ -2,6 +2,7 @@
   "id": "fee-sports-1",
   "conditionId": "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
   "question": "Sports fee market",
+  "version": "v1",
   "clobTokenIds": "[\"33333333333333333333333333333333333333333333333333333333333333333333333333333\", \"44444444444444444444444444444444444444444444444444444444444444444444444444444\"]",
   "outcomes": "[\"Yes\", \"No\"]",
   "active": true,

@@ -1312,7 +1312,9 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        log::debug!("Requesting instrument: {}", request.instrument_id);
+        let instrument_id = request.single_instrument_id()?;
+
+        log::debug!("Requesting instrument: {instrument_id}");
 
         let http = self.http_client.clone();
         let ws = self.ws_client.clone();
@@ -1321,7 +1323,6 @@ impl DataClient for HyperliquidDataClient {
         let coin_map = self.coin_to_instrument_id.clone();
         let update_lock = Arc::clone(&self.instrument_update_lock);
         let instrument_status = Arc::clone(&self.instrument_status);
-        let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
@@ -1373,11 +1374,12 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        log::debug!("Requesting bars for {}", request.bar_type);
+        let bar_type = request.single_bar_type()?;
+
+        log::debug!("Requesting bars for {bar_type}");
 
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let bar_type = request.bar_type;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -1415,7 +1417,8 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting trades for {instrument_id}");
 
         let instruments = self.instruments.load();
@@ -1549,7 +1552,8 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting funding rates for {instrument_id}");
 
         let instruments = self.instruments.load();
@@ -1606,7 +1610,8 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let instruments = self.instruments.load();
         let instrument = instruments
             .get(&instrument_id)

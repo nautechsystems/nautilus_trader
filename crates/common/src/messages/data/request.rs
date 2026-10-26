@@ -23,7 +23,12 @@ use nautilus_model::{
 };
 use serde::{Deserialize, Serialize};
 
-use super::check_client_id_or_venue;
+use super::{
+    IntoBarTypes, IntoInstrumentIds, check_client_id_or_venue,
+    identifiers::{
+        deserialize_bar_types, deserialize_instrument_ids, single_bar_type, single_instrument_id,
+    },
+};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestCustomData {
@@ -65,7 +70,8 @@ impl RequestCustomData {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestInstrument {
-    pub instrument_id: InstrumentId,
+    #[serde(deserialize_with = "deserialize_instrument_ids")]
+    pub instrument_ids: Vec<InstrumentId>,
     pub start: Option<Timestamp>,
     pub end: Option<Timestamp>,
     pub client_id: Option<ClientId>,
@@ -76,8 +82,14 @@ pub struct RequestInstrument {
 
 impl RequestInstrument {
     /// Creates a new [`RequestInstrument`] instance.
+    ///
+    /// Duplicate entries are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the identifier list is empty.
     pub fn new(
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
@@ -85,8 +97,12 @@ impl RequestInstrument {
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
+        let instrument_ids = instrument_ids
+            .into_instrument_ids()
+            .expect("invalid instrument ID list");
+
         Self {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             client_id,
@@ -94,6 +110,15 @@ impl RequestInstrument {
             ts_init,
             params,
         }
+    }
+
+    /// Returns the instrument ID for a single-member request path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request does not contain exactly one member.
+    pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
+        single_instrument_id(&self.instrument_ids, "request")
     }
 }
 
@@ -134,7 +159,8 @@ impl RequestInstruments {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestBookSnapshot {
-    pub instrument_id: InstrumentId,
+    #[serde(deserialize_with = "deserialize_instrument_ids")]
+    pub instrument_ids: Vec<InstrumentId>,
     pub depth: Option<NonZeroUsize>,
     pub client_id: Option<ClientId>,
     pub request_id: UUID4,
@@ -144,16 +170,26 @@ pub struct RequestBookSnapshot {
 
 impl RequestBookSnapshot {
     /// Creates a new [`RequestBookSnapshot`] instance.
+    ///
+    /// Duplicate entries are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the identifier list is empty.
     pub fn new(
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         depth: Option<NonZeroUsize>,
         client_id: Option<ClientId>,
         request_id: UUID4,
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
+        let instrument_ids = instrument_ids
+            .into_instrument_ids()
+            .expect("invalid instrument ID list");
+
         Self {
-            instrument_id,
+            instrument_ids,
             depth,
             client_id,
             request_id,
@@ -161,11 +197,21 @@ impl RequestBookSnapshot {
             params,
         }
     }
+
+    /// Returns the instrument ID for a single-member request path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request does not contain exactly one member.
+    pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
+        single_instrument_id(&self.instrument_ids, "request")
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestQuotes {
-    pub instrument_id: InstrumentId,
+    #[serde(deserialize_with = "deserialize_instrument_ids")]
+    pub instrument_ids: Vec<InstrumentId>,
     pub start: Option<Timestamp>,
     pub end: Option<Timestamp>,
     pub limit: Option<NonZeroUsize>,
@@ -177,9 +223,15 @@ pub struct RequestQuotes {
 
 impl RequestQuotes {
     /// Creates a new [`RequestQuotes`] instance.
+    ///
+    /// Duplicate entries are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the identifier list is empty.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -188,8 +240,12 @@ impl RequestQuotes {
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
+        let instrument_ids = instrument_ids
+            .into_instrument_ids()
+            .expect("invalid instrument ID list");
+
         Self {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -199,11 +255,21 @@ impl RequestQuotes {
             params,
         }
     }
+
+    /// Returns the instrument ID for a single-member request path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request does not contain exactly one member.
+    pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
+        single_instrument_id(&self.instrument_ids, "request")
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestTrades {
-    pub instrument_id: InstrumentId,
+    #[serde(deserialize_with = "deserialize_instrument_ids")]
+    pub instrument_ids: Vec<InstrumentId>,
     pub start: Option<Timestamp>,
     pub end: Option<Timestamp>,
     pub limit: Option<NonZeroUsize>,
@@ -215,9 +281,15 @@ pub struct RequestTrades {
 
 impl RequestTrades {
     /// Creates a new [`RequestTrades`] instance.
+    ///
+    /// Duplicate entries are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the identifier list is empty.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -226,8 +298,12 @@ impl RequestTrades {
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
+        let instrument_ids = instrument_ids
+            .into_instrument_ids()
+            .expect("invalid instrument ID list");
+
         Self {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -237,11 +313,21 @@ impl RequestTrades {
             params,
         }
     }
+
+    /// Returns the instrument ID for a single-member request path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request does not contain exactly one member.
+    pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
+        single_instrument_id(&self.instrument_ids, "request")
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestFundingRates {
-    pub instrument_id: InstrumentId,
+    #[serde(deserialize_with = "deserialize_instrument_ids")]
+    pub instrument_ids: Vec<InstrumentId>,
     pub start: Option<Timestamp>,
     pub end: Option<Timestamp>,
     pub limit: Option<NonZeroUsize>,
@@ -253,9 +339,15 @@ pub struct RequestFundingRates {
 
 impl RequestFundingRates {
     /// Creates a new [`RequestFundingRates`] instance.
+    ///
+    /// Duplicate entries are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the identifier list is empty.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -264,8 +356,12 @@ impl RequestFundingRates {
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
+        let instrument_ids = instrument_ids
+            .into_instrument_ids()
+            .expect("invalid instrument ID list");
+
         Self {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -274,6 +370,15 @@ impl RequestFundingRates {
             ts_init,
             params,
         }
+    }
+
+    /// Returns the instrument ID for a single-member request path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request does not contain exactly one member.
+    pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
+        single_instrument_id(&self.instrument_ids, "request")
     }
 }
 
@@ -310,7 +415,8 @@ impl RequestOptionChainReferencePrice {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestBookDepth {
-    pub instrument_id: InstrumentId,
+    #[serde(deserialize_with = "deserialize_instrument_ids")]
+    pub instrument_ids: Vec<InstrumentId>,
     pub start: Option<Timestamp>,
     pub end: Option<Timestamp>,
     pub limit: Option<NonZeroUsize>,
@@ -323,9 +429,15 @@ pub struct RequestBookDepth {
 
 impl RequestBookDepth {
     /// Creates a new [`RequestBookDepth`] instance.
+    ///
+    /// Duplicate entries are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the identifier list is empty.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -335,8 +447,12 @@ impl RequestBookDepth {
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
+        let instrument_ids = instrument_ids
+            .into_instrument_ids()
+            .expect("invalid instrument ID list");
+
         Self {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -347,11 +463,21 @@ impl RequestBookDepth {
             params,
         }
     }
+
+    /// Returns the instrument ID for a single-member request path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request does not contain exactly one member.
+    pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
+        single_instrument_id(&self.instrument_ids, "request")
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestBookDeltas {
-    pub instrument_id: InstrumentId,
+    #[serde(deserialize_with = "deserialize_instrument_ids")]
+    pub instrument_ids: Vec<InstrumentId>,
     pub start: Option<Timestamp>,
     pub end: Option<Timestamp>,
     pub limit: Option<NonZeroUsize>,
@@ -363,9 +489,15 @@ pub struct RequestBookDeltas {
 
 impl RequestBookDeltas {
     /// Creates a new [`RequestBookDeltas`] instance.
+    ///
+    /// Duplicate entries are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the identifier list is empty.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
-        instrument_id: InstrumentId,
+        instrument_ids: impl IntoInstrumentIds,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -374,8 +506,12 @@ impl RequestBookDeltas {
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
+        let instrument_ids = instrument_ids
+            .into_instrument_ids()
+            .expect("invalid instrument ID list");
+
         Self {
-            instrument_id,
+            instrument_ids,
             start,
             end,
             limit,
@@ -385,11 +521,21 @@ impl RequestBookDeltas {
             params,
         }
     }
+
+    /// Returns the instrument ID for a single-member request path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request does not contain exactly one member.
+    pub fn single_instrument_id(&self) -> anyhow::Result<InstrumentId> {
+        single_instrument_id(&self.instrument_ids, "request")
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct RequestBars {
-    pub bar_type: BarType,
+    #[serde(deserialize_with = "deserialize_bar_types")]
+    pub bar_types: Vec<BarType>,
     pub start: Option<Timestamp>,
     pub end: Option<Timestamp>,
     pub limit: Option<NonZeroUsize>,
@@ -401,9 +547,15 @@ pub struct RequestBars {
 
 impl RequestBars {
     /// Creates a new [`RequestBars`] instance.
+    ///
+    /// Duplicate entries are removed in first-occurrence order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the identifier list is empty.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
-        bar_type: BarType,
+        bar_types: impl IntoBarTypes,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         limit: Option<NonZeroUsize>,
@@ -412,8 +564,10 @@ impl RequestBars {
         ts_init: UnixNanos,
         params: Option<Params>,
     ) -> Self {
+        let bar_types = bar_types.into_bar_types().expect("invalid bar type list");
+
         Self {
-            bar_type,
+            bar_types,
             start,
             end,
             limit,
@@ -422,6 +576,15 @@ impl RequestBars {
             ts_init,
             params,
         }
+    }
+
+    /// Returns the bar type for a single-member request path.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request does not contain exactly one member.
+    pub fn single_bar_type(&self) -> anyhow::Result<BarType> {
+        single_bar_type(&self.bar_types, "request")
     }
 }
 
@@ -497,6 +660,161 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::messages::data::IdentifierCountError;
+
+    macro_rules! instrument_request_tests {
+        ($test:ident, $request:ident, $($field:ident = $value:expr),* $(,)?) => {
+            #[rstest]
+            fn $test() {
+                let first = InstrumentId::from("ESM4.GLBX");
+                let second = InstrumentId::from("NQM4.GLBX");
+                let client_id = Some(ClientId::from("HISTORY"));
+                let request_id = UUID4::new();
+                let ts_init = UnixNanos::from(29);
+                let params = Some(Params::new([("source".into(), "history".into())].into()));
+                let request = $request::new(
+                    [second, first, second],
+                    $($value,)*
+                    client_id,
+                    request_id,
+                    ts_init,
+                    params.clone(),
+                );
+                let mut serialized = serde_json::to_value(&request).unwrap();
+                serialized["instrument_ids"] = serde_json::to_value([first, second, first]).unwrap();
+                let decoded: $request = serde_json::from_value(serialized.clone()).unwrap();
+                let mut expected = serialized.clone();
+                expected["instrument_ids"] = serde_json::to_value([first, second]).unwrap();
+                let single = $request::new(
+                    first,
+                    $($value,)*
+                    client_id,
+                    request_id,
+                    ts_init,
+                    params.clone(),
+                );
+                serialized["instrument_ids"] = serde_json::json!([]);
+                let empty = serde_json::from_value::<$request>(serialized);
+                let rejection = request.single_instrument_id().unwrap_err();
+
+                assert_eq!(request.instrument_ids, vec![second, first]);
+                $(assert_eq!(request.$field, $value);)*
+                assert_eq!(request.client_id, client_id);
+                assert_eq!(request.request_id, request_id);
+                assert_eq!(request.ts_init, ts_init);
+                assert_eq!(request.params, params);
+                assert!(rejection.is::<IdentifierCountError>());
+                assert_eq!(
+                    rejection.to_string(),
+                    "request requires one instrument ID on this adapter path, received 2",
+                );
+                assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
+                assert_eq!(single.single_instrument_id().unwrap(), first);
+                assert!(empty.unwrap_err().to_string().contains("instrument IDs cannot be empty"));
+            }
+        };
+    }
+
+    instrument_request_tests!(
+        test_instrument_request_identifier_lists,
+        RequestInstrument,
+        start = Some(Timestamp::from_second(11).unwrap()),
+        end = Some(Timestamp::from_second(19).unwrap()),
+    );
+    instrument_request_tests!(
+        test_book_snapshot_request_identifier_lists,
+        RequestBookSnapshot,
+        depth = NonZeroUsize::new(7),
+    );
+    instrument_request_tests!(
+        test_quotes_request_identifier_lists,
+        RequestQuotes,
+        start = Some(Timestamp::from_second(11).unwrap()),
+        end = Some(Timestamp::from_second(19).unwrap()),
+        limit = NonZeroUsize::new(3),
+    );
+    instrument_request_tests!(
+        test_trades_request_identifier_lists,
+        RequestTrades,
+        start = Some(Timestamp::from_second(11).unwrap()),
+        end = Some(Timestamp::from_second(19).unwrap()),
+        limit = NonZeroUsize::new(3),
+    );
+    instrument_request_tests!(
+        test_funding_rates_request_identifier_lists,
+        RequestFundingRates,
+        start = Some(Timestamp::from_second(11).unwrap()),
+        end = Some(Timestamp::from_second(19).unwrap()),
+        limit = NonZeroUsize::new(3),
+    );
+    instrument_request_tests!(
+        test_book_depth_request_identifier_lists,
+        RequestBookDepth,
+        start = Some(Timestamp::from_second(11).unwrap()),
+        end = Some(Timestamp::from_second(19).unwrap()),
+        limit = NonZeroUsize::new(3),
+        depth = NonZeroUsize::new(7),
+    );
+    instrument_request_tests!(
+        test_book_deltas_request_identifier_lists,
+        RequestBookDeltas,
+        start = Some(Timestamp::from_second(11).unwrap()),
+        end = Some(Timestamp::from_second(19).unwrap()),
+        limit = NonZeroUsize::new(3),
+    );
+
+    #[rstest]
+    fn test_bars_request_identifier_lists() {
+        let first = BarType::from("ESM4.GLBX-1-MINUTE-LAST-EXTERNAL");
+        let second = BarType::from("ESM4.GLBX-5-MINUTE-LAST-EXTERNAL");
+        let start = Some(Timestamp::from_second(11).unwrap());
+        let end = Some(Timestamp::from_second(19).unwrap());
+        let limit = NonZeroUsize::new(3);
+        let client_id = Some(ClientId::from("HISTORY"));
+        let request_id = UUID4::new();
+        let ts_init = UnixNanos::from(29);
+        let params = Some(Params::new([("source".into(), "history".into())].into()));
+
+        let request = RequestBars::new(
+            [second, first, second],
+            start,
+            end,
+            limit,
+            client_id,
+            request_id,
+            ts_init,
+            params.clone(),
+        );
+        let mut serialized = serde_json::to_value(&request).unwrap();
+        serialized["bar_types"] = serde_json::to_value([first, second, first]).unwrap();
+        let decoded: RequestBars = serde_json::from_value(serialized.clone()).unwrap();
+        let mut expected = serialized.clone();
+        expected["bar_types"] = serde_json::to_value([first, second]).unwrap();
+        serialized["bar_types"] = serde_json::json!([]);
+        let empty = serde_json::from_value::<RequestBars>(serialized);
+        let rejection = request.single_bar_type().unwrap_err();
+
+        assert_eq!(request.bar_types, vec![second, first]);
+        assert_eq!(request.start, start);
+        assert_eq!(request.end, end);
+        assert_eq!(request.limit, limit);
+        assert_eq!(request.client_id, client_id);
+        assert_eq!(request.request_id, request_id);
+        assert_eq!(request.ts_init, ts_init);
+        assert_eq!(request.params, params);
+        assert!(rejection.is::<IdentifierCountError>());
+        assert_eq!(
+            rejection.to_string(),
+            "request requires one bar type on this adapter path, received 2",
+        );
+        assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
+        assert!(
+            empty
+                .unwrap_err()
+                .to_string()
+                .contains("bar types cannot be empty")
+        );
+    }
 
     fn leg_request_ids() -> Vec<UUID4> {
         vec![

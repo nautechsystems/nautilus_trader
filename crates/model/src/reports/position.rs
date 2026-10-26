@@ -65,6 +65,8 @@ pub struct PositionStatusReport {
     pub avg_px_open_reconciliation: AvgPxReconciliation,
     /// The decimal places the venue kept for `avg_px_open`, when it rounds or truncates the average.
     pub avg_px_open_precision: Option<u8>,
+    /// The venue-reported liquidation price or estimate, when available.
+    pub liquidation_price: Option<Decimal>,
 }
 
 impl PositionStatusReport {
@@ -102,6 +104,7 @@ impl PositionStatusReport {
             avg_px_open,
             avg_px_open_reconciliation: AvgPxReconciliation::default(),
             avg_px_open_precision: None,
+            liquidation_price: None,
         }
     }
 
@@ -151,7 +154,7 @@ impl Display for PositionStatusReport {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "PositionStatusReport(account={}, instrument={}, side={}, qty={}, venue_pos_id={:?}, avg_px_open={:?}, avg_px_open_reconciliation={}, avg_px_open_precision={:?}, ts_last={}, ts_init={})",
+            "PositionStatusReport(account={}, instrument={}, side={}, qty={}, venue_pos_id={:?}, avg_px_open={:?}, avg_px_open_reconciliation={}, avg_px_open_precision={:?}, liquidation_price={:?}, ts_last={}, ts_init={})",
             self.account_id,
             self.instrument_id,
             self.position_side,
@@ -160,6 +163,7 @@ impl Display for PositionStatusReport {
             self.avg_px_open,
             self.avg_px_open_reconciliation,
             self.avg_px_open_precision,
+            self.liquidation_price,
             self.ts_last,
             self.ts_init
         )
@@ -251,6 +255,7 @@ mod tests {
             AvgPxReconciliation::Match
         );
         assert_eq!(report.avg_px_open_precision, None);
+        assert_eq!(report.liquidation_price, None);
     }
 
     #[rstest]
@@ -362,6 +367,7 @@ mod tests {
         assert!(display_str.contains("avg_px_open=None"));
         assert!(display_str.contains("avg_px_open_reconciliation=MATCH"));
         assert!(display_str.contains("avg_px_open_precision=None"));
+        assert!(display_str.contains("liquidation_price=None"));
     }
 
     #[rstest]
@@ -557,6 +563,41 @@ mod tests {
         let deserialized: PositionStatusReport = serde_json::from_str(&json).unwrap();
 
         assert_eq!(deserialized, report);
+    }
+
+    #[rstest]
+    #[case::reported(Some(dec!(0.87654321987654321)))]
+    #[case::zero(Some(Decimal::ZERO))]
+    #[case::unavailable(None)]
+    fn test_liquidation_price_serialization_roundtrip(#[case] liquidation_price: Option<Decimal>) {
+        let report = PositionStatusReport {
+            liquidation_price,
+            ..test_position_report_long()
+        };
+
+        let json = serde_json::to_string(&report).unwrap();
+        let deserialized: PositionStatusReport = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(deserialized, report);
+        assert!(format!("{report}").contains(&format!("liquidation_price={liquidation_price:?}")));
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::null(Some(serde_json::Value::Null))]
+    fn test_deserialize_without_liquidation_price(#[case] value: Option<serde_json::Value>) {
+        let report = test_position_report_long();
+        let mut json = serde_json::to_value(&report).unwrap();
+        let object = json.as_object_mut().unwrap();
+        object.remove("liquidation_price");
+        if let Some(value) = value {
+            object.insert("liquidation_price".to_string(), value);
+        }
+
+        let deserialized: PositionStatusReport = serde_json::from_value(json).unwrap();
+
+        assert_eq!(deserialized, report);
+        assert_eq!(deserialized.liquidation_price, None);
     }
 
     #[rstest]

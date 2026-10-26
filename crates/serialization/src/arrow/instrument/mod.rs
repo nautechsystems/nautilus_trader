@@ -44,7 +44,7 @@ use nautilus_model::{
 #[allow(unused)]
 use crate::arrow::{
     ArrowSchemaProvider, Data, DecodeDataFromRecordBatch, DecodeFromRecordBatch,
-    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_TYPE_NAME,
+    EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID, KEY_TYPE_NAME, first_logical_null,
 };
 
 pub mod betting;
@@ -141,6 +141,32 @@ pub(crate) fn instrument_validation_error<T>(
         INSTRUMENT_VALIDATION_FIELD,
         format!("row {row}: invalid {instrument_type}: {error}"),
     )
+}
+
+pub(crate) fn validate_required_instrument_columns<T: ArrowSchemaProvider>(
+    metadata: &HashMap<String, String>,
+    record_batch: &RecordBatch,
+) -> Result<(), EncodingError> {
+    let expected = T::get_schema(Some(metadata.clone()));
+    let actual = record_batch.schema();
+    for field in expected
+        .fields()
+        .iter()
+        .filter(|field| !field.is_nullable())
+    {
+        let Ok(index) = actual.index_of(field.name()) else {
+            continue;
+        };
+
+        if let Some(row) = first_logical_null(record_batch.column(index).as_ref()) {
+            return Err(EncodingError::ParseError(
+                INSTRUMENT_VALIDATION_FIELD,
+                format!("required field '{}' is null at row {row}", field.name()),
+            ));
+        }
+    }
+
+    Ok(())
 }
 
 impl ArrowSchemaProvider for InstrumentAny {
@@ -1274,6 +1300,96 @@ mod tests {
         columns[column_index] = Arc::new(UInt8Array::from(values));
 
         RecordBatch::try_new(schema, columns).unwrap()
+    }
+
+    fn batch_with_null_uint8_column(record_batch: &RecordBatch, column_name: &str) -> RecordBatch {
+        let schema = record_batch.schema();
+        let column_index = schema.index_of(column_name).unwrap();
+        let fields = schema
+            .fields()
+            .iter()
+            .enumerate()
+            .map(|(index, field)| {
+                if index == column_index {
+                    field.as_ref().clone().with_nullable(true)
+                } else {
+                    field.as_ref().clone()
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let mut columns = record_batch.columns().to_vec();
+        columns[column_index] = Arc::new(UInt8Array::from(vec![None]));
+        let schema = Schema::new_with_metadata(fields, schema.metadata().clone());
+
+        RecordBatch::try_new(Arc::new(schema), columns).unwrap()
+    }
+
+    #[rstest]
+    fn test_public_instrument_decoders_reject_null_required_columns() {
+        let instruments = vec![
+            InstrumentAny::Betting(nautilus_model::instruments::stubs::betting()),
+            InstrumentAny::BinaryOption(nautilus_model::instruments::stubs::binary_option()),
+            InstrumentAny::Cfd(nautilus_model::instruments::stubs::cfd_gold()),
+            InstrumentAny::Commodity(nautilus_model::instruments::stubs::commodity_gold()),
+            InstrumentAny::CryptoFuture(nautilus_model::instruments::stubs::crypto_future_btcusdt(
+                2,
+                6,
+                Price::from("0.01"),
+                Quantity::from("0.000001"),
+            )),
+            InstrumentAny::CryptoFuturesSpread(
+                nautilus_model::instruments::stubs::crypto_futures_spread_btc_deribit(),
+            ),
+            InstrumentAny::CryptoOption(
+                nautilus_model::instruments::stubs::crypto_option_btc_deribit(
+                    3,
+                    1,
+                    Price::from("0.001"),
+                    Quantity::from("0.1"),
+                ),
+            ),
+            InstrumentAny::CryptoOptionSpread(
+                nautilus_model::instruments::stubs::crypto_option_spread_btc_deribit(),
+            ),
+            InstrumentAny::CryptoPerpetual(
+                nautilus_model::instruments::stubs::crypto_perpetual_ethusdt(),
+            ),
+            InstrumentAny::CurrencyPair(nautilus_model::instruments::stubs::currency_pair_btcusdt()),
+            InstrumentAny::Equity(nautilus_model::instruments::stubs::equity_aapl()),
+            InstrumentAny::FuturesContract(
+                nautilus_model::instruments::stubs::futures_contract_es(None, None),
+            ),
+            InstrumentAny::FuturesSpread(nautilus_model::instruments::stubs::futures_spread_es()),
+            InstrumentAny::IndexInstrument(
+                nautilus_model::instruments::stubs::index_instrument_spx(),
+            ),
+            InstrumentAny::OptionContract(
+                nautilus_model::instruments::stubs::option_contract_appl(),
+            ),
+            InstrumentAny::OptionSpread(nautilus_model::instruments::stubs::option_spread()),
+            InstrumentAny::PerpetualContract(
+                nautilus_model::instruments::stubs::perpetual_contract_eurusd(),
+            ),
+            InstrumentAny::TokenizedAsset(
+                nautilus_model::instruments::stubs::tokenized_asset_aaplx(),
+            ),
+        ];
+
+        for instrument in instruments {
+            let metadata = instrument.metadata();
+            let record_batch =
+                InstrumentAny::encode_batch(&metadata, std::slice::from_ref(&instrument)).unwrap();
+            let record_batch = batch_with_null_uint8_column(&record_batch, "price_precision");
+
+            let result = decode_instrument_any_batch(&metadata, &record_batch);
+
+            assert!(matches!(
+                result,
+                Err(EncodingError::ParseError(INSTRUMENT_VALIDATION_FIELD, ref message))
+                    if message == "required field 'price_precision' is null at row 0"
+            ));
+        }
     }
 
     #[rstest]

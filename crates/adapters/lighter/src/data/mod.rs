@@ -1503,7 +1503,9 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        log::debug!("Requesting Lighter instrument: {}", request.instrument_id);
+        let instrument_id = request.single_instrument_id()?;
+
+        log::debug!("Requesting Lighter instrument: {instrument_id}");
 
         let http = self.http_client.clone();
         let ws = self.ws_client.clone();
@@ -1512,7 +1514,6 @@ impl DataClient for LighterDataClient {
         let instruments_cache = Arc::clone(&self.instruments);
         let status_cache = Arc::clone(&self.instrument_statuses);
         let status_subscriptions = Arc::clone(&self.instrument_status_subscriptions);
-        let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
@@ -1567,7 +1568,8 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        let bar_type = request.bar_type;
+        let bar_type = request.single_bar_type()?;
+
         log::debug!("Requesting Lighter bars for {bar_type}");
 
         LighterCandleResolution::try_from(&bar_type)?;
@@ -1621,15 +1623,17 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         anyhow::bail!(
-            "Lighter does not support historical quote requests for {}; \
-             subscribe to quotes via WebSocket for live BBO ticks",
-            request.instrument_id,
+            "Lighter does not support historical quote requests for {instrument_id}; \
+             subscribe to quotes via WebSocket for live BBO ticks"
         )
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting Lighter trades for {instrument_id}");
 
         let instrument = self
@@ -1677,7 +1681,8 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting Lighter funding rates for {instrument_id}");
 
         let instrument = self
@@ -1733,7 +1738,8 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting Lighter book snapshot for {instrument_id}");
 
         let instrument = self
@@ -1796,10 +1802,11 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         anyhow::bail!(
-            "Lighter does not support historical order book depth requests for {}; \
-             use request_book_snapshot for an L2 snapshot or subscribe_book_depth for live depth",
-            request.instrument_id,
+            "Lighter does not support historical order book depth requests for {instrument_id}; \
+             use request_book_snapshot for an L2 snapshot or subscribe_book_depth for live depth"
         )
     }
 }
@@ -2648,7 +2655,7 @@ mod tests {
 
         match event {
             DataEvent::Response(DataResponse::Trades(response)) => {
-                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(response.instrument_ids, vec![instrument_id]);
                 assert_eq!(response.data.len(), 1);
                 let tick = &response.data[0];
                 assert_eq!(tick.instrument_id, instrument_id);
@@ -2728,7 +2735,7 @@ mod tests {
 
         match event {
             DataEvent::Response(DataResponse::Trades(response)) => {
-                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(response.instrument_ids, vec![instrument_id]);
                 assert!(response.data.is_empty());
             }
             event => panic!("expected trades response, was {event:?}"),
@@ -2765,7 +2772,7 @@ mod tests {
 
         match event {
             DataEvent::Response(DataResponse::Trades(response)) => {
-                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(response.instrument_ids, vec![instrument_id]);
                 assert!(response.data.is_empty());
             }
             event => panic!("expected trades response, was {event:?}"),
@@ -2803,7 +2810,7 @@ mod tests {
 
         match event {
             DataEvent::Response(DataResponse::Trades(response)) => {
-                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(response.instrument_ids, vec![instrument_id]);
                 assert_eq!(
                     response
                         .data

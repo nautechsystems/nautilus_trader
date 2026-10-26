@@ -261,8 +261,11 @@ fn measure_format(config: &Run<'_>) {
         .unwrap();
 
     if let DataResponse::Trades(value) = &mut reply {
-        value.instrument_id = value.data[0].instrument_id;
-        value.data.resize(32, value.data[0]);
+        value.instrument_ids = vec![value.data[0].instrument_id];
+        let first = value.data[0];
+        let mut rows = value.data.to_vec();
+        rows.resize(32, first);
+        value.data = rows.into();
     }
 
     let custom = responses(1).remove(1);
@@ -1124,7 +1127,9 @@ fn resize_response(value: &mut DataResponse, count: usize) -> bool {
     macro_rules! resize {
         ($value:expr) => {
             if let Some(first) = $value.data.first().cloned() {
-                $value.data.resize(count, first);
+                let mut rows = $value.data.to_vec();
+                rows.resize(count, first);
+                $value.data = rows.into();
             }
         };
     }
@@ -1146,7 +1151,11 @@ fn resize_response(value: &mut DataResponse, count: usize) -> bool {
                 response.data = std::sync::Arc::new(value.repeat(count));
             }
         }
-        DataResponse::Instruments(value) => resize!(value),
+        DataResponse::Instruments(value) => {
+            if let Some(first) = value.data.first().cloned() {
+                value.data.resize(count, first);
+            }
+        }
         DataResponse::BookDeltas(value) => resize!(value),
         DataResponse::BookDepth(value) => resize!(value),
         DataResponse::Quotes(value) => resize!(value),
@@ -1166,7 +1175,7 @@ fn resize_response(value: &mut DataResponse, count: usize) -> bool {
 fn data_requests() -> Vec<(String, RequestCommand)> {
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
     let client_id = ClientId::from("CLIENT-1");
-    let bar_type = "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL".parse().unwrap();
+    let bar_type: BarType = "BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL".parse().unwrap();
     let series_id = "DERIBIT:BTC:BTC:1800000000000000000".parse().unwrap();
     let data_type = stub_custom_data(77, -88, Some(params()), None).data_type;
     let mut cases = Vec::new();

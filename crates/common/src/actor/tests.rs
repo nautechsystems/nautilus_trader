@@ -79,14 +79,14 @@ use crate::{
     messages::{
         data::{
             BarsResponse, BookDeltasResponse, BookDepthResponse, BookResponse, CustomDataResponse,
-            DataCommand, DataResponse, FundingRatesResponse, InstrumentResponse,
-            InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse, RequestCommand,
-            SubscribeCommand, TradesResponse, UnsubscribeCommand,
+            DataCommand, DataResponse, DataResponseEnvelope, FundingRatesResponse,
+            InstrumentResponse, InstrumentsResponse, PARAMS_IS_PARENT, QuotesResponse,
+            RequestCommand, SubscribeCommand, TradesResponse, UnsubscribeCommand,
         },
         system::{QueueCondition, QueueState, QueueStateChanged, SocketState, SocketStateChanged},
     },
     msgbus::{
-        self, MessageBus, ShareableMessageHandler, TypedHandler, get_message_bus,
+        self, MessageBus, ShareableMessageHandler, TypedHandler, TypedIntoHandler, get_message_bus,
         stubs::get_typed_into_message_saving_handler,
         switchboard::{
             MessagingSwitchboard, get_bars_topic, get_book_deltas_topic, get_book_depth_topic,
@@ -97,7 +97,10 @@ use crate::{
         },
     },
     nautilus_actor,
-    runner::{SyncDataCommandSender, SystemChannel, set_data_cmd_sender},
+    runner::{
+        SyncDataCommandSender, SystemChannel, data_cmd_queue_is_empty, drain_data_cmd_queue,
+        get_data_cmd_sender, set_data_cmd_sender,
+    },
     signal::Signal,
     testing::init_logger_for_testing,
     timer::TimeEvent,
@@ -292,6 +295,13 @@ struct TestDataActor {
     pub received_queue_state_changes: Vec<QueueStateChanged>,
     pub received_socket_state_changes: Vec<SocketStateChanged>,
     pub received_custom_data: Vec<CustomData>,
+    responses: Vec<(UUID4, bool, Option<String>, usize, bool)>,
+    request_after_completion: Option<InstrumentId>,
+    chained_request: Option<UUID4>,
+    response_action: Option<(UUID4, ResponseAction)>,
+    grouped_request: Option<UUID4>,
+    in_response: bool,
+    reset_after_quotes: bool,
     #[cfg(feature = "defi")]
     pub received_blocks: Vec<Block>,
     #[cfg(feature = "defi")]
@@ -311,6 +321,13 @@ struct FacadeOnlyActor {
     started: bool,
 }
 
+#[derive(Debug)]
+enum ResponseAction {
+    Group,
+    Reset,
+    Fail,
+}
+
 impl DataActor for FacadeOnlyActor {
     fn on_start(&mut self) -> anyhow::Result<()> {
         self.started = true;
@@ -321,6 +338,51 @@ impl DataActor for FacadeOnlyActor {
 nautilus_actor!(TestDataActor);
 
 impl DataActor for TestDataActor {
+    #[expect(clippy::panic_in_result_fn)] // Hook errors are logged, so overlap must panic
+    fn on_data_response(
+        &mut self,
+        response: &crate::messages::data::DataResponseEnvelope,
+    ) -> anyhow::Result<()> {
+        assert!(!self.in_response, "response hooks must not overlap");
+        self.in_response = true;
+        self.responses.push((
+            *response.correlation_id(),
+            response.completed(),
+            response.failure_reason().map(str::to_owned),
+            self.received_quotes.len(),
+            self.core.is_pending_request(response.correlation_id()),
+        ));
+
+        if response.completed()
+            && let Some(id) = self.request_after_completion.take()
+        {
+            self.chained_request = Some(self.request_trades(id, None, None, None, None, None)?);
+        }
+
+        if self
+            .response_action
+            .as_ref()
+            .is_some_and(|(id, _)| id == response.correlation_id())
+        {
+            let (_, action) = self.response_action.take().unwrap();
+            match action {
+                ResponseAction::Group => {
+                    self.grouped_request =
+                        Some(self.request_group(vec![*response.correlation_id()], None)?);
+                }
+                ResponseAction::Reset => self.reset()?,
+                ResponseAction::Fail => {
+                    self.in_response = false;
+                    anyhow::bail!("response hook failed");
+                }
+            }
+        }
+
+        self.in_response = false;
+
+        Ok(())
+    }
+
     fn on_start(&mut self) -> anyhow::Result<()> {
         log::info!("Starting actor"); // Custom log
         Ok(())
@@ -390,6 +452,11 @@ impl DataActor for TestDataActor {
     fn on_historical_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         // Push to common received vec
         self.received_quotes.extend(quotes);
+
+        if self.reset_after_quotes {
+            self.reset()?;
+        }
+
         Ok(())
     }
 
@@ -540,6 +607,13 @@ impl TestDataActor {
             received_queue_state_changes: Vec::new(),
             received_socket_state_changes: Vec::new(),
             received_custom_data: Vec::new(),
+            responses: Vec::new(),
+            request_after_completion: None,
+            chained_request: None,
+            response_action: None,
+            grouped_request: None,
+            in_response: false,
+            reset_after_quotes: false,
             #[cfg(feature = "defi")]
             received_blocks: Vec::new(),
             #[cfg(feature = "defi")]
@@ -4104,7 +4178,7 @@ fn test_request_quotes_accepts_equal_start_and_end(
         panic!("expected one quotes request command, was {commands:?}");
     };
 
-    assert_eq!(request.instrument_id, audusd_sim.id);
+    assert_eq!(request.instrument_ids, vec![audusd_sim.id]);
     assert_eq!(request.start, Some(point));
     assert_eq!(request.end, Some(point));
     assert_eq!(request.limit, limit);
@@ -4331,7 +4405,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            instrument.instrument_id,
+            instrument.single_instrument_id().unwrap(),
             instrument.start,
             instrument.end,
             instrument.client_id,
@@ -4371,7 +4445,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            snapshot.instrument_id,
+            snapshot.single_instrument_id().unwrap(),
             snapshot.depth,
             snapshot.client_id,
             snapshot.request_id,
@@ -4389,7 +4463,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            deltas.instrument_id,
+            deltas.single_instrument_id().unwrap(),
             deltas.start,
             deltas.end,
             deltas.limit,
@@ -4411,7 +4485,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            book_depth.instrument_id,
+            book_depth.single_instrument_id().unwrap(),
             book_depth.start,
             book_depth.end,
             book_depth.limit,
@@ -4435,7 +4509,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            trades.instrument_id,
+            trades.single_instrument_id().unwrap(),
             trades.start,
             trades.end,
             trades.limit,
@@ -4457,7 +4531,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            funding.instrument_id,
+            funding.single_instrument_id().unwrap(),
             funding.start,
             funding.end,
             funding.limit,
@@ -4479,7 +4553,7 @@ fn test_request_facade_sends_exact_command_matrix(
     );
     assert_eq!(
         (
-            bars.bar_type,
+            bars.single_bar_type().unwrap(),
             bars.start,
             bars.end,
             bars.limit,
@@ -8284,4 +8358,437 @@ fn test_actor_quote_lists_validate_cached_spread_routes(
     expected_ids.sort_unstable();
     fields["instrument_ids"] = serde_json::json!(expected_ids);
     assert_eq!(serde_json::to_value(released).unwrap(), fields);
+}
+
+#[rstest]
+fn test_request_envelopes_preserve_handler_and_allow_completion_chaining(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let id = InstrumentId::from("AUD/USD.SIM");
+    actor.request_after_completion = Some(id);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+    let root = actor
+        .request_quotes(id, None, None, None, None, None)
+        .unwrap();
+    let group = actor.request_group(vec![root], None).unwrap();
+    drop(actor);
+    let quote = QuoteTick::default();
+    let child = UUID4::new();
+
+    let payload = QuotesResponse::new(
+        root,
+        ClientId::new("SOURCE"),
+        id,
+        vec![quote],
+        None,
+        None,
+        UnixNanos::from(47),
+        None,
+    );
+    msgbus::send_response_envelope(&crate::messages::data::DataResponseEnvelope::new(
+        DataResponse::Quotes(payload),
+        false,
+        Some(child),
+    ));
+    let terminal = crate::messages::data::DataResponseEnvelope::terminal(
+        root,
+        Some("second source failed".to_owned()),
+    );
+    msgbus::send_response_envelope(&terminal);
+    msgbus::send_response_envelope(&terminal);
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let commands = saver.get_messages();
+
+    let [
+        DataCommand::Request(RequestCommand::Quotes(first)),
+        DataCommand::Request(RequestCommand::Trades(next)),
+    ] = commands.as_slice()
+    else {
+        panic!("expected quotes followed by trades");
+    };
+
+    assert_eq!(first.request_id, root);
+    assert_eq!(next.instrument_ids, vec![id]);
+    assert_eq!(actor.chained_request, Some(next.request_id));
+    assert_eq!(actor.received_quotes, vec![quote]);
+    assert_eq!(
+        actor.responses,
+        vec![
+            (root, false, None, 1, true),
+            (
+                root,
+                true,
+                Some("second source failed".to_owned()),
+                1,
+                false
+            ),
+            (
+                group,
+                true,
+                Some(format!("Request {root}: second source failed")),
+                1,
+                false
+            )
+        ]
+    );
+    assert!(actor.core.is_pending_request(&next.request_id));
+    assert!(!actor.core.is_pending_request(&root));
+    assert!(!actor.core.is_pending_request(&group));
+    assert!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&root)
+            .is_none()
+    );
+}
+
+#[rstest]
+#[case::child_hook(false)]
+#[case::group_hook(true)]
+fn test_request_group_preserves_payload_and_terminal_order(
+    #[case] group_hook: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let child = actor
+        .request_quotes(instrument_id, None, None, None, None, None)
+        .unwrap();
+    let first = actor.request_group(vec![child], None).unwrap();
+    let second = actor.request_group(vec![child], None).unwrap();
+    actor.response_action = Some((
+        if group_hook { first } else { child },
+        ResponseAction::Group,
+    ));
+    drop(actor);
+    let quote = QuoteTick::default();
+
+    let payload = QuotesResponse::new(
+        child,
+        ClientId::new("SOURCE"),
+        instrument_id,
+        vec![quote],
+        None,
+        None,
+        UnixNanos::from(47),
+        None,
+    );
+    let intermediate =
+        DataResponseEnvelope::new(DataResponse::Quotes(payload), false, Some(UUID4::new()));
+    msgbus::send_response_envelope(&intermediate);
+    let terminal = DataResponseEnvelope::terminal(child, None);
+    msgbus::send_response_envelope(&terminal);
+    msgbus::send_response_envelope(&terminal);
+    msgbus::send_response_envelope(&intermediate);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let nested = actor.grouped_request.unwrap();
+    let late = UUID4::new();
+    assert_eq!(actor.request_group(vec![child], Some(late)).unwrap(), late);
+    assert_eq!(
+        actor
+            .request_group(vec![child], Some(late))
+            .unwrap_err()
+            .to_string(),
+        format!("Request ID already registered: {late}"),
+    );
+    assert_eq!(actor.received_quotes, vec![quote]);
+    assert_eq!(
+        actor.responses,
+        vec![
+            (child, false, None, 1, true),
+            (child, true, None, 1, false),
+            (first, true, None, 1, false),
+            (second, true, None, 1, false),
+            (nested, true, None, 1, false),
+            (late, true, None, 1, false),
+        ]
+    );
+}
+
+#[rstest]
+fn test_request_group_cleanup_preserves_unrelated_bus_handler(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let child = actor
+        .request_quotes(
+            InstrumentId::from("AUD/USD.SIM"),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+    let foreign = UUID4::new();
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let target = Rc::clone(&received);
+    let handler = TypedHandler::from(move |response: &DataResponseEnvelope| {
+        target.borrow_mut().push(*response.correlation_id());
+    });
+
+    msgbus::register_response_handler(&foreign, handler);
+    assert_eq!(
+        actor.request_group(vec![child], Some(foreign)).unwrap(),
+        foreign
+    );
+    actor.reset().unwrap();
+    drop(actor);
+    let terminal = DataResponseEnvelope::terminal(foreign, None);
+    msgbus::send_response_envelope(&terminal);
+    assert_eq!(*received.borrow(), vec![foreign]);
+    assert!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&child)
+            .is_none()
+    );
+}
+
+#[rstest]
+#[case::payload(0)]
+#[case::child(1)]
+#[case::group(2)]
+#[case::hook_error(3)]
+fn test_request_group_cleanup_during_delivery(
+    #[case] phase: u8,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    let child = actor
+        .request_quotes(instrument_id, None, None, None, None, None)
+        .unwrap();
+    let first = actor.request_group(vec![child], None).unwrap();
+    let second = actor.request_group(vec![child], None).unwrap();
+    match phase {
+        0 => actor.reset_after_quotes = true,
+        1 => actor.response_action = Some((child, ResponseAction::Reset)),
+        2 => actor.response_action = Some((first, ResponseAction::Reset)),
+        3 => actor.response_action = Some((child, ResponseAction::Fail)),
+        _ => unreachable!(),
+    }
+
+    drop(actor);
+    let quote = QuoteTick::default();
+
+    let payload = QuotesResponse::new(
+        child,
+        ClientId::new("SOURCE"),
+        instrument_id,
+        vec![quote],
+        None,
+        None,
+        UnixNanos::from(47),
+        None,
+    );
+    let response = DataResponseEnvelope::new(DataResponse::Quotes(payload), true, None);
+    msgbus::send_response_envelope(&response);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+
+    let expected: &[UUID4] = match phase {
+        0 => &[],
+        1 => &[child],
+        2 => &[child, first],
+        3 => &[child, first, second],
+        _ => unreachable!(),
+    };
+
+    assert_eq!(
+        actor.responses,
+        expected
+            .iter()
+            .map(|id| (*id, true, None, 1, false))
+            .collect::<Vec<_>>()
+    );
+    assert!(!actor.core.is_pending_request(&child));
+    assert!(!actor.core.is_pending_request(&first));
+    assert!(!actor.core.is_pending_request(&second));
+
+    if phase != 3 {
+        assert_eq!(
+            actor
+                .request_group(vec![child], None)
+                .unwrap_err()
+                .to_string(),
+            format!("Unknown request ID: {child}")
+        );
+    }
+}
+
+#[rstest]
+fn test_request_group_chains_through_sync_command_queue(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        TypedIntoHandler::from(|command: DataCommand| get_data_cmd_sender().execute(command)),
+    );
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_execute(),
+        TypedIntoHandler::from(|command: DataCommand| {
+            let DataCommand::Request(request) = command else {
+                panic!("expected historical request")
+            };
+
+            let terminal = DataResponseEnvelope::terminal(*request.request_id(), None);
+            msgbus::send_response_envelope(&terminal);
+        }),
+    );
+
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let instrument_id = InstrumentId::from("AUD/USD.SIM");
+    actor.request_after_completion = Some(instrument_id);
+    let child = actor
+        .request_quotes(instrument_id, None, None, None, None, None)
+        .unwrap();
+    let group = actor.request_group(vec![child], None).unwrap();
+    assert!(actor.responses.is_empty());
+    drop(actor);
+    drain_data_cmd_queue();
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    let chained = actor.chained_request.unwrap();
+    assert_eq!(
+        actor.responses,
+        vec![(child, true, None, 0, false), (group, true, None, 0, false)]
+    );
+    assert!(actor.core.is_pending_request(&chained));
+    drop(actor);
+    drain_data_cmd_queue();
+    let actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    assert_eq!(
+        actor.responses,
+        vec![
+            (child, true, None, 0, false),
+            (group, true, None, 0, false),
+            (chained, true, None, 0, false)
+        ]
+    );
+    assert!(!actor.core.is_pending_request(&chained));
+    assert!(data_cmd_queue_is_empty());
+}
+
+#[rstest]
+#[case::reset("reset", false)]
+#[case::dispose("dispose", false)]
+#[case::stop("stop", true)]
+#[case::fault("fault", false)]
+fn test_request_handler_lifecycle(
+    #[case] operation: &str,
+    #[case] retained: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    let actor_id = register_data_actor(clock, cache, trader_id);
+    let mut actor = get_actor_unchecked::<TestDataActor>(&actor_id);
+    if matches!(operation, "stop" | "fault") {
+        actor.start().unwrap();
+    }
+
+    let request = actor
+        .request_instrument(InstrumentId::from("AUD/USD.SIM"), None, None, None, None)
+        .unwrap();
+
+    match operation {
+        "reset" => actor.reset().unwrap(),
+        "dispose" => actor.dispose().unwrap(),
+        "stop" => actor.stop().unwrap(),
+        "fault" => actor.fault().unwrap(),
+        _ => unreachable!(),
+    }
+
+    assert_eq!(actor.core.is_pending_request(&request), retained);
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&request)
+            .is_some(),
+        retained
+    );
+    assert!(actor.responses.is_empty());
+}
+
+#[rstest]
+#[case::reset("reset", "reset failed", true)]
+#[case::dispose("dispose", "dispose failed", true)]
+#[case::fault("fault", "fault failed", false)]
+fn test_failed_retirement_request_cleanup(
+    #[case] operation: &str,
+    #[case] expected_error: &str,
+    #[case] retained: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+) {
+    set_data_cmd_sender(Arc::new(SyncDataCommandSender));
+    *get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut actor = FailingRetirementActor {
+        core: DataActorCore::new(DataActorConfig::default()),
+    };
+
+    actor.register(trader_id, clock, cache).unwrap();
+    let actor_id = actor.actor_id().inner();
+    crate::component::register_component_actor(actor);
+    let mut actor = get_actor_unchecked::<FailingRetirementActor>(&actor_id);
+    if operation == "fault" {
+        actor.start().unwrap();
+    }
+
+    let request = actor
+        .request_instrument(InstrumentId::from("AUD/USD.SIM"), None, None, None, None)
+        .unwrap();
+
+    let error = match operation {
+        "reset" => actor.reset().unwrap_err(),
+        "dispose" => actor.dispose().unwrap_err(),
+        "fault" => actor.fault().unwrap_err(),
+        _ => unreachable!(),
+    };
+
+    assert_eq!(error.to_string(), expected_error);
+    assert_eq!(actor.core.is_pending_request(&request), retained);
+    assert_eq!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&request)
+            .is_some(),
+        retained
+    );
+    drop(actor);
+
+    crate::component::release_component_subscriptions(&actor_id).unwrap();
+
+    let actor = get_actor_unchecked::<FailingRetirementActor>(&actor_id);
+    assert!(!actor.core.is_pending_request(&request));
+    assert!(
+        get_message_bus()
+            .borrow()
+            .get_response_handler(&request)
+            .is_none()
+    );
+    drop(actor);
+    crate::component::deregister_component(&actor_id);
+    crate::actor::registry::deregister_actor(&actor_id);
 }

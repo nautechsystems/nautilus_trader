@@ -1994,7 +1994,7 @@ async fn test_request_trades_emits_response() {
     .expect("expected Trades response");
 
     if let DataEvent::Response(DataResponse::Trades(response)) = event {
-        assert_eq!(response.instrument_id, eth_perp_id());
+        assert_eq!(response.instrument_ids, vec![eth_perp_id()]);
         assert_eq!(response.data.len(), 1);
     }
 

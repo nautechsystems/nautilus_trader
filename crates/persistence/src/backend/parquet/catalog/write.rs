@@ -248,19 +248,7 @@ impl ParquetDataCatalog {
 
         let type_name = to_snake_case(std::any::type_name::<T>());
         Self::check_ascending_timestamps(data, &type_name)?;
-
-        let chunk_metadata = T::chunk_metadata(data);
-        if let Some(position) = data
-            .iter()
-            .position(|item| !item.matches_chunk_metadata(&chunk_metadata))
-        {
-            anyhow::bail!(
-                "Cannot write {type_name} data with mixed identities: element {position} has \
-                 metadata {:?} but the chunk has {chunk_metadata:?}; write each \
-                 instrument or bar type separately",
-                data[position].metadata(),
-            );
-        }
+        Self::check_chunk_identity(data, &type_name)?;
 
         let start_ts = start.unwrap_or(first.ts_init());
         let end_ts = end.unwrap_or(last.ts_init());
@@ -328,7 +316,7 @@ impl ParquetDataCatalog {
         self.write_custom_data_refs_batch(&data, start, end, skip_disjoint_check)
     }
 
-    pub(crate) fn write_custom_data_refs_batch(
+    fn write_custom_data_refs_batch(
         &self,
         data: &[&CustomData],
         start: Option<UnixNanos>,
@@ -366,7 +354,7 @@ impl ParquetDataCatalog {
     // while the disjoint check is active, overlap within a directory. A file holds one data type,
     // so two such groups cannot be stored together, and writing them in turn would skip the
     // second as an existing file.
-    fn prepare_custom_data_groups(
+    pub(crate) fn prepare_custom_data_groups(
         &self,
         data: &[CustomData],
         start: Option<UnixNanos>,
@@ -387,7 +375,7 @@ impl ParquetDataCatalog {
             anyhow::ensure!(
                 !intervals.contains(&interval),
                 "Cannot write custom data for {} with different metadata to the same file {}: \
-                 a file holds one data type, so write each metadata value over a distinct range",
+                 a file holds one data type",
                 write.type_name,
                 PathBuf::from(&write.directory)
                     .join(catalog_filename(write.start_ts, write.end_ts, None))
@@ -408,7 +396,7 @@ impl ParquetDataCatalog {
         Ok(writes)
     }
 
-    fn prepare_custom_data_write(
+    pub(crate) fn prepare_custom_data_write(
         &self,
         data: &[&CustomData],
         start: Option<UnixNanos>,
@@ -426,7 +414,7 @@ impl ParquetDataCatalog {
         })
     }
 
-    fn write_custom_data_prepared(
+    pub(crate) fn write_custom_data_prepared(
         &self,
         write: &CustomDataWrite,
         skip_disjoint_check: Option<bool>,
@@ -764,6 +752,32 @@ impl ParquetDataCatalog {
         Ok(())
     }
 
+    // Rejects data whose elements carry different chunk metadata, such as two instruments or
+    // precisions, since one file stores one identity.
+    pub(crate) fn check_chunk_identity<T: EncodeToRecordBatch>(
+        data: &[T],
+        type_name: &str,
+    ) -> anyhow::Result<()> {
+        if data.is_empty() {
+            return Ok(());
+        }
+        let chunk_metadata = T::chunk_metadata(data);
+
+        if let Some(position) = data
+            .iter()
+            .position(|item| !item.matches_chunk_metadata(&chunk_metadata))
+        {
+            anyhow::bail!(
+                "Cannot write {type_name} data with mixed identities: element {position} has \
+                 metadata {:?} but the chunk has {chunk_metadata:?}; write each \
+                 instrument or bar type separately",
+                data[position].metadata(),
+            );
+        }
+
+        Ok(())
+    }
+
     /// Converts data into Arrow record batches for Parquet serialization.
     ///
     /// This method chunks the data according to the configured batch size and converts
@@ -806,12 +820,19 @@ impl ParquetDataCatalog {
 }
 
 // A custom data group prepared for writing, with its target directory and file range.
-struct CustomDataWrite {
+pub(crate) struct CustomDataWrite {
     type_name: String,
     directory: String,
     start_ts: UnixNanos,
     end_ts: UnixNanos,
-    batches: Vec<RecordBatch>,
+    pub(crate) batches: Vec<RecordBatch>,
+}
+
+impl CustomDataWrite {
+    pub(crate) fn path(&self) -> PathBuf {
+        let filename = catalog_filename(self.start_ts, self.end_ts, None);
+        PathBuf::from(&self.directory).join(filename)
+    }
 }
 
 #[cfg(test)]
@@ -1280,7 +1301,7 @@ mod tests {
 
         let mut catalog = ParquetDataCatalog {
             base_path: String::new(),
-            original_uri: "memory://".to_string(),
+            original_uri: "s3://test-bucket".to_string(),
             object_store: object_store.clone(),
             session: DataBackendSession::new(5_000),
             batch_size: 5_000,

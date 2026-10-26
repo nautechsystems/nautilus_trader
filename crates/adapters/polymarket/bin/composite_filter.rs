@@ -17,8 +17,8 @@
 //!
 //! This example combines:
 //!
-//! - [`EventQueryFilter`] - two-phase fetch: resolves an event slug to
-//!   condition IDs, then queries `/markets` with sorting and limiting.
+//! - [`EventQueryFilter`] - fetches an event's embedded markets, then sorts
+//!   and limits them client-side.
 //!   Here we fetch the top 20 markets by liquidity from the 2028
 //!   presidential election event.
 //! - [`PredicateFilter`] - post-fetch refinement (keeps only outcome "Yes")

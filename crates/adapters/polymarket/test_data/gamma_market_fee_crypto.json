@@ -2,6 +2,7 @@
   "id": "fee-crypto-1",
   "conditionId": "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
   "question": "Crypto fee market",
+  "version": "v1",
   "clobTokenIds": "[\"11111111111111111111111111111111111111111111111111111111111111111111111111111\", \"22222222222222222222222222222222222222222222222222222222222222222222222222222\"]",
   "outcomes": "[\"Yes\", \"No\"]",
   "active": true,

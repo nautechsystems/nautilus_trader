@@ -91,22 +91,31 @@ server can send up to 16 MiB of a response before the client acknowledges any of
 value `false` or an unset variable keeps the fixed windows, and any other value makes the client build fail.
 [Flow-control windows](#flow-control-windows) explains how these sizes were chosen.
 
-Buffered responses contain the status, only the header names selected when the client was built, and the raw
-body bytes. The client rejects a declared body larger than 100 MiB before reading it. For chunked
-or unbounded responses, it stops as soon as accumulated bytes would cross the same limit.
-
 The client adds only the request origin (scheme, host, and port) to transport errors and response-stream
 diagnostics. It excludes userinfo, paths, queries, and fragments from this URL context. Set
 `HttpClient::builder().redact_url(true)` to omit the added origin. Requests and diagnostic messages
 from lower layers are unchanged; TLS certificate errors and dependency logs can still include the hostname.
 
-`HttpClient::get_stream` returns status and body chunks without accumulating the complete response
-or applying the buffered size limit. One absolute deadline covers headers and the whole body,
-including time spent processing chunks. No rate-limit keys are supplied, so no quota is consumed.
-Dropping an unfinished response releases the exchange, including its owned connection task
-[under simulation](dst.md#simulated-http-and-websocket-transport). Dataset downloads use this path
-to stream to a temporary file before renaming it. Downloads configure a separate timeout for
-response headers and for each body read, allowing a progressing transfer to exceed that duration.
+#### Buffered responses
+
+Buffered requests advertise gzip unless default or per-request headers set `Accept-Encoding`. The client
+decodes gzip and removes `Content-Encoding` and `Content-Length` from selected headers. Unsupported or corrupt
+encodings fail regardless of status; responses whose method or status forbids content are not decoded.
+
+Received and decoded bodies have separate 100 MiB default limits. Oversized declared lengths fail before
+reading; chunked or unbounded bodies stop at the limit on received bytes. The request deadline includes
+decompression. Configure the decoded limit with `HttpClient::builder().max_decompressed_bytes(...)`; Tardis sets 1 GiB.
+
+#### Streaming responses
+
+`HttpClient::get_stream` returns status and raw chunks without buffering or decoding the body. Default headers
+apply; it adds no `Accept-Encoding` or total body size limit. One absolute deadline covers headers and the body,
+including chunk processing. No rate-limit keys are supplied, so no quota is consumed.
+
+Dropping an unfinished response releases the exchange, including its
+[simulated connection task](dst.md#simulated-http-and-websocket-transport). Dataset downloads stream to a
+temporary file before renaming it. Separate header and per-read timeouts let a progressing download exceed
+the configured timeout in total.
 
 ### HTTP transport benchmarks
 

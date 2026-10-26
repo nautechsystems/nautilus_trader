@@ -451,14 +451,20 @@ fn resolve_precision(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use std::{
+        str::FromStr,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     use axum::{
         Json, Router,
-        extract::State,
+        extract::{
+            State,
+            ws::{Message, WebSocketUpgrade},
+        },
         http::{StatusCode, Uri},
         response::{IntoResponse, Response},
-        routing::get,
+        routing::{get, post},
     };
     use nautilus_common::{
         cache::fifo::FifoCache,
@@ -486,6 +492,7 @@ mod tests {
         },
         futures::http::{
             client::BinanceFuturesInstrument,
+            error::BinanceFuturesHttpError,
             models::{BinanceFuturesCoinSymbol, BinanceFuturesUsdSymbol},
         },
     };
@@ -658,6 +665,223 @@ mod tests {
         };
 
         (context, event_rx)
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_recovery_resumes_after_uncommitted_listen_key_expires() {
+        let creations = Arc::new(AtomicUsize::new(0));
+        let create_count = creations.clone();
+        let create = move || {
+            let count = create_count.clone();
+            async move {
+                let index = count.fetch_add(1, Ordering::SeqCst) + 1;
+                Json(json!({"listenKey": format!("recovery-key-{index}")}))
+            }
+        };
+        let query_count = creations.clone();
+        let query = move || {
+            let count = query_count.clone();
+            async move {
+                if count.load(Ordering::SeqCst) == 1 {
+                    (
+                        StatusCode::SERVICE_UNAVAILABLE,
+                        Json(json!({"code": -1000, "msg": "Unavailable"})),
+                    )
+                } else {
+                    (StatusCode::OK, Json(json!([])))
+                }
+            }
+        };
+        let app = Router::new()
+            .route("/fapi/v1/listenKey", post(create).delete(|| async {
+                (StatusCode::BAD_REQUEST, Json(json!({"code": -1125, "msg": "This listenKey does not exist."})))
+            }))
+            .route("/fapi/v1/openOrders", get(query.clone()))
+            .route("/fapi/v1/openAlgoOrders", get(query))
+            .route("/ws", get(|upgrade: WebSocketUpgrade| async move {
+                upgrade.on_upgrade(|mut socket| async move {
+                    let payload = include_str!("../../../../test_data/futures/user_data_json/account_update_funding_fee_usdm.json");
+                    socket.send(Message::Text(payload.into())).await.unwrap();
+                    while socket.recv().await.is_some() {}
+                })
+            }));
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let (mut ctx, _events) = recovery_context(format!("http://{address}"));
+        ctx.ws_build_params.private_base_url = format!("ws://{address}/ws");
+
+        let first = recover_user_data_stream(&ctx, |_, _, _| {}).await;
+        assert!(format!("{:#}", first.unwrap_err()).contains("both REST queries returned errors"));
+        assert_eq!(
+            ctx.recovery_listen_key
+                .read()
+                .as_ref()
+                .unwrap()
+                .expose_secret(),
+            "recovery-key-1"
+        );
+
+        let (messages_tx, mut messages_rx) = tokio::sync::mpsc::unbounded_channel();
+        let recovered = tokio::time::timeout(
+            Duration::from_secs(5),
+            recover_user_data_stream(&ctx, move |message, _, _| {
+                messages_tx.send(message).unwrap();
+            }),
+        )
+        .await
+        .unwrap();
+        recovered.unwrap();
+
+        assert_eq!(creations.load(Ordering::SeqCst), 2);
+        assert!(ctx.recovery_listen_key.read().is_none());
+        assert_eq!(
+            ctx.listen_key.read().as_ref().unwrap().expose_secret(),
+            "recovery-key-2"
+        );
+        let message = tokio::time::timeout(Duration::from_secs(5), messages_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            message,
+            BinanceFuturesWsStreamsMessage::AccountUpdate(_)
+        ));
+
+        ctx.dispatch_ctx.cancellation_token.cancel();
+        let mut ws = ctx.ws_client.lock().take().unwrap();
+        ws.close().await.unwrap();
+        let mut task = ctx.ws_task.lock().await;
+        finish_task(&mut task, Duration::from_secs(1), Duration::from_secs(1)).await;
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::closed(StatusCode::OK, 0)]
+    #[case::absent(StatusCode::BAD_REQUEST, -1125)]
+    #[tokio::test]
+    async fn test_close_recovery_key_preserves_replacement(
+        #[case] status: StatusCode,
+        #[case] code: i64,
+        #[values(false, true)] replace: bool,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let (ctx, _events) = recovery_context(format!("http://{address}"));
+        *ctx.recovery_listen_key.write() = Some(SecretString::from("old-key"));
+        let pending = ctx.recovery_listen_key.clone();
+        let app = Router::new().route(
+            "/fapi/v1/listenKey",
+            axum::routing::delete(move || {
+                let pending = pending.clone();
+                async move {
+                    if replace {
+                        *pending.write() = Some(SecretString::from("replacement-key"));
+                    }
+                    (status, Json(json!({"code": code, "msg": "venue response"})))
+                }
+            }),
+        );
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+
+        let result = close_recovery_listen_key(&ctx).await;
+        server.abort();
+
+        result.unwrap();
+        assert_eq!(
+            ctx.recovery_listen_key
+                .read()
+                .as_ref()
+                .map(SecretString::expose_secret),
+            replace.then_some("replacement-key"),
+        );
+    }
+
+    #[rstest]
+    #[case::permission(StatusCode::UNAUTHORIZED, -2015)]
+    #[case::throttled(StatusCode::TOO_MANY_REQUESTS, -1003)]
+    #[case::unavailable(StatusCode::SERVICE_UNAVAILABLE, -1000)]
+    #[tokio::test]
+    async fn test_close_recovery_key_preserves_pending_on_other_venue_error(
+        #[case] status: StatusCode,
+        #[case] code: i64,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let app = Router::new().route(
+            "/fapi/v1/listenKey",
+            axum::routing::delete(move || async move {
+                (status, Json(json!({"code": code, "msg": "failure"})))
+            }),
+        );
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let (ctx, _events) = recovery_context(format!("http://{address}"));
+        *ctx.recovery_listen_key.write() = Some(SecretString::from("pending-key"));
+
+        let result = close_recovery_listen_key(&ctx).await;
+        server.abort();
+
+        assert!(matches!(
+            result.unwrap_err().root_cause().downcast_ref::<BinanceFuturesHttpError>(),
+            Some(BinanceFuturesHttpError::BinanceError { code: actual, .. }) if *actual == code
+        ));
+        assert_eq!(
+            ctx.recovery_listen_key
+                .read()
+                .as_ref()
+                .unwrap()
+                .expose_secret(),
+            "pending-key",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_close_recovery_key_preserves_pending_on_transport_failure(
+        #[values(false, true)] timeout: bool,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+
+            if timeout {
+                std::future::pending::<()>().await;
+            }
+            drop(stream);
+        });
+        let (ctx, _events) = recovery_context(format!("http://{address}"));
+
+        // An empty slot must not send a request to the waiting server
+        close_recovery_listen_key(&ctx).await.unwrap();
+        *ctx.recovery_listen_key.write() = Some(SecretString::from("pending-key"));
+        let result = tokio::time::timeout(Duration::from_secs(5), close_recovery_listen_key(&ctx))
+            .await
+            .unwrap();
+        server.abort();
+
+        let e = result.unwrap_err();
+        let root = e
+            .root_cause()
+            .downcast_ref::<BinanceFuturesHttpError>()
+            .unwrap();
+
+        if timeout {
+            assert!(matches!(root, BinanceFuturesHttpError::Timeout(_)));
+        } else {
+            assert!(matches!(root, BinanceFuturesHttpError::NetworkError(_)));
+        }
+        assert_eq!(
+            ctx.recovery_listen_key
+                .read()
+                .as_ref()
+                .unwrap()
+                .expose_secret(),
+            "pending-key",
+        );
     }
 
     fn usdm_instrument(symbol: &str, quantity_precision: i32) -> BinanceFuturesInstrument {

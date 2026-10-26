@@ -5,6 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 -B "$SCRIPT_DIR/update-clippy-allowances.py" --check
 # One shared definition so this pass resolves the same feature graph as the Makefile
 # gates and the other changed-crate hook. A command substitution inside a here-string
 # does not trip errexit, so bind the list first and reject an empty one rather than

@@ -1397,19 +1397,19 @@ impl DataClient for InteractiveBrokersDataClient {
 
     // Request handlers
     fn request_instrument(&self, cmd: RequestInstrument) -> anyhow::Result<()> {
-        tracing::debug!("Requesting instrument: {}", cmd.instrument_id);
+        let instrument_id = cmd.single_instrument_id()?;
+
+        tracing::debug!("Requesting instrument: {instrument_id}");
 
         if cmd.start.is_some() {
             tracing::warn!(
-                "Requesting instrument {} with specified `start` which has no effect",
-                cmd.instrument_id
+                "Requesting instrument {instrument_id} with specified `start` which has no effect"
             );
         }
 
         if cmd.end.is_some() {
             tracing::warn!(
-                "Requesting instrument {} with specified `end` which has no effect",
-                cmd.instrument_id
+                "Requesting instrument {instrument_id} with specified `end` which has no effect"
             );
         }
 
@@ -1421,75 +1421,71 @@ impl DataClient for InteractiveBrokersDataClient {
             .is_some_and(parse_bool_param_value);
 
         // Get instrument from provider (or load if not found or force_update)
-        let instrument =
-            if force_update || self.instrument_provider.find(&cmd.instrument_id).is_none() {
-                // Need to load instrument - spawn async task
-                let client = self
-                    .ib_client
-                    .as_ref()
-                    .context("IB client not connected. Call connect() first")?;
-                let instrument_provider = Arc::clone(&self.instrument_provider);
-                let instrument_id = cmd.instrument_id;
-                let data_sender = self.data_sender.clone();
-                let clock = self.clock;
-                let request_id = cmd.request_id;
-                let client_id = cmd.client_id.unwrap_or(self.client_id);
-                let params = cmd.params.clone();
-                let start_nanos = cmd.start.map(datetime_to_unix_nanos);
-                let end_nanos = cmd.end.map(datetime_to_unix_nanos);
+        let instrument = if force_update || self.instrument_provider.find(&instrument_id).is_none()
+        {
+            // Need to load instrument - spawn async task
+            let client = self
+                .ib_client
+                .as_ref()
+                .context("IB client not connected. Call connect() first")?;
+            let instrument_provider = Arc::clone(&self.instrument_provider);
+            let data_sender = self.data_sender.clone();
+            let clock = self.clock;
+            let request_id = cmd.request_id;
+            let client_id = cmd.client_id.unwrap_or(self.client_id);
+            let params = cmd.params.clone();
+            let start_nanos = cmd.start.map(datetime_to_unix_nanos);
+            let end_nanos = cmd.end.map(datetime_to_unix_nanos);
 
-                let client_clone = client.as_arc().clone();
+            let client_clone = client.as_arc().clone();
 
-                self.spawn_command(async move {
-                    let filters = params_to_string_filters(params.as_ref());
+            self.spawn_command(async move {
+                let filters = params_to_string_filters(params.as_ref());
 
-                    if let Err(e) = load_requested_instrument(
-                        &instrument_provider,
-                        &client_clone,
+                if let Err(e) = load_requested_instrument(
+                    &instrument_provider,
+                    &client_clone,
+                    instrument_id,
+                    force_update,
+                    filters,
+                    &data_sender,
+                )
+                .await
+                {
+                    tracing::error!(
+                        "Failed to fetch contract details for {}: {:?}",
                         instrument_id,
-                        force_update,
-                        filters,
-                        &data_sender,
-                    )
-                    .await
-                    {
-                        tracing::error!(
-                            "Failed to fetch contract details for {}: {:?}",
-                            instrument_id,
-                            e
-                        );
-                        return;
+                        e
+                    );
+                    return;
+                }
+
+                if let Some(instrument) = instrument_provider.find(&instrument_id) {
+                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                        request_id,
+                        client_id,
+                        instrument_id,
+                        instrument,
+                        start_nanos,
+                        end_nanos,
+                        clock.get_time_ns(),
+                        params,
+                    )));
+
+                    if let Err(e) = data_sender.send(DataEvent::Response(response)) {
+                        tracing::error!("Failed to send instrument response: {e}");
                     }
+                }
+            });
 
-                    if let Some(instrument) = instrument_provider.find(&instrument_id) {
-                        let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                            request_id,
-                            client_id,
-                            instrument_id,
-                            instrument,
-                            start_nanos,
-                            end_nanos,
-                            clock.get_time_ns(),
-                            params,
-                        )));
-
-                        if let Err(e) = data_sender.send(DataEvent::Response(response)) {
-                            tracing::error!("Failed to send instrument response: {e}");
-                        }
-                    }
-                });
-
-                // Return early, response will be sent async
-                return Ok(());
-            } else {
-                // Instrument already in provider
-                self.instrument_provider
-                    .find(&cmd.instrument_id)
-                    .context(format!(
-                        "Instrument {} not found in provider",
-                        cmd.instrument_id
-                    ))?
-            };
+            // Return early, response will be sent async
+            return Ok(());
+        } else {
+            // Instrument already in provider
+            self.instrument_provider
+                .find(&instrument_id)
+                .context(format!("Instrument {instrument_id} not found in provider"))?
+        };
 
         let start_nanos = cmd.start.map(datetime_to_unix_nanos);
         let end_nanos = cmd.end.map(datetime_to_unix_nanos);
@@ -1497,7 +1493,7 @@ impl DataClient for InteractiveBrokersDataClient {
         let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
             cmd.request_id,
             cmd.client_id.unwrap_or(self.client_id),
-            cmd.instrument_id,
+            instrument_id,
             instrument,
             start_nanos,
             end_nanos,
@@ -1707,7 +1703,9 @@ impl DataClient for InteractiveBrokersDataClient {
     }
 
     fn request_quotes(&self, cmd: RequestQuotes) -> anyhow::Result<()> {
-        tracing::debug!("Requesting quotes for {}", cmd.instrument_id);
+        let instrument_id = cmd.single_instrument_id()?;
+
+        tracing::debug!("Requesting quotes for {instrument_id}");
 
         let client = self
             .ib_client
@@ -1717,23 +1715,19 @@ impl DataClient for InteractiveBrokersDataClient {
         // Get instrument from provider
         let instrument = self
             .instrument_provider
-            .find(&cmd.instrument_id)
-            .context(format!(
-                "Instrument {} not found in provider",
-                cmd.instrument_id
-            ))?;
+            .find(&instrument_id)
+            .context(format!("Instrument {instrument_id} not found in provider"))?;
 
         let prices = IbPriceConverter::for_instrument(
             &instrument,
-            self.instrument_provider
-                .get_price_magnifier(&cmd.instrument_id),
+            self.instrument_provider.get_price_magnifier(&instrument_id),
         );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
         let contract = self
             .instrument_provider
-            .resolve_contract_for_instrument(cmd.instrument_id)
+            .resolve_contract_for_instrument(instrument_id)
             .context("Failed to convert instrument_id to IB contract")?;
 
         let limit = cmd
@@ -1742,7 +1736,6 @@ impl DataClient for InteractiveBrokersDataClient {
             .or_else(|| cmd.start.is_none().then_some(HISTORICAL_TICK_DEFAULT_LIMIT));
         let number_of_ticks = limit.unwrap_or(1000).min(1000) as i32;
 
-        let instrument_id = cmd.instrument_id;
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
         let request_id = cmd.request_id;
@@ -1893,7 +1886,9 @@ impl DataClient for InteractiveBrokersDataClient {
     }
 
     fn request_trades(&self, cmd: RequestTrades) -> anyhow::Result<()> {
-        tracing::debug!("Requesting trades for {}", cmd.instrument_id);
+        let instrument_id = cmd.single_instrument_id()?;
+
+        tracing::debug!("Requesting trades for {instrument_id}");
 
         let client = self
             .ib_client
@@ -1903,32 +1898,27 @@ impl DataClient for InteractiveBrokersDataClient {
         // Get instrument from provider
         let instrument = self
             .instrument_provider
-            .find(&cmd.instrument_id)
-            .context(format!(
-                "Instrument {} not found in provider",
-                cmd.instrument_id
-            ))?;
+            .find(&instrument_id)
+            .context(format!("Instrument {instrument_id} not found in provider"))?;
 
         // Check if instrument is a CurrencyPair (IB doesn't support trades for CurrencyPair)
         if matches!(instrument, InstrumentAny::CurrencyPair(_)) {
             tracing::error!(
-                "Interactive Brokers does not support trades for CurrencyPair instruments: {}",
-                cmd.instrument_id
+                "Interactive Brokers does not support trades for CurrencyPair instruments: {instrument_id}"
             );
             return Ok(());
         }
 
         let prices = IbPriceConverter::for_instrument(
             &instrument,
-            self.instrument_provider
-                .get_price_magnifier(&cmd.instrument_id),
+            self.instrument_provider.get_price_magnifier(&instrument_id),
         );
         let size_precision = instrument.size_precision();
 
         // Convert instrument_id to IB contract
         let contract = self
             .instrument_provider
-            .resolve_contract_for_instrument(cmd.instrument_id)
+            .resolve_contract_for_instrument(instrument_id)
             .context("Failed to convert instrument_id to IB contract")?;
 
         let limit = cmd
@@ -1937,7 +1927,6 @@ impl DataClient for InteractiveBrokersDataClient {
             .or_else(|| cmd.start.is_none().then_some(HISTORICAL_TICK_DEFAULT_LIMIT));
         let number_of_ticks = limit.unwrap_or(1000).min(1000) as i32;
 
-        let instrument_id = cmd.instrument_id;
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
         let request_id = cmd.request_id;
@@ -2098,13 +2087,14 @@ impl DataClient for InteractiveBrokersDataClient {
     }
 
     fn request_bars(&self, cmd: RequestBars) -> anyhow::Result<()> {
-        tracing::debug!("Requesting bars for {}", cmd.bar_type);
+        let bar_type = cmd.single_bar_type()?;
+
+        tracing::debug!("Requesting bars for {bar_type}");
 
         // Validate bar spec (only time-aggregated bars are supported)
-        if !cmd.bar_type.spec().is_time_aggregated() {
+        if !bar_type.spec().is_time_aggregated() {
             tracing::error!(
-                "Cannot request {} bars: only time bars are aggregated by Interactive Brokers",
-                cmd.bar_type
+                "Cannot request {bar_type} bars: only time bars are aggregated by Interactive Brokers"
             );
             return Ok(());
         }
@@ -2115,7 +2105,7 @@ impl DataClient for InteractiveBrokersDataClient {
             .context("IB client not connected. Call connect() first")?;
 
         // Get instrument from provider
-        let instrument_id = cmd.bar_type.instrument_id();
+        let instrument_id = bar_type.instrument_id();
         let instrument = self
             .instrument_provider
             .find(&instrument_id)
@@ -2134,13 +2124,13 @@ impl DataClient for InteractiveBrokersDataClient {
             .context("Failed to convert instrument_id to IB contract")?;
 
         // Convert bar type to IB formats
-        let ib_bar_size = bar_type_to_ib_bar_size(&cmd.bar_type)
+        let ib_bar_size = bar_type_to_ib_bar_size(&bar_type)
             .context("Failed to convert bar type to IB bar size")?;
         // Crypto trade-price bars require AGGTRADES (TWS rejects TRADES for crypto,
         // error 10299); mirror the Java engine's whatToShowFor rule.
         let is_crypto = is_crypto_contract(&contract);
         let ib_what_to_show =
-            price_type_to_ib_what_to_show_for_security(cmd.bar_type.spec().price_type, is_crypto);
+            price_type_to_ib_what_to_show_for_security(bar_type.spec().price_type, is_crypto);
 
         // Calculate segments to break down the request if needed.
         // Omit the end date for continuous futures (IB error 10339).
@@ -2148,7 +2138,6 @@ impl DataClient for InteractiveBrokersDataClient {
         let segments = calculate_duration_segments(cmd.start, cmd.end, None);
         let segments = bar_request_segments(segments, is_continuous_future);
 
-        let bar_type = cmd.bar_type;
         let data_sender = self.data_sender.clone();
         let clock = self.clock;
         let request_id = cmd.request_id;

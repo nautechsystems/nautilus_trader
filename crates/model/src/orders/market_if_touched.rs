@@ -443,6 +443,12 @@ impl Order for MarketIfTouchedOrder {
         self.events.iter().collect()
     }
 
+    fn last_event(&self) -> &OrderEventAny {
+        self.events
+            .last()
+            .expect("Order invariant violated: no events")
+    }
+
     fn commissions(&self) -> &IndexMap<Currency, Money> {
         &self.commissions
     }

@@ -19,7 +19,7 @@ use std::{any::Any, sync::Arc};
 
 use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
-    data::BarType,
+    data::{BarType, NautilusDataType},
     identifiers::{ClientId, InstrumentId, Venue},
 };
 use serde::{Deserialize, Serialize};
@@ -45,7 +45,7 @@ pub const PARAMS_IS_PARENT: &str = "is_parent";
 
 // Re-exports
 pub use identifiers::{
-    IntoBarTypes, IntoInstrumentIds, QuoteRouting, ensure_routable_bar_types,
+    IdentifierCountError, IntoBarTypes, IntoInstrumentIds, QuoteRouting, ensure_routable_bar_types,
     ensure_routable_instrument_ids, ensure_subscription_routes, quote_routing,
 };
 pub use request::{
@@ -1006,17 +1006,17 @@ impl RequestCommand {
     pub fn venue(&self) -> Option<&Venue> {
         match self {
             Self::Data(_) => None,
-            Self::Instrument(cmd) => Some(&cmd.instrument_id.venue),
+            Self::Instrument(cmd) => first_venue(&cmd.instrument_ids),
             Self::Instruments(cmd) => cmd.venue.as_ref(),
-            Self::BookSnapshot(cmd) => Some(&cmd.instrument_id.venue),
-            Self::BookDeltas(cmd) => Some(&cmd.instrument_id.venue),
-            Self::BookDepth(cmd) => Some(&cmd.instrument_id.venue),
-            Self::Quotes(cmd) => Some(&cmd.instrument_id.venue),
-            Self::Trades(cmd) => Some(&cmd.instrument_id.venue),
-            Self::FundingRates(cmd) => Some(&cmd.instrument_id.venue),
+            Self::BookSnapshot(cmd) => first_venue(&cmd.instrument_ids),
+            Self::BookDeltas(cmd) => first_venue(&cmd.instrument_ids),
+            Self::BookDepth(cmd) => first_venue(&cmd.instrument_ids),
+            Self::Quotes(cmd) => first_venue(&cmd.instrument_ids),
+            Self::Trades(cmd) => first_venue(&cmd.instrument_ids),
+            Self::FundingRates(cmd) => first_venue(&cmd.instrument_ids),
             Self::OptionChainReferencePrice(cmd) => Some(&cmd.series_id.venue),
             // TODO: Extract the below somewhere
-            Self::Bars(cmd) => match &cmd.bar_type {
+            Self::Bars(cmd) => match cmd.bar_types.first()? {
                 BarType::Standard { instrument_id, .. } => Some(&instrument_id.venue),
                 BarType::Composite { instrument_id, .. } => Some(&instrument_id.venue),
             },
@@ -1042,6 +1042,10 @@ impl RequestCommand {
     }
 }
 
+fn first_venue(ids: &[InstrumentId]) -> Option<&Venue> {
+    ids.first().map(|id| &id.venue)
+}
+
 #[derive(Clone, Debug)]
 pub enum DataResponse {
     Data(CustomDataResponse),
@@ -1057,7 +1061,239 @@ pub enum DataResponse {
     Bars(BarsResponse),
 }
 
+/// A historical payload and the completion state of its root request.
+///
+/// A terminal envelope can omit its payload, including when a request fails before returning data.
+/// `sub_correlation_id` identifies a source child without changing the root correlation ID.
+#[derive(Clone, Debug, Serialize)]
+pub struct DataResponseEnvelope {
+    correlation_id: UUID4,
+    response: Option<DataResponse>,
+    completed: bool,
+    sub_correlation_id: Option<UUID4>,
+    failure_reason: Option<String>,
+}
+
+impl DataResponseEnvelope {
+    /// Creates an envelope containing a payload.
+    #[must_use]
+    pub fn new(response: DataResponse, completed: bool, sub_correlation_id: Option<UUID4>) -> Self {
+        Self {
+            correlation_id: *response.correlation_id(),
+            response: Some(response),
+            completed,
+            sub_correlation_id,
+            failure_reason: None,
+        }
+    }
+
+    /// Completes a request without a payload. A reason marks the request as failed.
+    #[must_use]
+    pub fn terminal(correlation_id: UUID4, failure_reason: Option<String>) -> Self {
+        Self {
+            correlation_id,
+            response: None,
+            completed: true,
+            sub_correlation_id: None,
+            failure_reason,
+        }
+    }
+
+    /// Sets the root request ID while preserving the payload correlation ID.
+    #[must_use]
+    pub fn with_correlation_id(mut self, correlation_id: UUID4) -> Self {
+        self.correlation_id = correlation_id;
+        self
+    }
+
+    /// Completes a failed request while preserving the payload returned by successful work.
+    #[must_use]
+    pub fn with_failure(mut self, reason: String) -> Self {
+        self.completed = true;
+        self.failure_reason = Some(reason);
+        self
+    }
+
+    #[must_use]
+    pub const fn correlation_id(&self) -> &UUID4 {
+        &self.correlation_id
+    }
+
+    #[must_use]
+    pub const fn response(&self) -> Option<&DataResponse> {
+        self.response.as_ref()
+    }
+
+    /// Returns the payload for in-place metadata updates or bounds trimming.
+    pub const fn response_mut(&mut self) -> Option<&mut DataResponse> {
+        self.response.as_mut()
+    }
+
+    #[must_use]
+    pub const fn completed(&self) -> bool {
+        self.completed
+    }
+
+    #[must_use]
+    pub const fn sub_correlation_id(&self) -> Option<UUID4> {
+        self.sub_correlation_id
+    }
+
+    #[must_use]
+    pub fn failure_reason(&self) -> Option<&str> {
+        self.failure_reason.as_deref()
+    }
+}
+
+impl<'de> Deserialize<'de> for DataResponseEnvelope {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        struct Wire {
+            correlation_id: UUID4,
+            response: Option<DataResponse>,
+            completed: bool,
+            sub_correlation_id: Option<UUID4>,
+            failure_reason: Option<String>,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        let completed = wire.completed || wire.failure_reason.is_some();
+
+        if wire.response.is_none() && !completed {
+            return Err(serde::de::Error::custom(
+                "a payload-free response must complete its request",
+            ));
+        }
+
+        Ok(Self {
+            correlation_id: wire.correlation_id,
+            response: wire.response,
+            completed,
+            sub_correlation_id: wire.sub_correlation_id,
+            failure_reason: wire.failure_reason,
+        })
+    }
+}
+
+/// An adapter request failure, optionally carrying data collected before the failure.
+#[derive(Clone, Debug)]
+pub struct DataRequestFailed {
+    pub request_id: UUID4,
+    pub reason: String,
+    pub response: Option<DataResponse>,
+}
+
 impl DataResponse {
+    /// Returns the responding client.
+    #[must_use]
+    pub fn client_id(&self) -> &ClientId {
+        match self {
+            Self::Data(r) => &r.client_id,
+            Self::Instrument(r) => &r.client_id,
+            Self::Instruments(r) => &r.client_id,
+            Self::Book(r) => &r.client_id,
+            Self::BookDeltas(r) => &r.client_id,
+            Self::BookDepth(r) => &r.client_id,
+            Self::Quotes(r) => &r.client_id,
+            Self::Trades(r) => &r.client_id,
+            Self::FundingRates(r) => &r.client_id,
+            Self::OptionChainReferencePrice(r) => &r.client_id,
+            Self::Bars(r) => &r.client_id,
+        }
+    }
+
+    /// Returns response parameters.
+    #[must_use]
+    pub fn params(&self) -> Option<&Params> {
+        match self {
+            Self::Data(r) => r.params.as_ref(),
+            Self::Instrument(r) => r.params.as_ref(),
+            Self::Instruments(r) => r.params.as_ref(),
+            Self::Book(r) => r.params.as_ref(),
+            Self::BookDeltas(r) => r.params.as_ref(),
+            Self::BookDepth(r) => r.params.as_ref(),
+            Self::Quotes(r) => r.params.as_ref(),
+            Self::Trades(r) => r.params.as_ref(),
+            Self::FundingRates(r) => r.params.as_ref(),
+            Self::OptionChainReferencePrice(r) => r.params.as_ref(),
+            Self::Bars(r) => r.params.as_ref(),
+        }
+    }
+
+    /// Returns the inclusive start bound.
+    #[must_use]
+    pub fn start(&self) -> Option<UnixNanos> {
+        match self {
+            Self::Data(r) => r.start,
+            Self::Instrument(r) => r.start,
+            Self::Instruments(r) => r.start,
+            Self::Book(r) => r.start,
+            Self::BookDeltas(r) => r.start,
+            Self::BookDepth(r) => r.start,
+            Self::Quotes(r) => r.start,
+            Self::Trades(r) => r.start,
+            Self::FundingRates(r) => r.start,
+            Self::OptionChainReferencePrice(_) => None,
+            Self::Bars(r) => r.start,
+        }
+    }
+
+    /// Returns the inclusive end bound.
+    #[must_use]
+    pub fn end(&self) -> Option<UnixNanos> {
+        match self {
+            Self::Data(r) => r.end,
+            Self::Instrument(r) => r.end,
+            Self::Instruments(r) => r.end,
+            Self::Book(r) => r.end,
+            Self::BookDeltas(r) => r.end,
+            Self::BookDepth(r) => r.end,
+            Self::Quotes(r) => r.end,
+            Self::Trades(r) => r.end,
+            Self::FundingRates(r) => r.end,
+            Self::OptionChainReferencePrice(_) => None,
+            Self::Bars(r) => r.end,
+        }
+    }
+
+    /// Returns the response creation timestamp.
+    #[must_use]
+    pub fn ts_init(&self) -> UnixNanos {
+        match self {
+            Self::Data(r) => r.ts_init,
+            Self::Instrument(r) => r.ts_init,
+            Self::Instruments(r) => r.ts_init,
+            Self::Book(r) => r.ts_init,
+            Self::BookDeltas(r) => r.ts_init,
+            Self::BookDepth(r) => r.ts_init,
+            Self::Quotes(r) => r.ts_init,
+            Self::Trades(r) => r.ts_init,
+            Self::FundingRates(r) => r.ts_init,
+            Self::OptionChainReferencePrice(r) => r.ts_init,
+            Self::Bars(r) => r.ts_init,
+        }
+    }
+
+    /// Returns the payload's catalog data type.
+    #[must_use]
+    pub fn data_kind(&self) -> NautilusDataType {
+        match self {
+            Self::Data(r) => NautilusDataType::Custom {
+                type_name: r.data_type.type_name().to_string(),
+            },
+            Self::Instrument(_) | Self::Instruments(_) => NautilusDataType::Instrument,
+            Self::Book(_) | Self::BookDeltas(_) => NautilusDataType::OrderBookDelta,
+            Self::BookDepth(_) => NautilusDataType::OrderBookDepth,
+            Self::Quotes(_) => NautilusDataType::QuoteTick,
+            Self::Trades(_) => NautilusDataType::TradeTick,
+            Self::FundingRates(_) => NautilusDataType::FundingRateUpdate,
+            Self::Bars(_) => NautilusDataType::Bar,
+            Self::OptionChainReferencePrice(_) => NautilusDataType::Custom {
+                type_name: "OptionChainReferencePrice".to_string(),
+            },
+        }
+    }
+
     /// Converts the command to a dyn Any trait object for messaging.
     pub fn as_any(&self) -> &dyn Any {
         self
@@ -1116,7 +1352,7 @@ impl DataResponse {
         }
     }
 
-    /// Trims vector payloads to the inclusive `[start, end]` window on `ts_init`.
+    /// Trims payloads to the inclusive `[start, end]` window on `ts_init`.
     ///
     /// Applies to variants whose payload elements implement `HasTsInit`
     /// (`BookDeltas`, `BookDepth`, `Quotes`, `Trades`, `FundingRates`,
@@ -1126,13 +1362,17 @@ impl DataResponse {
     /// `Data` variant.
     pub fn trim_to_bounds(&mut self) {
         match self {
-            Self::Quotes(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
-            Self::Trades(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
-            Self::FundingRates(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
-            Self::Bars(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::Quotes(r) => response::trim_batch_to_bounds(&mut r.data, r.start, r.end),
+            Self::Trades(r) => response::trim_batch_to_bounds(&mut r.data, r.start, r.end),
+            Self::FundingRates(r) => {
+                response::trim_batch_to_bounds(&mut r.data, r.start, r.end);
+            }
+            Self::Bars(r) => response::trim_batch_to_bounds(&mut r.data, r.start, r.end),
             Self::Instruments(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
-            Self::BookDeltas(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
-            Self::BookDepth(r) => response::trim_data_to_bounds(&mut r.data, r.start, r.end),
+            Self::BookDeltas(r) => {
+                response::trim_batch_to_bounds(&mut r.data, r.start, r.end);
+            }
+            Self::BookDepth(r) => response::trim_batch_to_bounds(&mut r.data, r.start, r.end),
             Self::Data(_)
             | Self::Instrument(_)
             | Self::Book(_)
@@ -1159,6 +1399,39 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest::rstest]
+    fn failure_envelopes_complete_the_request() {
+        let response = QuotesResponse::new(
+            UUID4::new(),
+            ClientId::from("SOURCE"),
+            InstrumentId::from("AUD/USD.SIM"),
+            Vec::new(),
+            Some(UnixNanos::from(3)),
+            Some(UnixNanos::from(17)),
+            UnixNanos::from(29),
+            None,
+        );
+        let source = UUID4::new();
+        let intermediate =
+            DataResponseEnvelope::new(DataResponse::Quotes(response), false, Some(source));
+        let mut expected = serde_json::to_value(&intermediate).unwrap();
+        expected["completed"] = serde_json::json!(true);
+        expected["failure_reason"] = serde_json::json!("Missing dataset");
+        let failure = intermediate.with_failure("Missing dataset".to_owned());
+        assert_eq!(serde_json::to_value(failure).unwrap(), expected);
+    }
+
+    #[rstest::rstest]
+    fn deserialized_failure_envelopes_complete_the_request() {
+        let expected =
+            DataResponseEnvelope::terminal(UUID4::new(), Some("Missing dataset".to_owned()));
+        let expected_value = serde_json::to_value(&expected).unwrap();
+        let mut wire = expected_value.clone();
+        wire["completed"] = serde_json::json!(false);
+        let actual: DataResponseEnvelope = serde_json::from_value(wire).unwrap();
+        assert_eq!(serde_json::to_value(actual).unwrap(), expected_value);
+    }
 
     macro_rules! identifier_message_tests {
         ($projection_test:ident, $release_test:ident, $serde_test:ident, $subscribe:ident, $unsubscribe:ident, $variant:ident) => {

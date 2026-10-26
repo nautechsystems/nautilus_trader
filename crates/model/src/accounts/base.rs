@@ -24,16 +24,16 @@ use nautilus_core::{
     DurationNanos, UnixNanos,
     correctness::{CorrectnessError, CorrectnessResult, FAILED, check_equal},
 };
-use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    accounts::fill_position_pnl,
     enums::{AccountType, LiquiditySide, OrderSide},
     events::{AccountState, OrderFilled},
     fees::{MakerTakerFeeRates, calculate_maker_taker_commission},
     identifiers::{AccountId, InstrumentId},
     instruments::{Instrument, InstrumentAny},
-    position::Position,
+    position::{Position, amount, money_from_qty, notional},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 
@@ -290,9 +290,11 @@ impl BaseAccount {
 
     /// Calculates the amount of balance to lock for a new order based on the given side, quantity, and price.
     ///
+    /// Projects the reservation at native [`Money`] precision with midpoint-to-even rounding.
+    ///
     /// # Errors
     ///
-    /// Returns an error if the locked amount cannot be represented in the target currency.
+    /// Returns an error if an input or the locked amount exceeds the accounting bounds.
     pub fn base_calculate_balance_locked(
         &self,
         instrument: &InstrumentAny,
@@ -301,26 +303,21 @@ impl BaseAccount {
         price: Price,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        let (amount, currency) = match side {
+        match side {
             // A buy at a negative price settles as a credit rather than a debit, so it
             // reserves nothing. Clamping per order rather than after aggregation keeps a
             // negative-price buy from financing a positive-price one before either fills.
             OrderSide::Buy => {
-                let notional = instrument.try_calculate_notional_value(
-                    quantity,
-                    price,
-                    use_quote_for_inverse,
-                )?;
-                (notional.as_decimal().max(Decimal::ZERO), notional.currency)
+                let notional =
+                    calculate_notional(instrument, quantity, price, use_quote_for_inverse)?;
+                Ok(notional.max(Money::zero(notional.currency)))
             }
             // No modeled base asset means nothing to reserve; inventory is venue-enforced.
             OrderSide::Sell => match instrument.base_currency() {
-                Some(base_currency) => (quantity.as_decimal(), base_currency),
-                None => (Decimal::ZERO, instrument.quote_currency()),
+                Some(currency) => Ok(money_from_qty(quantity, currency)?),
+                None => Ok(Money::from_raw_checked(0, instrument.quote_currency())?),
             },
-        };
-
-        Ok(Money::from_decimal(amount, currency)?)
+        }
     }
 
     /// Calculates profit and loss amounts for a filled order.
@@ -332,27 +329,39 @@ impl BaseAccount {
     /// Note: Unlike betting accounts, cash accounts do NOT cap to position quantity.
     /// The full fill quantity is used for PnL calculation.
     ///
+    /// Projects each cash flow at native [`Money`] precision with midpoint-to-even rounding.
+    ///
     /// # Errors
     ///
-    /// Returns an error if a PnL amount cannot be represented in the target currency.
+    /// Returns an error if an input, cash flow, or resulting position exceeds the accounting bounds.
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "matches the owned Position input of Account::calculate_pnls"
+    )]
     pub fn base_calculate_pnls(
         &self,
         instrument: &InstrumentAny,
         fill: &OrderFilled,
-        _position: Option<Position>,
+        position: Option<Position>,
     ) -> anyhow::Result<Vec<Money>> {
+        if let Some(commission) = fill.commission {
+            amount(commission)?;
+        }
+
+        fill_position_pnl(instrument, fill, position.as_ref())?;
+
         let mut pnls: IndexMap<Currency, Money> = IndexMap::new();
         let base_currency = instrument.base_currency();
 
         // No quantity capping (betting accounts cap to position qty, cash accounts don't)
         let fill_qty = fill.last_qty;
-        let notional = instrument.try_calculate_notional_value(fill_qty, fill.last_px, None)?;
+        let notional = calculate_notional(instrument, fill_qty, fill.last_px, None)?;
 
         if fill.order_side == OrderSide::Buy {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
                     base_currency_value,
-                    Money::from_decimal(fill_qty.as_decimal(), base_currency_value)?,
+                    money_from_qty(fill_qty, base_currency_value)?,
                 );
             }
             pnls.insert(notional.currency, -notional);
@@ -360,7 +369,7 @@ impl BaseAccount {
             if let (Some(base_currency_value), None) = (base_currency, self.base_currency) {
                 pnls.insert(
                     base_currency_value,
-                    -Money::from_decimal(fill_qty.as_decimal(), base_currency_value)?,
+                    -money_from_qty(fill_qty, base_currency_value)?,
                 );
             }
             pnls.insert(notional.currency, notional);
@@ -389,6 +398,35 @@ impl BaseAccount {
         let rate = fee_rates.rate_for(liquidity_side)?;
         calculate_maker_taker_commission(instrument, last_qty, last_px, rate, use_quote_for_inverse)
     }
+}
+
+fn calculate_notional(
+    instrument: &InstrumentAny,
+    quantity: Quantity,
+    price: Price,
+    use_quote_for_inverse: Option<bool>,
+) -> anyhow::Result<Money> {
+    if instrument.is_inverse() && use_quote_for_inverse.unwrap_or(false) {
+        return Ok(money_from_qty(quantity, instrument.quote_currency())?);
+    }
+
+    let currency = if instrument.is_inverse() {
+        instrument
+            .base_currency()
+            .ok_or_else(|| anyhow::anyhow!("inverse instrument has no base currency"))?
+    } else {
+        instrument.cost_currency()
+    };
+
+    Ok(notional(
+        quantity,
+        price,
+        instrument.multiplier(),
+        instrument
+            .instrument_class()
+            .divides_notional_by_price(instrument.is_inverse()),
+        currency,
+    )?)
 }
 
 /// Updates the locked balance for the given instrument and currency, then recalculates the
@@ -574,6 +612,7 @@ fn non_spendable_balance(current_balance: AccountBalance) -> AccountBalance {
 #[cfg(all(test, feature = "test-support"))]
 mod tests {
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use rust_decimal_macros::dec;
 
     use super::*;

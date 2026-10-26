@@ -67,16 +67,18 @@ use nautilus_core::{DurationNanos, UUID4, UnixNanos, time::get_atomic_clock_real
 use nautilus_derive::{
     common::{
         consts::{DERIVE_VENUE, MIN_SIGNATURE_TTL, TRIGGER_ORDER_SIGNATURE_TTL},
+        credential::DeriveCredential,
         enums::DeriveEnvironment,
         parse::parse_derive_instrument_any,
+        urls,
     },
     config::DeriveExecutionClientConfig,
     execution::DeriveExecutionClient,
     http::{
-        DeriveHttpError,
+        DeriveCredentials, DeriveHttpClient, DeriveHttpError,
         models::{DeriveInstrument, DerivePosition, DeriveSubaccount},
         parse::parse_derive_subaccount_to_balances,
-        query::DeriveGetSubaccountParams,
+        query::{DeriveGetSubaccountParams, DeriveGetTriggerOrdersParams},
     },
     websocket::dispatch::ORDER_DEDUP_CAPACITY,
 };
@@ -89,8 +91,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::QuoteTick,
     enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TriggerType,
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSide, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderEventType,
@@ -122,6 +124,7 @@ const TEST_TRADE_MODULE_ADDRESS: &str = "0x000000000000000000000000000000000000b
 
 #[derive(Clone, Default)]
 struct RestState {
+    order_writes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     get_account_calls: Arc<tokio::sync::Mutex<Vec<Value>>>,
     cancel_on_disconnect: Arc<AtomicBool>,
     get_account_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -507,11 +510,18 @@ async fn handle_get_account(State(state): State<RestState>, body: axum::body::By
     (StatusCode::OK, Json(reply)).into_response()
 }
 
+async fn handle_order_write(State(state): State<RestState>, Json(body): Json<Value>) -> StatusCode {
+    state.order_writes.lock().await.push(body);
+    StatusCode::BAD_REQUEST
+}
+
 async fn start_rest_server(state: RestState) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
     let router = Router::new()
         .route("/health", get(handle_rest_health))
+        .route("/private/order", post(handle_order_write))
+        .route("/private/replace", post(handle_order_write))
         .route("/private/get_account", post(handle_get_account))
         .route("/private/get_subaccount", post(handle_get_subaccount))
         .route("/private/get_order", post(handle_get_order))
@@ -2539,10 +2549,17 @@ async fn test_exec_client_marks_disconnected_after_reconnect_auth_exhaustion() {
 }
 
 #[rstest]
-#[case("SM")]
-#[case("PM2")]
+#[case::independent(None, false)]
+#[case::oto(Some(ContingencyType::Oto), false)]
+#[case::oco(Some(ContingencyType::Oco), false)]
+#[case::ouo(Some(ContingencyType::Ouo), false)]
+#[case::parent_only(None, true)]
 #[tokio::test]
-async fn test_submit_order_limit_posts_signed_payload(#[case] margin_type: &str) {
+async fn test_submit_order_limit_posts_signed_payload(
+    #[values("SM", "PM2")] margin_type: &str,
+    #[case] contingency_type: Option<ContingencyType>,
+    #[case] parent_only: bool,
+) {
     let rest_state = RestState::default();
     let mut subaccount = sample_subaccount_json();
     subaccount["margin_type"] = json!(margin_type);
@@ -2553,13 +2570,28 @@ async fn test_submit_order_limit_posts_signed_payload(#[case] margin_type: &str)
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
     let client_order_id = ClientOrderId::from("STRAT-LIMIT-1");
-    let order = build_limit_order(
-        instrument_id,
-        client_order_id,
-        OrderSide::Buy,
-        Price::from("3500.00"),
-        Quantity::from("1.000"),
-    );
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3500.00"))
+        .time_in_force(TimeInForce::Gtc);
+
+    if let Some(contingency_type) = contingency_type {
+        builder
+            .contingency_type(contingency_type)
+            .linked_order_ids(vec![ClientOrderId::from("MANAGED-SIBLING")]);
+    }
+
+    if parent_only {
+        builder.parent_order_id(ClientOrderId::from("MANAGED-PARENT"));
+    }
+
+    let order = builder.build();
     tc.cache
         .borrow_mut()
         .add_order(order.clone(), None, None, false)
@@ -3165,6 +3197,269 @@ async fn test_submit_order_posts_supported_time_in_force(
 }
 
 #[rstest]
+#[case(OrderType::Limit)]
+#[case(OrderType::Market)]
+#[case(OrderType::StopMarket)]
+#[case(OrderType::StopLimit)]
+#[case(OrderType::MarketIfTouched)]
+#[case(OrderType::LimitIfTouched)]
+#[tokio::test]
+async fn test_submit_quote_qty_is_denied_before_submission(
+    #[case] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+    let order = OrderTestBuilder::new(order_type)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(InstrumentId::from("ETH-PERP.DERIVE"))
+        .side(side)
+        .quantity(Quantity::from("100.000"))
+        .quote_quantity(true)
+        .price(Price::from("3500.00"))
+        .trigger_price(Price::from("3500.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .time_in_force(TimeInForce::Ioc)
+        .build();
+
+    if order_type == OrderType::Market {
+        let quote = QuoteTick::new(
+            order.instrument_id(),
+            Price::from("3500.00"),
+            Price::from("3501.00"),
+            Quantity::from("1.000"),
+            Quantity::from("2.000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        tc.cache.borrow_mut().add_quote(quote).unwrap();
+    }
+
+    add_order_to_cache(&tc.cache, order.clone(), Some(ClientId::from("DERIVE")));
+
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+    let event = drain_denied_without_submitted(&mut tc.rx, &order.client_order_id()).await;
+    tc.client.disconnect().await.unwrap();
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("expected OrderDenied");
+    };
+
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
+    assert_eq!(rest_state.order_writes.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_trigger_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.replace_orders.lock().await.len(), 0);
+
+    while let Ok(event) = tc.rx.try_recv() {
+        assert!(!matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_))
+        ));
+    }
+}
+
+#[rstest]
+#[case(OrderType::Limit)]
+#[case(OrderType::StopMarket)]
+#[case(OrderType::StopLimit)]
+#[case(OrderType::LimitIfTouched)]
+#[tokio::test]
+async fn test_submit_display_qty_is_denied_before_submission(
+    #[case] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values("0.137", "0.000", "1.237")] display_qty: &str,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+    let order = OrderTestBuilder::new(order_type)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(InstrumentId::from("ETH-PERP.DERIVE"))
+        .side(side)
+        .quantity(Quantity::from("1.237"))
+        .display_qty(Quantity::from(display_qty))
+        .price(Price::from("3500.00"))
+        .trigger_price(Price::from("3500.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    add_order_to_cache(&tc.cache, order.clone(), Some(ClientId::from("DERIVE")));
+
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+    let event = drain_denied_without_submitted(&mut tc.rx, &order.client_order_id()).await;
+    tc.client.disconnect().await.unwrap();
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("expected OrderDenied");
+    };
+
+    assert_eq!(order.display_qty(), Some(Quantity::from(display_qty)));
+    assert_eq!(denied.trader_id, order.trader_id());
+    assert_eq!(denied.strategy_id, order.strategy_id());
+    assert_eq!(denied.instrument_id, order.instrument_id());
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(
+        denied.reason.as_str(),
+        "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+    );
+    assert_eq!(rest_state.order_writes.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_trigger_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.replace_orders.lock().await.len(), 0);
+
+    while let Ok(event) = tc.rx.try_recv() {
+        assert!(!matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_))
+        ));
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Derive testnet credentials and an isolated live-validation route"]
+async fn test_testnet_quote_qty_is_denied_before_submission() {
+    let environment = DeriveEnvironment::Testnet;
+    let credential = DeriveCredential::resolve(None, None, None, environment).unwrap();
+    let credentials =
+        DeriveCredentials::new(credential.wallet_address(), credential.session_key()).unwrap();
+    let http = DeriveHttpClient::with_credentials(
+        urls::rest_url(environment),
+        credentials,
+        Some(15),
+        None,
+        None,
+    )
+    .unwrap();
+    let params = DeriveGetSubaccountParams::new(credential.subaccount_id());
+    let triggers = DeriveGetTriggerOrdersParams::new(credential.subaccount_id());
+    let before = http.get_subaccount(&params).await.unwrap();
+    assert!(
+        before.open_orders.is_empty(),
+        "live validation requires no open orders"
+    );
+    assert!(
+        before.positions.is_empty(),
+        "live validation requires no positions"
+    );
+    assert!(
+        http.get_trigger_orders(&triggers)
+            .await
+            .unwrap()
+            .orders
+            .is_empty(),
+        "live validation requires no trigger orders"
+    );
+    let definition = http.get_instrument("ETH-PERP").await.unwrap();
+    let instrument = parse_derive_instrument_any(&definition, UnixNanos::default())
+        .unwrap()
+        .unwrap();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+    let (balances, margins, _) = parse_derive_subaccount_to_balances(&before).unwrap();
+
+    let state = AccountState::new(
+        AccountId::from("DERIVE-001"),
+        AccountType::Margin,
+        balances,
+        margins,
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    let account = AccountAny::Margin(MarginAccount::new(state, true));
+    cache.borrow_mut().add_account(account).unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_exec_event_sender(tx);
+
+    let config = DeriveExecutionClientConfig {
+        environment,
+        max_fee_per_contract: Some(dec!(1)),
+        ..Default::default()
+    };
+
+    let mut client = DeriveExecutionClient::new(build_core(cache.clone()), config).unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let mut count = 0;
+
+    for order_type in [
+        OrderType::Limit,
+        OrderType::Market,
+        OrderType::StopMarket,
+        OrderType::StopLimit,
+        OrderType::MarketIfTouched,
+        OrderType::LimitIfTouched,
+    ] {
+        for side in [OrderSide::Buy, OrderSide::Sell] {
+            let order = OrderTestBuilder::new(order_type)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("S-1"))
+                .instrument_id(InstrumentId::from("ETH-PERP.DERIVE"))
+                .client_order_id(ClientOrderId::from(format!("QUOTE-DENIAL-{count}")))
+                .side(side)
+                .quantity(Quantity::from("0.001"))
+                .quote_quantity(true)
+                .price(Price::from("1.00"))
+                .trigger_price(Price::from("1.00"))
+                .trigger_type(TriggerType::MarkPrice)
+                .time_in_force(TimeInForce::Ioc)
+                .build();
+            add_order_to_cache(&cache, order.clone(), Some(ClientId::from("DERIVE")));
+            client.submit_order(submit_cmd(&order)).unwrap();
+            let event = drain_denied_without_submitted(&mut rx, &order.client_order_id()).await;
+
+            let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+                panic!("expected OrderDenied");
+            };
+
+            assert_eq!(denied.client_order_id, order.client_order_id());
+            assert_eq!(denied.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
+            count += 1;
+        }
+    }
+
+    client.disconnect().await.unwrap();
+
+    while let Ok(event) = rx.try_recv() {
+        assert!(!matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_))
+        ));
+    }
+
+    let after = http.get_subaccount(&params).await.unwrap();
+    assert_eq!(count, 12);
+    assert!(
+        after.open_orders.is_empty(),
+        "live validation leaves no open orders"
+    );
+    assert!(
+        after.positions.is_empty(),
+        "live validation leaves no positions"
+    );
+    assert!(
+        http.get_trigger_orders(&triggers)
+            .await
+            .unwrap()
+            .orders
+            .is_empty(),
+        "live validation leaves no trigger orders"
+    );
+    println!(
+        "Derive testnet: 12 quote-sized orders denied locally; no submitted events, open orders, trigger orders, or positions"
+    );
+}
+
+#[rstest]
 #[case(TimeInForce::Day, false, "UNSUPPORTED_TIME_IN_FORCE: DAY")]
 #[case(TimeInForce::Day, true, "UNSUPPORTED_TIME_IN_FORCE: DAY")]
 #[case(TimeInForce::Ioc, true, "UNSUPPORTED_TIME_IN_FORCE: IOC")]
@@ -3300,10 +3595,12 @@ async fn test_submit_order_denies_unsupported_trigger_price_type_before_posting(
 
     if let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event {
         assert_eq!(denied.client_order_id, order.client_order_id());
-        assert!(
-            denied.reason.contains("unsupported trigger price type"),
-            "unexpected deny reason: {}",
-            denied.reason,
+        assert_eq!(
+            denied.reason.as_str(),
+            concat!(
+                "VALIDATION_FAILED: unsupported trigger price type for Derive: IndexPrice; ",
+                "Derive currently accepts only MarkPrice for trigger orders",
+            ),
         );
     } else {
         unreachable!();
@@ -3849,14 +4146,65 @@ async fn test_submit_order_rate_limit_jsonrpc_emits_order_rejected() {
 }
 
 #[rstest]
-#[case(false)]
-#[case(true)]
+#[case(OrderType::Limit, false, None, "UNSUPPORTED_TIME_IN_FORCE: DAY")]
+#[case(OrderType::Limit, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::Market, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::StopMarket, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::StopLimit, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::MarketIfTouched, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::LimitIfTouched, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(
+    OrderType::Limit,
+    false,
+    Some("0.137"),
+    "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+)]
+#[case(
+    OrderType::StopMarket,
+    false,
+    Some("0.137"),
+    "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+)]
+#[case(
+    OrderType::StopLimit,
+    false,
+    Some("0.137"),
+    "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+)]
+#[case(
+    OrderType::LimitIfTouched,
+    false,
+    Some("0.137"),
+    "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+)]
 #[tokio::test]
-async fn test_submit_order_list_denies_every_leg_before_submission(#[case] invalid_first: bool) {
+async fn test_submit_order_list_denies_every_leg_before_submission(
+    #[case] order_type: OrderType,
+    #[case] quote_qty: bool,
+    #[case] display_qty: Option<&str>,
+    #[case] reason: &str,
+    #[values(false, true)] invalid_first: bool,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let rest_state = RestState::default();
     let ws_state = WsState::default();
-    let mut tc = build_client(RestState::default(), ws_state.clone()).await;
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
     tc.client.connect().await.unwrap();
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    if order_type == OrderType::Market {
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("3500.00"),
+            Price::from("3501.00"),
+            Quantity::from("1.000"),
+            Quantity::from("2.000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        );
+        tc.cache.borrow_mut().add_quote(quote).unwrap();
+    }
+
     let valid = build_limit_order(
         instrument_id,
         ClientOrderId::from("LIST-VALID"),
@@ -3864,15 +4212,32 @@ async fn test_submit_order_list_denies_every_leg_before_submission(#[case] inval
         Price::from("3500.00"),
         Quantity::from("1.000"),
     );
-    let invalid = build_limit_order_with_time_in_force(
-        instrument_id,
-        ClientOrderId::from("LIST-INVALID"),
-        OrderSide::Sell,
-        Price::from("3501.00"),
-        Quantity::from("2.000"),
-        TimeInForce::Day,
-        false,
-    );
+
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("LIST-INVALID"))
+        .side(side)
+        .quantity(Quantity::from("2.000"))
+        .quote_quantity(quote_qty)
+        .price(Price::from("3501.00"))
+        .trigger_price(Price::from("3501.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .time_in_force(if display_qty.is_some() {
+            TimeInForce::Gtc
+        } else if quote_qty {
+            TimeInForce::Ioc
+        } else {
+            TimeInForce::Day
+        });
+
+    if let Some(qty) = display_qty {
+        builder.display_qty(Quantity::from(qty));
+    }
+
+    let invalid = builder.build();
 
     let orders = if invalid_first {
         vec![invalid.clone(), valid.clone()]
@@ -3930,42 +4295,175 @@ async fn test_submit_order_list_denies_every_leg_before_submission(#[case] inval
     assert_eq!(
         denied,
         vec![
-            (
-                invalid.client_order_id(),
-                Ustr::from("UNSUPPORTED_TIME_IN_FORCE: DAY")
-            ),
+            (invalid.client_order_id(), Ustr::from(reason)),
             (
                 valid.client_order_id(),
                 Ustr::from("ORDER_LIST_DENIED: DENIED-LIST")
             ),
         ]
     );
-    assert!(ws_state.submitted_orders.lock().await.is_empty());
+    assert_eq!(rest_state.order_writes.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_trigger_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.replace_orders.lock().await.len(), 0);
+}
+
+#[rstest]
+#[case::oto(Some(ContingencyType::Oto), false)]
+#[case::oco(Some(ContingencyType::Oco), false)]
+#[case::ouo(Some(ContingencyType::Ouo), false)]
+#[case::parent_only(None, true)]
+#[case::linked_only(None, false)]
+#[tokio::test]
+async fn test_submit_order_list_denies_native_linkage_before_submission(
+    #[case] contingency_type: Option<ContingencyType>,
+    #[case] parent_only: bool,
+    #[values(false, true)] independent_first: bool,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let list_id = OrderListId::from("CONTINGENT-LIST");
+    let first_id = ClientOrderId::from("LIST-FIRST");
+    let second_id = ClientOrderId::from("LIST-SECOND");
+    let mut orders = Vec::new();
+
+    for (id, linked_id, side, price, qty) in [
+        (first_id, second_id, OrderSide::Buy, "3500.00", "1.000"),
+        (second_id, first_id, OrderSide::Sell, "3600.00", "2.000"),
+    ] {
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        builder
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("S-1"))
+            .instrument_id(instrument_id)
+            .client_order_id(id)
+            .side(side)
+            .quantity(Quantity::from(qty))
+            .price(Price::from(price))
+            .time_in_force(TimeInForce::Gtc)
+            .order_list_id(list_id);
+
+        if id == second_id && (contingency_type == Some(ContingencyType::Oto) || parent_only) {
+            builder.parent_order_id(first_id);
+        } else if let Some(contingency_type) = contingency_type {
+            builder
+                .contingency_type(contingency_type)
+                .linked_order_ids(vec![linked_id]);
+        } else if id == second_id {
+            builder.linked_order_ids(vec![first_id]);
+        }
+
+        orders.push(builder.build());
+    }
+
+    let independent = build_limit_order(
+        instrument_id,
+        ClientOrderId::from("LIST-INDEPENDENT"),
+        OrderSide::Buy,
+        Price::from("3400.00"),
+        Quantity::from("3.000"),
+    );
+    orders.insert(if independent_first { 0 } else { 2 }, independent);
+
+    for order in &orders {
+        add_order_to_cache(&tc.cache, order.clone(), Some(ClientId::from("DERIVE")));
+    }
+
+    let order_list = OrderList::new(
+        list_id,
+        instrument_id,
+        StrategyId::from("S-1"),
+        orders.iter().map(Order::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+
+    let cmd = SubmitOrderList::new(
+        TraderId::from("TRADER-001"),
+        Some(ClientId::from("DERIVE")),
+        StrategyId::from("S-1"),
+        order_list,
+        orders.iter().map(OrderInitialized::from).collect(),
+        None,
+        None,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+    tc.client.submit_order_list(cmd).unwrap();
+    let mut events = Vec::new();
+
+    while let Ok(event) = tc.rx.try_recv() {
+        if let ExecutionEvent::Order(event) = event {
+            events.push(event);
+        }
+    }
+
+    tc.client.disconnect().await.unwrap();
+
+    assert_eq!(events.len(), orders.len());
+
+    for (event, order) in events.iter().zip(&orders) {
+        let OrderEventAny::Denied(event) = event else {
+            panic!("Expected OrderDenied, found {event:?}");
+        };
+
+        assert_eq!(event.trader_id, order.trader_id());
+        assert_eq!(event.strategy_id, order.strategy_id());
+        assert_eq!(event.instrument_id, order.instrument_id());
+        assert_eq!(event.client_order_id, order.client_order_id());
+        assert_eq!(
+            event.reason,
+            Ustr::from(
+                "UNSUPPORTED_ORDER_LIST: Derive does not support native contingent order lists"
+            )
+        );
+    }
+
+    assert_eq!(rest_state.order_writes.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_trigger_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.replace_orders.lock().await.len(), 0);
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_order_list_delegates_per_order() {
+async fn test_submit_order_list_delegates_per_order(#[values(false, true)] empty_links: bool) {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let mut tc = build_client(rest_state, ws_state.clone()).await;
     tc.client.connect().await.expect("connect succeeds");
 
     let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
-    let order_a = build_limit_order(
-        instrument_id,
-        ClientOrderId::from("STRAT-LIST-A"),
-        OrderSide::Buy,
-        Price::from("3500.00"),
-        Quantity::from("1.000"),
-    );
-    let order_b = build_limit_order(
+    let mut builder = OrderTestBuilder::new(OrderType::Limit);
+    builder
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(ClientOrderId::from("STRAT-LIST-A"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("3500.00"))
+        .time_in_force(TimeInForce::Gtc);
+
+    if empty_links {
+        builder.linked_order_ids(vec![]);
+    }
+
+    let mut order_a = builder.build();
+    let mut order_b = build_limit_order(
         instrument_id,
         ClientOrderId::from("STRAT-LIST-B"),
         OrderSide::Sell,
         Price::from("3501.00"),
         Quantity::from("1.000"),
     );
+    let list_id = OrderListId::from("OL-1");
+    order_a.set_order_list_id(list_id);
+    order_b.set_order_list_id(list_id);
     tc.cache
         .borrow_mut()
         .add_order(order_a.clone(), None, None, false)
@@ -3976,7 +4474,7 @@ async fn test_submit_order_list_delegates_per_order() {
         .expect("insert B");
 
     let order_list = OrderList::new(
-        OrderListId::from("OL-1"),
+        list_id,
         instrument_id,
         StrategyId::from("S-1"),
         vec![order_a.client_order_id(), order_b.client_order_id()],
@@ -4013,12 +4511,12 @@ async fn test_submit_order_list_delegates_per_order() {
     .await;
 
     let posts = ws_state.submitted_orders.lock().await;
-    let labels: Vec<&str> = posts
+    let mut labels: Vec<&str> = posts
         .iter()
         .map(|b| b["label"].as_str().unwrap_or(""))
         .collect();
-    assert!(labels.contains(&"STRAT-LIST-A"));
-    assert!(labels.contains(&"STRAT-LIST-B"));
+    labels.sort_unstable();
+    assert_eq!(labels, vec!["STRAT-LIST-A", "STRAT-LIST-B"]);
 
     tc.client.disconnect().await.expect("disconnect");
 }
@@ -9898,7 +10396,7 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].quantity, Quantity::from("0.100"));
         assert_eq!(positions[0].signed_decimal_qty(), dec!(0.1));
-        assert_eq!(positions[0].avg_px_open, 2553.01);
+        assert_eq!(positions[0].avg_px_open, dec!(2553.01));
         assert_eq!(
             positions[0].trade_ids.iter().copied().collect::<Vec<_>>(),
             vec![trade_id]
@@ -9912,7 +10410,7 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
             Some(Money::from("-0.08658967 USDC"))
         );
         assert_eq!(
-            positions[0].unrealized_pnl(Price::from("2553.01")),
+            positions[0].unrealized_pnl(Price::from("2553.01")).unwrap(),
             Money::from("0.00000000 USDC")
         );
     }
@@ -9982,8 +10480,8 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
         );
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].quantity, Quantity::from("0.000"));
-        assert_eq!(positions[0].avg_px_open, 2553.01);
-        assert_eq!(positions[0].avg_px_close, Some(2552.59));
+        assert_eq!(positions[0].avg_px_open, dec!(2553.01));
+        assert_eq!(positions[0].avg_px_close, Some(dec!(2552.59)));
         assert_eq!(
             positions[0].trade_ids,
             [trade_id, close_trade_id].into_iter().collect()

@@ -777,7 +777,7 @@ impl ParquetDataCatalog {
 
         let mut all_data = Vec::new();
 
-        for file in files {
+        for (index, file) in files.into_iter().enumerate() {
             let object_path = self.to_object_path_parsed(&file)?;
 
             let mut decode_metadata = self.execute_async(|| async {
@@ -795,7 +795,7 @@ impl ParquetDataCatalog {
             let safe_sql_identifier = make_sql_safe_identifier(identifier);
             let safe_filename = extract_sql_safe_filename(&file);
             let table_name =
-                format!("custom_{safe_type_name}_{safe_sql_identifier}_{safe_filename}");
+                format!("custom_{safe_type_name}_{safe_sql_identifier}_{safe_filename}_{index}");
             let resolved_path = self.resolve_path_for_datafusion(&file);
             let sql_query = build_query(&table_name, start, end, where_clause);
 

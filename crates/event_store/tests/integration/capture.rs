@@ -26,11 +26,12 @@ use bytes::Bytes;
 use indexmap::IndexMap;
 use nautilus_common::{
     messages::{
-        data::{DataResponse, QuotesResponse},
+        data::{DataResponse, DataResponseEnvelope, QuotesResponse},
         execution::{SubmitOrder, TradingCommand},
     },
     msgbus::{
         self, BusTap, Endpoint, MStr, MessageBus, MessagingSwitchboard, ShareableMessageHandler,
+        TypedHandler,
     },
 };
 use nautilus_core::{UUID4, UnixNanos, time::get_atomic_clock_static};
@@ -41,9 +42,11 @@ use nautilus_event_store::{
     default_registry, noop_halt,
 };
 use nautilus_model::{
-    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    enums::{
+        AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+    },
     events::{
-        OrderEventAny, OrderFilled,
+        AccountState, OrderEventAny, OrderFilled,
         order::spec::{OrderFilledSpec, OrderInitializedSpec},
     },
     identifiers::{
@@ -51,7 +54,7 @@ use nautilus_model::{
         TraderId, VenueOrderId,
     },
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use parking_lot::Mutex;
 use rstest::rstest;
@@ -706,6 +709,59 @@ impl BusTap for HeadersAwareAdapterTap {
 }
 
 #[rstest]
+fn account_state_endpoint_and_topic_capture_once() {
+    let bus = MessageBus::new(TraderId::from("TRADER-001"), UUID4::new(), None, None);
+    let _bus_rc = bus.register_message_bus();
+    let (writer, backend) = writer_with_open_run("run-account-two-hops", noop_halt());
+    let registry = Arc::new(default_registry());
+    let adapter = Arc::new(BusCaptureAdapter::new(
+        Arc::clone(&writer),
+        Arc::clone(&registry),
+        noop_halt(),
+    ));
+    msgbus::set_bus_tap(Rc::new(HeadersAwareAdapterTap {
+        adapter: Arc::clone(&adapter),
+        registry,
+    }));
+    let endpoint = MessagingSwitchboard::portfolio_update_account();
+    msgbus::register_account_state_endpoint(endpoint, TypedHandler::from(|_: &AccountState| {}));
+    let state = AccountState::new(
+        AccountId::from("SIM-001"),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("100 USD"),
+            Money::from("20 USD"),
+            Money::from("80 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::from(100),
+        UnixNanos::from(101),
+        Some(Currency::USD()),
+    );
+    msgbus::send_account_state(endpoint, &state);
+    msgbus::publish_account_state("events.account.SIM-001".into(), &state);
+
+    msgbus::clear_bus_tap();
+    drop(adapter);
+    let writer = Arc::try_unwrap(writer).expect("sole writer reference");
+    writer.close(run_ended_draft()).expect("close writer");
+    let backend = backend.lock();
+    assert_eq!(
+        backend.high_watermark().unwrap(),
+        2,
+        "one state and RunEnded"
+    );
+    let entry = backend.scan_seq(1).unwrap().unwrap();
+    assert_eq!(entry.payload_type.as_str(), "AccountState");
+    let decoded: AccountState = rmp_serde::from_slice(&entry.payload).unwrap();
+    assert_eq!(decoded.event_id, state.event_id);
+    assert_eq!(decoded.account_id, state.account_id);
+    assert_eq!(decoded.balances, state.balances);
+}
+
+#[rstest]
 fn tap_path_writes_headers_from_command_fields() {
     // End-to-end: a SubmitOrder published with populated correlation_id and
     // causation_id must reach the writer with both headers on the entry. This is the
@@ -751,6 +807,16 @@ fn tap_path_writes_headers_from_command_fields() {
 
 #[rstest]
 fn tap_path_writes_headers_from_data_response_correlation_handler() {
+    #[derive(serde::Deserialize)]
+    struct CapturedResponse {
+        correlation_id: UUID4,
+        completed: bool,
+        sub_correlation_id: Option<UUID4>,
+        failure_reason: Option<String>,
+        payload_type: Option<String>,
+        payload: Option<bytes::Bytes>,
+    }
+
     // Data responses dispatch through the bus correlation-response path rather than a
     // publish topic or endpoint. The tap still captures the DataResponse envelope and
     // forwards its correlation_id into event-store headers.
@@ -775,7 +841,7 @@ fn tap_path_writes_headers_from_data_response_correlation_handler() {
     let handler_called_clone = Rc::clone(&handler_called);
     msgbus::register_response_handler(
         &correlation,
-        ShareableMessageHandler::from_typed(move |_resp: &QuotesResponse| {
+        TypedHandler::from(move |_resp: &DataResponseEnvelope| {
             *handler_called_clone.borrow_mut() = true;
         }),
     );
@@ -799,14 +865,21 @@ fn tap_path_writes_headers_from_data_response_correlation_handler() {
     let entry = backend.scan_seq(1).expect("scan").expect("present");
     assert_eq!(entry.headers.correlation_id, Some(correlation));
     assert_eq!(entry.headers.causation_id, None);
-    assert_eq!(entry.payload_type.as_str(), "QuotesResponse");
+    assert_eq!(entry.payload_type.as_str(), "DataResponseEnvelope");
     assert_eq!(entry.topic, MessagingSwitchboard::data_response_topic());
 
+    let envelope: CapturedResponse =
+        rmp_serde::from_slice(&entry.payload).expect("decode response envelope");
+    assert_eq!(envelope.correlation_id, correlation);
+    assert!(envelope.completed);
+    assert_eq!(envelope.sub_correlation_id, None);
+    assert_eq!(envelope.failure_reason, None);
+    assert_eq!(envelope.payload_type.as_deref(), Some("QuotesResponse"));
     let decoded: QuotesResponse =
-        rmp_serde::from_slice(&entry.payload).expect("decode QuotesResponse");
+        rmp_serde::from_slice(envelope.payload.as_ref().unwrap()).expect("decode quotes payload");
     assert_eq!(decoded.correlation_id, response.correlation_id);
     assert_eq!(decoded.client_id, response.client_id);
-    assert_eq!(decoded.instrument_id, response.instrument_id);
+    assert_eq!(decoded.instrument_ids, response.instrument_ids);
     assert!(decoded.data.is_empty());
 
     drop(backend);

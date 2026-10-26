@@ -3163,7 +3163,7 @@ mod tests {
         messages::{ExecutionEvent, ExecutionReport},
     };
     use nautilus_core::time::get_atomic_clock_realtime;
-    use nautilus_live::ExecutionClientCore;
+    use nautilus_live::{ExecutionClientCore, testing::ExecutionHarness};
     use nautilus_model::{
         enums::AssetClass,
         events::order::spec::OrderSubmittedSpec,
@@ -3171,7 +3171,7 @@ mod tests {
             AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TraderId, VenueOrderId,
         },
         instruments::{InstrumentAny, PerpetualContract},
-        orders::builder::OrderTestBuilder,
+        orders::{builder::OrderTestBuilder, stubs::TestOrderEventStubs},
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
@@ -4703,6 +4703,398 @@ mod tests {
         assert_eq!(
             *caches.venue_to_client_id.get(&venue_order_id).unwrap(),
             client_order_id
+        );
+    }
+
+    #[rstest]
+    #[case::unaccepted_partial(true, false, false, false)]
+    #[case::unaccepted_terminal(true, false, true, false)]
+    #[case::partial_order(true, true, false, false)]
+    #[case::partial_order_terminal(true, true, true, false)]
+    #[case::untracked_partial(false, true, false, false)]
+    #[case::untracked_terminal(false, true, true, false)]
+    #[case::rest_partial(true, true, false, true)]
+    #[case::rest_terminal(true, true, true, true)]
+    fn test_commission_failure_corrected_replay_applies_once(
+        #[case] tracked: bool,
+        #[case] prior_fill: bool,
+        #[case] complete: bool,
+        #[case] rest_recovery: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let trader_id = TraderId::from("TRADER-001");
+        let account_id = AccountId::from("AX-001");
+        let client_order_id = ClientOrderId::from("O-FEE-REPLAY");
+        let venue_order_id = VenueOrderId::from("OID-FEE-REPLAY");
+        let instrument = test_perp_instrument("BTC-PERP");
+        let instrument_id = instrument.id();
+        let harness =
+            ExecutionHarness::new(trader_id, *AX_CLIENT_ID, account_id, instrument.clone());
+
+        let prior_qty = if prior_fill { 10 } else { 0 };
+        let total_qty = prior_qty + if complete { 25 } else { 50 };
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(trader_id)
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(total_qty))
+            .price(Price::from("100.00"))
+            .build();
+        initialize_commission_replay_order(
+            &harness,
+            &order,
+            &instrument,
+            venue_order_id,
+            prior_fill,
+        );
+
+        let before = harness
+            .cache()
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .clone();
+        assert_eq!(
+            before.venue_order_id(),
+            prior_fill.then_some(venue_order_id)
+        );
+        let caches = test_caches();
+
+        if tracked {
+            let mut metadata = test_metadata(client_order_id, instrument_id);
+            metadata.order_init = Some(order.init_event().clone());
+            metadata.is_accepted = prior_fill;
+            metadata.venue_order_id = prior_fill.then_some(venue_order_id);
+            caches.orders_metadata.insert(client_order_id, metadata);
+            if prior_fill {
+                caches
+                    .venue_to_client_id
+                    .insert(venue_order_id, client_order_id);
+            }
+
+            caches.cid_to_client_order_id.insert(42, client_order_id);
+        }
+
+        let instruments = AtomicMap::new();
+        instruments.insert(Ustr::from("BTC-PERP"), instrument.clone());
+        let rates = AtomicMap::new();
+        rates.insert(
+            None,
+            MakerTakerFeeRates::new(dec!(1000000000000000000000), dec!(0.0025)),
+        );
+        let mut wire_order = test_ws_order(venue_order_id.as_str(), dec!(100), total_qty);
+        wire_order.cid = tracked.then_some(42);
+        wire_order.xq = prior_qty + 25;
+        wire_order.rq = total_qty - wire_order.xq;
+
+        let execution = test_execution("T-FEE-REPLAY", dec!(80), 25, false);
+        let event = commission_replay_event(wire_order.clone(), execution.clone(), complete);
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let mut emitter =
+            ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
+        emitter.set_sender(tx);
+
+        let error =
+            calculate_fill_commission(&wire_order, &execution, &instruments, &rates).unwrap_err();
+        dispatch_order_event(
+            event.clone(),
+            &emitter,
+            &caches,
+            account_id,
+            &instruments,
+            &rates,
+            clock,
+        );
+
+        assert_eq!(
+            error.to_string(),
+            "failed to convert AX fill commission to Money"
+        );
+        assert!(rx.try_recv().is_err());
+        assert_eq!(caches.orders_metadata.len(), usize::from(tracked));
+        assert_eq!(
+            caches.venue_to_client_id.len(),
+            usize::from(tracked && prior_fill)
+        );
+        assert_eq!(caches.cid_to_client_order_id.len(), usize::from(tracked));
+        assert!(caches.pending_modifies.is_empty());
+
+        if tracked {
+            let metadata = caches.orders_metadata.get(&client_order_id).unwrap();
+            assert_eq!(metadata.is_accepted, prior_fill);
+            assert_eq!(
+                metadata.venue_order_id,
+                prior_fill.then_some(venue_order_id)
+            );
+            assert_eq!(
+                caches
+                    .venue_to_client_id
+                    .get(&venue_order_id)
+                    .map(|owner| *owner),
+                prior_fill.then_some(client_order_id)
+            );
+            assert_eq!(
+                *caches.cid_to_client_order_id.get(&42).unwrap(),
+                client_order_id
+            );
+        }
+
+        assert_eq!(
+            harness
+                .cache()
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .events(),
+            before.events()
+        );
+        rates.insert(None, MakerTakerFeeRates::new(dec!(0.0002), dec!(0.0025)));
+
+        let retained = usize::from(tracked && !complete);
+
+        for replay in 0..2 {
+            if rest_recovery {
+                let mut response: AxFillsResponse =
+                    serde_json::from_str(include_str!("../test_data/http_get_fills.json")).unwrap();
+                let fill = &mut response.fills[0];
+                fill.trade_id = execution.tid.clone();
+                fill.order_id = Some(wire_order.oid.clone());
+                fill.symbol = wire_order.s;
+                fill.quantity = execution.q;
+                fill.price = execution.p;
+                fill.fee = dec!(0.40);
+                fill.is_taker = false;
+                let report = crate::http::parse::parse_fill_report(
+                    fill,
+                    account_id,
+                    &instrument,
+                    clock.get_time_ns(),
+                )
+                .unwrap();
+                emitter.send_fill_report(report);
+            } else {
+                dispatch_order_event(
+                    event.clone(),
+                    &emitter,
+                    &caches,
+                    account_id,
+                    &instruments,
+                    &rates,
+                    clock,
+                );
+                assert_eq!(caches.orders_metadata.len(), retained);
+                assert_eq!(caches.venue_to_client_id.len(), retained);
+                assert_eq!(caches.cid_to_client_order_id.len(), retained);
+            }
+
+            apply_commission_replay(
+                &harness,
+                &mut rx,
+                client_order_id,
+                venue_order_id,
+                usize::from(!rest_recovery && tracked && !prior_fill && replay == 0),
+            );
+
+            assert_commission_replay_state(
+                &harness,
+                client_order_id,
+                venue_order_id,
+                prior_fill,
+                complete,
+            );
+        }
+    }
+
+    fn initialize_commission_replay_order(
+        harness: &ExecutionHarness,
+        order: &OrderAny,
+        instrument: &InstrumentAny,
+        venue_order_id: VenueOrderId,
+        prior_fill: bool,
+    ) {
+        let account_id = harness.account_id();
+        let client_order_id = order.client_order_id();
+        harness
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+            .unwrap();
+        let submitted = TestOrderEventStubs::submitted(order, account_id);
+        harness.exec_engine().borrow_mut().process(&submitted);
+
+        if prior_fill {
+            let accepted = TestOrderEventStubs::accepted(order, account_id, venue_order_id);
+            harness.exec_engine().borrow_mut().process(&accepted);
+            let accepted_order = harness
+                .cache()
+                .borrow()
+                .order_owned(&client_order_id)
+                .unwrap();
+            let prior = TestOrderEventStubs::filled(
+                &accepted_order,
+                instrument,
+                Some(TradeId::from("T-PRIOR")),
+                None,
+                Some(Price::from("90.00")),
+                Some(Quantity::from(10)),
+                Some(LiquiditySide::Taker),
+                Some(Money::from("0.09 USD")),
+                Some(UnixNanos::from(1_609_459_199_000_000_000)),
+                Some(account_id),
+            );
+            harness.exec_engine().borrow_mut().process(&prior);
+        }
+    }
+
+    fn commission_replay_event(
+        mut order: AxWsOrder,
+        execution: AxWsTradeExecution,
+        complete: bool,
+    ) -> AxWsOrderEvent {
+        order.o = if complete {
+            AxOrderStatus::Filled
+        } else {
+            AxOrderStatus::PartiallyFilled
+        };
+
+        let mut event: AxWsOrderEvent = serde_json::from_str(if complete {
+            include_str!("../test_data/ws_order_filled.json")
+        } else {
+            include_str!("../test_data/ws_order_partially_filled.json")
+        })
+        .unwrap();
+
+        match &mut event {
+            AxWsOrderEvent::Filled(message) => {
+                message.o = order;
+                message.xs = execution;
+            }
+            AxWsOrderEvent::PartiallyFilled(message) => {
+                message.o = order;
+                message.xs = execution;
+            }
+            _ => unreachable!(),
+        }
+
+        event
+    }
+
+    fn apply_commission_replay(
+        harness: &ExecutionHarness,
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        expected_accepted: usize,
+    ) {
+        let mut accepted = 0;
+        let mut filled = 0;
+
+        while let Ok(message) = rx.try_recv() {
+            match message {
+                ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+                    accepted += 1;
+                    harness
+                        .exec_engine()
+                        .borrow_mut()
+                        .process(&OrderEventAny::Accepted(event));
+                }
+                ExecutionEvent::Order(OrderEventAny::Filled(event)) => {
+                    assert_eq!(event.client_order_id, client_order_id);
+                    assert_eq!(event.venue_order_id, venue_order_id);
+                    assert_eq!(event.account_id, harness.account_id());
+                    assert_eq!(event.instrument_id, harness.instrument_id());
+                    assert_eq!(event.trade_id, TradeId::from("T-FEE-REPLAY"));
+                    assert_eq!(event.order_side, OrderSide::Buy);
+                    assert_eq!(event.last_qty.as_decimal(), dec!(25));
+                    assert_eq!(event.last_px.as_decimal(), dec!(80));
+                    assert_eq!(event.currency, Currency::USD());
+                    assert_eq!(event.commission, Some(Money::from("0.40 USD")));
+                    assert_eq!(event.liquidity_side, LiquiditySide::Maker);
+                    filled += 1;
+                    harness
+                        .exec_engine()
+                        .borrow_mut()
+                        .process(&OrderEventAny::Filled(event));
+                }
+                ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                    assert_eq!(report.trade_id, TradeId::from("T-FEE-REPLAY"));
+                    assert_eq!(report.venue_order_id, venue_order_id);
+                    assert_eq!(report.account_id, harness.account_id());
+                    assert_eq!(report.instrument_id, harness.instrument_id());
+                    assert_eq!(report.order_side, OrderSide::Buy);
+                    assert_eq!(report.last_qty.as_decimal(), dec!(25));
+                    assert_eq!(report.last_px.as_decimal(), dec!(80));
+                    assert_eq!(report.commission, Money::from("0.40 USD"));
+                    assert_eq!(report.liquidity_side, LiquiditySide::Maker);
+                    filled += 1;
+                    harness
+                        .exec_engine()
+                        .borrow_mut()
+                        .reconcile_fill_report(&report);
+                }
+                other => panic!("unexpected commission replay event: {other:?}"),
+            }
+        }
+
+        assert_eq!(accepted, expected_accepted);
+        assert_eq!(filled, 1);
+    }
+
+    fn assert_commission_replay_state(
+        harness: &ExecutionHarness,
+        client_order_id: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        prior_fill: bool,
+        complete: bool,
+    ) {
+        let cache = harness.cache().borrow();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(cached.venue_order_id(), Some(venue_order_id));
+        assert_eq!(
+            cached.status(),
+            if complete {
+                OrderStatus::Filled
+            } else {
+                OrderStatus::PartiallyFilled
+            }
+        );
+        assert_eq!(
+            cached.filled_qty(),
+            Quantity::from(if prior_fill { 35 } else { 25 })
+        );
+        assert_eq!(
+            cached.leaves_qty(),
+            Quantity::from(if complete { 0 } else { 25 })
+        );
+        assert_eq!(
+            cached.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from(if prior_fill {
+                "0.49 USD"
+            } else {
+                "0.40 USD"
+            })]
+        );
+
+        let expected_trades = if prior_fill {
+            vec![TradeId::from("T-PRIOR"), TradeId::from("T-FEE-REPLAY")]
+        } else {
+            vec![TradeId::from("T-FEE-REPLAY")]
+        };
+
+        assert_eq!(
+            cached.trade_ids().into_iter().copied().collect::<Vec<_>>(),
+            expected_trades
+        );
+        assert_eq!(
+            cached
+                .events()
+                .iter()
+                .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+                .count(),
+            usize::from(prior_fill) + 1
         );
     }
 

@@ -123,14 +123,14 @@ impl From<HttpMethod> for Method {
     }
 }
 
-/// The status, selected headers, and raw body returned by an HTTP request.
+/// The status, selected headers, and decoded body returned by a buffered HTTP request.
 #[derive(Clone, Debug)]
 pub struct HttpResponse {
     /// The HTTP status code.
     pub status: HttpStatus,
     /// The response headers as a map of key-value pairs.
     pub headers: HashMap<String, String>,
-    /// The raw response body.
+    /// The response body after HTTP content decoding.
     pub body: Bytes,
 }
 

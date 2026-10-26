@@ -237,6 +237,7 @@ fn gamma_market_with_slug(slug: &str, condition_id: &str, token_ids: [&str; 2]) 
         "id": "100001",
         "conditionId": condition_id,
         "questionID": "0xquestion_test",
+        "version": "v1",
         "clobTokenIds": format!("[\"{}\", \"{}\"]", token_ids[0], token_ids[1]),
         "outcomes": "[\"Yes\", \"No\"]",
         "outcomePrices": "[\"0.60\", \"0.40\"]",

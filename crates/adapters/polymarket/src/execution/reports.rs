@@ -46,8 +46,8 @@ use super::{
         FillContext, FillReportScope, ResolvedBalanceScope, TargetOrderReportScope,
         apply_fill_time_filters, apply_logical_order_quantity, build_fill_reports_from_trades,
         build_reconciliation_position_reports, build_target_order_report,
-        cap_order_report_filled_qty, normalize_terminal_order_report_quantity,
-        venue_leg_filled_before_and_quantity,
+        cap_order_report_filled_qty, filter_unsupported_orders, filter_unsupported_positions,
+        normalize_terminal_order_report_quantity, venue_leg_filled_before_and_quantity,
     },
     responses::confirm_modify_replacement,
 };
@@ -797,6 +797,16 @@ impl PolymarketExecutionClient {
         } else {
             self.config.reconciliation_load_ids()
         };
+
+        filter_unsupported_orders(
+            &self.http_client,
+            &mut orders,
+            &self.shared_token_instruments,
+            &ctx,
+            cmd.instrument_id,
+            collection_load_ids,
+        )
+        .await?;
         let (mut reports, _) = super::reconciliation::build_order_reports_from_orders(
             &orders,
             &self.shared_token_instruments,
@@ -1083,13 +1093,23 @@ impl PolymarketExecutionClient {
             "Session positions cannot be inferred from wallet-wide holdings"
         );
         let ctx = self.fill_context();
-        let positions = self
+        let mut positions = self
             .data_api_client
             .get_positions(ctx.user_address)
             .await
             .context("failed to fetch positions from Data API")?;
 
         let ts_now = self.clock.get_time_ns();
+        let resolved_balances = self.resolved_balance_scope();
+        filter_unsupported_positions(
+            &self.http_client,
+            &mut positions,
+            &self.shared_token_instruments,
+            cmd.instrument_id,
+            self.config.reconciliation_load_ids(),
+            &resolved_balances,
+        )
+        .await?;
         let reports = build_reconciliation_position_reports(
             &positions,
             self.core.account_id,
@@ -1097,7 +1117,7 @@ impl PolymarketExecutionClient {
             &self.shared_token_instruments,
             cmd.instrument_id,
             self.config.reconciliation_load_ids(),
-            &self.resolved_balance_scope(),
+            &resolved_balances,
         )?;
 
         log::debug!("Generated {} position status reports", reports.len());

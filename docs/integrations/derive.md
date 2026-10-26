@@ -300,7 +300,7 @@ and prioritize ongoing maintenance.
 | ------------------------------ | --------- | ----------------------------------------------------------------------- |
 | Request instrument (REST)      | ✓         | `public/get_instrument`; loads one instrument into the local cache.     |
 | Request all instruments (REST) | ✓         | Paginated `public/get_all_instruments` for each currency.               |
-| Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.              |
+| Instrument subscription        | -         | *Not supported.* Configure `currencies` for periodic REST refresh.      |
 | Order book deltas (L2_MBP)     | ✓         | Channel: `orderbook.{instrument}.{group}.{depth}`.                      |
 | Order book depth (L2_MBP)      | ✓         | Same order book channel with `depth=10`.                                |
 | Order book at interval         | -         | *Not supported.* Maintain interval books from deltas locally.           |
@@ -369,10 +369,12 @@ fields fail that currency's fetch. A fetch error during initial loading also fai
 
 Public REST history and WebSocket trades can return maker and taker rows under the same
 `trade_id`. Each row's `direction` is that participant's side. The adapter uses the taker's
-side as the aggressor direction and inverts a maker row's direction, independent of row order.
+side as the aggressor direction and inverts a maker row's direction. For maker/taker pairs,
+the result is independent of row order.
 Live v3 maker WebSocket row mapping remains unverified.
-For rows with an absent or unrecognized `liquidity_role`, the adapter treats `direction` as
-the taker's side.
+For rows with an absent `liquidity_role`, the adapter treats `direction` as the taker's side.
+It maps an unrecognized role to `AggressorSide::NoAggressor` and logs a warning
+with the trade and instrument identifiers.
 
 Historical trade requests emit one `TradeTick` per trade ID within the request. The live feed suppresses
 paired rows and reconnect replays while their IDs remain in a cache of the latest 4,096 trades. Automatic
@@ -823,6 +825,12 @@ responsible for observed order state.
 | ------------- | --------- | ------------- | ----------------------------------------------------------- |
 | `post_only`   | ✓         | `post_only`   | Requires `GTC`; rejects if the order would take liquidity.  |
 | `reduce_only` | ✓         | `reduce_only` | Perps and options, market or `IOC`/`FOK` only; spot denied. |
+| `display_qty` | -         | -             | *Not supported by Derive*.                                  |
+
+The adapter does not support iceberg instructions. Orders with `display_qty` set receive
+`OrderDenied` before submission, including conditional orders. If any leg sets `display_qty`,
+the adapter denies every leg before submitting any leg. Existing orders with `display_qty`
+can still be canceled; modifying them is rejected.
 
 #### Time in force
 
@@ -867,9 +875,14 @@ resting `GTC` or post-only limit with `reduce_only` is denied locally before sub
 Direct venue submissions fail with `11024 Reduce only not supported with this time in force`.
 
 :::warning
-A Nautilus bracket whose take-profit leg is a reduce-only `GTC` limit cannot rest on Derive:
-the entry and stop-loss legs submit, but the adapter denies the take-profit locally. Use a reduce-only
-`IOC`/`FOK` close or a non-reduce-only take-profit when targeting Derive.
+If any leg fails local list prevalidation, the adapter denies every leg before submitting any leg.
+Lists containing an order with a contingency type (`OTO`, `OCO`, or `OUO`), a parent order ID, or
+nonempty linked order IDs are denied in full, even when each leg's order terms are valid.
+
+Removing `reduce_only` from a `GTC` take-profit does not avoid this denial. Use
+[local order emulation](../concepts/orders/emulated.md), or submit orders individually and manage
+their activation, sibling cancellation, and quantity updates in the strategy. Independent unlinked
+lists remain supported.
 :::
 
 #### Order rejection semantics
@@ -1197,11 +1210,15 @@ Class/struct: `DeriveDataClientConfig`.
 | `ws_timeout_secs`                  | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
 | `book_snapshot_timeout_secs`       | `10`      | Snapshot wait in seconds; `0` disables deadlines.                                           |
 | `book_stale_threshold_secs`        | `120`     | Seconds without an advancing snapshot before recovery; `0` disables this timer.             |
-| `update_instruments_interval_mins` | `60`      | Interval in minutes between instrument refreshes.                                           |
+| `update_instruments_interval_mins` | `60`      | Instrument refresh interval in minutes; `0` disables periodic refresh.                      |
 | `currencies`                       | `[]`      | Currencies to bulk-load on connect. Empty means lazy-load on demand.                        |
 | `include_expired`                  | `false`   | Merge live and expired option listings from `public/get_all_instruments`.                   |
 | `auto_load_missing_instruments`    | `true`    | Lazy-load an unknown instrument before sending a subscribe request.                         |
-| `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                   |
+
+The data client refreshes instrument definitions for configured currencies after each refresh interval
+and publishes them, including new listings. A failed refresh leaves cached definitions available and
+retries at the next interval. Empty `currencies` disables periodic refresh.
 
 :::important
 **`auto_load_missing_instruments` covers subscribe commands only.** Before requesting quotes,
@@ -1236,13 +1253,13 @@ Class/struct: `DeriveExecutionClientConfig`.
 | `environment`            | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                        |
 | `http_timeout_secs`      | `10`      | REST request timeout in seconds.                                                            |
 | `ws_timeout_secs`        | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
-| `transport_backend`      | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
+| `transport_backend`      | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                   |
 | `max_retries`            | `3`       | Retry attempts for idempotent REST reads. Order writes are sent once and never replayed.    |
 | `retry_delay_initial_ms` | `100`     | Initial retry delay in milliseconds.                                                        |
 | `retry_delay_max_ms`     | `5,000`   | Maximum backoff delay in milliseconds.                                                      |
 
-The default transport falls back to `Tungstenite` when the build disables the
-`transport-sockudo` feature.
+The adapter always enables `nautilus-network/transport-sockudo`. Set `transport_backend`
+to `Tungstenite` to select the alternative backend.
 
 For HTTP reads, `Retry-After` sets a minimum delay that can exceed `retry_delay_max_ms`.
 If that delay does not fit within the remaining 180-second retry budget, the client returns the

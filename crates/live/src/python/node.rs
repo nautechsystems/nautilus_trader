@@ -1422,119 +1422,7 @@ impl PyLiveNode {
         _py: Python,
         config: ImportableStrategyConfig,
     ) -> PyResult<()> {
-        log::debug!("`add_strategy_from_config` with: {config:?}");
-
-        // Extract module and class name from strategy_path
-        let parts: Vec<&str> = config.strategy_path.split(':').collect();
-        if parts.len() != 2 {
-            return Err(to_pyvalue_err(
-                "strategy_path must be in format 'module.path:ClassName'",
-            ));
-        }
-
-        let (module_name, class_name) = (parts[0], parts[1]);
-
-        log::info!("Importing strategy from module: {module_name} class: {class_name}");
-
-        // Phase 1: Create the Python strategy, then prepare it for registration so the strategy ID,
-        // order ID tag, and logging flags are sourced from the same config as the instance path
-        let python_strategy = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
-            let strategy_module = py
-                .import(module_name)
-                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-            let strategy_class = strategy_module
-                .getattr(class_name)
-                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
-
-            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
-
-            let python_strategy = if let Some(config_obj) = config_instance {
-                strategy_class.call1((config_obj,))?
-            } else {
-                strategy_class.call0()?
-            };
-
-            log::debug!("Created Python strategy instance: {python_strategy:?}");
-
-            Ok(python_strategy.unbind())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        let strategy_id = self
-            .node_mut()?
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .prepare_python_strategy_instance(&python_strategy)
-            .map_err(to_pyruntime_err)?;
-
-        Python::attach(|py| -> anyhow::Result<()> {
-            let bound = python_strategy.bind(py);
-            let config_obj = bound
-                .getattr("config")
-                .ok()
-                .filter(|config| !config.is_none());
-
-            let mut py_strategy_ref = bound
-                .extract::<PyRefMut<PyStrategy>>()
-                .map_err(Into::<PyErr>::into)
-                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-            if let Some(config_obj) = config_obj.as_ref()
-                && let Some(claims) = extract_external_order_instrument_ids_config_attr(config_obj)?
-            {
-                py_strategy_ref.set_external_order_instrument_ids(Some(claims));
-            }
-
-            Ok(())
-        })
-        .map_err(to_pyruntime_err)?;
-
-        // Phase 2: Claim external orders before committing, matching the instance path
-        let external_order_instrument_ids =
-            Python::attach(|py| -> anyhow::Result<Option<Vec<_>>> {
-                let py_strategy = python_strategy.bind(py);
-                let py_strategy_ref = py_strategy
-                    .extract::<PyRef<PyStrategy>>()
-                    .map_err(Into::<PyErr>::into)
-                    .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
-
-                Ok(py_strategy_ref.external_order_instrument_ids())
-            })
-            .map_err(to_pyruntime_err)?;
-
-        let external_order_instrument_ids =
-            external_order_instrument_ids.filter(|claims| !claims.is_empty());
-        if let Some(claims) = &external_order_instrument_ids {
-            self.node_mut()?
-                .register_external_order_claims(strategy_id, claims)
-                .map_err(to_pyruntime_err)?;
-        }
-
-        // Phase 3: Register the strategy through the trader's single Python registration path
-        let commit_result = self
-            .node_mut()?
-            .kernel_mut()
-            .trader
-            .borrow_mut()
-            .commit_python_strategy_instance(&python_strategy);
-
-        if let Err(commit_error) = commit_result {
-            if let Some(instrument_ids) = external_order_instrument_ids.as_deref()
-                && let Err(rollback_error) = self
-                    .node_mut()?
-                    .rollback_external_order_claims(strategy_id, instrument_ids)
-            {
-                return Err(to_pyruntime_err(format!(
-                    "Failed to add strategy {strategy_id}: {commit_error}; failed to roll back external order claims: {rollback_error}"
-                )));
-            }
-
-            return Err(to_pyruntime_err(commit_error));
-        }
-
-        log::info!("Registered Python strategy {strategy_id}");
-        Ok(())
+        self.node_mut()?.add_python_strategy_from_config(&config)
     }
 
     /// Adds an execution algorithm to the trader.
@@ -1558,7 +1446,6 @@ impl PyLiveNode {
         log::debug!("`add_exec_algorithm` with a constructed instance");
 
         let exec_algorithm = exec_algorithm.clone().unbind();
-
         let py_exec_algorithm = Python::attach(|py| -> anyhow::Result<PyExecutionAlgorithm> {
             let bound = exec_algorithm.bind(py);
             let config = bound
@@ -1603,136 +1490,8 @@ impl PyLiveNode {
         _py: Python,
         config: ImportableExecutionAlgorithmConfig,
     ) -> PyResult<()> {
-        if self.node()?.is_running() {
-            return Err(to_pyruntime_err(
-                "Cannot add exec algorithm while node is running",
-            ));
-        }
-
-        log::debug!("`add_exec_algorithm_from_config` with: {config:?}");
-
-        let parts: Vec<&str> = config.exec_algorithm_path.split(':').collect();
-        if parts.len() != 2 {
-            return Err(to_pyvalue_err(
-                "exec_algorithm_path must be in format 'module.path:ClassName'",
-            ));
-        }
-
-        let (module_name, class_name) = (parts[0], parts[1]);
-
-        log::info!("Importing exec algorithm from module: {module_name} class: {class_name}");
-
-        // Phase 1: Create and configure the Python exec algorithm.
-        let (python_exec_algorithm, py_execution_algorithm, actor_id) = Python::attach(
-            |py| -> anyhow::Result<(Py<PyAny>, Option<PyExecutionAlgorithm>, ActorId)> {
-                let algo_module = py
-                    .import(module_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
-                let algo_class = algo_module
-                    .getattr(class_name)
-                    .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
-
-                let config_instance =
-                    create_config_instance(py, &config.config_path, &config.config)?;
-
-                let python_exec_algorithm = if let Some(config_obj) = config_instance.clone() {
-                    algo_class.call1((config_obj,))?
-                } else {
-                    algo_class.call0()?
-                };
-
-                log::debug!("Created Python exec algorithm instance: {python_exec_algorithm:?}");
-
-                if let Ok(mut py_exec_algorithm_ref) =
-                    python_exec_algorithm.extract::<PyRefMut<PyExecutionAlgorithm>>()
-                {
-                    if let Some(config_obj) = config_instance.as_ref() {
-                        py_exec_algorithm_ref.configure_from_py_config(config_obj)?;
-                    }
-
-                    py_exec_algorithm_ref.set_python_instance(&python_exec_algorithm)?;
-                    let actor_id = ActorId::new(py_exec_algorithm_ref.exec_algorithm_id().inner());
-
-                    return Ok((
-                        python_exec_algorithm.unbind(),
-                        Some(py_exec_algorithm_ref.clone()),
-                        actor_id,
-                    ));
-                }
-
-                let mut py_data_actor_ref = python_exec_algorithm
-                    .extract::<PyRefMut<PyDataActor>>()
-                    .map_err(Into::<PyErr>::into)
-                    .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
-
-                // Extract ID from config: prefer exec_algorithm_id, fall back to actor_id
-                if let Some(config_obj) = config_instance.as_ref() {
-                    let id_attr = config_obj
-                        .getattr("exec_algorithm_id")
-                        .ok()
-                        .filter(|v| !v.is_none())
-                        .or_else(|| config_obj.getattr("actor_id").ok().filter(|v| !v.is_none()));
-
-                    if let Some(id_value) = id_attr {
-                        let actor_id_val = if let Ok(eaid) = id_value.extract::<ExecAlgorithmId>() {
-                            ActorId::new(eaid.inner())
-                        } else if let Ok(aid) = id_value.extract::<ActorId>() {
-                            aid
-                        } else if let Ok(aid_str) = id_value.extract::<String>() {
-                            ActorId::new_checked(&aid_str)?
-                        } else {
-                            anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type");
-                        };
-
-                        py_data_actor_ref.set_actor_id(actor_id_val);
-                    }
-
-                    if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
-                        py_data_actor_ref.set_log_events(val);
-                    }
-
-                    if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
-                        py_data_actor_ref.set_log_commands(val);
-                    }
-                }
-
-                py_data_actor_ref.set_python_instance(&python_exec_algorithm)?;
-
-                let actor_id = py_data_actor_ref.actor_id();
-
-                Ok((python_exec_algorithm.unbind(), None, actor_id))
-            },
-        )
-        .map_err(to_pyruntime_err)?;
-
-        let exec_algorithm_id = if let Some(py_execution_algorithm) = py_execution_algorithm {
-            // This branch registered through `LiveNode::add_exec_algorithm` before the trader owned
-            // the path, so it keeps that method's stricter state requirement
-            if self.node()?.state() != NodeState::Idle {
-                return Err(to_pyruntime_err(
-                    "Cannot add exec algorithm while node is running, add exec algorithms before running the node",
-                ));
-            }
-
-            self.node_mut()?
-                .kernel_mut()
-                .trader
-                .borrow_mut()
-                .add_py_execution_algorithm_instance(py_execution_algorithm, &python_exec_algorithm)
-                .map_err(to_pyruntime_err)?
-        } else {
-            // Phase 2: Register the DataActor-backed algorithm through the trader's single Python
-            // registration path
-            self.node_mut()?
-                .kernel_mut()
-                .trader
-                .borrow_mut()
-                .add_python_exec_algorithm_instance(&python_exec_algorithm, actor_id)
-                .map_err(to_pyruntime_err)?
-        };
-
-        log::info!("Registered Python exec algorithm {exec_algorithm_id}");
-        Ok(())
+        self.node_mut()?
+            .add_python_exec_algorithm_from_config(&config)
     }
 
     /// Loads and registers one plug-in instance.
@@ -1806,6 +1565,206 @@ impl PyLiveNode {
             ),
             self.py_is_running()
         )
+    }
+}
+
+impl LiveNode {
+    // panics-doc-ok
+    /// Imports and registers a Python strategy before the node starts.
+    ///
+    /// Uses the same registration and external order claims as Python's
+    /// `LiveNode.add_strategy_from_config` method.
+    /// Requires an initialized Python interpreter with the strategy and configuration
+    /// modules on its import path.
+    ///
+    /// # Panics
+    ///
+    /// Panics if Python has not been initialized.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node is not idle.
+    /// - The strategy or configuration path is invalid.
+    /// - Python import, construction, or registration fails.
+    pub fn add_python_strategy_from_config(
+        &mut self,
+        config: &ImportableStrategyConfig,
+    ) -> PyResult<()> {
+        if self.state() != NodeState::Idle {
+            return Err(to_pyruntime_err(
+                "Cannot add strategy while node is running, add strategies before running the node",
+            ));
+        }
+
+        log::debug!("`add_strategy_from_config` with: {config:?}");
+
+        // Extract module and class name from strategy_path
+        let parts: Vec<&str> = config.strategy_path.split(':').collect();
+        if parts.len() != 2 {
+            return Err(to_pyvalue_err(
+                "strategy_path must be in format 'module.path:ClassName'",
+            ));
+        }
+
+        let (module_name, class_name) = (parts[0], parts[1]);
+
+        log::info!("Importing strategy from module: {module_name} class: {class_name}");
+
+        // Phase 1: Create the Python strategy, then prepare it for registration so the strategy ID,
+        // order ID tag, and logging flags are sourced from the same config as the instance path
+        let python_strategy = Python::attach(|py| -> anyhow::Result<Py<PyAny>> {
+            let strategy_module = py
+                .import(module_name)
+                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+            let strategy_class = strategy_module
+                .getattr(class_name)
+                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+
+            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
+
+            let python_strategy = if let Some(config_obj) = config_instance {
+                strategy_class.call1((config_obj,))?
+            } else {
+                strategy_class.call0()?
+            };
+
+            log::debug!("Created Python strategy instance: {python_strategy:?}");
+
+            Ok(python_strategy.unbind())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        let strategy_id = self
+            .kernel_mut()
+            .trader
+            .borrow_mut()
+            .prepare_python_strategy_instance(&python_strategy)
+            .map_err(to_pyruntime_err)?;
+
+        Python::attach(|py| -> anyhow::Result<()> {
+            let bound = python_strategy.bind(py);
+            let config_obj = bound
+                .getattr("config")
+                .ok()
+                .filter(|config| !config.is_none());
+
+            let mut py_strategy_ref = bound
+                .extract::<PyRefMut<PyStrategy>>()
+                .map_err(Into::<PyErr>::into)
+                .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+            if let Some(config_obj) = config_obj.as_ref()
+                && let Some(claims) = extract_external_order_instrument_ids_config_attr(config_obj)?
+            {
+                py_strategy_ref.set_external_order_instrument_ids(Some(claims));
+            }
+
+            Ok(())
+        })
+        .map_err(to_pyruntime_err)?;
+
+        // Phase 2: Claim external orders before committing, matching the instance path
+        let external_order_instrument_ids =
+            Python::attach(|py| -> anyhow::Result<Option<Vec<_>>> {
+                let py_strategy = python_strategy.bind(py);
+                let py_strategy_ref = py_strategy
+                    .extract::<PyRef<PyStrategy>>()
+                    .map_err(Into::<PyErr>::into)
+                    .map_err(|e| anyhow::anyhow!("Failed to extract PyStrategy: {e}"))?;
+
+                Ok(py_strategy_ref.external_order_instrument_ids())
+            })
+            .map_err(to_pyruntime_err)?;
+
+        let external_order_instrument_ids =
+            external_order_instrument_ids.filter(|claims| !claims.is_empty());
+        if let Some(claims) = &external_order_instrument_ids {
+            self.register_external_order_claims(strategy_id, claims)
+                .map_err(to_pyruntime_err)?;
+        }
+
+        // Phase 3: Register the strategy through the trader's single Python registration path
+        let commit_result = self
+            .kernel_mut()
+            .trader
+            .borrow_mut()
+            .commit_python_strategy_instance(&python_strategy);
+
+        if let Err(commit_error) = commit_result {
+            if let Some(instrument_ids) = external_order_instrument_ids.as_deref()
+                && let Err(rollback_error) =
+                    self.rollback_external_order_claims(strategy_id, instrument_ids)
+            {
+                return Err(to_pyruntime_err(format!(
+                    "Failed to add strategy {strategy_id}: {commit_error}; failed to roll back external order claims: {rollback_error}"
+                )));
+            }
+
+            return Err(to_pyruntime_err(commit_error));
+        }
+
+        log::info!("Registered Python strategy {strategy_id}");
+        Ok(())
+    }
+
+    // panics-doc-ok
+    /// Imports and registers a Python execution algorithm.
+    ///
+    /// Uses the same registration as Python's `LiveNode.add_exec_algorithm_from_config`,
+    /// including `DataActor`-backed algorithms. The caller initializes Python and makes the
+    /// algorithm and configuration modules importable before calling this method.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The node is running, or the class derives from `ExecutionAlgorithm` and the node is not idle.
+    /// - An import path is invalid, or importing, construction, configuration, or registration fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics if Python has not been initialized.
+    pub fn add_python_exec_algorithm_from_config(
+        &mut self,
+        config: &ImportableExecutionAlgorithmConfig,
+    ) -> PyResult<()> {
+        if self.is_running() {
+            return Err(to_pyruntime_err(
+                "Cannot add exec algorithm while node is running",
+            ));
+        }
+
+        log::debug!("`add_exec_algorithm_from_config` with: {config:?}");
+
+        let (python_exec_algorithm, py_execution_algorithm, actor_id) =
+            create_python_exec_algorithm(config)?;
+
+        let exec_algorithm_id = if let Some(py_execution_algorithm) = py_execution_algorithm {
+            // This branch registered through `LiveNode::add_exec_algorithm` before the trader owned
+            // the path, so it keeps that method's stricter state requirement
+            if self.state() != NodeState::Idle {
+                return Err(to_pyruntime_err(
+                    "Cannot add exec algorithm while node is running, add exec algorithms before running the node",
+                ));
+            }
+
+            self.kernel_mut()
+                .trader
+                .borrow_mut()
+                .add_py_execution_algorithm_instance(py_execution_algorithm, &python_exec_algorithm)
+                .map_err(to_pyruntime_err)?
+        } else {
+            // Phase 2: Register the DataActor-backed algorithm through the trader's single Python
+            // registration path
+            self.kernel_mut()
+                .trader
+                .borrow_mut()
+                .add_python_exec_algorithm_instance(&python_exec_algorithm, actor_id)
+                .map_err(to_pyruntime_err)?
+        };
+
+        log::info!("Registered Python exec algorithm {exec_algorithm_id}");
+        Ok(())
     }
 }
 
@@ -1901,6 +1860,120 @@ fn stop_live_node_detached(py: Python<'_>, node: &mut LiveNode) -> PyResult<()> 
         })
     }
     .map_err(to_pyruntime_err)
+}
+
+fn create_python_exec_algorithm(
+    config: &ImportableExecutionAlgorithmConfig,
+) -> PyResult<(Py<PyAny>, Option<PyExecutionAlgorithm>, ActorId)> {
+    let parts: Vec<&str> = config.exec_algorithm_path.split(':').collect();
+    if parts.len() != 2 {
+        return Err(to_pyvalue_err(
+            "exec_algorithm_path must be in format 'module.path:ClassName'",
+        ));
+    }
+
+    let (module_name, class_name) = (parts[0], parts[1]);
+
+    log::info!("Importing exec algorithm from module: {module_name} class: {class_name}");
+
+    // Phase 1: Create and configure the Python exec algorithm.
+    Python::attach(
+        |py| -> anyhow::Result<(Py<PyAny>, Option<PyExecutionAlgorithm>, ActorId)> {
+            let algo_module = py
+                .import(module_name)
+                .map_err(|e| anyhow::anyhow!("Failed to import module {module_name}: {e}"))?;
+            let algo_class = algo_module
+                .getattr(class_name)
+                .map_err(|e| anyhow::anyhow!("Failed to get class {class_name}: {e}"))?;
+
+            let config_instance = create_config_instance(py, &config.config_path, &config.config)?;
+
+            let python_exec_algorithm = if let Some(config_obj) = config_instance.clone() {
+                algo_class.call1((config_obj,))?
+            } else {
+                algo_class.call0()?
+            };
+
+            log::debug!("Created Python exec algorithm instance: {python_exec_algorithm:?}");
+
+            let (prepared, actor_id) =
+                prepare_python_exec_algorithm(&python_exec_algorithm, config_instance.as_ref())?;
+            Ok((python_exec_algorithm.unbind(), prepared, actor_id))
+        },
+    )
+    .map_err(to_pyruntime_err)
+}
+
+fn prepare_python_exec_algorithm(
+    algorithm: &Bound<'_, PyAny>,
+    config: Option<&Bound<'_, PyAny>>,
+) -> anyhow::Result<(Option<PyExecutionAlgorithm>, ActorId)> {
+    if let Ok(mut py_exec_algorithm_ref) = algorithm.extract::<PyRefMut<PyExecutionAlgorithm>>() {
+        if let Some(config_obj) = config {
+            py_exec_algorithm_ref.configure_from_py_config(config_obj)?;
+        }
+
+        py_exec_algorithm_ref.set_python_instance(algorithm)?;
+        let actor_id = ActorId::new(py_exec_algorithm_ref.exec_algorithm_id().inner());
+
+        return Ok((Some(py_exec_algorithm_ref.clone()), actor_id));
+    }
+
+    let mut py_data_actor_ref = algorithm
+        .extract::<PyRefMut<PyDataActor>>()
+        .map_err(Into::<PyErr>::into)
+        .map_err(|e| anyhow::anyhow!("Failed to extract PyDataActor: {e}"))?;
+
+    // Extract ID from config: prefer exec_algorithm_id, fall back to actor_id
+    if let Some(config_obj) = config {
+        if let Some(actor_id) = extract_exec_algorithm_actor_id(config_obj)? {
+            py_data_actor_ref.set_actor_id(actor_id);
+        }
+
+        if let Some(val) = extract_bool_config_attr(config_obj, "log_events") {
+            py_data_actor_ref.set_log_events(val);
+        }
+
+        if let Some(val) = extract_bool_config_attr(config_obj, "log_commands") {
+            py_data_actor_ref.set_log_commands(val);
+        }
+    }
+
+    py_data_actor_ref.set_python_instance(algorithm)?;
+
+    let actor_id = py_data_actor_ref.actor_id();
+
+    Ok((None, actor_id))
+}
+
+fn extract_exec_algorithm_actor_id(config: &Bound<'_, PyAny>) -> anyhow::Result<Option<ActorId>> {
+    let Some(value) = config
+        .getattr("exec_algorithm_id")
+        .ok()
+        .filter(|value| !value.is_none())
+        .or_else(|| {
+            config
+                .getattr("actor_id")
+                .ok()
+                .filter(|value| !value.is_none())
+        })
+    else {
+        return Ok(None);
+    };
+
+    if let Ok(id) = value.extract::<ExecAlgorithmId>() {
+        return Ok(Some(ActorId::new(id.inner())));
+    }
+
+    if let Ok(id) = value.extract::<ActorId>() {
+        return Ok(Some(id));
+    }
+
+    if let Ok(id) = value.extract::<String>() {
+        return Ok(Some(ActorId::new_checked(&id)?));
+    }
+
+    anyhow::bail!("Invalid `exec_algorithm_id`/`actor_id` type")
 }
 
 /// Creates a Python config instance from a config path and config dictionary.
@@ -2709,7 +2782,7 @@ mod tests {
         any::Any,
         cell::RefCell,
         collections::HashMap,
-        ffi::CString,
+        ffi::{CStr, CString},
         fmt::Debug,
         rc::Rc,
         sync::{
@@ -2745,7 +2818,7 @@ mod tests {
         },
         python::{
             actor::PyDataActor, cache::get_global_cache_database_factory_registry,
-            msgbus::get_global_msgbus_factory_registry,
+            msgbus::get_global_msgbus_factory_registry, wrappers::get_python_wrapper,
         },
         runner::{TradingCommandMessage, get_trading_cmd_sender},
     };
@@ -2755,7 +2828,8 @@ mod tests {
         data::{Bar, BarType},
         enums::{OmsType, OrderStatus, OrderType},
         identifiers::{
-            AccountId, ActorId, ClientId, InstrumentId, PositionId, StrategyId, TraderId, Venue,
+            AccountId, ActorId, ClientId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
+            TraderId, Venue,
         },
         instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
         orders::{Order, OrderTestBuilder},
@@ -2763,8 +2837,8 @@ mod tests {
     };
     use nautilus_testkit::cache::{TestCacheDatabase, TestCacheDatabaseControl};
     use nautilus_trading::{
-        ImportableStrategyConfig, nautilus_strategy,
-        python::strategy::PyStrategy,
+        ImportableExecutionAlgorithmConfig, ImportableStrategyConfig, nautilus_strategy,
+        python::{algorithm::PyExecutionAlgorithm, strategy::PyStrategy},
         strategy::{StrategyConfig, StrategyCore},
     };
     use parking_lot::Mutex;
@@ -2777,9 +2851,10 @@ mod tests {
 
     use super::{
         BUILDER_OPERATION_IN_PROGRESS, LiveNode, PyLiveNode, PyLiveNodeBuilder,
-        PyLiveNodeBuilderState, finish_owned_run, get_global_pyo3_registry,
+        PyLiveNodeBuilderState, extract_exec_algorithm_actor_id, finish_owned_run,
+        get_global_pyo3_registry,
     };
-    use crate::node::config::RoutingConfig;
+    use crate::node::{NodeState, config::RoutingConfig};
 
     #[rstest]
     fn test_owned_run_cleanup_preserves_all_errors(
@@ -3879,6 +3954,7 @@ def add_data_client():
         }
 
         fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+            let bar_type = request.single_bar_type()?;
             self.request_count.fetch_add(1, Ordering::Relaxed);
 
             if get_message_bus()
@@ -3896,8 +3972,8 @@ def add_data_client():
             let response = BarsResponse::new(
                 request.request_id,
                 client_id,
-                request.bar_type,
-                vec![Self::make_bar(request.bar_type)],
+                bar_type,
+                vec![Self::make_bar(bar_type)],
                 None,
                 None,
                 UnixNanos::from(1_700_000_000_000_000_002u64),
@@ -4919,7 +4995,9 @@ class ClaimsStrategy(Strategy):
     }
 
     #[rstest]
-    fn test_add_strategy_from_config_registers_external_order_instrument_ids() {
+    #[case::python(false)]
+    #[case::rust(true)]
+    fn test_add_strategy_from_config_registers_external_order_instrument_ids(#[case] rust: bool) {
         Python::initialize();
 
         let module_name = "test_live_node_claim_strategy";
@@ -4952,14 +5030,31 @@ class ClaimsStrategy(Strategy):
             config,
         };
 
-        Python::attach(|py| {
-            node.py_add_strategy_from_config(py, importable)
+        if rust {
+            node.node_mut()
+                .unwrap()
+                .add_python_strategy_from_config(&importable)
                 .expect("strategy should register");
-        });
+        } else {
+            Python::attach(|py| {
+                node.py_add_strategy_from_config(py, importable)
+                    .expect("strategy should register");
+            });
+        }
 
         {
             let guard = node.node_mut().unwrap();
             let exec_engine = guard.kernel().exec_engine.borrow();
+            assert_eq!(
+                guard.kernel().trader.borrow().strategy_ids(),
+                vec![strategy_id]
+            );
+            assert_eq!(
+                guard
+                    .exec_manager()
+                    .get_external_order_claim(&instrument_id),
+                Some(strategy_id)
+            );
             assert_eq!(
                 exec_engine.get_external_order_claim(&instrument_id),
                 Some(strategy_id)
@@ -4978,6 +5073,416 @@ class ClaimsStrategy(Strategy):
                 .unwrap_err()
                 .to_string()
                 .contains("already exists for CLAIMS-001")
+        );
+    }
+
+    #[rstest]
+    #[case::rust_native(true, "NativeAlgorithm")]
+    #[case::python_native(false, "NativeAlgorithm")]
+    #[case::rust_actor(true, "ActorAlgorithm")]
+    #[case::python_actor(false, "ActorAlgorithm")]
+    fn test_add_exec_algorithm_from_config_registers_id(
+        #[case] rust: bool,
+        #[case] class: &str,
+        #[values(false, true)] log_events: bool,
+    ) {
+        Python::initialize();
+        let name = "test_live_importable_exec_algorithm";
+        Python::attach(|py| install_exec_algorithm_module(py, name));
+        let node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .map(PyLiveNode::new)
+            .unwrap();
+
+        let config = ImportableExecutionAlgorithmConfig {
+            exec_algorithm_path: format!("{name}:{class}"),
+            config_path: format!("{name}:AlgorithmConfig"),
+            config: HashMap::from([
+                (
+                    "exec_algorithm_id".to_string(),
+                    serde_json::json!("HOST-ALGO"),
+                ),
+                ("actor_id".to_string(), serde_json::json!("FALLBACK-ACTOR")),
+                ("log_events".to_string(), serde_json::json!(log_events)),
+                ("log_commands".to_string(), serde_json::json!(!log_events)),
+            ]),
+        };
+
+        let register = || {
+            if rust {
+                node.node_mut()
+                    .unwrap()
+                    .add_python_exec_algorithm_from_config(&config)
+            } else {
+                Python::attach(|py| node.py_add_exec_algorithm_from_config(py, config.clone()))
+            }
+        };
+
+        register().unwrap();
+        let error = register().unwrap_err();
+
+        let flags = Python::attach(|py| {
+            let wrapper = get_python_wrapper(ExecAlgorithmId::from("HOST-ALGO").into()).unwrap();
+            if class == "NativeAlgorithm" {
+                let algorithm = wrapper.extract::<PyRef<PyExecutionAlgorithm>>(py).unwrap();
+                let config = DataActor::config(&*algorithm);
+                (config.log_events, config.log_commands)
+            } else {
+                let actor = wrapper.extract::<PyRef<PyDataActor>>(py).unwrap();
+                let config = &actor.config;
+                (config.log_events, config.log_commands)
+            }
+        });
+
+        let guard = node.node_mut().unwrap();
+        let mut trader = guard.kernel().trader().borrow_mut();
+        trader.start_components().unwrap();
+        trader.stop_components().unwrap();
+
+        let callbacks = Python::attach(|py| {
+            py.import(name)
+                .unwrap()
+                .getattr("callbacks")
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap()
+        });
+
+        assert_eq!(
+            trader.exec_algorithm_ids(),
+            vec![ExecAlgorithmId::from("HOST-ALGO")]
+        );
+        assert!(trader.actor_ids().is_empty());
+        assert_eq!(
+            error.to_string(),
+            "RuntimeError: Execution algorithm 'HOST-ALGO' is already registered"
+        );
+        assert_eq!(callbacks, vec!["start", "stop"]);
+        assert_eq!(flags, (log_events, !log_events));
+    }
+
+    #[rstest]
+    fn test_add_python_exec_algorithm_from_config_rejects_invalid_path() {
+        Python::initialize();
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+
+        let config = ImportableExecutionAlgorithmConfig {
+            exec_algorithm_path: "missing_separator".to_string(),
+            config_path: String::new(),
+            config: HashMap::new(),
+        };
+
+        let error = node
+            .add_python_exec_algorithm_from_config(&config)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "ValueError: exec_algorithm_path must be in format 'module.path:ClassName'"
+        );
+        assert!(
+            node.kernel()
+                .trader()
+                .borrow()
+                .exec_algorithm_ids()
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    #[case::native("NativeAlgorithm", false)]
+    #[case::actor("ActorAlgorithm", true)]
+    fn test_add_exec_algorithm_from_config_preserves_non_idle_registration(
+        #[case] class: &str,
+        #[case] accepted: bool,
+    ) {
+        Python::initialize();
+        let name = "test_non_idle_exec_algorithm";
+        Python::attach(|py| install_exec_algorithm_module(py, name));
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        node.handle().set_starting();
+
+        let config = ImportableExecutionAlgorithmConfig {
+            exec_algorithm_path: format!("{name}:{class}"),
+            config_path: format!("{name}:AlgorithmConfig"),
+            config: HashMap::from([("actor_id".to_string(), serde_json::json!("ACTOR-FALLBACK"))]),
+        };
+
+        let result = node.add_python_exec_algorithm_from_config(&config);
+        let ids = node.kernel().trader().borrow().exec_algorithm_ids();
+
+        assert_eq!(node.state(), NodeState::Starting);
+
+        if accepted {
+            result.unwrap();
+            assert_eq!(ids, vec![ExecAlgorithmId::from("ACTOR-FALLBACK")]);
+        } else {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "RuntimeError: Cannot add exec algorithm while node is running, add exec algorithms before running the node"
+            );
+            assert!(ids.is_empty());
+        }
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "current_thread")]
+    async fn test_add_exec_algorithm_from_config_rejects_running_before_import() {
+        Python::initialize();
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+
+        let config = ImportableExecutionAlgorithmConfig {
+            exec_algorithm_path: "must_not_import:Algorithm".to_string(),
+            config_path: String::new(),
+            config: HashMap::new(),
+        };
+
+        node.start().await.unwrap();
+        let running_state = node.state();
+
+        let error = node
+            .add_python_exec_algorithm_from_config(&config)
+            .unwrap_err();
+        let ids = node.kernel().trader().borrow().exec_algorithm_ids();
+        node.stop().await.unwrap();
+
+        assert_eq!(running_state, NodeState::Running);
+        assert_eq!(
+            error.to_string(),
+            "RuntimeError: Cannot add exec algorithm while node is running"
+        );
+        assert!(ids.is_empty());
+        assert_eq!(node.state(), NodeState::Stopped);
+    }
+
+    #[rstest]
+    #[case::native("NoConfigNativeAlgorithm")]
+    #[case::actor("NoConfigActorAlgorithm")]
+    fn test_add_exec_algorithm_from_config_without_config(#[case] class: &str) {
+        Python::initialize();
+        let name = "test_no_config_exec_algorithm";
+        Python::attach(|py| install_exec_algorithm_module(py, name));
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+
+        let config = ImportableExecutionAlgorithmConfig {
+            exec_algorithm_path: format!("{name}:{class}"),
+            config_path: String::new(),
+            config: HashMap::new(),
+        };
+
+        node.add_python_exec_algorithm_from_config(&config).unwrap();
+
+        assert_eq!(
+            node.kernel().trader().borrow().exec_algorithm_ids(),
+            vec![ExecAlgorithmId::from(class)]
+        );
+        assert!(node.kernel().trader().borrow().actor_ids().is_empty());
+    }
+
+    #[rstest]
+    #[case::exec_id(c_str!("ExecAlgorithmId('PRIMARY')"), c_str!("ActorId('SECONDARY')"), Ok(Some("PRIMARY")))]
+    #[case::actor_id(c_str!("ActorId('PRIMARY')"), c_str!("None"), Ok(Some("PRIMARY")))]
+    #[case::string_id(c_str!("'PRIMARY'"), c_str!("None"), Ok(Some("PRIMARY")))]
+    #[case::fallback(c_str!("None"), c_str!("ActorId('SECONDARY')"), Ok(Some("SECONDARY")))]
+    #[case::no_id(c_str!("None"), c_str!("None"), Ok(None))]
+    #[case::invalid(c_str!("42"), c_str!("ActorId('SECONDARY')"), Err("Invalid `exec_algorithm_id`/`actor_id` type"))]
+    fn test_extract_exec_algorithm_actor_id(
+        #[case] primary: &CStr,
+        #[case] fallback: &CStr,
+        #[case] expected: Result<Option<&str>, &str>,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let globals = PyDict::new(py);
+            globals
+                .set_item("ExecAlgorithmId", py.get_type::<ExecAlgorithmId>())
+                .unwrap();
+            globals
+                .set_item("ActorId", py.get_type::<ActorId>())
+                .unwrap();
+            let config = py
+                .import("types")
+                .unwrap()
+                .getattr("SimpleNamespace")
+                .unwrap()
+                .call0()
+                .unwrap();
+            config
+                .setattr(
+                    "exec_algorithm_id",
+                    py.eval(primary, Some(&globals), None).unwrap(),
+                )
+                .unwrap();
+            config
+                .setattr("actor_id", py.eval(fallback, Some(&globals), None).unwrap())
+                .unwrap();
+
+            let actual = extract_exec_algorithm_actor_id(&config)
+                .map(|id| id.map(|id| id.to_string()))
+                .map_err(|e| e.to_string());
+
+            assert_eq!(
+                actual,
+                expected
+                    .map(|id| id.map(str::to_string))
+                    .map_err(str::to_string)
+            );
+        });
+    }
+
+    fn install_exec_algorithm_module(py: Python<'_>, name: &str) {
+        let module = PyModule::new(py, name).unwrap();
+        module
+            .setattr("ExecutionAlgorithm", py.get_type::<PyExecutionAlgorithm>())
+            .unwrap();
+        module
+            .setattr("DataActor", py.get_type::<PyDataActor>())
+            .unwrap();
+        py.run(
+            c_str!(
+                r#"
+callbacks = []
+
+class AlgorithmConfig:
+    def __init__(self, exec_algorithm_id=None, actor_id=None, log_events=False, log_commands=True):
+        self.exec_algorithm_id = exec_algorithm_id
+        self.actor_id = actor_id
+        self.log_events = log_events
+        self.log_commands = log_commands
+
+class NativeAlgorithm(ExecutionAlgorithm):
+    def on_start(self):
+        callbacks.append("start")
+
+    def on_stop(self):
+        callbacks.append("stop")
+
+class ActorAlgorithm(DataActor):
+    def on_start(self):
+        callbacks.append("start")
+
+    def on_stop(self):
+        callbacks.append("stop")
+
+class NoConfigNativeAlgorithm(NativeAlgorithm):
+    def __init__(self):
+        super().__init__()
+
+class NoConfigActorAlgorithm(ActorAlgorithm):
+    def __init__(self):
+        super().__init__()
+"#
+            ),
+            Some(&module.dict()),
+            None,
+        )
+        .unwrap();
+        py.import("sys")
+            .unwrap()
+            .getattr("modules")
+            .unwrap()
+            .set_item(name, module)
+            .unwrap();
+    }
+
+    #[rstest]
+    fn test_add_python_strategy_from_config_rejects_non_idle_node() {
+        Python::initialize();
+
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+
+        let config = ImportableStrategyConfig {
+            strategy_path: "must_not_import:Strategy".to_string(),
+            config_path: String::new(),
+            config: HashMap::new(),
+        };
+
+        node.handle().set_starting();
+
+        let error = node.add_python_strategy_from_config(&config).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "RuntimeError: Cannot add strategy while node is running, add strategies before running the node"
+        );
+        assert_eq!(node.state(), NodeState::Starting);
+        assert!(node.kernel().trader.borrow().strategy_ids().is_empty());
+    }
+
+    #[rstest]
+    fn test_add_python_strategy_from_config_claim_conflict_is_atomic() {
+        Python::initialize();
+
+        let module_name = "test_rust_live_node_claim_conflict";
+        Python::attach(|py| install_claim_strategy_module(py, module_name));
+        let mut node = LiveNode::builder(TraderId::from("TESTER-001"), Environment::Sandbox)
+            .unwrap()
+            .with_reconciliation(false)
+            .build()
+            .unwrap();
+        let existing_id = InstrumentId::from("AUDUSD.SIM");
+        let new_id = InstrumentId::from("EURUSD.SIM");
+        let existing_strategy = StrategyId::from("EXISTING-001");
+        node.register_external_order_claims(existing_strategy, &[existing_id])
+            .unwrap();
+        let mut config = HashMap::new();
+        config.insert(
+            "strategy_id".to_string(),
+            serde_json::json!("CANDIDATE-002"),
+        );
+        config.insert(
+            "external_order_instrument_ids".to_string(),
+            serde_json::json!([new_id.to_string(), existing_id.to_string()]),
+        );
+
+        let importable = ImportableStrategyConfig {
+            strategy_path: format!("{module_name}:ClaimsStrategy"),
+            config_path: format!("{module_name}:ClaimsConfig"),
+            config,
+        };
+
+        let error = node
+            .add_python_strategy_from_config(&importable)
+            .unwrap_err();
+        let engine = node.kernel().exec_engine.borrow();
+
+        assert!(
+            error
+                .to_string()
+                .contains("already exists for EXISTING-001")
+        );
+        assert!(node.kernel().trader.borrow().strategy_ids().is_empty());
+        assert_eq!(node.exec_manager().get_external_order_claim(&new_id), None);
+        assert_eq!(engine.get_external_order_claim(&new_id), None);
+        assert_eq!(
+            node.exec_manager().get_external_order_claim(&existing_id),
+            Some(existing_strategy)
+        );
+        assert_eq!(
+            engine.get_external_order_claim(&existing_id),
+            Some(existing_strategy)
         );
     }
 

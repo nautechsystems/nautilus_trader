@@ -2814,13 +2814,14 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments_by_symbol.clone();
         let update_lock = self.instrument_update_lock.clone();
         let ws_public = self.ws_public.clone();
         let ws_business = self.ws_business.clone();
-        let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start = request.start;
@@ -2916,9 +2917,10 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
         let depth = request.depth.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -2961,9 +2963,10 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -3004,9 +3007,10 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+        let bar_type = request.single_bar_type()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let bar_type = request.bar_type;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -3047,9 +3051,10 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);

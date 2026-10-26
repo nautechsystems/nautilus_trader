@@ -96,20 +96,18 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
                 );
             } else {
                 summary.used_watchlist_fallback = true;
-                let snapshot = watchlist.load();
                 let selection_mode = if resolve_poll_enabled {
                     ResolveWatchSelectionMode::ManualFallback
                 } else {
                     ResolveWatchSelectionMode::ManualAllEligible
                 };
                 let selection = collect_resolve_watch_selection(
-                    &snapshot,
+                    &watchlist.read(),
                     clock.get_time_ns(),
                     grace_secs,
                     max_wait_secs,
                     selection_mode,
                 );
-                drop(snapshot);
 
                 pause_and_reconcile_resolve_watch_entries(
                     &resolve_ctx,
@@ -283,8 +281,11 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     }
 }
 
-pub(super) fn request_instrument(client: &PolymarketDataClient, request: RequestInstrument) {
-    let instrument_id = request.instrument_id;
+pub(super) fn request_instrument(
+    client: &PolymarketDataClient,
+    request: RequestInstrument,
+) -> anyhow::Result<()> {
+    let instrument_id = request.single_instrument_id()?;
     let http = client.provider.http_client().clone();
     let sender = client.data_sender.clone();
     let instruments_cache = client.instruments.clone();
@@ -375,13 +376,15 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
     if let Err(e) = client.tasks.spawn(future) {
         log::debug!("Skipping Polymarket data task after shutdown began: {e}");
     }
+
+    Ok(())
 }
 
 pub(super) fn request_book_snapshot(
     client: &PolymarketDataClient,
     request: RequestBookSnapshot,
 ) -> anyhow::Result<()> {
-    let instrument_id = request.instrument_id;
+    let instrument_id = request.single_instrument_id()?;
     let instrument = client.ensure_market_data_request_allowed(instrument_id)?;
 
     let token_id = instrument.raw_symbol().as_str().to_string();
@@ -431,7 +434,7 @@ pub(super) fn request_trades(
     client: &PolymarketDataClient,
     request: RequestTrades,
 ) -> anyhow::Result<()> {
-    let instrument_id = request.instrument_id;
+    let instrument_id = request.single_instrument_id()?;
     let instrument = client.ensure_market_data_request_allowed(instrument_id)?;
 
     let condition_id = extract_condition_id(&instrument_id)?;

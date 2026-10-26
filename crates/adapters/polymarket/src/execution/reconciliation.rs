@@ -58,6 +58,7 @@ use crate::{
             PolymarketTradeStatus,
         },
         models::is_owned_by_account,
+        parse::validate_market_version,
     },
     http::{
         clob::PolymarketClobHttpClient,
@@ -1303,10 +1304,12 @@ pub(crate) async fn generate_mass_status(
         .transpose()?
         .map(|lookback| ts_init.saturating_sub(lookback));
 
-    let orders = http_client
+    let mut orders = http_client
         .get_orders(GetOrdersParams::default())
         .await
         .context("failed to fetch orders for mass status")?;
+
+    filter_unsupported_orders(http_client, &mut orders, instruments, ctx, None, load_ids).await?;
 
     let (mut order_reports, orders_filtered) =
         build_order_reports_from_orders(&orders, instruments, ctx, None, ts_init, load_ids)?;
@@ -1319,7 +1322,7 @@ pub(crate) async fn generate_mass_status(
         .await
         .context("failed to fetch trades for mass status")?;
 
-    let positions = if ctx.signer_type == PolymarketSignerType::Session {
+    let mut positions = if ctx.signer_type == PolymarketSignerType::Session {
         Vec::new()
     } else {
         data_api_client
@@ -1327,6 +1330,16 @@ pub(crate) async fn generate_mass_status(
             .await
             .context("failed to fetch positions for mass status")?
     };
+
+    filter_unsupported_positions(
+        http_client,
+        &mut positions,
+        instruments,
+        None,
+        load_ids,
+        resolved_balances,
+    )
+    .await?;
 
     let (mut fill_reports, fill_discards) = build_fill_reports_from_trades(
         &trades,
@@ -1462,6 +1475,122 @@ pub(crate) async fn generate_mass_status(
     }
 
     Ok(Some(mass_status))
+}
+
+pub(crate) async fn filter_unsupported_orders(
+    http_client: &PolymarketClobHttpClient,
+    orders: &mut Vec<PolymarketOpenOrder>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    ctx: &FillContext<'_>,
+    instrument_filter: Option<InstrumentId>,
+    load_ids: Option<&[InstrumentId]>,
+) -> anyhow::Result<()> {
+    let requires_lookup = |order: &PolymarketOpenOrder| {
+        let instrument_id =
+            instrument_id_from_market_token(order.market.as_str(), order.asset_id.as_str());
+        !instruments.contains_key(&order.asset_id)
+            && instrument_filter
+                .is_none_or(|filter| polymarket_instrument_ids_equivalent(filter, instrument_id))
+            && instrument_in_load_ids_scope(instrument_id, load_ids)
+            && is_owned_by_account(
+                &order.maker_address,
+                &order.owner,
+                ctx.user_address,
+                ctx.api_key,
+                ctx.signer_type,
+            )
+    };
+
+    let conditions = orders
+        .iter()
+        .filter(|order| requires_lookup(order))
+        .map(|order| order.market.as_str());
+
+    let unsupported = unsupported_market_conditions(http_client, conditions).await?;
+    orders.retain(|order| {
+        if unsupported.contains(order.market.as_str()) && requires_lookup(order) {
+            log::warn!(
+                "Skipping unsupported Polymarket open order {} for condition {}",
+                order.id,
+                order.market
+            );
+            return false;
+        }
+
+        true
+    });
+
+    Ok(())
+}
+
+pub(crate) async fn filter_unsupported_positions(
+    http_client: &PolymarketClobHttpClient,
+    positions: &mut Vec<DataApiPosition>,
+    instruments: &AtomicMap<Ustr, InstrumentAny>,
+    instrument_filter: Option<InstrumentId>,
+    load_ids: Option<&[InstrumentId]>,
+    resolved_balances: &ResolvedBalanceScope,
+) -> anyhow::Result<()> {
+    let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
+
+    let requires_lookup = |position: &DataApiPosition| {
+        let instrument_id =
+            instrument_id_from_market_token(&position.condition_id, &position.asset);
+        !instruments.contains_key(&Ustr::from(position.asset.as_str()))
+            && instrument_filter
+                .is_none_or(|filter| polymarket_instrument_ids_equivalent(filter, instrument_id))
+            && instrument_in_load_ids_scope(instrument_id, collection_load_ids)
+            && !resolved_balances.excludes(position, instrument_id)
+            && !position_is_dust(position)
+    };
+
+    let conditions = positions
+        .iter()
+        .filter(|position| requires_lookup(position))
+        .map(|position| position.condition_id.as_str());
+
+    let unsupported = unsupported_market_conditions(http_client, conditions).await?;
+    positions.retain(|position| {
+        if unsupported.contains(&position.condition_id) && requires_lookup(position) {
+            log::warn!(
+                "Skipping unsupported Polymarket position {} for condition {}",
+                position.asset,
+                position.condition_id
+            );
+            return false;
+        }
+
+        true
+    });
+
+    Ok(())
+}
+
+async fn unsupported_market_conditions<'a>(
+    http_client: &PolymarketClobHttpClient,
+    conditions: impl Iterator<Item = &'a str>,
+) -> anyhow::Result<AHashSet<String>> {
+    let conditions: AHashSet<_> = conditions.collect();
+    let mut unsupported = AHashSet::new();
+
+    for condition_id in conditions {
+        let market = http_client
+            .get_market(condition_id)
+            .await
+            .with_context(|| format!("failed to check market protocol for {condition_id}"))?;
+        anyhow::ensure!(
+            market.condition_id.eq_ignore_ascii_case(condition_id),
+            "CLOB market condition {} does not match requested condition {condition_id}",
+            market.condition_id
+        );
+
+        if let Err(e) = validate_market_version(market.version.as_deref()) {
+            log::warn!("Unsupported Polymarket condition {condition_id}: {e}");
+            unsupported.insert(condition_id.to_string());
+        }
+    }
+
+    Ok(unsupported)
 }
 
 #[expect(clippy::too_many_arguments)]
@@ -1671,8 +1800,7 @@ pub(crate) fn cached_order_scopes(
         let mut seen = AHashSet::new();
         let mut earlier = Vec::new();
 
-        // A reloaded cache indexes only the current venue order, not earlier legs, and an
-        // earlier ID backs a fill only when that fill is already on the order
+        // An earlier venue order ID backs a fill only when that fill is already on the order
         for event in order.events() {
             let Some(venue_order_id) = event.venue_order_id() else {
                 continue;
@@ -2406,6 +2534,7 @@ mod tests {
             crypto_market_config: None,
             fee_schedule: None,
             game_id: None,
+            market_version: "v1".into(),
         };
 
         crate::http::parse::create_instrument_from_def(&def, UnixNanos::from(1))

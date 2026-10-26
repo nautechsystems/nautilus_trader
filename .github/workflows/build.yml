@@ -171,6 +171,8 @@ jobs:
       - name: Check GitHub Action pins
         # One network round trip per pinned reference, so only when they changed
         if: needs.plan.outputs.github-changed == 'true'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: make check-github-action-pins
 
       - name: Check Docker toolchain pins
@@ -184,6 +186,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           toolchain: ${{ env.TOOLCHAIN }}
+          components: clippy
           cache: false
           override: true
           rustflags: -D warnings
@@ -335,7 +338,7 @@ jobs:
     # yamllint disable rule:line-length
     services: &python-build-services
       redis:
-        image: ghcr.io/nautechsystems/redis:7.4.5-alpine3.21@sha256:0302cccee2b2043e61b497c8f4075467c5f7ba27a9f38be7e092634f2734baed
+        image: ghcr.io/nautechsystems/redis:8.10.2-alpine3.23@sha256:16b124a2d3eacd620d917ead6fd26cbf1f1d7117fa94122398971931cfe2d403
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -347,7 +350,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: ghcr.io/nautechsystems/postgres:16.4-alpine@sha256:f5aa7cac1dc299a77761ada5a5cf9c6ef4064bc85c89fed49c587dd2381d6f05
+        image: ghcr.io/nautechsystems/postgres:18.6-alpine3.23@sha256:dd504ba15d335bb17f83ed48a75899501be82726126a691f597fb91e1e505373
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -543,7 +546,7 @@ jobs:
     # yamllint disable rule:line-length
     services:
       redis:
-        image: ghcr.io/nautechsystems/redis:7.4.5-alpine3.21@sha256:0302cccee2b2043e61b497c8f4075467c5f7ba27a9f38be7e092634f2734baed
+        image: ghcr.io/nautechsystems/redis:8.10.2-alpine3.23@sha256:16b124a2d3eacd620d917ead6fd26cbf1f1d7117fa94122398971931cfe2d403
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -555,7 +558,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
       postgres:
-        image: ghcr.io/nautechsystems/postgres:16.4-alpine@sha256:f5aa7cac1dc299a77761ada5a5cf9c6ef4064bc85c89fed49c587dd2381d6f05
+        image: ghcr.io/nautechsystems/postgres:18.6-alpine3.23@sha256:dd504ba15d335bb17f83ed48a75899501be82726126a691f597fb91e1e505373
         credentials:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
@@ -893,18 +896,19 @@ jobs:
           cargo audit --deny unsound --file crates/adapters/lighter/fuzz/pornin/Cargo.lock || status=$?
           exit "$status"
 
+      - name: Install osv-scanner
+        run: bash scripts/install-osv-scanner.sh
+
       - name: Run osv-scanner
         id: osv-scan
         continue-on-error: true
-        # https://github.com/google/osv-scanner-action
-        uses: google/osv-scanner-action/osv-scanner-action@b1d267aea5211fa648d9d442fa64b90dbdcbdd36 # v2.7.0
-        with:
-          scan-args: |-
-            --config=osv-scanner.toml
-            --format=json
-            --output=/github/workspace/osv-results.json
-            --lockfile=Cargo.lock
-            --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock
+        run: |
+          "$HOME/.cargo/bin/osv-scanner" scan source \
+            --config=osv-scanner.toml \
+            --format=json \
+            --output=osv-results.json \
+            --lockfile=Cargo.lock \
+            --lockfile=crates/adapters/lighter/fuzz/pornin/Cargo.lock \
             --lockfile=python/uv.lock
 
       - name: Check OSV severity

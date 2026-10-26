@@ -163,6 +163,24 @@ fn bench_decode_user_batch(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_decode_user_batch_tag_first(c: &mut Criterion) {
+    let expected: Vec<UserWsMessage> = serde_json::from_str(fixtures::USER_BATCH).unwrap();
+    let text = serde_json::to_string(&expected).unwrap();
+    assert_eq!(UserWsMessage::parse_batch(&text).unwrap(), expected);
+    let escaped = text.replace("\"order\"", "\"or\\u0064er\"");
+    assert_eq!(UserWsMessage::parse_batch(&escaped).unwrap(), expected);
+
+    let mut invalid = serde_json::to_value(&expected).unwrap();
+    invalid[0]["event_type"] = serde_json::json!({"order": null});
+    let invalid = serde_json::to_string(&invalid).unwrap();
+    assert!(serde_json::from_str::<Vec<UserWsMessage>>(&invalid).is_err());
+    assert!(UserWsMessage::parse_batch(&invalid).is_err());
+
+    c.bench_function("decode_only/user_batch_tag_first", |b| {
+        b.iter(|| black_box(UserWsMessage::parse_batch(black_box(&text)).unwrap()));
+    });
+}
+
 fn bench_parse_trade(c: &mut Criterion) {
     let (px_prec, sz_prec) = instrument_precisions();
     let id = yes_instrument_id();
@@ -522,6 +540,7 @@ criterion_group!(
     bench_decode_user_order_dispatch,
     bench_decode_user_trade,
     bench_decode_user_batch,
+    bench_decode_user_batch_tag_first,
     bench_parse_trade,
     bench_parse_book_snapshot,
     bench_parse_book_deltas,

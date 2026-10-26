@@ -498,13 +498,26 @@ impl OrderMatchingEngine {
         }
 
         let mut total_size = Quantity::zero(order.quantity().precision);
+        let initial_market_to_limit =
+            order.order_type() == OrderType::MarketToLimit && order.filled_qty().is_zero();
+        let mut first_price = None;
 
         for &(fill_px, fill_qty) in fills {
-            if self
-                .normalize_price_for_current_instrument(fill_px)
-                .is_some()
+            if let Some(fill_px) = self.normalize_price_for_current_instrument(fill_px)
                 && let Some(fill_qty) = self.normalize_quantity_for_current_instrument(fill_qty)
             {
+                if initial_market_to_limit {
+                    if fill_qty.is_zero() {
+                        continue;
+                    }
+
+                    if first_price.is_some_and(|price| price != fill_px) {
+                        break;
+                    }
+
+                    first_price = Some(fill_px);
+                }
+
                 total_size = total_size.add(fill_qty);
             }
         }
@@ -1342,15 +1355,15 @@ impl OrderMatchingEngine {
     }
 
     fn resolve_pending_on_trade(&mut self, trade_price_raw: PriceRaw) {
-        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
-        keys.extend(self.queue_pending.keys().copied());
+        let mut pending = Self::take_cleared(&mut self.queue_pending_scratch);
+        pending.extend(
+            self.queue_pending
+                .iter()
+                .map(|(&client_order_id, &price_raw)| (client_order_id, price_raw)),
+        );
         let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
 
-        for client_order_id in keys.iter().copied() {
-            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
-                continue;
-            };
-
+        for (client_order_id, order_price_raw) in pending.iter().copied() {
             let cache = self.cache.borrow();
 
             let order_side = cache.order(&client_order_id).and_then(|order| {
@@ -1385,7 +1398,7 @@ impl OrderMatchingEngine {
             self.remove_queue_position(id);
         }
 
-        self.queue_id_scratch = keys;
+        self.queue_pending_scratch = pending;
         self.queue_stale_scratch = stale;
     }
 
@@ -4236,7 +4249,10 @@ impl OrderMatchingEngine {
             .copied()
             .unwrap_or_default();
         let leaves_qty = order.quantity().saturating_sub(filled_qty);
-        if leaves_qty.is_zero() {
+        if leaves_qty.is_zero()
+            || order.time_in_force() == TimeInForce::Fok
+            || (order.time_in_force() == TimeInForce::Ioc && filled_qty.is_zero())
+        {
             self.purge_cached_filled_qty_if_closed(client_order_id);
             return;
         }
@@ -5601,7 +5617,9 @@ impl OrderMatchingEngine {
             venue_position_id
         };
 
-        let mut initial_market_to_limit_fill = false;
+        let initial_market_to_limit =
+            order.order_type() == OrderType::MarketToLimit && order.filled_qty().is_zero();
+        let mut first_price = None;
         let mut total_filled = self.engine_filled_qty(order);
         let initial_total_filled = total_filled;
         let mut last_fill_px: Option<Price> = None;
@@ -5627,11 +5645,19 @@ impl OrderMatchingEngine {
                 continue;
             };
 
-            if order.filled_qty() == Quantity::zero(order.filled_qty().precision)
-                && order.order_type() == OrderType::MarketToLimit
-            {
-                self.generate_order_updated(order, order.quantity(), Some(fill_px), None, None);
-                initial_market_to_limit_fill = true;
+            if initial_market_to_limit {
+                if fill_qty.is_zero() {
+                    continue;
+                }
+
+                if first_price.is_some_and(|price| price != fill_px) {
+                    break;
+                }
+
+                if first_price.is_none() {
+                    self.generate_order_updated(order, order.quantity(), Some(fill_px), None, None);
+                    first_price = Some(fill_px);
+                }
             }
 
             if self.book_type == BookType::L1_MBP
@@ -5706,8 +5732,9 @@ impl OrderMatchingEngine {
             )?;
             last_fill_px = Some(fill_px);
 
-            if order.order_type() == OrderType::MarketToLimit && initial_market_to_limit_fill {
-                // Filled initial level
+            if initial_market_to_limit
+                && (total_filled >= order.quantity() || reduce_only_exhausts_position)
+            {
                 return Ok(());
             }
 
@@ -5717,8 +5744,12 @@ impl OrderMatchingEngine {
             }
         }
 
-        let leaves_remaining = total_filled < order.quantity();
         let filled_in_loop = total_filled > initial_total_filled;
+        if initial_market_to_limit && filled_in_loop {
+            return Ok(());
+        }
+
+        let leaves_remaining = total_filled < order.quantity();
 
         if order.time_in_force() == TimeInForce::Ioc && leaves_remaining {
             self.cancel_order(order, None);
@@ -5958,7 +5989,6 @@ impl OrderMatchingEngine {
                     fill.position_id
                         .filter(|id| cache.position(id).is_some())
                 })
-                .or_else(|| cache.position_id(&fill.client_order_id).copied())
                 .or_else(|| {
                     let cache = cash_cache?;
                     let order = cache.order(&fill.client_order_id)?;

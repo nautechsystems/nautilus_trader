@@ -231,6 +231,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
             account_id,
             private_key: Some(SMOKE_PRIVATE_KEY.into()),
             environment: HyperliquidEnvironment::Testnet,
+            scheduled_cancel_timeout_secs: Some(60),
             ..HyperliquidExecutionClientConfig::default()
         },
     )
@@ -265,6 +266,7 @@ fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
         "HyperliquidExecutionClientConfig"
     );
     assert_eq!(hyperliquid_config.account_id, account_id);
+    assert_eq!(hyperliquid_config.scheduled_cancel_timeout_secs, Some(60));
     assert_eq!(
         client.client_id(),
         ClientId::from("HYPERLIQUID-EXEC-EXTRACTED")

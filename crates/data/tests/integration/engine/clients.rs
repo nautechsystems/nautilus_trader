@@ -806,7 +806,10 @@ impl DataClient for ConnectionDataClient {
         self.record("unsubscribe")
     }
 
-    fn request_quotes(&self, _: RequestQuotes) -> anyhow::Result<()> {
+    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        request
+            .single_instrument_id()
+            .map_err(|e| e.context("provider context token=SYN-private"))?;
         self.record("request")
     }
 
@@ -1094,7 +1097,7 @@ fn test_data_request_logging(
     take_connection_logs();
 
     let request = RequestQuotes {
-        instrument_id: InstrumentId::from("SYN.SYN"),
+        instrument_ids: vec![InstrumentId::from("SYN.SYN")],
         start: None,
         end: None,
         limit: None,
@@ -1104,6 +1107,8 @@ fn test_data_request_logging(
         params: None,
     };
 
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&request_id, handler);
     engine.execute(DataCommand::Request(RequestCommand::Quotes(request)));
 
     let expected = if error_message.is_some() {
@@ -1119,6 +1124,112 @@ fn test_data_request_logging(
 
     assert_eq!(take_connection_logs(), expected);
     assert_eq!(*calls.borrow(), vec![(client_id, "request")]);
+    let responses = saver.get_messages();
+    assert_eq!(responses.len(), usize::from(error_message.is_some()));
+
+    if error_message.is_some() {
+        assert_eq!(responses[0].correlation_id(), &request_id);
+        assert!(responses[0].completed());
+        assert!(responses[0].response().is_none());
+        assert_eq!(
+            responses[0].failure_reason(),
+            Some("Data client REQUESTS request failed")
+        );
+    }
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+#[case::unsupported(true)]
+#[case::operational(false)]
+fn test_data_request_failure_preserves_only_safe_reason(
+    #[case] unsupported: bool,
+    #[values(false, true)] planned: bool,
+    cache: Rc<RefCell<Cache>>,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let client_id = ClientId::from("REQUESTS");
+    let request_id = UUID4::new();
+    let calls = Rc::new(RefCell::new(Vec::new()));
+
+    let client = ConnectionDataClient {
+        client_id,
+        error_message: Some("provider password=SYN-private"),
+        error_operation: None,
+        barrier: Rc::new(tokio::sync::Barrier::new(1)),
+        connected: false,
+        calls: Rc::clone(&calls),
+    };
+
+    let mut engine = DataEngine::new(data_engine_clock_at(3000), cache, None);
+    engine.register_client(
+        DataClientAdapter::new(client_id, None, true, true, Box::new(client)),
+        None,
+    );
+    let directory = planned.then(|| CatalogTempDir::new("request-rejection"));
+    if let Some(directory) = &directory {
+        engine.register_catalog(
+            Box::new(ParquetDataCatalog::new(
+                directory.path(),
+                None,
+                None,
+                None,
+                None,
+            )),
+            Some("history"),
+        );
+    }
+
+    let mut ids = vec![InstrumentId::from("AUD/USD.SIM")];
+    if unsupported {
+        ids.push(InstrumentId::from("GBP/USD.SIM"));
+    }
+
+    let request = RequestQuotes::new(
+        ids,
+        Some(UnixNanos::from(1000).to_datetime_utc()),
+        Some(UnixNanos::from(2000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::from(3000),
+        None,
+    );
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&request_id, handler);
+    let result = engine.execute_request(RequestCommand::Quotes(request));
+    let replies = saver.get_messages();
+
+    let expected_reason = if unsupported {
+        "Data client REQUESTS request failed: request requires one instrument ID on this adapter path, received 2"
+    } else {
+        "Data client REQUESTS request failed"
+    };
+
+    let expected_calls = if unsupported {
+        Vec::new()
+    } else {
+        vec![(client_id, "request")]
+    };
+
+    assert_eq!(
+        result.err().map(|e| e.to_string()),
+        (!planned).then(|| expected_reason.to_owned())
+    );
+    assert_eq!(*calls.borrow(), expected_calls);
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].correlation_id(), &request_id);
+    assert_eq!(replies[0].sub_correlation_id(), None);
+    assert!(replies[0].completed());
+    assert!(replies[0].response().is_none());
+    assert_eq!(replies[0].failure_reason(), Some(expected_reason));
+    assert_eq!(engine.request_pipeline_count(), 0);
+    assert!(
+        stub_msgbus
+            .borrow()
+            .get_response_handler(&request_id)
+            .is_none()
+    );
 }
 
 #[rstest]
@@ -1130,7 +1241,7 @@ fn test_data_request_logging_preserves_venue_without_client(
     let request_id = UUID4::new();
 
     let request = RequestQuotes {
-        instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+        instrument_ids: vec![InstrumentId::from("BTCUSDT.BINANCE")],
         start: None,
         end: None,
         limit: None,
@@ -1201,7 +1312,7 @@ fn test_unimplemented_command_logging_omits_parameters() {
     );
 
     let request = RequestQuotes {
-        instrument_id: InstrumentId::from("SYN.SYN"),
+        instrument_ids: vec![InstrumentId::from("SYN.SYN")],
         start: None,
         end: None,
         limit: None,
@@ -1224,26 +1335,20 @@ fn test_unimplemented_command_logging_omits_parameters() {
     let result = client.request_quotes(request);
     let unsubscribe_result = client.unsubscribe_quotes(&unsubscribe);
 
-    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Data client UNSUPPORTED does not support RequestQuotes"
+    );
     assert!(unsubscribe_result.is_ok());
     assert_eq!(
         take_connection_logs(),
-        vec![
-            (
-                Level::Warn,
-                format!(
-                    "Handler not implemented: client UNSUPPORTED, command {}",
-                    std::any::type_name::<RequestQuotes>()
-                )
-            ),
-            (
-                Level::Warn,
-                format!(
-                    "Handler not implemented: client UNSUPPORTED, command {}",
-                    std::any::type_name::<UnsubscribeQuotes>()
-                )
+        vec![(
+            Level::Warn,
+            format!(
+                "Handler not implemented: client UNSUPPORTED, command {}",
+                std::any::type_name::<UnsubscribeQuotes>()
             )
-        ]
+        )]
     );
 }
 

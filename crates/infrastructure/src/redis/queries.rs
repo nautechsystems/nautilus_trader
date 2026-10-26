@@ -1020,9 +1020,10 @@ impl DatabaseQueries {
         for payload in snapshots.iter().rev() {
             let snapshot: PositionSnapshot = Self::deserialize_payload(encoding, payload)?;
             if let Some(replay_state) = snapshot.replay_state {
-                return serde_json::from_value(replay_state)
-                    .map(Some)
-                    .map_err(|e| anyhow::anyhow!("Failed to decode position replay state: {e}"));
+                let position: Position = serde_json::from_value(replay_state)
+                    .map_err(|e| anyhow::anyhow!("Failed to decode position replay state: {e}"))?;
+                position.check_accounting()?;
+                return Ok(Some(position));
             }
         }
 
@@ -1049,7 +1050,7 @@ impl DatabaseQueries {
             return Ok(None);
         };
 
-        let mut position = Position::new(&instrument, first_fill.clone());
+        let mut position = Position::new_checked(&instrument, first_fill.clone())?;
         for fill in remaining_fills {
             if position.trade_ids.contains(&fill.trade_id) {
                 anyhow::bail!(
@@ -1057,7 +1058,8 @@ impl DatabaseQueries {
                     fill.trade_id
                 );
             }
-            position.apply(fill);
+
+            position.try_apply(fill)?;
         }
 
         Ok(Some(position))

@@ -128,11 +128,11 @@ engine.add_venue(
     oms_type=OmsType.NETTING,
     account_type=AccountType.CASH,
     starting_balances=[Money.from_str("10_000 USDT")],
-    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     fee_model=MakerTakerFeeModel(
         maker_rate=Decimal("0"),
         taker_rate=Decimal("0"),
     ),
+    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
 )
 ```
 

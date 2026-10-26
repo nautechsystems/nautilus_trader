@@ -871,8 +871,18 @@ pub(super) fn legacy_enum_dictionary_column(
         .as_any()
         .downcast_ref::<UInt8Array>()
         .ok_or_else(|| ArrowError::CastError(format!("Column '{}' is not UInt8", field.name())))?;
+
     let names = (0..values.len())
-        .map(|row| legacy_enum_name(field.name(), values.value(row)))
+        .map(|row| {
+            if values.is_null(row) {
+                return Err(ArrowError::CastError(format!(
+                    "Legacy enum column '{}' is null at row {row}",
+                    field.name()
+                )));
+            }
+
+            legacy_enum_name(field.name(), values.value(row))
+        })
         .collect::<Result<Vec<_>, _>>()?;
     Ok(Arc::new(enum_dictionary_array(names)?) as ArrayRef)
 }
@@ -1512,6 +1522,19 @@ mod tests {
         assert_eq!(
             normalized.column_by_name("ts_init").unwrap().data_type(),
             &timestamp_data_type(),
+        );
+    }
+
+    #[rstest]
+    fn legacy_enum_normalization_rejects_null_with_field_and_row() {
+        let field = Field::new("aggressor_side", DataType::UInt8, true);
+        let values = UInt8Array::from(vec![Some(AggressorSide::Buy as u8), None]);
+
+        let error = legacy_enum_dictionary_column(&field, &values).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Cast error: Legacy enum column 'aggressor_side' is null at row 1"
         );
     }
 

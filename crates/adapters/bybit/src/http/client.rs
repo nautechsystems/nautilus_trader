@@ -4472,11 +4472,15 @@ impl BybitHttpClient {
 
     /// Fetches execution history (fills) for the account and returns a list of [`FillReport`]s.
     ///
-    /// Executions for instruments not currently loaded in cache will be skipped.
+    /// Funding executions and executions for instruments not currently loaded in cache are skipped.
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails.
+    /// Returns an error if:
+    /// - The request fails.
+    /// - The instrument ID is invalid.
+    /// - Pagination cannot advance.
+    /// - A fill for a cached instrument cannot be parsed.
     ///
     /// # References
     ///
@@ -4573,12 +4577,8 @@ impl BybitHttpClient {
                 continue;
             };
 
-            match parse_fill_report(&execution, account_id, &instrument, ts_init) {
-                Ok(report) => reports.push(report),
-                Err(e) => {
-                    log::error!("Failed to parse fill report: {e}");
-                }
-            }
+            let report = parse_fill_report(&execution, account_id, &instrument, ts_init)?;
+            reports.push(report);
         }
 
         Ok(reports)

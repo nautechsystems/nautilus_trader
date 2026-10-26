@@ -43,7 +43,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, value::RawValue};
 
 use crate::{
-    common::urls::gamma_api_url,
+    common::{parse::validate_market_version, urls::gamma_api_url},
     filters::set_market_closed,
     http::{
         error::{Error, Result, decode_response},
@@ -369,6 +369,11 @@ pub(crate) fn parse_markets_with_transient(
     let mut event_metadata = AHashMap::new();
 
     for market in markets {
+        if let Err(e) = validate_market_version(market.version.as_deref()) {
+            log::warn!("Skipping Gamma market {}: {e}", market.condition_id);
+            continue;
+        }
+
         if is_transient_clob_token_ids(&market.clob_token_ids) {
             transient.push(market.condition_id.clone());
             continue;
@@ -655,7 +660,12 @@ impl PolymarketGammaHttpClient {
                             .flat_map(|(_, markets)| markets)
                             .collect();
 
-                        if parse_markets_to_instruments(&markets, ts_init).is_empty() {
+                        if parse_markets_to_instruments(&markets, ts_init).is_empty()
+                            && (markets.is_empty()
+                                || markets.iter().any(|market| {
+                                    validate_market_version(market.version.as_deref()).is_ok()
+                                }))
+                        {
                             return Err(Error::transport(
                                 "Gamma returned no instruments (indexing lag)",
                             ));
@@ -740,16 +750,28 @@ impl PolymarketGammaHttpClient {
         Ok(instruments)
     }
 
-    /// Same as [`Self::request_instruments_by_params`] but also returns
-    /// condition IDs whose markets came back from Gamma with empty
-    /// `clob_token_ids`. Callers driving auto-load retries use the transient
-    /// list to distinguish "still hydrating in the CLOB" from "absent on the
-    /// venue".
+    /// Fetches supported instruments and condition IDs awaiting CLOB token IDs.
+    ///
+    /// Only market protocol `v1` enters the transient list. Unlike
+    /// [`Self::request_instruments_by_params`], this method errors when every returned
+    /// market uses an unsupported protocol.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails or every returned market is unsupported.
     pub async fn request_instruments_by_params_with_transient(
         &self,
         base_params: GetGammaMarketsParams,
     ) -> anyhow::Result<(Vec<InstrumentAny>, Vec<String>)> {
         let mut markets = self.fetch_gamma_markets_paginated(base_params).await?;
+        if !markets.is_empty()
+            && markets
+                .iter()
+                .all(|market| validate_market_version(market.version.as_deref()).is_err())
+        {
+            validate_market_version(markets[0].version.as_deref())?;
+        }
+
         enrich_markets(&mut markets);
         let ts_init = self.clock.get_time_ns();
         let (instruments, transient) = parse_markets_with_transient(&markets, ts_init);
@@ -769,19 +791,89 @@ impl PolymarketGammaHttpClient {
         self.fetch_gamma_markets_paginated(base_params).await
     }
 
-    /// Fetches instruments from an event slug with client-side sorting and limiting.
+    /// Fetches instruments from an event's embedded markets with client-side sorting and limiting.
     ///
-    /// The `/events?slug=` response already includes the full markets array,
-    /// so no second API call is needed. Sorting and truncation are applied
-    /// client-side using fields from `GetGammaMarketsParams`:
-    /// - `order`: sort field (`"liquidity"`, `"volume"`, `"volume24hr"`)
-    /// - `ascending`: sort direction (default: descending)
-    /// - `max_markets`: truncate after sorting
+    /// Only these `GetGammaMarketsParams` fields are supported:
+    /// - `order`: `"liquidity"`, `"volume"`, `"volume24hr"`, `"competitive"`,
+    ///   `"spread"`, `"best_bid"`, `"one_day_price_change"`, or `"volume_1wk"`.
+    /// - `ascending`: sort direction (default: descending); unused without `order`.
+    /// - `max_markets`: truncate after sorting; without `order`, retain event order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - A parameter or order field is unsupported, rejected before fetching.
+    /// - The event request fails.
     pub async fn request_instruments_by_event_query(
         &self,
         event_slug: &str,
         params: GetGammaMarketsParams,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let unsupported = GetGammaMarketsParams {
+            order: None,
+            ascending: None,
+            max_markets: None,
+            ..params.clone()
+        };
+
+        let unsupported = serde_json::to_value(unsupported)?;
+        if let Some(field) = unsupported
+            .as_object()
+            .and_then(|fields| fields.keys().next())
+        {
+            anyhow::bail!("Unsupported event query parameter '{field}'");
+        }
+
+        let compare: Option<fn(&GammaMarket, &GammaMarket) -> std::cmp::Ordering> =
+            if let Some(order_field) = params.order.as_deref() {
+                Some(match order_field {
+                    "liquidity" => |a, b| {
+                        a.liquidity_num
+                            .unwrap_or(Decimal::ZERO)
+                            .cmp(&b.liquidity_num.unwrap_or(Decimal::ZERO))
+                    },
+                    "volume" => |a, b| {
+                        a.volume_num
+                            .unwrap_or(Decimal::ZERO)
+                            .cmp(&b.volume_num.unwrap_or(Decimal::ZERO))
+                    },
+                    "volume24hr" => |a, b| {
+                        a.volume_24hr
+                            .unwrap_or(Decimal::ZERO)
+                            .cmp(&b.volume_24hr.unwrap_or(Decimal::ZERO))
+                    },
+                    "competitive" => |a, b| {
+                        a.competitive
+                            .unwrap_or(0.0)
+                            .partial_cmp(&b.competitive.unwrap_or(0.0))
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    },
+                    "spread" => |a, b| {
+                        a.spread
+                            .unwrap_or(Decimal::MAX)
+                            .cmp(&b.spread.unwrap_or(Decimal::MAX))
+                    },
+                    "best_bid" => |a, b| {
+                        a.best_bid
+                            .unwrap_or(Decimal::ZERO)
+                            .cmp(&b.best_bid.unwrap_or(Decimal::ZERO))
+                    },
+                    "one_day_price_change" => |a, b| {
+                        a.one_day_price_change
+                            .unwrap_or(Decimal::ZERO)
+                            .cmp(&b.one_day_price_change.unwrap_or(Decimal::ZERO))
+                    },
+                    "volume_1wk" => |a, b| {
+                        a.volume_1wk
+                            .unwrap_or(Decimal::ZERO)
+                            .cmp(&b.volume_1wk.unwrap_or(Decimal::ZERO))
+                    },
+                    _ => anyhow::bail!("Unsupported event query order field '{order_field}'"),
+                })
+            } else {
+                None
+            };
+
         let events = self.inner.get_gamma_events_by_slug(event_slug).await?;
         let mut markets = flatten_event_markets(events);
 
@@ -792,51 +884,14 @@ impl PolymarketGammaHttpClient {
 
         log::debug!("Event '{event_slug}' returned {} markets", markets.len());
 
-        // Client-side sort
-        if let Some(ref order_field) = params.order {
+        if let Some(compare) = compare {
             let ascending = params.ascending.unwrap_or(false);
             markets.sort_by(|a, b| {
-                let cmp = match order_field.as_str() {
-                    "liquidity" => a
-                        .liquidity_num
-                        .unwrap_or(Decimal::ZERO)
-                        .partial_cmp(&b.liquidity_num.unwrap_or(Decimal::ZERO)),
-                    "volume" => a
-                        .volume_num
-                        .unwrap_or(Decimal::ZERO)
-                        .partial_cmp(&b.volume_num.unwrap_or(Decimal::ZERO)),
-                    "volume24hr" => a
-                        .volume_24hr
-                        .unwrap_or(Decimal::ZERO)
-                        .partial_cmp(&b.volume_24hr.unwrap_or(Decimal::ZERO)),
-                    "competitive" => a
-                        .competitive
-                        .unwrap_or(0.0)
-                        .partial_cmp(&b.competitive.unwrap_or(0.0)),
-                    "spread" => a
-                        .spread
-                        .unwrap_or(Decimal::MAX)
-                        .partial_cmp(&b.spread.unwrap_or(Decimal::MAX)),
-                    "best_bid" => a
-                        .best_bid
-                        .unwrap_or(Decimal::ZERO)
-                        .partial_cmp(&b.best_bid.unwrap_or(Decimal::ZERO)),
-                    "one_day_price_change" => a
-                        .one_day_price_change
-                        .unwrap_or(Decimal::ZERO)
-                        .partial_cmp(&b.one_day_price_change.unwrap_or(Decimal::ZERO)),
-                    "volume_1wk" => a
-                        .volume_1wk
-                        .unwrap_or(Decimal::ZERO)
-                        .partial_cmp(&b.volume_1wk.unwrap_or(Decimal::ZERO)),
-                    _ => None,
-                };
-                let cmp = cmp.unwrap_or(std::cmp::Ordering::Equal);
+                let cmp = compare(a, b);
                 if ascending { cmp } else { cmp.reverse() }
             });
         }
 
-        // Client-side truncation
         if let Some(cap) = params.max_markets {
             markets.truncate(cap as usize);
         }
@@ -991,7 +1046,7 @@ mod tests {
     use rust_decimal_macros::dec;
 
     use super::*;
-    use crate::http::parse::parse_gamma_market;
+    use crate::http::{parse::parse_gamma_market, query::GetGammaMarketsParamsBuilder};
 
     fn load_fee_market(filename: &str) -> GammaMarket {
         let path = format!("test_data/{filename}");
@@ -1007,6 +1062,62 @@ mod tests {
         let info = binary.info.as_ref().unwrap();
         let value = info.get("fee_schedule").unwrap();
         serde_json::from_value(value.clone()).unwrap()
+    }
+
+    #[rstest]
+    #[case(Some("v1"), true)]
+    #[case(Some("v2"), false)]
+    #[case(None, false)]
+    #[case(Some("v3"), false)]
+    #[case(Some("V1"), false)]
+    fn test_market_protocol_controls_discovery(
+        #[case] version: Option<&str>,
+        #[case] supported: bool,
+        #[values("gamma_market_protocol_v1.json", "gamma_market_protocol_v2.json")] fixture: &str,
+        #[values(false, true)] empty_ids: bool,
+    ) {
+        let mut market = load_fee_market(fixture);
+        market.version = version.map(str::to_string);
+        if empty_ids {
+            market.clob_token_ids = "[]".into();
+        }
+
+        let condition_id = market.condition_id.clone();
+        let (instruments, transient) = parse_markets_with_transient(&[market.clone()], 1.into());
+        assert_eq!(
+            instruments.len(),
+            if supported && !empty_ids { 2 } else { 0 }
+        );
+        assert_eq!(
+            transient,
+            if supported && empty_ids {
+                vec![condition_id]
+            } else {
+                vec![]
+            }
+        );
+
+        if supported && !empty_ids {
+            for instrument in instruments {
+                let InstrumentAny::BinaryOption(binary) = instrument else {
+                    panic!("expected binary option")
+                };
+
+                assert_eq!(
+                    binary.info.as_ref().unwrap().get_str("market_version"),
+                    Some("v1")
+                );
+            }
+        } else if !supported {
+            let error = crate::http::parse::parse_gamma_market(&market).unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Unsupported Polymarket market protocol {}; only v1 CTF markets are supported",
+                    version.unwrap_or("missing"),
+                )
+            );
+        }
     }
 
     #[rstest]
@@ -1171,15 +1282,115 @@ mod tests {
     }
 
     #[rstest]
+    #[case(GetGammaMarketsParamsBuilder::default().active(false).build().unwrap(), "active")]
+    #[case(GetGammaMarketsParamsBuilder::default().closed(false).build().unwrap(), "closed")]
+    #[case(GetGammaMarketsParamsBuilder::default().archived(false).build().unwrap(), "archived")]
+    #[case(GetGammaMarketsParamsBuilder::default().id(vec![42]).build().unwrap(), "id")]
+    #[case(GetGammaMarketsParamsBuilder::default().limit(1_u32).build().unwrap(), "limit")]
+    #[case(GetGammaMarketsParamsBuilder::default().offset(0_u32).build().unwrap(), "offset")]
+    #[case(GetGammaMarketsParamsBuilder::default().slug(vec!["other".into()]).build().unwrap(), "slug")]
+    #[case(GetGammaMarketsParamsBuilder::default().clob_token_ids(vec![]).build().unwrap(), "clob_token_ids")]
+    #[case(GetGammaMarketsParamsBuilder::default().condition_ids(vec!["condition".into()]).build().unwrap(), "condition_ids")]
+    #[case(GetGammaMarketsParamsBuilder::default().question_ids(vec!["question".into()]).build().unwrap(), "question_ids")]
+    #[case(GetGammaMarketsParamsBuilder::default().market_maker_address(vec!["maker".into()]).build().unwrap(), "market_maker_address")]
+    #[case(GetGammaMarketsParamsBuilder::default().liquidity_num_min(dec!(1.25)).build().unwrap(), "liquidity_num_min")]
+    #[case(GetGammaMarketsParamsBuilder::default().liquidity_num_max(dec!(8.75)).build().unwrap(), "liquidity_num_max")]
+    #[case(GetGammaMarketsParamsBuilder::default().volume_num_min(dec!(2.5)).build().unwrap(), "volume_num_min")]
+    #[case(GetGammaMarketsParamsBuilder::default().volume_num_max(dec!(9.5)).build().unwrap(), "volume_num_max")]
+    #[case(GetGammaMarketsParamsBuilder::default().start_date_min("2026-01-01").build().unwrap(), "start_date_min")]
+    #[case(GetGammaMarketsParamsBuilder::default().start_date_max("2026-12-31").build().unwrap(), "start_date_max")]
+    #[case(GetGammaMarketsParamsBuilder::default().end_date_min("2027-01-01").build().unwrap(), "end_date_min")]
+    #[case(GetGammaMarketsParamsBuilder::default().end_date_max("2027-12-31").build().unwrap(), "end_date_max")]
+    #[case(GetGammaMarketsParamsBuilder::default().tag_id(vec![42]).build().unwrap(), "tag_id")]
+    #[case(GetGammaMarketsParamsBuilder::default().related_tags(false).build().unwrap(), "related_tags")]
+    #[case(GetGammaMarketsParamsBuilder::default().tag_match("any").build().unwrap(), "tag_match")]
+    #[case(GetGammaMarketsParamsBuilder::default().decimalized(false).build().unwrap(), "decimalized")]
+    #[case(GetGammaMarketsParamsBuilder::default().cyom(false).build().unwrap(), "cyom")]
+    #[case(GetGammaMarketsParamsBuilder::default().rfq_enabled(false).build().unwrap(), "rfq_enabled")]
+    #[case(GetGammaMarketsParamsBuilder::default().uma_resolution_status("resolved").build().unwrap(), "uma_resolution_status")]
+    #[case(GetGammaMarketsParamsBuilder::default().game_id("game").build().unwrap(), "game_id")]
+    #[case(GetGammaMarketsParamsBuilder::default().sports_market_types(vec!["moneyline".into()]).build().unwrap(), "sports_market_types")]
+    #[case(GetGammaMarketsParamsBuilder::default().include_tag(false).build().unwrap(), "include_tag")]
+    #[case(GetGammaMarketsParamsBuilder::default().locale("en").build().unwrap(), "locale")]
+    #[tokio::test]
+    async fn test_event_query_rejects_unsupported_params_before_http(
+        #[case] params: GetGammaMarketsParams,
+        #[case] field: &str,
+    ) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{address}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        let error = client
+            .request_instruments_by_event_query("unused", params)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Unsupported event query parameter '{field}'")
+        );
+        assert!(matches!(
+            listener.accept(),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
+        ));
+    }
+
+    #[rstest]
+    #[case("volumeNum")]
+    #[case("liquidityNum")]
+    #[case("unknown")]
+    #[case("")]
+    #[tokio::test]
+    async fn test_event_query_rejects_unsupported_order_before_http(#[case] order: &str) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        listener.set_nonblocking(true).unwrap();
+        let address = listener.local_addr().unwrap();
+        let client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{address}")),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        let params = GetGammaMarketsParamsBuilder::default()
+            .order(order)
+            .max_markets(1_u32)
+            .build()
+            .unwrap();
+        let error = client
+            .request_instruments_by_event_query("unused", params)
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Unsupported event query order field '{order}'")
+        );
+        assert!(matches!(
+            listener.accept(),
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock
+        ));
+    }
+
+    #[rstest]
     #[case("liquidity")]
     #[case("volume")]
     #[case("volume24hr")]
+    #[case("competitive")]
     #[case("spread")]
     #[case("best_bid")]
     #[case("one_day_price_change")]
     #[case("volume_1wk")]
     #[tokio::test]
-    async fn test_event_sort_preserves_adjacent_decimal_values(#[case] field: &str) {
+    async fn test_event_sort_preserves_adjacent_decimal_values(
+        #[case] field: &str,
+        #[values(None, Some(true), Some(false))] ascending: Option<bool>,
+    ) {
         let mut lower: GammaMarket =
             serde_json::from_str(include_str!("../../test_data/gamma_market.json")).unwrap();
         lower.clob_token_ids = serde_json::to_string(&["1", "2"]).unwrap();
@@ -1194,6 +1405,7 @@ mod tests {
                 "liquidity" => market.liquidity_num = Some(value),
                 "volume" => market.volume_num = Some(value),
                 "volume24hr" => market.volume_24hr = Some(value),
+                "competitive" => {}
                 "spread" => market.spread = Some(value),
                 "best_bid" => market.best_bid = Some(value),
                 "one_day_price_change" => market.one_day_price_change = Some(value),
@@ -1201,10 +1413,19 @@ mod tests {
                 _ => unreachable!(),
             }
         }
+
+        lower.competitive = Some(0.25);
+        higher.competitive = Some(0.75);
         let mut event: GammaEvent =
             serde_json::from_str(include_str!("../../test_data/decimal_precision_event.json"))
                 .unwrap();
-        event.markets = vec![lower, higher];
+
+        event.markets = if ascending == Some(true) {
+            vec![higher, lower]
+        } else {
+            vec![lower, higher]
+        };
+
         let response = serde_json::to_string(&vec![event]).unwrap();
         let router = axum::Router::new().route(
             "/events",
@@ -1227,7 +1448,7 @@ mod tests {
                 "precision",
                 GetGammaMarketsParams {
                     order: Some(field.into()),
-                    ascending: Some(false),
+                    ascending,
                     max_markets: Some(1),
                     ..Default::default()
                 },
@@ -1236,8 +1457,15 @@ mod tests {
             .unwrap();
         server.abort();
         assert_eq!(instruments.len(), 2);
-        assert_eq!(instruments[0].raw_symbol().as_str(), "3");
-        assert_eq!(instruments[1].raw_symbol().as_str(), "4");
+
+        let expected = if ascending == Some(true) {
+            ["1", "2"]
+        } else {
+            ["3", "4"]
+        };
+
+        assert_eq!(instruments[0].raw_symbol().as_str(), expected[0]);
+        assert_eq!(instruments[1].raw_symbol().as_str(), expected[1]);
     }
 
     #[rstest]

@@ -366,6 +366,9 @@ Ingress yields the same `BusMessage { topic, payload_type, encoding, payload, so
 `republish_external_message` decodes supported inbound messages and republishes them internally
 without forwarding the message back out. Normal internal republishing requires the inbound payload
 type to be registered for streaming and skips unregistered types without decoding.
+Inbound `AccountState` messages go through Portfolio's account endpoint rather than directly to the
+inbound topic. Portfolio must be registered; it updates the cache before publishing accepted states
+on `events.account.{account_id}`. Rejected account updates are not published.
 
 A Rust ingress implementation can attach optional `BusMessageSource` provenance: the publisher ID,
 process instance ID, stream, and sequence. Rust `msgbus::current_external_source()` exposes it while
@@ -452,7 +455,9 @@ stay local when no external streams are configured.
 Application code publishes native requests and replies with Rust `msgbus::publish_any`.
 The `DataEngine` does not forward requests for external clients, and `send_response` stays local.
 To route inbound replies to pending request callbacks, register `BusPayloadType::DataResponse`
-for streaming and subscribe a topic handler that calls `msgbus::send_response`.
+for streaming and subscribe a topic handler that calls `msgbus::send_response`. This completes the request.
+For intermediate or payload-free terminal replies, register `BusPayloadType::DataResponseEnvelope`
+and call `msgbus::send_response_envelope` from the topic handler.
 
 Native replies use the shared JSON/MessagePack response representation keyed by response kind.
 Book replies preserve all orders, metadata, and each side's unfinished L1 batch state. Their encoding

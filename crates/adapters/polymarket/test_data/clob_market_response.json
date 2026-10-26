@@ -7,6 +7,7 @@
   "accepting_order_timestamp": "2026-08-01T22:56:49Z",
   "minimum_order_size": 5,
   "minimum_tick_size": 0.01,
+  "version": "v1",
   "condition_id": "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
   "question_id": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "question": "LoL: T1 vs Hanwha Life Esports (BO3) - LCK Round 3-4 Legend Group",

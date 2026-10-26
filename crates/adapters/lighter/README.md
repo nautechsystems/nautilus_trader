@@ -49,33 +49,34 @@ trait surface.
 ## Integrator attribution
 
 NautilusTrader participates in [Lighter's partner program](https://apidocs.lighter.xyz/docs/partner-integration).
-On Lighter Mainnet, create and modify order transactions from the execution client carry the
-NautilusTrader integrator account index in `L2TxAttributes` across all account tiers, including
-Standard. Maker and taker integrator fees are zero. Lighter Testnet and both Robinhood environments
-omit integrator attributes.
+On Lighter Mainnet and Robinhood Mainnet, create and modify order transactions carry the deployment-specific
+NautilusTrader integrator account index in `L2TxAttributes` across all account tiers, including Standard.
+Maker and taker integrator fees are zero. Both testnets omit integrator attributes.
 
 Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to orders.
-During startup, the Lighter Mainnet execution client submits the required **zero-fee** approval for
-a configured L2 account with a non-maker-only API key. Lighter Testnet and both Robinhood
-environments do not submit an approval.
+During startup, each mainnet execution client submits the required **zero-fee** approval for
+a configured L2 account with a non-maker-only API key. Both testnets skip approval.
 
-Robinhood Mainnet uses separate account-level referral attribution. During startup, the
-execution client applies the `NAUTILUS` code to the account's public L1 address. Selecting
-Robinhood Mainnet opts the account into this attribution. Application failures log a
-warning and do not block trading. Robinhood Testnet does not apply a referral.
+During startup on either mainnet, when account details are available, the execution client
+attempts to apply the `NAUTILUS` referral code to the account's public L1 address using the
+configured L2 API key. The call is best effort with a 10-second timeout, and failures do not block trading.
+Selecting either mainnet opts the account into this attribution to support NautilusTrader development.
+Both testnets skip referral attribution.
+
+Lighter Mainnet's [referral program](https://docs.lighter.xyz/programs/referral-program) offers eligible
+referred users a 10% trading fee discount, paid as rebates. The venue determines referral acceptance and eligibility.
 
 See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
 for full attribution and revocation details.
 
 ### Maker-only API keys
 
-On Lighter Mainnet, Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly
+On both mainnets, Lighter restricts maker-only API keys to the 0ms speed-bump lane (PostOnly
 orders, modifies on ALO orders, and cancels), so they cannot submit `ApproveIntegrator` themselves.
 The execution client detects maker-only keys at startup via `getMakerOnlyApiKeys` and skips the
 approval with a WARN log. Approval is account-scoped: a single `ApproveIntegrator` from any
 non-maker-only key on the same account unlocks orders for every key on that account,
-including maker-only ones. Lighter Testnet and both Robinhood environments do not query
-`getMakerOnlyApiKeys` for integrator approval.
+including maker-only ones. Both testnets skip `getMakerOnlyApiKeys` for integrator approval.
 
 ## L2 transaction signer
 
@@ -85,9 +86,8 @@ gated by independent layers:
 
 - **Vector parity** with the upstream Go reference (`elliottech/poseidon_crypto`)
   for every algebra layer.
-- **Compiled-signer oracle parity** with the signer distributed by the official
-  `lighter-python` SDK, covering end-to-end outputs for the four supported tx
-  kinds.
+- **Compiled-signer oracle parity** with `lighter-go` v1.0.12, covering end-to-end outputs for
+  create, cancel, modify, cancel-all, leverage, integrator approval, and grouped orders.
 - **Differential parity** with Thomas Pornin's MIT-licensed Rust reference
   (`pornin/ecgfp5`), kept in the publish=false fuzz crate so the crates.io
   package graph has no git dependencies. The fuzz targets assert every public

@@ -1342,8 +1342,10 @@ mod streaming_tests {
 
     use nautilus_common::{
         clock::VirtualClock,
-        messages::data::{DataCommand, QuotesResponse, RequestCommand, RequestQuotes},
-        msgbus::{self, MStr, ShareableMessageHandler},
+        messages::data::{
+            DataCommand, DataResponse, DataResponseEnvelope, RequestCommand, RequestQuotes,
+        },
+        msgbus::{self, MStr, TypedHandler},
     };
     use nautilus_core::Params;
     use nautilus_model::{
@@ -1412,8 +1414,12 @@ mod streaming_tests {
         let received_quotes = received.clone();
         msgbus::register_response_handler(
             &request_id,
-            ShareableMessageHandler::from_typed(move |response: &QuotesResponse| {
-                *received_quotes.borrow_mut() = response.data.clone();
+            TypedHandler::from(move |envelope: &DataResponseEnvelope| {
+                let Some(DataResponse::Quotes(response)) = envelope.response() else {
+                    panic!("expected quotes");
+                };
+
+                *received_quotes.borrow_mut() = response.data.to_vec();
             }),
         );
         let request = RequestQuotes::new(

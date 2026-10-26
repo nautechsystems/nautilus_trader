@@ -28,12 +28,15 @@ use nautilus_architect_ax::{
     },
     config::AxExecutionClientConfig,
     execution::AxExecutionClient,
-    http::{models::AxInstrumentsResponse, parse::parse_instrument},
+    http::{
+        models::{AxFillsResponse, AxInstrumentsResponse, AxOrdersResponse},
+        parse::{parse_fill_report, parse_instrument, parse_order_detail_status_report},
+    },
 };
 use nautilus_common::{
     cache::Cache,
     clients::{ExecutionClient, ExecutionReportTask},
-    live::runner::{replace_system_event_sender, set_exec_event_sender},
+    live::runner::{replace_exec_event_sender, replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
         execution::{
@@ -57,8 +60,8 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderPendingUpdate,
@@ -71,8 +74,8 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     orders::{LimitOrder, Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
-    reports::{OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, Money, Price, Quantity},
+    reports::{ExecutionMassStatus, OrderStatusReport, PositionStatusReport},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
@@ -1815,6 +1818,251 @@ async fn test_generate_mass_status_restores_historical_terminal_orders() {
 }
 
 #[rstest]
+#[case::trade_backed(true, false, 1)]
+#[case::verified_zero(true, true, 1)]
+#[case::missing_history(false, false, 32)]
+#[tokio::test]
+async fn test_historical_position_flip_commission_replay(
+    #[case] with_fills: bool,
+    #[case] zero_fee: bool,
+    #[case] days_after_fill: u64,
+) {
+    let instruments: AxInstrumentsResponse =
+        serde_json::from_value(load_test_data("captured/instruments.json")).unwrap();
+    let wire_instrument = instruments
+        .instruments
+        .iter()
+        .find(|instrument| instrument.symbol == "XAG-PERP")
+        .unwrap();
+    let instrument =
+        parse_instrument(wire_instrument, UnixNanos::default(), UnixNanos::default()).unwrap();
+    let account_id = AccountId::from("AX-001");
+
+    let harness = ExecutionHarness::new(
+        TraderId::from("TESTER-001"),
+        *AX_CLIENT_ID,
+        account_id,
+        instrument.clone(),
+    );
+    add_test_account_to_cache(harness.cache(), account_id);
+
+    let core = ExecutionClientCore::new(
+        harness.trader_id(),
+        *AX_CLIENT_ID,
+        *AX_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        harness.cache().clone(),
+    );
+    let client = AxExecutionClient::new(
+        core,
+        create_test_exec_config("127.0.0.1:9".parse().unwrap()),
+    )
+    .unwrap();
+    harness.register_client(Box::new(client)).unwrap();
+    let mut manager = ExecutionManager::new(
+        harness.clock().clone(),
+        harness.cache().clone(),
+        ExecutionManagerConfig::default(),
+    )
+    .unwrap();
+    let strategy_id = StrategyId::from("HISTORY-001");
+    manager
+        .claim_external_orders(instrument.id(), strategy_id)
+        .unwrap();
+    harness
+        .exec_engine()
+        .borrow_mut()
+        .register_oms_type(strategy_id, OmsType::Netting);
+
+    let orders: AxOrdersResponse =
+        serde_json::from_value(load_test_data("captured/orders-live.json")).unwrap();
+    let fills: AxFillsResponse =
+        serde_json::from_value(load_test_data("captured/fills.json")).unwrap();
+    let day_ns = 24 * 60 * 60 * 1_000_000_000;
+    let ts_fill = u64::try_from(fills.fills[0].timestamp.as_nanosecond()).unwrap();
+    let ts_init = UnixNanos::from(ts_fill + days_after_fill * day_ns);
+    let mut mass = ExecutionMassStatus::new(*AX_CLIENT_ID, account_id, *AX_VENUE, ts_init, None);
+    mass.set_report_window(Some(UnixNanos::from(ts_init.as_u64() - 7 * day_ns)), true);
+    let mut reports = Vec::new();
+    let mut fill_reports = Vec::new();
+
+    for fill in fills.fills.iter().rev() {
+        let wire_order = orders
+            .orders
+            .iter()
+            .find(|order| Some(order.oid.as_str()) == fill.order_id.as_deref())
+            .unwrap();
+        let report = parse_order_detail_status_report(
+            wire_order,
+            account_id,
+            &instrument,
+            ts_init,
+            None::<&fn(u64) -> Option<ClientOrderId>>,
+        )
+        .unwrap();
+        assert_eq!(report.ts_last < mass.lookback_start().unwrap(), !with_fills);
+        reports.push(report);
+        let mut fill = fill.clone();
+        if zero_fee {
+            fill.fee = dec!(0);
+        }
+
+        let fill_report = parse_fill_report(&fill, account_id, &instrument, ts_init).unwrap();
+        assert_eq!(
+            fill_report.ts_event < mass.lookback_start().unwrap(),
+            !with_fills
+        );
+        fill_reports.push(fill_report);
+    }
+
+    assert_eq!(
+        fills
+            .fills
+            .iter()
+            .map(|fill| fill.fee)
+            .sum::<rust_decimal::Decimal>(),
+        dec!(0.052372)
+    );
+
+    let expected_fee = if with_fills && !zero_fee {
+        dec!(0.05)
+    } else {
+        dec!(0)
+    };
+
+    mass.add_order_reports(reports.clone());
+    if with_fills {
+        mass.add_fill_reports(fill_reports);
+    }
+
+    mass.add_position_reports(vec![PositionStatusReport::new(
+        account_id,
+        instrument.id(),
+        PositionSide::Flat,
+        Quantity::from("0"),
+        ts_init,
+        ts_init,
+        None,
+        None,
+        None,
+    )]);
+
+    for replay in 0..2 {
+        let result = manager.reconcile_execution_mass_status(&mass, harness.exec_engine());
+        assert!(result.unresolved_positions.is_empty());
+
+        let replay_fills: Vec<_> = result
+            .events
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(replay_fills.len(), if replay == 0 { 3 } else { 0 });
+
+        for (index, fill) in replay_fills.iter().enumerate() {
+            assert_eq!(fill.instrument_id, instrument.id());
+            assert_eq!(fill.account_id, account_id);
+            assert_eq!(fill.strategy_id, strategy_id);
+            assert_eq!(
+                fill.client_order_id,
+                reports[index].client_order_id.unwrap()
+            );
+            assert_eq!(fill.venue_order_id, reports[index].venue_order_id);
+            assert_eq!(fill.order_type, OrderType::Limit);
+            assert_eq!(fill.currency, Currency::USD());
+            assert!(fill.reconciliation);
+            assert_eq!(
+                fill.trade_id
+                    == TradeId::from(["fixture-0006", "fixture-0004", "fixture-0002"][index]),
+                with_fills
+            );
+            assert_eq!(fill.last_qty, Quantity::from(["1", "2", "1"][index]));
+            assert_eq!(
+                fill.last_px,
+                Price::from(["65.48", "65.45", "65.48"][index])
+            );
+            assert_eq!(
+                fill.order_side,
+                [OrderSide::Buy, OrderSide::Sell, OrderSide::Buy][index]
+            );
+            assert_eq!(
+                fill.liquidity_side,
+                if with_fills {
+                    LiquiditySide::Taker
+                } else {
+                    LiquiditySide::NoLiquiditySide
+                }
+            );
+            assert_eq!(
+                fill.commission,
+                with_fills.then(|| Money::from(if zero_fee {
+                    "0 USD"
+                } else {
+                    ["0.01 USD", "0.03 USD", "0.01 USD"][index]
+                }))
+            );
+
+            assert_eq!(fill.to_string().contains("commission=None,"), !with_fills);
+        }
+
+        let cache = harness.cache().borrow();
+        let positions =
+            cache.positions(None, Some(&instrument.id()), None, Some(&account_id), None);
+        assert_eq!(positions.len(), 1);
+        let position = &positions[0];
+        let snapshots = cache.position_snapshots(Some(&position.id), Some(&account_id));
+        assert_eq!(snapshots.len(), 1);
+        assert_eq!(position.side, PositionSide::Flat);
+        assert_eq!(position.quantity, Quantity::from("0"));
+        assert_eq!(position.avg_px_open, dec!(65.45));
+        assert_eq!(position.avg_px_close, Some(dec!(65.48)));
+        assert_eq!(snapshots[0].side, PositionSide::Flat);
+        assert_eq!(snapshots[0].quantity, Quantity::from("0"));
+        assert_eq!(snapshots[0].avg_px_open, dec!(65.48));
+        assert_eq!(snapshots[0].avg_px_close, Some(dec!(65.45)));
+        assert_eq!(
+            position
+                .commissions()
+                .iter()
+                .map(|fee| fee.as_decimal())
+                .sum::<rust_decimal::Decimal>(),
+            expected_fee / dec!(2)
+        );
+        assert_eq!(
+            position.realized_pnl.unwrap().as_decimal(),
+            dec!(-0.03) - expected_fee / dec!(2)
+        );
+        assert_eq!(
+            snapshots[0].realized_pnl.unwrap().as_decimal(),
+            dec!(-0.03) - expected_fee / dec!(2)
+        );
+        let total_pnl = position.realized_pnl.unwrap().as_decimal()
+            + snapshots[0].realized_pnl.unwrap().as_decimal();
+        assert_eq!(total_pnl, dec!(-0.06) - expected_fee);
+        let total_fee = position
+            .commissions()
+            .iter()
+            .chain(snapshots[0].commissions().iter())
+            .map(|fee| fee.as_decimal())
+            .sum::<rust_decimal::Decimal>();
+        assert_eq!(total_fee, expected_fee);
+
+        for report in &reports {
+            let order = cache.order(&report.client_order_id.unwrap()).unwrap();
+            assert_eq!(order.status(), OrderStatus::Filled);
+            assert_eq!(order.filled_qty(), report.filled_qty);
+            assert_eq!(order.trade_ids().len(), 1);
+        }
+    }
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_generate_mass_status_fetches_uncached_report_instrument() {
     let (addr, state) = start_test_server().await.unwrap();
@@ -2827,6 +3075,322 @@ async fn test_generate_fill_reports_rejects_unrepresentable_fee() {
     );
 
     client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[case::fills("fills")]
+#[case::fills_task("fills_task")]
+#[case::targeted("targeted")]
+#[case::targeted_task("targeted_task")]
+#[case::history("history")]
+#[case::history_task("history_task")]
+#[case::mass_status("mass_status")]
+#[tokio::test]
+async fn test_commission_failure_defers_reports_until_corrected(#[case] route: &str) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let instruments: AxInstrumentsResponse =
+        serde_json::from_value(load_test_data("http_get_instruments.json")).unwrap();
+    let instrument = parse_instrument(
+        &instruments.instruments[0],
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+    .unwrap();
+    let trader_id = TraderId::from("TESTER-001");
+    let account_id = AccountId::from("AX-001");
+    let client_order_id = ClientOrderId::from("O-FEE-RECOVERY");
+    let venue_order_id = VenueOrderId::from("O-PARTIAL-CANCELED");
+    let harness = ExecutionHarness::new(trader_id, *AX_CLIENT_ID, account_id, instrument.clone());
+    add_test_account_to_cache(harness.cache(), account_id);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("200"))
+        .price(Price::from("1.0840"))
+        .time_in_force(TimeInForce::Ioc)
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+    harness
+        .cache()
+        .borrow_mut()
+        .add_order(order, None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+    harness
+        .cache()
+        .borrow_mut()
+        .update_order(&accepted)
+        .unwrap();
+
+    let core = ExecutionClientCore::new(
+        trader_id,
+        *AX_CLIENT_ID,
+        *AX_VENUE,
+        OmsType::Netting,
+        account_id,
+        AccountType::Margin,
+        None,
+        harness.cache().clone(),
+    );
+    let mut client = AxExecutionClient::new(core, create_test_exec_config(addr)).unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    replace_exec_event_sender(tx);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    drain_rx(&mut rx);
+    let now = nautilus_core::time::get_atomic_clock_realtime()
+        .get_time_ns()
+        .as_u64()
+        - 2_000_000_000;
+    let mut fills = load_test_data("http_get_fills_partial_canceled.json");
+    fills["fills"].as_array_mut().unwrap().truncate(2);
+    fills["fills"].as_array_mut().unwrap().reverse();
+    for (index, fill) in fills["fills"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        fill["timestamp"] = jiff::Timestamp::from_nanosecond(i128::from(now + index as u64))
+            .unwrap()
+            .to_string()
+            .into();
+    }
+
+    let fill_cmd = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .instrument_id(Some(instrument.id()))
+        .venue_order_id(Some(venue_order_id))
+        .build()
+        .unwrap();
+    let mut prior = fills.clone();
+    prior["fills"].as_array_mut().unwrap().truncate(1);
+    *state.fills_payload.lock().await = Some(prior);
+    let prior_reports = client
+        .generate_fill_reports(fill_cmd.clone())
+        .await
+        .unwrap();
+    assert_eq!(prior_reports.len(), 1);
+    harness
+        .exec_engine()
+        .borrow_mut()
+        .reconcile_fill_report(&prior_reports[0]);
+    let before = harness
+        .cache()
+        .borrow()
+        .order(&client_order_id)
+        .unwrap()
+        .clone();
+    assert_eq!(before.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(before.filled_qty(), Quantity::from("40"));
+    assert_eq!(
+        before.commissions().values().copied().collect::<Vec<_>>(),
+        vec![Money::from("0.10 USD")]
+    );
+    let mut orders = load_test_data("http_get_orders_partial_canceled.json");
+    orders["orders"][0]["cid"] = serde_json::Value::Null;
+    orders["orders"][0]["ts"] = (now / 1_000_000_000).into();
+    orders["orders"][0]["tn"] = (now % 1_000_000_000).into();
+    *state.orders_payload.lock().await = Some(orders);
+    *state.open_orders_payload.lock().await = Some(serde_json::json!({"orders": []}));
+    *state.positions_payload.lock().await = Some(serde_json::json!({"positions": []}));
+    let mut status = load_test_data("http_get_order_status.json");
+    status["status"]["order_id"] = venue_order_id.to_string().into();
+    status["status"]["state"] = "CANCELED".into();
+    *state.order_status_response.lock().await = Some((200, status));
+    let order_cmd = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::default())
+        .client_order_id(Some(client_order_id))
+        .venue_order_id(Some(venue_order_id))
+        .build()
+        .unwrap();
+    let history_cmd = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .unwrap();
+
+    for valid in [false, true] {
+        fills["fills"][1]["fee"] = if valid {
+            "0.23"
+        } else {
+            "9999999999999999999999999999"
+        }
+        .into();
+
+        *state.fills_payload.lock().await = Some(fills.clone());
+
+        let result = match route {
+            "fills" => client
+                .generate_fill_reports(fill_cmd.clone())
+                .await
+                .map(|reports| assert_eq!(reports.len(), 2)),
+            "fills_task" => {
+                collect_report_task(client.generate_fill_reports_task(&fill_cmd).unwrap())
+                    .await
+                    .map(|reports| assert_eq!(reports.len(), 2))
+            }
+            "targeted" => client
+                .generate_order_status_report(&order_cmd)
+                .await
+                .map(|report| {
+                    assert_commission_recovery_order(
+                        &report.unwrap(),
+                        venue_order_id,
+                        Some(client_order_id),
+                        UnixNanos::from(now + 1),
+                    );
+                }),
+            "targeted_task" => collect_report_task(
+                client
+                    .generate_order_status_report_task(&order_cmd)
+                    .unwrap(),
+            )
+            .await
+            .map(|report| {
+                assert_commission_recovery_order(
+                    &report.unwrap(),
+                    venue_order_id,
+                    Some(client_order_id),
+                    UnixNanos::from(now + 1),
+                );
+            }),
+            "history" => client
+                .generate_order_status_reports(&history_cmd)
+                .await
+                .map(|reports| {
+                    assert_eq!(reports.len(), 1);
+                    assert_commission_recovery_order(
+                        &reports[0],
+                        venue_order_id,
+                        None,
+                        UnixNanos::from(now + 1),
+                    );
+                }),
+            "history_task" => collect_report_task(
+                client
+                    .generate_order_status_reports_task(&history_cmd)
+                    .unwrap(),
+            )
+            .await
+            .map(|reports| {
+                assert_eq!(reports.len(), 1);
+                assert_commission_recovery_order(
+                    &reports[0],
+                    venue_order_id,
+                    None,
+                    UnixNanos::from(now + 1),
+                );
+            }),
+            "mass_status" => client
+                .generate_mass_status(None)
+                .await
+                .map(|mass| assert_eq!(mass.unwrap().order_reports().len(), 1)),
+            _ => unreachable!(),
+        };
+
+        if valid {
+            result.unwrap();
+        } else {
+            let error = result.unwrap_err();
+            assert!(
+                format!("{error:#}").contains("Failed to convert fill.fee Decimal to Money"),
+                "{error:#}"
+            );
+        }
+
+        let cache = harness.cache().borrow();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(cached.events(), before.events());
+        assert_eq!(cached.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(cached.filled_qty(), Quantity::from("40"));
+        assert_eq!(cached.trade_ids(), vec![&TradeId::from("T-FIRST")]);
+        assert_eq!(
+            cached.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from("0.10 USD")]
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    let reports = client.generate_fill_reports(fill_cmd).await.unwrap();
+    assert_eq!(reports.len(), 2);
+
+    for (report, trade, qty, fee, timestamp) in [
+        (&reports[0], "T-FIRST", "40", "0.10 USD", now),
+        (&reports[1], "T-LAST", "60", "0.23 USD", now + 1),
+    ] {
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(report.venue_order_id, venue_order_id);
+        assert_eq!(report.trade_id, TradeId::from(trade));
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.last_qty, Quantity::from(qty));
+        assert_eq!(report.last_px, Price::from("1.0841"));
+        assert_eq!(report.commission, Money::from(fee));
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.ts_event, UnixNanos::from(timestamp));
+        assert_eq!(report.client_order_id, None);
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.avg_px, None);
+    }
+
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+    harness.register_client(Box::new(client)).unwrap();
+    let mut manager = ExecutionManager::new(
+        harness.clock().clone(),
+        harness.cache().clone(),
+        ExecutionManagerConfig::default(),
+    )
+    .unwrap();
+
+    for _ in 0..2 {
+        let result = manager.reconcile_execution_mass_status(&mass, harness.exec_engine());
+        assert!(result.unresolved_positions.is_empty());
+        let cache = harness.cache().borrow();
+        let cached = cache.order(&client_order_id).unwrap();
+        assert_eq!(cached.status(), OrderStatus::Canceled);
+        assert_eq!(cached.filled_qty(), Quantity::from("100"));
+        assert_eq!(cached.leaves_qty(), Quantity::from("100"));
+        assert_eq!(
+            cached.trade_ids(),
+            vec![&TradeId::from("T-FIRST"), &TradeId::from("T-LAST")]
+        );
+        assert_eq!(
+            cached.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from("0.33 USD")]
+        );
+        assert_eq!(
+            cached
+                .events()
+                .iter()
+                .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+                .count(),
+            2
+        );
+    }
+}
+
+fn assert_commission_recovery_order(
+    report: &OrderStatusReport,
+    venue_order_id: VenueOrderId,
+    client_order_id: Option<ClientOrderId>,
+    ts_last: UnixNanos,
+) {
+    assert_eq!(report.account_id, AccountId::from("AX-001"));
+    assert_eq!(report.instrument_id, InstrumentId::from("EURUSD-PERP.AX"));
+    assert_eq!(report.client_order_id, client_order_id);
+    assert_eq!(report.venue_order_id, venue_order_id);
+    assert_eq!(report.order_side, Some(OrderSide::Buy));
+    assert_eq!(report.order_type, OrderType::Limit);
+    assert_eq!(report.time_in_force, TimeInForce::Ioc);
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.quantity, Quantity::from("200"));
+    assert_eq!(report.filled_qty, Quantity::from("100"));
+    assert_eq!(report.price, Some(Price::from("1.0840")));
+    assert_eq!(report.ts_last, ts_last);
 }
 
 #[rstest]

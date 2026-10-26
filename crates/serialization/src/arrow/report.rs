@@ -92,6 +92,7 @@ const POSITION_STATUS_REPORT_FIELDS: &[JsonFieldSpec] = &[
     JsonFieldSpec::utf8("avg_px_open", true),
     JsonFieldSpec::utf8("avg_px_open_reconciliation", true),
     JsonFieldSpec::u64("avg_px_open_precision", true),
+    JsonFieldSpec::utf8("liquidation_price", true),
 ];
 
 const EXECUTION_MASS_STATUS_FIELDS: &[JsonFieldSpec] = &[
@@ -168,16 +169,16 @@ impl_report_arrow!(
     position_status_report_decode_fields
 );
 
-// Files written before the average reconciliation fields lack their two trailing columns
+// Older files omit liquidation price and, before that, average reconciliation metadata
 fn position_status_report_decode_fields(record_batch: &RecordBatch) -> &'static [JsonFieldSpec] {
-    if record_batch
-        .schema()
-        .index_of("avg_px_open_reconciliation")
-        .is_ok()
-    {
+    let schema = record_batch.schema();
+
+    if schema.index_of("liquidation_price").is_ok() {
         POSITION_STATUS_REPORT_FIELDS
+    } else if schema.index_of("avg_px_open_reconciliation").is_ok() {
+        &POSITION_STATUS_REPORT_FIELDS[..POSITION_STATUS_REPORT_FIELDS.len() - 1]
     } else {
-        &POSITION_STATUS_REPORT_FIELDS[..POSITION_STATUS_REPORT_FIELDS.len() - 2]
+        &POSITION_STATUS_REPORT_FIELDS[..POSITION_STATUS_REPORT_FIELDS.len() - 3]
     }
 }
 
@@ -281,7 +282,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_position_status_report_round_trip_preserves_decimal_precision() {
+    #[case::reported(Some(Decimal::from_str("0.87654321987654321").unwrap()))]
+    #[case::zero(Some(Decimal::ZERO))]
+    #[case::unavailable(None)]
+    fn test_position_status_report_round_trip_preserves_decimal_precision(
+        #[case] liquidation_price: Option<Decimal>,
+    ) {
         let report = PositionStatusReport {
             account_id: AccountId::from("SIM-001"),
             instrument_id: InstrumentId::from("AUDUSD.SIM"),
@@ -295,6 +301,7 @@ mod tests {
             avg_px_open: Some(Decimal::from_str("1.23456789123456789").unwrap()),
             avg_px_open_reconciliation: AvgPxReconciliation::OpeningOnly,
             avg_px_open_precision: Some(4),
+            liquidation_price,
         };
         let metadata = report.metadata();
         let batch =
@@ -306,10 +313,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case::missing_columns(true)]
-    #[case::null_values(false)]
-    fn test_position_status_report_decodes_without_avg_px_open_metadata(
-        #[case] omit_columns: bool,
+    #[case::before_liquidation_price(1)]
+    #[case::before_avg_metadata(3)]
+    #[case::null_values(0)]
+    fn test_position_status_report_decodes_without_optional_metadata(
+        #[case] missing_columns: usize,
     ) {
         let report = PositionStatusReport::new(
             AccountId::from("SIM-001"),
@@ -322,14 +330,24 @@ mod tests {
             None,
             Some(Decimal::from_str("1.2345").unwrap()),
         );
+
+        let report = if missing_columns == 1 {
+            report
+                .with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly)
+                .with_avg_px_open_precision(4)
+        } else {
+            report
+        };
+
         let metadata = report.metadata();
 
-        let batch = if omit_columns {
+        let batch = if missing_columns != 0 {
             encode_batch(
                 "PositionStatusReport",
                 &metadata,
                 [&report],
-                &POSITION_STATUS_REPORT_FIELDS[..POSITION_STATUS_REPORT_FIELDS.len() - 2],
+                &POSITION_STATUS_REPORT_FIELDS
+                    [..POSITION_STATUS_REPORT_FIELDS.len() - missing_columns],
             )
             .unwrap()
         } else {
@@ -340,6 +358,7 @@ mod tests {
                 serde_json::Value::Null,
             );
             object.insert("avg_px_open_precision".to_string(), serde_json::Value::Null);
+            object.insert("liquidation_price".to_string(), serde_json::Value::Null);
             encode_batch(
                 "PositionStatusReport",
                 &metadata,

@@ -192,6 +192,11 @@ impl ExecutionClient for BacktestExecutionClient {
         Ok(())
     }
 
+    fn reset(&mut self) -> anyhow::Result<()> {
+        self.queued_events.borrow_mut().clear();
+        Ok(())
+    }
+
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         // Buffer the OrderSubmitted event for deferred processing to avoid
         // RefCell re-entrancy (exec_engine holds a borrow during execute)
@@ -307,6 +312,7 @@ mod tests {
     };
     use nautilus_model::{
         enums::{AccountType, BookType, OmsType},
+        events::OrderSubmitted,
         identifiers::{InstrumentId, StrategyId},
         stubs::TestDefault,
         types::{Currency, Money},
@@ -393,6 +399,21 @@ mod tests {
             .into();
 
         assert!(Rc::ptr_eq(&upgraded, &exchange));
+    }
+
+    #[rstest]
+    fn test_reset_clears_buffered_order_events_across_clones() {
+        let (client, _exchange) = setup_client_with_latency();
+        let mut cloned = client.clone();
+        let event = OrderEventAny::Submitted(OrderSubmitted::test_default());
+        let handler = client.order_event_handler();
+        handler(event.clone());
+        assert_eq!(*client.queued_events.borrow(), vec![event]);
+
+        cloned.reset().unwrap();
+
+        assert_eq!(*client.queued_events.borrow(), Vec::<OrderEventAny>::new());
+        assert_eq!(*cloned.queued_events.borrow(), Vec::<OrderEventAny>::new());
     }
 
     #[rstest]

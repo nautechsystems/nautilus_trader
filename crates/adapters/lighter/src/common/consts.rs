@@ -20,6 +20,11 @@ use std::{sync::LazyLock, time::Duration};
 use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
+pub(crate) const SCHEDULED_CANCEL_MIN_DELAY_SECS: u64 = 5 * 60;
+pub(crate) const SCHEDULED_CANCEL_MAX_DELAY_SECS: u64 = 15 * 24 * 60 * 60;
+pub(crate) const SCHEDULED_CANCEL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const SCHEDULED_CANCEL_CLOCK_HEADROOM_SECS: u64 = 60;
+
 /// Venue name string for Lighter.
 pub const LIGHTER: &str = "LIGHTER";
 
@@ -58,6 +63,12 @@ pub const LIGHTER_ROBINHOOD_CHAIN_ID: u32 = 466_324;
 
 /// Nautilus integrator account index on Lighter.
 pub const LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX: u64 = 723_813;
+
+/// Nautilus integrator account index on Robinhood Chain.
+pub const LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX: u64 = 17_725;
+
+/// Nautilus referral code shared by both mainnets.
+pub const LIGHTER_NAUTILUS_REFERRAL_CODE: &str = "NAUTILUS";
 
 /// Venue error code for missing integrator approval.
 pub const LIGHTER_ERROR_CODE_INTEGRATOR_NOT_APPROVED: u64 = 21_149;

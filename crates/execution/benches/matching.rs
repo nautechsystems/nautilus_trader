@@ -40,6 +40,7 @@ use nautilus_model::{
 };
 
 const SIZES: &[usize] = &[4, 32, 100, 1_000];
+const MIXED_ASK_PRICE: &str = "100.01";
 
 fn make_limit(side: OrderSide, price: &str, seq: usize) -> RestingOrder {
     let init = OrderInitializedSpec::builder()
@@ -243,9 +244,7 @@ fn bench_iterate(c: &mut Criterion) {
         assert_eq!(no_fill.iterate(), Vec::<MatchAction>::new());
         assert_eq!(no_fill.get_orders(), no_fill_orders);
 
-        // no_fill: ask above all bid limits, bid below all ask limits.
-        // Measures clone + per-order match dispatch with no MatchAction
-        // pushes (allocation-free hot path).
+        // No orders match; measure rejection of a populated passive book
         group.throughput(Throughput::Elements(n as u64));
         group.bench_with_input(BenchmarkId::new("no_fill", n), &n, |b, &n| {
             b.iter_batched_ref(
@@ -264,12 +263,39 @@ fn bench_iterate(c: &mut Criterion) {
         assert_eq!(all_fills.iterate(), expected);
         assert_eq!(all_fills.get_orders(), all_fill_orders);
 
-        // all_fills: ask at 1.00 and bid at 200.00, every order matches.
-        // Adds the per-order MatchAction push to the result vec on top of the
-        // dispatch cost, exercising the `collect()` allocation path.
+        // Every order matches; measure traversal and result allocation
         group.bench_with_input(BenchmarkId::new("all_fills", n), &n, |b, &n| {
             b.iter_batched_ref(
                 || all_fill_core(n),
+                |core| black_box(core.iterate()),
+                BatchSize::SmallInput,
+            );
+        });
+
+        let mixed_fills = mixed_fill_core(n);
+        let mixed_orders = mixed_fills.get_orders();
+
+        let mut expected: Vec<_> = mixed_orders
+            .iter()
+            .filter(|order| {
+                order.order_type == OrderType::Limit
+                    && order.order_side == OrderSide::Buy
+                    && order.limit_price.unwrap() >= Price::from(MIXED_ASK_PRICE)
+            })
+            .map(|order| MatchAction::FillLimit(order.client_order_id))
+            .collect();
+
+        expected.extend(
+            ["S-BUY", "T-BUY", "S-SELL"]
+                .map(|id| MatchAction::TriggerStop(ClientOrderId::from(id))),
+        );
+        assert_eq!(mixed_fills.iterate(), expected);
+        assert_eq!(mixed_fills.get_orders(), mixed_orders);
+
+        // Match a limit prefix, then stops and touched orders beyond the first unfilled limit
+        group.bench_with_input(BenchmarkId::new("mixed_fills", n), &n, |b, &n| {
+            b.iter_batched_ref(
+                || mixed_fill_core(n),
                 |core| black_box(core.iterate()),
                 BatchSize::SmallInput,
             );
@@ -282,6 +308,52 @@ fn all_fill_core(n: usize) -> OrderMatchingCore {
     let (mut core, _, _) = seeded_core(n);
     core.set_ask_raw(Price::from("1.00"));
     core.set_bid_raw(Price::from("200.00"));
+    core
+}
+
+fn mixed_fill_core(n: usize) -> OrderMatchingCore {
+    let (mut core, _, _) = seeded_core(n);
+    core.set_ask_raw(Price::from(MIXED_ASK_PRICE));
+    for (id, side, order_type, trigger, active) in [
+        (
+            "S-INACTIVE",
+            OrderSide::Buy,
+            OrderType::StopMarket,
+            "99.00",
+            false,
+        ),
+        (
+            "S-BUY",
+            OrderSide::Buy,
+            OrderType::StopMarket,
+            MIXED_ASK_PRICE,
+            true,
+        ),
+        (
+            "T-BUY",
+            OrderSide::Buy,
+            OrderType::MarketIfTouched,
+            "101.00",
+            true,
+        ),
+        (
+            "S-SELL",
+            OrderSide::Sell,
+            OrderType::StopMarket,
+            "100.00",
+            true,
+        ),
+    ] {
+        core.add_order(RestingOrder::new(
+            ClientOrderId::from(id),
+            side,
+            order_type,
+            Some(Price::from(trigger)),
+            None,
+            active,
+        ));
+    }
+
     core
 }
 

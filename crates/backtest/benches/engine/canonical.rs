@@ -18,6 +18,7 @@ use std::{
     fs::File,
     hint::black_box,
     io::{BufRead, BufReader},
+    path::PathBuf,
     time::{Duration, Instant},
 };
 
@@ -198,8 +199,8 @@ impl CanonicalScenario {
                     "blake3:be57c858fd2d34e157342f64260c4d517abc2f7a5f67dce73d43858ea1b2bf1a"
                         .to_string(),
                 result_digest: expected_result_digest(
-                    "blake3:af19677c389328849e47fe5054b8a48bef8e0884975a6bca79a59168550eaf68",
-                    "blake3:c060d4fbd5bdfd519d6718e8e9ba57c2b4ffdbbe2c8a12574f8b0f1505103faa",
+                    "blake3:f2930cd2c5127aa2a0d4845c1735c9891a62d308963b2d791fa89310710f2b9e",
+                    "blake3:aff686ceb0181ce3f2459115269bc0f634a46aeaa5d26a6e01e380b1b08c2ffb",
                 ),
             },
             Self::PassiveLimitOrders => CanonicalFingerprint {
@@ -231,8 +232,8 @@ impl CanonicalScenario {
                     "blake3:ba1b5311a979bcfb6b58a4a9c478b4f00d0c577ce0c5c9cb3328f84ee921d9fc"
                         .to_string(),
                 result_digest: expected_result_digest(
-                    "blake3:a6b8a6e9f1f1576f53413bf73190bc8e55cccd91491db4e86dd2abb83ae942f7",
-                    "blake3:eb31ad11e645e6ea771d2f63c2aac14775a5c007f940cbcfc78f8437ac94d816",
+                    "blake3:b39fb4859eb50b38a2bbc8dd46d2817549ecff2d463f438604922da2e4ef843e",
+                    "blake3:1be2c04ff8587ac11aa7b68119afaf787818b75391aa7fcf5634e56f63bd09cd",
                 ),
             },
         }
@@ -700,6 +701,9 @@ fn verify_input(
     let case = scenario.case_name(input);
     let fixture = load_fixture(input)?;
     let preloaded = scenario.run(&fixture)?;
+
+    write_result(&case, &preloaded)?;
+
     if let Err(e) = scenario.verify(&preloaded) {
         mismatches.push(format!("[{case}] {e}"));
     }
@@ -714,6 +718,19 @@ fn verify_input(
         ));
     }
     Ok(preloaded)
+}
+
+pub(crate) fn write_result(case: &str, result: &CanonicalBacktestResult) -> anyhow::Result<()> {
+    if let Some(directory) = std::env::var_os("NAUTILUS_BENCH_RESULT_DIR") {
+        let directory = PathBuf::from(directory);
+        std::fs::create_dir_all(&directory)?;
+        std::fs::write(
+            directory.join(format!("{case}.json")),
+            serde_json::to_vec_pretty(result.as_value())?,
+        )?;
+    }
+
+    Ok(())
 }
 
 pub(crate) fn load_fixture(input: CanonicalInput) -> anyhow::Result<CanonicalFixture> {

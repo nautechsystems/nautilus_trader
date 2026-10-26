@@ -31,6 +31,46 @@ cannot check.
 Match nearby code when the tools do not settle a choice. Change generator inputs and regenerate
 outputs instead of editing generated files directly.
 
+## Lint configuration
+
+`Cargo.toml` defines shared lint levels under `[workspace.lints]`. Each package inherits them with
+`[lints] workspace = true`. `clippy.toml` configures lint behavior, including thresholds, test
+allowances, and disallowed APIs; it does not set lint levels. `.cargo/config.toml` and the repository
+Clippy commands deny warnings so enabled checks fail the command.
+
+Crates adopt pedantic checks through `#![warn(clippy::pedantic)]` in each migrated target root.
+A library opt-in does not opt in its binaries, examples, or integration tests. Keep pedantic disabled
+in targets that have not migrated. Use narrow, reasoned source allowances for local exceptions,
+including documented macro exceptions.
+
+[Source attributes](https://doc.rust-lang.org/rustc/lints/levels.html#priority-of-lint-level-sources)
+override Cargo lint flags. Cargo
+[priority](https://doc.rust-lang.org/cargo/reference/manifest.html#the-lints-section) orders those flags
+and cannot preserve a shared allowance against a source group opt-in. Cargo also rejects package lint
+tables alongside workspace inheritance. The repository therefore generates shared allowance attributes after each
+source pedantic opt-in. This keeps direct Cargo commands and staged adoption working without copied
+lint tables or a custom Clippy runner. The generated attributes repeat the shared choices in source,
+with `Cargo.toml` as their authoritative definition.
+
+After changing shared allowances or adding an opt-in, run:
+
+```bash
+python3 -B scripts/update-clippy-allowances.py
+make check-clippy-allowances
+```
+
+The generator also covers module opt-ins: a group attribute in an inner scope overrides inherited
+allowances. Keep generated allowances after the opt-in and regenerate them instead of editing them.
+Pre-commit and repository Clippy commands check for drift. Run
+`python3 -B scripts/ci/test_clippy_allowances.py` for the isolated compiler regression probes.
+
+`make check-code` checks library and test targets; `scripts/clippy-changed.sh` also checks binaries.
+`make check-all-targets` includes examples and benches. These gates retain `-D warnings`.
+`make clippy-pedantic-crate-<package>` enables pedantic for one package's targets and appends shared
+allowance flags from the same generator.
+`make clippy-strict-audit` uses `--force-warn` to report candidate lints even at deliberately allowed
+sites; findings do not fail that audit.
+
 ## Module layout
 
 Arrange each hand-written module so its primary behavior appears before its supporting

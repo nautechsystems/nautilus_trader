@@ -342,6 +342,126 @@ def test_process_crate_only_reports_traversal_when_verbose(
     assert verbose_output.err == ""
 
 
+@pytest.mark.parametrize("name", ["quote", "trade", "bar"])
+def test_process_crate_uses_indexed_cache_docs_for_shared_wrapper(
+    name: str,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Distinguish indexed shared accessors from native latest reads.
+    """
+    monkeypatch.setattr(generate_docstrings, "ROOT", tmp_path)
+    src_dir = tmp_path / "crates" / "common" / "src"
+    python_dir = src_dir / "python"
+    python_dir.mkdir(parents=True)
+    (src_dir / "cache.rs").write_text(
+        f"""\
+impl Cache {{
+    /// Returns the latest {name}.
+    pub fn {name}(&self) {{}}
+    /// Returns the {name} at index, with index 0 most recent.
+    pub fn {name}_at_index(&self, index: usize) {{}}
+}}
+""",
+        encoding="utf-8",
+    )
+    binding_path = python_dir / "cache.rs"
+    binding_path.write_text(
+        f"""\
+#[pymethods]
+impl PyCache {{
+    fn py_{name}(&self, index: usize) {{}}
+}}
+#[pymethods]
+impl Cache {{
+    fn py_{name}(&self) {{}}
+}}
+""",
+        encoding="utf-8",
+    )
+
+    updates = generate_docstrings.process_crate("common", src_dir)
+    updated = binding_path.read_text(encoding="utf-8")
+    repeated_updates = generate_docstrings.process_crate("common", src_dir)
+
+    assert updates == 2
+    assert (
+        updated
+        == f"""\
+#[pymethods]
+impl PyCache {{
+    /// Returns the {name} at index, with index 0 most recent.
+    fn py_{name}(&self, index: usize) {{}}
+}}
+#[pymethods]
+impl Cache {{
+    /// Returns the latest {name}.
+    fn py_{name}(&self) {{}}
+}}
+"""
+    )
+    assert repeated_updates == 0
+    assert binding_path.read_text(encoding="utf-8") == updated
+
+
+def test_process_crate_copies_cache_history_docs_without_overwriting_other_wrappers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Copy history docs to PyCache while preserving unrelated wrapper documentation.
+    """
+    monkeypatch.setattr(generate_docstrings, "ROOT", tmp_path)
+    src_dir = tmp_path / "crates" / "common" / "src"
+    python_dir = src_dir / "python"
+    python_dir.mkdir(parents=True)
+    (src_dir / "cache.rs").write_text(
+        """\
+impl Cache {
+    /// Returns cached bars, newest first.
+    ///
+    /// Returns `None` if absent.
+    pub fn bars(&self) {}
+    /// Returns a native order reference.
+    pub fn order(&self) {}
+}
+""",
+        encoding="utf-8",
+    )
+    binding_path = python_dir / "cache.rs"
+    binding_path.write_text(
+        """\
+#[pymethods]
+impl PyCache {
+    fn py_bars(&self) {}
+    /// Returns a Python order snapshot.
+    fn py_order(&self) {}
+}
+""",
+        encoding="utf-8",
+    )
+
+    updates = generate_docstrings.process_crate("common", src_dir)
+    updated = binding_path.read_text(encoding="utf-8")
+
+    assert updates == 1
+    assert (
+        updated
+        == """\
+#[pymethods]
+impl PyCache {
+    /// Returns cached bars, newest first.
+    ///
+    /// Returns `None` if absent.
+    fn py_bars(&self) {}
+    /// Returns a Python order snapshot.
+    fn py_order(&self) {}
+}
+"""
+    )
+
+
 def test_collect_source_docs_attaches_doc_across_commented_attribute(tmp_path: Path) -> None:
     """
     Test collect source docs attaches doc across commented attribute.

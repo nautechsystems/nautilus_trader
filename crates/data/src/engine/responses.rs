@@ -13,11 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::sync::Arc;
+
+use nautilus_common::messages::data::InstrumentsResponse;
+use nautilus_model::data::BatchView;
+
 use super::{
-    BarsResponse, BookDeltasResponse, BookDepthResponse, BookType, CustomData, CustomDataResponse,
-    Data, DataEngine, DataResponse, Display, FromStr, FundingRatesResponse, HasTsInit,
-    NANOSECONDS_IN_DAY, OrderBook, OrderBookDelta, OrderBookDeltas, QuotesResponse, RecordFlag,
-    RequestCommand, TradesResponse, UUID4, UnixNanos, type_name,
+    BookDeltasResponse, BookType, CustomData, CustomDataResponse, Data, DataEngine, DataResponse,
+    Display, FromStr, HasTsInit, InstrumentAny, InstrumentId, NANOSECONDS_IN_DAY, OrderBook,
+    OrderBookDelta, OrderBookDeltas, RecordFlag, RequestCommand, UUID4, UnixNanos, type_name,
 };
 
 impl DataEngine {
@@ -71,8 +75,7 @@ impl DataEngine {
         let mut after: Vec<OrderBookDelta> = Vec::new();
         let mut last_applied_ts: Option<UnixNanos> = None;
         let mut crossed = false;
-
-        for delta in &resp.data {
+        for delta in resp.data.iter() {
             if crossed {
                 after.push(*delta);
             } else {
@@ -106,7 +109,7 @@ impl DataEngine {
         let snapshot_ts = last_ts.max(original_start_ns);
         let mut new_data = book.to_deltas(snapshot_ts, snapshot_ts).deltas;
         new_data.extend(after);
-        resp.data = new_data;
+        resp.data = new_data.into();
     }
 }
 
@@ -126,34 +129,22 @@ pub(super) fn log_if_empty_response<T, I: Display>(
     false
 }
 
-/// Concatenates same-variant leg payloads into a single rebuilt response keyed by `parent_id`.
-///
-/// Returns `None` when legs are mixed-variant or empty; pipelines only group legs of the same
-/// variant. `BookDeltas` legs additionally return `None` when their wrapper instruments differ,
-/// since a book-delta batch is keyed by one instrument and cannot carry another's children.
-/// The rebuilt response inherits `start` and `end` from the parent request when the parent is a
-/// `RequestJoin`; otherwise leg bounds are preserved on the first leg.
+// A book-delta batch carries one instrument ID, so different instruments must stay separate
 pub(super) fn rebuild_pipeline_response(
     parent_id: UUID4,
     parent: Option<&RequestCommand>,
     legs: Vec<DataResponse>,
 ) -> Option<DataResponse> {
-    if legs.is_empty() {
-        return None;
-    }
-
-    let (parent_start, parent_end) = parent_request_window(parent);
-
+    let (start, end) = parent_request_window(parent);
     let mut iter = legs.into_iter();
     let first = iter.next()?;
 
-    match first {
+    let response = match first {
         DataResponse::Data(mut acc) => {
             let mut data = custom_response_data(&acc, parent_id)?;
 
             for leg in iter {
                 let DataResponse::Data(other) = leg else {
-                    log::error!("Mixed-variant legs in pipeline {parent_id}");
                     return None;
                 };
 
@@ -161,199 +152,205 @@ pub(super) fn rebuild_pipeline_response(
             }
 
             data.sort_by_key(CustomData::ts_init);
-            acc.data = std::sync::Arc::new(data);
-            acc.correlation_id = parent_id;
-
-            if parent_start.is_some() {
-                acc.start = parent_start;
-            }
-
-            if parent_end.is_some() {
-                acc.end = parent_end;
-            }
-
-            Some(DataResponse::Data(acc))
+            acc.data = Arc::new(data);
+            acc.start = start.or(acc.start);
+            acc.end = end.or(acc.end);
+            DataResponse::Data(acc)
         }
-        DataResponse::Quotes(mut acc) => {
-            for leg in iter {
-                let DataResponse::Quotes(other) = leg else {
-                    log::error!("Mixed-variant legs in pipeline {parent_id}");
-                    return None;
-                };
-
-                acc.data.extend(other.data);
-            }
-
-            acc.data.sort_by_key(|q| q.ts_init);
-            acc.correlation_id = parent_id;
-
-            if parent_start.is_some() {
-                acc.start = parent_start;
-            }
-
-            if parent_end.is_some() {
-                acc.end = parent_end;
-            }
-
-            Some(DataResponse::Quotes(acc))
-        }
-        DataResponse::Trades(mut acc) => {
-            for leg in iter {
-                let DataResponse::Trades(other) = leg else {
-                    log::error!("Mixed-variant legs in pipeline {parent_id}");
-                    return None;
-                };
-
-                acc.data.extend(other.data);
-            }
-
-            acc.data.sort_by_key(|t| t.ts_init);
-            acc.correlation_id = parent_id;
-
-            if parent_start.is_some() {
-                acc.start = parent_start;
-            }
-
-            if parent_end.is_some() {
-                acc.end = parent_end;
-            }
-
-            Some(DataResponse::Trades(acc))
-        }
-        DataResponse::FundingRates(mut acc) => {
-            for leg in iter {
-                let DataResponse::FundingRates(other) = leg else {
-                    log::error!("Mixed-variant legs in pipeline {parent_id}");
-                    return None;
-                };
-
-                acc.data.extend(other.data);
-            }
-
-            acc.data.sort_by_key(|r| r.ts_init);
-            acc.correlation_id = parent_id;
-
-            if parent_start.is_some() {
-                acc.start = parent_start;
-            }
-
-            if parent_end.is_some() {
-                acc.end = parent_end;
-            }
-
-            Some(DataResponse::FundingRates(acc))
-        }
-        DataResponse::Bars(mut acc) => {
-            for leg in iter {
-                let DataResponse::Bars(other) = leg else {
-                    log::error!("Mixed-variant legs in pipeline {parent_id}");
-                    return None;
-                };
-
-                acc.data.extend(other.data);
-            }
-
-            acc.data.sort_by_key(|b| b.ts_init);
-            acc.correlation_id = parent_id;
-
-            if parent_start.is_some() {
-                acc.start = parent_start;
-            }
-
-            if parent_end.is_some() {
-                acc.end = parent_end;
-            }
-
-            Some(DataResponse::Bars(acc))
+        DataResponse::Instrument(acc) => {
+            let data = merge_instrument_data(vec![acc.data], iter)?;
+            DataResponse::Instruments(InstrumentsResponse::new(
+                parent_id,
+                acc.client_id,
+                acc.instrument_id.venue,
+                data,
+                start.or(acc.start),
+                end.or(acc.end),
+                acc.ts_init,
+                acc.params,
+            ))
         }
         DataResponse::Instruments(mut acc) => {
-            for leg in iter {
-                let DataResponse::Instruments(other) = leg else {
-                    log::error!("Mixed-variant legs in pipeline {parent_id}");
-                    return None;
-                };
+            acc.data = merge_instrument_data(acc.data, iter)?;
+            acc.start = start.or(acc.start);
+            acc.end = end.or(acc.end);
+            DataResponse::Instruments(acc)
+        }
+        DataResponse::Quotes(mut acc) => {
+            acc.data = merge_series(
+                acc.data,
+                iter.map(|r| {
+                    if let DataResponse::Quotes(r) = r {
+                        Some(r.data)
+                    } else {
+                        None
+                    }
+                }),
+                |row| (row.ts_init, row.instrument_id),
+            )?;
 
-                acc.data.extend(other.data);
+            acc.start = start.or(acc.start);
+            acc.end = end.or(acc.end);
+            if let Some(RequestCommand::Quotes(parent)) = parent {
+                acc.instrument_ids.clone_from(&parent.instrument_ids);
             }
 
-            acc.correlation_id = parent_id;
-            Some(DataResponse::Instruments(acc))
+            DataResponse::Quotes(acc)
+        }
+        DataResponse::Trades(mut acc) => {
+            acc.data = merge_series(
+                acc.data,
+                iter.map(|r| {
+                    if let DataResponse::Trades(r) = r {
+                        Some(r.data)
+                    } else {
+                        None
+                    }
+                }),
+                |row| (row.ts_init, row.instrument_id),
+            )?;
+
+            acc.start = start.or(acc.start);
+            acc.end = end.or(acc.end);
+            if let Some(RequestCommand::Trades(parent)) = parent {
+                acc.instrument_ids.clone_from(&parent.instrument_ids);
+            }
+
+            DataResponse::Trades(acc)
+        }
+        DataResponse::FundingRates(mut acc) => {
+            acc.data = merge_series(
+                acc.data,
+                iter.map(|r| {
+                    if let DataResponse::FundingRates(r) = r {
+                        Some(r.data)
+                    } else {
+                        None
+                    }
+                }),
+                |row| row.ts_init,
+            )?;
+
+            acc.start = start.or(acc.start);
+            acc.end = end.or(acc.end);
+            DataResponse::FundingRates(acc)
+        }
+        DataResponse::Bars(mut acc) => {
+            acc.data = merge_series(
+                acc.data,
+                iter.map(|r| {
+                    if let DataResponse::Bars(r) = r {
+                        Some(r.data)
+                    } else {
+                        None
+                    }
+                }),
+                |row| row.ts_init,
+            )?;
+
+            acc.start = start.or(acc.start);
+            acc.end = end.or(acc.end);
+            DataResponse::Bars(acc)
         }
         DataResponse::BookDeltas(mut acc) => {
-            for leg in iter {
-                let DataResponse::BookDeltas(other) = leg else {
-                    log::error!("Mixed-variant legs in pipeline {parent_id}");
-                    return None;
-                };
+            let instrument_id = acc.instrument_id;
+            acc.data = merge_series(
+                acc.data,
+                iter.map(|r| {
+                    let DataResponse::BookDeltas(r) = r else {
+                        return None;
+                    };
 
-                // A book-delta batch is keyed by one instrument, so legs for different
-                // instruments cannot be concatenated into a single response. Matched by
-                // value as well as identity, mirroring `OrderBookDeltas::new_checked`,
-                // since legs crossing the FFI boundary do not share an intern pool.
-                let same_instrument = other.instrument_id == acc.instrument_id
-                    || (other.instrument_id.symbol.as_str() == acc.instrument_id.symbol.as_str()
-                        && other.instrument_id.venue.as_str() == acc.instrument_id.venue.as_str());
+                    same_instrument(r.instrument_id, instrument_id).then_some(r.data)
+                }),
+                |row| row.ts_init,
+            )?;
 
-                if !same_instrument {
-                    log::error!(
-                        "Mixed-instrument BookDeltas legs in pipeline {parent_id}: {} and {}",
-                        acc.instrument_id,
-                        other.instrument_id,
-                    );
-                    return None;
-                }
-
-                acc.data.extend(other.data);
-            }
-
-            acc.data.sort_by_key(|d| d.ts_init);
-            acc.correlation_id = parent_id;
-
-            if parent_start.is_some() {
-                acc.start = parent_start;
-            }
-
-            if parent_end.is_some() {
-                acc.end = parent_end;
-            }
-
-            Some(DataResponse::BookDeltas(acc))
+            acc.start = start.or(acc.start);
+            acc.end = end.or(acc.end);
+            DataResponse::BookDeltas(acc)
         }
         DataResponse::BookDepth(mut acc) => {
-            for leg in iter {
-                let DataResponse::BookDepth(other) = leg else {
-                    log::error!("Mixed-variant legs in pipeline {parent_id}");
-                    return None;
-                };
+            acc.data = merge_series(
+                acc.data,
+                iter.map(|r| {
+                    if let DataResponse::BookDepth(r) = r {
+                        Some(r.data)
+                    } else {
+                        None
+                    }
+                }),
+                |row| row.ts_init,
+            )?;
 
-                acc.data.extend(other.data);
-            }
-
-            acc.data.sort_by_key(|d| d.ts_init);
-            acc.correlation_id = parent_id;
-
-            if parent_start.is_some() {
-                acc.start = parent_start;
-            }
-
-            if parent_end.is_some() {
-                acc.end = parent_end;
-            }
-
-            Some(DataResponse::BookDepth(acc))
+            acc.start = start.or(acc.start);
+            acc.end = end.or(acc.end);
+            DataResponse::BookDepth(acc)
         }
-        other => {
-            // Pipelines today rebuild same-variant time-series legs. Variants
-            // without a per-item ts_init payload (singular Book/Instrument,
-            // OptionChainReferencePrice) cannot be concatenated and would
-            // otherwise leak a leg-keyed response. Drop rather than forward.
-            log::error!(
-                "Pipeline rebuild not supported for variant {} (parent {parent_id})",
-                other.kind(),
-            );
-            None
+        _ => return None,
+    };
+
+    Some(rebind_response_correlation(response, parent_id))
+}
+
+pub(super) fn same_instrument(left: InstrumentId, right: InstrumentId) -> bool {
+    left == right
+        || (left.symbol.as_str() == right.symbol.as_str()
+            && left.venue.as_str() == right.venue.as_str())
+}
+
+fn merge_series<T: Clone, K: Ord>(
+    mut data: BatchView<T>,
+    legs: impl Iterator<Item = Option<BatchView<T>>>,
+    key: impl Fn(&T) -> K,
+) -> Option<BatchView<T>> {
+    let mut batches = Vec::new();
+
+    for leg in legs {
+        let leg = leg?;
+
+        if leg.is_empty() {
+            continue;
+        }
+
+        if data.is_empty() {
+            data = leg;
+        } else {
+            batches.push(leg);
         }
     }
+
+    if !batches.is_empty() {
+        let len = data.len() + batches.iter().map(|batch| batch.len()).sum::<usize>();
+        let mut rows = Vec::with_capacity(len);
+        rows.extend_from_slice(&data);
+        for batch in batches {
+            rows.extend_from_slice(&batch);
+        }
+
+        data = rows.into();
+    }
+
+    if !data.is_sorted_by_key(&key) {
+        data.make_mut().sort_by_key(key);
+    }
+
+    Some(data)
+}
+
+fn merge_instrument_data(
+    mut data: Vec<InstrumentAny>,
+    legs: impl Iterator<Item = DataResponse>,
+) -> Option<Vec<InstrumentAny>> {
+    for leg in legs {
+        match leg {
+            DataResponse::Instrument(r) => data.push(r.data),
+            DataResponse::Instruments(r) => data.extend(r.data),
+            _ => return None,
+        }
+    }
+
+    Some(data)
 }
 
 fn custom_response_data(resp: &CustomDataResponse, parent_id: UUID4) -> Option<Vec<CustomData>> {
@@ -419,82 +416,6 @@ pub(super) fn datetime_to_unix_nanos_or_zero(dt: jiff::Timestamp) -> UnixNanos {
     UnixNanos::from(u64::try_from(dt.as_nanosecond().max(0)).unwrap_or(0))
 }
 
-pub(super) fn empty_response_like(
-    template: &DataResponse,
-    correlation_id: UUID4,
-    ts_init: UnixNanos,
-) -> DataResponse {
-    match template {
-        DataResponse::Quotes(r) => DataResponse::Quotes(QuotesResponse::new(
-            correlation_id,
-            r.client_id,
-            r.instrument_id,
-            Vec::new(),
-            r.start,
-            r.end,
-            ts_init,
-            r.params.clone(),
-        )),
-        DataResponse::Trades(r) => DataResponse::Trades(TradesResponse::new(
-            correlation_id,
-            r.client_id,
-            r.instrument_id,
-            Vec::new(),
-            r.start,
-            r.end,
-            ts_init,
-            r.params.clone(),
-        )),
-        DataResponse::FundingRates(r) => DataResponse::FundingRates(FundingRatesResponse::new(
-            correlation_id,
-            r.client_id,
-            r.instrument_id,
-            Vec::new(),
-            r.start,
-            r.end,
-            ts_init,
-            r.params.clone(),
-        )),
-        DataResponse::Bars(r) => DataResponse::Bars(BarsResponse::new(
-            correlation_id,
-            r.client_id,
-            r.bar_type,
-            Vec::new(),
-            r.start,
-            r.end,
-            ts_init,
-            r.params.clone(),
-        )),
-        DataResponse::BookDeltas(r) => DataResponse::BookDeltas(BookDeltasResponse::new(
-            correlation_id,
-            r.client_id,
-            r.instrument_id,
-            Vec::new(),
-            r.start,
-            r.end,
-            ts_init,
-            r.params.clone(),
-        )),
-        DataResponse::BookDepth(r) => DataResponse::BookDepth(BookDepthResponse::new(
-            correlation_id,
-            r.client_id,
-            r.instrument_id,
-            Vec::new(),
-            r.start,
-            r.end,
-            ts_init,
-            r.params.clone(),
-        )),
-        other => {
-            log::error!(
-                "Cannot fabricate empty leg response for variant {}",
-                other.kind(),
-            );
-            other.clone()
-        }
-    }
-}
-
 pub(super) fn rebind_response_correlation(mut resp: DataResponse, new_id: UUID4) -> DataResponse {
     match &mut resp {
         DataResponse::Data(r) => r.correlation_id = new_id,
@@ -511,4 +432,63 @@ pub(super) fn rebind_response_correlation(mut resp: DataResponse, new_id: UUID4)
     }
 
     resp
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::sorted(vec![9, 1, 2, 8], true)]
+    #[case::unsorted(vec![9, 2, 1, 8], false)]
+    fn test_merge_series_preserves_single_visible_leg(
+        #[case] rows: Vec<u64>,
+        #[case] shared: bool,
+    ) {
+        let backing = Arc::new(rows.clone());
+        let view = BatchView::new(Arc::clone(&backing), 1..3);
+        let empty: BatchView<u64> = Vec::new().into();
+
+        let merged = merge_series(
+            empty.clone(),
+            [Some(view), Some(empty)].into_iter(),
+            |row| *row,
+        )
+        .unwrap();
+
+        assert_eq!(merged.as_ref(), &[1, 2]);
+        assert_eq!(Arc::ptr_eq(merged.arc(), &backing), shared);
+        assert_eq!(merged.range(), if shared { 1..3 } else { 0..2 });
+        assert_eq!(backing.as_slice(), rows.as_slice());
+    }
+
+    #[rstest]
+    fn test_merge_series_materializes_visible_rows_in_stable_leg_order() {
+        let first = Arc::new(vec![(0, 90), (2, 11), (1, 12), (9, 91)]);
+        let second = Arc::new(vec![(0, 92), (1, 21), (2, 22), (9, 93)]);
+
+        let merged = merge_series(
+            BatchView::new(Arc::clone(&first), 1..3),
+            [Some(BatchView::new(Arc::clone(&second), 1..3))].into_iter(),
+            |row| row.0,
+        )
+        .unwrap();
+
+        assert_eq!(merged.as_ref(), &[(1, 12), (1, 21), (2, 11), (2, 22)]);
+        assert_eq!(merged.range(), 0..4);
+        assert_eq!(first.as_slice(), &[(0, 90), (2, 11), (1, 12), (9, 91)]);
+        assert_eq!(second.as_slice(), &[(0, 92), (1, 21), (2, 22), (9, 93)]);
+    }
+
+    #[rstest]
+    fn test_merge_series_rejects_missing_variant_after_empty_legs() {
+        let data: BatchView<u64> = vec![1, 2].into();
+        let empty: BatchView<u64> = Vec::new().into();
+
+        let merged = merge_series(data, [Some(empty), None].into_iter(), |row| *row);
+
+        assert!(merged.is_none());
+    }
 }

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -632,16 +633,69 @@ def _run_cargo(context: Context, policy: AuditPolicy) -> list[str]:  # noqa: C90
         except AuditError as error:
             failures.append(str(error))
     for audit in policy.cargo_vets:
-        label = f"cargo vet {audit.manifest.as_posix()}"
-        args = [cargo, "vet", "--manifest-path", audit.manifest.as_posix()]
-        if audit.store is not None:
-            args.extend(("--store-path", audit.store.as_posix()))
-        args.append("--locked")
         try:
-            _run_step(context, label, args)
+            _run_cargo_vet(context, audit)
         except AuditError as error:
             failures.append(str(error))
     return failures
+
+
+def _run_cargo_vet(context: Context, audit: CargoVet) -> None:
+    cargo = context.executables["cargo"]
+    label = f"cargo vet {audit.manifest.as_posix()}"
+    args = [cargo, "vet", "--manifest-path", audit.manifest.as_posix()]
+    if audit.store is None or audit.store.is_relative_to(audit.manifest.parent):
+        if audit.store is not None:
+            args.extend(("--store-path", audit.store.as_posix()))
+        _run_step(context, label, [*args, "--locked"])
+        return
+
+    metadata = _run_process(
+        [
+            cargo,
+            "metadata",
+            "--manifest-path",
+            audit.manifest.as_posix(),
+            "--all-features",
+            "--locked",
+            "--format-version",
+            "1",
+        ],
+        root=context.root,
+    )
+    if metadata.returncode != 0:
+        raise AuditError(f"cargo metadata {audit.manifest.as_posix()} failed: {_output(metadata)}")
+    names = {package["name"] for package in json.loads(metadata.stdout)["packages"]}
+    config_path = context.root / audit.store / "config.toml"
+    config = _read_toml(config_path)
+    policies = cast("dict[str, object]", config.get("policy", {}))
+    unused = {name for name in policies if name.partition(":")[0] not in names}
+    if not unused:
+        _run_step(context, label, [*args, "--store-path", audit.store.as_posix(), "--locked"])
+        return
+
+    sections = re.split(r"(?m)(?=^\[)", config_path.read_text(encoding="utf-8"))
+    retained = []
+    for section in sections:
+        header = section.partition("\n")[0]
+        if header.startswith("[policy."):
+            policy = cast("dict[str, object]", tomllib.loads(header)["policy"])
+            if unused.intersection(policy):
+                continue
+        retained.append(section)
+    scoped_text = "".join(retained)
+    expected = dict(config)
+    expected["policy"] = {name: value for name, value in policies.items() if name not in unused}
+    if not expected["policy"]:
+        del expected["policy"]
+    if tomllib.loads(scoped_text) != expected:
+        raise AuditError(f"could not preserve applicable policies from {config_path}")
+
+    with tempfile.TemporaryDirectory(prefix="nautilus-cargo-vet-") as temp:
+        store = Path(temp) / "supply-chain"
+        shutil.copytree(context.root / audit.store, store)
+        (store / "config.toml").write_text(scoped_text, encoding="utf-8")
+        _run_step(context, label, [*args, "--store-path", str(store), "--locked"])
 
 
 def _run_python_audit(context: Context, audit: PythonAudit) -> None:

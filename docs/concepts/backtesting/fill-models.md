@@ -68,7 +68,7 @@ normal-liquidity mode, respectively.
 
 ## Configuration
 
-Pass a built-in model object directly to `BacktestVenueConfig`:
+Pass a built-in or custom Python model object directly to `BacktestVenueConfig`:
 
 ```python
 from decimal import Decimal
@@ -124,13 +124,13 @@ venue = BacktestVenueConfig(
 )
 ```
 
-The high-level venue configuration accepts built-in fill models. It does not load fill
-models from import-path configuration objects.
+The high-level venue configuration accepts model objects directly. It does not load fill models
+from import-path configuration objects.
 
 ### Custom fill models
 
-The low-level `BacktestEngine.add_venue()` method also accepts a custom Python object. It must
-implement:
+Pass a custom Python object as `fill_model` to `BacktestVenueConfig`, `BacktestEngine.add_venue()`,
+`BacktestEngine.change_fill_model(venue, fill_model)`, or `SandboxExecutionClientConfig`. It must implement:
 
 - `is_limit_filled() -> bool`
 - `is_slipped() -> bool`
@@ -141,7 +141,16 @@ It may also implement:
 - `get_orderbook_for_fill_simulation(instrument, order, best_bid, best_ask) -> OrderBook | None`
 
 Subclassing `nautilus_trader.execution.FillModel` supplies default implementations for these
-methods. This custom-object protocol applies to the **low-level engine only**.
+methods: limit fills return `True`, slippage and spread fills return `False`, and the liquidity hook
+returns `None`. Compatible objects do not need to inherit `FillModel`; omitted optional methods use
+these same defaults. Objects missing either required method raise `TypeError` during configuration.
+
+Configuration getters and copies retain the supplied Python instance. Callback state is shared with
+runtime copies and persists across backtest runs and resets. Use a fresh model for independent state.
+Callback failures propagate from the Python bridge as errors. Matching logs the error and stops that
+fill attempt; fills already applied in the attempt remain. A failure in `fill_limit_inside_spread()`
+logs the error and disables spread fills. The engine reads this hook when each matching engine is
+created or its fill model is replaced, not for each order.
 
 The liquidity hook receives `None` for a missing historical bid or ask. Custom models must handle
 these optional prices. The return value determines the fill behavior:

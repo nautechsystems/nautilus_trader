@@ -9,11 +9,16 @@
 
 //! Interactive Brokers order and execution update handling.
 
+use std::future::Future;
+
 use nautilus_common::live::sender::EventSender;
 
 use super::{core::*, incarnations::duplicate_client_order_id};
 use crate::{
-    common::enums::{IbOrderStatus, IbOrderType},
+    common::{
+        consts::{ORDER_UPDATE_BIND_RETRY_DELAY_SECS, ORDER_UPDATE_REBIND_DELAY_SECS},
+        enums::{IbOrderStatus, IbOrderType},
+    },
     execution::{parse, transform::from_ib_price},
 };
 
@@ -23,6 +28,52 @@ const COMMISSION_REPORT_TIMEOUT: Duration = Duration::from_secs(5);
 /// node's default `position_check_threshold_ms` of 5 seconds, so the continuous position check
 /// cannot dispatch the held fill as an orderless fill first.
 const FILL_HOLD_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Why [`InteractiveBrokersExecutionClient::process_order_update_stream`] returned.
+#[derive(Debug)]
+pub(super) enum OrderUpdateStreamOutcome {
+    /// The stream yielded `None`.
+    Ended,
+    /// The stream yielded an error, which in ibapi ends it.
+    Error(ibapi::Error),
+}
+
+/// Why [`InteractiveBrokersExecutionClient::run_order_update_stream`] returned.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum OrderUpdateLoopOutcome {
+    /// The execution client stopped the task.
+    Canceled,
+    /// ibapi's message bus shut down: the stream yielded `Error::Shutdown`, ended while
+    /// the IB client reported not connected, or a bind failed with `Error::Shutdown`. A
+    /// re-bind would be refused.
+    TransportShutdown,
+}
+
+/// Backoff of the order-update re-bind loop.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct RebindDelays {
+    /// After the stream ended or errored, before re-binding.
+    pub after_stream: Duration,
+    /// After a failed bind, before retrying.
+    pub after_bind_failure: Duration,
+}
+
+impl RebindDelays {
+    pub(super) const fn from_consts() -> Self {
+        Self {
+            after_stream: Duration::from_secs(ORDER_UPDATE_REBIND_DELAY_SECS),
+            after_bind_failure: Duration::from_secs(ORDER_UPDATE_BIND_RETRY_DELAY_SECS),
+        }
+    }
+}
+
+/// Sleeps for `delay` unless `cancel` fires first; returns whether the sleep completed.
+async fn sleep_or_cancel(delay: Duration, cancel: &CancellationToken) -> bool {
+    tokio::select! {
+        () = cancel.cancelled() => false,
+        () = tokio::time::sleep(delay) => true,
+    }
+}
 
 /// Venue access for notice handling spawned from the update and notice streams.
 pub(super) struct NoticeVenueContext {
@@ -148,7 +199,7 @@ impl InteractiveBrokersExecutionClient {
             self.client_id(),
             self.account_id()
         );
-        let mut subscription = tokio::time::timeout(timeout_dur, client.order_update_stream())
+        let subscription = tokio::time::timeout(timeout_dur, client.order_update_stream())
             .await
             .context("Timeout starting order update stream")??;
 
@@ -174,28 +225,45 @@ impl InteractiveBrokersExecutionClient {
             cancellation: tasks.cancellation_token(),
             tasks: tasks.clone(),
         };
+        let liveness_client = Arc::clone(client.as_arc());
+        let is_client_alive = move || liveness_client.is_connected();
+        let bind_client = Arc::clone(client.as_arc());
+        let bind = move || {
+            let client = Arc::clone(&bind_client);
+            async move {
+                tokio::time::timeout(timeout_dur, client.order_update_stream())
+                    .await
+                    .context("Timeout starting order update stream")?
+                    .context("Failed to start order update stream")
+            }
+        };
 
+        // The loop re-binds the stream after an error or an end, so a bad frame does not end
+        // the task and order entry stays enabled. It returns only when the execution client
+        // stops it or when ibapi's transport has shut down; only the latter is a disconnect.
         let future = async move {
-            tokio::select! {
-                () = Self::process_order_update_stream(
-                    &mut subscription,
-                    &orders,
-                    &instrument_provider,
-                    &exec_sender,
-                    clock,
-                    account_id,
-                    ib_account,
-                    &commission_cache,
-                    &pending_execution_cache,
-                    &position_tracker,
-                    Some(&venue_ctx),
-                ) => {
-                    tracing::error!(
-                        "IB order update stream ended; execution client is disconnected"
-                    );
-                    is_connected.store(false, Ordering::Relaxed);
-                }
-                () = cancellation_token.cancelled() => {}
+            let outcome = Self::run_order_update_stream(
+                subscription,
+                bind,
+                is_client_alive,
+                cancellation_token,
+                RebindDelays::from_consts(),
+                &orders,
+                &instrument_provider,
+                &exec_sender,
+                clock,
+                account_id,
+                ib_account,
+                &commission_cache,
+                &pending_execution_cache,
+                &position_tracker,
+                Some(&venue_ctx),
+            )
+            .await;
+
+            if outcome == OrderUpdateLoopOutcome::TransportShutdown {
+                tracing::error!("IB transport shut down; execution client is disconnected");
+                is_connected.store(false, Ordering::Relaxed);
             }
         };
 
@@ -267,6 +335,118 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
+    /// Drives `process_order_update_stream` over `initial`, then over every stream `bind`
+    /// hands out after the previous one ended or errored. A dropped stream is re-bound after
+    /// `delays.after_stream`, a failed bind retried after `delays.after_bind_failure`.
+    /// Returns when `cancel` fires or the transport shuts down, see
+    /// [`OrderUpdateLoopOutcome`]; `is_client_alive` decides whether a plain end means the
+    /// transport shut down.
+    #[allow(clippy::too_many_arguments)] // The stream task owns explicit shared client state.
+    pub(super) async fn run_order_update_stream<S, B, F, L>(
+        initial: S,
+        mut bind: B,
+        is_client_alive: L,
+        cancel: CancellationToken,
+        delays: RebindDelays,
+        orders: &OrderTracker,
+        instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+        account_id: AccountId,
+        ib_account: Ustr,
+        commission_cache: &Arc<Mutex<CommissionCache>>,
+        pending_execution_cache: &Arc<Mutex<PendingExecutionCache>>,
+        position_tracker: &PositionTracker,
+        venue_ctx: Option<&NoticeVenueContext>,
+    ) -> OrderUpdateLoopOutcome
+    where
+        S: futures_util::Stream<Item = Result<SubscriptionItem<OrderUpdate>, ibapi::Error>> + Unpin,
+        B: FnMut() -> F,
+        F: Future<Output = anyhow::Result<S>>,
+        L: Fn() -> bool,
+    {
+        let mut subscription = initial;
+
+        loop {
+            let outcome = tokio::select! {
+                () = cancel.cancelled() => return OrderUpdateLoopOutcome::Canceled,
+                outcome = Self::process_order_update_stream(
+                    &mut subscription,
+                    orders,
+                    instrument_provider,
+                    exec_sender,
+                    clock,
+                    account_id,
+                    ib_account,
+                    commission_cache,
+                    pending_execution_cache,
+                    position_tracker,
+                    venue_ctx,
+                ) => outcome,
+            };
+
+            // A transparent ibapi reconnect keeps the stream open, so `Error::Shutdown` only
+            // arrives once the message bus is gone for good (reconnects exhausted or shutdown
+            // requested). A plain end while the client reports disconnected means the same.
+            match outcome {
+                OrderUpdateStreamOutcome::Error(ibapi::Error::Shutdown) => {
+                    return OrderUpdateLoopOutcome::TransportShutdown;
+                }
+                OrderUpdateStreamOutcome::Ended if !is_client_alive() => {
+                    return OrderUpdateLoopOutcome::TransportShutdown;
+                }
+                OrderUpdateStreamOutcome::Ended => tracing::warn!(
+                    "IB order update stream ended; re-binding in {:?}",
+                    delays.after_stream
+                ),
+                OrderUpdateStreamOutcome::Error(e) => tracing::error!(
+                    "IB order update stream error: {e}; re-binding in {:?}",
+                    delays.after_stream
+                ),
+            }
+
+            // The ended subscription still holds its receiver on ibapi's order-update
+            // channel, and `order_update_stream()` returns `AlreadySubscribed` while any
+            // receiver is alive. Drop it before binding again.
+            drop(subscription);
+
+            if !sleep_or_cancel(delays.after_stream, &cancel).await {
+                return OrderUpdateLoopOutcome::Canceled;
+            }
+
+            subscription = loop {
+                let bound = tokio::select! {
+                    () = cancel.cancelled() => return OrderUpdateLoopOutcome::Canceled,
+                    bound = bind() => bound,
+                };
+
+                match bound {
+                    Ok(subscription) => break subscription,
+                    Err(e) => {
+                        // A bind on a shut-down bus fails with `Error::Shutdown` (through the
+                        // `anyhow` context); a retry would fail the same way.
+                        if matches!(
+                            e.downcast_ref::<ibapi::Error>(),
+                            Some(ibapi::Error::Shutdown)
+                        ) {
+                            tracing::warn!("IB order update stream bind failed: {e:#}");
+                            return OrderUpdateLoopOutcome::TransportShutdown;
+                        }
+                        tracing::warn!(
+                            "IB order update stream bind failed: {e:#}; retrying in {:?}",
+                            delays.after_bind_failure
+                        );
+
+                        if !sleep_or_cancel(delays.after_bind_failure, &cancel).await {
+                            return OrderUpdateLoopOutcome::Canceled;
+                        }
+                    }
+                }
+            };
+            tracing::info!("IB order update stream re-bound");
+        }
+    }
+
     #[allow(clippy::too_many_arguments)] // The stream task owns explicit shared client state.
     pub(super) async fn process_order_update_stream<S>(
         subscription: &mut S,
@@ -280,7 +460,8 @@ impl InteractiveBrokersExecutionClient {
         pending_execution_cache: &Arc<Mutex<PendingExecutionCache>>,
         position_tracker: &PositionTracker,
         venue_ctx: Option<&NoticeVenueContext>,
-    ) where
+    ) -> OrderUpdateStreamOutcome
+    where
         S: futures_util::Stream<Item = Result<SubscriptionItem<OrderUpdate>, ibapi::Error>> + Unpin,
     {
         let mut commission_timeout = tokio::time::interval_at(
@@ -292,7 +473,7 @@ impl InteractiveBrokersExecutionClient {
             tokio::select! {
                 update_result = subscription.next() => {
                     let Some(update_result) = update_result else {
-                        break;
+                        return OrderUpdateStreamOutcome::Ended;
                     };
 
                     match update_result {
@@ -327,9 +508,9 @@ impl InteractiveBrokersExecutionClient {
                                 tracing::error!("Error handling IB order update notice: {e}");
                             }
                         }
-                        Err(e) => {
-                            tracing::error!("Error receiving order update: {e}");
-                        }
+                        // A decode error ends the ibapi subscription; the next poll would
+                        // only yield `None`. Hand the reason to the caller.
+                        Err(e) => return OrderUpdateStreamOutcome::Error(e),
                     }
                 }
                 _ = commission_timeout.tick() => {

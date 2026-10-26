@@ -66,7 +66,8 @@ artifact integrity records, and verification flow. This section records CI-speci
 - External actions include their canonical source URL, use a full commit SHA, and record the
   corresponding release tag. Adopt an action release only after it has been available for at least
   two weeks.
-- Docker base images and workflow service containers use immutable digest pins.
+- Docker base images and workflow service containers use immutable digest pins and follow the
+  [container image cooldown](../SECURITY.md#dependency-intake-controls).
 - Tool and dependency versions are pinned in the repository. Python dependency resolution applies
   the seven-day publication cooldown defined in `python/pyproject.toml`, and Rust crate updates
   observe the three-day cooldown defined in `Cargo.toml`.

@@ -37,9 +37,10 @@ pub(crate) use self::{
         PolymarketResolveRequestSummaryData, RESOLVE_REQUEST_TYPE_NAME, ResolveRequestSummary,
     },
     watchlist::{
-        ResolveWatchEntry, ResolveWatchSelection, ResolveWatchSelectionMode, TrackedInstrument,
-        collect_resolve_watch_selection, instrument_market_context, pause_resolve_watch_entries,
-        remove_data_resolve_watch_entry, update_resolve_watchlist_from_position_event_serialized,
+        ResolveWatchEntry, ResolveWatchSelection, ResolveWatchSelectionMode, ResolveWatchlist,
+        TrackedInstrument, collect_resolve_watch_selection, instrument_market_context,
+        pause_resolve_watch_entries, remove_data_resolve_watch_entry,
+        update_resolve_watchlist_from_position_event_serialized,
         upsert_data_resolve_watch_entry_from_instrument,
         upsert_resolve_watch_entry_from_instrument,
     },

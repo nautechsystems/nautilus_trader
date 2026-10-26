@@ -50,7 +50,7 @@ use std::{
 };
 
 use nautilus_core::UnixNanos;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[cfg(feature = "defi")]
 use crate::defi::DefiData;
@@ -394,10 +394,13 @@ impl HasTsInit for DataRef<'_> {
 }
 
 /// Range view over a shared typed data batch.
-#[derive(Clone, Debug)]
+///
+/// A view retains its entire backing buffer. Serialization and debug output include only
+/// the visible rows.
+#[derive(Clone)]
 #[expect(
     clippy::rc_buffer,
-    reason = "Backtest batch views share full Vec batches by design"
+    reason = "Batch views share Vec storage across ranges"
 )]
 pub struct BatchView<T> {
     data: Arc<Vec<T>>,
@@ -429,6 +432,7 @@ impl<T> BatchView<T> {
         }
     }
 
+    /// Returns the backing buffer, including rows outside this view.
     #[must_use]
     pub fn arc(&self) -> &Arc<Vec<T>> {
         &self.data
@@ -453,12 +457,37 @@ impl<T> BatchView<T> {
             range: (self.range.start + start)..(self.range.start + end),
         }
     }
-    /// Returns this view for modification, cloning shared storage when needed.
+
+    /// Returns the visible rows for modification, copying only those rows if storage is shared.
     pub fn make_mut(&mut self) -> &mut [T]
     where
         T: Clone,
     {
+        if Arc::get_mut(&mut self.data).is_none() {
+            let data = self.to_vec();
+            self.range = 0..data.len();
+            self.data = Arc::new(data);
+        }
+
         &mut Arc::make_mut(&mut self.data)[self.range.clone()]
+    }
+}
+
+impl<T: Debug> Debug for BatchView<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl<T: Serialize> Serialize for BatchView<T> {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.as_ref().serialize(serializer)
+    }
+}
+
+impl<'de, T: Deserialize<'de>> Deserialize<'de> for BatchView<T> {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        Vec::<T>::deserialize(deserializer).map(Self::from)
     }
 }
 
@@ -1438,25 +1467,89 @@ mod tests {
     }
     #[rstest]
     fn test_batch_view_make_mut_reuses_unshared_backing() {
-        let mut view = BatchView::from(vec![3, 1, 2]);
+        let mut view = BatchView::new(Arc::new(vec![9, 3, 1, 2, 8]), 1..4);
         let backing = Arc::as_ptr(view.arc());
+        let rows = view.as_ptr();
 
         view.make_mut().sort_unstable();
 
         assert!(std::ptr::eq(Arc::as_ptr(view.arc()), backing));
+        assert_eq!(view.as_ptr(), rows);
         assert_eq!(view.as_ref(), &[1, 2, 3]);
+        assert_eq!(view.range(), 1..4);
+        assert_eq!(view.arc().as_slice(), &[9, 1, 2, 3, 8]);
     }
 
     #[rstest]
-    fn test_batch_view_make_mut_clones_shared_backing_within_range() {
-        let source = BatchView::new(Arc::new(vec![9, 3, 1, 2]), 1..4);
-        let mut view = source.clone();
+    #[case::whole_view(0, 3)]
+    #[case::nested(1, 3)]
+    #[case::empty(1, 1)]
+    fn test_batch_view_make_mut_copies_only_visible_rows(#[case] start: usize, #[case] end: usize) {
+        let source = BatchView::new(Arc::new(vec![9, 3, 1, 2, 8]), 1..4);
+        let mut view = source.slice(start, end);
+        let mut expected = source[start..end].to_vec();
+        expected.sort_unstable();
 
         view.make_mut().sort_unstable();
 
         assert!(!Arc::ptr_eq(source.arc(), view.arc()));
         assert_eq!(source.as_ref(), &[3, 1, 2]);
-        assert_eq!(view.as_ref(), &[1, 2, 3]);
-        assert_eq!(view.arc().as_slice(), &[9, 1, 2, 3]);
+        assert_eq!(source.range(), 1..4);
+        assert_eq!(source.arc().as_slice(), &[9, 3, 1, 2, 8]);
+        assert_eq!(view.as_ref(), expected.as_slice());
+        assert_eq!(view.range(), 0..expected.len());
+        assert_eq!(view.arc().as_slice(), expected.as_slice());
+    }
+
+    #[rstest]
+    fn test_batch_view_make_mut_does_not_clone_hidden_rows() {
+        #[derive(Debug)]
+        struct Row(bool);
+
+        impl Clone for Row {
+            fn clone(&self) -> Self {
+                assert!(self.0, "Hidden rows must not be cloned");
+                Self(self.0)
+            }
+        }
+
+        let backing = Arc::new(vec![Row(false), Row(true), Row(true), Row(false)]);
+        let mut view = BatchView::new(Arc::clone(&backing), 1..3);
+
+        view.make_mut()[0].0 = false;
+
+        assert_eq!(view.range(), 0..2);
+        assert_eq!(view.arc().len(), 2);
+        assert!(!view[0].0);
+        assert!(view[1].0);
+        assert!(backing[1].0);
+        assert!(backing[2].0);
+    }
+
+    #[rstest]
+    #[case::full(0, 5)]
+    #[case::narrowed(1, 4)]
+    #[case::empty(2, 2)]
+    fn test_batch_view_serialization_and_debug_include_only_visible_rows(
+        #[case] start: usize,
+        #[case] end: usize,
+    ) {
+        let rows = Arc::new(vec![9, 3, 1, 2, 8]);
+        let view = BatchView::new(Arc::clone(&rows), start..end);
+        let visible = &rows[start..end];
+        let json = serde_json::to_vec(&view).unwrap();
+        let msgpack = rmp_serde::to_vec_named(&view).unwrap();
+        let decoded_json: BatchView<i32> = serde_json::from_slice(&json).unwrap();
+        let decoded_msgpack: BatchView<i32> = rmp_serde::from_slice(&msgpack).unwrap();
+
+        assert_eq!(json, serde_json::to_vec(visible).unwrap());
+        assert_eq!(msgpack, rmp_serde::to_vec_named(visible).unwrap());
+        assert_eq!(format!("{view:?}"), format!("{visible:?}"));
+
+        for decoded in [decoded_json, decoded_msgpack] {
+            assert_eq!(decoded.as_ref(), visible);
+            assert_eq!(decoded.range(), 0..visible.len());
+            assert_eq!(decoded.arc().as_slice(), visible);
+        }
     }
 }

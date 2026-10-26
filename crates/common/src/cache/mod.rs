@@ -690,9 +690,33 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current cache index and re-build.
+    /// Rebuilds entity-derived indexes from cached accounts, orders, and positions.
+    ///
+    /// Retains venue-order-ID aliases, order-position and order-client mappings, and local
+    /// pending-cancel state only for cached orders. Rebuilding can update mappings from order
+    /// state. Position OMS entries are rebuilt from the general cache.
+    /// Reverse venue-order-ID lookups include historical IDs; forward lookups use the current ID.
+    /// To discard independently maintained index state, call [`Self::clear_index`] before
+    /// reloading entities.
     pub fn build_index(&mut self) {
         log::debug!("Building index");
+
+        self.index.clear_entities();
+        self.index
+            .venue_order_ids
+            .retain(|_, client_order_id| self.orders.contains_key(client_order_id));
+        self.index
+            .client_order_ids
+            .retain(|client_order_id, _| self.orders.contains_key(client_order_id));
+        self.index
+            .order_position
+            .retain(|client_order_id, _| self.orders.contains_key(client_order_id));
+        self.index
+            .order_client
+            .retain(|client_order_id, _| self.orders.contains_key(client_order_id));
+        self.index
+            .orders_pending_cancel
+            .retain(|client_order_id| self.orders.contains_key(client_order_id));
 
         // Index accounts
         for account_id in self.accounts.keys() {
@@ -715,10 +739,13 @@ impl Cache {
 
             // 2: Build index.venue_order_ids -> {VenueOrderId, ClientOrderId}
             //    and index.client_order_ids -> {ClientOrderId, VenueOrderId}
-            if let Some(venue_order_id) = order.venue_order_id() {
+            for venue_order_id in order.venue_order_ids() {
                 self.index
                     .venue_order_ids
-                    .insert(venue_order_id, *client_order_id);
+                    .insert(*venue_order_id, *client_order_id);
+            }
+
+            if let Some(venue_order_id) = order.venue_order_id() {
                 self.index
                     .client_order_ids
                     .insert(*client_order_id, venue_order_id);
@@ -912,8 +939,7 @@ impl Cache {
 
         for position in self.positions.values().map(|cell| cell.borrow()) {
             if !self.index.position_oms.contains_key(&position.id)
-                && position.id.as_str()
-                    == format!("{}-{}", position.instrument_id, position.strategy_id)
+                && resolve_position_oms(&position, OmsType::Unspecified) == OmsType::Netting
             {
                 self.index
                     .position_oms
@@ -1805,11 +1831,9 @@ impl Cache {
     ///
     /// For safety, a position is prevented from being purged if it's open.
     pub fn purge_position(&mut self, position_id: PositionId) {
-        // Snapshot the position so we can release the borrow before mutating indexes.
-        let position = self
-            .positions
-            .get(&position_id)
-            .map(|cell| cell.borrow().clone());
+        // Keep the cell alive during index cleanup without cloning position history
+        let position_cell = self.positions.get(&position_id).cloned();
+        let position = position_cell.as_ref().map(|cell| cell.borrow());
 
         // Prevent purging open positions
         if let Some(ref pos) = position
@@ -3148,6 +3172,9 @@ impl Cache {
 
     /// Adds the `position` to the cache.
     ///
+    /// For [`OmsType::Unspecified`], IDs matching `{instrument_id}-{strategy_id}` resolve to
+    /// [`OmsType::Netting`]. Other IDs retain the supplied OMS type.
+    ///
     /// # Errors
     ///
     /// Returns an error if persisting the position to the backing database fails. After
@@ -3158,6 +3185,8 @@ impl Cache {
     }
 
     /// Adds a position whose opening fill intentionally has no backing order.
+    ///
+    /// Resolves unspecified OMS types as [`Self::add_position`] does.
     ///
     /// # Errors
     ///
@@ -3179,6 +3208,8 @@ impl Cache {
     /// [`Self::add_position_without_order`]. The carry runs under the same borrow as the swap, so a
     /// validation failure cannot leave the prior position stripped of its replay history.
     ///
+    /// Resolves unspecified OMS types as [`Self::add_position`] does.
+    ///
     /// # Errors
     ///
     /// Returns an error if validating or persisting the position fails.
@@ -3199,6 +3230,8 @@ impl Cache {
         index_order: bool,
         carry_replay_state: bool,
     ) -> anyhow::Result<()> {
+        let oms_type = resolve_position_oms(&position, oms_type);
+
         // Validate and serialize the OMS entry up front: both are construction failures, and
         // committing the position before they run would leave the cache mutated by one.
         // The key embeds the position ID, which embeds the instrument ID and venue
@@ -3620,12 +3653,12 @@ impl Cache {
     /// Updates a cached position by applying an order fill in place.
     ///
     /// Returns a transient copy of the updated state without stored history. The canonical cached
-    /// position retains its complete history.
+    /// position retains its complete history. A fill without a position ID uses `position_id`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the position is not already held in the cache, or if updating the
-    /// position in the database fails.
+    /// Returns an error if the position is not cached, the fill fails accounting validation,
+    /// or updating the position in the database fails.
     pub fn update_position_from_fill(
         &mut self,
         position_id: PositionId,
@@ -3635,9 +3668,18 @@ impl Cache {
             anyhow::bail!("Cannot update position {position_id}: not found in cache");
         };
 
+        let mut resolved_fill;
+        let fill = if fill.position_id.is_none() {
+            resolved_fill = fill.clone();
+            resolved_fill.position_id = Some(position_id);
+            &resolved_fill
+        } else {
+            fill
+        };
+
         let position = {
             let mut position = position_cell.borrow_mut();
-            position.apply(fill);
+            position.try_apply(fill)?;
             position.clone_without_events()
         };
 
@@ -3669,7 +3711,7 @@ impl Cache {
             anyhow::bail!("Cannot update position {position_id}: not found in cache");
         };
 
-        position_cell.borrow_mut().apply_adjustment(adjustment);
+        position_cell.borrow_mut().apply_adjustment(adjustment)?;
         self.refresh_position_indexes(&position_cell.borrow());
 
         if let Some(database) = &mut self.database {
@@ -6162,7 +6204,10 @@ impl Cache {
         }
     }
 
-    /// Gets all quotes for the `instrument_id`.
+    /// Returns cached quotes for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added quote. Entries are not sorted by timestamp.
+    /// Returns `None` when no quotes are cached for the instrument.
     #[must_use]
     pub fn quotes(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
         self.quotes
@@ -6170,7 +6215,10 @@ impl Cache {
             .map(|quotes| quotes.iter().copied().collect())
     }
 
-    /// Gets all trades for the `instrument_id`.
+    /// Returns cached trades for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added trade. Entries are not sorted by timestamp.
+    /// Returns `None` when no trades are cached for the instrument.
     #[must_use]
     pub fn trades(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
         self.trades
@@ -6178,7 +6226,10 @@ impl Cache {
             .map(|trades| trades.iter().copied().collect())
     }
 
-    /// Gets all mark price updates for the `instrument_id`.
+    /// Returns cached mark price updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no mark price updates are cached for the instrument.
     #[must_use]
     pub fn mark_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
         self.mark_prices
@@ -6186,7 +6237,10 @@ impl Cache {
             .map(|mark_prices| mark_prices.iter().copied().collect())
     }
 
-    /// Gets all index price updates for the `instrument_id`.
+    /// Returns cached index price updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no index price updates are cached for the instrument.
     #[must_use]
     pub fn index_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
         self.index_prices
@@ -6194,7 +6248,10 @@ impl Cache {
             .map(|index_prices| index_prices.iter().copied().collect())
     }
 
-    /// Gets all funding rate updates for the `instrument_id`.
+    /// Returns cached funding rate updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no funding rate updates are cached for the instrument.
     #[must_use]
     pub fn funding_rates(&self, instrument_id: &InstrumentId) -> Option<Vec<FundingRateUpdate>> {
         self.funding_rates
@@ -6202,7 +6259,10 @@ impl Cache {
             .map(|funding_rates| funding_rates.iter().copied().collect())
     }
 
-    /// Gets all instrument status updates for the `instrument_id`.
+    /// Returns cached instrument status updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no instrument status updates are cached for the instrument.
     #[must_use]
     pub fn instrument_statuses(
         &self,
@@ -6213,7 +6273,9 @@ impl Cache {
             .map(|statuses| statuses.iter().copied().collect())
     }
 
-    /// Gets all bars for the `bar_type`.
+    /// Returns cached bars for the `bar_type` in reverse chronological order by `ts_event`.
+    ///
+    /// Index 0 is the most recent bar. Returns `None` when no bars are cached for the bar type.
     #[must_use]
     pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
         self.bars
@@ -6221,7 +6283,9 @@ impl Cache {
             .map(|bars| bars.iter().copied().collect())
     }
 
-    /// Gets a reference to the order book for the `instrument_id`.
+    /// Returns the current order book for the `instrument_id`, or `None` if absent.
+    ///
+    /// The cache holds the current book state, not a history of book updates.
     #[must_use]
     pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<&OrderBook> {
         self.books.get(instrument_id)
@@ -6276,7 +6340,7 @@ impl Cache {
         self.own_books.get_mut(instrument_id)
     }
 
-    /// Gets a reference to the latest quote for the `instrument_id`.
+    /// Returns the most recently added quote for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
         self.quotes
@@ -6284,9 +6348,10 @@ impl Cache {
             .and_then(|quotes| quotes.front())
     }
 
-    /// Gets a reference to the quote at `index` for the `instrument_id`.
+    /// Returns the quote at `index` for the `instrument_id`.
     ///
-    /// Index 0 is the most recent.
+    /// Index 0 is the most recently added quote; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no quote exists at the index.
     #[must_use]
     pub fn quote_at_index(&self, instrument_id: &InstrumentId, index: usize) -> Option<&QuoteTick> {
         self.quotes
@@ -6294,7 +6359,7 @@ impl Cache {
             .and_then(|quotes| quotes.get(index))
     }
 
-    /// Gets a reference to the latest trade for the `instrument_id`.
+    /// Returns the most recently added trade for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn trade(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
         self.trades
@@ -6302,9 +6367,10 @@ impl Cache {
             .and_then(|trades| trades.front())
     }
 
-    /// Gets a reference to the trade at `index` for the `instrument_id`.
+    /// Returns the trade at `index` for the `instrument_id`.
     ///
-    /// Index 0 is the most recent.
+    /// Index 0 is the most recently added trade; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no trade exists at the index.
     #[must_use]
     pub fn trade_at_index(&self, instrument_id: &InstrumentId, index: usize) -> Option<&TradeTick> {
         self.trades
@@ -6312,7 +6378,7 @@ impl Cache {
             .and_then(|trades| trades.get(index))
     }
 
-    /// Gets a reference to the latest mark price update for the `instrument_id`.
+    /// Returns the most recently added mark price update for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn mark_price(&self, instrument_id: &InstrumentId) -> Option<&MarkPriceUpdate> {
         self.mark_prices
@@ -6320,7 +6386,7 @@ impl Cache {
             .and_then(|mark_prices| mark_prices.front())
     }
 
-    /// Gets a reference to the latest index price update for the `instrument_id`.
+    /// Returns the most recently added index price update for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn index_price(&self, instrument_id: &InstrumentId) -> Option<&IndexPriceUpdate> {
         self.index_prices
@@ -6328,7 +6394,7 @@ impl Cache {
             .and_then(|index_prices| index_prices.front())
     }
 
-    /// Gets a reference to the latest funding rate update for the `instrument_id`.
+    /// Returns the most recently added funding rate update for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn funding_rate(&self, instrument_id: &InstrumentId) -> Option<&FundingRateUpdate> {
         self.funding_rates
@@ -6336,7 +6402,7 @@ impl Cache {
             .and_then(|funding_rates| funding_rates.front())
     }
 
-    /// Gets a reference to the latest instrument status update for the `instrument_id`.
+    /// Returns the most recently added instrument status for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn instrument_status(&self, instrument_id: &InstrumentId) -> Option<&InstrumentStatus> {
         self.instrument_statuses
@@ -6345,6 +6411,8 @@ impl Cache {
     }
 
     /// Returns the close cached for `instrument_id`, if present.
+    ///
+    /// A later insertion replaces the cached close for the instrument; no history is kept.
     #[must_use]
     pub fn instrument_close(&self, instrument_id: &InstrumentId) -> Option<&InstrumentClose> {
         self.instrument_closes.get(instrument_id)
@@ -6356,15 +6424,16 @@ impl Cache {
         self.instrument_closes.keys().collect()
     }
 
-    /// Gets a reference to the latest bar for the `bar_type`.
+    /// Returns the most recent bar by `ts_event` for the `bar_type`, or `None` if absent.
     #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.front())
     }
 
-    /// Gets a reference to the bar at `index` for the `bar_type`.
+    /// Returns the bar at `index` for the `bar_type`.
     ///
-    /// Index 0 is the most recent.
+    /// Bars are ordered by `ts_event`, newest first. Index 0 is the most recent bar;
+    /// index 1 is the previous bar. Returns `None` when no bar exists at the index.
     #[must_use]
     pub fn bar_at_index(&self, bar_type: &BarType, index: usize) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.get(index))
@@ -7052,6 +7121,16 @@ const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
 fn position_oms_key(position_id: PositionId) -> String {
     format!("{POSITION_OMS_KEY_PREFIX}{position_id}")
+}
+
+fn resolve_position_oms(position: &Position, oms_type: OmsType) -> OmsType {
+    if oms_type == OmsType::Unspecified
+        && position.id.as_str() == format!("{}-{}", position.instrument_id, position.strategy_id)
+    {
+        OmsType::Netting
+    } else {
+        oms_type
+    }
 }
 
 /// Inserts `bar` into the newest-first bars deque for a `bar_type`.

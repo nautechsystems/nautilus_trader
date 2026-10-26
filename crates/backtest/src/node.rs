@@ -259,13 +259,6 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
 
         let default_leverage = venue_config.default_leverage();
         let leverages = venue_config.leverages().cloned().unwrap_or_default();
-        let margin_model = venue_config.margin_model().cloned().map(Into::into);
-        let modules = venue_config
-            .modules()
-            .iter()
-            .cloned()
-            .map(Into::into)
-            .collect();
         let fill_model = venue_config
             .fill_model()
             .cloned()
@@ -283,7 +276,17 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             })?
             .into();
 
+        let margin_model = venue_config.margin_model().cloned().map(Into::into);
+
         let latency_model = venue_config.latency_model().cloned().map(Into::into);
+
+        let modules = venue_config
+            .modules()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
+
         let sim_config = SimulatedVenueConfig::builder()
             .venue(Venue::from(venue_config.name().as_str()))
             .oms_type(venue_config.oms_type())
@@ -293,11 +296,11 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             .maybe_base_currency(venue_config.base_currency())
             .maybe_default_leverage(default_leverage)
             .leverages(leverages)
-            .maybe_margin_model(margin_model)
-            .modules(modules)
             .fill_model(fill_model)
             .fee_model(fee_model)
+            .maybe_margin_model(margin_model)
             .maybe_latency_model(latency_model)
+            .modules(modules)
             .routing(venue_config.routing())
             .reject_stop_orders(venue_config.reject_stop_orders())
             .support_gtd_orders(venue_config.support_gtd_orders())

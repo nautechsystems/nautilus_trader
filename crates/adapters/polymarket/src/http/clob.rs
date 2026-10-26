@@ -384,9 +384,14 @@ impl PolymarketClobHttpClient {
         }
     }
 
-    /// Returns the CLOB protocol version reported by the venue.
+    /// Returns the CLOB service version reported by the venue.
     pub async fn get_version(&self) -> Result<ClobVersionResponse> {
         self.send_get::<(), _>(PATH_VERSION, None, false).await
+    }
+
+    pub(crate) async fn get_market(&self, condition_id: &str) -> Result<ClobMarketResponse> {
+        let path = format!("/markets/{condition_id}");
+        self.send_get::<(), _>(&path, None, false).await
     }
 
     /// Sends an authenticated order-safety heartbeat.

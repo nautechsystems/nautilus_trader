@@ -34,6 +34,7 @@ pub mod registry;
 mod access;
 mod dispatch;
 mod invocation;
+mod requests;
 mod storage;
 
 #[cfg(test)]
@@ -46,6 +47,8 @@ pub use dispatch::DispatchError as CallbackDispatchError;
 pub(crate) use dispatch::{ChainContext, PublicationScope};
 #[cfg(feature = "live")]
 pub(crate) use dispatch::{SendChainContext, collect_command_contexts};
+#[cfg(feature = "python")]
+pub(crate) use requests::ResponseScope;
 
 pub use crate::component::Component;
 

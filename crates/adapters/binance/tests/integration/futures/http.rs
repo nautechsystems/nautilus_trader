@@ -40,6 +40,7 @@ use nautilus_binance::{
     config::BinanceInstrumentProviderConfig,
     futures::http::{
         client::{BinanceFuturesHttpClient, BinanceRawFuturesHttpClient},
+        error::BinanceFuturesHttpError,
         query::{BinanceNewOrderParamsBuilder, BinanceOpenInterestHistParams},
     },
 };
@@ -975,6 +976,104 @@ async fn test_listen_key_creation() {
         .await
         .unwrap();
     assert_eq!(result["listenKey"], "test-listen-key-12345");
+}
+
+async fn listen_key_client(
+    product_type: BinanceProductType,
+    status: u16,
+    body: &'static str,
+) -> (BinanceFuturesHttpClient, tokio::task::JoinHandle<()>) {
+    let path = match product_type {
+        BinanceProductType::UsdM => "/fapi/v1/listenKey",
+        BinanceProductType::CoinM => "/dapi/v1/listenKey",
+        _ => unreachable!(),
+    };
+    let respond = move |headers: HeaderMap| async move {
+        assert!(has_auth_headers(&headers));
+        (
+            StatusCode::from_u16(status).unwrap(),
+            [("content-type", "application/json")],
+            body,
+        )
+    };
+    let router = Router::new().route(path, delete(respond).put(respond).post(respond));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+
+    let task = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    let client = BinanceFuturesHttpClient::new(
+        product_type,
+        BinanceEnvironment::Live,
+        get_atomic_clock_realtime(),
+        Some("test-key".to_string()),
+        Some("test-secret".to_string()),
+        Some(format!("http://{address}")),
+        None,
+        Some(1),
+        None,
+        false,
+    )
+    .unwrap();
+
+    (client, task)
+}
+
+#[rstest]
+#[case::closed(200, "{}", true)]
+#[case::missing(400, r#"{"code":-1125,"msg":"This listenKey does not exist."}"#, true)]
+#[case::permission(401, r#"{"code":-2015,"msg":"Invalid API-key"}"#, false)]
+#[case::throttled(429, r#"{"code":-1003,"msg":"Too many requests"}"#, false)]
+#[case::unavailable(503, r#"{"code":-1000,"msg":"Unavailable"}"#, false)]
+#[case::other_error(400, r#"{"code":-2010,"msg":"Rejected"}"#, false)]
+#[case::malformed(400, "invalid response", false)]
+#[tokio::test]
+async fn test_close_listen_key_is_idempotent_only_for_missing_key(
+    #[values(BinanceProductType::UsdM, BinanceProductType::CoinM)] product_type: BinanceProductType,
+    #[case] status: u16,
+    #[case] body: &'static str,
+    #[case] succeeds: bool,
+) {
+    let (client, task) = listen_key_client(product_type, status, body).await;
+    let result = client.close_listen_key("expired-key").await;
+    task.abort();
+
+    assert_eq!(result.is_ok(), succeeds, "{result:?}");
+
+    if !succeeds && let Ok(value) = serde_json::from_str::<serde_json::Value>(body) {
+        assert!(matches!(
+            result,
+            Err(BinanceFuturesHttpError::BinanceError { code, .. })
+                if Some(code) == value["code"].as_i64()
+        ));
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_listen_key_absence_still_fails_creation_and_keepalive(
+    #[values(BinanceProductType::UsdM, BinanceProductType::CoinM)] product_type: BinanceProductType,
+) {
+    let (client, task) = listen_key_client(
+        product_type,
+        400,
+        r#"{"code":-1125,"msg":"This listenKey does not exist."}"#,
+    )
+    .await;
+    let created = client.create_listen_key().await;
+    let kept = client.keepalive_listen_key("expired-key").await;
+    task.abort();
+
+    assert!(matches!(
+        created,
+        Err(BinanceFuturesHttpError::BinanceError { code: -1125, .. })
+    ));
+    assert!(matches!(
+        kept,
+        Err(BinanceFuturesHttpError::BinanceError { code: -1125, .. })
+    ));
 }
 
 #[rstest]

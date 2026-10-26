@@ -460,6 +460,10 @@ impl SandboxExecutionClient {
         account.set_calculate_account_state(!self.config.frozen_account);
 
         if let AccountAny::Margin(margin_account) = &mut account {
+            if let Some(model) = &self.config.margin_model {
+                margin_account.set_margin_model(model.clone().into());
+            }
+
             margin_account.set_default_leverage(self.config.default_leverage);
             for (instrument_id, leverage) in &self.config.leverages {
                 margin_account.set_leverage(*instrument_id, *leverage);
@@ -1735,10 +1739,7 @@ impl SandboxInner {
 
     /// Enqueues a trading command to be applied after its inbound latency elapses, as backtest
     /// `generate_inflight_command` does, but keyed off arrival rather than `command.ts_init()`.
-    fn enqueue(&mut self, command: TradingCommand, now_ns: UnixNanos) {
-        let leg_latency = self.command_leg_latency(&command);
-        let due_ns = now_ns + leg_latency;
-
+    fn enqueue(&mut self, command: TradingCommand, now_ns: UnixNanos, due_ns: UnixNanos) {
         let seq = self.inbound_seq;
         self.inbound_seq += 1;
 
@@ -1758,13 +1759,30 @@ impl SandboxInner {
     /// `(due_ns, seq)` order.
     fn defer_or_apply(&mut self, command: TradingCommand) {
         let now_ns = self.clock.borrow().timestamp_ns();
+
+        let leg_latency = match self.command_leg_latency(&command, now_ns) {
+            Ok(latency) => latency,
+            Err(e) => {
+                let reason = format!("Latency model failed: {e:#}");
+                log::error!("{reason}");
+                self.reject_command(&command, &reason);
+                return;
+            }
+        };
+
+        let Some(due_ns) = now_ns.checked_add(leg_latency) else {
+            let reason = "Latency arrival timestamp exceeds u64 nanoseconds";
+            log::error!("{reason}");
+            self.reject_command(&command, reason);
+            return;
+        };
+
         let head_is_due = self
             .inbound_queue
             .peek()
             .is_some_and(|delayed| delayed.due_ns <= now_ns);
-
-        if head_is_due || self.command_leg_latency(&command) > DurationNanos::ZERO {
-            self.enqueue(command, now_ns);
+        if head_is_due || leg_latency > DurationNanos::ZERO {
+            self.enqueue(command, now_ns, due_ns);
             return;
         }
 
@@ -1775,22 +1793,30 @@ impl SandboxInner {
     }
 
     /// Returns the inbound latency leg for `command`, or zero when no model is set.
-    fn command_leg_latency(&self, command: &TradingCommand) -> DurationNanos {
+    fn command_leg_latency(
+        &self,
+        command: &TradingCommand,
+        ts_now: UnixNanos,
+    ) -> anyhow::Result<DurationNanos> {
         let Some(latency_model) = self.config.latency_model.as_ref() else {
-            return DurationNanos::ZERO;
+            return Ok(DurationNanos::ZERO);
         };
 
         match command {
             TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_) => {
-                latency_model.get_insert_latency()
+                latency_model.get_insert_latency(command, ts_now)
             }
             TradingCommand::ModifyOrder(_) | TradingCommand::ModifyOrders(_) => {
-                latency_model.get_update_latency()
+                latency_model.get_update_latency(command, ts_now)
             }
             TradingCommand::CancelOrder(_)
             | TradingCommand::CancelOrders(_)
-            | TradingCommand::CancelAllOrders(_) => latency_model.get_delete_latency(),
-            TradingCommand::QueryOrder(_) | TradingCommand::QueryAccount(_) => DurationNanos::ZERO,
+            | TradingCommand::CancelAllOrders(_) => {
+                latency_model.get_delete_latency(command, ts_now)
+            }
+            TradingCommand::QueryOrder(_) | TradingCommand::QueryAccount(_) => {
+                Ok(DurationNanos::ZERO)
+            }
         }
     }
 

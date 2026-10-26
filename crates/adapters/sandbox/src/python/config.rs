@@ -27,6 +27,7 @@ use nautilus_execution::{
 use nautilus_model::{
     enums::{AccountType, BookType, OmsType},
     identifiers::{AccountId, Venue},
+    python::account::margin_model::{margin_model_any_to_pyobject, pyobject_to_margin_model_any},
     types::{Currency, Money},
 };
 use pyo3::{Py, PyAny, Python, prelude::*};
@@ -39,7 +40,35 @@ use crate::config::SandboxExecutionClientConfig;
 impl SandboxExecutionClientConfig {
     /// Configuration for `SandboxExecutionClient` instances.
     #[new]
-    #[pyo3(signature = (venue, starting_balances, account_id=None, base_currency=None, oms_type=None, account_type=None, default_leverage=None, book_type=None, frozen_account=false, bar_execution=true, trade_execution=true, reject_stop_orders=true, support_gtd_orders=true, support_contingent_orders=true, use_position_ids=true, use_random_ids=false, use_reduce_only=true, fee_model=None, fill_model=None, queue_position=false, liquidity_consumption=false, bar_adaptive_high_low_ordering=false, use_market_order_acks=false, oto_full_trigger=false, price_protection_points=None, latency_model=None))]
+    #[pyo3(signature = (
+        venue,
+        starting_balances,
+        account_id = None,
+        base_currency = None,
+        oms_type = None,
+        account_type = None,
+        default_leverage = None,
+        book_type = None,
+        fill_model = None,
+        fee_model = None,
+        margin_model = None,
+        latency_model = None,
+        frozen_account = false,
+        bar_execution = true,
+        trade_execution = true,
+        reject_stop_orders = true,
+        support_gtd_orders = true,
+        support_contingent_orders = true,
+        use_position_ids = true,
+        use_random_ids = false,
+        use_reduce_only = true,
+        queue_position = false,
+        liquidity_consumption = false,
+        bar_adaptive_high_low_ordering = false,
+        use_market_order_acks = false,
+        oto_full_trigger = false,
+        price_protection_points = None,
+    ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
         venue: Venue,
@@ -50,6 +79,10 @@ impl SandboxExecutionClientConfig {
         account_type: Option<AccountType>,
         default_leverage: Option<Decimal>,
         book_type: Option<BookType>,
+        fill_model: Option<Py<PyAny>>,
+        fee_model: Option<Py<PyAny>>,
+        margin_model: Option<Py<PyAny>>,
+        latency_model: Option<Py<PyAny>>,
         frozen_account: bool,
         bar_execution: bool,
         trade_execution: bool,
@@ -59,25 +92,28 @@ impl SandboxExecutionClientConfig {
         use_position_ids: bool,
         use_random_ids: bool,
         use_reduce_only: bool,
-        fee_model: Option<Py<PyAny>>,
-        fill_model: Option<Py<PyAny>>,
         queue_position: bool,
         liquidity_consumption: bool,
         bar_adaptive_high_low_ordering: bool,
         use_market_order_acks: bool,
         oto_full_trigger: bool,
         price_protection_points: Option<u32>,
-        latency_model: Option<Py<PyAny>>,
     ) -> PyResult<Self> {
         // Generate the default account ID from the venue
         let account_id =
             account_id.unwrap_or_else(|| AccountId::from(format!("{venue}-SANDBOX-001").as_str()));
-        let fee_model: Option<FeeModelAny> = fee_model
-            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
-            .transpose()?;
         let fill_model: Option<FillModelAny> = fill_model
             .map(|obj| Python::attach(|py| pyobject_to_fill_model_any(obj.bind(py))))
             .transpose()?;
+
+        let fee_model: Option<FeeModelAny> = fee_model
+            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
+            .transpose()?;
+
+        let margin_model = margin_model
+            .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(obj.bind(py))))
+            .transpose()?;
+
         let latency_model: Option<LatencyModelAny> = latency_model
             .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
             .transpose()?;
@@ -92,8 +128,9 @@ impl SandboxExecutionClientConfig {
             default_leverage: default_leverage.unwrap_or(Decimal::ONE),
             leverages: ahash::AHashMap::new(),
             book_type: book_type.unwrap_or(BookType::L1_MBP),
-            fee_model,
             fill_model,
+            fee_model,
+            margin_model,
             latency_model,
             frozen_account,
             bar_execution,
@@ -157,6 +194,14 @@ impl SandboxExecutionClientConfig {
     }
 
     #[getter]
+    fn fill_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        self.fill_model
+            .as_ref()
+            .map(|model| fill_model_any_to_pyobject(py, model))
+            .transpose()
+    }
+
+    #[getter]
     fn fee_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
         self.fee_model
             .as_ref()
@@ -165,10 +210,10 @@ impl SandboxExecutionClientConfig {
     }
 
     #[getter]
-    fn fill_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
-        self.fill_model
+    fn margin_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        self.margin_model
             .as_ref()
-            .map(|model| fill_model_any_to_pyobject(py, model))
+            .map(|model| margin_model_any_to_pyobject(py, model))
             .transpose()
     }
 

@@ -86,14 +86,14 @@ use nautilus_common::{
     logging::{RECV, RES},
     messages::data::{
         BarsResponse, BookDeltasResponse, BookDepthResponse, CustomDataResponse, DataCommand,
-        DataResponse, FundingRatesResponse, OptionChainReferencePriceResponse, PARAMS_IS_PARENT,
-        QuoteRouting, QuotesResponse, RequestBars, RequestCommand, RequestJoin,
-        RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBars,
-        SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand, SubscribeOptionChain,
-        SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-        UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeBookSnapshots, UnsubscribeCommand,
-        UnsubscribeInstrumentStatus, UnsubscribeOptionChain, UnsubscribeOptionGreeks,
-        UnsubscribeQuotes, UnsubscribeTrades, ensure_routable_bar_types,
+        DataRequestFailed, DataResponse, DataResponseEnvelope, IdentifierCountError,
+        OptionChainReferencePriceResponse, PARAMS_IS_PARENT, QuoteRouting, RequestBars,
+        RequestCommand, RequestJoin, RequestOptionChainReferencePrice, RequestQuotes,
+        RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand,
+        SubscribeOptionChain, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+        UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeBookSnapshots,
+        UnsubscribeCommand, UnsubscribeInstrumentStatus, UnsubscribeOptionChain,
+        UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades, ensure_routable_bar_types,
         ensure_routable_instrument_ids, is_parent_subscription, quote_routing,
     },
     msgbus::{
@@ -134,14 +134,13 @@ use option_chain::{
 };
 use requests::{
     ContinuousFutureRequest, ContinuousFutureRequestState, ContinuousFutureSegment,
-    ContinuousFutureSource, RequestBarAggregation, continuous_future_parent_request_id,
-    continuous_future_request_from_bars, continuous_future_subscription_from_bars,
-    has_continuous_future_params, request_bar_aggregation_from_params, request_params,
-    response_params,
+    ContinuousFutureSource, RequestBarAggregation, continuous_future_request_from_bars,
+    continuous_future_subscription_from_bars, has_continuous_future_params,
+    request_bar_aggregation_from_params, request_params, response_params,
 };
 use responses::{
-    empty_response_like, log_if_empty_response, parent_request_window, rebind_response_correlation,
-    rebuild_pipeline_response,
+    log_if_empty_response, parent_request_window, rebind_response_correlation,
+    rebuild_pipeline_response, same_instrument,
 };
 use serde_json::Value;
 use spread_quote::SpreadQuoteState;
@@ -196,15 +195,17 @@ pub struct DataEngine {
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
     subscriptions_bar_aggregation: AHashMap<BarType, BarAggregationSubscription>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
+    inflight_requests: AHashMap<UUID4, RequestCommand>,
     request_pipeline_parent_request: AHashMap<UUID4, RequestCommand>,
     request_pipeline_n_components: AHashMap<UUID4, usize>,
-    request_pipeline_parent_request_id: AHashMap<UUID4, UUID4>,
-    request_pipeline_responses: AHashMap<UUID4, Vec<DataResponse>>,
+    request_pipeline_parent_request_id: AHashMap<UUID4, (UUID4, usize)>,
+    request_pipeline_responses: AHashMap<UUID4, Vec<Option<Vec<DataResponseEnvelope>>>>,
     time_range_pipeline_requests: AHashMap<UUID4, TimeRangePipelineState>,
     time_range_pipeline_parent_request_id: AHashMap<UUID4, UUID4>,
     parent_join_request_id: AHashMap<UUID4, UUID4>,
     pending_join_requests: AHashMap<UUID4, RequestJoin>,
     continuous_future_requests: AHashMap<UUID4, ContinuousFutureRequestState>,
+    continuous_future_parent_request_id: AHashMap<UUID4, UUID4>,
     continuous_future_subscriptions: AHashMap<BarType, ContinuousFutureSubscriptionState>,
     continuous_future_roller: Option<Rc<ContinuousFutureRoller>>,
     spread_quote_states: AHashMap<InstrumentId, SpreadQuoteState>,
@@ -272,6 +273,7 @@ impl DataEngine {
             bar_aggregator_handlers: AHashMap::new(),
             subscriptions_bar_aggregation: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
+            inflight_requests: AHashMap::new(),
             request_pipeline_parent_request: AHashMap::new(),
             request_pipeline_n_components: AHashMap::new(),
             request_pipeline_parent_request_id: AHashMap::new(),
@@ -281,6 +283,7 @@ impl DataEngine {
             parent_join_request_id: AHashMap::new(),
             pending_join_requests: AHashMap::new(),
             continuous_future_requests: AHashMap::new(),
+            continuous_future_parent_request_id: AHashMap::new(),
             continuous_future_subscriptions: AHashMap::new(),
             continuous_future_roller: None,
             spread_quote_states: AHashMap::new(),
@@ -516,6 +519,7 @@ impl DataEngine {
         self.subscriptions_bar_aggregation.clear();
 
         self.request_bar_aggregations.clear();
+        self.inflight_requests.clear();
         self.request_pipeline_parent_request.clear();
         self.request_pipeline_n_components.clear();
         self.request_pipeline_parent_request_id.clear();
@@ -525,6 +529,7 @@ impl DataEngine {
         self.parent_join_request_id.clear();
         self.pending_join_requests.clear();
         self.continuous_future_requests.clear();
+        self.continuous_future_parent_request_id.clear();
 
         for state in self.continuous_future_subscriptions.values_mut() {
             if let Some(name) = state.timer_name.take() {
@@ -1479,11 +1484,28 @@ impl DataEngine {
 
     /// Sends a [`RequestCommand`] to a suitable data client implementation.
     ///
+    /// Submission errors also send the requester a terminal failure envelope.
+    ///
     /// # Errors
     ///
-    /// Returns an error if no client is found for the given client ID or venue,
-    /// or if the client fails to process the request.
+    /// Returns an error if validation fails, no client is found for the given client ID or venue,
+    /// or the client rejects direct submission.
     pub fn execute_request(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+        let request_id = *req.request_id();
+        let result = self.execute_request_inner(req);
+        if let Err(e) = &result {
+            self.process_response_envelope(DataResponseEnvelope::terminal(
+                request_id,
+                Some(e.to_string()),
+            ));
+        }
+
+        result
+    }
+
+    fn execute_request_inner(&mut self, req: RequestCommand) -> anyhow::Result<()> {
+        Self::validate_request(&req)?;
+
         // Skip requests for external clients
         if let Some(cid) = req.client_id()
             && self.is_external_client(*cid)
@@ -1533,10 +1555,42 @@ impl DataEngine {
         result.map(|_| ())
     }
 
+    fn validate_request(req: &RequestCommand) -> anyhow::Result<()> {
+        let (instrument_ids, requires_single, limit) = match req {
+            RequestCommand::Instrument(cmd) => (&cmd.instrument_ids, false, None),
+            RequestCommand::BookSnapshot(cmd) => (&cmd.instrument_ids, true, None),
+            RequestCommand::BookDeltas(cmd) => (&cmd.instrument_ids, true, None),
+            RequestCommand::BookDepth(cmd) => (&cmd.instrument_ids, true, None),
+            RequestCommand::Quotes(cmd) => (&cmd.instrument_ids, false, cmd.limit),
+            RequestCommand::Trades(cmd) => (&cmd.instrument_ids, false, cmd.limit),
+            RequestCommand::FundingRates(cmd) => (&cmd.instrument_ids, true, None),
+            RequestCommand::Bars(cmd) => {
+                ensure_routable_bar_types(&cmd.bar_types, cmd.client_id.is_some())?;
+                cmd.single_bar_type()?;
+                return Ok(());
+            }
+            _ => return Ok(()),
+        };
+
+        ensure_routable_instrument_ids(instrument_ids, req.client_id().is_some())?;
+        anyhow::ensure!(
+            !requires_single || instrument_ids.len() == 1,
+            "request requires one instrument ID for this data type, received {}",
+            instrument_ids.len(),
+        );
+        anyhow::ensure!(
+            instrument_ids.len() == 1 || limit.is_none(),
+            "A record limit is unsupported for multi-instrument requests",
+        );
+        Ok(())
+    }
+
     pub(super) fn dispatch_request_to_client(
         &mut self,
         req: RequestCommand,
     ) -> anyhow::Result<ClientId> {
+        self.inflight_requests
+            .insert(*req.request_id(), req.clone());
         let client_id = req.client_id().copied();
         let venue = req.venue().copied();
         let Some(client) = self.get_client(client_id.as_ref(), venue.as_ref()) else {
@@ -1560,17 +1614,36 @@ impl DataEngine {
             RequestCommand::Join(_) => anyhow::bail!("RequestJoin must be handled by handle_request_join"),
         };
 
-        result
-            .map_err(|e| e.context(format!("Data client {resolved_client_id} request failed")))?;
+        result.map_err(|e| {
+            let context = format!("Data client {resolved_client_id} request failed");
+
+            let context = if let Some(rejection) = e.downcast_ref::<IdentifierCountError>() {
+                format!("{context}: {rejection}")
+            } else {
+                context
+            };
+
+            e.context(context)
+        })?;
 
         Ok(resolved_client_id)
     }
 
     /// Processes a dynamically-typed data message.
     ///
-    /// Currently supports `InstrumentAny`, funding rates, option greeks, instrument status, and
-    /// custom data; unrecognized types are logged as errors.
+    /// Supports instruments, response envelopes, request failures, funding rates, option greeks,
+    /// instrument status, and custom data; unrecognized types are logged as errors.
     pub fn process(&mut self, data: &dyn Any) {
+        if let Some(response) = data.downcast_ref::<DataResponseEnvelope>() {
+            self.response_envelope(response.clone());
+            return;
+        }
+
+        if let Some(failure) = data.downcast_ref::<DataRequestFailed>() {
+            self.request_failed(failure.clone());
+            return;
+        }
+
         self.data_count += 1;
         // Dynamically-typed entry point: `FundingRateUpdate`, `OptionGreeks`, `InstrumentStatus`,
         // and custom data are also `Data` enum variants handled in `process_data`, but can arrive
@@ -1727,8 +1800,126 @@ impl DataEngine {
         }
     }
 
-    /// Processes a `DataResponse`, handling and publishing the response message.
+    /// Processes a payload-only reply as a completed request.
+    ///
+    /// Payload-only replies do not certify coverage for catalog write-back. Use
+    /// [`Self::response_envelope`] to report explicit source completion.
     pub fn response(&mut self, mut resp: DataResponse) {
+        resp.trim_to_bounds();
+        let request = self.inflight_requests.remove(resp.correlation_id());
+        #[cfg(feature = "streaming")]
+        if request
+            .as_ref()
+            .and_then(request_params)
+            .is_some_and(|params| params.get_bool(streaming::PARAM_UPDATE_CATALOG) == Some(true))
+        {
+            log::warn!(
+                "Catalog write-back requires an explicit completed response envelope, request={}",
+                resp.correlation_id()
+            );
+        }
+
+        #[cfg(not(feature = "streaming"))]
+        let _ = request;
+        let envelope = DataResponseEnvelope::new(resp, true, None);
+        self.process_response_envelope(envelope);
+    }
+
+    /// Completes failed adapter work while preserving any returned rows.
+    pub fn request_failed(&mut self, failure: DataRequestFailed) {
+        log::error!(
+            "Data request {} failed: {}",
+            failure.request_id,
+            failure.reason
+        );
+
+        let envelope = if let Some(mut response) = failure.response {
+            response.trim_to_bounds();
+            DataResponseEnvelope::new(response, true, None)
+                .with_correlation_id(failure.request_id)
+                .with_failure(failure.reason)
+        } else {
+            DataResponseEnvelope::terminal(failure.request_id, Some(failure.reason))
+        };
+
+        self.process_response_envelope(envelope);
+    }
+
+    /// Processes an adapter envelope, retaining intermediate request handlers.
+    pub fn response_envelope(&mut self, mut envelope: DataResponseEnvelope) {
+        if let Some(response) = envelope.response_mut() {
+            response.trim_to_bounds();
+        }
+
+        self.process_response_envelope(envelope);
+    }
+
+    fn process_response_envelope(&mut self, envelope: DataResponseEnvelope) {
+        let request = self.inflight_requests.remove(envelope.correlation_id());
+        #[cfg(feature = "streaming")]
+        if envelope.completed()
+            && envelope.failure_reason().is_none()
+            && let (Some(request), Some(response)) = (&request, envelope.response())
+        {
+            self.update_catalog_from_response(response, request);
+        }
+
+        #[cfg(not(feature = "streaming"))]
+        let _ = request;
+
+        let Some(envelope) = self.handle_request_pipeline_response(envelope) else {
+            return;
+        };
+
+        if self
+            .request_pipeline_parent_request_id
+            .contains_key(envelope.correlation_id())
+        {
+            self.process_response_envelope(envelope);
+            return;
+        }
+
+        if self.handle_continuous_future_child_response(&envelope)
+            || self.handle_time_range_pipeline_child_response(&envelope)
+        {
+            return;
+        }
+
+        let Some(resp) = envelope.response().cloned() else {
+            self.finish_empty_response(&envelope);
+            return;
+        };
+
+        self.route_response_payload(resp, &envelope);
+    }
+
+    fn finish_empty_response(&mut self, envelope: &DataResponseEnvelope) {
+        if let Some(original_id) = self
+            .parent_join_request_id
+            .remove(envelope.correlation_id())
+        {
+            if let Some(original) = self.pending_join_requests.remove(&original_id) {
+                for child_id in original.request_ids {
+                    msgbus::send_response_envelope(&DataResponseEnvelope::terminal(
+                        child_id,
+                        envelope.failure_reason().map(str::to_owned),
+                    ));
+                }
+            }
+
+            self.process_response_envelope(DataResponseEnvelope::terminal(
+                original_id,
+                envelope.failure_reason().map(str::to_owned),
+            ));
+            return;
+        }
+
+        self.cleanup_request_bar_aggregators(envelope.correlation_id());
+        msgbus::send_response_envelope(envelope);
+    }
+
+    fn route_response_payload(&mut self, resp: DataResponse, envelope: &DataResponseEnvelope) {
+        let resp = rebind_response_correlation(resp, *envelope.correlation_id());
         if log::log_enabled!(log::Level::Debug) {
             let correlation_id = resp.correlation_id();
             match resp.record_count() {
@@ -1746,37 +1937,27 @@ impl DataEngine {
 
         self.response_count += 1;
 
-        resp.trim_to_bounds();
-
-        let Some(resp) = self.handle_request_pipeline_response(resp) else {
-            return;
-        };
-
-        // Catalog legs inherit the child's params, so route only the assembled segment
-        if let Some(parent_id) = continuous_future_parent_request_id(response_params(&resp)) {
-            self.handle_continuous_future_child_response(parent_id, &resp);
-            return;
-        }
-
-        if let Some(parent_id) = self
-            .time_range_pipeline_parent_request_id
-            .remove(resp.correlation_id())
-        {
-            self.handle_time_range_pipeline_child_response(parent_id, &resp);
-            return;
-        }
-
         if self
             .parent_join_request_id
             .contains_key(resp.correlation_id())
         {
-            self.finalize_request_join(resp);
+            self.finalize_request_join(resp, envelope.failure_reason().map(str::to_owned));
             return;
         }
 
+        if !self.handle_response_payload(&resp) {
+            return;
+        }
+
+        self.process_request_bar_aggregation_response(&resp, envelope.completed());
+
+        msgbus::send_response_envelope(envelope);
+    }
+
+    fn handle_response_payload(&mut self, resp: &DataResponse) -> bool {
         let correlation_id = *resp.correlation_id();
 
-        match &resp {
+        match resp {
             DataResponse::Instrument(r) => {
                 self.handle_instrument_response(r.data.clone());
             }
@@ -1784,12 +1965,20 @@ impl DataEngine {
                 self.handle_instruments(&r.data);
             }
             DataResponse::Quotes(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                if !log_if_empty_response(
+                    &r.data,
+                    &format_args!("{:?}", r.instrument_ids),
+                    &correlation_id,
+                ) {
                     self.handle_quotes(&r.data);
                 }
             }
             DataResponse::Trades(r) => {
-                if !log_if_empty_response(&r.data, &r.instrument_id, &correlation_id) {
+                if !log_if_empty_response(
+                    &r.data,
+                    &format_args!("{:?}", r.instrument_ids),
+                    &correlation_id,
+                ) {
                     self.handle_trades(&r.data);
                 }
             }
@@ -1815,15 +2004,14 @@ impl DataEngine {
                 }
             }
             DataResponse::OptionChainReferencePrice(r) => {
-                self.process_request_bar_aggregation_response(&resp);
-                return self.handle_option_chain_reference_price_response(&correlation_id, r);
+                self.process_request_bar_aggregation_response(resp, true);
+                self.handle_option_chain_reference_price_response(&correlation_id, r);
+                return false;
             }
             DataResponse::Data(_) => {}
         }
 
-        self.process_request_bar_aggregation_response(&resp);
-
-        msgbus::send_response(&correlation_id, &resp);
+        true
     }
 
     /// Registers a parent request whose response will be rebuilt from `n_components` leg responses.
@@ -1838,82 +2026,149 @@ impl DataEngine {
     }
 
     /// Registers a leg `request_id` as a child of the pipeline keyed by `parent_id`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the parent pipeline is not registered.
     pub fn register_request_pipeline_leg(&mut self, leg_id: UUID4, parent_id: UUID4) {
+        let slots = self
+            .request_pipeline_responses
+            .get_mut(&parent_id)
+            .expect("pipeline registered before its legs");
+        let index = slots.len();
+        slots.push(None);
         self.request_pipeline_parent_request_id
-            .insert(leg_id, parent_id);
+            .insert(leg_id, (parent_id, index));
     }
 
-    /// Fans a leg response into its parent pipeline and emits the rebuilt response when all legs arrive.
-    ///
-    /// Responses whose `correlation_id` is not part of any pipeline pass through unchanged.
-    /// While accumulating legs, returns `None` so the caller skips further response handling.
-    fn handle_request_pipeline_response(&mut self, resp: DataResponse) -> Option<DataResponse> {
-        let leg_id = *resp.correlation_id();
-        let Some(parent_id) = self.request_pipeline_parent_request_id.remove(&leg_id) else {
-            return Some(resp);
+    fn handle_request_pipeline_response(
+        &mut self,
+        envelope: DataResponseEnvelope,
+    ) -> Option<DataResponseEnvelope> {
+        let leg_id = *envelope.correlation_id();
+
+        let Some(&(parent_id, index)) = self.request_pipeline_parent_request_id.get(&leg_id) else {
+            return Some(envelope);
         };
 
-        let Some(buf) = self.request_pipeline_responses.get_mut(&parent_id) else {
-            log::error!("Pipeline response buffer missing for parent {parent_id} (leg {leg_id})");
-            return Some(resp);
-        };
-        buf.push(resp);
+        let completed = envelope.completed();
+        let slots = self.request_pipeline_responses.get_mut(&parent_id)?;
+        slots[index].get_or_insert_with(Vec::new).push(envelope);
 
-        let expected = self.request_pipeline_n_components.get(&parent_id).copied();
-        let received = buf.len();
-        match expected {
-            Some(n) if received < n => return None,
-            Some(_) => {}
-            None => {
-                log::error!("Pipeline n_components missing for parent {parent_id}");
-                return None;
-            }
+        if !completed {
+            return None;
         }
 
-        let mut legs = self.request_pipeline_responses.remove(&parent_id)?;
+        self.request_pipeline_parent_request_id.remove(&leg_id);
+        let expected = *self.request_pipeline_n_components.get(&parent_id)?;
+
+        if slots
+            .iter()
+            .flatten()
+            .filter(|slot| slot.last().is_some_and(DataResponseEnvelope::completed))
+            .count()
+            < expected
+        {
+            return None;
+        }
+
+        let slots = self.request_pipeline_responses.remove(&parent_id)?;
         self.request_pipeline_n_components.remove(&parent_id);
         let parent = self.request_pipeline_parent_request.remove(&parent_id);
+        let failures = slots
+            .iter()
+            .flatten()
+            .flatten()
+            .filter_map(|value| value.failure_reason())
+            .collect::<Vec<_>>();
+        let failure_reason = (!failures.is_empty()).then(|| failures.join("; "));
+        let legs = slots
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|value| value.response().cloned())
+            .collect::<Vec<_>>();
 
-        for leg in &mut legs {
-            leg.trim_to_bounds();
+        if legs.is_empty() {
+            return Some(DataResponseEnvelope::terminal(parent_id, failure_reason));
         }
 
         let (parent_start, parent_end) = parent_request_window(parent.as_ref());
-        let rebuilt = rebuild_pipeline_response(parent_id, parent.as_ref(), legs);
-
-        // If the rebuild failed (mixed-variant, unsupported-variant, or mixed-instrument
-        // `BookDeltas` legs), drop the associated `RequestJoin` so its staging maps do not
-        // leak. Without this the
-        // original join request stays in `pending_join_requests` and its
-        // `parent_join_request_id` mapping stays live, neither of which will ever
-        // resolve through normal flow.
-        if rebuilt.is_none()
-            && let Some(original_id) = self.parent_join_request_id.remove(&parent_id)
-        {
-            self.pending_join_requests.remove(&original_id);
-            log::error!(
-                "Dropped RequestJoin {original_id} because pipeline rebuild failed for dated parent {parent_id}"
-            );
+        if self.emit_partitioned_book_responses(parent_id, parent.as_ref(), &legs) {
+            return Some(DataResponseEnvelope::terminal(parent_id, failure_reason));
         }
 
-        let mut rebuilt = rebuilt?;
+        let rebuilt = rebuild_pipeline_response(parent_id, parent.as_ref(), legs);
 
-        // Replay must run before `trim_to_bounds`, which would otherwise discard the pre-start
-        // deltas the replay folds into the snapshot.
+        let Some(mut rebuilt) = rebuilt else {
+            let reason = failure_reason
+                .unwrap_or_else(|| "Request pipeline could not rebuild its response".to_owned());
+
+            return Some(DataResponseEnvelope::terminal(parent_id, Some(reason)));
+        };
+
         if let DataResponse::BookDeltas(r) = &mut rebuilt {
             self.book_deltas_snapshot_replay(r);
         }
 
-        // Trim against the parent window only when the parent supplied one. With no
-        // parent window the rebuilt response inherits the first leg's bounds; legs are
-        // already trimmed against their own bounds at the top of `response()`, so a
-        // second pass would discard data from later legs whose bounds the parent never
-        // constrained.
-        if parent_start.is_some() || parent_end.is_some() {
+        // Client definitions can have a newer ts_init than the requested history
+        if !matches!(parent, Some(RequestCommand::Instrument(_)))
+            && (parent_start.is_some() || parent_end.is_some())
+        {
             rebuilt.trim_to_bounds();
         }
 
-        Some(rebuilt)
+        let result = DataResponseEnvelope::new(rebuilt, true, None);
+        Some(if let Some(reason) = failure_reason {
+            result.with_failure(reason)
+        } else {
+            result
+        })
+    }
+
+    fn emit_partitioned_book_responses(
+        &mut self,
+        parent_id: UUID4,
+        parent: Option<&RequestCommand>,
+        legs: &[DataResponse],
+    ) -> bool {
+        if !matches!(parent, Some(RequestCommand::BookDeltas(_))) {
+            return false;
+        }
+
+        let mut ids = legs.iter().filter_map(|r| match r {
+            DataResponse::BookDeltas(r) => Some(r.instrument_id),
+            _ => None,
+        });
+
+        let Some(first) = ids.next() else {
+            return false;
+        };
+
+        if !ids.any(|id| !same_instrument(id, first)) {
+            return false;
+        }
+
+        let (start, end) = parent_request_window(parent);
+
+        for response in legs {
+            let child_id = *response.correlation_id();
+            let mut response = rebind_response_correlation(response.clone(), parent_id);
+            if let DataResponse::BookDeltas(r) = &mut response {
+                r.start = start.or(r.start);
+                r.end = end.or(r.end);
+                self.book_deltas_snapshot_replay(r);
+            }
+
+            response.trim_to_bounds();
+            self.process_response_envelope(DataResponseEnvelope::new(
+                response,
+                false,
+                Some(child_id),
+            ));
+        }
+
+        true
     }
 
     fn handle_request_join(&mut self, req: RequestJoin) -> anyhow::Result<()> {
@@ -1943,7 +2198,7 @@ impl DataEngine {
         Ok(())
     }
 
-    fn finalize_request_join(&mut self, resp: DataResponse) {
+    fn finalize_request_join(&mut self, resp: DataResponse, failure_reason: Option<String>) {
         let dated_id = *resp.correlation_id();
         let Some(original_id) = self.parent_join_request_id.remove(&dated_id) else {
             log::error!("parent_join_request_id missing for dated correlation {dated_id}");
@@ -1955,16 +2210,9 @@ impl DataEngine {
             return;
         };
 
-        let now_ns = self.clock.borrow().timestamp_ns();
-
-        // Empty leg responses fire each leg's callback so caller-side request
-        // workflows clean up. Per-leg metadata is reconstructed from the
-        // rebuilt parent response and may not match a leg's original
-        // instrument_id/bar_type when the join spans heterogeneous legs;
-        // tracked as a follow-up in #5 (needs an in-flight leg-request cache).
         for leg_request_id in &original.request_ids {
-            let empty = empty_response_like(&resp, *leg_request_id, now_ns);
-            msgbus::send_response(leg_request_id, &empty);
+            let terminal = DataResponseEnvelope::terminal(*leg_request_id, failure_reason.clone());
+            msgbus::send_response_envelope(&terminal);
         }
 
         // Route the final join response through the normal response path so
@@ -1973,7 +2221,12 @@ impl DataEngine {
         // and join staging maps for this request have already been popped, so
         // the recursive call cannot re-enter either gate.
         let final_resp = rebind_response_correlation(resp, original_id);
-        self.response(final_resp);
+        let envelope = DataResponseEnvelope::new(final_resp, true, None);
+        self.process_response_envelope(if let Some(reason) = failure_reason {
+            envelope.with_failure(reason)
+        } else {
+            envelope
+        });
     }
 }
 

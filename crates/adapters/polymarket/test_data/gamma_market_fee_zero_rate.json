@@ -2,6 +2,7 @@
   "id": "fee-zero-rate-1",
   "conditionId": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
   "question": "Zero-rate crypto market",
+  "version": "v1",
   "clobTokenIds": "[\"12121212121212121212121212121212121212121212121212121212121212121212121212121\", \"13131313131313131313131313131313131313131313131313131313131313131313131313131\"]",
   "outcomes": "[\"Yes\", \"No\"]",
   "active": true,

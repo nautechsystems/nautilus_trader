@@ -130,21 +130,7 @@ impl AccountBalance {
         let total = Money::from_decimal(total, currency)?;
         let locked = Money::from_decimal(locked, currency)?;
 
-        let clamped_locked = if total.is_negative() {
-            locked
-        } else {
-            locked.clamp(Money::zero(currency), total)
-        };
-
-        let free = total.checked_sub(clamped_locked).ok_or_else(|| {
-            CorrectnessError::PredicateViolation {
-                message: format!(
-                    "Derived `free` exceeds Money bounds for `total` {total} and `locked` {clamped_locked}"
-                ),
-            }
-        })?;
-
-        Ok(Self::new(total, clamped_locked, free))
+        Self::from_money_total_and_locked(total, locked)
     }
 
     /// Creates a new [`AccountBalance`] from `total` and `free` decimal amounts,
@@ -183,6 +169,42 @@ impl AccountBalance {
         })?;
 
         Ok(Self::new(total, locked, clamped_free))
+    }
+
+    /// Creates a balance from native money amounts and derives `free` without rounding.
+    ///
+    /// Applies the same clamping rules as [`Self::from_total_and_locked`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if currencies differ or the derived `free` balance exceeds money bounds.
+    pub fn from_money_total_and_locked(total: Money, locked: Money) -> CorrectnessResult<Self> {
+        if total.currency != locked.currency {
+            return Err(CorrectnessError::PredicateViolation {
+                message: format!(
+                    "`total` currency ({}) != `locked` currency ({})",
+                    total.currency, locked.currency
+                ),
+            });
+        }
+
+        let currency = total.currency;
+
+        let clamped_locked = if total.is_negative() {
+            locked
+        } else {
+            locked.clamp(Money::zero(currency), total)
+        };
+
+        let free = total.checked_sub(clamped_locked).ok_or_else(|| {
+            CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Derived `free` exceeds Money bounds for `total` {total} and `locked` {clamped_locked}"
+                ),
+            }
+        })?;
+
+        Self::new_checked(total, clamped_locked, free)
     }
 }
 

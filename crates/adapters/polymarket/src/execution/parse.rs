@@ -596,16 +596,27 @@ pub fn compute_commission(
     price: Decimal,
     liquidity_side: LiquiditySide,
 ) -> anyhow::Result<Decimal> {
+    let commission =
+        compute_commission_unrounded(fee_rate, fee_exponent, size, price, liquidity_side)?;
+    Ok(commission.round_dp_with_strategy(5, RoundingStrategy::ToZero))
+}
+
+/// Computes commission before applying the five-decimal floor to a complete trade.
+pub(crate) fn compute_commission_unrounded(
+    fee_rate: Decimal,
+    fee_exponent: Decimal,
+    size: Decimal,
+    price: Decimal,
+    liquidity_side: LiquiditySide,
+) -> anyhow::Result<Decimal> {
     anyhow::ensure!(size >= Decimal::ZERO, "fee quantity must be non-negative");
     let rate = fee_curve_rate(fee_rate, price, fee_exponent)?;
 
     if liquidity_side != LiquiditySide::Taker {
         return Ok(Decimal::ZERO);
     }
-    let commission = size
-        .checked_mul(rate)
-        .context("commission calculation overflow")?;
-    Ok(commission.round_dp_with_strategy(5, RoundingStrategy::ToZero))
+    size.checked_mul(rate)
+        .context("commission calculation overflow")
 }
 
 fn fee_curve_rate(

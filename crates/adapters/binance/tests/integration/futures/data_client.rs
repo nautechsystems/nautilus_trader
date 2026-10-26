@@ -37,6 +37,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use jiff::{SignedDuration, Timestamp};
 use nautilus_binance::{
     common::{
         bar::BinanceBar,
@@ -741,7 +742,7 @@ fn futures_agg_trades_response(
         .get("startTime")
         .or_else(|| query.get("endTime"))
         .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
+        .unwrap_or_else(|| Timestamp::now().as_millisecond());
     state.market_queries.lock().push((path.to_string(), query));
     let quantity = if path.starts_with("/dapi") {
         "2"
@@ -785,7 +786,7 @@ fn futures_klines_response(
     let close_time = query
         .get("endTime")
         .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond() - 1_000);
+        .unwrap_or_else(|| Timestamp::now().as_millisecond() - 1_000);
     state.market_queries.lock().push((path.to_string(), query));
 
     if state.empty_klines {
@@ -1560,7 +1561,6 @@ async fn test_request_funding_rates_emits_response() {
     "BTCUSDT_260925.BINANCE",
     "/fapi/v1/aggTrades",
     "BTCUSDT_260925",
-    dec!(50001.2),
     dec!(0.123),
     AggregateTradeBounds::Both
 )]
@@ -1569,7 +1569,6 @@ async fn test_request_funding_rates_emits_response() {
     "BTCUSD_260925.BINANCE",
     "/dapi/v1/aggTrades",
     "BTCUSD_260925",
-    dec!(50001.2),
     dec!(2),
     AggregateTradeBounds::Both
 )]
@@ -1578,7 +1577,6 @@ async fn test_request_funding_rates_emits_response() {
     "BTCUSDT_260925.BINANCE",
     "/fapi/v1/aggTrades",
     "BTCUSDT_260925",
-    dec!(50001.2),
     dec!(0.123),
     AggregateTradeBounds::Start
 )]
@@ -1587,7 +1585,6 @@ async fn test_request_funding_rates_emits_response() {
     "BTCUSD_260925.BINANCE",
     "/dapi/v1/aggTrades",
     "BTCUSD_260925",
-    dec!(50001.2),
     dec!(2),
     AggregateTradeBounds::End
 )]
@@ -1597,9 +1594,9 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
     #[case] instrument: &str,
     #[case] expected_path: &str,
     #[case] expected_symbol: &str,
-    #[case] expected_price: Decimal,
     #[case] expected_size: Decimal,
     #[case] bounds: AggregateTradeBounds,
+    #[values(10, 2_160)] lookback_mins: i64,
 ) {
     let state = DataTestServerState::default();
     let addr = start_data_test_server_with_state(state.clone()).await;
@@ -1612,8 +1609,8 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
 
     while rx.try_recv().is_ok() {}
     let instrument_id = InstrumentId::from(instrument);
-    let start = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(10);
-    let end = start + jiff::SignedDuration::from_mins(5);
+    let start = Timestamp::now() - SignedDuration::from_mins(lookback_mins);
+    let end = start + SignedDuration::from_mins(5);
     let (request_start, request_end) = match bounds {
         AggregateTradeBounds::Start => (Some(start), None),
         AggregateTradeBounds::End => (None, Some(end)),
@@ -1663,9 +1660,9 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
         expected_end.as_deref()
     );
     assert_eq!(query.get("limit").map(String::as_str), Some("456"));
-    assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(response.instrument_ids, vec![instrument_id]);
     assert_eq!(response.data.len(), 1);
-    assert_eq!(response.data[0].price.as_decimal(), expected_price);
+    assert_eq!(response.data[0].price.as_decimal(), dec!(50001.2));
     assert_eq!(response.data[0].size.as_decimal(), expected_size);
     assert_eq!(response.data[0].trade_id.to_string(), "101");
     assert_eq!(
@@ -1707,8 +1704,8 @@ async fn test_request_historical_binance_bars_routes_futures_product(
     while rx.try_recv().is_ok() {}
     let bar_type = BarType::from(bar_type_raw);
     let data_type = binance_bar_data_type(bar_type);
-    let start = jiff::Timestamp::from_millisecond(1_700_000_000_000).unwrap();
-    let end = jiff::Timestamp::from_millisecond(1_700_000_059_999).unwrap();
+    let start = Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = Timestamp::from_millisecond(1_700_000_059_999).unwrap();
     let request_id = UUID4::new();
 
     client

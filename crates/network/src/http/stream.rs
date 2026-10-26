@@ -65,14 +65,10 @@ where
     B::Error: std::error::Error + 'static,
 {
     loop {
+        check_deadline(deadline)?;
+
         let frame = match deadline {
             Some(deadline) => {
-                if Instant::now() >= deadline {
-                    return Err(HttpClientError::TimeoutError(
-                        REQUEST_TIMEOUT_MESSAGE.into(),
-                    ));
-                }
-
                 tokio::select! {
                     biased;
                     () = crate::dst::time::sleep_until(deadline) => return Err(HttpClientError::TimeoutError(REQUEST_TIMEOUT_MESSAGE.into())),
@@ -90,6 +86,16 @@ where
             return Ok(Some(chunk));
         }
     }
+}
+
+pub(super) fn check_deadline(deadline: Option<Instant>) -> Result<(), HttpClientError> {
+    if deadline.is_some_and(|deadline| Instant::now() >= deadline) {
+        return Err(HttpClientError::TimeoutError(
+            REQUEST_TIMEOUT_MESSAGE.into(),
+        ));
+    }
+
+    Ok(())
 }
 
 pub(super) fn response_error(error: HttpClientError, origin: Option<&str>) -> HttpClientError {

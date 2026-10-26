@@ -890,13 +890,14 @@ impl DataClient for CoinbaseDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        log::debug!("Requesting instrument: {}", request.instrument_id);
+        let instrument_id = request.single_instrument_id()?;
+
+        log::debug!("Requesting instrument: {instrument_id}");
 
         let provider = self.provider.clone();
         let sender = self.data_sender.clone();
         let instruments_cache = self.instruments.clone();
         let ws = self.ws_client.clone();
-        let instrument_id = request.instrument_id;
         let product_id = instrument_id.symbol.to_string();
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -938,7 +939,8 @@ impl DataClient for CoinbaseDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let product_id = instrument_id.symbol.to_string();
 
         let instruments = self.instruments.load();
@@ -1022,9 +1024,9 @@ impl DataClient for CoinbaseDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        log::debug!("Requesting trades for {}", request.instrument_id);
+        let instrument_id = request.single_instrument_id()?;
 
-        let instrument_id = request.instrument_id;
+        log::debug!("Requesting trades for {instrument_id}");
         let product_id = instrument_id.symbol.to_string();
 
         let instruments = self.instruments.load();
@@ -1098,9 +1100,9 @@ impl DataClient for CoinbaseDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        log::debug!("Requesting bars for {}", request.bar_type);
+        let bar_type = request.single_bar_type()?;
 
-        let bar_type = request.bar_type;
+        log::debug!("Requesting bars for {bar_type}");
         let granularity = bar_type_to_granularity(&bar_type)?;
         let instrument_id = bar_type.instrument_id();
         let product_id = instrument_id.symbol.to_string();

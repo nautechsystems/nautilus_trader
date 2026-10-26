@@ -58,6 +58,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use base64::{Engine, engine::general_purpose::STANDARD};
 use futures_util::{SinkExt, StreamExt};
 use nautilus_common::{
     cache::Cache,
@@ -82,15 +83,22 @@ use nautilus_execution::engine::ExecutionEngine;
 use nautilus_lighter::{
     common::{
         consts::{
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_TESTNET_CHAIN_ID, LIGHTER_VENUE,
+            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_TESTNET_CHAIN_ID,
+            LIGHTER_VENUE,
         },
+        credential::Credential,
         enums::{LighterDeployment, LighterEnvironment},
     },
     config::LighterExecutionClientConfig,
     execution::LighterExecutionClient,
-    signing::tx::{
-        CancelOrderTxInfo, CreateGroupedOrdersTxInfo, CreateOrderTxInfo, L2TxAttributes,
-        ModifyOrderTxInfo, OrderInfo, TxContext, compute_tx_hash,
+    signing::{
+        field::Fp5,
+        schnorr::Signature,
+        tx::{
+            CancelAllOrdersTxInfo, CancelOrderTxInfo, CreateGroupedOrdersTxInfo, CreateOrderTxInfo,
+            L2TxAttributes, ModifyOrderTxInfo, OrderInfo, TxContext, compute_tx_hash,
+        },
     },
 };
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
@@ -499,7 +507,7 @@ async fn tx(
         };
 
         transactions.into_iter().find(|(kind, info)| {
-            matches!(kind, 14 | 15 | 17)
+            matches!(kind, 14..=17)
                 && order_tx_hash(*kind, info, state.chain_id.load(Ordering::Relaxed)) == *tx_hash
         })
     });
@@ -525,7 +533,12 @@ async fn tx(
     let Some(mut body) = (if keyed.is_some() {
         keyed
     } else {
-        state.tx_responses.lock().await.pop_front()
+        state
+            .tx_responses
+            .lock()
+            .await
+            .pop_front()
+            .or_else(|| (tx_type == 16).then(|| json!({"status": 2,"event_info":""})))
     }) else {
         return (
             StatusCode::BAD_REQUEST,
@@ -533,6 +546,10 @@ async fn tx(
         )
             .into_response();
     };
+
+    if body["code"].as_i64().is_some_and(|code| code != 200) {
+        return (StatusCode::OK, body.to_string()).into_response();
+    }
 
     let object = body
         .as_object_mut()
@@ -984,6 +1001,7 @@ fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
         sendtx_quota_per_min: None,
         transport_backend: Default::default(),
         use_gtd: true,
+        scheduled_cancel_timeout_secs: None,
     }
 }
 
@@ -1083,6 +1101,7 @@ fn build_client(
 
 fn build_client_mainnet(
     addr: SocketAddr,
+    deployment: LighterDeployment,
 ) -> (
     LighterExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -1090,19 +1109,7 @@ fn build_client_mainnet(
 ) {
     let mut config = build_config(addr);
     config.environment = LighterEnvironment::Mainnet;
-    build_client_with(config)
-}
-
-fn build_client_robinhood_mainnet(
-    addr: SocketAddr,
-) -> (
-    LighterExecutionClient,
-    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    Rc<RefCell<Cache>>,
-) {
-    let mut config = build_config(addr);
-    config.environment = LighterEnvironment::Mainnet;
-    config.deployment = LighterDeployment::Robinhood;
+    config.deployment = deployment;
     config.venue = Some(*LIGHTER_VENUE);
     build_client_with(config)
 }
@@ -1573,6 +1580,16 @@ fn order_tx_hash(kind: u8, info: &Value, chain_id: u32) -> String {
     };
 
     let hash = match kind {
+        16 => compute_tx_hash(
+            &CancelAllOrdersTxInfo {
+                context,
+                time_in_force: info["TimeInForce"].as_u64().unwrap() as u8,
+                scheduled_time_ms: info["Time"].as_i64().unwrap(),
+                skip_nonce: 0,
+            },
+            chain_id,
+        )
+        .unwrap(),
         14 => compute_tx_hash(
             &CreateOrderTxInfo {
                 context,
@@ -1985,10 +2002,15 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_submits_l2_only_integrator_auto_approval_for_all_account_tiers(
     #[case] account_type: Option<u8>,
+    #[values(
+        (LighterDeployment::Lighter, 723_813),
+        (LighterDeployment::Robinhood, 17_725)
+    )]
+    attribution: (LighterDeployment, u64),
 ) {
     let (addr, state) = start_server().await;
     *state.account_type.lock().await = account_type;
-    let (mut client, _rx, _cache) = build_client_mainnet(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr, attribution.0);
 
     client.connect().await.expect("connect");
 
@@ -2000,10 +2022,7 @@ async fn connect_submits_l2_only_integrator_auto_approval_for_all_account_tiers(
     let tx_info = &approvals[0]["tx_info"];
     assert_eq!(tx_info["AccountIndex"], TEST_ACCOUNT_INDEX);
     assert_eq!(tx_info["ApiKeyIndex"], TEST_API_KEY_INDEX);
-    assert_eq!(
-        tx_info["IntegratorAccountIndex"],
-        LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
-    );
+    assert_eq!(tx_info["IntegratorAccountIndex"], attribution.1);
     assert_eq!(tx_info["MaxPerpsTakerFee"], 0);
     assert_eq!(tx_info["MaxPerpsMakerFee"], 0);
     assert_eq!(tx_info["MaxSpotTakerFee"], 0);
@@ -2022,22 +2041,30 @@ async fn connect_submits_l2_only_integrator_auto_approval_for_all_account_tiers(
             .contains(&approval_expiry),
         "ApprovalExpiry must use the maximum five-year TTL",
     );
-    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        state.referral_use_calls.load(Ordering::Relaxed),
+        usize::from(account_type.is_some()),
+    );
 
     client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
+#[case::lighter(LighterDeployment::Lighter, "NAUTILUS")]
+#[case::robinhood(LighterDeployment::Robinhood, "NAUTILUS")]
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_applies_robinhood_referral_on_each_process_start() {
+async fn connect_applies_referral_on_each_process_start(
+    #[case] deployment: LighterDeployment,
+    #[case] referral_code: &str,
+) {
     let (addr, state) = start_server().await;
-    let (mut first_client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    let (mut first_client, _rx, _cache) = build_client_mainnet(addr, deployment);
     let expected_request = std::collections::HashMap::from([
         (
             "l1_address".to_string(),
             "0x0000000000000000000000000000000000000000".to_string(),
         ),
-        ("referral_code".to_string(), "NAUTILUS".to_string()),
+        ("referral_code".to_string(), referral_code.to_string()),
     ]);
 
     first_client.connect().await.expect("first connect");
@@ -2048,13 +2075,13 @@ async fn connect_applies_robinhood_referral_on_each_process_start() {
         state.referral_use_requests().await,
         vec![expected_request.clone()],
     );
-    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
-    assert!(state.rest_send_txs().await.is_empty());
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.rest_send_txs().await.len(), 1);
 
     first_client.disconnect().await.expect("first disconnect");
     drop(first_client);
 
-    let (mut second_client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    let (mut second_client, _rx, _cache) = build_client_mainnet(addr, deployment);
     second_client.connect().await.expect("second connect");
 
     assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 2);
@@ -2063,22 +2090,27 @@ async fn connect_applies_robinhood_referral_on_each_process_start() {
         state.referral_use_requests().await,
         vec![expected_request.clone(), expected_request],
     );
-    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
-    assert!(state.rest_send_txs().await.is_empty());
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(state.rest_send_txs().await.len(), 2);
 
     second_client.disconnect().await.expect("second disconnect");
 }
 
 #[rstest]
+#[case::lighter(LighterDeployment::Lighter)]
+#[case::robinhood(LighterDeployment::Robinhood)]
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_continues_when_robinhood_referral_fails() {
+async fn connect_continues_when_referral_fails(
+    #[case] deployment: LighterDeployment,
+    #[values(20001, 41013)] code: u64,
+) {
     let (addr, state) = start_server().await;
     *state.next_referral_use_response.lock().await = Some(json!({
-        "code": 20001,
+        "code": code,
         "message": "referral unavailable",
     }));
 
-    let (mut client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr, deployment);
 
     client.connect().await.expect("connect");
 
@@ -2122,7 +2154,7 @@ async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
         .lock()
         .await
         .push(i64::from(TEST_API_KEY_INDEX));
-    let (mut client, _rx, _cache) = build_client_mainnet(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr, LighterDeployment::Lighter);
 
     client.connect().await.expect("connect");
 
@@ -2142,7 +2174,7 @@ async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
         "code": 21149,
         "message": "integrator is not approved",
     }));
-    let (mut client, _rx, _cache) = build_client_mainnet(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr, LighterDeployment::Lighter);
 
     let err = client.connect().await.unwrap_err();
     let msg = format!("{err:#}");
@@ -2379,39 +2411,63 @@ mod serial_tests {
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Some(0), Value::Null)]
+#[case::testnet(
+    LighterDeployment::Lighter,
+    LighterEnvironment::Testnet,
+    Some(0),
+    Value::Null
+)]
 #[case::mainnet_unavailable(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     None,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_standard(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(0),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_premium(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(1),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_plus(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(2),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_builder(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(3),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_unknown(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(7),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
+#[case::robinhood_mainnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Mainnet,
+    Some(0),
+    json!({"1": LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
+#[case::robinhood_testnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Testnet,
+    Some(0),
+    Value::Null
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
+    #[case] deployment: LighterDeployment,
     #[case] environment: LighterEnvironment,
     #[case] account_type: Option<u8>,
     #[case] mut expected_attributes: Value,
@@ -2436,6 +2492,9 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
     *state.account_type.lock().await = account_type;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
+    state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
@@ -2485,13 +2544,21 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
+#[case::testnet(LighterDeployment::Lighter, LighterEnvironment::Testnet, Value::Null)]
 #[case::mainnet_standard(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
+#[case::robinhood_mainnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Mainnet,
+    json!({"1": LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
+#[case::robinhood_testnet(LighterDeployment::Robinhood, LighterEnvironment::Testnet, Value::Null)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_order_list_shares_correlated_transport_batch(
+    #[case] deployment: LighterDeployment,
     #[case] environment: LighterEnvironment,
     #[case] mut expected_attributes: Value,
     #[values(false, true)] override_modes: bool,
@@ -2514,6 +2581,8 @@ async fn test_submit_order_list_shares_correlated_transport_batch(
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
     state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
@@ -3606,39 +3675,63 @@ async fn test_cancel_order_venue_rejection_emits_cancel_rejected_for_pending_can
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Some(0), Value::Null)]
+#[case::testnet(
+    LighterDeployment::Lighter,
+    LighterEnvironment::Testnet,
+    Some(0),
+    Value::Null
+)]
 #[case::mainnet_unavailable(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     None,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_standard(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(0),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_premium(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(1),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_plus(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(2),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_builder(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(3),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_unknown(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(7),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
+#[case::robinhood_mainnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Mainnet,
+    Some(0),
+    json!({"1": LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
+#[case::robinhood_testnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Testnet,
+    Some(0),
+    Value::Null
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_signs_modify_sendtx(
+    #[case] deployment: LighterDeployment,
     #[case] environment: LighterEnvironment,
     #[case] account_type: Option<u8>,
     #[case] expected_attributes: Value,
@@ -3647,6 +3740,9 @@ async fn test_modify_order_signs_modify_sendtx(
     *state.account_type.lock().await = account_type;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
+    state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, _rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
@@ -3694,18 +3790,43 @@ async fn test_modify_order_signs_modify_sendtx(
 }
 
 #[rstest]
-#[case::acknowledged_testnet(false, LighterEnvironment::Testnet, Value::Null)]
-#[case::acknowledged_mainnet(false, LighterEnvironment::Mainnet, json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}))]
-#[case::venue_rejected(true, LighterEnvironment::Testnet, Value::Null)]
+#[case::acknowledged_testnet(
+    false,
+    LighterDeployment::Lighter,
+    LighterEnvironment::Testnet,
+    Value::Null
+)]
+#[case::acknowledged_mainnet(false, LighterDeployment::Lighter, LighterEnvironment::Mainnet, json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}))]
+#[case::venue_rejected(
+    true,
+    LighterDeployment::Lighter,
+    LighterEnvironment::Testnet,
+    Value::Null
+)]
+#[case::robinhood_mainnet(
+    false,
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Mainnet,
+    json!({"1": LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
+#[case::robinhood_testnet(
+    false,
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Testnet,
+    Value::Null
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_batch_modify_orders_shares_transport_and_child_outcomes(
     #[case] rejected: bool,
+    #[case] deployment: LighterDeployment,
     #[case] environment: LighterEnvironment,
     #[case] expected_attributes: Value,
 ) {
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
     state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.unwrap();
@@ -4110,6 +4231,422 @@ fn account_all_orders_open_entry(
         "updated_at": 1_777_941_383_576_i64,
         "transaction_time": 1_777_941_383_576_735_i64,
     })
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_signs_modes() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _) = build_client(addr);
+    client.connect().await.unwrap();
+    let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ms();
+    let first = now + 600_123;
+    let replacement = now + 900_456;
+    let hashes = [
+        client.cancel_all_orders_account().await.unwrap(),
+        client.schedule_cancel(Some(first)).await.unwrap(),
+        client.schedule_cancel(Some(replacement)).await.unwrap(),
+        client.schedule_cancel(None).await.unwrap(),
+    ];
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), 4);
+
+    for (offset, (frame, (mode, time))) in frames
+        .iter()
+        .zip([(0, 0), (1, first), (1, replacement), (2, 0)])
+        .enumerate()
+    {
+        assert_eq!(send_tx_type(frame), 16);
+        let mut info = send_tx_info(frame);
+        assert_eq!(
+            hashes[offset],
+            order_tx_hash(16, &info, LIGHTER_TESTNET_CHAIN_ID)
+        );
+        let signature = info.as_object_mut().unwrap().remove("Sig").unwrap();
+        let signature: [u8; 80] = STANDARD
+            .decode(signature.as_str().unwrap())
+            .unwrap()
+            .try_into()
+            .unwrap();
+        let signature = Signature::from_le_bytes_reduce(signature);
+
+        let tx = CancelAllOrdersTxInfo {
+            context: TxContext {
+                account_index: TEST_ACCOUNT_INDEX as i64,
+                api_key_index: TEST_API_KEY_INDEX,
+                nonce: TEST_NEXT_NONCE + offset as i64,
+                expired_at: info["ExpiredAt"].as_i64().unwrap(),
+            },
+            time_in_force: mode,
+            scheduled_time_ms: time as i64,
+            skip_nonce: 0,
+        };
+
+        let hash = compute_tx_hash(&tx, LIGHTER_TESTNET_CHAIN_ID).unwrap();
+        let hash = Fp5::try_from_le_bytes(hash).unwrap();
+        let credential =
+            Credential::new(TEST_API_KEY_INDEX, PRIVATE_KEY_HEX, TEST_ACCOUNT_INDEX).unwrap();
+        assert!(
+            credential
+                .private_key()
+                .unwrap()
+                .public_key()
+                .verify(hash, &signature)
+        );
+        let expiry = info
+            .as_object_mut()
+            .unwrap()
+            .remove("ExpiredAt")
+            .unwrap()
+            .as_u64()
+            .unwrap();
+        assert!((now + 300_000..=now + 310_000).contains(&expiry));
+        assert_eq!(
+            info,
+            json!({
+                "AccountIndex": TEST_ACCOUNT_INDEX, "ApiKeyIndex": TEST_API_KEY_INDEX,
+                "TimeInForce": mode, "Time": time, "Nonce": TEST_NEXT_NONCE + offset as i64,
+                "L2TxAttributes": null,
+            })
+        );
+    }
+
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::past(0)]
+#[case::too_soon(299_000)]
+#[case::too_late(1_296_001_000)]
+#[case::overflow(u64::MAX)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_rejects_invalid_deadline_before_nonce(#[case] delay: u64) {
+    let (addr, state) = start_server().await;
+    let (mut client, _, _) = build_client(addr);
+    client.connect().await.unwrap();
+    let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ms();
+
+    let deadline = if delay == 0 {
+        0
+    } else {
+        now.saturating_add(delay)
+    };
+
+    let error = client.schedule_cancel(Some(deadline)).await.unwrap_err();
+
+    let expected = if delay == 0 {
+        "scheduled cancellation is in the past"
+    } else {
+        "scheduled cancellation must be between five minutes and fifteen days ahead"
+    };
+
+    assert_eq!(error.to_string(), expected);
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+    client.cancel_all_orders_account().await.unwrap();
+    assert_eq!(
+        send_tx_info(&state.send_txs().await[0])["Nonce"],
+        TEST_NEXT_NONCE
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::pending(1)]
+#[case::pending_final(3)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_returns_known_pending_hash(#[case] status: i64) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _) = build_client(addr);
+    client.connect().await.unwrap();
+    state.tx_responses.lock().await.extend([
+        json!({"code":21500,"message":"transaction not found"}),
+        json!({"status":status,"event_info":""}),
+    ]);
+    let hash = client.schedule_cancel(None).await.unwrap();
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), 1);
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(
+        hash,
+        order_tx_hash(16, &send_tx_info(&frames[0]), LIGHTER_TESTNET_CHAIN_ID)
+    );
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_invalid_nonce_recovers_before_next_control() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _) = build_client(addr);
+    client.connect().await.unwrap();
+    state.next_nonce.store(777, Ordering::Release);
+    state.tx_responses_by_nonce.lock().await.insert(
+        TEST_NEXT_NONCE,
+        json!({"code":21500,"message":"transaction not found"}),
+    );
+    *state.next_send_tx_ack.lock().await =
+        Some(json!({"type":"jsonapi/sendtx","code":21104,"message":"invalid nonce"}));
+    assert!(
+        client
+            .schedule_cancel(None)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("confirmation timed out")
+    );
+    client.cancel_all_orders_account().await.unwrap();
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), 2);
+    assert_eq!(send_tx_info(&frames[0])["Nonce"], TEST_NEXT_NONCE);
+    assert_eq!(send_tx_info(&frames[1])["Nonce"], 777);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::failed(0, "rejected control", Some("rejected control"))]
+#[case::application_error(2, r#"{"ae":"rejected schedule"}"#, Some("rejected schedule"))]
+#[case::malformed_event(2, "invalid event", None)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_failed_transaction_returns_error_without_order_event(
+    #[case] status: i64,
+    #[case] event_info: &str,
+    #[case] detail: Option<&str>,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _) = build_client(addr);
+    client.connect().await.unwrap();
+    state.tx_responses_by_nonce.lock().await.insert(
+        TEST_NEXT_NONCE,
+        json!({"status":status,"event_info":event_info}),
+    );
+    let error = client.schedule_cancel(None).await.unwrap_err();
+    let frames = state.send_txs().await;
+    let hash = order_tx_hash(16, &send_tx_info(&frames[0]), LIGHTER_TESTNET_CHAIN_ID);
+    let expected = detail.map_or_else(
+        || format!("failed to parse Lighter account cancellation transaction {hash} event"),
+        |detail| format!("Lighter account cancellation transaction {hash} failed: {detail}"),
+    );
+    assert_eq!(error.to_string(), expected);
+    client.cancel_all_orders_account().await.unwrap();
+    assert_eq!(
+        send_tx_info(&state.send_txs().await[1])["Nonce"],
+        TEST_NEXT_NONCE + 1
+    );
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_lookup_error_identifies_transaction() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, _) = build_client(addr);
+    client.connect().await.unwrap();
+    state.tx_responses_by_nonce.lock().await.insert(
+        TEST_NEXT_NONCE,
+        json!({"code":21501,"message":"lookup unavailable"}),
+    );
+
+    let error = client.schedule_cancel(None).await.unwrap_err();
+    let frames = state.send_txs().await;
+    let hash = order_tx_hash(16, &send_tx_info(&frames[0]), LIGHTER_TESTNET_CHAIN_ID);
+    client.cancel_all_orders_account().await.unwrap();
+
+    assert_eq!(frames.len(), 1);
+    assert_eq!(
+        error.to_string(),
+        format!("failed to look up Lighter account cancellation transaction {hash}"),
+    );
+    assert_eq!(
+        error.root_cause().to_string(),
+        "venue error 21501: lookup unavailable"
+    );
+    assert_eq!(
+        send_tx_info(&state.send_txs().await[1])["Nonce"],
+        TEST_NEXT_NONCE + 1
+    );
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_dropped_confirmation_does_not_reuse_nonce() {
+    let (addr, state) = start_server().await;
+    let (mut client, _, _) = build_client(addr);
+    client.connect().await.unwrap();
+    state.tx_response_blocked.store(true, Ordering::Release);
+    {
+        let pending = client.cancel_all_orders_account();
+        tokio::pin!(pending);
+        tokio::select! {
+            result=&mut pending=>panic!("confirmation must remain blocked: {result:?}"),
+            ()=await_tx_calls(&state,1)=>{}
+        }
+    }
+
+    state.tx_response_blocked.store(false, Ordering::Release);
+    state.tx_response_release.notify_one();
+    client.schedule_cancel(None).await.unwrap();
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), 2);
+    assert_eq!(send_tx_info(&frames[0])["Nonce"], TEST_NEXT_NONCE);
+    assert_eq!(send_tx_info(&frames[1])["Nonce"], TEST_NEXT_NONCE + 1);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::native_first(true)]
+#[case::order_first(false)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_shares_ordered_transport(#[case] native_first: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, _, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let order = make_limit_order(
+        "O-ACCOUNT-SEQUENCE",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+
+    if native_first {
+        let (result, ()) = tokio::join!(client.cancel_all_orders_account(), async {
+            await_send_tx_count(&state, 1).await;
+            client.submit_order(submit_command(&order)).unwrap();
+            await_send_tx_count(&state, 2).await;
+        });
+        result.unwrap();
+    } else {
+        client.submit_order(submit_command(&order)).unwrap();
+        client.cancel_all_orders_account().await.unwrap();
+        await_send_tx_count(&state, 2).await;
+    }
+
+    let frames = state.send_txs().await;
+    assert_eq!(
+        frames.iter().map(send_tx_type).collect::<Vec<_>>(),
+        if native_first {
+            vec![16, 14]
+        } else {
+            vec![14, 16]
+        }
+    );
+    assert_eq!(send_tx_info(&frames[0])["Nonce"], TEST_NEXT_NONCE);
+    assert_eq!(send_tx_info(&frames[1])["Nonce"], TEST_NEXT_NONCE + 1);
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::immediate(false)]
+#[case::scheduled(true)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_cancellation_waits_for_venue_order_update(#[case] scheduled: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let (index, venue_id) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        "O-ACCOUNT-CANCEL",
+        "281476929510125",
+    )
+    .await;
+
+    if scheduled {
+        let now = nautilus_core::time::get_atomic_clock_realtime().get_time_ms();
+        client.schedule_cancel(Some(now + 600_000)).await.unwrap();
+    } else {
+        client.cancel_all_orders_account().await.unwrap();
+    }
+
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    let mut entry = account_all_orders_open_entry(
+        index,
+        venue_id.as_str(),
+        &index.to_string(),
+        TEST_ORDER_NONCE,
+    );
+    entry["status"] = json!(if scheduled {
+        "canceled-expired"
+    } else {
+        "canceled"
+    });
+    state.push_frame(&json!({
+        "type": "update/account_all_orders", "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders": {"0": [entry]},
+    }));
+    let event = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    assert!(matches!(
+        (&event, scheduled),
+        (OrderEventAny::Expired(_), true) | (OrderEventAny::Canceled(_), false)
+    ));
+    assert_eq!(
+        event.client_order_id(),
+        ClientOrderId::from("O-ACCOUNT-CANCEL")
+    );
+    assert_eq!(event.venue_order_id(), Some(venue_id));
+    assert_eq!(event.instrument_id(), eth_perp_id());
+    assert_eq!(event.strategy_id(), strategy_id());
+    assert_eq!(event.account_id(), Some(account_id()));
+
+    cache.borrow_mut().update_order(&event).unwrap();
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&ClientOrderId::from("O-ACCOUNT-CANCEL"))
+            .unwrap()
+            .status(),
+        if scheduled {
+            OrderStatus::Expired
+        } else {
+            OrderStatus::Canceled
+        }
+    );
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -7459,12 +7996,13 @@ async fn test_order_status_reports_stop_repeated_active_market_seed_cursor(
 }
 
 #[rstest]
-#[case::long(1, PositionSide::Long)]
-#[case::short(-1, PositionSide::Short)]
+#[case::long(1, PositionSide::Long, "1900.123456789123456789")]
+#[case::short(-1, PositionSide::Short, "3000.987654321987654321")]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_account_all_positions_empty_update_retains_cached_position(
     #[case] sign: i8,
     #[case] expected_side: PositionSide,
+    #[case] liquidation_price: &str,
     #[values(false, true)] worker: bool,
 ) {
     let (addr, state) = start_server().await;
@@ -7475,6 +8013,9 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
     let mut snapshot = load_json("ws_account_all_positions_update.json");
     snapshot["type"] = json!("subscribed/account_all_positions");
     snapshot["positions"]["0"]["sign"] = json!(sign);
+    snapshot["positions"]["0"]["liquidation_price"] = json!(liquidation_price);
+    let expected_liquidation_price =
+        rust_decimal::Decimal::from_str_exact(liquidation_price).unwrap();
     state.push_frame(&snapshot);
 
     next_event_matching(&mut rx, Duration::from_secs(2), |e| {
@@ -7484,6 +8025,7 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
                 if report.instrument_id == eth_perp_id()
                     && report.position_side == expected_side
                     && report.quantity == Quantity::from("1.5000")
+                    && report.liquidation_price == Some(expected_liquidation_price)
         )
     })
     .await
@@ -7543,6 +8085,10 @@ async fn test_account_all_positions_empty_update_retains_cached_position(
         Some(rust_decimal::Decimal::new(235010, 2)),
     );
     assert_eq!(positions[0].venue_position_id, None);
+    assert_eq!(
+        positions[0].liquidation_price,
+        Some(expected_liquidation_price),
+    );
 
     client.disconnect().await.expect("disconnect");
 }
@@ -7629,6 +8175,7 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
     assert!(flat_report.ts_last > UnixNanos::default());
     assert_eq!(flat_report.venue_position_id, None);
     assert_eq!(flat_report.avg_px_open, None);
+    assert_eq!(flat_report.liquidation_price, None);
 
     let duplicate_flat = next_event_matching(&mut rx, Duration::from_millis(250), |e| {
         matches!(
@@ -10075,6 +10622,11 @@ async fn test_acknowledged_modify_ignores_delayed_terminal_report() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
     #[case] rejected: bool,
+    #[values(
+        (LighterDeployment::Lighter, 723_813),
+        (LighterDeployment::Robinhood, 17_725)
+    )]
+    attribution: (LighterDeployment, u64),
     #[values(false, true)] override_modes: bool,
     #[values(LighterEnvironment::Testnet, LighterEnvironment::Mainnet)]
     environment: LighterEnvironment,
@@ -10082,6 +10634,9 @@ async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = attribution.0;
+    config.venue = Some(*LIGHTER_VENUE);
+    state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
@@ -10153,7 +10708,7 @@ async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
         json!({"6": u8::from(override_modes), "7": u8::from(override_modes)});
 
     if environment == LighterEnvironment::Mainnet {
-        expected_attributes["1"] = json!(LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX);
+        expected_attributes["1"] = json!(attribution.1);
     }
 
     assert_eq!(body["L2TxAttributes"], expected_attributes);
@@ -11496,4 +12051,237 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
         0,
         "completed cancellation must release its queued recovery lookup"
     );
+}
+
+#[rstest]
+#[case::pending(1)]
+#[case::pending_final(3)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_startup_waits_for_execution(#[case] status: i64) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    state
+        .tx_responses
+        .lock()
+        .await
+        .push_back(json!({"status":status,"event_info":"not executed yet"}));
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    assert_eq!(state.send_txs().await.len(), 1);
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), 2);
+    let info = send_tx_info(&state.send_txs().await[0]);
+    assert_eq!(info["TimeInForce"], 1);
+    assert_eq!(info["Nonce"], TEST_NEXT_NONCE);
+    client.disconnect().await.unwrap();
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.send_txs().await.len(), 1);
+}
+
+#[rstest]
+#[case::failed(0, "rejected control")]
+#[case::application_error(2, r#"{"ae":"rejected schedule"}"#)]
+#[case::wrong_identity(2, "")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_arming_failure_cleans_session(
+    #[case] status: i64,
+    #[case] event: &str,
+) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    let mut response = json!({"status": status, "event_info": event});
+    if status == 2 && event.is_empty() {
+        response["hash"] = json!("wrong-hash");
+    }
+
+    state.tx_responses.lock().await.push_back(response);
+    let error = client.connect().await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "failed to arm Lighter scheduled cancellation"
+    );
+    assert!(!client.is_connected());
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.send_txs().await.len(), 1);
+    client.connect().await.unwrap();
+    client.disconnect().await.unwrap();
+    assert_eq!(state.send_txs().await.len(), 2);
+    assert!(
+        state
+            .send_txs()
+            .await
+            .iter()
+            .all(|frame| send_tx_info(frame)["TimeInForce"] == 1)
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_pending_startup_is_bounded() {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    state
+        .tx_responses_by_nonce
+        .lock()
+        .await
+        .insert(TEST_NEXT_NONCE, json!({"status":1,"event_info":""}));
+    let error = tokio::time::timeout(Duration::from_secs(35), client.connect())
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("timed out"));
+    assert!(!client.is_connected());
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.send_txs().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_refresh_retries_and_reconnects() {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    client.connect().await.unwrap();
+    client.connect().await.unwrap();
+    state.tx_responses_by_nonce.lock().await.insert(
+        TEST_NEXT_NONCE + 1,
+        json!({"status":2,"event_info":r#"{"ae":"temporary failure"}"#}),
+    );
+    wait_until_async(
+        || async { state.send_txs().await.len() == 3 },
+        Duration::from_secs(85),
+    )
+    .await;
+    let frames = state.send_txs().await;
+    assert_eq!(send_tx_info(&frames[1])["Nonce"], TEST_NEXT_NONCE + 1);
+    assert_eq!(send_tx_info(&frames[2])["Nonce"], TEST_NEXT_NONCE + 2);
+    assert!(
+        send_tx_info(&frames[2])["Time"].as_i64().unwrap()
+            > send_tx_info(&frames[0])["Time"].as_i64().unwrap()
+    );
+    state.next_nonce.store(777, Ordering::Release);
+    let subscriptions = state.subscribes().await.len();
+    state.close_after_next_frame.store(true, Ordering::Release);
+    client.cancel_all_orders_account().await.unwrap();
+    await_subscribe_count(&state, subscriptions + 5).await;
+    wait_until_async(
+        || async { state.send_txs().await.len() == 5 },
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(
+        send_tx_info(&state.send_txs().await[3])["Nonce"],
+        TEST_NEXT_NONCE + 3
+    );
+    assert_eq!(send_tx_info(&state.send_txs().await[4])["Nonce"], 777);
+    client.disconnect().await.unwrap();
+    let retained = state.send_txs().await;
+    tokio::time::sleep(Duration::from_secs(42)).await;
+    assert_eq!(state.send_txs().await, retained);
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+    assert_eq!(
+        retained
+            .iter()
+            .map(|frame| send_tx_info(frame)["TimeInForce"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![1, 1, 1, 0, 1]
+    );
+}
+
+#[rstest]
+#[case::stop(true)]
+#[case::reset(false)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_shutdown_retains_deadline_and_restarts_once(#[case] stop: bool) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    client.connect().await.unwrap();
+    if stop {
+        client.stop().unwrap();
+    } else {
+        client.reset().unwrap();
+    }
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.send_txs().await.len() == 3 },
+        Duration::from_secs(45),
+    )
+    .await;
+    client.disconnect().await.unwrap();
+    assert!(client.pending_tasks_all_finished());
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), 3);
+    assert!(
+        frames
+            .iter()
+            .all(|frame| send_tx_info(frame)["TimeInForce"] == 1)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_timeout_preserves_order_nonce_on_wire() {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    config.sendtx_quota_per_min = Some(1);
+    let (mut client, mut rx, cache) = build_client_with(config);
+    client.connect().await.unwrap();
+    {
+        let earlier = client.cancel_all_orders_account();
+        tokio::pin!(earlier);
+        tokio::select! {
+            result = &mut earlier => panic!("cancellation must wait for quota: {result:?}"),
+            () = tokio::time::sleep(Duration::from_millis(20)) => {},
+        }
+    }
+
+    tokio::time::sleep(Duration::from_secs(45)).await;
+    let order = make_limit_order(
+        "AFTER-RENEWAL",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).unwrap();
+    let event = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .unwrap();
+    assert!(
+        matches!(event, OrderEventAny::Submitted(ref submitted) if submitted.client_order_id == order.client_order_id())
+    );
+    wait_until_async(
+        || async { state.send_txs().await.len() == 3 },
+        Duration::from_secs(85),
+    )
+    .await;
+    let frames = state.send_txs().await;
+    assert_eq!(
+        frames.iter().map(send_tx_type).collect::<Vec<_>>(),
+        vec![16, 16, 16]
+    );
+    assert_eq!(
+        frames
+            .iter()
+            .map(|frame| send_tx_info(frame)["Nonce"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![TEST_NEXT_NONCE, TEST_NEXT_NONCE + 1, TEST_NEXT_NONCE + 2]
+    );
+    assert_eq!(send_tx_info(&frames[2])["TimeInForce"], 1);
+    client.disconnect().await.unwrap();
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.send_txs().await, frames);
 }

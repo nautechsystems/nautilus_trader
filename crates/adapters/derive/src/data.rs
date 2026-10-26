@@ -89,7 +89,8 @@ use crate::{
     config::DeriveDataClientConfig,
     http::{DeriveHttpClient, query::PaginationCursor},
     providers::{
-        DeriveInstrumentProvider, fetch_instrument_definitions, parse_instrument_definitions,
+        DeriveInstrumentProvider, fetch_instrument_definitions, normalize_currency,
+        parse_instrument_definitions,
     },
     websocket::{
         DEFAULT_ORDERBOOK_DEPTH, DEFAULT_ORDERBOOK_GROUP, DEFAULT_TICKER_INTERVAL,
@@ -218,8 +219,6 @@ impl DeriveDataClient {
         })
     }
 
-    /// Spawns a fire-and-forget task, tracks its handle in `pending_tasks`
-    /// for teardown abort, and logs failures with the task description.
     fn spawn_task<F>(&self, description: impl Into<Cow<'static, str>>, fut: F)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
@@ -247,10 +246,8 @@ impl DeriveDataClient {
         self.ws_client.begin_shutdown();
     }
 
-    /// Clears every local subscription map. Called from `disconnect` and
-    /// `reset` because the venue drops all subscriptions on socket close,
-    /// and aborted in-flight subscribe tasks can leak entries staged before
-    /// spawn (they never reach their on-error rollback branch).
+    // The venue drops subscriptions on socket close, and aborted tasks can leave
+    // staged entries whose rollback never runs.
     fn clear_subscription_state(&self) {
         let _guard = self.subscription_lock.lock();
         self.channel_subscriptions.clear();
@@ -390,6 +387,56 @@ impl DeriveDataClient {
                                 &tasks,
                             );
                         }
+                    }
+                }
+            }
+        })?;
+
+        Ok(())
+    }
+
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let minutes = self.config.update_instruments_interval_mins;
+        let currencies: Vec<_> = self
+            .config
+            .currencies
+            .iter()
+            .filter_map(|currency| normalize_currency(currency).map(ToOwned::to_owned))
+            .collect();
+
+        if minutes == 0 || currencies.is_empty() {
+            return Ok(());
+        }
+
+        let interval = Duration::from_secs(minutes.saturating_mul(60));
+        let cancellation = self.cancellation_token.clone();
+        let http_client = self.http_client.clone();
+        let include_expired = self.config.include_expired;
+        let instruments = Arc::clone(&self.instruments);
+        let sender = self.data_sender.clone();
+        let subscription_lock = Arc::clone(&self.subscription_lock);
+
+        self.session_tasks.spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    () = time::sleep(interval) => {}
+                }
+
+                for currency in &currencies {
+                    let result = tokio::select! {
+                        biased;
+                        () = cancellation.cancelled() => return,
+                        result = fetch_instrument_definitions(&http_client, currency, include_expired) => result,
+                    };
+
+                    match result {
+                        Ok(definitions) => {
+                            let loaded = parse_instrument_definitions(definitions);
+                            cache_instruments(loaded, &instruments, &sender, &cancellation, &subscription_lock);
+                        }
+                        Err(e) => log::warn!("Failed to refresh Derive instruments for {currency}: {e}"),
                     }
                 }
             }
@@ -712,7 +759,7 @@ impl DeriveDataClient {
     }
 
     fn cache_provider_instruments(&self) {
-        let mut instruments = self
+        let instruments = self
             .provider
             .store()
             .get_all()
@@ -720,18 +767,13 @@ impl DeriveDataClient {
             .cloned()
             .collect::<Vec<_>>();
 
-        instruments.sort_by_key(|instrument| instrument.id());
-        self.instruments.rcu(|cache| {
-            for instrument in &instruments {
-                cache.insert(instrument.id(), instrument.clone());
-            }
-        });
-
-        for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
-                log::warn!("Failed to send Derive instrument: {e}");
-            }
-        }
+        cache_instruments(
+            instruments,
+            &self.instruments,
+            &self.data_sender,
+            &self.cancellation_token,
+            &self.subscription_lock,
+        );
     }
 
     fn prepare_subscribe(&self, instrument_id: InstrumentId) -> anyhow::Result<bool> {
@@ -903,6 +945,7 @@ impl DataClient for DeriveDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Derive data client: {}", self.client_id);
         self.cancellation_token.cancel();
+        let _guard = self.subscription_lock.lock();
         self.abort_session_tasks();
         self.abort_pending_tasks();
         self.book_sync.clear();
@@ -920,7 +963,11 @@ impl DataClient for DeriveDataClient {
 
         // Leave the cancellation token cancelled; connect() refreshes it
         // (and tears down the inner WS client) on the next lifecycle start.
-        self.instruments.store(AHashMap::new());
+        {
+            let _guard = self.subscription_lock.lock();
+            self.instruments.store(AHashMap::new());
+        }
+
         self.clear_subscription_state();
         self.provider.store_mut().clear();
         Ok(())
@@ -952,6 +999,7 @@ impl DataClient for DeriveDataClient {
         if self.cancellation_token.is_cancelled()
             || !self.session_tasks.is_open()
             || !self.pending_tasks.is_open()
+            || !self.session_tasks.is_empty()
         {
             self.teardown_partial_connect().await?;
             self.cancellation_token = CancellationToken::new();
@@ -990,7 +1038,8 @@ impl DataClient for DeriveDataClient {
             .take_event_receiver()
             .ok_or_else(|| anyhow::anyhow!("Derive WebSocket event receiver not initialized"))
             .and_then(|rx| self.spawn_stream_task(rx))
-            .and_then(|()| self.spawn_book_monitor());
+            .and_then(|()| self.spawn_book_monitor())
+            .and_then(|()| self.spawn_instrument_refresh());
 
         if let Err(e) = session_result {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
@@ -1306,8 +1355,9 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         // No historical quote endpoint; `public/get_tickers` is a current snapshot.
-        let instrument_id = request.instrument_id;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1380,7 +1430,7 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1516,7 +1566,7 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1597,7 +1647,8 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        let bar_type = request.bar_type;
+        let bar_type = request.single_bar_type()?;
+
         anyhow::ensure!(
             bar_type.aggregation_source() == AggregationSource::External,
             "Derive only supports EXTERNAL aggregation source (got {bar_type})",
@@ -1908,7 +1959,8 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let venue_symbol = format_venue_symbol(&instrument_id)?.to_string();
 
         let http_client = self.http_client.clone();
@@ -2588,6 +2640,33 @@ impl DeriveDataClient {
     }
 }
 
+fn cache_instruments(
+    mut loaded: Vec<InstrumentAny>,
+    instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+    sender: &EventSender<DataEvent>,
+    cancellation: &CancellationToken,
+    subscription_lock: &Mutex<()>,
+) {
+    loaded.sort_by_key(|instrument| instrument.id());
+    let _guard = subscription_lock.lock();
+
+    if cancellation.is_cancelled() {
+        return;
+    }
+
+    instruments.rcu(|cache| {
+        for instrument in &loaded {
+            cache.insert(instrument.id(), instrument.clone());
+        }
+    });
+
+    for instrument in loaded {
+        if let Err(e) = sender.send(DataEvent::Instrument(instrument)) {
+            log::warn!("Failed to send Derive instrument: {e}");
+        }
+    }
+}
+
 fn cache_instrument(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument: &InstrumentAny,
@@ -2804,6 +2883,46 @@ mod tests {
         let content = std::fs::read_to_string(data_path().join(filename))
             .unwrap_or_else(|_| panic!("failed to read {filename}"));
         serde_json::from_str(&content).expect("invalid json")
+    }
+
+    #[rstest]
+    #[case::stop("stop")]
+    #[case::reset("reset")]
+    #[case::dispose("dispose")]
+    #[tokio::test]
+    async fn test_cache_instruments_rejects_completion_after_shutdown(#[case] shutdown: &str) {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let mut client =
+            DeriveDataClient::new(*DERIVE_CLIENT_ID, DeriveDataClientConfig::default()).unwrap();
+        let original = perp_instrument();
+        let instrument_id = original.id();
+        client.instruments.insert(instrument_id, original.clone());
+        let mut definition: DeriveInstrument =
+            serde_json::from_value(load_json("perps/instrument_eth.json")).unwrap();
+        definition.amount_step = dec!(0.007);
+        let refreshed = parse_derive_instrument_any(&definition, UnixNanos::from(751))
+            .unwrap()
+            .unwrap();
+        let cancellation = client.cancellation_token.clone();
+        match shutdown {
+            "stop" => client.stop().unwrap(),
+            "reset" => client.reset().unwrap(),
+            "dispose" => client.dispose().unwrap(),
+            _ => unreachable!(),
+        }
+
+        cache_instruments(
+            vec![refreshed],
+            &client.instruments,
+            &client.data_sender,
+            &cancellation,
+            &client.subscription_lock,
+        );
+
+        let expected = (shutdown != "reset").then_some(original);
+        assert_eq!(client.instruments.get_cloned(&instrument_id), expected);
+        assert!(receiver.try_recv().is_err());
     }
 
     #[tokio::test]

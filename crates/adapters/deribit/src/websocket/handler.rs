@@ -68,8 +68,8 @@ use super::{
         DeribitWsMessage, NautilusWsMessage, parse_raw_message,
     },
     parse::{
-        OrderEventType, determine_order_event_type, parse_book_msg, parse_chart_msg,
-        parse_deribit_order_type, parse_order_accepted_with_client_order_id,
+        OrderEventType, determine_order_event_type, parse_book_depth, parse_book_msg,
+        parse_chart_msg, parse_deribit_order_type, parse_order_accepted_with_client_order_id,
         parse_order_canceled_with_client_order_id, parse_order_expired_with_client_order_id,
         parse_order_updated_with_client_order_id, parse_perpetual_to_funding_rate, parse_quote_msg,
         parse_ticker_to_index_price, parse_ticker_to_mark_price, parse_ticker_to_option_greeks,
@@ -259,6 +259,7 @@ pub struct DeribitWsFeedHandler {
     pending_bars: AHashMap<String, Bar>,
     bars_timestamp_on_close: bool,
     last_account_states: AHashMap<String, AccountState>,
+    book_depth_subs: Arc<tokio::sync::Mutex<SubscriptionState>>,
     book_sequence: AHashMap<Ustr, u64>,
     pending_book_resync: Vec<String>,
     pending_outgoing: VecDeque<NautilusWsMessage>,
@@ -307,6 +308,7 @@ impl DeribitWsFeedHandler {
             pending_bars: AHashMap::new(),
             bars_timestamp_on_close,
             last_account_states: AHashMap::new(),
+            book_depth_subs: Arc::new(tokio::sync::Mutex::new(SubscriptionState::new('.'))),
             book_sequence: AHashMap::new(),
             pending_book_resync: Vec::new(),
             pending_outgoing: VecDeque::new(),
@@ -344,6 +346,10 @@ impl DeribitWsFeedHandler {
             account_states={account_count}, book_sequence={book_count}, \
             pending_outgoing={outgoing_count}"
         );
+    }
+
+    pub(crate) fn set_book_depth_subs(&mut self, subs: Arc<tokio::sync::Mutex<SubscriptionState>>) {
+        self.book_depth_subs = subs;
     }
 
     /// Generates a unique request ID.
@@ -1701,88 +1707,7 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         DeribitWsChannel::Book => {
-                            // Parse order book messages
-                            match serde_json::from_str::<DeribitBookMsg>(data.get()) {
-                                Ok(book_msg) => {
-                                    if let Some(instrument) =
-                                        self.instruments_cache.get(&book_msg.instrument_name)
-                                    {
-                                        let inst_name = book_msg.instrument_name.as_str();
-                                        let awaiting_resync = self
-                                            .pending_book_resync
-                                            .iter()
-                                            .any(|ch| is_instrument_book_channel(ch, inst_name));
-
-                                        if awaiting_resync
-                                            && book_msg.msg_type == DeribitBookMsgType::Change
-                                        {
-                                            // Drop deltas while awaiting resync snapshot
-                                        } else if book_msg.msg_type == DeribitBookMsgType::Change
-                                            && let Some(prev_id) = book_msg.prev_change_id
-                                            && let Some(&last_id) =
-                                                self.book_sequence.get(&book_msg.instrument_name)
-                                            && prev_id != last_id
-                                        {
-                                            log::warn!(
-                                                "Book sequence gap for {}: expected prev_change_id={}, was {} \
-                                                - dropping delta, forcing resync",
-                                                book_msg.instrument_name,
-                                                last_id,
-                                                prev_id
-                                            );
-                                            self.resync_book(book_msg.instrument_name).await;
-                                        } else {
-                                            // Commit the sequence only for an applied message so a
-                                            // rejected one cannot hide a gap from its successor.
-                                            match parse_book_msg(&book_msg, instrument, ts_init) {
-                                                Ok(deltas) => {
-                                                    // Clear only the channel that delivered the
-                                                    // snapshot, since a grouped snapshot can arrive
-                                                    // before a delta channel's resync completes.
-                                                    if awaiting_resync {
-                                                        self.pending_book_resync
-                                                            .retain(|ch| ch != channel);
-                                                    }
-
-                                                    self.book_sequence.insert(
-                                                        book_msg.instrument_name,
-                                                        book_msg.change_id,
-                                                    );
-                                                    return Some(NautilusWsMessage::Deltas(deltas));
-                                                }
-                                                // A grouped channel resends a full snapshot every
-                                                // interval, and a resync could race that snapshot
-                                                // and never resubscribe.
-                                                Err(e) if is_grouped_book_channel(channel) => {
-                                                    log::error!(
-                                                        "Failed to parse book snapshot for {} on {channel}: {e}, waiting for the next snapshot",
-                                                        book_msg.instrument_name
-                                                    );
-                                                }
-                                                Err(e) => {
-                                                    log::error!(
-                                                        "Failed to parse book message for {}: {e}, forcing resync",
-                                                        book_msg.instrument_name
-                                                    );
-                                                    self.resync_book(book_msg.instrument_name)
-                                                        .await;
-                                                }
-                                            }
-                                        }
-                                    } else {
-                                        log::warn!(
-                                            "Book message received but instrument '{}' not found in cache (cache size: {})",
-                                            book_msg.instrument_name,
-                                            self.instruments_cache.len()
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    log::warn!(
-                                        "Failed to deserialize book message: {e}, channel: {channel}"
-                                    );
-                                }
-                            }
+                            return self.handle_book_message(channel, data.get(), ts_init).await;
                         }
                         DeribitWsChannel::Ticker => {
                             match serde_json::from_str::<DeribitTickerMsg>(data.get()) {
@@ -2516,6 +2441,136 @@ impl DeribitWsFeedHandler {
         }
     }
 
+    async fn handle_book_message(
+        &mut self,
+        channel: &str,
+        data: &str,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let book_msg = match serde_json::from_str::<DeribitBookMsg>(data) {
+            Ok(msg) => msg,
+            Err(e) => {
+                log::warn!("Failed to deserialize book message: {e}, channel: {channel}");
+                return None;
+            }
+        };
+
+        if is_grouped_book_channel(channel) {
+            return match self.handle_grouped_book(channel, &book_msg, ts_init).await {
+                Ok(message) => message,
+                Err(e) => {
+                    log::error!(
+                        "Failed to parse book snapshot for {} on {channel}: {e}, waiting for the next snapshot",
+                        book_msg.instrument_name
+                    );
+                    None
+                }
+            };
+        }
+
+        let Some(instrument) = self.instruments_cache.get(&book_msg.instrument_name) else {
+            log::warn!(
+                "Book message received but instrument '{}' not found in cache (cache size: {})",
+                book_msg.instrument_name,
+                self.instruments_cache.len()
+            );
+            return None;
+        };
+
+        let inst_name = book_msg.instrument_name.as_str();
+        let awaiting_resync = self
+            .pending_book_resync
+            .iter()
+            .any(|ch| is_instrument_book_channel(ch, inst_name));
+
+        if awaiting_resync && book_msg.msg_type == DeribitBookMsgType::Change {
+            return None;
+        }
+
+        if book_msg.msg_type == DeribitBookMsgType::Change
+            && let Some(prev_id) = book_msg.prev_change_id
+            && let Some(&last_id) = self.book_sequence.get(&book_msg.instrument_name)
+            && prev_id != last_id
+        {
+            log::warn!(
+                "Book sequence gap for {}: expected prev_change_id={}, was {} \
+                - dropping delta, forcing resync",
+                book_msg.instrument_name,
+                last_id,
+                prev_id
+            );
+            self.resync_book(book_msg.instrument_name).await;
+            return None;
+        }
+
+        match parse_book_msg(&book_msg, instrument, ts_init) {
+            Ok(deltas) => {
+                if awaiting_resync {
+                    self.pending_book_resync.retain(|ch| ch != channel);
+                }
+
+                self.book_sequence
+                    .insert(book_msg.instrument_name, book_msg.change_id);
+                Some(NautilusWsMessage::Deltas(deltas))
+            }
+            Err(e) => {
+                log::error!(
+                    "Failed to parse book message for {}: {e}, forcing resync",
+                    book_msg.instrument_name
+                );
+                self.resync_book(book_msg.instrument_name).await;
+                None
+            }
+        }
+    }
+
+    async fn handle_grouped_book(
+        &mut self,
+        channel: &str,
+        book_msg: &DeribitBookMsg<'_>,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Option<NautilusWsMessage>> {
+        let depth_subs = self.book_depth_subs.lock().await;
+        let depth_refs = depth_subs.get_reference_count(channel);
+        let deltas_subscribed = self.subscriptions_state.get_reference_count(channel) > depth_refs;
+        if depth_refs == 0 && !deltas_subscribed {
+            return Ok(None);
+        }
+
+        let Some(instrument) = self.instruments_cache.get(&book_msg.instrument_name) else {
+            log::warn!(
+                "Book snapshot instrument '{}' not found in cache",
+                book_msg.instrument_name
+            );
+            return Ok(None);
+        };
+
+        let depth = if depth_refs > 0 {
+            Some(parse_book_depth(book_msg, instrument, ts_init)?)
+        } else {
+            None
+        };
+
+        let deltas = if deltas_subscribed {
+            Some(parse_book_msg(book_msg, instrument, ts_init)?)
+        } else {
+            None
+        };
+
+        if let Some(depth) = depth {
+            if let Some(deltas) = deltas {
+                self.pending_outgoing
+                    .push_back(NautilusWsMessage::Deltas(deltas));
+            }
+
+            return Ok(Some(NautilusWsMessage::Data(vec![Data::BookDepth(
+                Box::new(depth),
+            )])));
+        }
+
+        Ok(deltas.map(NautilusWsMessage::Deltas))
+    }
+
     // Drops the book sequence and resubscribes the instrument's delta book channels; grouped
     // channels recover from their next snapshot. Each channel stays in `pending_book_resync`
     // until a snapshot on it converts, and deltas are dropped meanwhile.
@@ -2813,8 +2868,9 @@ fn is_grouped_book_channel(channel: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
-        enums::LiquiditySide,
+        enums::{BookType, LiquiditySide},
         instruments::Instrument,
+        orderbook::OrderBook,
         types::{Money, Price, Quantity},
     };
     use rstest::rstest;
@@ -3896,10 +3952,149 @@ mod tests {
         );
     }
 
-    #[rstest]
     #[tokio::test]
-    async fn rejected_grouped_book_snapshot_waits_for_next_snapshot() {
+    async fn grouped_book_waits_for_depth_subscription_update() {
         let mut handler = book_test_handler();
+        handler
+            .book_depth_subs
+            .lock()
+            .await
+            .add_reference(GROUPED_CHANNEL);
+        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+        handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await;
+        let depth_subs = Arc::clone(&handler.book_depth_subs);
+        let subscriptions = handler.subscriptions_state.clone();
+        let depth_guard = depth_subs.lock().await;
+        depth_guard.add_reference(GROUPED_CHANNEL);
+        let message = grouped_book_message(999, 89532.5);
+        let mut processing = Box::pin(handler.process_raw_message(&message));
+
+        assert!(futures_util::poll!(processing.as_mut()).is_pending());
+
+        subscriptions.add_reference(GROUPED_CHANNEL);
+        drop(depth_guard);
+        let output = processing.await.unwrap();
+
+        let NautilusWsMessage::Data(data) = output else {
+            panic!("expected grouped depth");
+        };
+
+        let [Data::BookDepth(depth)] = data.as_slice() else {
+            panic!("expected only depth data");
+        };
+
+        assert_eq!(depth.sequence, 999);
+        assert!(handler.pending_outgoing.is_empty());
+        assert_eq!(
+            handler.book_sequence.get(&Ustr::from("BTC-PERPETUAL")),
+            Some(&100)
+        );
+        assert!(handler.pending_book_resync.is_empty());
+    }
+
+    #[rstest]
+    #[case::depth_only(false)]
+    #[case::shared_grouped_channel(true)]
+    #[tokio::test]
+    async fn grouped_depth_does_not_change_raw_book_sequence(#[case] grouped_deltas: bool) {
+        let mut handler = book_test_handler();
+        handler
+            .book_depth_subs
+            .lock()
+            .await
+            .add_reference(GROUPED_CHANNEL);
+        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+        if grouped_deltas {
+            handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+        }
+
+        let snapshot = handler
+            .process_raw_message(&book_message("snapshot", 100, None, 42500.0))
+            .await
+            .unwrap();
+        let grouped = handler
+            .process_raw_message(&grouped_book_message(999, 89532.5))
+            .await
+            .unwrap();
+        let sequence_after_grouped = handler
+            .book_sequence
+            .get(&Ustr::from("BTC-PERPETUAL"))
+            .copied();
+        let contiguous = handler
+            .process_raw_message(&book_message("change", 101, Some(100), 42499.5))
+            .await
+            .unwrap();
+
+        let mut book = OrderBook::new(
+            InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            BookType::L2_MBP,
+        );
+
+        let NautilusWsMessage::Deltas(snapshot) = snapshot else {
+            panic!("expected raw snapshot");
+        };
+
+        book.apply_deltas(&snapshot).unwrap();
+
+        let NautilusWsMessage::Data(data) = grouped else {
+            panic!("expected grouped depth");
+        };
+
+        let [Data::BookDepth(depth)] = data.as_slice() else {
+            panic!("expected only depth data");
+        };
+
+        let NautilusWsMessage::Deltas(contiguous) = contiguous else {
+            panic!("expected raw delta");
+        };
+
+        book.apply_deltas(&contiguous).unwrap();
+
+        assert_eq!(sequence_after_grouped, Some(100));
+        assert_eq!(
+            handler.book_sequence.get(&Ustr::from("BTC-PERPETUAL")),
+            Some(&101)
+        );
+        assert_eq!(depth.sequence, 999);
+        assert_eq!(depth.bids[0].price, Price::from("89532.5"));
+        assert_eq!(
+            book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                (Decimal::from(42500), Decimal::from(10)),
+                (Decimal::new(424995, 1), Decimal::from(10)),
+            ]
+        );
+        assert!(handler.pending_book_resync.is_empty());
+        assert!(pending_unsubscribe_channels(&handler).is_empty());
+        assert_eq!(handler.pending_outgoing.len(), usize::from(grouped_deltas));
+
+        if grouped_deltas {
+            let Some(NautilusWsMessage::Deltas(deltas)) = handler.pending_outgoing.pop_front()
+            else {
+                panic!("expected requested grouped deltas");
+            };
+
+            assert_eq!(deltas.sequence, 999);
+        }
+    }
+
+    #[rstest]
+    #[case::deltas(false)]
+    #[case::depth(true)]
+    #[tokio::test]
+    async fn rejected_grouped_book_snapshot_waits_for_next_snapshot(#[case] depth: bool) {
+        let mut handler = book_test_handler();
+        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+        if depth {
+            handler
+                .book_depth_subs
+                .lock()
+                .await
+                .add_reference(GROUPED_CHANNEL);
+        }
+
         handler.subscriptions_state.mark_subscribe(GROUPED_CHANNEL);
         handler
             .subscriptions_state
@@ -3918,16 +4113,38 @@ mod tests {
             .process_raw_message(&grouped_book_message(101, 42500.0))
             .await;
 
-        assert!(matches!(
-            next,
-            Some(NautilusWsMessage::Deltas(deltas)) if deltas.sequence == 101
-        ));
+        match next.unwrap() {
+            NautilusWsMessage::Deltas(deltas) if !depth => assert_eq!(deltas.sequence, 101),
+            NautilusWsMessage::Data(data) if depth => {
+                let [Data::BookDepth(snapshot)] = data.as_slice() else {
+                    panic!("expected depth");
+                };
+
+                assert_eq!(snapshot.sequence, 101);
+            }
+            message => panic!("unexpected message: {message:?}"),
+        }
+
+        assert!(handler.book_sequence.is_empty());
     }
 
     #[rstest]
+    #[case::deltas(false)]
+    #[case::depth(true)]
     #[tokio::test]
-    async fn delta_channel_resync_survives_grouped_snapshot_before_unsubscribe_ack() {
+    async fn delta_channel_resync_survives_grouped_snapshot_before_unsubscribe_ack(
+        #[case] depth: bool,
+    ) {
         let mut handler = book_test_handler();
+        handler.subscriptions_state.add_reference(GROUPED_CHANNEL);
+        if depth {
+            handler
+                .book_depth_subs
+                .lock()
+                .await
+                .add_reference(GROUPED_CHANNEL);
+        }
+
         handler.subscriptions_state.mark_subscribe(GROUPED_CHANNEL);
         handler
             .subscriptions_state
@@ -3943,10 +4160,19 @@ mod tests {
             .process_raw_message(&grouped_book_message(102, 42500.0))
             .await;
 
-        assert!(matches!(
-            grouped,
-            Some(NautilusWsMessage::Deltas(deltas)) if deltas.sequence == 102
-        ));
+        match grouped.unwrap() {
+            NautilusWsMessage::Deltas(deltas) if !depth => assert_eq!(deltas.sequence, 102),
+            NautilusWsMessage::Data(data) if depth => {
+                let [Data::BookDepth(snapshot)] = data.as_slice() else {
+                    panic!("expected depth");
+                };
+
+                assert_eq!(snapshot.sequence, 102);
+            }
+            message => panic!("unexpected message: {message:?}"),
+        }
+
+        assert!(handler.book_sequence.is_empty());
         assert_eq!(handler.pending_book_resync, vec![BOOK_CHANNEL.to_string()]);
         assert_eq!(
             pending_unsubscribe_channels(&handler),

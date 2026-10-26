@@ -7968,7 +7968,7 @@ mod tests {
         assert_eq!(order.avg_px(), Some(dec!(9.47)));
         assert_eq!(filled.last_px.as_decimal(), dec!(12));
         assert_eq!(position.quantity.as_decimal(), dec!(2));
-        assert_eq!(position.avg_px_open, restatement.last_px.as_f64());
+        assert_eq!(position.avg_px_open, restatement.last_px.as_decimal());
         assert_eq!(position.events[0].last_px, filled.last_px);
         assert_eq!(voided.trade_id, filled.trade_id);
         assert_eq!(voided.last_px, filled.last_px);

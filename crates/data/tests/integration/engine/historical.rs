@@ -16,6 +16,73 @@
 use super::*;
 
 #[rstest]
+#[case::envelope(false)]
+#[case::partial_failure(true)]
+fn test_response_envelope_preserves_root_and_source_correlation(
+    #[case] failure: bool,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    data_engine: Rc<RefCell<DataEngine>>,
+) {
+    let root = UUID4::new();
+    let child = UUID4::new();
+
+    let response = QuotesResponse::new(
+        child,
+        ClientId::test_default(),
+        InstrumentId::from("AUD/USD.SIM"),
+        Vec::new(),
+        None,
+        None,
+        UnixNanos::from(31),
+        None,
+    );
+    let envelope = DataResponseEnvelope::new(DataResponse::Quotes(response), true, Some(child))
+        .with_failure("Missing sibling".to_owned());
+    let mut wire = serde_json::to_value(envelope).unwrap();
+    wire["correlation_id"] = serde_json::to_value(root).unwrap();
+    let envelope = serde_json::from_value(wire).unwrap();
+    let received = Rc::new(RefCell::new(Vec::new()));
+    let shared = Rc::clone(&received);
+    msgbus::register_response_handler(
+        &root,
+        TypedHandler::from(move |reply: &DataResponseEnvelope| {
+            shared.borrow_mut().push(reply.clone());
+        }),
+    );
+
+    if failure {
+        data_engine.borrow_mut().request_failed(DataRequestFailed {
+            request_id: root,
+            reason: "Missing sibling".to_owned(),
+            response: Some(DataResponse::Quotes(QuotesResponse::new(
+                child,
+                ClientId::test_default(),
+                InstrumentId::from("AUD/USD.SIM"),
+                Vec::new(),
+                None,
+                None,
+                UnixNanos::from(31),
+                None,
+            ))),
+        });
+    } else {
+        data_engine.borrow_mut().response_envelope(envelope);
+    }
+
+    let received = received.borrow();
+    assert_eq!(received.len(), 1);
+    assert_eq!(received[0].correlation_id(), &root);
+    assert_eq!(
+        received[0].sub_correlation_id(),
+        (!failure).then_some(child)
+    );
+    assert_eq!(received[0].response().unwrap().correlation_id(), &child);
+    assert!(received[0].completed());
+    assert_eq!(received[0].failure_reason(), Some("Missing sibling"));
+    assert!(stub_msgbus.borrow().get_response_handler(&root).is_none());
+}
+
+#[rstest]
 fn test_response_increments_response_count(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -60,7 +127,7 @@ fn test_custom_data_response_is_forwarded_with_metadata(
     let end = UnixNanos::from(2_000);
     let ts_init = UnixNanos::from(3_000);
     let (handler, saver) =
-        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-data-response")));
+        get_response_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-data-response")));
     msgbus::register_response_handler(&correlation_id, handler);
 
     let resp = CustomDataResponse::new(
@@ -123,7 +190,7 @@ fn test_custom_data_response_does_not_publish_payload_to_custom_topic(
     let data_type = payload.data_type.clone();
     let params = serde_json::from_value(json!({"source": "params"})).unwrap();
     let (response_handler, response_saver) =
-        get_any_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-response-only")));
+        get_response_saving_handler::<CustomDataResponse>(Some(Ustr::from("custom-response-only")));
     msgbus::register_response_handler(&correlation_id, response_handler);
 
     let (topic_handler, topic_saver) =
@@ -366,7 +433,7 @@ fn test_book_response_always_delivers_to_requester(
 
     let request_id = UUID4::new();
     let (handler, saver) =
-        get_any_saving_handler::<BookResponse>(Some(Ustr::from("book-response-delivery")));
+        get_response_saving_handler::<BookResponse>(Some(Ustr::from("book-response-delivery")));
     msgbus::register_response_handler(&request_id, handler);
 
     let fresh_book = OrderBook::new(instrument_id, BookType::L3_MBO);
@@ -427,7 +494,7 @@ fn test_book_deltas_response_skips_cache_write_when_subscription_active(
 
     let request_id = UUID4::new();
     let (handler, saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-response-skip")));
+        get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-response-skip")));
     msgbus::register_response_handler(&request_id, handler);
 
     data_engine.response(DataResponse::BookDeltas(BookDeltasResponse::new(
@@ -632,8 +699,9 @@ fn test_book_deltas_request_replays_day_start_snapshot(
     );
 
     let parent_id = UUID4::new();
-    let (handler, saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-assemble")));
+    let (handler, saver) = get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from(
+        "deltas-replay-assemble",
+    )));
     msgbus::register_response_handler(&parent_id, handler);
 
     let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
@@ -708,7 +776,7 @@ fn test_book_deltas_request_skips_replay_without_snapshot_flag(
 
     let parent_id = UUID4::new();
     let (handler, saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-noflag")));
+        get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-noflag")));
     msgbus::register_response_handler(&parent_id, handler);
 
     let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
@@ -771,8 +839,9 @@ fn test_book_deltas_request_skips_replay_when_snapshot_not_on_day_boundary(
     );
 
     let parent_id = UUID4::new();
-    let (handler, saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-offboundary")));
+    let (handler, saver) = get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from(
+        "deltas-replay-offboundary",
+    )));
     msgbus::register_response_handler(&parent_id, handler);
 
     let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
@@ -832,8 +901,9 @@ fn test_book_deltas_request_skips_replay_when_start_at_day_boundary(
     );
 
     let parent_id = UUID4::new();
-    let (handler, saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-atboundary")));
+    let (handler, saver) = get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from(
+        "deltas-replay-atboundary",
+    )));
     msgbus::register_response_handler(&parent_id, handler);
 
     // Request starts exactly on the day boundary, so there is nothing to fast-forward.
@@ -894,8 +964,9 @@ fn test_book_deltas_request_replays_end_snapshot_when_exhausted(
     );
 
     let parent_id = UUID4::new();
-    let (handler, saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-exhausted")));
+    let (handler, saver) = get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from(
+        "deltas-replay-exhausted",
+    )));
     msgbus::register_response_handler(&parent_id, handler);
 
     // All catalog deltas precede the original start, so the end-state snapshot is keyed at it.
@@ -956,8 +1027,9 @@ fn test_book_deltas_request_from_day_start_false_skips_floor(
     );
 
     let parent_id = UUID4::new();
-    let (handler, saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-nofloor")));
+    let (handler, saver) = get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from(
+        "deltas-replay-nofloor",
+    )));
     msgbus::register_response_handler(&parent_id, handler);
 
     let params: Params = serde_json::from_value(json!({ "from_day_start": false })).unwrap();
@@ -1021,7 +1093,7 @@ fn test_book_deltas_replay_writes_assembled_snapshot_to_cache(
 
     let parent_id = UUID4::new();
     let (handler, _saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-cache")));
+        get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-cache")));
     msgbus::register_response_handler(&parent_id, handler);
 
     let req = RequestCommand::BookDeltas(RequestBookDeltas::new(
@@ -1111,7 +1183,7 @@ fn test_book_deltas_replay_respects_cache_ownership(
 
     let parent_id = UUID4::new();
     let (handler, _saver) =
-        get_any_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-owned")));
+        get_response_saving_handler::<BookDeltasResponse>(Some(Ustr::from("deltas-replay-owned")));
     msgbus::register_response_handler(&parent_id, handler);
 
     let req = RequestCommand::BookDeltas(RequestBookDeltas::new(

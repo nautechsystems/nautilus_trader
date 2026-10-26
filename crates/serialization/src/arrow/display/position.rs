@@ -161,7 +161,7 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
         closing_order_id.append_option(position.closing_order_id.map(|v| v.to_string()));
         entry.append_value(format!("{}", position.entry));
         side.append_value(format!("{}", position.side));
-        signed_qty.append_value(position.signed_qty);
+        signed_qty.append_value(position.signed_qty.as_f64());
         quantity.append_value(quantity_to_f64(&position.quantity));
         peak_qty.append_value(quantity_to_f64(&position.peak_qty));
         price_precision.append_value(position.price_precision);
@@ -178,8 +178,8 @@ pub fn encode_positions(data: &[Position]) -> Result<RecordBatch, ArrowError> {
         ts_last.append_value(unix_nanos_to_i64(position.ts_last.as_u64()));
         ts_closed.append_option(position.ts_closed.map(|v| unix_nanos_to_i64(v.as_u64())));
         duration_ns.append_value(position.duration_ns.as_u64());
-        avg_px_open.append_value(position.avg_px_open);
-        avg_px_close.append_option(position.avg_px_close);
+        avg_px_open.append_value(position.avg_px_open.as_f64());
+        avg_px_close.append_option(position.avg_px_close.map(|price| price.as_f64()));
         realized_return.append_value(position.realized_return);
         realized_pnl_amount.append_option(position.realized_pnl.map(|v| money_to_f64(&v)));
         realized_pnl_currency.append_option(position.realized_pnl.map(|v| v.currency.to_string()));

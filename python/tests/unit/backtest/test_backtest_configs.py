@@ -478,10 +478,10 @@ def test_venue_config_optional_params() -> None:
     """
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     fill_model = BestPriceFillModel(prob_fill_on_limit=0.9, prob_slippage=0.1)
-    latency_model = StaticLatencyModel(base_latency_nanos=1_000)
     margin_model = StandardMarginModel()
+    latency_model = StaticLatencyModel(base_latency_nanos=1_000)
     module = FXRolloverInterestModule(
-        records=[InterestRateRecord(location="USD", time="17:00", value=0.01)],
+        records=[InterestRateRecord(location="USD", time="17:00", value=Decimal("0.01"))],
     )
     config = BacktestVenueConfig(
         name="BINANCE",
@@ -508,10 +508,10 @@ def test_venue_config_optional_params() -> None:
         base_currency=Currency.from_str("USDT"),
         default_leverage=Decimal(5),
         leverages={instrument_id: Decimal(3)},
-        margin_model=margin_model,
-        modules=[module],
         fill_model=fill_model,
+        margin_model=margin_model,
         latency_model=latency_model,
+        modules=[module],
         price_protection_points=7,
     )
     assert config.name == "BINANCE"

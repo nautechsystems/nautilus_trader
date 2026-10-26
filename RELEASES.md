@@ -4,37 +4,72 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added gzip support to buffered HTTP requests (#5420), thanks @cryptolenny3
+- Added batched data subscriptions and unsubscriptions, thanks @faysou
+- Added batched historical instrument, quote, and trade requests, thanks @faysou
+- Added `on_data_response` hooks for historical completion and partial failures, thanks @faysou
+- Added `DataActor::request_group` for grouped historical request completion
+- Added Python historical request callbacks, `request_join`, and pending inspection for actors and strategies
+- Added historical request catalog write-back with confirmed source coverage, thanks @faysou
 - Added native external MessageBus data requests and replies for JSON and MessagePack
+- Added `LiveNode::add_python_exec_algorithm_from_config` for embedded Python execution algorithms
+- Added `LiveNode::add_python_strategy_from_config` for embedded Python strategies
+- Added `nautilus_pyo3::register_embedded_module` for embedded Python
 - Added `Money::from_decimal_exact` and `Money::from_str_exact` for fractional amounts beyond currency precision
 - Added exact `Money` round trips through JSON, MessagePack, Arrow, PostgreSQL, and Python balance dictionaries
 - Added accumulation of fractional `Money` commissions beyond currency precision
+- Added optional venue-reported liquidation prices to `PositionStatusReport`
+- Added custom fee models for sandbox execution clients (#5328), thanks @imbolc
+- Added Python-subclassable latency models with command and clock time context
+- Added custom Python fill models in backtest venue and sandbox configuration
+- Added custom Python margin models in backtest venue and sandbox configuration
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
 - Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
+- Added Hyperliquid scheduled cancellation with automatic execution-client refresh
 - Added Hyperliquid instrument status subscriptions through metadata polling (#5346), thanks @dxwil
 - Added Interactive Brokers optional account base currency (#5322), thanks @chaneyka1
+- Added Interactive Brokers `max_reconnect_attempts` configuration (#5392), thanks @tradatious
+- Added liquidation prices to Lighter position status reports
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
+- Added Lighter Rust APIs for account-wide cancellation and manual scheduled cancellation with revocation
+- Added Lighter execution-client scheduled cancellation with automatic renewal
 - Added Lighter self-trade behavior and account-scope order params with explicit defaults
+- Added OKX startup reconciliation history page limits (#5279), thanks for reporting @almostintuitive
 - Added OKX trading-account bills and archive queries (#5352), thanks @silarin
-- Added custom fee models for sandbox execution clients (#5328), thanks @imbolc
 
 ### Breaking Changes
 
 - Removed Cap'n Proto codecs and `capnp` features; use JSON or MessagePack for native messages
 - Removed `Params` mutation; build an `IndexMap` and call `Params::new`
+- Removed `instrument_expiration` and `has_unprocessed_instrument_expiration` (#5407), thanks @mahimn01
 - Removed Hyperliquid `Secrets::from_file` and `from_json`; use `from_private_key` or `from_env`
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
 - Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
+- Changed buffered `HttpClient` bodies to decode gzip; remove manual decoding or use `get_stream` for raw bytes
+- Changed request and subscription fields to `instrument_ids` and `bar_types` lists, thanks @faysou
+- Changed quote and trade response fields to `instrument_ids` lists, thanks @faysou
+- Changed quote, trade, bar, book-delta, book-depth, and funding responses to `BatchView<T>`, thanks @faysou
+- Changed correlated response handlers to `TypedHandler<DataResponseEnvelope>`, thanks @faysou
+- Changed backtest registration to reject conflicting definitions for an instrument ID (#5407), thanks @mahimn01
+- Changed `nautilus-pyo3` without default features to omit standard adapter bindings; enable `adapters` to include them
 - Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches
 - Changed `Money` display and decimal conversion to retain finer digits; round to currency precision explicitly
 - Changed `Money` deserialization to reject excess precision instead of rounding; round inputs before loading
 - Changed SBE depth encoding for padded or variable levels and nonzero order IDs; update readers for the new layout
 - Changed `BusMessage` to add `source`; use `BusMessage::new` to construct messages without provenance
+- Changed `PositionStatusReport` literals: add `liquidation_price: None` or use `new`
 - Changed emulated releases to undergo risk checks; use `REDUCING` for eligible exits, as `HALTED` denies stops
 - Changed order-list validation to deny unsent siblings; retry with new IDs (#5336), thanks @imbolc
 - Changed direct `OrderMatchingEngine` use: share `MatchingOrders` and drain commands for cross-instrument OTO orders
 - Changed `OrderMatchingEngine` expiration to wait for queued fills; retry `process_instrument_expiration` afterward
+- Changed `LatencyModel` operation methods; accept `(command, ts_now)` and return `Result` in custom models
+- Changed Python `BacktestVenueConfig` model and module argument order; pass them by keyword
+- Changed Python `BacktestEngine.add_venue()` model argument order; pass models by keyword
+- Changed Python `SandboxExecutionClientConfig` argument order; pass models and matching options by keyword
+- Changed `MarginModelAny` with the `python` feature enabled; add the `Python` variant to exhaustive matches
+- Changed `SandboxExecutionClientConfig` literals; add `margin_model: None` or use the builder
 - Changed Architect AX WebSocket `submit_order`: pass `&OrderInitialized::from(&order)` for identity and side
 - Changed Architect AX `OrderMetadata` literals: add `order_init` and `is_accepted`
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
@@ -51,6 +86,7 @@ Released on TBD (UTC).
 - Changed Interactive Brokers execution config literals; add `base_currency: None` (#5322), thanks @chaneyka1
 - Changed Lighter `LighterHttpError`: `Http` adds `retry_after`; `RateLimit` uses named `message` and `retry_after`
 - Changed Lighter `compute_tx_hash` and `sign_tx` to return `Result`; handle invalid transaction attributes
+- Changed Lighter execution config literals; add `scheduled_cancel_timeout_secs: None` or use the builder
 - Changed Lighter `L2TxAttributes` literals; add the new fields or use `..Default::default()`
 - Changed OKX spot stop/touched buys to explicit base or quote sizing; resubmit pending buys
 - Changed OKX unsupported algo quote sizing to local denials; resubmit spot trailing buys with quote quantity
@@ -60,16 +96,23 @@ Released on TBD (UTC).
 - Changed Python `OKXHttpClient.place_algo_order` spot stop-market and market-if-touched buy defaults from quote to base
 - Changed Python OKX quote-budget algo calls to require `quote_quantity=True`, including spot trailing buys
 - Changed OKX `place_algo_order_with_domain_types` to require `quote_quantity`; pass `false` for base sizing
+- Changed OKX execution config literals; add `max_reconciliation_history_pages: None`
 - Changed `PolymarketInstrumentDef.gamma_event` from `Option<String>` to `Option<Arc<Value>>` (#5389), thanks @imbolc
 - Changed Polymarket market-order preparation to use `OrderDenied` consistently; handle `on_order_denied`
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
 - Changed Polymarket data WebSocket timeouts from 15 to 30 seconds by default; `ws_timeout_secs` must be positive
+- Changed `PolymarketInstrumentDef` to require `market_version: "v1"`; reload cached instruments
+- Changed Polymarket `EventQueryFilter` to reject unsupported inputs; remove unsupported parameters and sort fields
 
 ### Security
 
+- Fixed order fills accepting cumulative commissions beyond `Money` bounds or panicking after partial state changes
 - Fixed matching-engine restarts reusing position IDs for independent hedging orders
 - Fixed `DataType::from_str` panics on repeated identifier suffixes
 - Fixed custom-data deserialization panics on metadata containing the reserved `identifier` key
+- Fixed exchange-rate calculation panics on decimal overflow
+- Fixed Parquet period consolidation and delete losing rows when rewrites share a file name (#5422), thanks @faysou
+- Fixed Parquet catalog queries reading NaN floats back as another row's value (#5422), thanks @faysou
 - Fixed Python order `from_dict` methods aborting on invalid identifiers, quantities, and prices
 - Fixed Python account reconstruction aborting on invalid account IDs
 - Fixed Python margin balance and account reconstruction aborting on invalid instrument IDs
@@ -78,15 +121,25 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed unavailable `OrderFilled` commissions displaying as zero
+- Fixed live bulk order reconciliation timeouts discarding finalized adapter reports
+- Fixed live timer backlogs starving data events and commands (#5431), thanks @imbolc
+- Fixed book recovery timeouts reporting the snapshot limit instead of the attempt limit (#5425), thanks @imbolc
+- Fixed position reconciliation timeouts discarding finalized snapshots and authoritative fills
+- Fixed Python `LiveNode.add_strategy_from_config` accepting strategies when the node is not idle
+- Fixed Python Parquet catalog typed reads and writes holding the GIL during native I/O
+- Fixed targeted order reconciliation discarding accepted statuses and fills after timeout or cancellation
 - Fixed OUO sibling resizes converting base quantities twice when quote-denominated stops trigger
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
 - Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking
 - Fixed expiration settlement missing final-tick fills when position updates are deferred
 - Fixed reduce-only FOK orders canceling when liquidity covered the remaining position but not the order quantity
+- Fixed `MarketToLimit` first-level fills and FOK/IOC handling (#5408), thanks @Milchstrassse
 - Fixed external JSON and MessagePack DeFi blocks losing their chain identity
 - Fixed DeFi swap simulation and replay hanging at bounds or accepting unreachable price limits
 - Fixed SBE market data decoding panics on invalid prices and quantities
 - Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
+- Fixed Parquet writes of mixed custom data; conflicting file groups fail before writing (#5405), thanks @faysou
 - Fixed reconciliation leaving amended orders in `PendingUpdate` after working reports confirm changed terms
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
 - Fixed risk denials for released orders and cleanup of their contingent orders
@@ -101,14 +154,26 @@ Released on TBD (UTC).
 - Fixed Architect AX special-fill reconciliation, fill-history windows, and cached flat-position recovery
 - Fixed Architect AX position-report requests dropping flat rows and skipping invalid rows
 - Fixed Binance Spot and Futures overlapping instrument-status updates losing or duplicating changes
+- Fixed Binance USD-M and COIN-M aggregate trade requests rejecting history between 24 and 48 hours old
 - Fixed Binance Futures funding-fee account updates discarding symbol attribution
 - Fixed Binance Futures HTTP order reports using update time as acceptance time
 - Fixed Binance spot account balances panicking or skipping an unrepresentable amount
 - Fixed Binance spot SBE exponent overflow aborting user-data decode (#5320), thanks @zifulifufu
 - Fixed Binance Spot SBE stream panics and negative quantities parsed as large sizes
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
+- Fixed Bybit fill prices using the commission currency instead of the quote currency (#5385), thanks @Milchstrassse
+- Fixed Bybit fill-report requests silently dropping fills that fail to parse
+- Fixed Bybit premature order acceptance from invalid WebSocket executions
+- Fixed Bybit unsupported time in force reaching submission for market, limit, and post-only orders
+- Fixed Bybit GTD orders failing validation on HTTP submission
+- Fixed Bybit reconciliation timeouts losing pending cancel and amend rejection events
 - Fixed Databento live trades duplicated across different record types (#5367), thanks @chaneyka1
+- Fixed Deribit depth subscriptions emitting deltas and disrupting raw order books
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
+- Fixed Derive data clients ignoring the configured instrument refresh interval
+- Fixed Derive public trades with unrecognized liquidity roles reporting a known aggressor side
+- Fixed Derive submitting quote-denominated order quantities as base units
+- Fixed Derive iceberg display quantities being silently discarded during order submission
 - Fixed Derive startup stalls when loading large instrument listings
 - Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
 - Fixed dYdX oracle price precision for catalog promotion (#5391), thanks for reporting @fintech07
@@ -122,6 +187,8 @@ Released on TBD (UTC).
 - Fixed Hyperliquid data client consumption loop remaining active after its WebSocket handler closes
 - Fixed Hyperliquid REST fill reports omitting venue client order IDs
 - Fixed Hyperliquid REST order and fill report panics on invalid client order IDs
+- Fixed Hyperliquid reconnect recovery losing missed events after history request failures
+- Fixed Hyperliquid capped reconciliation history creating positions without explicit position reports
 - Fixed Interactive Brokers small-lot entry prices after commission rounding (#5327), thanks @bebop23
 - Fixed Interactive Brokers futures expiry times blocking market data (#5318), thanks @chaneyka1
 - Fixed Interactive Brokers quote sizes dropped by float rounding (#5318), thanks @chaneyka1
@@ -129,8 +196,10 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers FX prices falling between price increments (#5322), thanks @chaneyka1
 - Fixed Interactive Brokers orders and fills for instruments loaded at runtime (#5349), thanks @jweltmer
 - Fixed Interactive Brokers missing or stale bars after resubscription (#5331), thanks @tradatious
+- Fixed Interactive Brokers spread instrument requests at runtime (#5397), thanks @faysou
 - Fixed Kraken Futures batch edits sending `orderId` instead of `order_id` (#5312), thanks @zhaow-de
 - Fixed Kraken Futures client order IDs shortened to 18 characters (#5312), thanks @zhaow-de
+- Fixed Kraken Spot L3 queue priority after same-price order modifications (#5421), thanks @ahmetsbilgin
 - Fixed Lighter funding rates 100x too high and missing the live interval (#5338), thanks @dxwil
 - Fixed Lighter order lookups using the wrong client order ID after a collision and restart
 - Fixed Lighter deferred order reports being treated as proof of absence
@@ -140,21 +209,27 @@ Released on TBD (UTC).
 - Fixed Lighter probes for completed cancels consuming REST quota and delaying modification confirmation
 - Fixed Lighter cancellation recovery stopping before terminal order status is available
 - Fixed Lighter single-order cancel transaction failures leaving orders pending cancel
+- Fixed Lighter batch operations failing instead of retrying as nonce refresh completes
 - Fixed empty and incomplete OKX historical bar responses (#5339), thanks for reporting @AlphaTraderK
 - Fixed OKX external limit orders missing amendment confirmations
 - Fixed OKX spot `StopMarket` and `MarketIfTouched` buy sizing (#5371), thanks for reporting @michalismeng
 - Fixed OKX WebSocket send failures delaying rejection events and leaving unsent cancels unresolved
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket event metadata duplicated across instruments and cache clones (#5389), thanks @imbolc
+- Fixed Polymarket backtest taker fees rounding to nearest instead of flooring to five decimal places
 - Fixed Polymarket data clients ignoring `ws_timeout_secs` for market and PolyBolt WebSockets
 - Fixed Polymarket auto-load retrying filter-rejected instruments and logging false missing-market errors
 - Fixed Polymarket batch cancels discarding completed results when a later chunk fails
 - Fixed Polymarket batch submits delaying later chunks behind FOK recovery and deferred cancels
 - Fixed Polymarket book recovery continuing after market resolution (#5359), thanks @imbolc
+- Fixed Polymarket tick-size changes logging misleading invalid book snapshot warnings
+- Fixed Polymarket quiet books staying unsynced when the initial subscription snapshot is lost
+- Fixed Polymarket stale snapshots restoring deleted book levels
 - Fixed Polymarket cancels lost while submit responses register venue order IDs
 - Fixed Polymarket closure timestamps causing catalog promotion overlaps (#5358), thanks @imbolc
 - Fixed Polymarket reconciliation reverting resting partially filled orders to `Accepted`
 - Fixed Polymarket `price_change` quotes carrying sizes from different price levels
+- Fixed Polymarket stale quotes after suppressing unchanged quotes (#5424), thanks @imbolc
 - Fixed Polymarket stale book levels after resubscribing with effective deltas enabled
 - Fixed Polymarket loading, request caching, and execution lookup cleanup for open markets past `endDate`
 - Fixed Polymarket market order reconciliation panics after delayed FOK status checks
@@ -162,37 +237,63 @@ Released on TBD (UTC).
 - Fixed Polymarket market data subscriptions stalling after transient initial WebSocket connection failures
 - Fixed Polymarket taker rates derived from CLOB `base_fee` when Gamma rates are missing or zero
 - Fixed Polymarket trade history and settlement recovery failing on missing or null transaction hashes
+- Fixed Polymarket taker fill prices and fees across price levels and complementary tokens (#5404), thanks @SoYuCry
+- Fixed Polymarket accepting unsupported market protocols during discovery, trading, and position operations
 - Fixed sandbox restarts reviving closed OTO children while the cache still shows them open
 - Fixed sandbox position checks creating spurious closing trades (#5357), thanks @awss1i
 
 ### Internal Improvements
 
 - Added deferred finalization for live execution report collection
+- Added `rust-code-analysis-cli` v0.0.25 to `make install-tools`
 - Improved Dockerfile linting to run Hadolint without Docker
-- Optimized JSON and MessagePack decoding and custom data response encoding
-- Optimized virtual hedging fill-history checks during execution and reconciliation
+- Improved live shutdown test coverage for slow position report collection
+- Improved performance CI to fail when any benchmark crate fails
+- Refined live reconciliation report collection and task ownership
+- Restored default-feature compilation of `position_replay_criterion` benchmarks
 - Standardized Architect AX owned execution report tasks
+- Updated Nautilus Engineering common tooling
+- Optimized JSON and MessagePack decoding and custom data response encoding
+- Optimized order last-event reads to avoid collecting history (#5412), thanks @graceyangfan
+- Optimized passive limit matching and L1 queue tracking with many orders behind the BBO
+- Optimized position purging to avoid cloning fill and replay history (#5414), thanks @graceyangfan
+- Optimized typed message router subscription registration and removal (#5426), thanks @imbolc
+- Optimized virtual hedging fill-history checks during execution and reconciliation
 - Optimized Polymarket instrument caching during bootstrap and refresh (#5373), thanks @imbolc
+- Optimized Polymarket snapshot diffs and trade ID formatting
+- Removed unused Interactive Brokers data farm degradation timestamps (#5376), thanks @tradatious
+- Upgraded Rust (MSRV) to 1.99.1
 - Upgraded `cargo-codspeed` tool to v5.0.3
+- Upgraded `cargo-edit` tool to v0.13.14
+- Upgraded `cargo-nextest` tool to v0.9.149
+- Upgraded `cargo-vet` tool to v0.10.3
 - Upgraded `OSV Scanner` tool to v2.7.0
-- Upgraded `Socket CLI` tool to v1.8.4
-- Upgraded `uv` tool to v0.13.1
+- Upgraded `pgAdmin` container image to v9.18
+- Upgraded `PostgreSQL` container image to v18.6
+- Upgraded `prek` tool to v0.5.7
+- Upgraded `Redis` container image to v8.10.2
+- Upgraded `Socket CLI` tool to v1.9.0
+- Upgraded `uv` tool and pre-commit hook to v0.13.4
 - Upgraded `pyupgrade` pre-commit hook to v3.22.0
 - Upgraded `zizmor` pre-commit hook to v1.31.1
+- Upgraded `arc-swap` crate to v1.9.3
 - Upgraded `arrow` and `parquet` crates to v59.3.1
 - Upgraded `aws-lc-rs` crate to v1.18.2
 - Upgraded `codspeed-criterion-compat` crate to v5.0.3
 - Upgraded `inventory` crate to v0.3.25
+- Upgraded `libc` crate to v0.2.191
+- Upgraded `parking_lot` crate to v0.13.0
 - Upgraded `proptest` crate to v1.12.0
 - Upgraded `pyo3` crate to v0.30.1
 - Upgraded `pyo3-async-runtimes` crate to v0.30.0
 - Upgraded `redb` crate to v4.4.0
+- Upgraded `rstest` crate to v0.28.0
 - Upgraded `rustls-webpki` crate to v0.103.16
 - Upgraded `serde_json` crate to v1.0.154
 - Upgraded `smallvec` crate to v1.16.3
 - Upgraded `sockudo-ws` crate to v3.1.0 (#5345), thanks @sunlei
 - Upgraded `syn` crate to v3.0.9
-- Upgraded `tokio` crate to v1.53.3
+- Upgraded `tokio` crate to v1.54.1
 - Upgraded `toml` crate to v1.1.8
 - Upgraded `uuid` crate to v1.28.0
 - Upgraded `webpki-root-certs` and `webpki-roots` crates to v1.0.10
@@ -201,12 +302,13 @@ Released on TBD (UTC).
 - Upgraded `polars` package (test) to v2.0.0
 - Upgraded `pyarrow` package (test) to v26.0.0
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.17.1
-- Upgraded `ty` package (dev) to v0.0.86
+- Upgraded `ty` package (dev) to v0.0.89
 
 ### Documentation Updates
 
 - Added `Money` exact-construction and persistence guidance
 - Updated Lighter funding rate units and live interval documentation (#5356), thanks @dxwil
+- Documented Polymarket taker fill averaging, fees, and settlement precision (#5415), thanks @SoYuCry
 
 ### Deprecations
 

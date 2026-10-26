@@ -1348,17 +1348,27 @@ mod tests {
 
     #[rstest]
     fn test_add_data_batch_copies_shared_unsorted_backing_allocation() {
-        let data = Arc::new(vec![quote_tick("A.B", 200), quote_tick("A.B", 100)]);
+        let data = Arc::new(vec![
+            quote_tick("A.B", 50),
+            quote_tick("A.B", 200),
+            quote_tick("A.B", 100),
+            quote_tick("A.B", 250),
+        ]);
         let mut it = DataIterator::new();
 
         it.add_data_batch(
             "typed",
-            DataBatch::Quote(BatchView::from(Arc::clone(&data))),
+            DataBatch::Quote(BatchView::new(Arc::clone(&data), 1..3)),
             true,
         );
 
         assert_eq!(Arc::strong_count(&data), 1);
-        assert_eq!(data[0].ts_init, UnixNanos::from(200));
+        assert_eq!(
+            data.iter()
+                .map(|row| row.ts_init.as_u64())
+                .collect::<Vec<_>>(),
+            vec![50, 200, 100, 250]
+        );
         assert_eq!(collect_ts(&mut it), vec![100, 200]);
     }
 

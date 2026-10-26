@@ -16,7 +16,7 @@
 """
 Layer 2 oracle for the Lighter L2 tx signer.
 
-Loads the closed-source signer that ships with `lighter-python`, runs it against
+Loads the compiled signer released by `lighter-go`, runs it against
 deterministic inputs covering the trading-critical L2 tx types, and writes a JSON
 fixture consumed by `signing/tx/encode.rs` tests.
 
@@ -38,8 +38,9 @@ from pathlib import Path
 
 
 CHAIN_ID_TESTNET = 300
-UPSTREAM_VERSION = "1.1.4"
-UPSTREAM_REVISION = "a38b6405f362fc14a562fe7a97df03f3ee756bc1"
+UPSTREAM_VERSION = "1.0.12"
+UPSTREAM_REVISION = "324c93b067f24ede24918f3ac10663605d5f11c3"
+MARKET_INDICES = (0, 40_000, 1 << 32, (1 << 48) - 1)
 
 # Tx type discriminants, mirrored from the lighter-go constants.
 TX_TYPE_L2_CREATE_ORDER = 14
@@ -79,7 +80,7 @@ class CreateOrderTxReq(ctypes.Structure):
     """
 
     _fields_ = [
-        ("MarketIndex", ctypes.c_int),
+        ("MarketIndex", ctypes.c_longlong),
         ("ClientOrderIndex", ctypes.c_longlong),
         ("BaseAmount", ctypes.c_longlong),
         ("Price", ctypes.c_uint32),
@@ -127,7 +128,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
     lib.CreateClient.restype = ctypes.c_void_p
 
     lib.SignCreateOrder.argtypes = [
-        ctypes.c_int,
+        ctypes.c_longlong,
         ctypes.c_longlong,
         ctypes.c_longlong,
         ctypes.c_int,
@@ -166,7 +167,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
     lib.SignCreateGroupedOrders.restype = SignedTxResponse
 
     lib.SignCancelOrder.argtypes = [
-        ctypes.c_int,
+        ctypes.c_longlong,
         ctypes.c_longlong,
         ctypes.c_uint8,
         ctypes.c_longlong,
@@ -176,7 +177,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
     lib.SignCancelOrder.restype = SignedTxResponse
 
     lib.SignModifyOrder.argtypes = [
-        ctypes.c_int,
+        ctypes.c_longlong,
         ctypes.c_longlong,
         ctypes.c_longlong,
         ctypes.c_longlong,
@@ -188,7 +189,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
         ctypes.c_uint8,
         ctypes.c_uint8,
         ctypes.c_longlong,
-        ctypes.c_longlong,  # order_version (added in signer 1.1.3)
+        ctypes.c_longlong,  # order_version (added in Python SDK 1.1.3)
         ctypes.c_int,
         ctypes.c_longlong,
     ]
@@ -197,7 +198,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
     lib.SignCancelAllOrders.argtypes = [
         ctypes.c_int,
         ctypes.c_longlong,
-        ctypes.c_int,
+        ctypes.c_longlong,
         ctypes.c_uint8,
         ctypes.c_longlong,
         ctypes.c_int,
@@ -206,7 +207,7 @@ def setup_lib(path: Path) -> ctypes.CDLL:
     lib.SignCancelAllOrders.restype = SignedTxResponse
 
     lib.SignUpdateLeverage.argtypes = [
-        ctypes.c_int,
+        ctypes.c_longlong,
         ctypes.c_int,
         ctypes.c_int,
         ctypes.c_uint8,
@@ -291,7 +292,7 @@ def derived_public_key_hex(lib: ctypes.CDLL, sk_hex: str) -> str:
     """
     Re-run the signer once to harvest the matching public-key bytes.
 
-    The closed signer does not export PubKey directly to Python, but every signed tx
+    The compiled signer does not export PubKey directly to Python, but every signed tx
     response embeds the pubkey-derived `tx_hash`, and the signer accepts the same
     private key in `CreateClient`. We capture the pubkey by signing a throwaway tx and
     decoding it, but a simpler path is to just bake the public key recovered from the
@@ -422,7 +423,7 @@ def gen_approve_integrator(lib: ctypes.CDLL, ctx: dict, fields: dict) -> dict:
 
 def gen_auth_token(lib: ctypes.CDLL, deadline: int, api_key_index: int, account_index: int) -> str:
     """
-    Drive the closed signer's `CreateAuthToken` for a single deadline.
+    Drive the compiled signer's `CreateAuthToken` for a single deadline.
 
     `CreateAuthToken(deadline, api_key_index, account_index)` returns the serialized
     `"{message}:{hex(sig)}"` string. The signer reuses the client handle established by
@@ -449,12 +450,12 @@ def build_auth_vectors(
     """
     Generate auth-token vectors at fixed deadlines under the seeded signer.
 
-    Each entry pins the inputs that drove the closed signer's `CreateAuthToken` plus the
+    Each entry pins the inputs that drove the compiled signer's `CreateAuthToken` plus the
     resulting token string. The Rust side recomputes the digest from `message` and
     verifies the embedded signature under the public key derived from `sk` to gate
     behavioral equivalence.
 
-    The closed signer requires a `CreateClient` call for every `(api_key_index,
+    The compiled signer requires a `CreateClient` call for every `(api_key_index,
     account_index)` pair before signing; the seeded key is reused for the other vectors
     so the script does not need to re-initialize per case.
 
@@ -523,9 +524,9 @@ def write_auth_oracle(
     vectors = build_auth_vectors(lib, sk_hex, chain_id, account_index, seeded_api_key)
     payload = {
         "metadata": {
-            "license": "Apache-2.0 (SDK repository; compiled signer binary)",
+            "license": "Apache-2.0 (lighter-go repository; compiled signer binary)",
             "primitive": "lighter_auth_token",
-            "source": "github.com/elliottech/lighter-python",
+            "source": "github.com/elliottech/lighter-go",
             "upstream_version": UPSTREAM_VERSION,
             "upstream_revision": UPSTREAM_REVISION,
             "note": (
@@ -560,7 +561,7 @@ def build_vector(kind: str, ctx: dict, fields: dict, sig_resp: dict) -> dict:
         "tx_info": sig_resp["tx_info"],
         "tx_hash": sig_resp["tx_hash"],
         "sig": sig_resp["sig"],
-        # Re-export the parsed ExpiredAt because the closed signer auto-fills
+        # Re-export the parsed ExpiredAt because the compiled signer auto-fills
         # it from wall-clock time inside the FFI; the Rust side reads it back
         # to reconstruct the same hash preimage.
         "expired_at": sig_resp["tx_info_decoded"]["ExpiredAt"],
@@ -591,6 +592,11 @@ def main() -> int:
         help="optional output path for the auth-token oracle fixture",
     )
     parser.add_argument("--grouped-out", type=Path, help="optional grouped-order oracle fixture")
+    parser.add_argument(
+        "--cancel-all-out",
+        type=Path,
+        help="optional account cancellation oracle fixture",
+    )
     parser.add_argument(
         "--self-trade-out",
         type=Path,
@@ -627,9 +633,9 @@ def main() -> int:
 
     payload = {
         "metadata": {
-            "license": "Apache-2.0 (SDK repository; compiled signer binary)",
+            "license": "Apache-2.0 (lighter-go repository; compiled signer binary)",
             "primitive": "lighter_l2_tx",
-            "source": "github.com/elliottech/lighter-python",
+            "source": "github.com/elliottech/lighter-go",
             "upstream_version": UPSTREAM_VERSION,
             "upstream_revision": UPSTREAM_REVISION,
             "note": (
@@ -671,7 +677,31 @@ def main() -> int:
     if args.auth_out is not None:
         write_auth_oracle(lib, sk, chain_id, account_index, api_key_index, args.auth_out)
 
+    if args.cancel_all_out is not None:
+        payload["vectors"] = build_cancel_all_vectors(lib, base_ctx)
+        args.cancel_all_out.parent.mkdir(parents=True, exist_ok=True)
+        args.cancel_all_out.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        print(f"wrote {len(payload['vectors'])} cancellation vectors to {args.cancel_all_out}")
+
     return 0
+
+
+def build_cancel_all_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
+    """
+    Generate immediate, scheduled, and abort-scheduled account cancellation vectors.
+    """
+    vectors = []
+    for time_in_force, scheduled_time_ms in ((0, 0), (1, 1_999_999_123_456), (2, 0)):
+        ctx = {**base_ctx, "nonce": 61 + time_in_force}
+        fields = {
+            "time_in_force": time_in_force,
+            "scheduled_time_ms": scheduled_time_ms,
+            "cancel_all_market_index": 255,
+            "skip_nonce": 0,
+        }
+        decoded = gen_cancel_all_orders(lib, ctx, fields)
+        vectors.append(build_vector("cancel_all_orders", ctx, fields, decoded))
+    return vectors
 
 
 def build_grouped_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
@@ -683,44 +713,47 @@ def build_grouped_tx_vectors(lib: ctypes.CDLL, base_ctx: dict) -> list[dict]:
     take_profit = CreateOrderTxReq(0, 302, 0, 419000, 1, 5, 1, 1, 420000, expiry)
     stop_loss = CreateOrderTxReq(0, 303, 0, 379000, 1, 3, 1, 1, 380000, expiry)
     vectors = []
-    for grouping in (GROUPING_TYPE_OTO, GROUPING_TYPE_OCO, GROUPING_TYPE_OTOCO):
-        siblings = [take_profit, stop_loss]
-        if grouping == GROUPING_TYPE_OTO:
-            orders = [parent, stop_loss]
-        elif grouping == GROUPING_TYPE_OCO:
-            orders = [CreateOrderTxReq.from_buffer_copy(order) for order in siblings]
-            for order in orders:
-                order.BaseAmount = 1000
-        else:
-            orders = [parent, *siblings]
-        bodies = (CreateOrderTxReq * len(orders))(*orders)
-        for attributes in (False, True):
-            ctx = {**base_ctx, "nonce": 30 + grouping * 2 + int(attributes)}
-            integrator = 190 if attributes else 0
-            response = lib.SignCreateGroupedOrders(
-                grouping,
-                bodies,
-                len(orders),
-                integrator,
-                2 if attributes else 0,
-                3 if attributes else 0,
-                0,
-                0,
-                int(attributes),
-                ctx["nonce"],
-                ctx["api_key_index"],
-                ctx["account_index"],
-            )
-            decoded = decode_expected(lib, response, TX_TYPE_L2_CREATE_GROUPED_ORDERS)
-            fields = {
-                "grouping_type": grouping,
-                "orders": decoded["tx_info_decoded"]["Orders"],
-                "integrator_account_index": integrator,
-                "integrator_taker_fee": 2 if attributes else 0,
-                "integrator_maker_fee": 3 if attributes else 0,
-                "skip_nonce": int(attributes),
-            }
-            vectors.append(build_vector("create_grouped_orders", ctx, fields, decoded))
+    for market_index in MARKET_INDICES:
+        for order in (parent, take_profit, stop_loss):
+            order.MarketIndex = market_index
+        for grouping in (GROUPING_TYPE_OTO, GROUPING_TYPE_OCO, GROUPING_TYPE_OTOCO):
+            siblings = [take_profit, stop_loss]
+            if grouping == GROUPING_TYPE_OTO:
+                orders = [parent, stop_loss]
+            elif grouping == GROUPING_TYPE_OCO:
+                orders = [CreateOrderTxReq.from_buffer_copy(order) for order in siblings]
+                for order in orders:
+                    order.BaseAmount = 1000
+            else:
+                orders = [parent, *siblings]
+            bodies = (CreateOrderTxReq * len(orders))(*orders)
+            for attributes in (False, True):
+                ctx = {**base_ctx, "nonce": 30 + grouping * 2 + int(attributes)}
+                integrator = 190 if attributes else 0
+                response = lib.SignCreateGroupedOrders(
+                    grouping,
+                    bodies,
+                    len(orders),
+                    integrator,
+                    2 if attributes else 0,
+                    3 if attributes else 0,
+                    0,
+                    0,
+                    int(attributes),
+                    ctx["nonce"],
+                    ctx["api_key_index"],
+                    ctx["account_index"],
+                )
+                decoded = decode_expected(lib, response, TX_TYPE_L2_CREATE_GROUPED_ORDERS)
+                fields = {
+                    "grouping_type": grouping,
+                    "orders": decoded["tx_info_decoded"]["Orders"],
+                    "integrator_account_index": integrator,
+                    "integrator_taker_fee": 2 if attributes else 0,
+                    "integrator_maker_fee": 3 if attributes else 0,
+                    "skip_nonce": int(attributes),
+                }
+                vectors.append(build_vector("create_grouped_orders", ctx, fields, decoded))
     return vectors
 
 
@@ -730,93 +763,24 @@ def _widened_tx_vectors(
     create_fields: dict,
     modify_fields: dict,
 ) -> list[dict]:
-    """
-    Widened market ids from the post-September-2026 64-bit allocation.
-
-    4095 is the first new-allocation index (live on Mainnet and Testnet); 32767 is the
-    largest index the official signer accepts. Ids above that are rejected by the SDK
-    signer ("MarketIndex is not valid"), so the Rust side pins them via preimage/render
-    tests instead of oracle vectors.
-
-    """
     vectors: list[dict] = []
-
-    widened_create = {
-        **create_fields,
-        "market_index": 4095,
-        "client_order_index": 300,
-    }
-    ctx = {**base_ctx, "nonce": 17}
-    vectors.append(
-        build_vector(
-            "create_order",
-            ctx,
-            widened_create,
-            gen_create_order(lib, ctx, widened_create),
-        ),
-    )
-
-    widened_cancel = {
-        "market_index": 4095,
-        "index": 300,
-        "skip_nonce": 0,
-    }
-    ctx = {**base_ctx, "nonce": 18}
-    vectors.append(
-        build_vector(
-            "cancel_order",
-            ctx,
-            widened_cancel,
-            gen_cancel_order(lib, ctx, widened_cancel),
-        ),
-    )
-
-    widened_modify = {
-        **modify_fields,
-        "market_index": 4095,
-        "index": 300,
-    }
-    ctx = {**base_ctx, "nonce": 19}
-    vectors.append(
-        build_vector(
-            "modify_order",
-            ctx,
-            widened_modify,
-            gen_modify_order(lib, ctx, widened_modify),
-        ),
-    )
-
-    widened_leverage = {
-        "market_index": 4095,
-        "initial_margin_fraction": 500,
-        "margin_mode": 1,
-        "skip_nonce": 0,
-    }
-    ctx = {**base_ctx, "nonce": 20}
-    vectors.append(
-        build_vector(
+    fields_by_kind = (
+        ("create_order", {**create_fields, "client_order_index": 300}, gen_create_order),
+        ("cancel_order", {"index": 300, "skip_nonce": 0}, gen_cancel_order),
+        ("modify_order", {**modify_fields, "index": 300}, gen_modify_order),
+        (
             "update_leverage",
-            ctx,
-            widened_leverage,
-            gen_update_leverage(lib, ctx, widened_leverage),
+            {"initial_margin_fraction": 500, "margin_mode": 1, "skip_nonce": 0},
+            gen_update_leverage,
         ),
     )
 
-    sdk_max_create = {
-        **create_fields,
-        "market_index": 32767,
-        "client_order_index": 301,
-    }
-    ctx = {**base_ctx, "nonce": 21}
-    vectors.append(
-        build_vector(
-            "create_order",
-            ctx,
-            sdk_max_create,
-            gen_create_order(lib, ctx, sdk_max_create),
-        ),
-    )
-
+    # 4095 samples the widened allocation; 32767 pins the legacy i16 maximum
+    for market_index in (4095, 32767, *MARKET_INDICES[1:]):
+        for kind, template, generate in fields_by_kind:
+            ctx = {**base_ctx, "nonce": 17 + len(vectors)}
+            fields = {**template, "market_index": market_index}
+            vectors.append(build_vector(kind, ctx, fields, generate(lib, ctx, fields)))
     return vectors
 
 

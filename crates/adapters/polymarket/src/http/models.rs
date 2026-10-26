@@ -396,6 +396,8 @@ pub struct GammaMarket {
     pub parent_event: Option<Arc<GammaEvent>>,
     /// Events linked to this gamma market.
     pub events: Option<Vec<GammaEvent>>,
+    /// Market protocol version, independent of the CLOB service version.
+    pub version: Option<String>,
 }
 
 impl_gamma_response_serde!(GammaMarket);
@@ -670,6 +672,7 @@ pub struct ClobMarketResponse {
     pub is_50_50_outcome: Option<bool>,
     pub tokens: Vec<ClobMarketToken>,
     pub tags: Option<Vec<String>>,
+    pub version: Option<String>,
 }
 
 /// A position row from the Polymarket Data API v2 `GET /v2/positions` endpoint.
@@ -903,7 +906,7 @@ mod tests {
         let trade: PolymarketTradeReport = load("http_trade_report.json");
 
         let first = &trade.maker_orders[0];
-        assert_eq!(first.matched_amount, dec!(25.0000));
+        assert_eq!(first.matched_amount, dec!(20.0000));
         assert_eq!(first.price, dec!(0.5000));
         assert_eq!(first.outcome, PolymarketOutcome::yes());
 

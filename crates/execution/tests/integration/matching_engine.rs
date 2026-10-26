@@ -22411,7 +22411,9 @@ fn test_option_physical_settlement_scales_quantity_and_side(
             };
 
             assert_eq!(
-                delivered_position.unrealized_pnl(Price::from(spot)),
+                delivered_position
+                    .unrealized_pnl(Price::from(spot))
+                    .unwrap(),
                 Money::from_decimal(points * multiplier.as_decimal(), Currency::USD()).unwrap(),
             );
         }

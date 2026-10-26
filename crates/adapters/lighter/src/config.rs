@@ -31,9 +31,13 @@ use nautilus_model::{
     types::Currency,
 };
 use nautilus_network::websocket::TransportBackend;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::common::{
+    consts::{
+        SCHEDULED_CANCEL_CLOCK_HEADROOM_SECS, SCHEDULED_CANCEL_MAX_DELAY_SECS,
+        SCHEDULED_CANCEL_MIN_DELAY_SECS, SCHEDULED_CANCEL_REQUEST_TIMEOUT,
+    },
     credential::credential_env_vars_for_deployment,
     deployment,
     enums::{LighterDeployment, LighterEnvironment},
@@ -279,6 +283,13 @@ pub struct LighterExecutionClientConfig {
     /// the fallback would expire first; use native GTD for those orders.
     #[builder(default = true)]
     pub use_gtd: bool,
+    /// Arms and renews account-wide scheduled cancellation with this timeout in seconds.
+    ///
+    /// Valid values are `[420, 1_295_940]`. `None` leaves the venue schedule untouched.
+    /// Connection fails if arming does not execute within 30 seconds after account streams are ready.
+    /// Shutdown stops renewal and preserves the last deadline. Scheduled cancellation does not close positions.
+    #[serde(deserialize_with = "deserialize_scheduled_cancel_timeout")]
+    pub scheduled_cancel_timeout_secs: Option<u64>,
 }
 
 #[cfg(feature = "python")]
@@ -298,6 +309,7 @@ nautilus_core::impl_pyo3_config_getters!(LighterExecutionClientConfig {
     sendtx_quota_per_min: Option<u32>,
     transport_backend: TransportBackend,
     use_gtd: bool,
+    scheduled_cancel_timeout_secs: Option<u64>,
 });
 
 impl Default for LighterExecutionClientConfig {
@@ -358,6 +370,30 @@ impl LighterExecutionClientConfig {
     }
 }
 
+fn deserialize_scheduled_cancel_timeout<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<u64>, D::Error> {
+    let timeout = Option::<u64>::deserialize(deserializer)?;
+    validate_scheduled_cancel_timeout(timeout).map_err(serde::de::Error::custom)?;
+    Ok(timeout)
+}
+
+pub(crate) fn validate_scheduled_cancel_timeout(timeout_secs: Option<u64>) -> anyhow::Result<()> {
+    let min = SCHEDULED_CANCEL_MIN_DELAY_SECS
+        + SCHEDULED_CANCEL_CLOCK_HEADROOM_SECS
+        + 2 * SCHEDULED_CANCEL_REQUEST_TIMEOUT.as_secs();
+    let max = SCHEDULED_CANCEL_MAX_DELAY_SECS - SCHEDULED_CANCEL_CLOCK_HEADROOM_SECS;
+
+    if let Some(timeout_secs) = timeout_secs {
+        anyhow::ensure!(
+            (min..=max).contains(&timeout_secs),
+            "scheduled_cancel_timeout_secs must be in [{min}, {max}]"
+        );
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::string::secret::REDACTED;
@@ -367,6 +403,46 @@ mod tests {
 
     const PRIVATE_KEY_HEX: &str =
         "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
+
+    #[rstest]
+    #[case(None, true)]
+    #[case(Some(0), false)]
+    #[case(Some(15), false)]
+    #[case(Some(419), false)]
+    #[case(Some(420), true)]
+    #[case(Some(1_295_940), true)]
+    #[case(Some(1_295_941), false)]
+    #[case(Some(u64::MAX), false)]
+    fn test_scheduled_cancel_timeout(#[case] timeout: Option<u64>, #[case] valid: bool) {
+        let config = LighterExecutionClientConfig {
+            scheduled_cancel_timeout_secs: timeout,
+            ..Default::default()
+        };
+
+        let encoded = serde_json::to_value(&config).unwrap();
+        assert_eq!(
+            encoded["scheduled_cancel_timeout_secs"],
+            serde_json::json!(timeout)
+        );
+        let decoded = serde_json::from_value::<LighterExecutionClientConfig>(encoded);
+        assert_eq!(validate_scheduled_cancel_timeout(timeout).is_ok(), valid);
+        assert_eq!(decoded.is_ok(), valid);
+
+        if valid {
+            assert_eq!(decoded.unwrap().scheduled_cancel_timeout_secs, timeout);
+        }
+    }
+
+    #[rstest]
+    fn test_scheduled_cancel_timeout_default() {
+        assert_eq!(
+            LighterExecutionClientConfig::default().scheduled_cancel_timeout_secs,
+            None
+        );
+        let decoded: LighterExecutionClientConfig =
+            serde_json::from_value(serde_json::json!({})).unwrap();
+        assert_eq!(decoded.scheduled_cancel_timeout_secs, None);
+    }
 
     #[rstest]
     fn data_config_has_credentials_when_all_fields_set() {
@@ -574,6 +650,7 @@ mod tests {
             sendtx_quota_per_min: None,
             transport_backend: TransportBackend::default(),
             use_gtd: true,
+            scheduled_cancel_timeout_secs: None,
         };
 
         let dbg_out = format!("{config:?}");

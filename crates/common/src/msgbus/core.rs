@@ -112,7 +112,7 @@ use smallvec::SmallVec;
 use ustr::Ustr;
 
 use super::{
-    HAS_EXTERNAL_EGRESS, ShareableMessageHandler,
+    HAS_EXTERNAL_EGRESS, ShareableMessageHandler, TypedHandler,
     backing::MessageBusExternalEgress,
     config::MessageBusConfig,
     matching::is_matching_backtracking,
@@ -126,7 +126,7 @@ use super::{
 use crate::{
     enums::SerializationEncoding,
     messages::{
-        data::{DataCommand, DataResponse},
+        data::{DataCommand, DataResponse, DataResponseEnvelope},
         execution::{ExecutionReport, TradingCommand},
     },
 };
@@ -236,7 +236,7 @@ pub struct MessageBus {
     pub(crate) subscriptions: AHashSet<Subscription>,
     pub(crate) topics: IndexMap<MStr<Topic>, Vec<Subscription>>,
     pub(crate) endpoints: IndexMap<MStr<Endpoint>, ShareableMessageHandler>,
-    pub(crate) correlation_index: AHashMap<UUID4, ShareableMessageHandler>,
+    pub(crate) correlation_index: AHashMap<UUID4, TypedHandler<DataResponseEnvelope>>,
     pub(crate) router_quotes: TopicRouter<QuoteTick>,
     pub(crate) router_trades: TopicRouter<TradeTick>,
     pub(crate) router_bars: TopicRouter<Bar>,
@@ -746,7 +746,10 @@ impl MessageBus {
 
     /// Returns the handler for the `correlation_id`.
     #[must_use]
-    pub fn get_response_handler(&self, correlation_id: &UUID4) -> Option<&ShareableMessageHandler> {
+    pub fn get_response_handler(
+        &self,
+        correlation_id: &UUID4,
+    ) -> Option<&TypedHandler<DataResponseEnvelope>> {
         self.correlation_index.get(correlation_id)
     }
 
@@ -754,7 +757,7 @@ impl MessageBus {
     pub fn take_response_handler(
         &mut self,
         correlation_id: &UUID4,
-    ) -> Option<ShareableMessageHandler> {
+    ) -> Option<TypedHandler<DataResponseEnvelope>> {
         self.correlation_index.remove(correlation_id)
     }
 
@@ -818,7 +821,7 @@ impl MessageBus {
     pub fn register_response_handler(
         &mut self,
         correlation_id: &UUID4,
-        handler: ShareableMessageHandler,
+        handler: TypedHandler<DataResponseEnvelope>,
     ) -> anyhow::Result<()> {
         if self.correlation_index.contains_key(correlation_id) {
             anyhow::bail!("Correlation ID <{correlation_id}> already has a registered handler");
@@ -1134,7 +1137,7 @@ mod tests {
     fn test_get_response_handler_when_already_registered() {
         let msgbus = get_message_bus();
         let mut msgbus_ref = msgbus.borrow_mut();
-        let handler = get_stub_shareable_handler(None);
+        let handler = TypedHandler::from(|_: &DataResponseEnvelope| {});
 
         let request_id = UUID4::new();
         msgbus_ref
@@ -1149,22 +1152,23 @@ mod tests {
     fn test_get_response_handler_when_registered() {
         let msgbus = get_message_bus();
         let mut msgbus_ref = msgbus.borrow_mut();
-        let handler = get_stub_shareable_handler(None);
+        let handler = TypedHandler::from(|_: &DataResponseEnvelope| {});
 
+        let expected_id = handler.id();
         let request_id = UUID4::new();
         msgbus_ref
             .register_response_handler(&request_id, handler)
             .unwrap();
 
         let handler = msgbus_ref.get_response_handler(&request_id).unwrap();
-        assert_eq!(handler.id(), handler.id());
+        assert_eq!(handler.id(), expected_id);
     }
 
     #[rstest]
     fn test_take_response_handler_removes_registration_and_allows_reregistration() {
         let mut msgbus = MessageBus::default();
         let request_id = UUID4::new();
-        let handler = get_stub_shareable_handler(None);
+        let handler = TypedHandler::from(|_: &DataResponseEnvelope| {});
         let handler_id = handler.id();
         msgbus
             .register_response_handler(&request_id, handler)

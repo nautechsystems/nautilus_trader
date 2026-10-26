@@ -428,6 +428,132 @@ The system distinguishes between two data flows:
    - Processed through specific handlers like `on_bar()`, `on_quote()`, etc.
    - Used for ongoing event processing.
 
+### Historical request lists
+
+Each historical request selects one data type. These methods accept a scalar or a non-empty list:
+
+| Data                   | Request methods                                                      | Python argument |
+| ---------------------- | -------------------------------------------------------------------- | --------------- |
+| Instrument definitions | `request_instrument`                                                 | `instrument_id` |
+| Quotes and trades      | `request_quotes`, `request_trades`                                   | `instrument_id` |
+| Order books            | `request_book_snapshot`, `request_book_deltas`, `request_book_depth` | `instrument_id` |
+| Funding rates          | `request_funding_rates`                                              | `instrument_id` |
+| Bars                   | `request_bars`                                                       | `bar_type`      |
+
+Rust accepts vectors, arrays, and slices as well as scalar values. Python keeps the singular keyword
+for sequence inputs. Duplicate members are removed in first-occurrence order.
+
+- IDs must share a venue unless `client_id` is explicit.
+- Quote and trade requests with multiple IDs reject a record limit before dispatch.
+- Multiple-member support depends on the adapter. Book, funding-rate, and bar requests require one member.
+
+Databento supports lists for instrument definitions, quotes, and trades. Other adapter paths reject
+unsupported lists with a clear error. Custom data, venue-wide instrument requests, option-chain
+requests, and DeFi requests keep their existing inputs.
+
+Invalid routing and multi-ID record limits fail in the request call (`ValueError` in Python,
+`Err` in Rust). Unsupported lists reach `on_data_response` as a completed envelope with
+`failure_reason` set. Catalog hits can still supply partial data.
+
+### Historical completion
+
+`on_data_response(response)` runs after the typed payload hook for each envelope. The envelope keeps
+the root correlation ID, and `completed` marks the final envelope for that request.
+When present, `sub_correlation_id` identifies the child request.
+
+Requests with `params["time_range_generator"]` deliver each window's payload through the typed hook
+and `on_data_response`, with `completed=False`. On success, the final envelope has an empty payload.
+Its `params["data_count"]` reports the total count when nonzero.
+
+Check `failure_reason` at completion. Operational failures preserve data from successful work. A
+terminal envelope can have `data=None`; it then has no payload metadata and invokes no typed payload hook.
+
+Submit a request for another data type from the completion hook. Each call has its own correlation ID.
+For an actor with `instrument_ids` configured:
+
+```python
+def on_start(self):
+    self.quotes_request_id = self.request_quotes(instrument_id=self.config.instrument_ids)
+
+
+def on_data_response(self, response):
+    if response.correlation_id != self.quotes_request_id or not response.completed:
+        return
+    if response.failure_reason is not None:
+        self.log.error(response.failure_reason)
+        return
+    self.request_trades(instrument_id=self.config.instrument_ids)
+```
+
+#### Python callbacks and joins
+
+Python actors and strategies accept an optional `callback` on historical request methods.
+The callable receives the request ID as a string, matching the method's return value. It runs once
+on terminal success or failure, after the typed payload hook and `on_data_response`, with that
+request no longer pending. Intermediate envelopes do not invoke it. Callback exceptions retain their
+tracebacks in the log and do not prevent other completions.
+
+The callback does not receive the outcome; inspect or record `failure_reason` in `on_data_response`,
+which runs first. A failed request's partial data still reaches the typed payload hooks.
+Callbacks can submit follow-up requests. A successful reset or disposal, or a call to `fault()`,
+discards unfinished callbacks and joins. If one happens during a response hook, that response's
+callback is also discarded.
+
+Use `request_join(request_ids, callback=None, request_id=None)` to wait for historical requests
+already issued by the same actor or strategy:
+
+```python
+def on_start(self):
+    quotes_id = self.request_quotes(instrument_id=self.config.instrument_ids)
+    trades_id = self.request_trades(instrument_id=self.config.instrument_ids)
+    self.request_join([quotes_id, trades_id], callback=self._on_history_complete)
+
+
+def _on_history_complete(self, request_id):
+    self.log.info(f"Historical requests completed: {request_id}")
+```
+
+A join follows the completion-group rules below and returns its own string ID. It coordinates
+completion while each child retains its payload delivery; it does not merge or replay the data.
+`request_join` and `is_pending_request` accept string IDs or `UUID4` objects. A join of completed
+children can invoke its callback before `request_join` returns. Use the callback argument to identify
+it, or supply a previously stored `request_id` to recognize it in `on_data_response`.
+
+Inspect historical requests on the actor or strategy:
+
+- `is_pending_request(request_id)` checks an individual request or join.
+- `has_pending_requests()` checks whether any historical request or join is pending.
+- `pending_requests()` returns a snapshot set of their string IDs, including callback-free requests.
+
+#### Completion groups
+
+In Rust, use `request_group(request_ids, request_id)` to receive one completion event after several requests finish.
+Pass a non-empty list of distinct request IDs issued by the same actor. Completed requests and other
+groups are valid children. Empty, duplicate, or unknown child IDs return an error without creating a
+group. The supplied group ID must not match an existing request or group ID in the actor.
+
+Each child keeps its own typed payload delivery. The group emits a terminal `on_data_response` envelope
+with its own correlation ID and no payload. It waits for every child, including after a failure.
+Its `failure_reason` identifies the first failed child in the supplied order, or is absent on success.
+
+Groups notify after the active response hook returns. Groups made ready by the same child notify in
+registration order. A group whose children have already completed can notify before `request_group`
+returns. Store and supply a group UUID before the call if the hook needs to recognize that event:
+
+```rust
+use nautilus_core::UUID4;
+
+let group_id = UUID4::new();
+self.history_group = Some(group_id);
+self.request_group(vec![quotes_id, trades_id], Some(group_id))?;
+```
+
+The runner queues follow-up requests submitted from completion hooks. Hook errors are
+logged and do not prevent group completion. Request IDs and failure metadata remain available for
+grouping until actor request cleanup; payload batches are not retained for grouping. Successful reset
+or disposal, fault, and `release_subscriptions` clear this state and discard unfinished groups without
+completion events. Python `request_join` uses the same lifecycle.
+
 ### Subscription lists
 
 Actor and Strategy subscriptions accept one identifier or a non-empty collection. The matching
@@ -462,8 +588,8 @@ self.unsubscribe_quotes(instrument_id=[first_id, second_id])
 self.subscribe_trades(instrument_id=[first_id, second_id])
 ```
 
-Historical requests keep their scalar instrument or bar input. These list rules do not change custom
-data, venue-wide `subscribe_instruments(Venue)`, option-chain, or DeFi inputs.
+These subscription list rules do not change custom data, venue-wide `subscribe_instruments(Venue)`,
+option-chain, or DeFi inputs.
 
 #### Routing and validation
 
