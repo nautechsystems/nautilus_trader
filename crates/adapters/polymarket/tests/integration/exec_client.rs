@@ -3323,8 +3323,6 @@ async fn test_generate_mass_status_leaves_cached_closed_order_to_its_fills(#[cas
     );
 
     if replaced {
-        // Build the history before caching it, as a restart reloads it, so the cache indexes only
-        // the replacement venue order.
         order
             .apply(TestOrderEventStubs::submitted(&order, account_id))
             .unwrap();
@@ -3377,7 +3375,11 @@ async fn test_generate_mass_status_leaves_cached_closed_order_to_its_fills(#[cas
             cache
                 .borrow()
                 .client_order_id(&VenueOrderId::from(venue_order_id)),
-            None,
+            Some(&order.client_order_id()),
+        );
+        assert_eq!(
+            cache.borrow().venue_order_id(&order.client_order_id()),
+            Some(&VenueOrderId::from("0xreplacement")),
         );
     } else {
         cache
@@ -3751,7 +3753,17 @@ fn cache_replaced_order(
         cache
             .borrow()
             .client_order_id(&VenueOrderId::from("0xoriginal")),
-        None
+        Some(&order.client_order_id())
+    );
+    assert_eq!(
+        cache
+            .borrow()
+            .client_order_id(&VenueOrderId::from("0xreplacement")),
+        Some(&order.client_order_id())
+    );
+    assert_eq!(
+        cache.borrow().venue_order_id(&order.client_order_id()),
+        Some(&VenueOrderId::from("0xreplacement"))
     );
     order
 }

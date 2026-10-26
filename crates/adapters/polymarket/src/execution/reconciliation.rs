@@ -1800,8 +1800,7 @@ pub(crate) fn cached_order_scopes(
         let mut seen = AHashSet::new();
         let mut earlier = Vec::new();
 
-        // A reloaded cache indexes only the current venue order, not earlier legs, and an
-        // earlier ID backs a fill only when that fill is already on the order
+        // An earlier venue order ID backs a fill only when that fill is already on the order
         for event in order.events() {
             let Some(venue_order_id) = event.venue_order_id() else {
                 continue;

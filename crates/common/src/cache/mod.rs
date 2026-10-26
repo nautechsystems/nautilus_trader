@@ -690,9 +690,33 @@ impl Cache {
         Ok(())
     }
 
-    /// Clears the current cache index and re-build.
+    /// Rebuilds entity-derived indexes from cached accounts, orders, and positions.
+    ///
+    /// Retains venue-order-ID aliases, order-position and order-client mappings, and local
+    /// pending-cancel state only for cached orders. Rebuilding can update mappings from order
+    /// state. Position OMS entries are rebuilt from the general cache.
+    /// Reverse venue-order-ID lookups include historical IDs; forward lookups use the current ID.
+    /// To discard independently maintained index state, call [`Self::clear_index`] before
+    /// reloading entities.
     pub fn build_index(&mut self) {
         log::debug!("Building index");
+
+        self.index.clear_entities();
+        self.index
+            .venue_order_ids
+            .retain(|_, client_order_id| self.orders.contains_key(client_order_id));
+        self.index
+            .client_order_ids
+            .retain(|client_order_id, _| self.orders.contains_key(client_order_id));
+        self.index
+            .order_position
+            .retain(|client_order_id, _| self.orders.contains_key(client_order_id));
+        self.index
+            .order_client
+            .retain(|client_order_id, _| self.orders.contains_key(client_order_id));
+        self.index
+            .orders_pending_cancel
+            .retain(|client_order_id| self.orders.contains_key(client_order_id));
 
         // Index accounts
         for account_id in self.accounts.keys() {
@@ -715,10 +739,13 @@ impl Cache {
 
             // 2: Build index.venue_order_ids -> {VenueOrderId, ClientOrderId}
             //    and index.client_order_ids -> {ClientOrderId, VenueOrderId}
-            if let Some(venue_order_id) = order.venue_order_id() {
+            for venue_order_id in order.venue_order_ids() {
                 self.index
                     .venue_order_ids
-                    .insert(venue_order_id, *client_order_id);
+                    .insert(*venue_order_id, *client_order_id);
+            }
+
+            if let Some(venue_order_id) = order.venue_order_id() {
                 self.index
                     .client_order_ids
                     .insert(*client_order_id, venue_order_id);

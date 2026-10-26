@@ -100,16 +100,21 @@ impl Default for CacheIndex {
 impl CacheIndex {
     /// Clears the index which will clear/reset all internal state.
     pub(super) fn clear(&mut self) {
-        self.venue_accounts.clear();
-        self.venue_orders.clear();
-        self.venue_positions.clear();
+        self.clear_entities();
         self.venue_order_ids.clear();
         self.client_order_ids.clear();
         self.order_position.clear();
-        self.order_strategy.clear();
         self.order_client.clear();
-        self.position_strategy.clear();
         self.position_oms.clear();
+        self.orders_pending_cancel.clear();
+    }
+
+    pub(super) fn clear_entities(&mut self) {
+        self.venue_accounts.clear();
+        self.venue_orders.clear();
+        self.venue_positions.clear();
+        self.order_strategy.clear();
+        self.position_strategy.clear();
         self.position_orders.clear();
         self.instrument_orders.clear();
         self.instrument_positions.clear();
@@ -125,7 +130,6 @@ impl CacheIndex {
         self.orders_closed.clear();
         self.orders_emulated.clear();
         self.orders_inflight.clear();
-        self.orders_pending_cancel.clear();
         self.positions.clear();
         self.positions_open.clear();
         self.positions_closed.clear();
