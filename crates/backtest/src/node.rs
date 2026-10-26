@@ -32,7 +32,6 @@ use nautilus_persistence::{
         factory as catalog_factory,
         traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalog},
     },
-    config::DataCatalogConfig,
 };
 
 use crate::{
@@ -636,17 +635,7 @@ fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
 }
 
 fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalog> {
-    let catalog_config = DataCatalogConfig::new(
-        config.catalog_path().to_string(),
-        config.catalog_fs_protocol().map(str::to_string),
-        Some(config.catalog_backend()),
-    )
-    .with_storage_options(
-        config
-            .catalog_fs_rust_storage_options()
-            .cloned()
-            .or_else(|| config.catalog_fs_storage_options().cloned()),
-    );
+    let catalog_config = config.catalog();
     catalog_factory::create_catalog(
         catalog_config.catalog_backend(),
         &catalog_config.connect_config(),

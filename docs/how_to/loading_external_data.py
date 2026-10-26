@@ -27,6 +27,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
@@ -143,7 +144,7 @@ venue_configs = [
 
 data_configs = [
     BacktestDataConfig(
-        catalog_path=str(CATALOG_PATH),
+        catalog=DataCatalogConfig(path=str(CATALOG_PATH)),
         data_type=NautilusDataType.QuoteTick,
         instrument_id=instrument.id,
         start_time=start,

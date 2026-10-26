@@ -33,6 +33,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.execution import FeeModel
 from nautilus_trader.execution import FillModel
 from nautilus_trader.execution import LatencyModel
@@ -226,7 +227,7 @@ def margin_account_factory(request: pytest.FixtureRequest, tmp_path: Path) -> Ca
                 ],
                 data=[
                     BacktestDataConfig(
-                        catalog_path=str(tmp_path),
+                        catalog=DataCatalogConfig(path=str(tmp_path)),
                         data_type=NautilusDataType.QuoteTick,
                         instrument_id=instrument.id,
                     ),

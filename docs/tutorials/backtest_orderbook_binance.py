@@ -91,6 +91,7 @@ from nautilus_trader.config import (
     BacktestEngineConfig,
     BacktestRunConfig,
     BacktestVenueConfig,
+    DataCatalogConfig,
     ImportableStrategyConfig,
     LoggerConfig,
 )
@@ -222,7 +223,7 @@ book_type = BookType.L2_MBP
 
 data_configs = [
     BacktestDataConfig(
-        catalog_path=str(CATALOG_PATH),
+        catalog=DataCatalogConfig(path=str(CATALOG_PATH)),
         data_type=NautilusDataType.OrderBookDelta,
         instrument_id=instrument.id,
     ),

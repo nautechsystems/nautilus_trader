@@ -51,7 +51,9 @@ use nautilus_model::{
     instruments::{CryptoOption, Instrument, InstrumentAny},
     types::{Currency, Money, Price, Quantity},
 };
-use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+use nautilus_persistence::{
+    backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
+};
 use nautilus_trading::{StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
 use tempfile::TempDir;
@@ -308,13 +310,13 @@ fn run_chain_backtest(
     let instrument_ids = vec![call_id, put_id];
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.to_string())
+        .catalog(DataCatalogConfig::new(catalog_path.to_string(), None, None))
         .instrument_ids(instrument_ids.clone())
         .build()
         .unwrap();
     let greeks_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OptionGreeks)
-        .catalog_path(catalog_path.to_string())
+        .catalog(DataCatalogConfig::new(catalog_path.to_string(), None, None))
         .instrument_ids(instrument_ids)
         .build()
         .unwrap();

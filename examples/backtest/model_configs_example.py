@@ -24,6 +24,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.config import LoggerConfig
 from nautilus_trader.execution import FixedFeeModel
 from nautilus_trader.execution import MakerTakerFeeModel
@@ -124,7 +125,7 @@ if __name__ == "__main__":
     # Create data config (this is just a placeholder - you would need actual data)
     data_config = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="./data",
+        catalog=DataCatalogConfig(path="./data"),
         instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
     )
 

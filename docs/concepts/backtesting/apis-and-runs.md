@@ -107,11 +107,12 @@ Build the node before adding strategies through its run-specific methods:
 ```python
 from decimal import Decimal
 
+from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
-from nautilus_trader.backtest import BacktestNode
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
@@ -131,7 +132,7 @@ venue = BacktestVenueConfig(
 )
 data = BacktestDataConfig(
     data_type=NautilusDataType.QuoteTick,
-    catalog_path="/data/catalog",
+    catalog=DataCatalogConfig(path="/data/catalog"),
     instrument_id=instrument_id,
 )
 config = BacktestRunConfig(
@@ -186,7 +187,7 @@ Set `batch_deltas=False` to replay each delta individually:
 ```python
 data = BacktestDataConfig(
     data_type=NautilusDataType.OrderBookDelta,
-    catalog_path="/data/catalog",
+    catalog=DataCatalogConfig(path="/data/catalog"),
     instrument_id=instrument_id,
     batch_deltas=False,
 )

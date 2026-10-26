@@ -46,6 +46,7 @@ Released on TBD (UTC).
 - Removed `instrument_expiration` and `has_unprocessed_instrument_expiration` (#5407), thanks @mahimn01
 - Removed Hyperliquid `Secrets::from_file` and `from_json`; use `from_private_key` or `from_env`
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
+- Replaced flat `BacktestDataConfig` catalog fields with `catalog: DataCatalogConfig`
 - Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
 - Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
 - Changed buffered `HttpClient` bodies to decode gzip; remove manual decoding or use `get_stream` for raw bytes

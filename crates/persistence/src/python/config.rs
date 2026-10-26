@@ -500,7 +500,7 @@ impl StreamingConfig {
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 #[pyo3::pymethods]
 impl DataCatalogConfig {
-    /// Configuration for a catalog available to request-time historical data loading.
+    /// Configuration for catalog connection and storage settings.
     #[new]
     #[expect(
         clippy::too_many_arguments,
