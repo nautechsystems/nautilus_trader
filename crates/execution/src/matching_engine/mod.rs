@@ -1355,15 +1355,15 @@ impl OrderMatchingEngine {
     }
 
     fn resolve_pending_on_trade(&mut self, trade_price_raw: PriceRaw) {
-        let mut keys = Self::take_cleared(&mut self.queue_id_scratch);
-        keys.extend(self.queue_pending.keys().copied());
+        let mut pending = Self::take_cleared(&mut self.queue_pending_scratch);
+        pending.extend(
+            self.queue_pending
+                .iter()
+                .map(|(&client_order_id, &price_raw)| (client_order_id, price_raw)),
+        );
         let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
 
-        for client_order_id in keys.iter().copied() {
-            let Some(&order_price_raw) = self.queue_pending.get(&client_order_id) else {
-                continue;
-            };
-
+        for (client_order_id, order_price_raw) in pending.iter().copied() {
             let cache = self.cache.borrow();
 
             let order_side = cache.order(&client_order_id).and_then(|order| {
@@ -1398,7 +1398,7 @@ impl OrderMatchingEngine {
             self.remove_queue_position(id);
         }
 
-        self.queue_id_scratch = keys;
+        self.queue_pending_scratch = pending;
         self.queue_stale_scratch = stale;
     }
 
@@ -5989,7 +5989,6 @@ impl OrderMatchingEngine {
                     fill.position_id
                         .filter(|id| cache.position(id).is_some())
                 })
-                .or_else(|| cache.position_id(&fill.client_order_id).copied())
                 .or_else(|| {
                     let cache = cash_cache?;
                     let order = cache.order(&fill.client_order_id)?;

@@ -88,6 +88,8 @@ const DATA_STREAM_COUNT: usize = 4;
 const DATA_ROUTE_COUNT: usize = 1_000;
 const ORDER_SWEEP_QUOTE_COUNT: usize = 1_000;
 const ORDER_TYPE_SWEEP_ORDERS: usize = 9;
+// Clear the fixture's minimum notional at the lowest passive limit price
+const LIMIT_ORDER_SIZE: &str = "0.012";
 const BASE_TS_NS: u64 = 1_735_689_600_000_000_000;
 const QUOTE_INTERVAL_NS: u64 = 1_000_000;
 const TRADE_OFFSET_NS: u64 = 500_000;
@@ -1172,7 +1174,7 @@ impl PassiveLimitOrders {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from(LIMIT_ORDER_SIZE),
             max_orders,
             quote_count: 0,
             orders_submitted: 0,
@@ -1257,7 +1259,7 @@ impl GtdLimitExpiry {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from(LIMIT_ORDER_SIZE),
             max_orders,
             quote_count: 0,
             orders_submitted: 0,
@@ -1336,7 +1338,7 @@ impl OrderTypeSweep {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from(LIMIT_ORDER_SIZE),
             submitted: false,
         }
     }

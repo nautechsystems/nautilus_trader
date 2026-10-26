@@ -368,7 +368,12 @@ impl OrderMatchingCore {
     /// Matches bid-side orders: limits best (highest) first, then stops
     /// nearest-trigger (lowest) first. FIFO within each price level.
     pub fn iterate_bids(&self) -> Vec<MatchAction> {
-        self.iter_bid_book_orders()
+        self.bid_limits
+            .iter()
+            .rev()
+            .take_while(|(price, _)| self.is_limit_fillable(OrderSide::Buy, **price))
+            .flat_map(|(_, bucket)| bucket)
+            .chain(self.bid_stops.values().flatten())
             .filter_map(|order| self.match_order(order))
             .collect()
     }
@@ -376,7 +381,11 @@ impl OrderMatchingCore {
     /// Matches ask-side orders: limits best (lowest) first, then stops
     /// nearest-trigger (highest) first. FIFO within each price level.
     pub fn iterate_asks(&self) -> Vec<MatchAction> {
-        self.iter_ask_book_orders()
+        self.ask_limits
+            .iter()
+            .take_while(|(price, _)| self.is_limit_fillable(OrderSide::Sell, **price))
+            .flat_map(|(_, bucket)| bucket)
+            .chain(self.ask_stops.values().rev().flatten())
             .filter_map(|order| self.match_order(order))
             .collect()
     }
@@ -457,6 +466,7 @@ impl OrderMatchingCore {
     /// (BUY >= bid, SELL <= ask), requiring both sides initialized.
     #[must_use]
     pub fn is_limit_fillable(&self, side: OrderSide, price: Price) -> bool {
+        // Limit traversal relies on fillability being monotonic in price
         if self.is_limit_matched(side, price) {
             return true;
         }
@@ -515,20 +525,15 @@ impl OrderMatchingCore {
         self.bid_limits
             .values()
             .rev()
-            .flat_map(|bucket| bucket.iter())
-            .chain(self.bid_stops.values().flat_map(|bucket| bucket.iter()))
+            .flatten()
+            .chain(self.bid_stops.values().flatten())
     }
 
     fn iter_ask_book_orders(&self) -> impl Iterator<Item = &RestingOrder> {
         self.ask_limits
             .values()
-            .flat_map(|bucket| bucket.iter())
-            .chain(
-                self.ask_stops
-                    .values()
-                    .rev()
-                    .flat_map(|bucket| bucket.iter()),
-            )
+            .flatten()
+            .chain(self.ask_stops.values().rev().flatten())
     }
 
     fn locate(order: &RestingOrder) -> Option<(BookKind, Price)> {
@@ -540,13 +545,8 @@ impl OrderMatchingCore {
     }
 
     fn match_limit_order(&self, order: &RestingOrder) -> Option<MatchAction> {
-        if let Some(limit_price) = order.limit_price
-            && self.is_limit_fillable(order.order_side, limit_price)
-        {
-            Some(MatchAction::FillLimit(order.client_order_id))
-        } else {
-            None
-        }
+        self.is_limit_fillable(order.order_side, order.limit_price?)
+            .then_some(MatchAction::FillLimit(order.client_order_id))
     }
 
     fn match_stop_order(&self, order: &RestingOrder) -> Option<MatchAction> {
@@ -1215,41 +1215,40 @@ mod tests {
     }
 
     #[rstest]
-    fn test_iterate_returns_mixed_actions_for_limits_and_stops() {
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let mut matching_core = create_matching_core(instrument_id, Price::from("0.01"));
-        matching_core.set_bid_raw(Price::from("99.00"));
-        matching_core.set_ask_raw(Price::from("101.00"));
+    #[case(false, "101.00", "99.00")]
+    #[case(true, "99.00", "101.00")]
+    fn test_iterate_returns_mixed_actions_for_limits_and_stops(
+        #[case] fill_inside: bool,
+        #[case] buy_price: &str,
+        #[case] sell_price: &str,
+    ) {
+        let mut core = create_matching_core(InstrumentId::from("AAPL.XNAS"), Price::from("0.01"));
+        core.set_bid_raw(Price::from("99.00"));
+        core.set_ask_raw(Price::from("101.00"));
+        core.set_fill_limit_inside_spread(fill_inside);
 
-        let buy_limit = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(instrument_id)
-            .side(OrderSide::Buy)
-            .price(Price::from("101.00"))
-            .quantity(Quantity::from("100"))
-            .client_order_id(ClientOrderId::from("O-BUY-LIMIT"))
-            .build();
-        let buy_limit_id = buy_limit.client_order_id();
-        matching_core.add_order(RestingOrder::from(
-            &PassiveOrderAny::try_from(buy_limit).unwrap(),
-        ));
+        core.add_order(limit_order(OrderSide::Buy, "102.00", "O-BUY-BEST"));
+        core.add_order(limit_order(OrderSide::Buy, buy_price, "O-BUY-LIMIT"));
+        core.add_order(limit_order(OrderSide::Buy, "98.00", "O-BUY-MISS"));
+        core.add_order(stop_order(OrderSide::Buy, "101.00", "O-BUY-STOP"));
+        core.add_order(limit_order(OrderSide::Sell, "98.00", "O-SELL-BEST"));
+        core.add_order(limit_order(OrderSide::Sell, sell_price, "O-SELL-LIMIT"));
+        core.add_order(limit_order(OrderSide::Sell, "102.00", "O-SELL-MISS"));
+        core.add_order(stop_order(OrderSide::Sell, "99.00", "O-SELL-STOP"));
 
-        let sell_stop = OrderTestBuilder::new(OrderType::StopMarket)
-            .instrument_id(instrument_id)
-            .side(OrderSide::Sell)
-            .trigger_price(Price::from("99.00"))
-            .quantity(Quantity::from("50"))
-            .client_order_id(ClientOrderId::from("O-SELL-STOP"))
-            .build();
-        let sell_stop_id = sell_stop.client_order_id();
-        matching_core.add_order(RestingOrder::from(
-            &PassiveOrderAny::try_from(sell_stop).unwrap(),
-        ));
+        let actions = core.iterate();
 
-        let actions = matching_core.iterate();
-
-        assert_eq!(actions.len(), 2);
-        assert_eq!(actions[0], MatchAction::FillLimit(buy_limit_id));
-        assert_eq!(actions[1], MatchAction::TriggerStop(sell_stop_id));
+        assert_eq!(
+            actions,
+            vec![
+                MatchAction::FillLimit(ClientOrderId::from("O-BUY-BEST")),
+                MatchAction::FillLimit(ClientOrderId::from("O-BUY-LIMIT")),
+                MatchAction::TriggerStop(ClientOrderId::from("O-BUY-STOP")),
+                MatchAction::FillLimit(ClientOrderId::from("O-SELL-BEST")),
+                MatchAction::FillLimit(ClientOrderId::from("O-SELL-LIMIT")),
+                MatchAction::TriggerStop(ClientOrderId::from("O-SELL-STOP")),
+            ],
+        );
     }
 
     #[rstest]

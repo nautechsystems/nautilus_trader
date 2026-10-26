@@ -120,11 +120,7 @@ fn bench_market_data(c: &mut Criterion) {
             run_iterations(
                 iters,
                 || build_engine(BookType::L1_MBP),
-                |state| {
-                    for quote in &quotes {
-                        state.engine.process_quote_tick(black_box(quote));
-                    }
-                },
+                |state| process_quotes(state, &quotes),
                 |state| {
                     assert_eq!(
                         state.engine.get_book().update_count,
@@ -145,11 +141,7 @@ fn bench_market_data(c: &mut Criterion) {
             run_iterations(
                 iters,
                 || build_engine(BookType::L1_MBP),
-                |state| {
-                    for trade in &trades {
-                        state.engine.process_trade_tick(black_box(trade));
-                    }
-                },
+                |state| process_trades(state, &trades),
                 |state| {
                     assert_eq!(
                         state.engine.get_book().update_count,
@@ -226,11 +218,7 @@ fn bench_queue_position(c: &mut Criterion) {
                 run_iterations(
                     iters,
                     || build_queue_engine(BookType::L2_MBP, &orders, Some(&bid), None),
-                    |state| {
-                        for trade in &trades {
-                            state.engine.process_trade_tick(black_box(trade));
-                        }
-                    },
+                    |state| process_trades(state, &trades),
                     |state| {
                         assert_events(state, EventCounts::default());
                         assert_order_status(state, OrderStatus::Accepted, order_count);
@@ -305,11 +293,7 @@ fn bench_queue_position(c: &mut Criterion) {
                         );
                         build_queue_engine(BookType::L1_MBP, &orders, None, Some(&quote))
                     },
-                    |state| {
-                        for quote in &quotes {
-                            state.engine.process_quote_tick(black_box(quote));
-                        }
-                    },
+                    |state| process_quotes(state, &quotes),
                     |state| {
                         assert_eq!(
                             state.engine.get_book().update_count,
@@ -317,6 +301,34 @@ fn bench_queue_position(c: &mut Criterion) {
                         );
                         assert_events(state, EventCounts::default());
                         assert_order_status(state, OrderStatus::Accepted, order_count);
+                    },
+                )
+            });
+        });
+
+        // Trades away from pending L1 prices expose deferred queue scan cost
+        group.bench_function(BenchmarkId::new("trade_l1_pending", order_count), |b| {
+            b.iter_custom(|iters| {
+                run_iterations(
+                    iters,
+                    || {
+                        let quote = quote(
+                            instrument_id,
+                            Price::from("1490.00"),
+                            Price::from("1500.00"),
+                            0,
+                        );
+                        build_queue_engine(BookType::L1_MBP, &orders, None, Some(&quote))
+                    },
+                    |state| process_trades(state, &trades),
+                    |state| {
+                        assert_eq!(
+                            state.engine.get_book().update_count,
+                            (MARKET_DATA_COUNT + 1) as u64,
+                        );
+                        assert_events(state, EventCounts::default());
+                        assert_order_status(state, OrderStatus::Accepted, order_count);
+                        assert_eq!(state.engine.get_open_orders().len(), order_count);
                     },
                 )
             });
@@ -391,11 +403,7 @@ fn bench_liquidity_consumption(c: &mut Criterion) {
                 run_iterations(
                     iters,
                     || build_liquidity_engine(level_count, MARKET_DATA_COUNT),
-                    |state| {
-                        for trade in &trades {
-                            state.engine.process_trade_tick(black_box(trade));
-                        }
-                    },
+                    |state| process_trades(state, &trades),
                     |state| {
                         assert_eq!(state.engine.get_core().last, Some(worst_price));
                         assert_events(state, EventCounts::default());
@@ -855,6 +863,18 @@ fn process_deltas(state: &mut BenchEngine, deltas: &[OrderBookDelta]) {
             .engine
             .process_order_book_delta(black_box(delta))
             .expect("L2 delta should be processed");
+    }
+}
+
+fn process_quotes(state: &mut BenchEngine, quotes: &[QuoteTick]) {
+    for quote in quotes {
+        state.engine.process_quote_tick(black_box(quote));
+    }
+}
+
+fn process_trades(state: &mut BenchEngine, trades: &[TradeTick]) {
+    for trade in trades {
+        state.engine.process_trade_tick(black_box(trade));
     }
 }
 
