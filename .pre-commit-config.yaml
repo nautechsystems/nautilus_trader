@@ -386,6 +386,18 @@ repos:
         types: [file]
         pass_filenames: false
 
+      - id: check-clippy-allowances
+        name: check generated Clippy allowances
+        entry: python3 -B scripts/update-clippy-allowances.py --check
+        language: system
+        files: >-
+          (?x)^(
+            Cargo\.toml|.*\.rs|
+            scripts/(update-clippy-allowances\.py|ci/test_clippy_allowances\.py)|
+            \.pre-commit-config\.yaml
+          )$
+        pass_filenames: false
+
       - id: cargo-clippy-network-turmoil-non-linux
         name: cargo clippy network turmoil (non-Linux)
         description: Run the network Turmoil Clippy check on non-Linux hosts

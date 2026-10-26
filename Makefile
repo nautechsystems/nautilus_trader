@@ -542,12 +542,20 @@ clippy-strict-audit: check-cargo-cooldown  #-- Report candidate strict Clippy li
 		--profile "$(CARGO_CI_PROFILE)"
 
 .PHONY: clippy-pedantic-crate-%
-clippy-pedantic-crate-%: check-cargo-cooldown  #-- Audit pedantic and panic-prone lints for one crate (usage: make clippy-pedantic-crate-<crate_name>)
+clippy-pedantic-crate-%: check-cargo-cooldown check-clippy-allowances  #-- Audit pedantic and panic-prone lints for one crate (usage: make clippy-pedantic-crate-<crate_name>)
+	@allowances="$$(python3 -B scripts/update-clippy-allowances.py --flags)" && \
 	cargo clippy --locked --all-targets --all-features -p $* -- -D warnings \
 		-W clippy::pedantic \
 		-W clippy::todo \
 		-W clippy::unwrap_used \
-		-W clippy::expect_used
+		-W clippy::expect_used $$allowances
+
+.PHONY: check-clippy-allowances
+check-clippy-allowances:  #-- Check generated workspace allowances after source pedantic opt-ins
+	python3 -B scripts/update-clippy-allowances.py --check
+
+check-code check-code-standard-precision check-code-sim check-all-targets \
+	clippy clippy-fix clippy-fix-nightly clippy-strict-audit: check-clippy-allowances
 
 .PHONY: hawk
 hawk: check-cargo-cooldown check-hawk-installed  #-- Find unnecessary Rust public surface and restricted visibility
@@ -918,6 +926,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/test-check-cargo-cooldown.bash
 	$Q bash scripts/test-cargo-ci-benches.bash
 	$Q bash scripts/test-clippy-strict-audit.bash
+	$Q python3 -B scripts/ci/test_clippy_allowances.py
 	$Q bash scripts/test-update-cargo-dependencies.bash
 	$Q python3 -B scripts/ci/test_check_commit_message.py
 	$Q python3 -B scripts/ci/test_check_test_network.py

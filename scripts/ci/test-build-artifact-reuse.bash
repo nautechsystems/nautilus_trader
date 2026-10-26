@@ -17,6 +17,7 @@ RUST_CHECK_LOG="$CASE_ROOT/rust-check.log"
 TARGET_DIR="$CASE_ROOT/target"
 SOURCE_DIR="$CASE_ROOT/source"
 MAKE_BIN=$(command -v make)
+GIT_BIN=$(command -v git)
 
 mkdir -p "$MOCK_BIN" "$SOURCE_DIR"
 : > "$SOURCE_DIR/input.rs"
@@ -210,6 +211,10 @@ printf '%s\n' \
   '' \
   'set -euo pipefail' \
   '' \
+  'if [ "${1:-}" = "ls-files" ]; then' \
+  '  exec "${GIT_BIN:?}" "$@"' \
+  'fi' \
+  '' \
   'if [ "${1:-}" = "diff" ]; then' \
   '  if [ -n "${GIT_CHANGED_FILES:-}" ]; then' \
   '    printf "%s\n" "$GIT_CHANGED_FILES"' \
@@ -230,6 +235,7 @@ run_changed_script() {
   PATH="$MOCK_BIN:$PATH" \
     CARGO_CI_PROFILE=nextest \
     CARGO_LOG="$CARGO_LOG" \
+    GIT_BIN="$GIT_BIN" \
     GIT_CHANGED_FILES="$changed_files" \
     CHANGED_BASE_SHA='' \
     bash "$REPO_ROOT/scripts/$script" > "$RUST_CHECK_LOG"
@@ -278,6 +284,8 @@ real_git_repo() {
   git -C "$repo" config commit.gpgsign false
   cp "$REPO_ROOT/scripts/cargo-features.bash" "$repo/scripts/"
   cp "$REPO_ROOT/scripts/clippy-changed.sh" "$REPO_ROOT/scripts/doc-changed.sh" "$repo/scripts/"
+  cp "$REPO_ROOT/scripts/update-clippy-allowances.py" "$repo/scripts/"
+  cp "$REPO_ROOT/Cargo.toml" "$repo/"
   printf '%s\n' 'pub fn run() {}' > "$repo/crates/core/src/lib.rs"
   git -C "$repo" add -A
   git -C "$repo" commit -qm "Base state"

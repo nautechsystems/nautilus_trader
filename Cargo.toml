@@ -706,7 +706,8 @@ if_let_mutex = "warn"
 # assertions_on_result_states = "warn"
 # map_err_ignore = "warn"
 
-# Explicitly allowed (opinionated lints we disagree with)
+# Shared allowances, also generated after source pedantic opt-ins by
+# scripts/update-clippy-allowances.py because attributes override Cargo flags.
 redundant_else = "allow" # Sometimes explicit else blocks improve readability
 single_match_else = "allow" # Match can be clearer than if-let-else for some patterns
 manual_let_else = "allow" # Match can be clearer than let-else for some patterns

@@ -186,6 +186,7 @@ jobs:
         uses: actions-rust-lang/setup-rust-toolchain@ecabd13d1c56bd1345c230e542e9144811ad706f # v2.0.0
         with:
           toolchain: ${{ env.TOOLCHAIN }}
+          components: clippy
           cache: false
           override: true
           rustflags: -D warnings
