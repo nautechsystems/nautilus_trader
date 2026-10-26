@@ -300,7 +300,7 @@ and prioritize ongoing maintenance.
 | ------------------------------ | --------- | ----------------------------------------------------------------------- |
 | Request instrument (REST)      | ✓         | `public/get_instrument`; loads one instrument into the local cache.     |
 | Request all instruments (REST) | ✓         | Paginated `public/get_all_instruments` for each currency.               |
-| Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.              |
+| Instrument subscription        | -         | *Not supported.* Configure `currencies` for periodic REST refresh.      |
 | Order book deltas (L2_MBP)     | ✓         | Channel: `orderbook.{instrument}.{group}.{depth}`.                      |
 | Order book depth (L2_MBP)      | ✓         | Same order book channel with `depth=10`.                                |
 | Order book at interval         | -         | *Not supported.* Maintain interval books from deltas locally.           |
@@ -1210,11 +1210,15 @@ Class/struct: `DeriveDataClientConfig`.
 | `ws_timeout_secs`                  | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
 | `book_snapshot_timeout_secs`       | `10`      | Snapshot wait in seconds; `0` disables deadlines.                                           |
 | `book_stale_threshold_secs`        | `120`     | Seconds without an advancing snapshot before recovery; `0` disables this timer.             |
-| `update_instruments_interval_mins` | `60`      | Interval in minutes between instrument refreshes.                                           |
+| `update_instruments_interval_mins` | `60`      | Instrument refresh interval in minutes; `0` disables periodic refresh.                      |
 | `currencies`                       | `[]`      | Currencies to bulk-load on connect. Empty means lazy-load on demand.                        |
 | `include_expired`                  | `false`   | Merge live and expired option listings from `public/get_all_instruments`.                   |
 | `auto_load_missing_instruments`    | `true`    | Lazy-load an unknown instrument before sending a subscribe request.                         |
 | `transport_backend`                | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                   |
+
+The data client refreshes instrument definitions for configured currencies after each refresh interval
+and publishes them, including new listings. A failed refresh leaves cached definitions available and
+retries at the next interval. Empty `currencies` disables periodic refresh.
 
 :::important
 **`auto_load_missing_instruments` covers subscribe commands only.** Before requesting quotes,

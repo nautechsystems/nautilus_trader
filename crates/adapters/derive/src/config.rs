@@ -67,7 +67,8 @@ pub struct DeriveDataClientConfig {
     /// Empty snapshots count as updates; a zero value disables stale book recovery.
     #[builder(default = 120)]
     pub book_stale_threshold_secs: u64,
-    /// Interval for refreshing instruments in minutes.
+    /// Interval in minutes for refreshing instruments of configured currencies.
+    /// A zero value disables periodic refresh.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
     /// Underlying currencies to load on connect. Empty means lazy-load by

@@ -169,6 +169,7 @@ Released on TBD (UTC).
 - Fixed Databento live trades duplicated across different record types (#5367), thanks @chaneyka1
 - Fixed Deribit depth subscriptions emitting deltas and disrupting raw order books
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
+- Fixed Derive data clients ignoring the configured instrument refresh interval
 - Fixed Derive public trades with unrecognized liquidity roles reporting a known aggressor side
 - Fixed Derive submitting quote-denominated order quantities as base units
 - Fixed Derive iceberg display quantities being silently discarded during order submission
