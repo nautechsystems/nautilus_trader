@@ -1250,7 +1250,9 @@ impl<'a> CacheApi<'a> {
         self.cache().price(instrument_id, price_type)
     }
 
-    /// Returns all quotes for the `instrument_id` (if found).
+    /// Returns cached quotes for the `instrument_id`, most recently added first.
+    ///
+    /// See [`Cache::quotes`] for ordering and missing-data behavior.
     ///
     /// # Panics
     ///
@@ -1260,7 +1262,9 @@ impl<'a> CacheApi<'a> {
         self.cache().quotes(instrument_id)
     }
 
-    /// Returns all trades for the `instrument_id` (if found).
+    /// Returns cached trades for the `instrument_id`, most recently added first.
+    ///
+    /// See [`Cache::trades`] for ordering and missing-data behavior.
     ///
     /// # Panics
     ///
@@ -1270,7 +1274,9 @@ impl<'a> CacheApi<'a> {
         self.cache().trades(instrument_id)
     }
 
-    /// Returns all mark price updates for the `instrument_id` (if found).
+    /// Returns cached mark price updates for the `instrument_id`, most recently added first.
+    ///
+    /// See [`Cache::mark_prices`] for ordering and missing-data behavior.
     ///
     /// # Panics
     ///
@@ -1280,7 +1286,9 @@ impl<'a> CacheApi<'a> {
         self.cache().mark_prices(instrument_id)
     }
 
-    /// Returns all index price updates for the `instrument_id` (if found).
+    /// Returns cached index price updates for the `instrument_id`, most recently added first.
+    ///
+    /// See [`Cache::index_prices`] for ordering and missing-data behavior.
     ///
     /// # Panics
     ///
@@ -1290,7 +1298,9 @@ impl<'a> CacheApi<'a> {
         self.cache().index_prices(instrument_id)
     }
 
-    /// Returns all funding rate updates for the `instrument_id` (if found).
+    /// Returns cached funding rate updates for the `instrument_id`, most recently added first.
+    ///
+    /// See [`Cache::funding_rates`] for ordering and missing-data behavior.
     ///
     /// # Panics
     ///
@@ -1300,7 +1310,9 @@ impl<'a> CacheApi<'a> {
         self.cache().funding_rates(instrument_id)
     }
 
-    /// Returns all instrument status updates for the `instrument_id` (if found).
+    /// Returns cached instrument status updates for the `instrument_id`, most recently added first.
+    ///
+    /// See [`Cache::instrument_statuses`] for ordering and missing-data behavior.
     ///
     /// # Panics
     ///
@@ -1313,7 +1325,9 @@ impl<'a> CacheApi<'a> {
         self.cache().instrument_statuses(instrument_id)
     }
 
-    /// Returns all bars for the `bar_type` (if found).
+    /// Returns cached bars for the `bar_type`, newest `ts_event` first.
+    ///
+    /// See [`Cache::bars`] for ordering and missing-data behavior.
     ///
     /// # Panics
     ///
@@ -1324,6 +1338,8 @@ impl<'a> CacheApi<'a> {
     }
 
     /// Returns an owned copy of the order book for the `instrument_id` (if found).
+    ///
+    /// See [`Cache::order_book`] for the current-state contract.
     ///
     /// # Panics
     ///
@@ -1375,7 +1391,7 @@ impl<'a> CacheApi<'a> {
             .cloned()
     }
 
-    /// Returns the latest quote for the `instrument_id` (if found).
+    /// Returns the most recently added quote for the `instrument_id` (if found).
     ///
     /// # Panics
     ///
@@ -1387,7 +1403,8 @@ impl<'a> CacheApi<'a> {
 
     /// Returns the quote at `index` for the `instrument_id` (if found).
     ///
-    /// Index 0 is the most recent.
+    /// Index 0 is the most recently added quote. See [`Cache::quote_at_index`] for ordering
+    /// and out-of-range behavior.
     ///
     /// # Panics
     ///
@@ -1397,7 +1414,7 @@ impl<'a> CacheApi<'a> {
         self.cache().quote_at_index(instrument_id, index).copied()
     }
 
-    /// Returns the latest trade for the `instrument_id` (if found).
+    /// Returns the most recently added trade for the `instrument_id` (if found).
     ///
     /// # Panics
     ///
@@ -1409,7 +1426,8 @@ impl<'a> CacheApi<'a> {
 
     /// Returns the trade at `index` for the `instrument_id` (if found).
     ///
-    /// Index 0 is the most recent.
+    /// Index 0 is the most recently added trade. See [`Cache::trade_at_index`] for ordering
+    /// and out-of-range behavior.
     ///
     /// # Panics
     ///
@@ -1419,7 +1437,7 @@ impl<'a> CacheApi<'a> {
         self.cache().trade_at_index(instrument_id, index).copied()
     }
 
-    /// Returns the latest mark price update for the `instrument_id` (if found).
+    /// Returns the most recently added mark price update for the `instrument_id` (if found).
     ///
     /// # Panics
     ///
@@ -1429,7 +1447,7 @@ impl<'a> CacheApi<'a> {
         self.cache().mark_price(instrument_id).copied()
     }
 
-    /// Returns the latest index price update for the `instrument_id` (if found).
+    /// Returns the most recently added index price update for the `instrument_id` (if found).
     ///
     /// # Panics
     ///
@@ -1439,7 +1457,7 @@ impl<'a> CacheApi<'a> {
         self.cache().index_price(instrument_id).copied()
     }
 
-    /// Returns the latest funding rate update for the `instrument_id` (if found).
+    /// Returns the most recently added funding rate update for the `instrument_id` (if found).
     ///
     /// # Panics
     ///
@@ -1449,7 +1467,7 @@ impl<'a> CacheApi<'a> {
         self.cache().funding_rate(instrument_id).copied()
     }
 
-    /// Returns the latest instrument status update for the `instrument_id` (if found).
+    /// Returns the most recently added instrument status update for the `instrument_id` (if found).
     ///
     /// # Panics
     ///
@@ -1461,6 +1479,8 @@ impl<'a> CacheApi<'a> {
 
     /// Returns the cached close for the `instrument_id` (if found).
     ///
+    /// See [`Cache::instrument_close`] for replacement behavior.
+    ///
     /// # Panics
     ///
     /// Panics if the cache is already mutably borrowed.
@@ -1469,7 +1489,7 @@ impl<'a> CacheApi<'a> {
         self.cache().instrument_close(instrument_id).copied()
     }
 
-    /// Returns the latest bar for the `bar_type` (if found).
+    /// Returns the most recent bar by `ts_event` for the `bar_type` (if found).
     ///
     /// # Panics
     ///
@@ -1481,7 +1501,8 @@ impl<'a> CacheApi<'a> {
 
     /// Returns the bar at `index` for the `bar_type` (if found).
     ///
-    /// Index 0 is the most recent.
+    /// Index 0 is the most recent bar by `ts_event`. See [`Cache::bar_at_index`] for ordering
+    /// and out-of-range behavior.
     ///
     /// # Panics
     ///

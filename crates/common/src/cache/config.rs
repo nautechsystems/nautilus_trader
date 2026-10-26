@@ -65,11 +65,12 @@ pub struct CacheConfig {
     /// If instrument data should be dropped from the cache's memory on reset.
     #[builder(default = true)]
     pub drop_instruments_on_reset: bool,
-    /// The maximum length for internal tick deques (range `[1, 1_000_000]`).
+    /// The maximum length of each quote, trade, mark price, index price, funding rate, and
+    /// instrument status history per instrument (range `[1, 1_000_000]`).
     #[builder(default = 10_000)]
     #[serde(deserialize_with = "deserialize_cache_data_capacity")]
     pub tick_capacity: usize,
-    /// The maximum length for internal bar deques (range `[1, 1_000_000]`).
+    /// The maximum length of the bar history per bar type (range `[1, 1_000_000]`).
     #[builder(default = 10_000)]
     #[serde(deserialize_with = "deserialize_cache_data_capacity")]
     pub bar_capacity: usize,

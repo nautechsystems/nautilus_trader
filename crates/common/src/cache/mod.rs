@@ -6204,7 +6204,10 @@ impl Cache {
         }
     }
 
-    /// Gets all quotes for the `instrument_id`.
+    /// Returns cached quotes for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added quote. Entries are not sorted by timestamp.
+    /// Returns `None` when no quotes are cached for the instrument.
     #[must_use]
     pub fn quotes(&self, instrument_id: &InstrumentId) -> Option<Vec<QuoteTick>> {
         self.quotes
@@ -6212,7 +6215,10 @@ impl Cache {
             .map(|quotes| quotes.iter().copied().collect())
     }
 
-    /// Gets all trades for the `instrument_id`.
+    /// Returns cached trades for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added trade. Entries are not sorted by timestamp.
+    /// Returns `None` when no trades are cached for the instrument.
     #[must_use]
     pub fn trades(&self, instrument_id: &InstrumentId) -> Option<Vec<TradeTick>> {
         self.trades
@@ -6220,7 +6226,10 @@ impl Cache {
             .map(|trades| trades.iter().copied().collect())
     }
 
-    /// Gets all mark price updates for the `instrument_id`.
+    /// Returns cached mark price updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no mark price updates are cached for the instrument.
     #[must_use]
     pub fn mark_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
         self.mark_prices
@@ -6228,7 +6237,10 @@ impl Cache {
             .map(|mark_prices| mark_prices.iter().copied().collect())
     }
 
-    /// Gets all index price updates for the `instrument_id`.
+    /// Returns cached index price updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no index price updates are cached for the instrument.
     #[must_use]
     pub fn index_prices(&self, instrument_id: &InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
         self.index_prices
@@ -6236,7 +6248,10 @@ impl Cache {
             .map(|index_prices| index_prices.iter().copied().collect())
     }
 
-    /// Gets all funding rate updates for the `instrument_id`.
+    /// Returns cached funding rate updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no funding rate updates are cached for the instrument.
     #[must_use]
     pub fn funding_rates(&self, instrument_id: &InstrumentId) -> Option<Vec<FundingRateUpdate>> {
         self.funding_rates
@@ -6244,7 +6259,10 @@ impl Cache {
             .map(|funding_rates| funding_rates.iter().copied().collect())
     }
 
-    /// Gets all instrument status updates for the `instrument_id`.
+    /// Returns cached instrument status updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no instrument status updates are cached for the instrument.
     #[must_use]
     pub fn instrument_statuses(
         &self,
@@ -6255,7 +6273,9 @@ impl Cache {
             .map(|statuses| statuses.iter().copied().collect())
     }
 
-    /// Gets all bars for the `bar_type`.
+    /// Returns cached bars for the `bar_type` in reverse chronological order by `ts_event`.
+    ///
+    /// Index 0 is the most recent bar. Returns `None` when no bars are cached for the bar type.
     #[must_use]
     pub fn bars(&self, bar_type: &BarType) -> Option<Vec<Bar>> {
         self.bars
@@ -6263,7 +6283,9 @@ impl Cache {
             .map(|bars| bars.iter().copied().collect())
     }
 
-    /// Gets a reference to the order book for the `instrument_id`.
+    /// Returns the current order book for the `instrument_id`, or `None` if absent.
+    ///
+    /// The cache holds the current book state, not a history of book updates.
     #[must_use]
     pub fn order_book(&self, instrument_id: &InstrumentId) -> Option<&OrderBook> {
         self.books.get(instrument_id)
@@ -6318,7 +6340,7 @@ impl Cache {
         self.own_books.get_mut(instrument_id)
     }
 
-    /// Gets a reference to the latest quote for the `instrument_id`.
+    /// Returns the most recently added quote for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn quote(&self, instrument_id: &InstrumentId) -> Option<&QuoteTick> {
         self.quotes
@@ -6326,9 +6348,10 @@ impl Cache {
             .and_then(|quotes| quotes.front())
     }
 
-    /// Gets a reference to the quote at `index` for the `instrument_id`.
+    /// Returns the quote at `index` for the `instrument_id`.
     ///
-    /// Index 0 is the most recent.
+    /// Index 0 is the most recently added quote; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no quote exists at the index.
     #[must_use]
     pub fn quote_at_index(&self, instrument_id: &InstrumentId, index: usize) -> Option<&QuoteTick> {
         self.quotes
@@ -6336,7 +6359,7 @@ impl Cache {
             .and_then(|quotes| quotes.get(index))
     }
 
-    /// Gets a reference to the latest trade for the `instrument_id`.
+    /// Returns the most recently added trade for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn trade(&self, instrument_id: &InstrumentId) -> Option<&TradeTick> {
         self.trades
@@ -6344,9 +6367,10 @@ impl Cache {
             .and_then(|trades| trades.front())
     }
 
-    /// Gets a reference to the trade at `index` for the `instrument_id`.
+    /// Returns the trade at `index` for the `instrument_id`.
     ///
-    /// Index 0 is the most recent.
+    /// Index 0 is the most recently added trade; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no trade exists at the index.
     #[must_use]
     pub fn trade_at_index(&self, instrument_id: &InstrumentId, index: usize) -> Option<&TradeTick> {
         self.trades
@@ -6354,7 +6378,7 @@ impl Cache {
             .and_then(|trades| trades.get(index))
     }
 
-    /// Gets a reference to the latest mark price update for the `instrument_id`.
+    /// Returns the most recently added mark price update for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn mark_price(&self, instrument_id: &InstrumentId) -> Option<&MarkPriceUpdate> {
         self.mark_prices
@@ -6362,7 +6386,7 @@ impl Cache {
             .and_then(|mark_prices| mark_prices.front())
     }
 
-    /// Gets a reference to the latest index price update for the `instrument_id`.
+    /// Returns the most recently added index price update for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn index_price(&self, instrument_id: &InstrumentId) -> Option<&IndexPriceUpdate> {
         self.index_prices
@@ -6370,7 +6394,7 @@ impl Cache {
             .and_then(|index_prices| index_prices.front())
     }
 
-    /// Gets a reference to the latest funding rate update for the `instrument_id`.
+    /// Returns the most recently added funding rate update for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn funding_rate(&self, instrument_id: &InstrumentId) -> Option<&FundingRateUpdate> {
         self.funding_rates
@@ -6378,7 +6402,7 @@ impl Cache {
             .and_then(|funding_rates| funding_rates.front())
     }
 
-    /// Gets a reference to the latest instrument status update for the `instrument_id`.
+    /// Returns the most recently added instrument status for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn instrument_status(&self, instrument_id: &InstrumentId) -> Option<&InstrumentStatus> {
         self.instrument_statuses
@@ -6387,6 +6411,8 @@ impl Cache {
     }
 
     /// Returns the close cached for `instrument_id`, if present.
+    ///
+    /// A later insertion replaces the cached close for the instrument; no history is kept.
     #[must_use]
     pub fn instrument_close(&self, instrument_id: &InstrumentId) -> Option<&InstrumentClose> {
         self.instrument_closes.get(instrument_id)
@@ -6398,15 +6424,16 @@ impl Cache {
         self.instrument_closes.keys().collect()
     }
 
-    /// Gets a reference to the latest bar for the `bar_type`.
+    /// Returns the most recent bar by `ts_event` for the `bar_type`, or `None` if absent.
     #[must_use]
     pub fn bar(&self, bar_type: &BarType) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.front())
     }
 
-    /// Gets a reference to the bar at `index` for the `bar_type`.
+    /// Returns the bar at `index` for the `bar_type`.
     ///
-    /// Index 0 is the most recent.
+    /// Bars are ordered by `ts_event`, newest first. Index 0 is the most recent bar;
+    /// index 1 is the previous bar. Returns `None` when no bar exists at the index.
     #[must_use]
     pub fn bar_at_index(&self, bar_type: &BarType, index: usize) -> Option<&Bar> {
         self.bars.get(bar_type).and_then(|bars| bars.get(index))

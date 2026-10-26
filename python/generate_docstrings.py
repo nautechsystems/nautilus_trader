@@ -81,6 +81,25 @@ ANNOTATED_ADAPTER_CRATES = [
 
 DROPPED_SECTIONS = {"Panics"}
 
+METHOD_DOC_SOURCES = {
+    ("PyCache", "quote"): ("Cache", "quote_at_index"),
+    ("PyCache", "trade"): ("Cache", "trade_at_index"),
+    ("PyCache", "bar"): ("Cache", "bar_at_index"),
+    ("PyCache", "quotes"): ("Cache", "quotes"),
+    ("PyCache", "trades"): ("Cache", "trades"),
+    ("PyCache", "bars"): ("Cache", "bars"),
+    ("PyCache", "mark_price"): ("Cache", "mark_price"),
+    ("PyCache", "mark_prices"): ("Cache", "mark_prices"),
+    ("PyCache", "index_price"): ("Cache", "index_price"),
+    ("PyCache", "index_prices"): ("Cache", "index_prices"),
+    ("PyCache", "funding_rate"): ("Cache", "funding_rate"),
+    ("PyCache", "funding_rates"): ("Cache", "funding_rates"),
+    ("PyCache", "instrument_status"): ("Cache", "instrument_status"),
+    ("PyCache", "instrument_statuses"): ("Cache", "instrument_statuses"),
+    ("PyCache", "instrument_close"): ("Cache", "instrument_close"),
+    ("PyCache", "order_book"): ("Cache", "order_book"),
+}
+
 BANNER_RE = re.compile(r"^-{3,}.*-{3,}$")
 
 # Rust intra-doc link: [`Type::method`] or [`Type`](path)
@@ -442,7 +461,8 @@ def process_crate(  # noqa: C901
                     (impl_type, "new"),
                 )
             elif impl_type:
-                source_doc = source_docs.get((impl_type, target))
+                source_key = METHOD_DOC_SOURCES.get((impl_type, target), (impl_type, target))
+                source_doc = source_docs.get(source_key)
             elif item["in_pymethods"]:
                 # Method lost its impl_type (parser brace tracking); skip
                 source_doc = None

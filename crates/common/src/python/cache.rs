@@ -182,6 +182,10 @@ impl PyCache {
             .map_err(to_pyvalue_err)
     }
 
+    /// Returns the quote at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added quote; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no quote exists at the index.
     #[pyo3(name = "quote", signature = (instrument_id, index=0))]
     fn py_quote(&self, instrument_id: InstrumentId, index: usize) -> Option<QuoteTick> {
         self.0
@@ -190,6 +194,10 @@ impl PyCache {
             .copied()
     }
 
+    /// Returns the trade at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added trade; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no trade exists at the index.
     #[pyo3(name = "trade", signature = (instrument_id, index=0))]
     fn py_trade(&self, instrument_id: InstrumentId, index: usize) -> Option<TradeTick> {
         self.0
@@ -198,21 +206,36 @@ impl PyCache {
             .copied()
     }
 
+    /// Returns the bar at `index` for the `bar_type`.
+    ///
+    /// Bars are ordered by `ts_event`, newest first. Index 0 is the most recent bar;
+    /// index 1 is the previous bar. Returns `None` when no bar exists at the index.
     #[pyo3(name = "bar", signature = (bar_type, index=0))]
     fn py_bar(&self, bar_type: BarType, index: usize) -> Option<Bar> {
         self.0.borrow().bar_at_index(&bar_type, index).copied()
     }
 
+    /// Returns cached quotes for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added quote. Entries are not sorted by timestamp.
+    /// Returns `None` when no quotes are cached for the instrument.
     #[pyo3(name = "quotes")]
     fn py_quotes(&self, instrument_id: InstrumentId) -> Option<Vec<QuoteTick>> {
         self.0.borrow().quotes(&instrument_id)
     }
 
+    /// Returns cached trades for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added trade. Entries are not sorted by timestamp.
+    /// Returns `None` when no trades are cached for the instrument.
     #[pyo3(name = "trades")]
     fn py_trades(&self, instrument_id: InstrumentId) -> Option<Vec<TradeTick>> {
         self.0.borrow().trades(&instrument_id)
     }
 
+    /// Returns cached bars for the `bar_type` in reverse chronological order by `ts_event`.
+    ///
+    /// Index 0 is the most recent bar. Returns `None` when no bars are cached for the bar type.
     #[pyo3(name = "bars")]
     fn py_bars(&self, bar_type: BarType) -> Option<Vec<Bar>> {
         self.0.borrow().bars(&bar_type)
@@ -237,46 +260,69 @@ impl PyCache {
             .collect()
     }
 
+    /// Returns the most recently added mark price update for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "mark_price")]
     fn py_mark_price(&self, instrument_id: InstrumentId) -> Option<MarkPriceUpdate> {
         self.0.borrow().mark_price(&instrument_id).copied()
     }
 
+    /// Returns cached mark price updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no mark price updates are cached for the instrument.
     #[pyo3(name = "mark_prices")]
     fn py_mark_prices(&self, instrument_id: InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
         self.0.borrow().mark_prices(&instrument_id)
     }
 
+    /// Returns the most recently added index price update for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "index_price")]
     fn py_index_price(&self, instrument_id: InstrumentId) -> Option<IndexPriceUpdate> {
         self.0.borrow().index_price(&instrument_id).copied()
     }
 
+    /// Returns cached index price updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no index price updates are cached for the instrument.
     #[pyo3(name = "index_prices")]
     fn py_index_prices(&self, instrument_id: InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
         self.0.borrow().index_prices(&instrument_id)
     }
 
+    /// Returns the most recently added funding rate update for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
         self.0.borrow().funding_rate(&instrument_id).copied()
     }
 
+    /// Returns cached funding rate updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no funding rate updates are cached for the instrument.
     #[pyo3(name = "funding_rates")]
     fn py_funding_rates(&self, instrument_id: InstrumentId) -> Option<Vec<FundingRateUpdate>> {
         self.0.borrow().funding_rates(&instrument_id)
     }
 
+    /// Returns the most recently added instrument status for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "instrument_status")]
     fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
         self.0.borrow().instrument_status(&instrument_id).copied()
     }
 
+    /// Returns cached instrument status updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no instrument status updates are cached for the instrument.
     #[pyo3(name = "instrument_statuses")]
     fn py_instrument_statuses(&self, instrument_id: InstrumentId) -> Option<Vec<InstrumentStatus>> {
         self.0.borrow().instrument_statuses(&instrument_id)
     }
 
+    /// Returns the close cached for `instrument_id`, if present.
+    ///
+    /// A later insertion replaces the cached close for the instrument; no history is kept.
     #[pyo3(name = "instrument_close")]
     fn py_instrument_close(&self, instrument_id: InstrumentId) -> Option<InstrumentClose> {
         self.0.borrow().instrument_close(&instrument_id).copied()
@@ -287,6 +333,9 @@ impl PyCache {
         self.0.borrow().price(&instrument_id, price_type)
     }
 
+    /// Returns the current order book for the `instrument_id`, or `None` if absent.
+    ///
+    /// The cache holds the current book state, not a history of book updates.
     #[pyo3(name = "order_book")]
     fn py_order_book(&self, instrument_id: InstrumentId) -> Option<OrderBook> {
         self.0.borrow().order_book(&instrument_id).cloned()
@@ -2168,37 +2217,45 @@ impl Cache {
         self.add_bar(bar).map_err(to_pyvalue_err)
     }
 
-    /// Gets a reference to the latest quote for the `instrument_id`.
+    /// Returns the most recently added quote for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "quote")]
     fn py_quote(&self, instrument_id: InstrumentId) -> Option<QuoteTick> {
         self.quote(&instrument_id).copied()
     }
 
-    /// Gets a reference to the latest trade for the `instrument_id`.
+    /// Returns the most recently added trade for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "trade")]
     fn py_trade(&self, instrument_id: InstrumentId) -> Option<TradeTick> {
         self.trade(&instrument_id).copied()
     }
 
-    /// Gets a reference to the latest bar for the `bar_type`.
+    /// Returns the most recent bar by `ts_event` for the `bar_type`, or `None` if absent.
     #[pyo3(name = "bar")]
     fn py_bar(&self, bar_type: BarType) -> Option<Bar> {
         self.bar(&bar_type).copied()
     }
 
-    /// Gets all quotes for the `instrument_id`.
+    /// Returns cached quotes for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added quote. Entries are not sorted by timestamp.
+    /// Returns `None` when no quotes are cached for the instrument.
     #[pyo3(name = "quotes")]
     fn py_quotes(&self, instrument_id: InstrumentId) -> Option<Vec<QuoteTick>> {
         self.quotes(&instrument_id)
     }
 
-    /// Gets all trades for the `instrument_id`.
+    /// Returns cached trades for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added trade. Entries are not sorted by timestamp.
+    /// Returns `None` when no trades are cached for the instrument.
     #[pyo3(name = "trades")]
     fn py_trades(&self, instrument_id: InstrumentId) -> Option<Vec<TradeTick>> {
         self.trades(&instrument_id)
     }
 
-    /// Gets all bars for the `bar_type`.
+    /// Returns cached bars for the `bar_type` in reverse chronological order by `ts_event`.
+    ///
+    /// Index 0 is the most recent bar. Returns `None` when no bars are cached for the bar type.
     #[pyo3(name = "bars")]
     fn py_bars(&self, bar_type: BarType) -> Option<Vec<Bar>> {
         self.bars(&bar_type)
@@ -2294,61 +2351,77 @@ impl Cache {
         self.bar_count(&bar_type)
     }
 
-    /// Gets a reference to the latest mark price update for the `instrument_id`.
+    /// Returns the most recently added mark price update for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "mark_price")]
     fn py_mark_price(&self, instrument_id: InstrumentId) -> Option<MarkPriceUpdate> {
         self.mark_price(&instrument_id).copied()
     }
 
-    /// Gets all mark price updates for the `instrument_id`.
+    /// Returns cached mark price updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no mark price updates are cached for the instrument.
     #[pyo3(name = "mark_prices")]
     fn py_mark_prices(&self, instrument_id: InstrumentId) -> Option<Vec<MarkPriceUpdate>> {
         self.mark_prices(&instrument_id)
     }
 
-    /// Gets a reference to the latest index price update for the `instrument_id`.
+    /// Returns the most recently added index price update for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "index_price")]
     fn py_index_price(&self, instrument_id: InstrumentId) -> Option<IndexPriceUpdate> {
         self.index_price(&instrument_id).copied()
     }
 
-    /// Gets all index price updates for the `instrument_id`.
+    /// Returns cached index price updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no index price updates are cached for the instrument.
     #[pyo3(name = "index_prices")]
     fn py_index_prices(&self, instrument_id: InstrumentId) -> Option<Vec<IndexPriceUpdate>> {
         self.index_prices(&instrument_id)
     }
 
-    /// Gets a reference to the latest funding rate update for the `instrument_id`.
+    /// Returns the most recently added funding rate update for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "funding_rate")]
     fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
         self.funding_rate(&instrument_id).copied()
     }
 
-    /// Gets all funding rate updates for the `instrument_id`.
+    /// Returns cached funding rate updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no funding rate updates are cached for the instrument.
     #[pyo3(name = "funding_rates")]
     fn py_funding_rates(&self, instrument_id: InstrumentId) -> Option<Vec<FundingRateUpdate>> {
         self.funding_rates(&instrument_id)
     }
 
-    /// Gets a reference to the latest instrument status update for the `instrument_id`.
+    /// Returns the most recently added instrument status for the `instrument_id`, or `None` if absent.
     #[pyo3(name = "instrument_status")]
     fn py_instrument_status(&self, instrument_id: InstrumentId) -> Option<InstrumentStatus> {
         self.instrument_status(&instrument_id).copied()
     }
 
-    /// Gets all instrument status updates for the `instrument_id`.
+    /// Returns cached instrument status updates for the `instrument_id` in reverse insertion order.
+    ///
+    /// Index 0 is the most recently added update. Entries are not sorted by timestamp.
+    /// Returns `None` when no instrument status updates are cached for the instrument.
     #[pyo3(name = "instrument_statuses")]
     fn py_instrument_statuses(&self, instrument_id: InstrumentId) -> Option<Vec<InstrumentStatus>> {
         self.instrument_statuses(&instrument_id)
     }
 
     /// Returns the close cached for `instrument_id`, if present.
+    ///
+    /// A later insertion replaces the cached close for the instrument; no history is kept.
     #[pyo3(name = "instrument_close")]
     fn py_instrument_close(&self, instrument_id: InstrumentId) -> Option<InstrumentClose> {
         self.instrument_close(&instrument_id).copied()
     }
 
-    /// Gets a reference to the order book for the `instrument_id`.
+    /// Returns the current order book for the `instrument_id`, or `None` if absent.
+    ///
+    /// The cache holds the current book state, not a history of book updates.
     #[pyo3(name = "order_book")]
     fn py_order_book(&self, instrument_id: InstrumentId) -> Option<OrderBook> {
         self.order_book(&instrument_id).cloned()
