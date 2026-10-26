@@ -157,6 +157,7 @@ Released on TBD (UTC).
 - Fixed Bybit reconciliation timeouts losing pending cancel and amend rejection events
 - Fixed Databento live trades duplicated across different record types (#5367), thanks @chaneyka1
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
+- Fixed Derive public trades with unrecognized liquidity roles reporting a known aggressor side
 - Fixed Derive submitting quote-denominated order quantities as base units
 - Fixed Derive startup stalls when loading large instrument listings
 - Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt

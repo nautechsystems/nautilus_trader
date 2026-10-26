@@ -1753,6 +1753,95 @@ async fn test_ws_trades_emit_direction_as_aggressor_side() {
 }
 
 #[rstest]
+#[case::buy("buy")]
+#[case::sell("sell")]
+#[tokio::test]
+async fn test_ws_trades_preserve_unknown_aggressor(#[case] direction: &str) {
+    let ws_state = WsState::default();
+    let channel = "trades.perp.ETH";
+    let mut notification = subscription_notification(channel).unwrap();
+    let mut row = load_json("perps/http_public_trade_eth_unknown_role.json");
+    row["direction"] = json!(direction);
+    notification["params"]["data"] = json!([row]);
+    ws_state
+        .subscription_notifications
+        .lock()
+        .await
+        .insert(channel.to_string(), vec![notification]);
+    let rest_addr = start_rest_server(RestState::default()).await;
+    let ws_addr = start_ws_server(ws_state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut client = connect_with_eth_currency(rest_addr, ws_addr).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+
+    while rx.try_recv().is_ok() {}
+
+    let before = get_atomic_clock_realtime().get_time_ns();
+
+    client
+        .subscribe_trades(subscribe_trades(instrument_id))
+        .unwrap();
+
+    let Data::Trade(tick) = recv_data(&mut rx).await else {
+        panic!("expected trade data");
+    };
+
+    let after = get_atomic_clock_realtime().get_time_ns();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(tick.instrument_id, instrument_id);
+    assert_eq!(tick.price, Price::from("3499.00"));
+    assert_eq!(tick.size, Quantity::from("0.500"));
+    assert_eq!(tick.aggressor_side, AggressorSide::NoAggressor);
+    assert_eq!(tick.trade_id, TradeId::from("trade-1"));
+    assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+    assert!((before..=after).contains(&tick.ts_init));
+}
+
+#[rstest]
+#[case::buy("buy")]
+#[case::sell("sell")]
+#[tokio::test]
+async fn test_request_trades_preserves_unknown_aggressor(#[case] direction: &str) {
+    let rest_state = RestState::default();
+    let mut row = load_json("perps/http_public_trade_eth_unknown_role.json");
+    row["direction"] = json!(direction);
+    *rest_state.trade_history_pages.lock().await = vec![json!({
+        "trades": [row],
+        "pagination": {"count": 1, "num_pages": 1},
+    })];
+    let rest_addr = start_rest_server(rest_state).await;
+    let ws_addr = start_ws_server(WsState::default()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut client = connect_with_eth_currency(rest_addr, ws_addr).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let before = get_atomic_clock_realtime().get_time_ns();
+
+    client
+        .request_trades(request_trades(instrument_id, None))
+        .unwrap();
+
+    let DataResponse::Trades(trades) = recv_response(&mut rx).await else {
+        panic!("expected trades response");
+    };
+
+    let after = get_atomic_clock_realtime().get_time_ns();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(trades.data.len(), 1);
+    let tick = &trades.data[0];
+    assert_eq!(tick.instrument_id, instrument_id);
+    assert_eq!(tick.price, Price::from("3499.00"));
+    assert_eq!(tick.size, Quantity::from("0.500"));
+    assert_eq!(tick.aggressor_side, AggressorSide::NoAggressor);
+    assert_eq!(tick.trade_id, TradeId::from("trade-1"));
+    assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+    assert!((before..=after).contains(&tick.ts_init));
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_request_trades_continues_after_invalid_id_across_pages() {
     let rest_state = RestState::default();

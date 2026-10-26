@@ -369,10 +369,12 @@ fields fail that currency's fetch. A fetch error during initial loading also fai
 
 Public REST history and WebSocket trades can return maker and taker rows under the same
 `trade_id`. Each row's `direction` is that participant's side. The adapter uses the taker's
-side as the aggressor direction and inverts a maker row's direction, independent of row order.
+side as the aggressor direction and inverts a maker row's direction. For maker/taker pairs,
+the result is independent of row order.
 Live v3 maker WebSocket row mapping remains unverified.
-For rows with an absent or unrecognized `liquidity_role`, the adapter treats `direction` as
-the taker's side.
+For rows with an absent `liquidity_role`, the adapter treats `direction` as the taker's side.
+It maps an unrecognized role to `AggressorSide::NoAggressor` and logs a warning
+with the trade and instrument identifiers.
 
 Historical trade requests emit one `TradeTick` per trade ID within the request. The live feed suppresses
 paired rows and reconnect replays while their IDs remain in a cache of the latest 4,096 trades. Automatic

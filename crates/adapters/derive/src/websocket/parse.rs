@@ -243,9 +243,9 @@ pub fn parse_orderbook_depth(
 
 /// Parses a public trade message into a Nautilus trade tick.
 ///
-/// Public rows carry the participant's `direction`. It maps directly
-/// to the aggressor side when the participant role is absent, unrecognized, or taker.
-/// Maker rows use the opposite direction.
+/// Public rows carry the participant's `direction`. It maps directly to the aggressor
+/// side when the participant role is absent or taker. Maker rows use the opposite
+/// direction. An unrecognized role yields `AggressorSide::NoAggressor`.
 ///
 /// Pass price and size precision from the instrument definition rather than
 /// inferring them from the wire values, since Derive may trim trailing zeroes.
@@ -266,8 +266,9 @@ pub fn parse_trade_tick(
 ///
 /// Public rows can pair maker and taker participants under the same `trade_id`.
 /// Each row's `direction` is that participant's side: the aggressor side is the
-/// taker row's direction and the inverse of the maker row's. An absent or
-/// unrecognized role treats `direction` as the taker's side.
+/// taker row's direction and the inverse of the maker row's. An absent role
+/// treats `direction` as the taker's side. An unrecognized role preserves the
+/// trade with no aggressor side.
 ///
 /// Pass price and size precision from the instrument definition rather than
 /// inferring them from the wire values, since Derive may trim trailing zeroes.
@@ -283,12 +284,14 @@ pub fn parse_trade_tick_from_rest(
 ) -> anyhow::Result<TradeTick> {
     if trade.liquidity_role == Some(DeriveLiquidityRole::Unknown) {
         log::warn!(
-            "Unknown Derive liquidity role for trade {}, treating direction as the taker side",
+            "Unknown Derive liquidity role for trade {} on {}, preserving no aggressor side",
             trade.trade_id,
+            trade.instrument_name,
         );
     }
 
     let aggressor_side = match (trade.liquidity_role, trade.direction) {
+        (Some(DeriveLiquidityRole::Unknown), _) => AggressorSide::NoAggressor,
         (Some(DeriveLiquidityRole::Maker), DeriveOrderSide::Buy) => AggressorSide::Sell,
         (Some(DeriveLiquidityRole::Maker), DeriveOrderSide::Sell) => AggressorSide::Buy,
         (_, DeriveOrderSide::Buy) => AggressorSide::Buy,
@@ -1399,8 +1402,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_tick_from_rest_degrades_unknown_role_to_taker_side() {
-        let trade = fixture_trade("perps/http_public_trade_eth_unknown_role.json");
+    #[case::buy("buy")]
+    #[case::sell("sell")]
+    fn test_parse_trade_tick_from_rest_preserves_unknown_aggressor(#[case] direction: &str) {
+        let mut value = load_json("perps/http_public_trade_eth_unknown_role.json");
+        value["direction"] = json!(direction);
+        let trade: DerivePublicTrade = serde_json::from_value(value).unwrap();
 
         let tick = parse_trade_tick_from_rest(
             &trade,
@@ -1410,8 +1417,16 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(tick.aggressor_side, AggressorSide::Sell);
-        assert_eq!(tick.trade_id, TradeId::from("trade-1"));
+        let expected = TradeTick::new(
+            InstrumentId::from("ETH-PERP.DERIVE"),
+            price("3499.0"),
+            quantity("0.5"),
+            AggressorSide::NoAggressor,
+            TradeId::from("trade-1"),
+            UnixNanos::from(1_700_000_000_000_000_000),
+            UnixNanos::from(456),
+        );
+        assert_eq!(tick, expected);
     }
 
     #[rstest]
