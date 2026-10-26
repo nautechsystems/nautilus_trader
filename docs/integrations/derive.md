@@ -825,6 +825,12 @@ responsible for observed order state.
 | ------------- | --------- | ------------- | ----------------------------------------------------------- |
 | `post_only`   | ✓         | `post_only`   | Requires `GTC`; rejects if the order would take liquidity.  |
 | `reduce_only` | ✓         | `reduce_only` | Perps and options, market or `IOC`/`FOK` only; spot denied. |
+| `display_qty` | -         | -             | *Not supported by Derive*.                                  |
+
+The adapter does not support iceberg instructions. Orders with `display_qty` set receive
+`OrderDenied` before submission, including conditional orders. If any leg sets `display_qty`,
+the adapter denies every leg before submitting any leg. Existing orders with `display_qty`
+can still be canceled; modifying them is rejected.
 
 #### Time in force
 

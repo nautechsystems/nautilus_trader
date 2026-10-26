@@ -3263,6 +3263,65 @@ async fn test_submit_quote_qty_is_denied_before_submission(
     }
 }
 
+#[rstest]
+#[case(OrderType::Limit)]
+#[case(OrderType::StopMarket)]
+#[case(OrderType::StopLimit)]
+#[case(OrderType::LimitIfTouched)]
+#[tokio::test]
+async fn test_submit_display_qty_is_denied_before_submission(
+    #[case] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values("0.137", "0.000", "1.237")] display_qty: &str,
+) {
+    let rest_state = RestState::default();
+    let ws_state = WsState::default();
+    let mut tc = build_client(rest_state.clone(), ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+    let order = OrderTestBuilder::new(order_type)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(InstrumentId::from("ETH-PERP.DERIVE"))
+        .side(side)
+        .quantity(Quantity::from("1.237"))
+        .display_qty(Quantity::from(display_qty))
+        .price(Price::from("3500.00"))
+        .trigger_price(Price::from("3500.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    add_order_to_cache(&tc.cache, order.clone(), Some(ClientId::from("DERIVE")));
+
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+    let event = drain_denied_without_submitted(&mut tc.rx, &order.client_order_id()).await;
+    tc.client.disconnect().await.unwrap();
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = event else {
+        panic!("expected OrderDenied");
+    };
+
+    assert_eq!(order.display_qty(), Some(Quantity::from(display_qty)));
+    assert_eq!(denied.trader_id, order.trader_id());
+    assert_eq!(denied.strategy_id, order.strategy_id());
+    assert_eq!(denied.instrument_id, order.instrument_id());
+    assert_eq!(denied.client_order_id, order.client_order_id());
+    assert_eq!(
+        denied.reason.as_str(),
+        "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+    );
+    assert_eq!(rest_state.order_writes.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.submitted_trigger_orders.lock().await.len(), 0);
+    assert_eq!(ws_state.replace_orders.lock().await.len(), 0);
+
+    while let Ok(event) = tc.rx.try_recv() {
+        assert!(!matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Submitted(_))
+        ));
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires Derive testnet credentials and an isolated live-validation route"]
 async fn test_testnet_quote_qty_is_denied_before_submission() {
@@ -4087,17 +4146,42 @@ async fn test_submit_order_rate_limit_jsonrpc_emits_order_rejected() {
 }
 
 #[rstest]
-#[case(OrderType::Limit, false, "UNSUPPORTED_TIME_IN_FORCE: DAY")]
-#[case(OrderType::Limit, true, "UNSUPPORTED_QUOTE_QUANTITY")]
-#[case(OrderType::Market, true, "UNSUPPORTED_QUOTE_QUANTITY")]
-#[case(OrderType::StopMarket, true, "UNSUPPORTED_QUOTE_QUANTITY")]
-#[case(OrderType::StopLimit, true, "UNSUPPORTED_QUOTE_QUANTITY")]
-#[case(OrderType::MarketIfTouched, true, "UNSUPPORTED_QUOTE_QUANTITY")]
-#[case(OrderType::LimitIfTouched, true, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::Limit, false, None, "UNSUPPORTED_TIME_IN_FORCE: DAY")]
+#[case(OrderType::Limit, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::Market, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::StopMarket, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::StopLimit, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::MarketIfTouched, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(OrderType::LimitIfTouched, true, None, "UNSUPPORTED_QUOTE_QUANTITY")]
+#[case(
+    OrderType::Limit,
+    false,
+    Some("0.137"),
+    "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+)]
+#[case(
+    OrderType::StopMarket,
+    false,
+    Some("0.137"),
+    "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+)]
+#[case(
+    OrderType::StopLimit,
+    false,
+    Some("0.137"),
+    "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+)]
+#[case(
+    OrderType::LimitIfTouched,
+    false,
+    Some("0.137"),
+    "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+)]
 #[tokio::test]
 async fn test_submit_order_list_denies_every_leg_before_submission(
     #[case] order_type: OrderType,
     #[case] quote_qty: bool,
+    #[case] display_qty: Option<&str>,
     #[case] reason: &str,
     #[values(false, true)] invalid_first: bool,
     #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
@@ -4129,7 +4213,8 @@ async fn test_submit_order_list_denies_every_leg_before_submission(
         Quantity::from("1.000"),
     );
 
-    let invalid = OrderTestBuilder::new(order_type)
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
         .trader_id(TraderId::from("TRADER-001"))
         .strategy_id(StrategyId::from("S-1"))
         .instrument_id(instrument_id)
@@ -4140,12 +4225,19 @@ async fn test_submit_order_list_denies_every_leg_before_submission(
         .price(Price::from("3501.00"))
         .trigger_price(Price::from("3501.00"))
         .trigger_type(TriggerType::MarkPrice)
-        .time_in_force(if quote_qty {
+        .time_in_force(if display_qty.is_some() {
+            TimeInForce::Gtc
+        } else if quote_qty {
             TimeInForce::Ioc
         } else {
             TimeInForce::Day
-        })
-        .build();
+        });
+
+    if let Some(qty) = display_qty {
+        builder.display_qty(Quantity::from(qty));
+    }
+
+    let invalid = builder.build();
 
     let orders = if invalid_first {
         vec![invalid.clone(), valid.clone()]

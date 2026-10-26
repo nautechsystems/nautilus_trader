@@ -159,6 +159,7 @@ Released on TBD (UTC).
 - Fixed Deribit sending orders after event channel failures (#5324), thanks for reporting @maru-marvelquant
 - Fixed Derive public trades with unrecognized liquidity roles reporting a known aggressor side
 - Fixed Derive submitting quote-denominated order quantities as base units
+- Fixed Derive iceberg display quantities being silently discarded during order submission
 - Fixed Derive startup stalls when loading large instrument listings
 - Fixed Derive tracked fills routed to reconciliation after cancellation (#5355), thanks for reporting @Karrenbelt
 - Fixed dYdX oracle price precision for catalog promotion (#5391), thanks for reporting @fintech07
