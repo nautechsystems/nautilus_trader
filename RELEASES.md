@@ -121,6 +121,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed unavailable `OrderFilled` commissions displaying as zero
 - Fixed live bulk order reconciliation timeouts discarding finalized adapter reports
 - Fixed live timer backlogs starving data events and commands (#5431), thanks @imbolc
 - Fixed book recovery timeouts reporting the snapshot limit instead of the attempt limit (#5425), thanks @imbolc

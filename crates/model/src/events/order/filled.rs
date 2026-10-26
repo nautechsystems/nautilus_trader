@@ -290,7 +290,8 @@ impl Display for OrderFilled {
             self.last_qty.to_formatted_string(),
             self.last_px.to_formatted_string(),
             self.currency,
-            self.commission.unwrap_or(Money::from("0.0 USD")),
+            self.commission
+                .map_or_else(|| "None".to_string(), |commission| commission.to_string()),
             self.liquidity_side,
             self.ts_event
         )
@@ -517,14 +518,24 @@ mod tests {
     }
 
     #[rstest]
-    fn test_order_filled_display(order_filled: OrderFilled) {
+    #[case(Some(Money::from("12.2 USDT")), "12.20000000 USDT")]
+    #[case(Some(Money::from("0 USDT")), "0.00000000 USDT")]
+    #[case(None, "None")]
+    fn test_order_filled_display(
+        mut order_filled: OrderFilled,
+        #[case] commission: Option<Money>,
+        #[case] expected: &str,
+    ) {
+        order_filled.commission = commission;
         let display = format!("{order_filled}");
         assert_eq!(
             display,
-            "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
+            format!(
+                "OrderFilled(instrument_id=BTCUSDT.COINBASE, client_order_id=O-19700101-000000-001-001-1, \
             venue_order_id=123456, account_id=SIM-001, trade_id=1, position_id=None, \
             order_side=BUY, order_type=LIMIT, last_qty=0.561, last_px=22_000 USDT, \
-            commission=12.20000000 USDT, liquidity_side=TAKER, ts_event=0)"
+            commission={expected}, liquidity_side=TAKER, ts_event=0)"
+            )
         );
     }
 

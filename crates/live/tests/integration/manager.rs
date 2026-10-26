@@ -12235,6 +12235,24 @@ async fn test_position_reconciliation_order_has_reconciliation_tag() {
 
     assert!(!result.events.is_empty());
 
+    let fills: Vec<_> = result
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    let fill = fills[0];
+    assert_eq!(fill.last_qty, Quantity::from("5.0"));
+    assert_eq!(fill.last_px, Price::from("3000.50"));
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert_eq!(fill.commission, None);
+    assert!(fill.reconciliation);
+    assert!(fill.to_string().contains("commission=None,"));
+
     // Get the synthetic order created and verify it has the RECONCILIATION tag
     if let OrderEventAny::Accepted(accepted) = &result.events[0] {
         let order = ctx
@@ -12248,6 +12266,11 @@ async fn test_position_reconciliation_order_has_reconciliation_tag() {
     } else {
         panic!("Expected Accepted event, was {:?}", result.events[0]);
     }
+
+    let repeated = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    assert!(repeated.events.is_empty());
 }
 
 #[rstest]
