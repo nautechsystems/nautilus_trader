@@ -485,9 +485,49 @@ def on_data_response(self, response):
     self.request_trades(instrument_id=self.config.instrument_ids)
 ```
 
-#### Completion groups in Rust
+#### Python callbacks and joins
 
-Use `request_group(request_ids, request_id)` to receive one completion event after several requests finish.
+Python actors and strategies accept an optional `callback` on historical request methods.
+The callable receives the request ID as a string, matching the method's return value. It runs once
+on terminal success or failure, after the typed payload hook and `on_data_response`, with that
+request no longer pending. Intermediate envelopes do not invoke it. Callback exceptions retain their
+tracebacks in the log and do not prevent other completions.
+
+The callback does not receive the outcome; inspect or record `failure_reason` in `on_data_response`,
+which runs first. A failed request's partial data still reaches the typed payload hooks.
+Callbacks can submit follow-up requests. A successful reset or disposal, or a call to `fault()`,
+discards unfinished callbacks and joins. If one happens during a response hook, that response's
+callback is also discarded.
+
+Use `request_join(request_ids, callback=None, request_id=None)` to wait for historical requests
+already issued by the same actor or strategy:
+
+```python
+def on_start(self):
+    quotes_id = self.request_quotes(instrument_id=self.config.instrument_ids)
+    trades_id = self.request_trades(instrument_id=self.config.instrument_ids)
+    self.request_join([quotes_id, trades_id], callback=self._on_history_complete)
+
+
+def _on_history_complete(self, request_id):
+    self.log.info(f"Historical requests completed: {request_id}")
+```
+
+A join follows the completion-group rules below and returns its own string ID. It coordinates
+completion while each child retains its payload delivery; it does not merge or replay the data.
+`request_join` and `is_pending_request` accept string IDs or `UUID4` objects. A join of completed
+children can invoke its callback before `request_join` returns. Use the callback argument to identify
+it, or supply a previously stored `request_id` to recognize it in `on_data_response`.
+
+Inspect historical requests on the actor or strategy:
+
+- `is_pending_request(request_id)` checks an individual request or join.
+- `has_pending_requests()` checks whether any historical request or join is pending.
+- `pending_requests()` returns a snapshot set of their string IDs, including callback-free requests.
+
+#### Completion groups
+
+In Rust, use `request_group(request_ids, request_id)` to receive one completion event after several requests finish.
 Pass a non-empty list of distinct request IDs issued by the same actor. Completed requests and other
 groups are valid children. Empty, duplicate, or unknown child IDs return an error without creating a
 group. The supplied group ID must not match an existing request or group ID in the actor.
@@ -512,7 +552,7 @@ The runner queues follow-up requests submitted from completion hooks. Hook error
 logged and do not prevent group completion. Request IDs and failure metadata remain available for
 grouping until actor request cleanup; payload batches are not retained for grouping. Successful reset
 or disposal, fault, and `release_subscriptions` clear this state and discard unfinished groups without
-completion events. This API has no Python binding.
+completion events. Python `request_join` uses the same lifecycle.
 
 ### Subscription lists
 

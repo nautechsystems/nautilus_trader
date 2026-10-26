@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Added batched historical instrument, quote, and trade requests, thanks @faysou
 - Added `on_data_response` hooks for historical completion and partial failures, thanks @faysou
 - Added `DataActor::request_group` for grouped historical request completion
+- Added Python historical request callbacks, `request_join`, and pending inspection for actors and strategies
 - Added historical request catalog write-back with confirmed source coverage, thanks @faysou
 - Added native external MessageBus data requests and replies for JSON and MessagePack
 - Added `LiveNode::add_python_exec_algorithm_from_config` for embedded Python execution algorithms

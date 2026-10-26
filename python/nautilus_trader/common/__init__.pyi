@@ -984,6 +984,7 @@ class DataActor:
         end: datetime.datetime | None = None,
         limit: int | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_instrument(
         self,
@@ -992,6 +993,7 @@ class DataActor:
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_instruments(
         self,
@@ -1000,6 +1002,7 @@ class DataActor:
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_book_snapshot(
         self,
@@ -1007,6 +1010,7 @@ class DataActor:
         depth: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_book_deltas(
         self,
@@ -1016,6 +1020,7 @@ class DataActor:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_book_depth(
         self,
@@ -1026,6 +1031,7 @@ class DataActor:
         depth: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_quotes(
         self,
@@ -1035,6 +1041,7 @@ class DataActor:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_trades(
         self,
@@ -1044,6 +1051,7 @@ class DataActor:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_funding_rates(
         self,
@@ -1053,6 +1061,7 @@ class DataActor:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_bars(
         self,
@@ -1062,7 +1071,17 @@ class DataActor:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
+    def request_join(
+        self,
+        request_ids: typing.Sequence[str | core.UUID4],
+        callback: typing.Callable[[str], None] | None = None,
+        request_id: str | core.UUID4 | None = None,
+    ) -> str: ...
+    def is_pending_request(self, request_id: str | core.UUID4) -> bool: ...
+    def has_pending_requests(self) -> bool: ...
+    def pending_requests(self) -> set[str]: ...
     def reconnect_socket(self, client_id: model.ClientId, endpoint: str) -> None: ...
     def on_data_response(self, response: DataResponse) -> None: ...
     def on_historical_data(self, data: typing.Any) -> None: ...

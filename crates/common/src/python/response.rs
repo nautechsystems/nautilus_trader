@@ -15,7 +15,10 @@
 
 use std::fmt::Debug;
 
-use nautilus_core::python::{params::params_to_pydict, to_pytype_err};
+use nautilus_core::{
+    UUID4,
+    python::{params::params_to_pydict, to_pyruntime_err, to_pytype_err, to_pyvalue_err},
+};
 use nautilus_model::{
     data::CustomData,
     identifiers::ClientId,
@@ -130,6 +133,7 @@ impl PyDataResponse {
 pub fn response_handler<T>(
     actor_id: Ustr,
     instance: fn(&T) -> PyResult<Option<Py<PyAny>>>,
+    callback: Option<TypedHandler<DataResponseEnvelope>>,
 ) -> TypedHandler<DataResponseEnvelope>
 where
     T: DataActor + DataActorNative + Debug + 'static,
@@ -160,12 +164,32 @@ where
 
             if current {
                 dispatch_completion(py, instance.as_ref(), wrapper);
+                dispatch_callback::<T>(actor_id, &scope, envelope, callback.as_ref());
             }
 
             scope.leave();
             drain_groups::<T>(py, actor_id, instance.as_ref(), &scope);
         });
     })
+}
+
+/// Builds a Python historical response handler with an optional terminal callback.
+///
+/// # Errors
+///
+/// Returns an error if `callback` is not callable.
+#[doc(hidden)]
+pub fn request_handler<T>(
+    py: Python<'_>,
+    actor_id: Ustr,
+    instance: fn(&T) -> PyResult<Option<Py<PyAny>>>,
+    callback: Option<Py<PyAny>>,
+) -> PyResult<TypedHandler<DataResponseEnvelope>>
+where
+    T: DataActor + DataActorNative + Debug + 'static,
+{
+    let callback = completion_handler(py, callback)?;
+    Ok(response_handler(actor_id, instance, callback))
 }
 
 fn drain_groups<T>(
@@ -182,24 +206,125 @@ fn drain_groups<T>(
                 return None;
             }
 
-            let envelope = actor.core().next_group_response()?;
+            let (envelope, callback) = actor.core().next_group_response()?;
             let scope = actor.core().begin_response(envelope.correlation_id())?;
             actor
                 .core()
                 .complete_request(&envelope, &scope)
-                .then_some((envelope, scope))
+                .then_some((envelope, scope, callback))
         });
 
-        let Some((envelope, _scope)) = prepared else {
+        let Some((envelope, scope, callback)) = prepared else {
             return;
         };
 
         let wrapper = PyDataResponse {
-            envelope,
+            envelope: envelope.clone(),
             data: PyOnceLock::new(),
         };
 
         dispatch_completion(py, instance, wrapper);
+        dispatch_callback::<T>(actor_id, &scope, &envelope, callback.as_ref());
+    }
+}
+
+/// Extracts a request ID accepted by Python joins and pending inspection.
+///
+/// # Errors
+///
+/// Returns an error if the value is neither a UUID nor a valid UUID string.
+#[doc(hidden)]
+pub fn extract_request_id(value: &Bound<'_, PyAny>) -> PyResult<UUID4> {
+    if let Ok(id) = value.extract::<UUID4>() {
+        return Ok(id);
+    }
+
+    value.extract::<String>()?.parse().map_err(to_pyvalue_err)
+}
+
+/// Registers a Python completion join and drains ready notifications outside actor access.
+///
+/// # Errors
+///
+/// Returns an error if the actor is unavailable, its Python instance cannot be resolved,
+/// the callback is not callable, or the group IDs fail native validation.
+#[doc(hidden)]
+pub fn request_join<T>(
+    py: Python<'_>,
+    actor_id: Ustr,
+    instance: fn(&T) -> PyResult<Option<Py<PyAny>>>,
+    request_ids: Vec<UUID4>,
+    request_id: Option<UUID4>,
+    callback: Option<Py<PyAny>>,
+) -> PyResult<String>
+where
+    T: DataActor + DataActorNative + Debug + 'static,
+{
+    let callback = completion_handler(py, callback)?;
+
+    let (id, mut scope, instance) = {
+        let actor = try_get_actor_unchecked::<T>(&actor_id)
+            .ok_or_else(|| to_pyruntime_err("Actor is not registered"))?;
+        let instance = instance(&actor)?;
+        let id = actor
+            .core()
+            .register_request_group(request_ids, request_id, callback)
+            .map_err(to_pyvalue_err)?;
+        let scope = actor
+            .core()
+            .begin_response(&id)
+            .expect("newly registered group is pending");
+        (id, scope, instance)
+    };
+
+    scope.leave();
+    drain_groups::<T>(py, actor_id, instance.as_ref(), &scope);
+    Ok(id.to_string())
+}
+
+fn completion_handler(
+    py: Python<'_>,
+    callback: Option<Py<PyAny>>,
+) -> PyResult<Option<TypedHandler<DataResponseEnvelope>>> {
+    let Some(callback) = callback else {
+        return Ok(None);
+    };
+
+    if !callback.bind(py).is_callable() {
+        return Err(to_pytype_err("callback must be callable"));
+    }
+
+    Ok(Some(TypedHandler::from(
+        move |envelope: &DataResponseEnvelope| {
+            Python::attach(|py| {
+                if let Err(e) = callback.call1(py, (envelope.correlation_id().to_string(),)) {
+                    log::error!(
+                        "Python historical request callback failed: {}",
+                        format_exception(&e)
+                    );
+                }
+            });
+        },
+    )))
+}
+
+fn dispatch_callback<T>(
+    actor_id: Ustr,
+    scope: &ResponseScope,
+    envelope: &DataResponseEnvelope,
+    callback: Option<&TypedHandler<DataResponseEnvelope>>,
+) where
+    T: DataActor + DataActorNative + Debug + 'static,
+{
+    let Some(callback) = callback else {
+        return;
+    };
+
+    if envelope.completed()
+        && try_get_actor_unchecked::<T>(&actor_id)
+            .is_some_and(|actor| actor.core().is_response_current(scope))
+    {
+        callback.0.handle(envelope);
     }
 }
 

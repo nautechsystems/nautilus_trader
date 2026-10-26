@@ -18,7 +18,7 @@ use std::{cell::Cell, collections::VecDeque, rc::Rc};
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::UUID4;
 
-use crate::messages::data::DataResponseEnvelope;
+use crate::{messages::data::DataResponseEnvelope, msgbus::TypedHandler};
 
 #[derive(Debug, Default)]
 pub(super) struct RequestLifecycle {
@@ -39,6 +39,7 @@ impl RequestLifecycle {
         &mut self,
         request_ids: Vec<UUID4>,
         request_id: Option<UUID4>,
+        handler: Option<TypedHandler<DataResponseEnvelope>>,
     ) -> anyhow::Result<UUID4> {
         anyhow::ensure!(!request_ids.is_empty(), "Request group must not be empty");
         let mut seen = AHashSet::new();
@@ -67,6 +68,7 @@ impl RequestLifecycle {
             RequestGroup {
                 children: request_ids,
                 remaining,
+                handler,
             },
         );
 
@@ -80,6 +82,13 @@ impl RequestLifecycle {
 
     pub(super) fn is_pending(&self, request_id: &UUID4) -> bool {
         matches!(self.requests.get(request_id), Some(RequestState::Pending))
+    }
+
+    pub(super) fn pending(&self) -> Vec<UUID4> {
+        self.requests
+            .iter()
+            .filter_map(|(id, state)| matches!(state, RequestState::Pending).then_some(*id))
+            .collect()
     }
 
     #[cfg(feature = "python")]
@@ -131,7 +140,12 @@ impl RequestLifecycle {
         true
     }
 
-    pub(super) fn next_group_response(&mut self) -> Option<DataResponseEnvelope> {
+    pub(super) fn next_group_response(
+        &mut self,
+    ) -> Option<(
+        DataResponseEnvelope,
+        Option<TypedHandler<DataResponseEnvelope>>,
+    )> {
         if self.depth.get() != 0 {
             return None;
         }
@@ -147,10 +161,10 @@ impl RequestLifecycle {
             }
         });
 
-        Some(DataResponseEnvelope::terminal(id, failure))
+        Some((DataResponseEnvelope::terminal(id, failure), group.handler))
     }
 
-    pub(super) fn clear(&mut self) -> Vec<UUID4> {
+    pub(super) fn clear(&mut self) -> (Vec<UUID4>, Vec<TypedHandler<DataResponseEnvelope>>) {
         let pending = self
             .requests
             .iter()
@@ -161,11 +175,15 @@ impl RequestLifecycle {
             .collect();
 
         self.requests.clear();
-        self.groups.clear();
+        let handlers = self
+            .groups
+            .drain()
+            .filter_map(|(_, group)| group.handler)
+            .collect();
         self.parents.clear();
         self.ready.clear();
         self.generation = Rc::new(());
-        pending
+        (pending, handlers)
     }
 }
 
@@ -192,6 +210,7 @@ enum RequestState {
 struct RequestGroup {
     children: Vec<UUID4>,
     remaining: usize,
+    handler: Option<TypedHandler<DataResponseEnvelope>>,
 }
 
 pub(crate) struct ResponseScope {
@@ -226,10 +245,12 @@ mod tests {
         let second = UUID4::new();
         lifecycle.register(first);
         lifecycle.register(second);
-        let group = lifecycle.register_group(vec![first, second], None).unwrap();
-        let overlapping = lifecycle.register_group(vec![second], None).unwrap();
+        let group = lifecycle
+            .register_group(vec![first, second], None, None)
+            .unwrap();
+        let overlapping = lifecycle.register_group(vec![second], None, None).unwrap();
         let parent = lifecycle
-            .register_group(vec![group, overlapping], None)
+            .register_group(vec![group, overlapping], None, None)
             .unwrap();
 
         let scope = lifecycle.begin(&second).unwrap();
@@ -238,7 +259,7 @@ mod tests {
         assert!(!lifecycle.complete(&response, &scope));
         assert!(lifecycle.next_group_response().is_none());
         drop(scope);
-        let response = lifecycle.next_group_response().unwrap();
+        let response = lifecycle.next_group_response().unwrap().0;
         assert_eq!(*response.correlation_id(), overlapping);
         assert_eq!(
             response.failure_reason(),
@@ -253,7 +274,7 @@ mod tests {
         let response = DataResponseEnvelope::terminal(first, Some("first failed".to_owned()));
         assert!(lifecycle.complete(&response, &scope));
         drop(scope);
-        let response = lifecycle.next_group_response().unwrap();
+        let response = lifecycle.next_group_response().unwrap().0;
         assert_eq!(*response.correlation_id(), group);
         assert_eq!(
             response.failure_reason(),
@@ -265,7 +286,7 @@ mod tests {
         let scope = lifecycle.begin(&group).unwrap();
         assert!(lifecycle.complete(&response, &scope));
         drop(scope);
-        let response = lifecycle.next_group_response().unwrap();
+        let response = lifecycle.next_group_response().unwrap().0;
         assert_eq!(*response.correlation_id(), parent);
         assert_eq!(
             response.failure_reason(),
@@ -282,13 +303,13 @@ mod tests {
         let scope = lifecycle.begin(&child).unwrap();
         let response = DataResponseEnvelope::terminal(child, None);
         assert!(lifecycle.complete(&response, &scope));
-        let first = lifecycle.register_group(vec![child], None).unwrap();
-        let second = lifecycle.register_group(vec![child], None).unwrap();
+        let first = lifecycle.register_group(vec![child], None, None).unwrap();
+        let second = lifecycle.register_group(vec![child], None, None).unwrap();
         assert!(lifecycle.next_group_response().is_none());
         drop(scope);
 
         for id in [first, second] {
-            let response = lifecycle.next_group_response().unwrap();
+            let response = lifecycle.next_group_response().unwrap().0;
             assert_eq!(*response.correlation_id(), id);
             assert!(response.completed());
             assert_eq!(response.failure_reason(), None);
@@ -325,7 +346,10 @@ mod tests {
         };
 
         assert_eq!(
-            lifecycle.register_group(ids, None).unwrap_err().to_string(),
+            lifecycle
+                .register_group(ids, None, None)
+                .unwrap_err()
+                .to_string(),
             expected
         );
         assert_eq!(lifecycle.requests.len(), 1);
@@ -340,11 +364,11 @@ mod tests {
         let mut lifecycle = RequestLifecycle::default();
         let child = UUID4::new();
         lifecycle.register(child);
-        let group = lifecycle.register_group(vec![child], None).unwrap();
+        let group = lifecycle.register_group(vec![child], None, None).unwrap();
         let scope = lifecycle.begin(&child).unwrap();
         let response = DataResponseEnvelope::terminal(child, None);
         assert!(lifecycle.complete(&response, &scope));
-        assert!(lifecycle.clear().is_empty());
+        assert!(lifecycle.clear().0.is_empty());
         assert!(!lifecycle.is_pending(&group));
         lifecycle.register(child);
         assert!(!lifecycle.complete(&response, &scope));
@@ -369,8 +393,8 @@ mod tests {
         let current = DataResponseEnvelope::terminal(child, None);
         assert!(replacement.complete(&current, &current_scope));
         drop(current_scope);
-        let group = replacement.register_group(vec![child], None).unwrap();
-        let response = replacement.next_group_response().unwrap();
+        let group = replacement.register_group(vec![child], None, None).unwrap();
+        let response = replacement.next_group_response().unwrap().0;
         assert_eq!(*response.correlation_id(), group);
         assert_eq!(response.failure_reason(), None);
         assert!(original.is_pending(&child));

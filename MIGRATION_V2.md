@@ -356,6 +356,16 @@ Route historical results to type-specific callbacks:
 `on_historical_mark_prices` and `on_historical_index_prices` support native batch delivery, but the public
 Python API cannot initiate those requests.
 
+Historical request methods accept `callback=callable`. The callback receives the same string ID
+returned by the request method, replacing the v1 `UUID4` argument. It runs after `on_data_response`
+and after that request leaves pending state, including on failure.
+
+Use `request_join(request_ids, callback=None, request_id=None)` for completion joins. Pass time bounds
+to the child requests; the join waits for their completion and does not merge or replay their data.
+The actor and strategy methods `is_pending_request`, `has_pending_requests`, and `pending_requests`
+inspect the shared historical lifecycle. Pending snapshots contain string IDs. See
+[Python callbacks and joins](docs/concepts/actors.md#python-callbacks-and-joins) for ordering and cleanup.
+
 ### Events and custom subscriptions
 
 Replace the removed `on_event` hook with `on_time_event` for timers, `on_order_event` for aggregate order
@@ -1214,8 +1224,8 @@ medians, minimum-to-maximum spread, v2/v1 ratios, and percentage gaps. The drive
 
 ## Known limitations
 
-- **Request callbacks**: Python does not provide v1 joined-response, pending-request cleanup, or late and
-  duplicate delivery convenience behavior.
+- **Joined replay**: Python completion joins do not merge or replay historical data. See
+  [Python callbacks and joins](docs/concepts/actors.md#python-callbacks-and-joins).
 - **Message-bus backing**: use built-in configs such as `RedisMessageBusConfig`; arbitrary Python
   message-bus factory classes remain unsupported. V1
   `MessageBusConfig(database=DatabaseConfig(...), external_streams=[...])` maps to the builder calls

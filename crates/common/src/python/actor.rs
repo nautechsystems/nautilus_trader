@@ -56,7 +56,7 @@ use nautilus_model::{
 use pyo3::{
     IntoPyObjectExt,
     prelude::*,
-    types::{PyBytes, PyDict, PyList, PyWeakrefReference},
+    types::{PyBytes, PyDict, PyList, PySet, PyWeakrefReference},
 };
 use ustr::Ustr;
 
@@ -1028,6 +1028,7 @@ impl DataActor for PyDataActorInner {
         crate::python::response::response_handler(
             self.core().actor_id().inner(),
             Self::python_instance,
+            None,
         )
     }
 
@@ -2551,10 +2552,10 @@ impl PyDataActor {
     }
 
     #[pyo3(name = "request_data")]
-    #[pyo3(signature = (data_type, client_id, start=None, end=None, limit=None, params=None))]
+    #[pyo3(signature = (data_type, client_id, start=None, end=None, limit=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_data(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         data_type: DataType,
         client_id: ClientId,
@@ -2562,27 +2563,41 @@ impl PyDataActor {
         end: Option<Timestamp>,
         limit: Option<usize>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
-        self.ensure_registered_for_data()?;
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let request_id = DataActor::request_data(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_data(
+            actor.inner().core(),
             data_type,
             client_id,
             start,
             end,
             limit,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_instrument")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_instrument(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         #[gen_stub(override_type(
             type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
@@ -2592,45 +2607,78 @@ impl PyDataActor {
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
         let instrument_id = extract_instrument_ids(instrument_id)?;
-        self.ensure_registered_for_data()?;
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
-        let request_id = DataActor::request_instrument(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_instrument(
+            actor.inner().core(),
             instrument_id,
             start,
             end,
             client_id,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_instruments")]
-    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, params=None))]
+    #[pyo3(signature = (venue=None, start=None, end=None, client_id=None, params=None, callback=None))]
+    #[expect(clippy::too_many_arguments)]
     fn py_request_instruments(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         venue: Option<Venue>,
         start: Option<Timestamp>,
         end: Option<Timestamp>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
-        self.ensure_registered_for_data()?;
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
-        let request_id =
-            DataActor::request_instruments(self.inner_mut(), venue, start, end, client_id, params)
-                .map_err(to_pyvalue_err)?;
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_instruments(
+            actor.inner().core(),
+            venue,
+            start,
+            end,
+            client_id,
+            params,
+            handler,
+        )
+        .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_snapshot")]
-    #[pyo3(signature = (instrument_id, depth=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, depth=None, client_id=None, params=None, callback=None))]
     fn py_request_book_snapshot(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         #[gen_stub(override_type(
             type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
@@ -2639,28 +2687,41 @@ impl PyDataActor {
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
         let instrument_id = extract_instrument_ids(instrument_id)?;
-        self.ensure_registered_for_data()?;
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let depth = depth.and_then(NonZeroUsize::new);
 
-        let request_id = DataActor::request_book_snapshot(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_book_snapshot(
+            actor.inner().core(),
             instrument_id,
             depth,
             client_id,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_deltas")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_book_deltas(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         #[gen_stub(override_type(
             type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
@@ -2671,29 +2732,42 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
         let instrument_id = extract_instrument_ids(instrument_id)?;
-        self.ensure_registered_for_data()?;
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let request_id = DataActor::request_book_deltas(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_book_deltas(
+            actor.inner().core(),
             instrument_id,
             start,
             end,
             limit,
             client_id,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_book_depth")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, depth=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, depth=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_book_depth(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         #[gen_stub(override_type(
             type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
@@ -2705,14 +2779,26 @@ impl PyDataActor {
         depth: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
         let instrument_id = extract_instrument_ids(instrument_id)?;
-        self.ensure_registered_for_data()?;
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
         let depth = depth.and_then(NonZeroUsize::new);
-        let request_id = DataActor::request_book_depth(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_book_depth(
+            actor.inner().core(),
             instrument_id,
             start,
             end,
@@ -2720,16 +2806,17 @@ impl PyDataActor {
             depth,
             client_id,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_quotes")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_quotes(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         #[gen_stub(override_type(
             type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
@@ -2740,29 +2827,42 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
         let instrument_id = extract_instrument_ids(instrument_id)?;
-        self.ensure_registered_for_data()?;
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let request_id = DataActor::request_quotes(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_quotes(
+            actor.inner().core(),
             instrument_id,
             start,
             end,
             limit,
             client_id,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_trades")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_trades(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         #[gen_stub(override_type(
             type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
@@ -2773,29 +2873,42 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
         let instrument_id = extract_instrument_ids(instrument_id)?;
-        self.ensure_registered_for_data()?;
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let request_id = DataActor::request_trades(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_trades(
+            actor.inner().core(),
             instrument_id,
             start,
             end,
             limit,
             client_id,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_funding_rates")]
-    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (instrument_id, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_funding_rates(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         #[gen_stub(override_type(
             type_repr = "model.InstrumentId | typing.Sequence[model.InstrumentId]"
@@ -2806,29 +2919,42 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
         let instrument_id = extract_instrument_ids(instrument_id)?;
-        self.ensure_registered_for_data()?;
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let request_id = DataActor::request_funding_rates(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_funding_rates(
+            actor.inner().core(),
             instrument_id,
             start,
             end,
             limit,
             client_id,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
     }
 
     #[pyo3(name = "request_bars")]
-    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, client_id=None, params=None))]
+    #[pyo3(signature = (bar_type, start=None, end=None, limit=None, client_id=None, params=None, callback=None))]
     #[expect(clippy::too_many_arguments)]
     fn py_request_bars(
-        &mut self,
+        slf: &Bound<'_, Self>,
         py: Python<'_>,
         #[gen_stub(override_type(type_repr = "model.BarType | typing.Sequence[model.BarType]"))]
         bar_type: &Bound<'_, PyAny>,
@@ -2837,22 +2963,91 @@ impl PyDataActor {
         limit: Option<usize>,
         client_id: Option<ClientId>,
         params: Option<Py<PyDict>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
     ) -> PyResult<String> {
+        let actor = Self {
+            inner: Rc::clone(&slf.try_borrow()?.inner),
+        };
+
         let bar_type = extract_bar_types(bar_type)?;
-        self.ensure_registered_for_data()?;
+        actor.ensure_registered_for_data()?;
         let params = dict_to_params(py, params)?;
         let limit = limit.and_then(NonZeroUsize::new);
-        let request_id = DataActor::request_bars(
-            self.inner_mut(),
+        let handler = crate::python::response::request_handler(
+            py,
+            actor.inner().core().actor_id().inner(),
+            PyDataActorInner::python_instance,
+            callback,
+        )?;
+        let request_id = DataActorCore::request_bars(
+            actor.inner().core(),
             bar_type,
             start,
             end,
             limit,
             client_id,
             params,
+            handler,
         )
         .map_err(to_pyvalue_err)?;
         Ok(request_id.to_string())
+    }
+
+    #[pyo3(name = "request_join", signature = (request_ids, callback=None, request_id=None))]
+    fn py_request_join(
+        slf: &Bound<'_, Self>,
+        py: Python<'_>,
+        #[gen_stub(override_type(type_repr = "typing.Sequence[str | core.UUID4]", imports = ("typing", "nautilus_trader.core")))]
+        request_ids: Vec<Bound<'_, PyAny>>,
+        #[gen_stub(override_type(type_repr = "typing.Callable[[str], None] | None"))]
+        callback: Option<Py<PyAny>>,
+        #[gen_stub(override_type(type_repr = "str | core.UUID4 | None", imports = ("nautilus_trader.core",)))]
+        request_id: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<String> {
+        let actor_id = {
+            let actor = slf.try_borrow()?;
+            actor.ensure_registered_for_data()?;
+            actor.inner().core().actor_id().inner()
+        };
+
+        let request_ids = request_ids
+            .into_iter()
+            .map(|id| crate::python::response::extract_request_id(&id))
+            .collect::<PyResult<Vec<_>>>()?;
+        let request_id = request_id
+            .map(crate::python::response::extract_request_id)
+            .transpose()?;
+        crate::python::response::request_join::<PyDataActorInner>(
+            py,
+            actor_id,
+            PyDataActorInner::python_instance,
+            request_ids,
+            request_id,
+            callback,
+        )
+    }
+
+    #[pyo3(name = "is_pending_request")]
+    fn py_is_pending_request(
+        &self,
+        #[gen_stub(override_type(type_repr = "str | core.UUID4", imports = ("nautilus_trader.core",)))]
+        request_id: &Bound<'_, PyAny>,
+    ) -> PyResult<bool> {
+        let id = crate::python::response::extract_request_id(request_id)?;
+        Ok(self.inner().core().is_pending_request(&id))
+    }
+
+    #[pyo3(name = "has_pending_requests")]
+    fn py_has_pending_requests(&self) -> bool {
+        !self.inner().core().pending_requests().is_empty()
+    }
+
+    #[pyo3(name = "pending_requests")]
+    #[gen_stub(override_return_type(type_repr = "set[str]"))]
+    fn py_pending_requests(&self, py: Python<'_>) -> PyResult<Py<PySet>> {
+        let ids = self.inner().core().pending_requests();
+        PySet::new(py, ids.iter().map(ToString::to_string)).map(Bound::unbind)
     }
 
     /// Requests reconnect of one socket endpoint owned by `client_id`.
@@ -5413,6 +5608,534 @@ class CapturingActor:
     }
 
     #[rstest]
+    #[case("request_data")]
+    #[case("request_instrument")]
+    #[case("request_instruments")]
+    #[case("request_book_snapshot")]
+    #[case("request_book_deltas")]
+    #[case("request_book_depth")]
+    #[case("request_quotes")]
+    #[case("request_trades")]
+    #[case("request_funding_rates")]
+    #[case("request_bars")]
+    fn test_python_request_completion_callback_and_pending(
+        #[case] method: &str,
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            *get_message_bus().borrow_mut() = MessageBus::default();
+            let actor = Py::new(py, create_registered_actor(clock, cache, trader_id)).unwrap();
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+class CompletionActor:
+    def __init__(self, native):
+        self.native = native
+        self.events = []
+    def on_data_response(self, response):
+        self.events.append(("response", response.correlation_id, response.completed))
+        assert self.native.is_pending_request(response.correlation_id) == (not response.completed)
+    def complete(self, request_id):
+        assert not self.native.is_pending_request(request_id)
+        assert self.native.pending_requests() == set()
+        assert not self.native.has_pending_requests()
+        self.events.append(("callback", request_id, True))
+        self.next_request = self.native.request_instrument(instrument_id)
+    def submit(self, method):
+        if method == "request_data":
+            args = (data_type, client_id)
+        elif method == "request_instruments":
+            args = ()
+        elif method == "request_bars":
+            args = (bar_type,)
+        else:
+            args = (instrument_id,)
+        return getattr(self.native, method)(*args, callback=self.complete)
+"#
+                ),
+                c_str!("completion_actor.py"),
+                c_str!("completion_actor"),
+            )
+            .unwrap();
+            module
+                .setattr("instrument_id", sample_quote().instrument_id)
+                .unwrap();
+            module.setattr("bar_type", sample_bar().bar_type).unwrap();
+            module
+                .setattr("data_type", DataType::new("TestData", None, None))
+                .unwrap();
+            module
+                .setattr("client_id", ClientId::new("HISTORY"))
+                .unwrap();
+            let tracker = module
+                .getattr("CompletionActor")
+                .unwrap()
+                .call1((actor.clone_ref(py),))
+                .unwrap();
+            actor.borrow_mut(py).set_python_instance(&tracker).unwrap();
+            actor.borrow(py).register_in_global_registries().unwrap();
+            let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_queue_execute(),
+                handler,
+            );
+            let callback = tracker.getattr("complete").unwrap();
+            tracker.setattr("complete", 42).unwrap();
+            let error = tracker.call_method1("submit", (method,)).unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyTypeError>(py));
+            assert!(saver.get_messages().is_empty());
+            assert!(actor.borrow(py).inner().core.pending_requests().is_empty());
+            tracker.setattr("complete", callback).unwrap();
+            let root = tracker
+                .call_method1("submit", (method,))
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            let id: UUID4 = root.parse().unwrap();
+            assert_eq!(
+                actor
+                    .bind(py)
+                    .call_method0("pending_requests")
+                    .unwrap()
+                    .extract::<std::collections::HashSet<String>>()
+                    .unwrap(),
+                [root.clone()].into()
+            );
+            let terminal = crate::messages::data::DataResponseEnvelope::terminal(
+                id,
+                Some("empty result failure".to_owned()),
+            );
+            msgbus::send_response_envelope(&terminal);
+            msgbus::send_response_envelope(&terminal);
+            assert_eq!(
+                tracker
+                    .getattr("events")
+                    .unwrap()
+                    .extract::<Vec<(String, String, bool)>>()
+                    .unwrap(),
+                vec![
+                    ("response".to_owned(), root.clone(), true),
+                    ("callback".to_owned(), root, true)
+                ]
+            );
+            let next = tracker
+                .getattr("next_request")
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            assert_eq!(
+                actor
+                    .bind(py)
+                    .call_method0("pending_requests")
+                    .unwrap()
+                    .extract::<std::collections::HashSet<String>>()
+                    .unwrap(),
+                [next].into()
+            );
+            assert_eq!(saver.get_messages().len(), 2);
+        });
+    }
+
+    #[rstest]
+    #[case::success(false)]
+    #[case::failure(true)]
+    fn test_python_request_join_callback_order_and_late_join(
+        #[case] failed: bool,
+        #[values("none", "hook", "callback")] raises: &str,
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            *get_message_bus().borrow_mut() = MessageBus::default();
+            let actor = Py::new(py, create_registered_actor(clock, cache, trader_id)).unwrap();
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+class JoinActor:
+    def __init__(self, native):
+        self.native = native
+        self.events = []
+    def on_historical_quotes(self, quotes):
+        self.events.append(("payload", len(quotes)))
+    def on_data_response(self, response):
+        self.events.append(("response", response.correlation_id))
+        self.failure = response.failure_reason
+        assert self.native.is_pending_request(response.correlation_id) == (not response.completed)
+        if raises == "hook":
+            raise RuntimeError("response hook failed")
+    def complete(self, request_id):
+        assert not self.native.is_pending_request(request_id)
+        self.events.append(("callback", request_id))
+        if raises == "callback":
+            raise RuntimeError("completion callback failed")
+    def late_complete(self, request_id):
+        assert self.native.pending_requests() == set()
+        self.events.append(("late", request_id))
+        self.native.reset()
+    def on_reset(self):
+        pass
+"#
+                ),
+                c_str!("join_actor.py"),
+                c_str!("join_actor"),
+            )
+            .unwrap();
+            module.setattr("raises", raises).unwrap();
+            let tracker = module
+                .getattr("JoinActor")
+                .unwrap()
+                .call1((actor.clone_ref(py),))
+                .unwrap();
+            actor.borrow_mut(py).set_python_instance(&tracker).unwrap();
+            actor.borrow(py).register_in_global_registries().unwrap();
+            let (handler, _) = get_typed_into_message_saving_handler::<DataCommand>(None);
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_queue_execute(),
+                handler,
+            );
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("callback", tracker.getattr("complete").unwrap())
+                .unwrap();
+            let quote = sample_quote();
+            let root = actor
+                .bind(py)
+                .call_method("request_quotes", (quote.instrument_id,), Some(&kwargs))
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+
+            for (children, message) in [
+                (
+                    Vec::<String>::new(),
+                    "Request group must not be empty".to_owned(),
+                ),
+                (
+                    vec![root.clone(), root.clone()],
+                    format!("Duplicate request ID in group: {root}"),
+                ),
+                (
+                    vec![UUID4::new().to_string()],
+                    "Unknown request ID:".to_owned(),
+                ),
+            ] {
+                let error = actor
+                    .bind(py)
+                    .call_method("request_join", (children,), Some(&kwargs))
+                    .unwrap_err();
+                assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+                assert!(error.to_string().contains(&message));
+                assert_eq!(actor.borrow(py).inner().core.pending_requests().len(), 1);
+            }
+
+            let group = actor
+                .bind(py)
+                .call_method("request_join", (vec![root.clone()],), Some(&kwargs))
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            let id: UUID4 = root.parse().unwrap();
+
+            let payload = QuotesResponse::new(
+                id,
+                ClientId::new("HISTORY"),
+                quote.instrument_id,
+                vec![quote],
+                None,
+                None,
+                UnixNanos::from(47),
+                None,
+            );
+
+            let intermediate = crate::messages::data::DataResponseEnvelope::new(
+                crate::messages::data::DataResponse::Quotes(payload),
+                false,
+                None,
+            );
+            msgbus::send_response_envelope(&intermediate);
+            let failure = failed.then(|| "partial failure".to_owned());
+            let terminal = crate::messages::data::DataResponseEnvelope::terminal(id, failure);
+            msgbus::send_response_envelope(&terminal);
+            msgbus::send_response_envelope(&terminal);
+            let events = tracker
+                .getattr("events")
+                .unwrap()
+                .repr()
+                .unwrap()
+                .to_string();
+            assert_eq!(
+                events,
+                format!(
+                    "[('payload', 1), ('response', '{root}'), ('response', '{root}'), ('callback', '{root}'), ('response', '{group}'), ('callback', '{group}')]"
+                )
+            );
+            assert_eq!(
+                tracker
+                    .getattr("failure")
+                    .unwrap()
+                    .extract::<Option<String>>()
+                    .unwrap(),
+                failed.then(|| format!("Request {root}: partial failure"))
+            );
+            kwargs
+                .set_item("callback", tracker.getattr("late_complete").unwrap())
+                .unwrap();
+            let late = UUID4::new().to_string();
+            kwargs.set_item("request_id", &late).unwrap();
+            let returned = actor
+                .bind(py)
+                .call_method("request_join", (vec![root, group],), Some(&kwargs))
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            assert_eq!(returned, late);
+            assert_eq!(
+                tracker
+                    .getattr("events")
+                    .unwrap()
+                    .get_item(-1)
+                    .unwrap()
+                    .extract::<(String, String)>()
+                    .unwrap(),
+                ("late".to_owned(), late)
+            );
+        });
+    }
+
+    #[rstest]
+    #[case::reset("reset")]
+    #[case::dispose("dispose")]
+    #[case::fault("fault")]
+    fn test_python_request_callbacks_release_on_cleanup(
+        #[case] action: &str,
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let bus = py
+                .get_type::<crate::python::msgbus::PyMessageBus>()
+                .call1((trader_id,))
+                .unwrap();
+            let actor = Py::new(py, create_registered_actor(clock, cache, trader_id)).unwrap();
+            actor
+                .borrow_mut(py)
+                .set_python_instance(actor.bind(py).as_any())
+                .unwrap();
+            actor.borrow(py).register_in_global_registries().unwrap();
+            let (handler, _) = get_typed_into_message_saving_handler::<DataCommand>(None);
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_queue_execute(),
+                handler,
+            );
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+released = []
+called = []
+class Callback:
+    def __init__(self, name):
+        self.name = name
+    def __call__(self, request_id):
+        called.append(request_id)
+    def __del__(self):
+        bus.endpoints()
+        released.append(self.name)
+"#
+                ),
+                c_str!("cleanup_callbacks.py"),
+                c_str!("cleanup_callbacks"),
+            )
+            .unwrap();
+            module.setattr("bus", bus).unwrap();
+            let callback = module
+                .getattr("Callback")
+                .unwrap()
+                .call1(("request",))
+                .unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("callback", &callback).unwrap();
+            let root = actor
+                .bind(py)
+                .call_method(
+                    "request_quotes",
+                    (sample_quote().instrument_id,),
+                    Some(&kwargs),
+                )
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            drop(callback);
+            let callback = module
+                .getattr("Callback")
+                .unwrap()
+                .call1(("group",))
+                .unwrap();
+            kwargs.set_item("callback", &callback).unwrap();
+            let group = actor
+                .bind(py)
+                .call_method("request_join", (vec![root.clone()],), Some(&kwargs))
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            drop(callback);
+            drop(kwargs);
+
+            if action == "fault" {
+                actor.bind(py).call_method0("start").unwrap();
+            }
+
+            actor.bind(py).call_method0(action).unwrap();
+            let root: UUID4 = root.parse().unwrap();
+            msgbus::send_response_envelope(&crate::messages::data::DataResponseEnvelope::terminal(
+                root, None,
+            ));
+            let mut released = module
+                .getattr("released")
+                .unwrap()
+                .extract::<Vec<String>>()
+                .unwrap();
+            released.sort();
+            assert_eq!(released, vec!["group", "request"]);
+            assert_eq!(
+                module
+                    .getattr("called")
+                    .unwrap()
+                    .extract::<Vec<String>>()
+                    .unwrap(),
+                Vec::<String>::new()
+            );
+            assert!(
+                !actor
+                    .bind(py)
+                    .call_method1("is_pending_request", (group,))
+                    .unwrap()
+                    .extract::<bool>()
+                    .unwrap()
+            );
+            assert!(actor.borrow(py).inner().core.pending_requests().is_empty());
+        });
+    }
+
+    #[rstest]
+    #[case::payload("payload")]
+    #[case::root_hook("root")]
+    #[case::group_hook("group")]
+    fn test_python_request_callback_reset_during_hook(
+        #[case] reset_at: &str,
+        clock: Rc<RefCell<VirtualClock>>,
+        cache: Rc<RefCell<Cache>>,
+        trader_id: TraderId,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            *get_message_bus().borrow_mut() = MessageBus::default();
+            let actor = Py::new(py, create_registered_actor(clock, cache, trader_id)).unwrap();
+            let module = PyModule::from_code(
+                py,
+                c_str!(
+                    r#"
+class ResetActor:
+    def __init__(self, native, reset_at):
+        self.native = native
+        self.reset_at = reset_at
+        self.events = []
+    def on_reset(self):
+        pass
+    def on_historical_quotes(self, quotes):
+        self.events.append("payload")
+        if self.reset_at == "payload":
+            self.native.reset()
+    def on_data_response(self, response):
+        kind = "root" if response.correlation_id == self.root else "group"
+        self.events.append(kind)
+        if self.reset_at == kind:
+            self.native.reset()
+    def complete(self, request_id):
+        assert not self.native.is_pending_request(request_id)
+        self.events.append("callback:" + request_id)
+"#
+                ),
+                c_str!("reset_callback_actor.py"),
+                c_str!("reset_callback_actor"),
+            )
+            .unwrap();
+            let tracker = module
+                .getattr("ResetActor")
+                .unwrap()
+                .call1((actor.clone_ref(py), reset_at))
+                .unwrap();
+            actor.borrow_mut(py).set_python_instance(&tracker).unwrap();
+            actor.borrow(py).register_in_global_registries().unwrap();
+            let (handler, _) = get_typed_into_message_saving_handler::<DataCommand>(None);
+            msgbus::register_data_command_endpoint(
+                MessagingSwitchboard::data_engine_queue_execute(),
+                handler,
+            );
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("callback", tracker.getattr("complete").unwrap())
+                .unwrap();
+            let quote = sample_quote();
+            let root = actor
+                .bind(py)
+                .call_method("request_quotes", (quote.instrument_id,), Some(&kwargs))
+                .unwrap()
+                .extract::<String>()
+                .unwrap();
+            tracker.setattr("root", &root).unwrap();
+            actor
+                .bind(py)
+                .call_method("request_join", (vec![root.clone()],), Some(&kwargs))
+                .unwrap();
+            let id: UUID4 = root.parse().unwrap();
+
+            let response = QuotesResponse::new(
+                id,
+                ClientId::new("HISTORY"),
+                quote.instrument_id,
+                vec![quote],
+                None,
+                None,
+                UnixNanos::from(47),
+                None,
+            );
+            msgbus::send_response(&id, &crate::messages::data::DataResponse::Quotes(response));
+
+            let expected = match reset_at {
+                "payload" => vec!["payload".to_owned()],
+                "root" => vec!["payload".to_owned(), "root".to_owned()],
+                "group" => vec![
+                    "payload".to_owned(),
+                    "root".to_owned(),
+                    format!("callback:{root}"),
+                    "group".to_owned(),
+                ],
+                _ => unreachable!(),
+            };
+
+            assert_eq!(
+                tracker
+                    .getattr("events")
+                    .unwrap()
+                    .extract::<Vec<String>>()
+                    .unwrap(),
+                expected
+            );
+            assert!(actor.borrow(py).inner().core.pending_requests().is_empty());
+        });
+    }
+
+    #[rstest]
     fn test_python_response_hook_can_submit_next_request(
         clock: Rc<RefCell<VirtualClock>>,
         cache: Rc<RefCell<Cache>>,
@@ -5599,13 +6322,13 @@ class ResponseActor:
                 .borrow(py)
                 .inner()
                 .core
-                .register_request_group(vec![root], None)
+                .register_request_group(vec![root], None, None)
                 .unwrap();
             let second = actor
                 .borrow(py)
                 .inner()
                 .core
-                .register_request_group(vec![root], None)
+                .register_request_group(vec![root], None, None)
                 .unwrap();
 
             let payload = QuotesResponse::new(

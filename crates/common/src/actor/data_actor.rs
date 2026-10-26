@@ -1359,7 +1359,7 @@ pub trait DataActor {
     where
         Self: DataActorNative,
     {
-        while let Some(envelope) = self.core().next_group_response() {
+        while let Some((envelope, _handler)) = self.core().next_group_response() {
             let Some(scope) = self.core().begin_response(envelope.correlation_id()) else {
                 continue;
             };
@@ -3235,7 +3235,7 @@ pub trait DataActor {
         self.core().check_registered();
         let id = self
             .core()
-            .register_request_group(request_ids, request_id)?;
+            .register_request_group(request_ids, request_id, None)?;
         self.drain_request_groups();
         Ok(id)
     }
@@ -6729,14 +6729,21 @@ impl DataActorCore {
         self.requests.borrow().is_pending(request_id)
     }
 
+    /// Returns the IDs of this actor's pending historical requests and groups in unspecified order.
+    #[must_use]
+    pub fn pending_requests(&self) -> Vec<UUID4> {
+        self.requests.borrow().pending()
+    }
+
     pub(crate) fn register_request_group(
         &self,
         request_ids: Vec<UUID4>,
         request_id: Option<UUID4>,
+        handler: Option<TypedHandler<DataResponseEnvelope>>,
     ) -> anyhow::Result<UUID4> {
         self.requests
             .borrow_mut()
-            .register_group(request_ids, request_id)
+            .register_group(request_ids, request_id, handler)
     }
 
     pub(crate) fn begin_response(&self, request_id: &UUID4) -> Option<ResponseScope> {
@@ -6756,17 +6763,24 @@ impl DataActorCore {
         self.requests.borrow_mut().complete(response, scope)
     }
 
-    pub(crate) fn next_group_response(&self) -> Option<DataResponseEnvelope> {
+    pub(crate) fn next_group_response(
+        &self,
+    ) -> Option<(
+        DataResponseEnvelope,
+        Option<TypedHandler<DataResponseEnvelope>>,
+    )> {
         self.requests.borrow_mut().next_group_response()
     }
 
     fn clear_pending_requests(&self) {
-        let ids = self.requests.borrow_mut().clear();
-        let bus = get_message_bus();
-        let mut bus = bus.borrow_mut();
-        for id in ids {
-            bus.take_response_handler(&id);
+        let (ids, mut handlers) = self.requests.borrow_mut().clear();
+        {
+            let bus = get_message_bus();
+            let mut bus = bus.borrow_mut();
+            handlers.extend(ids.iter().filter_map(|id| bus.take_response_handler(id)));
         }
+
+        drop(handlers);
     }
 
     /// Sends a fire-and-observe reconnect command.

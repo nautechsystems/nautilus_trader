@@ -7,6 +7,7 @@ import enum
 import typing
 
 from nautilus_trader import common
+from nautilus_trader import core
 from nautilus_trader import model
 from nautilus_trader import portfolio
 
@@ -910,6 +911,7 @@ class Strategy:
         end: datetime.datetime | None = None,
         limit: int | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_instrument(
         self,
@@ -918,6 +920,7 @@ class Strategy:
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_instruments(
         self,
@@ -926,6 +929,7 @@ class Strategy:
         end: datetime.datetime | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_book_snapshot(
         self,
@@ -933,6 +937,7 @@ class Strategy:
         depth: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_book_deltas(
         self,
@@ -942,6 +947,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_book_depth(
         self,
@@ -952,6 +958,7 @@ class Strategy:
         depth: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_quotes(
         self,
@@ -961,6 +968,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_trades(
         self,
@@ -970,6 +978,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_funding_rates(
         self,
@@ -979,6 +988,7 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
     def request_bars(
         self,
@@ -988,7 +998,17 @@ class Strategy:
         limit: int | None = None,
         client_id: model.ClientId | None = None,
         params: dict | None = None,
+        callback: typing.Callable[[str], None] | None = None,
     ) -> str: ...
+    def request_join(
+        self,
+        request_ids: typing.Sequence[str | core.UUID4],
+        callback: typing.Callable[[str], None] | None = None,
+        request_id: str | core.UUID4 | None = None,
+    ) -> str: ...
+    def is_pending_request(self, request_id: str | core.UUID4) -> bool: ...
+    def has_pending_requests(self) -> bool: ...
+    def pending_requests(self) -> set[str]: ...
     def reconnect_socket(self, client_id: model.ClientId, endpoint: str) -> None: ...
     def publish_message(self, topic: str, message: object) -> None: ...
     def subscribe_topic(
