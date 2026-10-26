@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use ahash::AHashSet;
-use nautilus_core::{AtomicMap, UnixNanos};
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -33,7 +33,7 @@ use super::{
 };
 use crate::{
     providers::extract_condition_id,
-    resolve::{ResolveWatchEntry, remove_data_resolve_watch_entry},
+    resolve::{ResolveWatchlist, remove_data_resolve_watch_entry},
 };
 
 impl DataSubscriptions {
@@ -220,10 +220,9 @@ impl DataSubscriptions {
             ] {
                 ids.extend(
                     subscriptions
-                        .load()
                         .iter()
-                        .filter(|id| matches_condition(id))
-                        .copied(),
+                        .map(|id| *id)
+                        .filter(|id| matches_condition(id)),
                 );
             }
 
@@ -344,10 +343,10 @@ pub(crate) fn is_instrument_expired_and_not_reported_open(
 }
 
 fn is_watchlisted_instrument(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     instrument_id: InstrumentId,
 ) -> bool {
-    let snapshot = watchlist.load();
+    let snapshot = watchlist.read();
     snapshot.values().any(|entry| {
         entry
             .tracked
@@ -361,10 +360,10 @@ mod tests {
     use std::sync::Arc;
 
     use ahash::AHashSet;
-    use dashmap::DashMap;
+    use dashmap::{DashMap, DashSet};
     use log::Level;
     use nautilus_common::live::dst::time::Instant;
-    use nautilus_core::{AtomicMap, AtomicSet, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{AtomicMap, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::QuoteTick,
         enums::BookType,
@@ -400,7 +399,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -472,12 +471,12 @@ mod tests {
         instrument: &InstrumentAny,
         order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
         last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
-        active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
-        active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
-        active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
+        active_quote_subs: &Arc<DashSet<InstrumentId>>,
+        active_delta_subs: &Arc<DashSet<InstrumentId>>,
+        active_trade_subs: &Arc<DashSet<InstrumentId>>,
         book_sync: &BookSyncTracker,
         pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
-        ws_open_tokens: &Arc<AtomicSet<Ustr>>,
+        ws_open_tokens: &Arc<DashSet<Ustr>>,
     ) {
         let instrument_id = instrument.id();
 
@@ -513,7 +512,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -537,7 +536,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -573,7 +572,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -675,7 +674,7 @@ mod tests {
 
         let mut subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,

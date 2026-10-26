@@ -15,14 +15,14 @@
 
 use std::sync::Arc;
 
-use ahash::AHashSet;
+use ahash::{AHashMap, AHashSet};
 use nautilus_core::{AtomicMap, DurationNanos, UnixNanos};
 use nautilus_model::{
     events::PositionEvent,
     identifiers::{InstrumentId, PositionId},
     instruments::{Instrument, InstrumentAny},
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 
 use crate::{common::consts::POLYMARKET_VENUE, providers::extract_condition_id};
 
@@ -42,6 +42,8 @@ pub(crate) struct ResolveWatchEntry {
     pub(crate) tracked: ahash::AHashMap<String, TrackedInstrument>,
     pub(crate) paused: bool,
 }
+
+pub(crate) type ResolveWatchlist = RwLock<AHashMap<String, ResolveWatchEntry>>;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum ResolveWatchSelectionMode {
@@ -109,7 +111,7 @@ fn binary_option_context(
 }
 
 pub(crate) fn upsert_data_resolve_watch_entry_from_instrument(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     instrument: &InstrumentAny,
 ) -> bool {
     let Some((condition_id, token_id, expiration_ns, tracked)) = binary_option_context(instrument)
@@ -117,11 +119,12 @@ pub(crate) fn upsert_data_resolve_watch_entry_from_instrument(
         return false;
     };
 
-    watchlist.rcu(|entries| {
+    {
+        let mut entries = watchlist.write();
         let entry = entries
             .entry(condition_id.clone())
             .or_insert_with(|| ResolveWatchEntry {
-                condition_id: condition_id.clone(),
+                condition_id,
                 expiration_ns,
                 tracked: ahash::AHashMap::new(),
                 paused: false,
@@ -129,13 +132,13 @@ pub(crate) fn upsert_data_resolve_watch_entry_from_instrument(
         entry.expiration_ns = merge_expiration_ns(entry.expiration_ns, expiration_ns);
         entry
             .tracked
-            .entry(token_id.clone())
+            .entry(token_id)
             .and_modify(|existing| existing.has_data_subscription = true)
             .or_insert_with(|| TrackedInstrument {
                 has_data_subscription: true,
-                ..tracked.clone()
+                ..tracked
             });
-    });
+    }
     true
 }
 
@@ -148,11 +151,12 @@ fn merge_expiration_ns(current: UnixNanos, incoming: UnixNanos) -> UnixNanos {
 }
 
 pub(crate) fn remove_data_resolve_watch_entry(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     instrument_id: InstrumentId,
     has_data_subscription: bool,
 ) {
-    watchlist.rcu(|entries| {
+    {
+        let mut entries = watchlist.write();
         entries.retain(|_, entry| {
             entry.tracked.retain(|_, tracked| {
                 if tracked.instrument_id != instrument_id {
@@ -163,11 +167,11 @@ pub(crate) fn remove_data_resolve_watch_entry(
             });
             !entry.tracked.is_empty()
         });
-    });
+    }
 }
 
 pub(crate) fn upsert_resolve_watch_entry_from_instrument(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     instrument: &InstrumentAny,
     position_id: PositionId,
 ) {
@@ -176,11 +180,12 @@ pub(crate) fn upsert_resolve_watch_entry_from_instrument(
         return;
     };
 
-    watchlist.rcu(|entries| {
+    {
+        let mut entries = watchlist.write();
         let entry = entries
             .entry(condition_id.clone())
             .or_insert_with(|| ResolveWatchEntry {
-                condition_id: condition_id.clone(),
+                condition_id,
                 expiration_ns,
                 tracked: ahash::AHashMap::new(),
                 paused: false,
@@ -188,20 +193,20 @@ pub(crate) fn upsert_resolve_watch_entry_from_instrument(
         entry.expiration_ns = merge_expiration_ns(entry.expiration_ns, expiration_ns);
         entry
             .tracked
-            .entry(token_id.clone())
+            .entry(token_id)
             .and_modify(|existing| {
                 existing.open_position_ids.insert(position_id);
             })
             .or_insert_with(|| {
-                let mut seeded = tracked.clone();
+                let mut seeded = tracked;
                 seeded.open_position_ids.insert(position_id);
                 seeded
             });
-    });
+    }
 }
 
 fn remove_resolve_watch_instrument(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     instrument: &InstrumentAny,
     position_id: PositionId,
 ) {
@@ -211,7 +216,8 @@ fn remove_resolve_watch_instrument(
         return;
     };
 
-    watchlist.rcu(|entries| {
+    {
+        let mut entries = watchlist.write();
         let remove_entry = match entries.get_mut(&condition_id) {
             Some(entry) => {
                 let remove_token = match entry.tracked.get_mut(&token_id) {
@@ -233,13 +239,13 @@ fn remove_resolve_watch_instrument(
         if remove_entry {
             entries.remove(&condition_id);
         }
-    });
+    }
 }
 
 pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
     owner_lock: &Arc<Mutex<()>>,
     closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     event: &PositionEvent,
 ) {
@@ -260,14 +266,15 @@ pub(crate) fn update_resolve_watchlist_from_position_event_serialized(
     };
 
     let terminal_conditions = closed_condition_ids.lock();
-    if terminal_conditions.contains(&condition_id) && !watchlist.contains_key(&condition_id) {
+    if terminal_conditions.contains(&condition_id) && !watchlist.read().contains_key(&condition_id)
+    {
         return;
     }
     apply_position_event_to_watchlist(watchlist, instrument, event);
 }
 
 fn apply_position_event_to_watchlist(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     instrument: &InstrumentAny,
     event: &PositionEvent,
 ) {
@@ -348,20 +355,21 @@ pub(crate) fn collect_resolve_watch_selection(
 }
 
 pub(crate) fn pause_resolve_watch_entries(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     condition_ids: &[String],
 ) {
     if condition_ids.is_empty() {
         return;
     }
 
-    watchlist.rcu(|entries| {
+    {
+        let mut entries = watchlist.write();
         for condition_id in condition_ids {
             if let Some(entry) = entries.get_mut(condition_id) {
                 entry.paused = true;
             }
         }
-    });
+    }
 }
 
 #[cfg(test)]
@@ -381,7 +389,7 @@ mod tests {
     use super::*;
 
     fn update_resolve_watchlist_from_position_event(
-        watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+        watchlist: &Arc<ResolveWatchlist>,
         instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         event: &PositionEvent,
     ) {
@@ -540,7 +548,7 @@ mod tests {
 
     #[rstest]
     fn position_events_build_condition_level_watch_entries() {
-        let watchlist: Arc<AtomicMap<String, ResolveWatchEntry>> = Arc::new(AtomicMap::new());
+        let watchlist: Arc<ResolveWatchlist> = Arc::default();
         let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
         let expiration_ns = UnixNanos::from(1_000_000_000);
         let yes = seed_instrument_with_context(
@@ -579,7 +587,7 @@ mod tests {
             &stub_position_opened_event(no.id()),
         );
 
-        let entries = watchlist.load();
+        let entries = watchlist.read();
         let entry = entries
             .get("0xCOND-BTC")
             .expect("expected watch entry for condition");
@@ -610,7 +618,7 @@ mod tests {
             &instruments,
             &stub_position_closed_event(yes.id()),
         );
-        let entries = watchlist.load();
+        let entries = watchlist.read();
         let entry = entries
             .get("0xCOND-BTC")
             .expect("expected remaining condition entry");
@@ -622,12 +630,12 @@ mod tests {
             &instruments,
             &stub_position_closed_event(no.id()),
         );
-        assert!(!watchlist.contains_key(&"0xCOND-BTC".to_string()));
+        assert!(!watchlist.read().contains_key(&"0xCOND-BTC".to_string()));
     }
 
     #[rstest]
     fn position_events_keep_token_watched_until_last_position_id_closes() {
-        let watchlist: Arc<AtomicMap<String, ResolveWatchEntry>> = Arc::new(AtomicMap::new());
+        let watchlist: Arc<ResolveWatchlist> = Arc::default();
         let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
         let expiration_ns = UnixNanos::from(1_000_000_000);
         let yes = seed_instrument_with_context(
@@ -654,7 +662,7 @@ mod tests {
             &stub_position_opened_event_with_position_id(yes.id(), "P-2"),
         );
 
-        let entries = watchlist.load();
+        let entries = watchlist.read();
         let entry = entries
             .get("0xCOND-BTC")
             .expect("expected watch entry for condition");
@@ -671,7 +679,7 @@ mod tests {
             &stub_position_closed_event_with_position_id(yes.id(), "P-1"),
         );
 
-        let entries = watchlist.load();
+        let entries = watchlist.read();
         let entry = entries
             .get("0xCOND-BTC")
             .expect("expected condition still watched");
@@ -693,12 +701,12 @@ mod tests {
             &stub_position_closed_event_with_position_id(yes.id(), "P-2"),
         );
 
-        assert!(!watchlist.contains_key(&"0xCOND-BTC".to_string()));
+        assert!(!watchlist.read().contains_key(&"0xCOND-BTC".to_string()));
     }
 
     #[rstest]
     fn data_subscription_and_position_owners_are_removed_independently() {
-        let watchlist: Arc<AtomicMap<String, ResolveWatchEntry>> = Arc::new(AtomicMap::new());
+        let watchlist: Arc<ResolveWatchlist> = Arc::default();
         let instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>> = Arc::new(AtomicMap::new());
         let yes = seed_instrument_with_context(
             &instruments,
@@ -720,7 +728,7 @@ mod tests {
         );
         remove_data_resolve_watch_entry(&watchlist, yes.id(), false);
 
-        let entries = watchlist.load();
+        let entries = watchlist.read();
         let tracked = entries
             .get("0xCOND-BTC")
             .expect("position owner should retain condition")
@@ -736,14 +744,14 @@ mod tests {
             &instruments,
             &stub_position_closed_event(yes.id()),
         );
-        assert!(!watchlist.contains_key(&"0xCOND-BTC".to_string()));
+        assert!(!watchlist.read().contains_key(&"0xCOND-BTC".to_string()));
     }
 
     #[rstest]
     fn serialized_position_update_waits_for_resolution_owner_lock() {
         let owner_lock = Arc::new(Mutex::new(()));
         let closed_condition_ids = Arc::new(Mutex::new(AHashSet::new()));
-        let watchlist = Arc::new(AtomicMap::new());
+        let watchlist = Arc::new(ResolveWatchlist::default());
         let instruments = Arc::new(AtomicMap::new());
         let instrument = seed_instrument_with_context(
             &instruments,
@@ -786,13 +794,13 @@ mod tests {
             .expect("position update should complete after lock release");
         update_thread.join().expect("position update thread");
 
-        assert!(watchlist.contains_key(&"0xCOND-BTC".to_string()));
+        assert!(watchlist.read().contains_key(&"0xCOND-BTC".to_string()));
     }
 
     #[rstest]
     fn position_event_does_not_recreate_terminal_watch() {
         let owner_lock = Arc::new(Mutex::new(()));
-        let watchlist = Arc::new(AtomicMap::new());
+        let watchlist = Arc::new(ResolveWatchlist::default());
         let instruments = Arc::new(AtomicMap::new());
         let closed_condition_ids =
             Arc::new(Mutex::new(AHashSet::from_iter(["0xCOND-BTC".to_string()])));
@@ -818,14 +826,14 @@ mod tests {
 
         assert!(closed_condition_ids.lock().contains("0xCOND-BTC"));
         assert!(
-            !watchlist.contains_key(&"0xCOND-BTC".to_string()),
+            !watchlist.read().contains_key(&"0xCOND-BTC".to_string()),
             "a terminal condition must not regain resolution ownership",
         );
     }
 
     #[rstest]
     fn condition_expiration_does_not_regress_from_zero_or_earlier_sibling() {
-        let watchlist = Arc::new(AtomicMap::new());
+        let watchlist = Arc::new(ResolveWatchlist::default());
         let instruments = Arc::new(AtomicMap::new());
         let later = seed_instrument_with_context(
             &instruments,
@@ -869,7 +877,7 @@ mod tests {
 
         assert_eq!(
             watchlist
-                .load()
+                .read()
                 .get("0xCOND-BTC")
                 .expect("condition watch")
                 .expiration_ns,

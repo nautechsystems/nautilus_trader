@@ -27,8 +27,9 @@
 use std::sync::Arc;
 
 use ahash::AHashSet;
+use dashmap::DashSet;
 use nautilus_common::live::dst::time::{self, Duration, Instant};
-use nautilus_core::{AtomicMap, AtomicSet};
+use nautilus_core::AtomicMap;
 use nautilus_live::{book::recovery::BookRecovery as Recovery, task::TaskSpawner};
 use nautilus_model::{
     identifiers::InstrumentId,
@@ -51,7 +52,7 @@ pub(crate) type BookRecovery = Recovery<PolymarketWsError>;
 pub(crate) fn spawn_recovery_monitor(
     book_sync: BookSyncTracker,
     pool: PolymarketMarketPoolHandle,
-    active_delta_subs: Arc<AtomicSet<InstrumentId>>,
+    active_delta_subs: Arc<DashSet<InstrumentId>>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument_ids: Vec<InstrumentId>,
     snapshot_timeout: Duration,
@@ -97,7 +98,7 @@ pub(crate) fn spawn_recovery_monitor(
 pub(crate) fn start_recovery(
     instrument_id: InstrumentId,
     token_id: Option<String>,
-    active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
+    active_delta_subs: &Arc<DashSet<InstrumentId>>,
     book_sync: &BookSyncTracker,
     pool: &PolymarketMarketPoolHandle,
     snapshot_timeout: Duration,
@@ -231,7 +232,7 @@ mod tests {
     #[rstest]
     fn start_recovery_ignores_unsubscribed_instrument() {
         let book_sync = BookSyncTracker::default();
-        let active_delta_subs = Arc::new(AtomicSet::new());
+        let active_delta_subs = Arc::new(DashSet::new());
         let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
         let (_tasks, spawner) = test_tasks();
@@ -257,7 +258,7 @@ mod tests {
     #[rstest]
     fn start_recovery_without_token_leaves_book_unowned() {
         let book_sync = BookSyncTracker::default();
-        let active_delta_subs = Arc::new(AtomicSet::new());
+        let active_delta_subs = Arc::new(DashSet::new());
         active_delta_subs.insert(instrument_id());
         let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &[]);
@@ -291,7 +292,7 @@ mod tests {
     #[tokio::test]
     async fn start_recovery_skips_when_recovery_owned() {
         let book_sync = BookSyncTracker::default();
-        let active_delta_subs = Arc::new(AtomicSet::new());
+        let active_delta_subs = Arc::new(DashSet::new());
         active_delta_subs.insert(instrument_id());
         let (ws_tx, mut ws_rx) = tokio::sync::mpsc::unbounded_channel();
         let pool = PolymarketMarketPoolHandle::test_single_shard(ws_tx, &["0xTOKEN"]);
@@ -329,7 +330,7 @@ mod tests {
     #[tokio::test]
     async fn recovery_task_keeps_ownership_after_non_retryable_failure() {
         let book_sync = BookSyncTracker::default();
-        let active_delta_subs = AtomicSet::new();
+        let active_delta_subs = DashSet::new();
         active_delta_subs.insert(instrument_id());
         let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
         // The token is unowned, so the replacement send fails fast with a
