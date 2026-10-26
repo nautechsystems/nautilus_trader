@@ -1148,6 +1148,134 @@ def test_margin_account_calculate_maintenance_margin() -> None:
     assert isinstance(margin, Money)
 
 
+def _margin_account(account_id: str) -> MarginAccount:
+    """
+    Build a USD margin account that calculates its own state.
+    """
+    state = AccountState(
+        account_id=AccountId(account_id),
+        account_type=AccountType.MARGIN,
+        balances=[
+            AccountBalance(
+                total=Money.from_str("100000.00 USD"),
+                locked=Money.from_str("0.00 USD"),
+                free=Money.from_str("100000.00 USD"),
+            ),
+        ],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=0,
+        ts_init=0,
+        base_currency=Currency.from_str("USD"),
+    )
+
+    return MarginAccount(state, calculate_account_state=True)
+
+
+def test_margin_account_margin_rates_differ_for_the_same_instrument() -> None:
+    """
+    Test two margin accounts apply different margin rates to one instrument.
+    """
+    instrument = TestInstrumentProvider.audusd_sim()
+    account_a = _margin_account("SIM-001")
+    account_b = _margin_account("SIM-002")
+    account_b.set_margin_rates(instrument.id, Decimal("0.05"), Decimal("0.04"))
+    quantity = Quantity.from_int(100_000)
+    price = Price.from_str("0.80000")
+
+    initial_a = account_a.calculate_initial_margin(instrument, quantity, price)
+    maintenance_a = account_a.calculate_maintenance_margin(instrument, quantity, price)
+    initial_b = account_b.calculate_initial_margin(instrument, quantity, price)
+    maintenance_b = account_b.calculate_maintenance_margin(instrument, quantity, price)
+
+    assert initial_a == Money.from_str("2400.00 USD")
+    assert maintenance_a == Money.from_str("2400.00 USD")
+    assert initial_b == Money.from_str("4000.00 USD")
+    assert maintenance_b == Money.from_str("3200.00 USD")
+    assert instrument.margin_init == Decimal("0.03")
+    assert instrument.margin_maint == Decimal("0.03")
+
+
+def test_margin_account_margin_rates_getter() -> None:
+    """
+    Test the margin rates getter returns the override or None.
+    """
+    instrument = TestInstrumentProvider.audusd_sim()
+    other_id = InstrumentId.from_str("GBP/USD.SIM")
+    account = _margin_account("SIM-001")
+
+    assert account.margin_rates(instrument.id) is None
+
+    account.set_margin_rates(instrument.id, Decimal("0.05"), Decimal("0.04"))
+
+    assert account.margin_rates(instrument.id) == (Decimal("0.05"), Decimal("0.04"))
+    assert account.margin_rates(other_id) is None
+
+
+def test_margin_account_clear_margin_rates_restores_instrument_rates() -> None:
+    """
+    Test clearing a margin rate override restores the instrument rates.
+    """
+    instrument = TestInstrumentProvider.audusd_sim()
+    account = _margin_account("SIM-001")
+    quantity = Quantity.from_int(100_000)
+    price = Price.from_str("0.80000")
+    account.set_margin_rates(instrument.id, Decimal("0.05"), Decimal("0.04"))
+
+    initial_override = account.calculate_initial_margin(instrument, quantity, price)
+    maintenance_override = account.calculate_maintenance_margin(instrument, quantity, price)
+    account.clear_margin_rates(instrument.id)
+    initial_cleared = account.calculate_initial_margin(instrument, quantity, price)
+    maintenance_cleared = account.calculate_maintenance_margin(instrument, quantity, price)
+
+    assert initial_override == Money.from_str("4000.00 USD")
+    assert maintenance_override == Money.from_str("3200.00 USD")
+    assert initial_cleared == Money.from_str("2400.00 USD")
+    assert maintenance_cleared == Money.from_str("2400.00 USD")
+    assert account.margin_rates(instrument.id) is None
+
+
+def test_margin_account_clear_margin_rates_without_override_is_a_no_op() -> None:
+    """
+    Test clearing an unset margin rate override leaves other overrides in place.
+    """
+    instrument = TestInstrumentProvider.audusd_sim()
+    other_id = InstrumentId.from_str("GBP/USD.SIM")
+    account = _margin_account("SIM-001")
+    account.set_margin_rates(other_id, Decimal("0.05"), Decimal("0.04"))
+
+    account.clear_margin_rates(instrument.id)
+
+    assert account.margin_rates(other_id) == (Decimal("0.05"), Decimal("0.04"))
+
+
+@pytest.mark.parametrize(
+    ("margin_init", "margin_maint", "param"),
+    [
+        (Decimal(0), Decimal("0.04"), "margin_init"),
+        (Decimal("-0.05"), Decimal("0.04"), "margin_init"),
+        (Decimal("0.05"), Decimal(0), "margin_maint"),
+        (Decimal("0.05"), Decimal("-0.04"), "margin_maint"),
+    ],
+)
+def test_margin_account_set_margin_rates_rejects_non_positive_rates(
+    margin_init: Decimal,
+    margin_maint: Decimal,
+    param: str,
+) -> None:
+    """
+    Test non-positive margin rates raise and leave the account unchanged.
+    """
+    instrument = TestInstrumentProvider.audusd_sim()
+    account = _margin_account("SIM-001")
+
+    with pytest.raises(ValueError, match=param):
+        account.set_margin_rates(instrument.id, margin_init, margin_maint)
+
+    assert account.margin_rates(instrument.id) is None
+
+
 def _ethbtc_quanto() -> CryptoFuture:
     """
     Build an ETHBTC quanto future settled in USDT.

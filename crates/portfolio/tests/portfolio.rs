@@ -26,7 +26,7 @@ use nautilus_common::{
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos, approx_eq, datetime::NANOSECONDS_IN_DAY};
 use nautilus_model::{
-    accounts::{Account, AccountAny},
+    accounts::{Account, AccountAny, MarginAccount, margin::MarginRates},
     data::{Bar, BarType, MarkPriceUpdate, QuoteTick},
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderType, PositionAdjustmentType,
@@ -1037,6 +1037,303 @@ fn test_initialize_orders_splits_initial_margin_by_account_when_broker_routed(
     );
     assert_eq!(margin(&account_a), expected);
     assert_eq!(margin(&account_b), expected);
+}
+
+// Broker-routed margin account funded with 1,000,000 USD, leaving the default leveraged
+// model at leverage 1
+fn broker_margin_account(
+    account_id: AccountId,
+    rates: Option<(InstrumentId, MarginRates)>,
+    calculate_account_state: bool,
+) -> AccountAny {
+    let state = AccountState::new(
+        account_id,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000000 USD"),
+            Money::zero(Currency::USD()),
+            Money::from("1000000 USD"),
+        )],
+        Vec::new(),
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        Some(Currency::USD()),
+    );
+    let mut account = MarginAccount::new(state, calculate_account_state);
+
+    if let Some((instrument_id, rates)) = rates {
+        account.set_margin_rates(instrument_id, rates);
+    }
+    AccountAny::Margin(account)
+}
+
+fn accept_buy_limit_order(
+    portfolio: &Portfolio,
+    account_id: AccountId,
+    instrument_id: InstrumentId,
+    order_tag: &str,
+) -> OrderAccepted {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(ClientOrderId::new(order_tag))
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100000"))
+        .price(Price::from("1.00000"))
+        .build();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    let submitted = order_submitted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Submitted(submitted))
+        .unwrap();
+    let accepted = order_accepted(
+        order.trader_id(),
+        order.strategy_id(),
+        order.instrument_id(),
+        order.client_order_id(),
+        account_id,
+        VenueOrderId::new(format!("V-{order_tag}")),
+        uuid4(),
+    );
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Accepted(accepted))
+        .unwrap();
+    accepted
+}
+
+fn owned_margin_account(portfolio: &Portfolio, account_id: &AccountId) -> MarginAccount {
+    let Some(AccountAny::Margin(account)) = portfolio.cache().borrow().account_owned(account_id)
+    else {
+        panic!("missing margin account {account_id}");
+    };
+    account
+}
+
+#[rstest]
+fn test_initialize_orders_applies_account_margin_rates_per_account(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+) {
+    let account_a = AccountId::new("IB-001");
+    let account_b = AccountId::new("IB-002");
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("EUR/USD"),
+        Some(Venue::new("IBIS")),
+    ));
+    let instrument_id = instrument.id();
+    simple_cache.add_instrument(instrument).unwrap();
+    simple_cache
+        .add_account(broker_margin_account(account_a, None, true))
+        .unwrap();
+    simple_cache
+        .add_account(broker_margin_account(
+            account_b,
+            Some((instrument_id, MarginRates::new(dec!(0.05), dec!(0.04)))),
+            true,
+        ))
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+    accept_buy_limit_order(&portfolio, account_a, instrument_id, "O-RATE-A");
+    accept_buy_limit_order(&portfolio, account_b, instrument_id, "O-RATE-B");
+
+    portfolio.initialize_orders();
+
+    let usd = Currency::USD();
+    let margin_a = owned_margin_account(&portfolio, &account_a);
+    let margin_b = owned_margin_account(&portfolio, &account_b);
+    assert_eq!(
+        margin_a.initial_margin(instrument_id),
+        Money::from("3000.00 USD")
+    );
+    assert_eq!(
+        margin_b.initial_margin(instrument_id),
+        Money::from("5000.00 USD")
+    );
+    assert_eq!(
+        margin_a.balance_locked(Some(usd)),
+        Some(Money::from("3000.00 USD"))
+    );
+    assert_eq!(
+        margin_a.balance_free(Some(usd)),
+        Some(Money::from("997000.00 USD"))
+    );
+    assert_eq!(
+        margin_b.balance_locked(Some(usd)),
+        Some(Money::from("5000.00 USD"))
+    );
+    assert_eq!(
+        margin_b.balance_free(Some(usd)),
+        Some(Money::from("995000.00 USD"))
+    );
+
+    // The shared instrument definition is untouched
+    let cache = portfolio.cache().borrow();
+    assert_eq!(cache.instrument_ids(None).len(), 1);
+    let cached = cache.instrument(&instrument_id).unwrap();
+    assert_eq!(cached.margin_init(), dec!(0.03));
+    assert_eq!(cached.margin_maint(), dec!(0.03));
+}
+
+#[rstest]
+fn test_initialize_positions_applies_account_margin_rates_per_account(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+) {
+    let account_a = AccountId::new("IB-001");
+    let account_b = AccountId::new("IB-002");
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("EUR/USD"),
+        Some(Venue::new("IBIS")),
+    ));
+    let instrument_id = instrument.id();
+    simple_cache.add_instrument(instrument.clone()).unwrap();
+    simple_cache
+        .add_account(broker_margin_account(account_a, None, true))
+        .unwrap();
+    simple_cache
+        .add_account(broker_margin_account(
+            account_b,
+            Some((instrument_id, MarginRates::new(dec!(0.05), dec!(0.04)))),
+            true,
+        ))
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+
+    for (account_id, position_id) in [(account_a, "P-RATE-A"), (account_b, "P-RATE-B")] {
+        let fill = make_fill_for_account(
+            &instrument,
+            account_id,
+            OrderSide::Buy,
+            Quantity::from("100000"),
+            Price::from("1.00000"),
+            PositionId::new(position_id),
+        );
+        let position = Position::new(&instrument, fill);
+        portfolio
+            .cache()
+            .borrow_mut()
+            .add_position(&position, OmsType::Hedging)
+            .unwrap();
+    }
+    let quote = get_quote_tick(&instrument, 1.0010, 1.0011, 1.0, 1.0);
+    portfolio.cache().borrow_mut().add_quote(quote).unwrap();
+    portfolio.update_quote_tick(&quote);
+
+    portfolio.initialize_positions();
+
+    let margin_a = owned_margin_account(&portfolio, &account_a);
+    let margin_b = owned_margin_account(&portfolio, &account_b);
+    assert_eq!(
+        margin_a.maintenance_margin(instrument_id),
+        Money::from("3000.00 USD")
+    );
+    assert_eq!(
+        margin_b.maintenance_margin(instrument_id),
+        Money::from("4000.00 USD")
+    );
+    assert_eq!(
+        portfolio
+            .cache()
+            .borrow()
+            .instrument(&instrument_id)
+            .unwrap()
+            .margin_maint(),
+        dec!(0.03)
+    );
+}
+
+#[rstest]
+fn test_update_order_keeps_reported_margins_when_account_state_is_not_calculated(
+    mut simple_cache: Cache,
+    clock: VirtualClock,
+) {
+    let account_a = AccountId::new("IB-001");
+    let account_b = AccountId::new("IB-002");
+    let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+        Symbol::from("EUR/USD"),
+        Some(Venue::new("IBIS")),
+    ));
+    let instrument_id = instrument.id();
+    let reported = MarginBalance::new(
+        Money::from("500 USD"),
+        Money::from("400 USD"),
+        Some(instrument_id),
+    );
+    let reported_state = AccountState::new(
+        account_b,
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("1000000 USD"),
+            Money::from("900 USD"),
+            Money::from("999100 USD"),
+        )],
+        vec![reported],
+        true,
+        uuid4(),
+        0.into(),
+        0.into(),
+        Some(Currency::USD()),
+    );
+    let mut reported_account = MarginAccount::new(reported_state, false);
+    reported_account.set_margin_rates(instrument_id, MarginRates::new(dec!(0.05), dec!(0.04)));
+    simple_cache.add_instrument(instrument).unwrap();
+    simple_cache
+        .add_account(broker_margin_account(account_a, None, true))
+        .unwrap();
+    simple_cache
+        .add_account(AccountAny::Margin(reported_account))
+        .unwrap();
+    let mut portfolio = Portfolio::new(
+        Rc::new(RefCell::new(clock)),
+        Rc::new(RefCell::new(simple_cache)),
+        None,
+    );
+
+    for (account_id, order_tag) in [(account_a, "O-REPORTED-A"), (account_b, "O-REPORTED-B")] {
+        let accepted = accept_buy_limit_order(&portfolio, account_id, instrument_id, order_tag);
+        portfolio.update_order(&OrderEventAny::Accepted(accepted));
+    }
+
+    let usd = Currency::USD();
+    let margin_a = owned_margin_account(&portfolio, &account_a);
+    let margin_b = owned_margin_account(&portfolio, &account_b);
+    assert_eq!(
+        margin_a.initial_margin(instrument_id),
+        Money::from("3000.00 USD")
+    );
+    assert_eq!(margin_b.margin(&instrument_id), Some(reported));
+    assert_eq!(
+        margin_b.balance_locked(Some(usd)),
+        Some(Money::from("900 USD"))
+    );
+    assert_eq!(
+        margin_b.balance_free(Some(usd)),
+        Some(Money::from("999100 USD"))
+    );
 }
 
 #[rstest]

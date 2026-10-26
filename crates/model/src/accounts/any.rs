@@ -36,6 +36,10 @@ use crate::{
 };
 
 /// Represents any account type, so accounts can be held in one collection.
+#[expect(
+    clippy::large_enum_variant,
+    reason = "the margin account's per-instrument overrides widen it past the threshold"
+)]
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[enum_dispatch(Account)]
 pub enum AccountAny {
@@ -221,6 +225,7 @@ mod tests {
     use crate::{
         accounts::{
             Account, AccountAny,
+            margin::MarginRates,
             margin_model::{MarginModel, MarginModelAny, StandardMarginModel},
         },
         events::{AccountState, account::stubs::*},
@@ -340,6 +345,10 @@ mod tests {
             AccountAny::Margin(account) => {
                 account.set_default_leverage(Decimal::new(7, 0));
                 account.set_leverage(instrument_id, Decimal::new(3, 0));
+                account.set_margin_rates(
+                    instrument_id,
+                    MarginRates::new(Decimal::new(12, 2), Decimal::new(10, 2)),
+                );
                 account.set_margin_model(MarginModelAny::Standard(StandardMarginModel).into());
             }
             AccountAny::Cash(account) => {
@@ -376,6 +385,11 @@ mod tests {
             (AccountAny::Margin(source), AccountAny::Margin(cloned)) => {
                 assert_eq!(cloned.margin_model().name(), source.margin_model().name());
                 assert_eq!(cloned.margin_model().name(), "standard");
+                assert_eq!(cloned.margin_rates(), source.margin_rates());
+                assert_eq!(
+                    cloned.margin_rates().get(&instrument_id),
+                    Some(&MarginRates::new(Decimal::new(12, 2), Decimal::new(10, 2)))
+                );
             }
             (AccountAny::Cash(source), AccountAny::Cash(cloned)) => {
                 assert_eq!(cloned.balances_locked, source.balances_locked);

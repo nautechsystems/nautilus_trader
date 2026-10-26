@@ -14,6 +14,16 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Pluggable margin calculation models for [`MarginAccount`](super::MarginAccount).
+//!
+//! Margin requirements are resolved in layers:
+//! [`Instrument`] (base `margin_init` and `margin_maint`) ->
+//! [`MarginAccount`](super::MarginAccount) (leverage and optional per-instrument rate overrides) ->
+//! [`MarginModel`] (mechanics) -> [`Money`].
+//!
+//! A model reads the instrument rates through [`MarginModel::calculate_initial_margin`] and
+//! [`MarginModel::calculate_maintenance_margin`]. When the account carries a rate override for an
+//! instrument, it calls [`MarginModel::calculate_initial_margin_at_rate`] and
+//! [`MarginModel::calculate_maintenance_margin_at_rate`] instead, passing the rate explicitly.
 
 use std::{fmt::Debug, sync::Arc};
 
@@ -57,6 +67,62 @@ pub trait MarginModel: Send + Sync {
         leverage: Decimal,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money>;
+
+    /// Calculates the initial (order) margin requirement at an explicit margin rate, in place of
+    /// `instrument.margin_init()`.
+    ///
+    /// Called when the account carries a margin rate override for the instrument. The default
+    /// implementation returns an error, so models that do not support overrides return an error
+    /// rather than silently using the instrument rate. Callers surface that error differently:
+    /// the portfolio skips the margin update, and the risk engine denies the order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model does not support margin rate overrides, or if margin cannot
+    /// be computed (e.g. invalid instrument).
+    fn calculate_initial_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        _quantity: Quantity,
+        _price: Price,
+        _leverage: Decimal,
+        _margin_rate: Decimal,
+        _use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        anyhow::bail!(
+            "Margin model '{}' does not support account margin rates for {}",
+            self.name(),
+            instrument.id()
+        )
+    }
+
+    /// Calculates the maintenance (position) margin requirement at an explicit margin rate, in
+    /// place of `instrument.margin_maint()`.
+    ///
+    /// Called when the account carries a margin rate override for the instrument. The default
+    /// implementation returns an error, so models that do not support overrides return an error
+    /// rather than silently using the instrument rate. Callers surface that error differently:
+    /// the portfolio skips the margin update, and the risk engine denies the order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the model does not support margin rate overrides, or if margin cannot
+    /// be computed (e.g. invalid instrument).
+    fn calculate_maintenance_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        _quantity: Quantity,
+        _price: Price,
+        _leverage: Decimal,
+        _margin_rate: Decimal,
+        _use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        anyhow::bail!(
+            "Margin model '{}' does not support account margin rates for {}",
+            self.name(),
+            instrument.id()
+        )
+    }
 }
 
 /// Shared runtime handle for a margin model.
@@ -123,6 +189,44 @@ impl MarginModel for MarginModelHandle {
             quantity,
             price,
             leverage,
+            use_quote_for_inverse,
+        )
+    }
+
+    fn calculate_initial_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        margin_rate: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.0.calculate_initial_margin_at_rate(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            margin_rate,
+            use_quote_for_inverse,
+        )
+    }
+
+    fn calculate_maintenance_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        margin_rate: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.0.calculate_maintenance_margin_at_rate(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            margin_rate,
             use_quote_for_inverse,
         )
     }
@@ -214,6 +318,82 @@ impl MarginModel for MarginModelAny {
             ),
         }
     }
+
+    fn calculate_initial_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        margin_rate: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        match self {
+            Self::Standard(m) => m.calculate_initial_margin_at_rate(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                margin_rate,
+                use_quote_for_inverse,
+            ),
+            Self::Leveraged(m) => m.calculate_initial_margin_at_rate(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                margin_rate,
+                use_quote_for_inverse,
+            ),
+            #[cfg(feature = "python")]
+            Self::Python(m) => m.calculate_initial_margin_at_rate(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                margin_rate,
+                use_quote_for_inverse,
+            ),
+        }
+    }
+
+    fn calculate_maintenance_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        margin_rate: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        match self {
+            Self::Standard(m) => m.calculate_maintenance_margin_at_rate(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                margin_rate,
+                use_quote_for_inverse,
+            ),
+            Self::Leveraged(m) => m.calculate_maintenance_margin_at_rate(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                margin_rate,
+                use_quote_for_inverse,
+            ),
+            #[cfg(feature = "python")]
+            Self::Python(m) => m.calculate_maintenance_margin_at_rate(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                margin_rate,
+                use_quote_for_inverse,
+            ),
+        }
+    }
 }
 
 impl Default for MarginModelAny {
@@ -260,7 +440,44 @@ impl MarginModel for StandardMarginModel {
         instrument: &dyn Instrument,
         quantity: Quantity,
         price: Price,
+        leverage: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.calculate_initial_margin_at_rate(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            instrument.margin_init(),
+            use_quote_for_inverse,
+        )
+    }
+
+    fn calculate_maintenance_margin(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.calculate_maintenance_margin_at_rate(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            instrument.margin_maint(),
+            use_quote_for_inverse,
+        )
+    }
+
+    fn calculate_initial_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
         _leverage: Decimal,
+        margin_rate: Decimal,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         let use_quote = use_quote_for_inverse.unwrap_or(false);
@@ -270,17 +487,18 @@ impl MarginModel for StandardMarginModel {
         let margin = notional
             .as_decimal()
             .abs()
-            .checked_mul(instrument.margin_init())
+            .checked_mul(margin_rate)
             .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
         Money::from_decimal(margin, notional.currency).map_err(Into::into)
     }
 
-    fn calculate_maintenance_margin(
+    fn calculate_maintenance_margin_at_rate(
         &self,
         instrument: &dyn Instrument,
         quantity: Quantity,
         price: Price,
         _leverage: Decimal,
+        margin_rate: Decimal,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         let use_quote = use_quote_for_inverse.unwrap_or(false);
@@ -288,7 +506,7 @@ impl MarginModel for StandardMarginModel {
         let margin = notional
             .as_decimal()
             .abs()
-            .checked_mul(instrument.margin_maint())
+            .checked_mul(margin_rate)
             .ok_or_else(|| anyhow::anyhow!("maintenance margin calculation overflow"))?;
         Money::from_decimal(margin, notional.currency).map_err(Into::into)
     }
@@ -323,18 +541,14 @@ impl MarginModel for LeveragedMarginModel {
         leverage: Decimal,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
-        if leverage <= Decimal::ZERO {
-            anyhow::bail!("Invalid leverage {leverage} for {}", instrument.id());
-        }
-        let use_quote = use_quote_for_inverse.unwrap_or(false);
-        let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
-        let margin = notional
-            .as_decimal()
-            .abs()
-            .checked_div(leverage)
-            .and_then(|adjusted| adjusted.checked_mul(instrument.margin_init()))
-            .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
-        Money::from_decimal(margin, notional.currency).map_err(Into::into)
+        self.calculate_initial_margin_at_rate(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            instrument.margin_init(),
+            use_quote_for_inverse,
+        )
     }
 
     fn calculate_maintenance_margin(
@@ -343,6 +557,25 @@ impl MarginModel for LeveragedMarginModel {
         quantity: Quantity,
         price: Price,
         leverage: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        self.calculate_maintenance_margin_at_rate(
+            instrument,
+            quantity,
+            price,
+            leverage,
+            instrument.margin_maint(),
+            use_quote_for_inverse,
+        )
+    }
+
+    fn calculate_initial_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        margin_rate: Decimal,
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         if leverage <= Decimal::ZERO {
@@ -354,7 +587,30 @@ impl MarginModel for LeveragedMarginModel {
             .as_decimal()
             .abs()
             .checked_div(leverage)
-            .and_then(|adjusted| adjusted.checked_mul(instrument.margin_maint()))
+            .and_then(|adjusted| adjusted.checked_mul(margin_rate))
+            .ok_or_else(|| anyhow::anyhow!("initial margin calculation overflow"))?;
+        Money::from_decimal(margin, notional.currency).map_err(Into::into)
+    }
+
+    fn calculate_maintenance_margin_at_rate(
+        &self,
+        instrument: &dyn Instrument,
+        quantity: Quantity,
+        price: Price,
+        leverage: Decimal,
+        margin_rate: Decimal,
+        use_quote_for_inverse: Option<bool>,
+    ) -> anyhow::Result<Money> {
+        if leverage <= Decimal::ZERO {
+            anyhow::bail!("Invalid leverage {leverage} for {}", instrument.id());
+        }
+        let use_quote = use_quote_for_inverse.unwrap_or(false);
+        let notional = instrument.try_calculate_notional_value(quantity, price, Some(use_quote))?;
+        let margin = notional
+            .as_decimal()
+            .abs()
+            .checked_div(leverage)
+            .and_then(|adjusted| adjusted.checked_mul(margin_rate))
             .ok_or_else(|| anyhow::anyhow!("maintenance margin calculation overflow"))?;
         Money::from_decimal(margin, notional.currency).map_err(Into::into)
     }
@@ -756,6 +1012,310 @@ mod tests {
             .unwrap();
         let maintenance = model
             .calculate_maintenance_margin(&instrument, quantity, price, dec!(2), None)
+            .unwrap();
+
+        assert_eq!(initial, Money::from(expected_initial));
+        assert_eq!(maintenance, Money::from(expected_maintenance));
+
+        // Doubling both rates doubles the requirement
+        let initial_at_rate = model
+            .calculate_initial_margin_at_rate(
+                &instrument,
+                quantity,
+                price,
+                dec!(2),
+                dec!(0.2),
+                None,
+            )
+            .unwrap();
+        let maintenance_at_rate = model
+            .calculate_maintenance_margin_at_rate(
+                &instrument,
+                quantity,
+                price,
+                dec!(2),
+                dec!(0.1),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(initial_at_rate.currency, initial.currency);
+        assert_eq!(maintenance_at_rate.currency, maintenance.currency);
+        assert_eq!(initial_at_rate.as_decimal(), initial.as_decimal() * dec!(2));
+        assert_eq!(
+            maintenance_at_rate.as_decimal(),
+            maintenance.as_decimal() * dec!(2)
+        );
+    }
+
+    #[rstest]
+    #[case::standard(MarginModelAny::Standard(StandardMarginModel))]
+    #[case::leveraged(MarginModelAny::Leveraged(LeveragedMarginModel))]
+    fn test_at_rate_with_the_instrument_rate_equals_the_instrument_methods(
+        #[case] model: MarginModelAny,
+    ) {
+        let instrument = ethusdt();
+        let quantity = Quantity::from("10.000");
+        let price = Price::from("5000.00");
+        let leverage = dec!(10);
+
+        let initial = model
+            .calculate_initial_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin(&instrument, quantity, price, leverage, None)
+            .unwrap();
+        let initial_at_rate = model
+            .calculate_initial_margin_at_rate(
+                &instrument,
+                quantity,
+                price,
+                leverage,
+                instrument.margin_init(),
+                None,
+            )
+            .unwrap();
+        let maintenance_at_rate = model
+            .calculate_maintenance_margin_at_rate(
+                &instrument,
+                quantity,
+                price,
+                leverage,
+                instrument.margin_maint(),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(initial_at_rate, initial);
+        assert_eq!(maintenance_at_rate, maintenance);
+    }
+
+    #[rstest]
+    fn test_standard_at_rate_ignores_leverage_and_instrument_rate() {
+        let model = StandardMarginModel;
+        let instrument = ethusdt();
+        let quantity = Quantity::from("10.000");
+        let price = Price::from("5000.00");
+
+        let margin_low = model
+            .calculate_initial_margin_at_rate(
+                &instrument,
+                quantity,
+                price,
+                dec!(2),
+                dec!(0.2),
+                None,
+            )
+            .unwrap();
+        let margin_high = model
+            .calculate_initial_margin_at_rate(
+                &instrument,
+                quantity,
+                price,
+                dec!(100),
+                dec!(0.2),
+                None,
+            )
+            .unwrap();
+
+        // notional = 10 * 5000 = 50000, reserved in full at the explicit 0.2 rate
+        assert_eq!(margin_low, margin_high);
+        assert_eq!(margin_low, Money::from("10000 USDT"));
+    }
+
+    #[rstest]
+    #[case::zero(Decimal::ZERO)]
+    #[case::negative(dec!(-1))]
+    fn test_leveraged_at_rate_rejects_non_positive_leverage(#[case] leverage: Decimal) {
+        let model = LeveragedMarginModel;
+        let instrument = ethusdt();
+        let quantity = Quantity::from("1.000");
+        let price = Price::from("5000.00");
+        let expected = format!("Invalid leverage {leverage} for {}", instrument.id());
+
+        let initial = model.calculate_initial_margin_at_rate(
+            &instrument,
+            quantity,
+            price,
+            leverage,
+            dec!(0.2),
+            None,
+        );
+        let maintenance = model.calculate_maintenance_margin_at_rate(
+            &instrument,
+            quantity,
+            price,
+            leverage,
+            dec!(0.1),
+            None,
+        );
+
+        assert_eq!(initial.unwrap_err().to_string(), expected);
+        assert_eq!(maintenance.unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    fn test_leveraged_at_rate_decimal_overflow_returns_error() {
+        let model = LeveragedMarginModel;
+        let instrument = ethusdt();
+        let quantity = Quantity::from("1.000");
+        let price = Price::from("5000.00");
+        let leverage = Decimal::new(1, 28);
+
+        let initial = model.calculate_initial_margin_at_rate(
+            &instrument,
+            quantity,
+            price,
+            leverage,
+            dec!(0.2),
+            None,
+        );
+        let maintenance = model.calculate_maintenance_margin_at_rate(
+            &instrument,
+            quantity,
+            price,
+            leverage,
+            dec!(0.1),
+            None,
+        );
+
+        assert_eq!(
+            initial.unwrap_err().to_string(),
+            "initial margin calculation overflow"
+        );
+        assert_eq!(
+            maintenance.unwrap_err().to_string(),
+            "maintenance margin calculation overflow"
+        );
+    }
+
+    #[rstest]
+    fn test_model_without_rate_support_returns_error_at_rate() {
+        let model = FixedMarginModel {
+            initial: Money::from("12.34 USDT"),
+            maintenance: Money::from("5.67 USDT"),
+        };
+        let instrument = ethusdt();
+        let expected = format!(
+            "Margin model 'fixed' does not support account margin rates for {}",
+            instrument.id()
+        );
+
+        let initial = model.calculate_initial_margin_at_rate(
+            &instrument,
+            Quantity::from("1.000"),
+            Price::from("5000.00"),
+            dec!(10),
+            dec!(0.2),
+            None,
+        );
+        let maintenance = model.calculate_maintenance_margin_at_rate(
+            &instrument,
+            Quantity::from("1.000"),
+            Price::from("5000.00"),
+            dec!(10),
+            dec!(0.1),
+            None,
+        );
+
+        assert_eq!(initial.unwrap_err().to_string(), expected);
+        assert_eq!(maintenance.unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    fn test_margin_model_handle_forwards_at_rate_methods() {
+        let handle = MarginModelHandle::new(MarginModelAny::Standard(StandardMarginModel));
+        let instrument = ethusdt();
+
+        let initial = handle
+            .calculate_initial_margin_at_rate(
+                &instrument,
+                Quantity::from("10.000"),
+                Price::from("5000.00"),
+                dec!(10),
+                dec!(0.2),
+                None,
+            )
+            .unwrap();
+        let maintenance = handle
+            .calculate_maintenance_margin_at_rate(
+                &instrument,
+                Quantity::from("10.000"),
+                Price::from("5000.00"),
+                dec!(10),
+                dec!(0.1),
+                None,
+            )
+            .unwrap();
+
+        // A forwarder that fell back to the trait default would return an error instead
+        assert_eq!(initial, Money::from("10000 USDT"));
+        assert_eq!(maintenance, Money::from("5000 USDT"));
+    }
+
+    #[rstest]
+    fn test_margin_model_handle_forwards_unsupported_at_rate_to_the_model() {
+        let handle = MarginModelHandle::new(FixedMarginModel {
+            initial: Money::from("12.34 USDT"),
+            maintenance: Money::from("5.67 USDT"),
+        });
+        let instrument = ethusdt();
+
+        let result = handle.calculate_initial_margin_at_rate(
+            &instrument,
+            Quantity::from("1.000"),
+            Price::from("5000.00"),
+            dec!(10),
+            dec!(0.2),
+            None,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!(
+                "Margin model 'fixed' does not support account margin rates for {}",
+                instrument.id()
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::standard(
+        MarginModelAny::Standard(StandardMarginModel),
+        "10000 USDT",
+        "5000 USDT"
+    )]
+    #[case::leveraged(
+        MarginModelAny::Leveraged(LeveragedMarginModel),
+        "1000 USDT",
+        "500 USDT"
+    )]
+    fn test_margin_model_any_dispatches_at_rate_methods(
+        #[case] model: MarginModelAny,
+        #[case] expected_initial: &str,
+        #[case] expected_maintenance: &str,
+    ) {
+        let instrument = ethusdt();
+
+        let initial = model
+            .calculate_initial_margin_at_rate(
+                &instrument,
+                Quantity::from("10.000"),
+                Price::from("5000.00"),
+                dec!(10),
+                dec!(0.2),
+                None,
+            )
+            .unwrap();
+        let maintenance = model
+            .calculate_maintenance_margin_at_rate(
+                &instrument,
+                Quantity::from("10.000"),
+                Price::from("5000.00"),
+                dec!(10),
+                dec!(0.1),
+                None,
+            )
             .unwrap();
 
         assert_eq!(initial, Money::from(expected_initial));

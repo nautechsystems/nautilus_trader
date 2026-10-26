@@ -59,7 +59,34 @@ use crate::{
     },
 };
 
+/// Explicit margin rates as a fraction of notional value.
+///
+/// Rates are expressed as decimals (for example `0.05` is 5%), and replace the
+/// instrument's `margin_init` and `margin_maint` for the account that holds them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MarginRates {
+    /// The initial (order) margin rate.
+    pub initial: Decimal,
+    /// The maintenance (position) margin rate.
+    pub maintenance: Decimal,
+}
+
+impl MarginRates {
+    /// Creates new [`MarginRates`] with explicit rates.
+    #[must_use]
+    pub const fn new(initial: Decimal, maintenance: Decimal) -> Self {
+        Self {
+            initial,
+            maintenance,
+        }
+    }
+}
+
 /// Represents a margin account that can hold leveraged positions.
+///
+/// Margin requirements resolve in layers: the instrument supplies the base `margin_init` and
+/// `margin_maint` rates, the account supplies leverage and optional per-instrument margin rate
+/// overrides, and the margin model applies the mechanics.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[cfg_attr(
     feature = "python",
@@ -85,6 +112,10 @@ pub struct MarginAccount {
     pub default_leverage: Decimal,
     #[serde(skip, default = "MarginModelHandle::default")]
     margin_model: MarginModelHandle,
+    /// The margin rates applied per instrument, overriding the instrument's own `margin_init`
+    /// and `margin_maint`.
+    #[serde(default, skip_serializing_if = "std::collections::HashMap::is_empty")]
+    margin_rates: AHashMap<InstrumentId, MarginRates>,
 }
 
 impl MarginAccount {
@@ -100,6 +131,7 @@ impl MarginAccount {
             account_margins,
             default_leverage: Decimal::ONE,
             margin_model: MarginModelHandle::default(),
+            margin_rates: AHashMap::new(),
         }
     }
 
@@ -112,6 +144,7 @@ impl MarginAccount {
             account_margins: self.account_margins.clone(),
             default_leverage: self.default_leverage,
             margin_model: self.margin_model.clone(),
+            margin_rates: self.margin_rates.clone(),
         }
     }
 
@@ -168,6 +201,54 @@ impl MarginAccount {
         check_positive_decimal(leverage, "leverage")?;
         self.leverages.insert(instrument_id, leverage);
         Ok(())
+    }
+
+    /// Sets the margin rates for a specific instrument, overriding the instrument's own
+    /// `margin_init` and `margin_maint` for this account.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either rate is not positive. See [`Self::try_set_margin_rates`].
+    pub fn set_margin_rates(&mut self, instrument_id: InstrumentId, rates: MarginRates) {
+        self.try_set_margin_rates(instrument_id, rates)
+            .expect_display(FAILED);
+    }
+
+    /// Sets the margin rates for a specific instrument, overriding the instrument's own
+    /// `margin_init` and `margin_maint` for this account.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if either rate is not positive, leaving the account unchanged.
+    pub fn try_set_margin_rates(
+        &mut self,
+        instrument_id: InstrumentId,
+        rates: MarginRates,
+    ) -> CorrectnessResult<()> {
+        check_positive_decimal(rates.initial, "margin_init")?;
+        check_positive_decimal(rates.maintenance, "margin_maint")?;
+        self.margin_rates.insert(instrument_id, rates);
+        Ok(())
+    }
+
+    /// Returns the margin rate overrides, which replace the instrument's `margin_init` and
+    /// `margin_maint` for this account.
+    #[must_use]
+    pub const fn margin_rates(&self) -> &AHashMap<InstrumentId, MarginRates> {
+        &self.margin_rates
+    }
+
+    /// Returns the margin rate override for a specific instrument, or `None` when the
+    /// instrument's own `margin_init` and `margin_maint` apply.
+    #[must_use]
+    pub fn get_margin_rates(&self, instrument_id: &InstrumentId) -> Option<MarginRates> {
+        self.margin_rates.get(instrument_id).copied()
+    }
+
+    /// Removes the margin rate override for a specific instrument, so the instrument's own
+    /// `margin_init` and `margin_maint` apply again.
+    pub fn clear_margin_rates(&mut self, instrument_id: &InstrumentId) {
+        self.margin_rates.remove(instrument_id);
     }
 
     #[must_use]
@@ -411,12 +492,14 @@ impl MarginAccount {
 
     /// Calculates the initial margin amount for the specified instrument and quantity.
     ///
-    /// Delegates to the configured [`MarginModel`].
+    /// Delegates to the configured [`MarginModel`], using the account's margin rate override for
+    /// the instrument when set, otherwise the instrument's `margin_init`.
     ///
     /// # Errors
     ///
-    /// Returns an error if leverage is not positive, or if the result cannot be represented
-    /// as `Money`.
+    /// Returns an error if leverage is not positive, if the account has a margin rate override
+    /// for the instrument and the model does not support it, or if the result cannot be
+    /// represented as `Money`.
     pub fn calculate_initial_margin<T: Instrument>(
         &self,
         instrument: &T,
@@ -425,22 +508,35 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         let leverage = self.get_leverage(&instrument.id());
-        self.margin_model.calculate_initial_margin(
-            instrument,
-            quantity,
-            price,
-            leverage,
-            use_quote_for_inverse,
-        )
+
+        match self.margin_rates.get(&instrument.id()) {
+            Some(rates) => self.margin_model.calculate_initial_margin_at_rate(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                rates.initial,
+                use_quote_for_inverse,
+            ),
+            None => self.margin_model.calculate_initial_margin(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                use_quote_for_inverse,
+            ),
+        }
     }
 
     /// Calculates the maintenance margin amount for the specified instrument and quantity.
     ///
-    /// Delegates to the configured [`MarginModel`].
+    /// Delegates to the configured [`MarginModel`], using the account's margin rate override for
+    /// the instrument when set, otherwise the instrument's `margin_maint`.
     ///
     /// # Errors
     ///
-    /// Returns an error if the result cannot be represented as `Money`.
+    /// Returns an error if the account has a margin rate override for the instrument and the model
+    /// does not support it, or if the result cannot be represented as `Money`.
     pub fn calculate_maintenance_margin<T: Instrument>(
         &self,
         instrument: &T,
@@ -449,13 +545,24 @@ impl MarginAccount {
         use_quote_for_inverse: Option<bool>,
     ) -> anyhow::Result<Money> {
         let leverage = self.get_leverage(&instrument.id());
-        self.margin_model.calculate_maintenance_margin(
-            instrument,
-            quantity,
-            price,
-            leverage,
-            use_quote_for_inverse,
-        )
+
+        match self.margin_rates.get(&instrument.id()) {
+            Some(rates) => self.margin_model.calculate_maintenance_margin_at_rate(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                rates.maintenance,
+                use_quote_for_inverse,
+            ),
+            None => self.margin_model.calculate_maintenance_margin(
+                instrument,
+                quantity,
+                price,
+                leverage,
+                use_quote_for_inverse,
+            ),
+        }
     }
 
     /// Recalculates the account balance for the specified currency based on current margins.
@@ -733,7 +840,11 @@ mod tests {
     use crate::{
         accounts::{
             Account, MarginAccount,
-            margin_model::{MarginModel, MarginModelHandle},
+            margin::MarginRates,
+            margin_model::{
+                LeveragedMarginModel, MarginModel, MarginModelAny, MarginModelHandle,
+                StandardMarginModel,
+            },
             stubs::*,
         },
         enums::{AccountType, LiquiditySide, OrderSide, OrderType},
@@ -1483,6 +1594,481 @@ mod tests {
         audusd_sim: CurrencyPair,
     ) {
         margin_account.set_leverage(audusd_sim.id, Decimal::from(-1));
+    }
+
+    // The AUD/USD fixture with instrument rates of 0.10 initial and 0.08 maintenance, so an order
+    // of 100,000 @ 0.80000 has a notional of 80,000 USD
+    fn audusd_with_instrument_rates() -> CurrencyPair {
+        let mut instrument = audusd_sim();
+        instrument.margin_init = dec!(0.10);
+        instrument.margin_maint = dec!(0.08);
+        instrument
+    }
+
+    fn margin_account_with_model(
+        model: MarginModelAny,
+        instrument_id: InstrumentId,
+        rates: Option<MarginRates>,
+    ) -> MarginAccount {
+        let mut account = MarginAccount::new(margin_account_state(), true);
+        account.set_margin_model(model.into());
+
+        if let Some(rates) = rates {
+            account.set_margin_rates(instrument_id, rates);
+        }
+        account
+    }
+
+    #[rstest]
+    #[case::instrument_rates(None, "8000.00 USD", "6400.00 USD")]
+    #[case::account_b(
+        Some(MarginRates::new(dec!(0.12), dec!(0.10))),
+        "9600.00 USD",
+        "8000.00 USD"
+    )]
+    #[case::account_c(
+        Some(MarginRates::new(dec!(0.15), dec!(0.12))),
+        "12000.00 USD",
+        "9600.00 USD"
+    )]
+    fn test_margin_rates_differ_between_accounts_for_the_same_instrument(
+        #[case] rates: Option<MarginRates>,
+        #[case] expected_initial: &str,
+        #[case] expected_maintenance: &str,
+    ) {
+        let instrument = audusd_with_instrument_rates();
+        let account = margin_account_with_model(
+            MarginModelAny::Standard(StandardMarginModel),
+            instrument.id,
+            rates,
+        );
+
+        let initial = account
+            .calculate_initial_margin(
+                &instrument,
+                Quantity::from(100_000),
+                Price::from("0.80000"),
+                None,
+            )
+            .unwrap();
+        let maintenance = account
+            .calculate_maintenance_margin(
+                &instrument,
+                Quantity::from(100_000),
+                Price::from("0.80000"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(initial, Money::from(expected_initial));
+        assert_eq!(maintenance, Money::from(expected_maintenance));
+        assert_eq!(instrument.margin_init(), dec!(0.10));
+        assert_eq!(instrument.margin_maint(), dec!(0.08));
+    }
+
+    #[rstest]
+    fn test_margin_rates_apply_only_to_the_overridden_instrument(gbpusd_sim: CurrencyPair) {
+        let audusd = audusd_with_instrument_rates();
+        let account = margin_account_with_model(
+            MarginModelAny::Standard(StandardMarginModel),
+            audusd.id,
+            Some(MarginRates::new(dec!(0.12), dec!(0.10))),
+        );
+
+        let initial = account
+            .calculate_initial_margin(
+                &gbpusd_sim,
+                Quantity::from(100_000),
+                Price::from("1.30000"),
+                None,
+            )
+            .unwrap();
+        let maintenance = account
+            .calculate_maintenance_margin(
+                &gbpusd_sim,
+                Quantity::from(100_000),
+                Price::from("1.30000"),
+                None,
+            )
+            .unwrap();
+
+        // The 0.03 instrument rates apply to 130,000 USD of notional
+        assert_eq!(initial, Money::from("3900.00 USD"));
+        assert_eq!(maintenance, Money::from("3900.00 USD"));
+    }
+
+    #[rstest]
+    #[case::account_b(
+        Some(MarginRates::new(dec!(0.12), dec!(0.10))),
+        dec!(10),
+        "960.00 USD",
+        "800.00 USD"
+    )]
+    #[case::account_c(
+        Some(MarginRates::new(dec!(0.15), dec!(0.12))),
+        dec!(10),
+        "1200.00 USD",
+        "960.00 USD"
+    )]
+    #[case::instrument_rates_leverage_5(None, dec!(5), "1600.00 USD", "1280.00 USD")]
+    #[case::instrument_rates_leverage_10(None, dec!(10), "800.00 USD", "640.00 USD")]
+    fn test_leveraged_model_divides_by_leverage_before_the_account_rate(
+        #[case] rates: Option<MarginRates>,
+        #[case] leverage: Decimal,
+        #[case] expected_initial: &str,
+        #[case] expected_maintenance: &str,
+    ) {
+        let instrument = audusd_with_instrument_rates();
+        let mut account = margin_account_with_model(
+            MarginModelAny::Leveraged(LeveragedMarginModel),
+            instrument.id,
+            rates,
+        );
+        account.set_leverage(instrument.id, leverage);
+
+        let initial = account
+            .calculate_initial_margin(
+                &instrument,
+                Quantity::from(100_000),
+                Price::from("0.80000"),
+                None,
+            )
+            .unwrap();
+        let maintenance = account
+            .calculate_maintenance_margin(
+                &instrument,
+                Quantity::from(100_000),
+                Price::from("0.80000"),
+                None,
+            )
+            .unwrap();
+
+        assert_eq!(initial, Money::from(expected_initial));
+        assert_eq!(maintenance, Money::from(expected_maintenance));
+    }
+
+    #[rstest]
+    fn test_margin_rates_getter_returns_the_overrides(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let rates = MarginRates::new(dec!(0.12), dec!(0.10));
+        assert!(margin_account.margin_rates().is_empty());
+
+        margin_account.set_margin_rates(instrument_id_aud_usd_sim, rates);
+
+        assert_eq!(
+            margin_account.margin_rates(),
+            &AHashMap::from([(instrument_id_aud_usd_sim, rates)])
+        );
+    }
+
+    #[rstest]
+    fn test_get_margin_rates_returns_the_override_for_the_instrument(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let rates = MarginRates::new(dec!(0.12), dec!(0.10));
+        assert_eq!(
+            margin_account.get_margin_rates(&instrument_id_aud_usd_sim),
+            None
+        );
+
+        margin_account.set_margin_rates(instrument_id_aud_usd_sim, rates);
+
+        assert_eq!(
+            margin_account.get_margin_rates(&instrument_id_aud_usd_sim),
+            Some(rates)
+        );
+        assert_eq!(
+            margin_account.get_margin_rates(&InstrumentId::from("GBP/USD.SIM")),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_clear_margin_rates_restores_the_instrument_rates() {
+        let instrument = audusd_with_instrument_rates();
+        let mut account = margin_account_with_model(
+            MarginModelAny::Standard(StandardMarginModel),
+            instrument.id,
+            Some(MarginRates::new(dec!(0.12), dec!(0.10))),
+        );
+        let quantity = Quantity::from(100_000);
+        let price = Price::from("0.80000");
+
+        let initial_override = account
+            .calculate_initial_margin(&instrument, quantity, price, None)
+            .unwrap();
+        let maintenance_override = account
+            .calculate_maintenance_margin(&instrument, quantity, price, None)
+            .unwrap();
+        account.clear_margin_rates(&instrument.id);
+        let initial_cleared = account
+            .calculate_initial_margin(&instrument, quantity, price, None)
+            .unwrap();
+        let maintenance_cleared = account
+            .calculate_maintenance_margin(&instrument, quantity, price, None)
+            .unwrap();
+
+        assert_eq!(initial_override, Money::from("9600.00 USD"));
+        assert_eq!(maintenance_override, Money::from("8000.00 USD"));
+        assert_eq!(initial_cleared, Money::from("8000.00 USD"));
+        assert_eq!(maintenance_cleared, Money::from("6400.00 USD"));
+        assert!(account.margin_rates().is_empty());
+        assert_eq!(account.get_margin_rates(&instrument.id), None);
+    }
+
+    #[rstest]
+    fn test_clear_margin_rates_without_an_override_is_a_no_op(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let gbpusd = InstrumentId::from("GBP/USD.SIM");
+        let rates = MarginRates::new(dec!(0.12), dec!(0.10));
+        margin_account.set_margin_rates(gbpusd, rates);
+
+        margin_account.clear_margin_rates(&instrument_id_aud_usd_sim);
+
+        assert_eq!(
+            margin_account.margin_rates(),
+            &AHashMap::from([(gbpusd, rates)])
+        );
+    }
+
+    #[rstest]
+    fn test_one_account_applies_different_margin_rates_per_instrument(
+        gbpusd_sim: CurrencyPair,
+        usdjpy_idealpro: CurrencyPair,
+    ) {
+        let audusd = audusd_with_instrument_rates();
+        let mut account = margin_account_with_model(
+            MarginModelAny::Standard(StandardMarginModel),
+            audusd.id,
+            Some(MarginRates::new(dec!(0.12), dec!(0.10))),
+        );
+        account.set_margin_rates(gbpusd_sim.id, MarginRates::new(dec!(0.20), dec!(0.15)));
+        let quantity = Quantity::from(100_000);
+
+        let aud_initial = account
+            .calculate_initial_margin(&audusd, quantity, Price::from("0.80000"), None)
+            .unwrap();
+        let aud_maintenance = account
+            .calculate_maintenance_margin(&audusd, quantity, Price::from("0.80000"), None)
+            .unwrap();
+        let gbp_initial = account
+            .calculate_initial_margin(&gbpusd_sim, quantity, Price::from("1.30000"), None)
+            .unwrap();
+        let gbp_maintenance = account
+            .calculate_maintenance_margin(&gbpusd_sim, quantity, Price::from("1.30000"), None)
+            .unwrap();
+        let jpy_initial = account
+            .calculate_initial_margin(&usdjpy_idealpro, quantity, Price::from("110.000"), None)
+            .unwrap();
+        let jpy_maintenance = account
+            .calculate_maintenance_margin(&usdjpy_idealpro, quantity, Price::from("110.000"), None)
+            .unwrap();
+
+        // 80,000 USD of notional at 0.12 and 0.10
+        assert_eq!(aud_initial, Money::from("9600.00 USD"));
+        assert_eq!(aud_maintenance, Money::from("8000.00 USD"));
+        // 130,000 USD of notional at 0.20 and 0.15
+        assert_eq!(gbp_initial, Money::from("26000.00 USD"));
+        assert_eq!(gbp_maintenance, Money::from("19500.00 USD"));
+        // 11,000,000 JPY of notional at the 0.03 instrument rates
+        assert_eq!(jpy_initial, Money::from("330000 JPY"));
+        assert_eq!(jpy_maintenance, Money::from("330000 JPY"));
+    }
+
+    #[rstest]
+    #[case::zero_initial(dec!(0), dec!(0.10), "margin_init", "0")]
+    #[case::negative_initial(dec!(-0.12), dec!(0.10), "margin_init", "-0.12")]
+    #[case::zero_maintenance(dec!(0.12), dec!(0), "margin_maint", "0")]
+    #[case::negative_maintenance(dec!(0.12), dec!(-0.10), "margin_maint", "-0.10")]
+    fn test_try_set_margin_rates_rejects_non_positive_without_mutation(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+        #[case] initial: Decimal,
+        #[case] maintenance: Decimal,
+        #[case] param: &str,
+        #[case] value: &str,
+    ) {
+        let existing = MarginRates::new(dec!(0.05), dec!(0.04));
+        margin_account
+            .try_set_margin_rates(instrument_id_aud_usd_sim, existing)
+            .unwrap();
+
+        let error = margin_account
+            .try_set_margin_rates(
+                instrument_id_aud_usd_sim,
+                MarginRates::new(initial, maintenance),
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("invalid Decimal for '{param}' not positive, was {value}")
+        );
+        assert_eq!(
+            margin_account.margin_rates(),
+            &AHashMap::from([(instrument_id_aud_usd_sim, existing)])
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "not positive")]
+    fn test_set_margin_rates_zero_panics(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        margin_account.set_margin_rates(
+            instrument_id_aud_usd_sim,
+            MarginRates::new(Decimal::ZERO, dec!(0.10)),
+        );
+    }
+
+    #[rstest]
+    fn test_margin_rates_with_a_model_that_does_not_support_them_return_error(
+        mut margin_account: MarginAccount,
+    ) {
+        let instrument = audusd_with_instrument_rates();
+        margin_account.set_margin_model(MarginModelHandle::new(CustomMarginModel));
+        margin_account.set_margin_rates(instrument.id, MarginRates::new(dec!(0.12), dec!(0.10)));
+        let expected =
+            "Margin model 'custom' does not support account margin rates for AUD/USD.SIM";
+
+        let initial = margin_account.calculate_initial_margin(
+            &instrument,
+            Quantity::from(100_000),
+            Price::from("0.80000"),
+            None,
+        );
+        let maintenance = margin_account.calculate_maintenance_margin(
+            &instrument,
+            Quantity::from(100_000),
+            Price::from("0.80000"),
+            None,
+        );
+
+        assert_eq!(initial.unwrap_err().to_string(), expected);
+        assert_eq!(maintenance.unwrap_err().to_string(), expected);
+    }
+
+    #[rstest]
+    fn test_margin_rates_do_not_alter_venue_reported_margins(
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let usd = Currency::USD();
+        let reported = MarginBalance::new(
+            Money::from("500 USD"),
+            Money::from("400 USD"),
+            Some(instrument_id_aud_usd_sim),
+        );
+        let state = AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("100000 USD"),
+                Money::from("900 USD"),
+                Money::from("99100 USD"),
+            )],
+            vec![reported],
+            true,
+            uuid4(),
+            1.into(),
+            1.into(),
+            Some(usd),
+        );
+        let mut account = MarginAccount::new(margin_account_state(), false);
+        account.set_margin_rates(
+            instrument_id_aud_usd_sim,
+            MarginRates::new(dec!(0.12), dec!(0.10)),
+        );
+
+        account.apply(state).unwrap();
+
+        assert_eq!(account.margin(&instrument_id_aud_usd_sim), Some(reported));
+        assert_eq!(
+            account.balance_total(Some(usd)),
+            Some(Money::from("100000 USD"))
+        );
+        assert_eq!(
+            account.balance_locked(Some(usd)),
+            Some(Money::from("900 USD"))
+        );
+        assert_eq!(
+            account.balance_free(Some(usd)),
+            Some(Money::from("99100 USD"))
+        );
+    }
+
+    #[rstest]
+    fn test_calculated_initial_margin_at_account_rate_locks_the_balance() {
+        let usd = Currency::USD();
+        let instrument = audusd_with_instrument_rates();
+        let state = AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("100000 USD"),
+                Money::from("0 USD"),
+                Money::from("100000 USD"),
+            )],
+            Vec::new(),
+            true,
+            uuid4(),
+            0.into(),
+            0.into(),
+            Some(usd),
+        );
+        let mut account = MarginAccount::new(state, true);
+        account.set_margin_model(MarginModelAny::Standard(StandardMarginModel).into());
+        account.set_margin_rates(instrument.id, MarginRates::new(dec!(0.12), dec!(0.10)));
+
+        let initial = account
+            .calculate_initial_margin(
+                &instrument,
+                Quantity::from(100_000),
+                Price::from("0.80000"),
+                None,
+            )
+            .unwrap();
+        account.update_initial_margin(instrument.id, initial);
+
+        assert_eq!(
+            account.balance_locked(Some(usd)),
+            Some(Money::from("9600.00 USD"))
+        );
+        assert_eq!(
+            account.balance_free(Some(usd)),
+            Some(Money::from("90400.00 USD"))
+        );
+    }
+
+    #[rstest]
+    fn test_margin_rates_serialize_only_when_set(
+        mut margin_account: MarginAccount,
+        instrument_id_aud_usd_sim: InstrumentId,
+    ) {
+        let rates = MarginRates::new(dec!(0.12), dec!(0.10));
+        let without_rates = serde_json::to_value(&margin_account).unwrap();
+
+        margin_account.set_margin_rates(instrument_id_aud_usd_sim, rates);
+        let with_rates = serde_json::to_value(&margin_account).unwrap();
+        let roundtrip: MarginAccount = serde_json::from_value(with_rates.clone()).unwrap();
+
+        assert!(without_rates.get("margin_rates").is_none());
+        assert!(with_rates.get("margin_rates").is_some());
+        assert_eq!(
+            roundtrip.margin_rates(),
+            &AHashMap::from([(instrument_id_aud_usd_sim, rates)])
+        );
+        assert!(
+            serde_json::from_value::<MarginAccount>(without_rates)
+                .unwrap()
+                .margin_rates()
+                .is_empty()
+        );
     }
 
     #[rstest]
