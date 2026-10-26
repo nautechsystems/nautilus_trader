@@ -317,6 +317,37 @@ impl BinanceFuturesExecutionClient {
         })
     }
 
+    fn restore_active_orders(&self) -> anyhow::Result<()> {
+        for order in crate::common::execution::active_orders(&self.core) {
+            let Some(instrument) = self
+                .http_client
+                .instrument_reconciliation(&order.instrument_id())
+            else {
+                continue;
+            };
+
+            let (_, venue_position_id) = resolve_order_position_identity(
+                self.is_hedge_mode(),
+                self.config.use_position_ids,
+                &order,
+            )
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to restore Binance Futures order {}: {e}",
+                    order.client_order_id()
+                )
+            })?;
+
+            self.dispatch_state.restore_order(
+                &order,
+                venue_position_id,
+                instrument.price_precision(),
+            );
+        }
+
+        Ok(())
+    }
+
     /// Returns whether the account is in hedge mode (dual side position).
     #[must_use]
     pub fn is_hedge_mode(&self) -> bool {
@@ -1891,6 +1922,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             log::debug!("Loaded {} Futures instruments", instruments.len());
         }
         self.core.set_instruments_initialized();
+
+        self.restore_active_orders()?;
 
         // Apply configured leverage and margin types
         self.apply_futures_config()
@@ -3652,7 +3685,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             match result {
                 Ok(report) => {
-                    if !dispatch_state.record_order_update(command.client_order_id, report.venue_order_id, quantity, price, None) {
+                    if dispatch_state.record_order_update(command.client_order_id, report.venue_order_id, quantity, price, None) != Some(true) {
                         return Ok(());
                     }
                     let ts_now = clock.get_time_ns();

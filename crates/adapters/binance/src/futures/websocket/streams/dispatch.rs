@@ -417,7 +417,8 @@ pub(crate) fn dispatch_order_update(
             }
             BinanceExecutionType::Trade => {
                 let dedup_key = (order.symbol, order.trade_id);
-                let is_duplicate = seen_trade_ids.lock().contains(&dedup_key);
+                let is_duplicate =
+                    dispatch_state.has_trade(&client_order_id, &dedup_key, seen_trade_ids);
 
                 if is_duplicate && !use_trade_lite {
                     log::debug!(
@@ -608,14 +609,18 @@ pub(crate) fn dispatch_order_update(
                     }
                 };
 
-                refresh_identity(dispatch_state, client_order_id, Some(quantity), Some(price));
-                if !dispatch_state.record_order_update(
-                    client_order_id,
-                    venue_order_id,
-                    quantity,
-                    price,
-                    None,
-                ) {
+                if dispatch_state
+                    .record_order_update(client_order_id, venue_order_id, quantity, price, None)
+                    .inspect(|_| {
+                        refresh_identity(
+                            dispatch_state,
+                            client_order_id,
+                            Some(quantity),
+                            Some(price),
+                        );
+                    })
+                    != Some(true)
+                {
                     return;
                 }
 
@@ -847,21 +852,24 @@ fn emit_order_delta_if_changed(
     } else {
         submitted_qty
     };
-    refresh_identity(
-        dispatch_state,
-        client_order_id,
-        qty_changed.then(|| venue_qty.unwrap()),
-        updated_price,
-    );
 
-    if let Some(price) = event_price
-        && !dispatch_state.record_order_update(
+    if dispatch_state
+        .record_order_update(
             client_order_id,
             venue_order_id,
             event_qty,
-            price,
+            event_price.unwrap_or_else(|| Price::zero(price_precision)),
             trigger_price,
         )
+        .inspect(|_| {
+            refresh_identity(
+                dispatch_state,
+                client_order_id,
+                qty_changed.then(|| venue_qty.unwrap()),
+                updated_price,
+            );
+        })
+        != Some(true)
     {
         return;
     }
@@ -938,21 +946,24 @@ fn emit_trade_lite_delta_if_changed(
     } else {
         submitted_qty
     };
-    refresh_identity(
-        dispatch_state,
-        client_order_id,
-        qty_changed.then(|| venue_qty.unwrap()),
-        updated_price,
-    );
 
-    if let Some(price) = event_price
-        && !dispatch_state.record_order_update(
+    if dispatch_state
+        .record_order_update(
             client_order_id,
             venue_order_id,
             event_qty,
-            price,
+            event_price.unwrap_or_else(|| Price::zero(price_precision)),
             None,
         )
+        .inspect(|_| {
+            refresh_identity(
+                dispatch_state,
+                client_order_id,
+                qty_changed.then(|| venue_qty.unwrap()),
+                updated_price,
+            );
+        })
+        != Some(true)
     {
         return;
     }
@@ -1011,9 +1022,6 @@ pub(crate) fn dispatch_trade_lite(
     seen_trade_ids: &Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>>,
 ) {
     let dedup_key = (msg.symbol, msg.trade_id);
-    if seen_trade_ids.lock().contains(&dedup_key) {
-        return;
-    }
     let symbol_ustr = msg.symbol;
     let ts_init = clock.get_time_ns();
     let ts_event = parse_millis_or_init(msg.event_time, "Futures TRADE_LITE event time", ts_init);
@@ -1033,6 +1041,10 @@ pub(crate) fn dispatch_trade_lite(
                 return;
             }
         };
+
+    if dispatch_state.has_trade(&client_order_id, &dedup_key, seen_trade_ids) {
+        return;
+    }
 
     let Some(identity) = dispatch_state
         .order_identities
@@ -1629,7 +1641,9 @@ mod tests {
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         enums::{AccountType, OrderSide, OrderStatus, OrderType},
+        events::order::spec::{OrderFilledSpec, OrderUpdatedSpec},
         identifiers::{StrategyId, TraderId},
+        orders::{Order, OrderTestBuilder, stubs::TestOrderEventStubs},
     };
     use rstest::rstest;
     use serde::de::DeserializeOwned;
@@ -2545,13 +2559,16 @@ mod tests {
         let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
 
         if http_first {
-            assert!(dispatch_state.record_order_update(
-                ClientOrderId::from("TEST"),
-                VenueOrderId::from("8886774"),
-                Quantity::from("0.00200000"),
-                Price::from("7200.00000000"),
-                None
-            ));
+            assert_eq!(
+                dispatch_state.record_order_update(
+                    ClientOrderId::from("TEST"),
+                    VenueOrderId::from("8886774"),
+                    Quantity::from("0.00200000"),
+                    Price::from("7200.00000000"),
+                    None
+                ),
+                Some(true)
+            );
         }
 
         for _ in 0..2 {
@@ -2573,13 +2590,16 @@ mod tests {
         }
         let events = collect_events(&mut rx);
         assert_eq!(events.len(), usize::from(!http_first));
-        assert!(!dispatch_state.record_order_update(
-            ClientOrderId::from("TEST"),
-            VenueOrderId::from("8886774"),
-            Quantity::from("0.00200000"),
-            Price::from("7200.00000000"),
-            None
-        ));
+        assert_eq!(
+            dispatch_state.record_order_update(
+                ClientOrderId::from("TEST"),
+                VenueOrderId::from("8886774"),
+                Quantity::from("0.00200000"),
+                Price::from("7200.00000000"),
+                None
+            ),
+            Some(false)
+        );
         let identity = dispatch_state
             .order_identities
             .get(&ClientOrderId::from("TEST"))
@@ -2601,6 +2621,107 @@ mod tests {
             }
             other => panic!("Expected OrderUpdated, was {other:?}"),
         }
+    }
+
+    #[rstest]
+    #[case::amendment(BinanceExecutionType::Amendment)]
+    #[case::new(BinanceExecutionType::New)]
+    #[case::trade(BinanceExecutionType::Trade)]
+    fn test_dispatch_superseded_order_preserves_identity(
+        #[case] execution_type: BinanceExecutionType,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let mut msg = build_trade_order_update_with_trade_id(
+            "0.00200000",
+            "0.00100000",
+            "0.00100000",
+            "7200.00000000",
+            9183,
+            "PARTIALLY_FILLED",
+        );
+        msg.order.execution_type = execution_type;
+        let cid = ClientOrderId::from("TEST");
+        let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+        let quantity = Quantity::from("0.00300000");
+        let price = Price::from("7300.00000000");
+        let state =
+            create_tracked_state_with_price_and_qty(cid, instrument_id, Some(price), quantity);
+        state.insert_accepted(cid);
+
+        for venue_order_id in ["8886774", "8886775"] {
+            assert_eq!(
+                state.record_order_update(
+                    cid,
+                    VenueOrderId::from(venue_order_id),
+                    quantity,
+                    price,
+                    None
+                ),
+                Some(true)
+            );
+        }
+
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+        dispatch_order_update(
+            &msg,
+            &emitter,
+            &http_client,
+            AccountId::from("BINANCE-001"),
+            BinanceProductType::UsdM,
+            clock,
+            &state,
+            false,
+            Decimal::new(4, 4),
+            Currency::USDT(),
+            false,
+            false,
+            &seen_trade_ids,
+        );
+        let events = collect_events(&mut rx);
+        let identity = state.order_identities.get(&cid).unwrap();
+        assert_eq!(identity.quantity, quantity);
+        assert_eq!(identity.price, Some(price));
+        assert_eq!(
+            state.record_order_update(cid, VenueOrderId::from("8886775"), quantity, price, None),
+            Some(false)
+        );
+
+        if execution_type != BinanceExecutionType::Trade {
+            assert!(events.is_empty());
+            return;
+        }
+
+        assert_eq!(events.len(), 1);
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(event)) = &events[0] else {
+            panic!("Expected genuine late fill, received {:?}", events[0]);
+        };
+
+        let expected = OrderFilled::new(
+            emitter.trader_id(),
+            StrategyId::from("TEST-STRATEGY"),
+            instrument_id,
+            cid,
+            VenueOrderId::from("8886774"),
+            AccountId::from("BINANCE-001"),
+            TradeId::from("9183"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.001"),
+            Price::from("7200.00"),
+            Currency::USDT(),
+            LiquiditySide::Taker,
+            event.event_id,
+            UnixNanos::from_millis(1568879465651),
+            event.ts_init,
+            false,
+            None,
+            Some(Money::from("0.01 USDT")),
+            None,
+        );
+        assert_eq!(*event, expected);
     }
 
     #[rstest]
@@ -3299,6 +3420,118 @@ mod tests {
         );
 
         assert!(resolved.is_none());
+    }
+
+    #[rstest]
+    fn test_dispatch_trade_lite_restores_cached_partial_order(
+        #[values(false, true)] superseded: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let mut msg: BinanceFuturesTradeLiteMsg = load_user_data_fixture("trade_lite.json");
+        let (emitter, mut rx) = create_test_emitter(clock);
+        let http_client = create_test_http_client(clock);
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(ClientOrderId::from("TEST"))
+            .strategy_id(StrategyId::from("RETAINED-003"))
+            .instrument_id(InstrumentId::from("BTCUSDT-PERP.BINANCE"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("0.00300000"))
+            .price(Price::from("7100.50000000"))
+            .build();
+        let account_id = AccountId::from("BINANCE-001");
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("8886774"));
+        order.apply(accepted).unwrap();
+        let fill = OrderFilledSpec::builder()
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .account_id(account_id)
+            .venue_order_id(VenueOrderId::from("8886774"))
+            .trade_id(TradeId::from("12345678"))
+            .order_side(OrderSide::Sell)
+            .order_type(OrderType::Limit)
+            .last_qty(Quantity::from("0.00100000"))
+            .last_px(Price::from("7100.50000000"))
+            .build();
+        order.apply(OrderEventAny::Filled(fill)).unwrap();
+
+        if superseded {
+            let updated = OrderUpdatedSpec::builder()
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .account_id(account_id)
+                .venue_order_id(VenueOrderId::from("8886775"))
+                .quantity(Quantity::from("0.004"))
+                .price(Price::from("7200.00"))
+                .build();
+            order.apply(OrderEventAny::Updated(updated)).unwrap();
+        }
+
+        let state = WsDispatchState::default();
+        let position_id = Some(PositionId::from("BTCUSDT-PERP.BINANCE-SHORT"));
+        state.restore_order(&order, position_id, 8);
+        msg.original_qty = "0.003".to_string();
+        let seen_trade_ids = Arc::new(Mutex::new(FifoCache::new()));
+        dispatch_trade_lite(
+            &msg,
+            &emitter,
+            &http_client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &state,
+            &seen_trade_ids,
+        );
+        assert!(rx.try_recv().is_err());
+        msg.trade_id = 12345679;
+        dispatch_trade_lite(
+            &msg,
+            &emitter,
+            &http_client,
+            account_id,
+            BinanceProductType::UsdM,
+            clock,
+            &state,
+            &seen_trade_ids,
+        );
+        let events = collect_events(&mut rx);
+        assert_eq!(events.len(), 1);
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(event)) = &events[0] else {
+            panic!("Expected restored fill, received {events:?}")
+        };
+
+        let expected = OrderFilled::new(
+            TraderId::from("TESTER-001"),
+            StrategyId::from("RETAINED-003"),
+            order.instrument_id(),
+            order.client_order_id(),
+            VenueOrderId::from("8886774"),
+            account_id,
+            TradeId::from("12345679"),
+            OrderSide::Sell,
+            OrderType::Limit,
+            Quantity::from("0.00100000"),
+            Price::from("7100.50000000"),
+            Currency::USDT(),
+            LiquiditySide::Maker,
+            event.event_id,
+            UnixNanos::from_millis(1568879465651),
+            event.ts_init,
+            false,
+            position_id,
+            None,
+            None,
+        );
+        assert_eq!(*event, expected);
+        let identity = state
+            .order_identities
+            .get(&order.client_order_id())
+            .unwrap();
+        assert_eq!(identity.quantity, order.quantity());
+        assert_eq!(identity.price, order.price());
     }
 
     #[rstest]

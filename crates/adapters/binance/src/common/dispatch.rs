@@ -15,24 +15,28 @@
 
 //! WebSocket dispatch state for tracked/external order routing.
 //!
-//! Orders submitted through this client have their identity registered in
-//! [`WsDispatchState`]. When user data stream messages arrive, the dispatch
-//! function checks for a registered identity:
-//! - Tracked orders produce proper order events (OrderAccepted, OrderFilled, etc.).
+//! Orders submitted through this client and active local orders restored from the cache have their
+//! identity registered in [`WsDispatchState`]. User data stream messages route by registered identity:
+//! - Tracked orders produce typed order events (OrderAccepted, OrderFilled, etc.).
 //! - Untracked orders fall back to execution reports for reconciliation.
 
-use dashmap::DashMap;
+use ahash::AHashSet;
+use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::ExecutionEventEmitter;
 use nautilus_model::{
     enums::{OrderSide, OrderType},
     events::{OrderAccepted, OrderCanceled, OrderEventAny},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, VenueOrderId},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, VenueOrderId,
+    },
+    orders::{Order, OrderAny},
     reports::OrderStatusReport,
     types::{Price, Quantity},
 };
 use parking_lot::Mutex;
+use ustr::Ustr;
 
 /// The type of operation a pending WS API request represents.
 #[derive(Debug, Clone, Copy)]
@@ -64,17 +68,17 @@ enum CancelReplaceOutcome {
     /// The cancel report arrived; withheld while the replacement is pending or succeeded.
     ///
     /// Parsed at that point so it can be replayed even for an order without a
-    /// dispatch identity, such as one recovered after restart.
+    /// dispatch identity, such as an external order.
     Canceled(Box<OrderStatusReport>),
     /// The venue rejected the request before any cancel report arrived.
     Rejected,
 }
 
-/// Order identity context stored at submission time.
+/// Order identity context registered on submission or restored for an active local order.
 ///
-/// Provides the strategy and instrument metadata needed to construct proper
-/// order events without accessing the cache from the async dispatch task.
-/// The quantity and quote-sizing flag retain the submitted intent.
+/// Provides the strategy and instrument metadata needed to construct
+/// typed order events without accessing the cache from the async dispatch task.
+/// The quantity and quote-sizing flag retain the order's sizing intent.
 #[derive(Debug, Clone)]
 pub struct OrderIdentity {
     pub instrument_id: InstrumentId,
@@ -95,16 +99,18 @@ struct AlgoOrderIds {
 
 /// Tracks order lifecycle state for dispatch routing.
 ///
-/// Orders with a registered identity (submitted through this client) produce
-/// proper order events. Orders without identity (external or pre-existing)
-/// fall back to execution reports for reconciliation.
+/// Orders with a registered identity produce typed order events. Untracked orders
+/// fall back to execution reports for reconciliation. For restored orders, accepted and filled
+/// state, plus the trade IDs known at restoration, remain available until terminal cleanup,
+/// independent of the bounded deduplication caches.
 #[derive(Debug)]
 pub struct WsDispatchState {
     pub order_identities: DashMap<ClientOrderId, OrderIdentity>,
     pub pending_requests: DashMap<String, PendingRequest>,
     pub(crate) order_lists: DashMap<ClientOrderId, OrderListIdentity>,
     algo_order_ids: DashMap<ClientOrderId, AlgoOrderIds>,
-    order_updates: DashMap<ClientOrderId, OrderUpdate>,
+    order_updates: DashMap<ClientOrderId, OrderBinding>,
+    orders_restored: DashMap<ClientOrderId, RestoredOrderState>,
     replacements: DashMap<ClientOrderId, PendingReplacement>,
     emitted_accepted: Mutex<FifoCache<ClientOrderId, 10_000>>,
     filled_orders: Mutex<FifoCache<ClientOrderId, 10_000>>,
@@ -121,6 +127,7 @@ impl Default for WsDispatchState {
             order_lists: DashMap::new(),
             algo_order_ids: DashMap::new(),
             order_updates: DashMap::new(),
+            orders_restored: DashMap::new(),
             replacements: DashMap::new(),
             emitted_accepted: Mutex::new(FifoCache::new()),
             filled_orders: Mutex::new(FifoCache::new()),
@@ -131,21 +138,121 @@ impl Default for WsDispatchState {
 }
 
 impl WsDispatchState {
+    pub(crate) fn restore_order(
+        &self,
+        order: &OrderAny,
+        venue_position_id: Option<PositionId>,
+        price_precision: u8,
+    ) {
+        let cid = order.client_order_id();
+
+        let Entry::Vacant(entry) = self.order_identities.entry(cid) else {
+            return;
+        };
+
+        let accepted = order.ts_accepted().is_some();
+        self.orders_restored.insert(
+            cid,
+            RestoredOrderState {
+                trade_ids: order.trade_ids().into_iter().copied().collect(),
+                accepted,
+                filled: order.filled_qty().is_positive(),
+            },
+        );
+
+        if let Some(venue_order_id) = order.venue_order_id()
+            && !order.is_quote_quantity()
+        {
+            let current = OrderUpdate {
+                venue_order_id,
+                quantity: order.quantity(),
+                price: order
+                    .price()
+                    .unwrap_or_else(|| Price::zero(price_precision)),
+                trigger_price: order.trigger_price(),
+            };
+
+            let superseded = order
+                .venue_order_ids()
+                .into_iter()
+                .copied()
+                .filter(|id| *id != venue_order_id)
+                .collect();
+            self.order_updates.insert(
+                cid,
+                OrderBinding {
+                    current,
+                    superseded,
+                },
+            );
+        }
+
+        entry.insert(OrderIdentity {
+            instrument_id: order.instrument_id(),
+            strategy_id: order.strategy_id(),
+            order_side: order.order_side(),
+            order_type: order.order_type(),
+            price: order.price(),
+            quantity: order.quantity(),
+            is_quote_quantity: order.is_quote_quantity(),
+            venue_position_id,
+        });
+    }
+
     pub fn has_emitted_accepted(&self, cid: &ClientOrderId) -> bool {
-        self.order_lists.contains_key(cid) || self.emitted_accepted.lock().contains(cid)
+        self.orders_restored
+            .get(cid)
+            .is_some_and(|order| order.accepted)
+            || self.order_lists.contains_key(cid)
+            || self.emitted_accepted.lock().contains(cid)
     }
 
     /// Marks an order as having emitted an OrderAccepted event.
     pub fn insert_accepted(&self, cid: ClientOrderId) {
+        if let Some(mut order) = self.orders_restored.get_mut(&cid) {
+            order.accepted = true;
+        }
+
         self.emitted_accepted.lock().add(cid);
     }
 
     pub fn has_filled(&self, cid: &ClientOrderId) -> bool {
-        self.filled_orders.lock().contains(cid)
+        self.orders_restored
+            .get(cid)
+            .is_some_and(|order| order.filled)
+            || self.filled_orders.lock().contains(cid)
+    }
+
+    pub(crate) fn is_order_new_stale(
+        &self,
+        cid: &ClientOrderId,
+        venue_order_id: VenueOrderId,
+    ) -> bool {
+        self.has_filled(cid)
+            && self
+                .order_updates
+                .get(cid)
+                .is_none_or(|binding| binding.current.venue_order_id == venue_order_id)
+    }
+
+    pub(crate) fn has_trade(
+        &self,
+        cid: &ClientOrderId,
+        key: &(Ustr, i64),
+        seen_trade_ids: &Mutex<FifoCache<(Ustr, i64), 10_000>>,
+    ) -> bool {
+        self.orders_restored.get(cid).is_some_and(|order| {
+            let trade_id = TradeId::new(key.1.to_string());
+            order.trade_ids.contains(&trade_id)
+        }) || seen_trade_ids.lock().contains(key)
     }
 
     /// Marks an order as having received a fill.
     pub fn insert_filled(&self, cid: ClientOrderId) {
+        if let Some(mut order) = self.orders_restored.get_mut(&cid) {
+            order.filled = true;
+        }
+
         self.filled_orders.lock().add(cid);
     }
 
@@ -232,6 +339,10 @@ impl WsDispatchState {
             .and_then(|ids| (ids.current != ids.algo).then_some(ids.current))
     }
 
+    /// Returns `None` for a superseded venue order ID.
+    ///
+    /// Otherwise, returns `Some(true)` for the first update or a changed venue order ID,
+    /// quantity, price, or trigger price, and `Some(false)` for unchanged values.
     pub(crate) fn record_order_update(
         &self,
         cid: ClientOrderId,
@@ -239,20 +350,68 @@ impl WsDispatchState {
         quantity: Quantity,
         price: Price,
         trigger_price: Option<Price>,
-    ) -> bool {
+    ) -> Option<bool> {
         let update = OrderUpdate {
             venue_order_id,
             quantity,
             price,
             trigger_price,
         };
-        let changed = self
-            .order_updates
-            .insert(cid, update)
-            .is_none_or(|previous| previous != update);
+
+        let changed = match self.order_updates.entry(cid) {
+            Entry::Occupied(mut entry) => {
+                let binding = entry.get_mut();
+                if binding.superseded.contains(&venue_order_id) {
+                    return None;
+                }
+
+                let changed = binding.current != update;
+                if binding.current.venue_order_id != venue_order_id {
+                    binding.superseded.push(binding.current.venue_order_id);
+                }
+
+                binding.current = update;
+                changed
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(OrderBinding {
+                    current: update,
+                    superseded: Vec::new(),
+                });
+
+                true
+            }
+        };
+
         self.replacements
             .remove_if(&cid, |_, pending| pending.venue_order_id != venue_order_id);
-        changed
+        Some(changed)
+    }
+
+    pub(crate) fn record_order_update_from_fill(
+        &self,
+        cid: ClientOrderId,
+        venue_order_id: VenueOrderId,
+        quantity: Quantity,
+        price: Price,
+        trigger_price: Option<Price>,
+        identity: &OrderIdentity,
+    ) -> Option<bool> {
+        if !identity.is_quote_quantity {
+            self.order_updates
+                .entry(cid)
+                .or_insert_with(|| OrderBinding {
+                    current: OrderUpdate {
+                        venue_order_id,
+                        quantity: identity.quantity,
+                        price: identity.price.unwrap_or(price),
+                        trigger_price,
+                    },
+                    superseded: Vec::new(),
+                });
+        }
+
+        self.record_order_update(cid, venue_order_id, quantity, price, trigger_price)
     }
 
     pub(crate) fn begin_replace(&self, cid: ClientOrderId, venue_order_id: VenueOrderId) {
@@ -268,11 +427,11 @@ impl WsDispatchState {
     pub(crate) fn defer_replace_cancel(&self, canceled: OrderCanceled) -> bool {
         let cid = canceled.client_order_id;
 
-        if self
-            .order_updates
-            .get(&cid)
-            .is_some_and(|update| Some(update.venue_order_id) != canceled.venue_order_id)
-        {
+        if self.order_updates.get(&cid).is_some_and(|binding| {
+            canceled
+                .venue_order_id
+                .is_some_and(|venue_order_id| binding.superseded.contains(&venue_order_id))
+        }) {
             return true;
         }
 
@@ -297,10 +456,18 @@ impl WsDispatchState {
         self.order_lists.remove(&cid);
         self.algo_order_ids.remove(&cid);
         self.order_updates.remove(&cid);
+        self.orders_restored.remove(&cid);
         self.replacements.remove(&cid);
         self.emitted_accepted.lock().remove(&cid);
         self.filled_orders.lock().remove(&cid);
     }
+}
+
+#[derive(Debug)]
+struct RestoredOrderState {
+    trade_ids: AHashSet<TradeId>,
+    accepted: bool,
+    filled: bool,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -322,6 +489,12 @@ struct OrderUpdate {
     quantity: Quantity,
     price: Price,
     trigger_price: Option<Price>,
+}
+
+#[derive(Debug)]
+struct OrderBinding {
+    current: OrderUpdate,
+    superseded: Vec<VenueOrderId>,
 }
 
 /// Synthesizes and emits OrderAccepted if one has not yet been emitted.
@@ -353,4 +526,304 @@ pub fn ensure_accepted_emitted(
         false,
     );
     emitter.send_order_event(OrderEventAny::Accepted(accepted));
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_model::{
+        enums::OrderType,
+        events::order::spec::{OrderFilledSpec, OrderUpdatedSpec},
+        identifiers::AccountId,
+        orders::{OrderTestBuilder, stubs::TestOrderEventStubs},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::submitted(false)]
+    #[case::accepted(true)]
+    fn test_restore_order_retains_identity_and_lifecycle_beyond_replay_capacity(
+        #[case] accepted: bool,
+        #[values(false, true)] quote_quantity: bool,
+    ) {
+        let order_type = if quote_quantity {
+            OrderType::Market
+        } else {
+            OrderType::Limit
+        };
+
+        let mut order = OrderTestBuilder::new(order_type)
+            .client_order_id(ClientOrderId::from("restored-active"))
+            .strategy_id(StrategyId::from("RETAINED-007"))
+            .instrument_id(InstrumentId::from("ETHUSDT.BINANCE"))
+            .side(OrderSide::Sell)
+            .quantity(Quantity::from("2.003"))
+            .price(Price::from("3456.78"))
+            .quote_quantity(quote_quantity)
+            .build();
+        let account_id = AccountId::from("BINANCE-009");
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        order.apply(submitted).unwrap();
+
+        if accepted {
+            let event =
+                TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("9182"));
+            order.apply(event).unwrap();
+        }
+
+        let cid = order.client_order_id();
+        let position_id = Some(PositionId::from("ETHUSDT.BINANCE-SHORT"));
+        let state = WsDispatchState::default();
+        state.restore_order(&order, position_id, 2);
+
+        assert_eq!(state.has_emitted_accepted(&cid), accepted);
+        assert!(!state.has_filled(&cid));
+        state.insert_accepted(cid);
+        state.insert_filled(cid);
+
+        for index in 0..10_001 {
+            let other = ClientOrderId::from(format!("other-{index}"));
+            state.insert_accepted(other);
+            state.insert_filled(other);
+        }
+
+        state.restore_order(&order, None, 2);
+
+        let identity = state.order_identities.get(&cid).unwrap().clone();
+        assert_eq!(identity.instrument_id, order.instrument_id());
+        assert_eq!(identity.strategy_id, order.strategy_id());
+        assert_eq!(identity.order_side, OrderSide::Sell);
+        assert_eq!(identity.order_type, order_type);
+        assert_eq!(
+            identity.price,
+            (!quote_quantity).then(|| Price::from("3456.78"))
+        );
+        assert_eq!(identity.quantity, Quantity::from("2.003"));
+        assert_eq!(identity.is_quote_quantity, quote_quantity);
+        assert_eq!(identity.venue_position_id, position_id);
+        assert!(state.has_emitted_accepted(&cid));
+        assert!(state.has_filled(&cid));
+
+        state.cleanup_terminal(cid);
+        assert!(!state.order_identities.contains_key(&cid));
+        assert!(!state.orders_restored.contains_key(&cid));
+        assert!(!state.has_emitted_accepted(&cid));
+        assert!(!state.has_filled(&cid));
+    }
+
+    #[rstest]
+    fn test_restore_market_order_seeds_zero_price_update(
+        #[values(false, true)] quote_quantity: bool,
+    ) {
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .quantity(Quantity::from("0.002"))
+            .quote_quantity(quote_quantity)
+            .build();
+        let event = TestOrderEventStubs::accepted(
+            &order,
+            AccountId::from("BINANCE-001"),
+            VenueOrderId::from("312"),
+        );
+        order.apply(event).unwrap();
+        let state = WsDispatchState::default();
+        state.restore_order(&order, None, 2);
+
+        assert_eq!(
+            state.record_order_update(
+                order.client_order_id(),
+                VenueOrderId::from("312"),
+                order.quantity(),
+                Price::zero(2),
+                None
+            ),
+            Some(quote_quantity)
+        );
+    }
+
+    #[rstest]
+    fn test_restore_order_retains_partial_fills() {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .quantity(Quantity::from("3"))
+            .price(Price::from("50000.00"))
+            .build();
+        let accepted = TestOrderEventStubs::accepted(
+            &order,
+            AccountId::from("BINANCE-001"),
+            VenueOrderId::from("312"),
+        );
+        order.apply(accepted).unwrap();
+        let fill = OrderFilledSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("312"))
+            .account_id(AccountId::from("BINANCE-001"))
+            .trade_id(TradeId::from("9182"))
+            .last_qty(Quantity::from("1"))
+            .last_px(Price::from("50000.00"))
+            .build();
+        order.apply(OrderEventAny::Filled(fill)).unwrap();
+        let state = WsDispatchState::default();
+        state.restore_order(&order, None, 2);
+
+        assert!(state.has_emitted_accepted(&order.client_order_id()));
+        assert!(state.has_filled(&order.client_order_id()));
+        let seen_trade_ids = Mutex::new(FifoCache::new());
+        assert!(state.has_trade(
+            &order.client_order_id(),
+            &(Ustr::from("BTCUSDT"), 9182),
+            &seen_trade_ids
+        ));
+        assert!(!state.has_trade(
+            &order.client_order_id(),
+            &(Ustr::from("BTCUSDT"), 9183),
+            &seen_trade_ids
+        ));
+    }
+
+    #[rstest]
+    fn test_restore_order_same_shape_replacement_updates_venue_id() {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .quantity(Quantity::from("3"))
+            .price(Price::from("50000.00"))
+            .build();
+        let account_id = AccountId::from("BINANCE-001");
+        let old_id = VenueOrderId::from("312");
+        let current_id = VenueOrderId::from("313");
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, old_id);
+        order.apply(accepted).unwrap();
+        let state = WsDispatchState::default();
+        state.restore_order(&order, None, 2);
+
+        let canceled = OrderCanceled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(current_id),
+            Some(account_id),
+            None,
+        );
+        assert!(!state.defer_replace_cancel(canceled));
+        assert_eq!(
+            state.record_order_update(
+                order.client_order_id(),
+                current_id,
+                order.quantity(),
+                order.price().unwrap(),
+                None
+            ),
+            Some(true)
+        );
+        assert_eq!(
+            state.record_order_update(
+                order.client_order_id(),
+                current_id,
+                order.quantity(),
+                order.price().unwrap(),
+                None
+            ),
+            Some(false)
+        );
+
+        let stale_canceled = OrderCanceled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(old_id),
+            Some(account_id),
+            None,
+        );
+        assert!(state.defer_replace_cancel(stale_canceled));
+        assert!(!state.defer_replace_cancel(canceled));
+    }
+
+    #[rstest]
+    fn test_restore_order_retains_superseded_venue_ids() {
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+            .quantity(Quantity::from("3"))
+            .price(Price::from("50000.00"))
+            .build();
+        let account_id = AccountId::from("BINANCE-001");
+        let old_id = VenueOrderId::from("312");
+        let current_id = VenueOrderId::from("313");
+        let unknown_id = VenueOrderId::from("314");
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, old_id);
+        order.apply(accepted).unwrap();
+        let updated = OrderUpdatedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .quantity(order.quantity())
+            .price(order.price().unwrap())
+            .venue_order_id(current_id)
+            .account_id(account_id)
+            .build();
+        order.apply(OrderEventAny::Updated(updated)).unwrap();
+        let state = WsDispatchState::default();
+        state.restore_order(&order, None, 2);
+
+        for (venue_order_id, suppressed) in
+            [(old_id, true), (current_id, false), (unknown_id, false)]
+        {
+            let canceled = OrderCanceled::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue_order_id),
+                Some(account_id),
+                None,
+            );
+            assert_eq!(state.defer_replace_cancel(canceled), suppressed);
+        }
+
+        state.begin_replace(order.client_order_id(), current_id);
+
+        let pending = OrderCanceled::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(current_id),
+            Some(account_id),
+            None,
+        );
+        assert!(state.defer_replace_cancel(pending));
+        assert_eq!(
+            state.record_order_update(
+                order.client_order_id(),
+                old_id,
+                Quantity::from("2"),
+                Price::from("49000.00"),
+                None
+            ),
+            None
+        );
+        assert_eq!(state.reject_replace(order.client_order_id()), Some(pending));
+    }
 }
