@@ -215,30 +215,35 @@ repository or share it in logs.
 
 ## Integrator attribution
 
-The execution client attributes Lighter Mainnet create and modify transactions to NautilusTrader's
-[integrator account](https://apidocs.lighter.xyz/docs/partner-integration) through `L2TxAttributes`.
+The execution client attributes create and modify transactions through `L2TxAttributes` to NautilusTrader's
+[Lighter Mainnet integrator account](https://apidocs.lighter.xyz/docs/partner-integration) (`723813`) or
+[Robinhood Mainnet integrator account](https://apidocs.rh.lighter.xyz/docs/partner-attribution) (`17725`).
 This covers every tier, including Standard, and every order in a list. Maker and taker integrator fees are zero.
 
-On Lighter Mainnet, non-maker-only keys submit `ApproveIntegrator` at startup with an L2 signature and
+On both mainnets, non-maker-only keys submit `ApproveIntegrator` at startup with an L2 signature and
 zero maximum fees. No L1 signature is required.
 
-Lighter Testnet and both Robinhood environments send no integrator attributes and skip
-`ApproveIntegrator` at startup.
+Both testnets send no integrator attributes and skip `ApproveIntegrator` at startup.
 
-Robinhood Mainnet startup applies the `NAUTILUS` referral code to the account's public L1 address using
-the configured L2 API key. Failure logs a warning without blocking trading. Robinhood Testnet skips referral
-attribution.
+During startup on either mainnet, when account details are available, the execution client
+attempts to apply the `NAUTILUS` referral code to the account's public L1 address using the
+configured L2 API key. The call is best effort with a 10-second timeout, and failures do not block trading.
+Selecting either mainnet opts the account into this attribution to support NautilusTrader development.
+Both testnets skip referral attribution.
+
+Lighter Mainnet's [referral program](https://docs.lighter.xyz/programs/referral-program) offers eligible
+referred users a 10% trading fee discount, paid as rebates. The venue determines referral acceptance and eligibility.
 
 Attribution follows the typed deployment and environment, regardless of custom venue names.
 
-Maker-only Lighter Mainnet keys cannot submit `ApproveIntegrator` and skip approval at startup.
+Maker-only keys on both mainnets cannot submit `ApproveIntegrator` and skip approval at startup.
 Before trading, approve the integrator with a non-maker-only key on the same account; approval is account-scoped.
 
 ### Revoking the approval
 
-To revoke Lighter Mainnet approval when leaving the adapter, send `ApproveIntegrator` with
+To revoke approval on either mainnet when leaving the adapter, send `ApproveIntegrator` with
 `approval_expiry = 0` and zero maximum fees. The next execution-client startup with a non-maker-only
-key renews zero-fee approval on every Lighter Mainnet tier.
+key renews zero-fee approval on every tier of either mainnet. The commands below support Lighter Mainnet only.
 
 ```bash
 export LIGHTER_API_KEY_INDEX=5
@@ -265,15 +270,15 @@ if it is wrong. The Python binding does not prompt; review the active environmen
 | Data type            | Sub.         | Snapshot | Hist. | Nautilus type       | Notes                                                 |
 | -------------------- | ------------ | -------- | ----- | ------------------- | ----------------------------------------------------- |
 | Instrument metadata  | Cache replay | ✓        | -     | `InstrumentAny`     | Loaded from `orderBookDetails`.                       |
-| Trade ticks          | ✓            | -        | ✓     | `TradeTick`         | WebSocket trades; public `recentTrades` REST history. |
-| Quote ticks          | ✓            | -        | -     | `QuoteTick`         | Live BBO; history *Not supported by Lighter*.         |
 | Order book deltas    | ✓            | ✓        | -     | `OrderBookDeltas`   | `L2_MBP`; history *Not supported by Lighter*.         |
 | Order book depth     | ✓            | -        | -     | `OrderBookDepth`    | Live top-10; REST *Not currently implemented*.        |
 | Order book snapshots | -            | ✓        | -     | `OrderBook`         | REST snapshot; aggregates up to 250 orders per side.  |
+| Quote ticks          | ✓            | -        | -     | `QuoteTick`         | Live BBO; history *Not supported by Lighter*.         |
+| Trade ticks          | ✓            | -        | ✓     | `TradeTick`         | WebSocket trades; public `recentTrades` REST history. |
+| Bars                 | ✓            | -        | ✓     | `Bar`               | WebSocket candle stream; REST history for backfill.   |
 | Mark prices          | ✓            | -        | -     | `MarkPriceUpdate`   | Perp market stats stream.                             |
 | Index prices         | ✓            | -        | -     | `IndexPriceUpdate`  | Market and spot stats streams.                        |
 | Funding rates        | ✓            | -        | ✓     | `FundingRateUpdate` | Current estimates and REST hourly history.            |
-| Bars                 | ✓            | -        | ✓     | `Bar`               | WebSocket candle stream; REST history for backfill.   |
 | Instrument status    | REST         | ✓        | -     | `InstrumentStatus`  | `active` / `inactive` snapshots.                      |
 
 ### Order book data
@@ -931,7 +936,7 @@ Historical funding requests use public `/api/v1/fundings`, not account-specific 
 Account tiers set latency, rate limits, and fees. The client logs `GET /api/v1/account`'s tier, including
 unknown `account_type` values.
 
-All Lighter Mainnet tiers use [zero-fee integrator attribution](#integrator-attribution).
+All tiers on both mainnets use [zero-fee integrator attribution](#integrator-attribution).
 Quotas never rise automatically, and local overrides do not grant higher venue limits.
 
 For [Lighter Mainnet](https://apidocs.lighter.xyz/docs/account-types):

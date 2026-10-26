@@ -20,8 +20,9 @@ use nautilus_model::{identifiers::Venue, types::Currency};
 use super::{
     consts::{
         LIGHTER_MAINNET_CHAIN_ID, LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
-        LIGHTER_ROBINHOOD_CHAIN_ID, LIGHTER_ROBINHOOD_VENUE, LIGHTER_TESTNET_CHAIN_ID,
-        LIGHTER_VENUE,
+        LIGHTER_NAUTILUS_REFERRAL_CODE, LIGHTER_ROBINHOOD_CHAIN_ID,
+        LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_ROBINHOOD_VENUE,
+        LIGHTER_TESTNET_CHAIN_ID, LIGHTER_VENUE,
     },
     enums::{LighterDeployment, LighterEnvironment},
 };
@@ -34,7 +35,6 @@ const ROBINHOOD_MAINNET_HTTP_URL: &str = "https://api.rh.lighter.xyz";
 const ROBINHOOD_MAINNET_WS_URL: &str = "wss://api.rh.lighter.xyz/stream";
 const ROBINHOOD_TESTNET_HTTP_URL: &str = "https://api.rh-testnet.lighter.xyz";
 const ROBINHOOD_TESTNET_WS_URL: &str = "wss://api.rh-testnet.lighter.xyz/stream";
-const LIGHTER_NAUTILUS_REFERRAL_CODE: &str = "NAUTILUS";
 
 pub(crate) const fn http_base_url(
     deployment: LighterDeployment,
@@ -96,8 +96,10 @@ pub(crate) const fn integrator_account_index(
         (LighterDeployment::Lighter, LighterEnvironment::Mainnet) => {
             Some(LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX)
         }
-        (LighterDeployment::Lighter, LighterEnvironment::Testnet)
-        | (LighterDeployment::Robinhood, _) => None,
+        (LighterDeployment::Robinhood, LighterEnvironment::Mainnet) => {
+            Some(LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX)
+        }
+        (_, LighterEnvironment::Testnet) => None,
     }
 }
 
@@ -106,11 +108,11 @@ pub(crate) const fn referral_code(
     environment: LighterEnvironment,
 ) -> Option<&'static str> {
     match (deployment, environment) {
-        (LighterDeployment::Robinhood, LighterEnvironment::Mainnet) => {
-            Some(LIGHTER_NAUTILUS_REFERRAL_CODE)
-        }
-        (LighterDeployment::Lighter, _)
-        | (LighterDeployment::Robinhood, LighterEnvironment::Testnet) => None,
+        (
+            LighterDeployment::Lighter | LighterDeployment::Robinhood,
+            LighterEnvironment::Mainnet,
+        ) => Some(LIGHTER_NAUTILUS_REFERRAL_CODE),
+        (_, LighterEnvironment::Testnet) => None,
     }
 }
 
@@ -125,13 +127,13 @@ mod tests {
         LighterDeployment::Lighter,
         LighterEnvironment::Mainnet,
         Some(723_813),
-        None
+        Some("NAUTILUS")
     )]
     #[case::lighter_testnet(LighterDeployment::Lighter, LighterEnvironment::Testnet, None, None)]
     #[case::robinhood_mainnet(
         LighterDeployment::Robinhood,
         LighterEnvironment::Mainnet,
-        None,
+        Some(17_725),
         Some("NAUTILUS")
     )]
     #[case::robinhood_testnet(

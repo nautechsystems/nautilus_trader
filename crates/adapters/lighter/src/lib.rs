@@ -48,19 +48,28 @@
 //! # Integrator attribution
 //!
 //! NautilusTrader participates in [Lighter's partner program](https://apidocs.lighter.xyz/docs/partner-integration).
-//! On Lighter Mainnet, create and modify order transactions from the execution client carry the
-//! NautilusTrader integrator account index in `L2TxAttributes` across all account tiers, including
-//! Standard. Maker and taker integrator fees are zero. Lighter Testnet and both Robinhood environments
-//! omit integrator attributes.
+//! On Lighter Mainnet and Robinhood Mainnet, create and modify order transactions carry the
+//! deployment-specific NautilusTrader integrator account index in `L2TxAttributes` across all
+//! account tiers, including Standard. Maker and taker integrator fees are zero. Both testnets omit
+//! integrator attributes.
 //!
 //! Lighter requires an `ApproveIntegrator` approval before these attributes can be attached to
-//! Lighter Mainnet orders. During startup, the execution client submits the required zero-fee
-//! approval for a configured L2 account with a non-maker-only API key. Lighter Testnet and both
-//! Robinhood environments do not submit an approval.
+//! mainnet orders. During startup, each mainnet execution client submits the required zero-fee
+//! approval for a configured L2 account with a non-maker-only API key. Both testnets skip approval.
 //!
-//! Robinhood Mainnet instead applies the `NAUTILUS` referral to the account's public L1 address
-//! during execution-client startup. Application failures log a warning and do not block trading.
-//! Robinhood Testnet does not apply a referral. See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
+//! During startup on either mainnet, when account details are available, the execution client
+//! attempts to apply the `NAUTILUS` referral code to the account's public L1 address using the
+//! configured L2 API key. The call is best effort with a 10-second timeout, and failures do not block
+//! trading.
+//! Selecting either mainnet opts the account into this attribution to support NautilusTrader
+//! development.
+//! Both testnets skip referral attribution.
+//!
+//! Lighter Mainnet's [referral program](https://docs.lighter.xyz/programs/referral-program) offers eligible
+//! referred users a 10% trading fee discount, paid as rebates. The venue determines referral acceptance
+//! and eligibility.
+//!
+//! See the [Lighter integration guide](https://nautilustrader.io/docs/nightly/integrations/lighter/#integrator-attribution)
 //! for attribution and revocation details.
 
 #![warn(rustc::all)]

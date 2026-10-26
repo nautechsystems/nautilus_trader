@@ -743,7 +743,6 @@ impl LighterExecutionClient {
             .await
             .context("failed to apply Lighter referral code")?;
 
-        log::debug!("Applied Robinhood Chain referral attribution");
         Ok(())
     }
 
@@ -5447,26 +5446,11 @@ impl ExecutionClient for LighterExecutionClient {
         if let Some(detail) = &account_detail {
             self.log_account_tier(detail);
 
-            match tokio::time::timeout(
+            let _ = tokio::time::timeout(
                 REFERRAL_ATTRIBUTION_TIMEOUT,
                 self.apply_referral_attribution(detail),
             )
-            .await
-            {
-                Ok(Ok(())) => {}
-                Ok(Err(e)) => {
-                    log::warn!(
-                        "Robinhood Chain referral attribution failed; continuing startup: {e:?}"
-                    );
-                }
-                Err(_) => {
-                    log::warn!(
-                        "Robinhood Chain referral attribution timed out after {}s; continuing \
-                         startup",
-                        REFERRAL_ATTRIBUTION_TIMEOUT.as_secs()
-                    );
-                }
-            }
+            .await;
         }
 
         if let Err(e) = self.submit_integrator_auto_approval().await {
@@ -9310,7 +9294,10 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            consts::{LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE},
+            consts::{
+                LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+                LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_VENUE,
+            },
             enums::{LighterDeployment, LighterEnvironment, LighterProductType},
         },
         http::models::{LighterNextNonce, LighterOrders, LighterTx},
@@ -14750,7 +14737,11 @@ mod tests {
         Some(LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX)
     )]
     #[case::lighter_testnet(LighterDeployment::Lighter, LighterEnvironment::Testnet, None)]
-    #[case::robinhood_mainnet(LighterDeployment::Robinhood, LighterEnvironment::Mainnet, None)]
+    #[case::robinhood_mainnet(
+        LighterDeployment::Robinhood,
+        LighterEnvironment::Mainnet,
+        Some(LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX)
+    )]
     #[case::robinhood_testnet(LighterDeployment::Robinhood, LighterEnvironment::Testnet, None)]
     fn integrator_account_index_follows_deployment(
         #[case] deployment: LighterDeployment,
@@ -14767,7 +14758,7 @@ mod tests {
     }
 
     #[rstest]
-    fn robinhood_orders_keep_default_l2_attributes() {
+    fn robinhood_orders_carry_integrator_attributes() {
         let mut config = test_config();
         config.deployment = LighterDeployment::Robinhood;
         config.environment = LighterEnvironment::Mainnet;
@@ -14777,7 +14768,10 @@ mod tests {
                 config.deployment,
                 config.environment,
             )),
-            L2TxAttributes::default(),
+            L2TxAttributes {
+                integrator_account_index: LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+                ..Default::default()
+            },
         );
     }
 

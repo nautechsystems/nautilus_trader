@@ -82,7 +82,9 @@ use nautilus_execution::engine::ExecutionEngine;
 use nautilus_lighter::{
     common::{
         consts::{
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_TESTNET_CHAIN_ID, LIGHTER_VENUE,
+            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_TESTNET_CHAIN_ID,
+            LIGHTER_VENUE,
         },
         enums::{LighterDeployment, LighterEnvironment},
     },
@@ -1083,6 +1085,7 @@ fn build_client(
 
 fn build_client_mainnet(
     addr: SocketAddr,
+    deployment: LighterDeployment,
 ) -> (
     LighterExecutionClient,
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -1090,19 +1093,7 @@ fn build_client_mainnet(
 ) {
     let mut config = build_config(addr);
     config.environment = LighterEnvironment::Mainnet;
-    build_client_with(config)
-}
-
-fn build_client_robinhood_mainnet(
-    addr: SocketAddr,
-) -> (
-    LighterExecutionClient,
-    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    Rc<RefCell<Cache>>,
-) {
-    let mut config = build_config(addr);
-    config.environment = LighterEnvironment::Mainnet;
-    config.deployment = LighterDeployment::Robinhood;
+    config.deployment = deployment;
     config.venue = Some(*LIGHTER_VENUE);
     build_client_with(config)
 }
@@ -1985,10 +1976,15 @@ async fn connect_reports_socket_state_on_the_user_streams_endpoint() {
 #[tokio::test(flavor = "multi_thread")]
 async fn connect_submits_l2_only_integrator_auto_approval_for_all_account_tiers(
     #[case] account_type: Option<u8>,
+    #[values(
+        (LighterDeployment::Lighter, 723_813),
+        (LighterDeployment::Robinhood, 17_725)
+    )]
+    attribution: (LighterDeployment, u64),
 ) {
     let (addr, state) = start_server().await;
     *state.account_type.lock().await = account_type;
-    let (mut client, _rx, _cache) = build_client_mainnet(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr, attribution.0);
 
     client.connect().await.expect("connect");
 
@@ -2000,10 +1996,7 @@ async fn connect_submits_l2_only_integrator_auto_approval_for_all_account_tiers(
     let tx_info = &approvals[0]["tx_info"];
     assert_eq!(tx_info["AccountIndex"], TEST_ACCOUNT_INDEX);
     assert_eq!(tx_info["ApiKeyIndex"], TEST_API_KEY_INDEX);
-    assert_eq!(
-        tx_info["IntegratorAccountIndex"],
-        LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
-    );
+    assert_eq!(tx_info["IntegratorAccountIndex"], attribution.1);
     assert_eq!(tx_info["MaxPerpsTakerFee"], 0);
     assert_eq!(tx_info["MaxPerpsMakerFee"], 0);
     assert_eq!(tx_info["MaxSpotTakerFee"], 0);
@@ -2022,22 +2015,30 @@ async fn connect_submits_l2_only_integrator_auto_approval_for_all_account_tiers(
             .contains(&approval_expiry),
         "ApprovalExpiry must use the maximum five-year TTL",
     );
-    assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(
+        state.referral_use_calls.load(Ordering::Relaxed),
+        usize::from(account_type.is_some()),
+    );
 
     client.disconnect().await.expect("disconnect");
 }
 
 #[rstest]
+#[case::lighter(LighterDeployment::Lighter, "NAUTILUS")]
+#[case::robinhood(LighterDeployment::Robinhood, "NAUTILUS")]
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_applies_robinhood_referral_on_each_process_start() {
+async fn connect_applies_referral_on_each_process_start(
+    #[case] deployment: LighterDeployment,
+    #[case] referral_code: &str,
+) {
     let (addr, state) = start_server().await;
-    let (mut first_client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    let (mut first_client, _rx, _cache) = build_client_mainnet(addr, deployment);
     let expected_request = std::collections::HashMap::from([
         (
             "l1_address".to_string(),
             "0x0000000000000000000000000000000000000000".to_string(),
         ),
-        ("referral_code".to_string(), "NAUTILUS".to_string()),
+        ("referral_code".to_string(), referral_code.to_string()),
     ]);
 
     first_client.connect().await.expect("first connect");
@@ -2048,13 +2049,13 @@ async fn connect_applies_robinhood_referral_on_each_process_start() {
         state.referral_use_requests().await,
         vec![expected_request.clone()],
     );
-    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
-    assert!(state.rest_send_txs().await.is_empty());
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(state.rest_send_txs().await.len(), 1);
 
     first_client.disconnect().await.expect("first disconnect");
     drop(first_client);
 
-    let (mut second_client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    let (mut second_client, _rx, _cache) = build_client_mainnet(addr, deployment);
     second_client.connect().await.expect("second connect");
 
     assert_eq!(state.referral_use_calls.load(Ordering::Relaxed), 2);
@@ -2063,22 +2064,27 @@ async fn connect_applies_robinhood_referral_on_each_process_start() {
         state.referral_use_requests().await,
         vec![expected_request.clone(), expected_request],
     );
-    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 0);
-    assert!(state.rest_send_txs().await.is_empty());
+    assert_eq!(state.maker_only_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(state.rest_send_txs().await.len(), 2);
 
     second_client.disconnect().await.expect("second disconnect");
 }
 
 #[rstest]
+#[case::lighter(LighterDeployment::Lighter)]
+#[case::robinhood(LighterDeployment::Robinhood)]
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_continues_when_robinhood_referral_fails() {
+async fn connect_continues_when_referral_fails(
+    #[case] deployment: LighterDeployment,
+    #[values(20001, 41013)] code: u64,
+) {
     let (addr, state) = start_server().await;
     *state.next_referral_use_response.lock().await = Some(json!({
-        "code": 20001,
+        "code": code,
         "message": "referral unavailable",
     }));
 
-    let (mut client, _rx, _cache) = build_client_robinhood_mainnet(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr, deployment);
 
     client.connect().await.expect("connect");
 
@@ -2122,7 +2128,7 @@ async fn connect_skips_integrator_auto_approval_for_maker_only_api_key() {
         .lock()
         .await
         .push(i64::from(TEST_API_KEY_INDEX));
-    let (mut client, _rx, _cache) = build_client_mainnet(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr, LighterDeployment::Lighter);
 
     client.connect().await.expect("connect");
 
@@ -2142,7 +2148,7 @@ async fn connect_bails_when_integrator_auto_approval_reports_unapproved() {
         "code": 21149,
         "message": "integrator is not approved",
     }));
-    let (mut client, _rx, _cache) = build_client_mainnet(addr);
+    let (mut client, _rx, _cache) = build_client_mainnet(addr, LighterDeployment::Lighter);
 
     let err = client.connect().await.unwrap_err();
     let msg = format!("{err:#}");
@@ -2379,39 +2385,63 @@ mod serial_tests {
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Some(0), Value::Null)]
+#[case::testnet(
+    LighterDeployment::Lighter,
+    LighterEnvironment::Testnet,
+    Some(0),
+    Value::Null
+)]
 #[case::mainnet_unavailable(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     None,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_standard(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(0),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_premium(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(1),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_plus(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(2),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_builder(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(3),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_unknown(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(7),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
+#[case::robinhood_mainnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Mainnet,
+    Some(0),
+    json!({"1": LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
+#[case::robinhood_testnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Testnet,
+    Some(0),
+    Value::Null
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
+    #[case] deployment: LighterDeployment,
     #[case] environment: LighterEnvironment,
     #[case] account_type: Option<u8>,
     #[case] mut expected_attributes: Value,
@@ -2436,6 +2466,9 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
     *state.account_type.lock().await = account_type;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
+    state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
@@ -2485,13 +2518,21 @@ async fn test_submit_limit_order_emits_submitted_and_signs_sendtx(
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Value::Null)]
+#[case::testnet(LighterDeployment::Lighter, LighterEnvironment::Testnet, Value::Null)]
 #[case::mainnet_standard(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
+#[case::robinhood_mainnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Mainnet,
+    json!({"1": LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
+#[case::robinhood_testnet(LighterDeployment::Robinhood, LighterEnvironment::Testnet, Value::Null)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_order_list_shares_correlated_transport_batch(
+    #[case] deployment: LighterDeployment,
     #[case] environment: LighterEnvironment,
     #[case] mut expected_attributes: Value,
     #[values(false, true)] override_modes: bool,
@@ -2514,6 +2555,8 @@ async fn test_submit_order_list_shares_correlated_transport_batch(
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
     state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
@@ -3606,39 +3649,63 @@ async fn test_cancel_order_venue_rejection_emits_cancel_rejected_for_pending_can
 }
 
 #[rstest]
-#[case::testnet(LighterEnvironment::Testnet, Some(0), Value::Null)]
+#[case::testnet(
+    LighterDeployment::Lighter,
+    LighterEnvironment::Testnet,
+    Some(0),
+    Value::Null
+)]
 #[case::mainnet_unavailable(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     None,
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_standard(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(0),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_premium(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(1),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_plus(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(2),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_builder(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(3),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
 #[case::mainnet_unknown(
+    LighterDeployment::Lighter,
     LighterEnvironment::Mainnet,
     Some(7),
     json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
 )]
+#[case::robinhood_mainnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Mainnet,
+    Some(0),
+    json!({"1": LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
+#[case::robinhood_testnet(
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Testnet,
+    Some(0),
+    Value::Null
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_modify_order_signs_modify_sendtx(
+    #[case] deployment: LighterDeployment,
     #[case] environment: LighterEnvironment,
     #[case] account_type: Option<u8>,
     #[case] expected_attributes: Value,
@@ -3647,6 +3714,9 @@ async fn test_modify_order_signs_modify_sendtx(
     *state.account_type.lock().await = account_type;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
+    state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, _rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
@@ -3694,18 +3764,43 @@ async fn test_modify_order_signs_modify_sendtx(
 }
 
 #[rstest]
-#[case::acknowledged_testnet(false, LighterEnvironment::Testnet, Value::Null)]
-#[case::acknowledged_mainnet(false, LighterEnvironment::Mainnet, json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}))]
-#[case::venue_rejected(true, LighterEnvironment::Testnet, Value::Null)]
+#[case::acknowledged_testnet(
+    false,
+    LighterDeployment::Lighter,
+    LighterEnvironment::Testnet,
+    Value::Null
+)]
+#[case::acknowledged_mainnet(false, LighterDeployment::Lighter, LighterEnvironment::Mainnet, json!({"1": LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}))]
+#[case::venue_rejected(
+    true,
+    LighterDeployment::Lighter,
+    LighterEnvironment::Testnet,
+    Value::Null
+)]
+#[case::robinhood_mainnet(
+    false,
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Mainnet,
+    json!({"1": LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX}),
+)]
+#[case::robinhood_testnet(
+    false,
+    LighterDeployment::Robinhood,
+    LighterEnvironment::Testnet,
+    Value::Null
+)]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_batch_modify_orders_shares_transport_and_child_outcomes(
     #[case] rejected: bool,
+    #[case] deployment: LighterDeployment,
     #[case] environment: LighterEnvironment,
     #[case] expected_attributes: Value,
 ) {
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = deployment;
+    config.venue = Some(*LIGHTER_VENUE);
     state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.unwrap();
@@ -10085,6 +10180,11 @@ async fn test_acknowledged_modify_ignores_delayed_terminal_report() {
 #[tokio::test(flavor = "multi_thread")]
 async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
     #[case] rejected: bool,
+    #[values(
+        (LighterDeployment::Lighter, 723_813),
+        (LighterDeployment::Robinhood, 17_725)
+    )]
+    attribution: (LighterDeployment, u64),
     #[values(false, true)] override_modes: bool,
     #[values(LighterEnvironment::Testnet, LighterEnvironment::Mainnet)]
     environment: LighterEnvironment,
@@ -10092,6 +10192,9 @@ async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.environment = environment;
+    config.deployment = attribution.0;
+    config.venue = Some(*LIGHTER_VENUE);
+    state.chain_id.store(config.chain_id(), Ordering::Relaxed);
     let (mut client, mut rx, cache) = build_client_with(config);
     client.connect().await.expect("connect");
 
@@ -10163,7 +10266,7 @@ async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
         json!({"6": u8::from(override_modes), "7": u8::from(override_modes)});
 
     if environment == LighterEnvironment::Mainnet {
-        expected_attributes["1"] = json!(LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX);
+        expected_attributes["1"] = json!(attribution.1);
     }
 
     assert_eq!(body["L2TxAttributes"], expected_attributes);
