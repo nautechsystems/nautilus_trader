@@ -250,6 +250,7 @@ Released on TBD (UTC).
 - Fixed Polymarket market-order HTTP rejections missing `OrderSubmitted`
 - Fixed Polymarket market data subscriptions stalling after transient initial WebSocket connection failures
 - Fixed Polymarket taker rates derived from CLOB `base_fee` when Gamma rates are missing or zero
+- Fixed Polymarket `zero_fees` markets logging missing taker-rate warnings
 - Fixed Polymarket trade history and settlement recovery failing on missing or null transaction hashes
 - Fixed Polymarket taker fill prices and fees across price levels and complementary tokens (#5404), thanks @SoYuCry
 - Fixed Polymarket accepting unsupported market protocols during discovery, trading, and position operations

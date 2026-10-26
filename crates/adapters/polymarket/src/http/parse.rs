@@ -256,6 +256,10 @@ pub(crate) fn enrich_market_fee_schedule(market: &mut GammaMarket) {
     let rebate = resolve_maker_rebate_rate(market);
     if (market.fees_enabled == Some(true) || !rebate.is_zero())
         && market
+            .fee_type
+            .as_deref()
+            .is_none_or(|fee_type| !fee_type.trim().eq_ignore_ascii_case("zero_fees"))
+        && market
             .fee_schedule
             .as_ref()
             .is_none_or(|schedule| schedule.rate.is_zero())
@@ -1436,6 +1440,23 @@ mod tests {
         assert_eq!(schedule.rebate_rate, dec!(0.20));
         assert_eq!(schedule.exponent, Decimal::ONE);
         assert!(schedule.taker_only);
+    }
+
+    #[rstest]
+    #[case(Decimal::ZERO)]
+    #[case(dec!(0.0123))]
+    fn test_enrich_market_fee_schedule_preserves_zero_fee_values(#[case] rate: Decimal) {
+        let mut market = load_gamma_market("gamma_market_fee_zero_rate.json");
+        market.fee_type = Some("zero_fees".to_string());
+        let schedule = market.fee_schedule.as_mut().unwrap();
+        schedule.exponent = dec!(2);
+        schedule.rate = rate;
+        schedule.taker_only = false;
+        let original_schedule = market.fee_schedule.clone().unwrap();
+
+        enrich_market_fee_schedule(&mut market);
+
+        assert_eq!(market.fee_schedule, Some(original_schedule));
     }
 
     #[rstest]

@@ -1434,7 +1434,8 @@ Do not interpret the absence of an applied fill as proof that the order did not 
 ## Fees
 
 The instrument provider and historical data loader use Gamma's `feeSchedule.rate` as the taker rate.
-During provider or historical loading, a fee-enabled market with a missing or zero rate uses zero and logs a warning.
+During provider or historical loading, a fee-enabled market with a missing or zero rate uses zero.
+The adapter logs a warning unless `feeType` is `zero_fees`.
 Runtime automatic instrument loading also uses zero for a missing or zero rate, but does not log this warning.
 The CLOB `/fee-rate` response's `base_fee` is a legacy base fee and does not supply the effective taker rate.
 
