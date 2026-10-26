@@ -10,6 +10,7 @@ cat > "$case_root/bin/cargo" << 'CARGO'
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${CARGO_LOG:?}"
+printf '%s\n' "${VALGRIND_OPTS-}" >> "${VALGRIND_LOG:?}"
 if [[ "$4" == "${FAIL_CRATE:?}" ]]; then
   echo "Mock benchmark failure for $4" >&2
   exit 17
@@ -21,11 +22,15 @@ run_case() {
   local fail_crate="$1"
   local expected_status="$2"
   local expected_crates="$3"
+  local valgrind_opts="${4:-}"
+  local expected_valgrind_opts="${5:---cachegrind:cache-sim=yes}"
   local status=0
   local crate
 
   : > "$case_root/cargo.log"
-  PATH="$case_root/bin:$PATH" CARGO_LOG="$case_root/cargo.log" FAIL_CRATE="$fail_crate" \
+  : > "$case_root/valgrind.log"
+  PATH="$case_root/bin:$PATH" CARGO_LOG="$case_root/cargo.log" \
+    VALGRIND_LOG="$case_root/valgrind.log" VALGRIND_OPTS="$valgrind_opts" FAIL_CRATE="$fail_crate" \
     make -C "$repo_root" --no-print-directory -o check-cargo-cooldown \
     CI_BENCH_CRATES='nautilus-core nautilus-model nautilus-common' \
     cargo-ci-benches > "$case_root/output" 2>&1 || status=$?
@@ -37,11 +42,14 @@ run_case() {
   fi
 
   : > "$case_root/expected.log"
+  : > "$case_root/expected-valgrind.log"
   for crate in $expected_crates; do
     printf 'bench --locked -p %s --profile bench --benches --no-fail-fast\n' "$crate" \
       >> "$case_root/expected.log"
+    printf '%s\n' "$expected_valgrind_opts" >> "$case_root/expected-valgrind.log"
   done
   diff -u "$case_root/expected.log" "$case_root/cargo.log"
+  diff -u "$case_root/expected-valgrind.log" "$case_root/valgrind.log"
 
   if [[ "$expected_status" -ne 0 ]]; then
     grep -Fq "Mock benchmark failure for $fail_crate" "$case_root/output"
@@ -52,5 +60,8 @@ run_case nautilus-core 2 'nautilus-core'
 run_case nautilus-model 2 'nautilus-core nautilus-model'
 run_case nautilus-common 2 'nautilus-core nautilus-model nautilus-common'
 run_case none 0 'nautilus-core nautilus-model nautilus-common'
+run_case none 0 'nautilus-core nautilus-model nautilus-common' \
+  '--cachegrind:branch-sim=yes --cachegrind:cache-sim=no' \
+  '--cachegrind:branch-sim=yes --cachegrind:cache-sim=no --cachegrind:cache-sim=yes'
 
 echo 'Cargo CI benchmark script tests passed'
