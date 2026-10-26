@@ -216,6 +216,7 @@ Released on TBD (UTC).
 - Fixed OKX WebSocket send failures delaying rejection events and leaving unsent cancels unresolved
 - Fixed OKX USD-margined futures and swaps routed as spreads (#5337), thanks for reporting @michalismeng
 - Fixed Polymarket event metadata duplicated across instruments and cache clones (#5389), thanks @imbolc
+- Fixed Polymarket backtest taker fees rounding to nearest instead of flooring to five decimal places
 - Fixed Polymarket data clients ignoring `ws_timeout_secs` for market and PolyBolt WebSockets
 - Fixed Polymarket auto-load retrying filter-rejected instruments and logging false missing-market errors
 - Fixed Polymarket batch cancels discarding completed results when a later chunk fails

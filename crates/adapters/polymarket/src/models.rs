@@ -25,7 +25,7 @@ use nautilus_model::{
     orders::{Order, OrderAny},
     types::{Money, Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, RoundingStrategy};
 
 use crate::http::models::FeeSchedule;
 
@@ -97,7 +97,9 @@ impl FeeModel for PolymarketFeeModel {
                 .checked_mul(schedule.rebate_rate)
                 .context("commission calculation overflow")?
                 .round_dp(5),
-            LiquiditySide::Taker => fee_equivalent.round_dp(5),
+            LiquiditySide::Taker => {
+                fee_equivalent.round_dp_with_strategy(5, RoundingStrategy::ToZero)
+            }
             LiquiditySide::NoLiquiditySide => unreachable!(),
         };
 
@@ -229,8 +231,11 @@ mod tests {
 
     #[rstest]
     #[case("0.01", dec!(0.00000))]
-    #[case("0.02", dec!(0.00001))]
-    fn test_taker_fee_rounds_to_five_decimal_places(
+    #[case("0.02", dec!(0.00000))]
+    #[case("0.03", dec!(0.00001))]
+    #[case("0.04", dec!(0.00001))]
+    #[case("2.00", dec!(0.00099))]
+    fn test_taker_fee_floors_to_five_decimal_places(
         #[case] fill_quantity: &str,
         #[case] expected: Decimal,
     ) {
@@ -247,6 +252,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(commission.as_decimal(), expected);
+        assert_eq!(commission.currency, instrument.quote_currency());
     }
 
     #[rstest]
