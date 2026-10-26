@@ -15,6 +15,7 @@
 
 //! Parsing utilities for the Polymarket adapter.
 
+use alloy_primitives::hex::Buffer;
 pub(crate) use nautilus_core::serialization::decimal::parse as parse_decimal_exact;
 pub use nautilus_core::serialization::{
     decimal::{
@@ -207,7 +208,9 @@ pub fn determine_trade_id(
             h = h.wrapping_mul(FNV_PRIME);
         }
     }
-    TradeId::new(format!("{h:016x}"))
+
+    let encoded = Buffer::<8>::new().const_format(&h.to_be_bytes());
+    TradeId::new(encoded.as_str())
 }
 
 #[cfg(test)]
@@ -395,13 +398,8 @@ mod tests {
 
     #[rstest]
     fn test_determine_trade_id_format() {
-        let id = determine_trade_id("asset-1", PolymarketOrderSide::Buy, "0.5", "10", "1700000");
-        let s = id.to_string();
-        assert_eq!(s.len(), 16);
-        // Pin lowercase hex so downstream consumers can rely on the format
-        assert!(
-            s.chars()
-                .all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c))
-        );
+        let side = PolymarketOrderSide::Sell;
+        let id = determine_trade_id("asset-225", side, "0.01", "123.45", "1700000000000");
+        assert_eq!(id.as_str(), "007f43ec998548a8");
     }
 }
