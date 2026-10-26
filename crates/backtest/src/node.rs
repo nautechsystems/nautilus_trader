@@ -19,7 +19,7 @@ use std::{iter::Peekable, mem};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{Params, UnixNanos};
-use nautilus_data::replay::{DataIterator, ReplayBatch};
+use nautilus_data::replay::{DataIterator, ReplayBatch, ReplayPoll, ReplaySource};
 use nautilus_model::{
     data::{Data, DataBatch, HasTsInit, NautilusDataType, OrderBookDelta, OrderBookDeltas},
     enums::{BookType, OtoTriggerMode, RecordFlag},
@@ -501,47 +501,46 @@ fn run_streaming(
     )
 }
 
-// Sources are synchronous and fixed before consumption; refills happen on the next call so a
-// producer failure cannot swallow the row just selected.
-fn merge_streams<I: Iterator<Item = anyhow::Result<ReplayBatch>>>(
+fn merge_streams<I: Iterator<Item = anyhow::Result<ReplayBatch>> + 'static>(
     streams: Vec<(String, I)>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Data>>> {
     let mut iterator = DataIterator::new();
-    let (names, mut streams): (Vec<_>, Vec<_>) = streams.into_iter().unzip();
-    for (stream, name) in streams.iter_mut().zip(&names) {
-        if let Some(batch) = stream.next() {
-            iterator.add_batch(name, batch?, true);
-        }
+    for (name, stream) in streams {
+        iterator.add_source(&name, Box::new(BatchSource(stream)), true)?;
     }
 
-    let mut refill: Option<usize> = None;
     let mut failed = false;
     Ok(std::iter::from_fn(move || {
         if failed {
             return None;
         }
 
-        let load = (|| -> anyhow::Result<()> {
-            if let Some(index) = refill.take() {
-                let name = &names[index];
-                match streams[index].next() {
-                    Some(batch) => iterator.refill_batch(name, batch?)?,
-                    None => iterator.remove_data(name, true),
-                }
+        match iterator.next_stream_item() {
+            Ok(ReplayPoll::Ready((data, _))) => Some(Ok(data)),
+            Ok(ReplayPoll::Complete) => None,
+            Err(e) => {
+                failed = true;
+                Some(Err(e))
             }
-
-            Ok(())
-        })();
-
-        if let Err(e) = load {
-            failed = true;
-            return Some(Err(e));
+            Ok(ReplayPoll::Pending { .. }) => {
+                failed = true;
+                Some(Err(anyhow::anyhow!(
+                    "Synchronous replay source returned Pending"
+                )))
+            }
         }
-
-        let (data, exhausted) = iterator.next_stream_item()?;
-        refill = exhausted.and_then(|name| names.iter().position(|candidate| candidate == name));
-        Some(Ok(data))
     }))
+}
+
+struct BatchSource<I>(I);
+
+impl<I: Iterator<Item = anyhow::Result<ReplayBatch>>> ReplaySource for BatchSource<I> {
+    fn poll_batch(&mut self) -> anyhow::Result<ReplayPoll<ReplayBatch>> {
+        self.0.next().transpose().map(|batch| match batch {
+            Some(batch) => ReplayPoll::Ready(batch),
+            None => ReplayPoll::Complete,
+        })
+    }
 }
 
 // Feeds data from an iterator to the engine in timestamp-aligned chunks.
@@ -909,7 +908,7 @@ mod tests {
         ReplayBatch::Typed(batch)
     }
 
-    fn merge_rows<I: Iterator<Item = anyhow::Result<Data>>>(
+    fn merge_rows<I: Iterator<Item = anyhow::Result<Data>> + 'static>(
         streams: Vec<Peekable<I>>,
     ) -> impl Iterator<Item = anyhow::Result<Data>> {
         let batches = streams
@@ -919,7 +918,7 @@ mod tests {
         merge_batches(batches).expect("initial batches must load")
     }
 
-    fn merge_batches<I: Iterator<Item = anyhow::Result<ReplayBatch>>>(
+    fn merge_batches<I: Iterator<Item = anyhow::Result<ReplayBatch>> + 'static>(
         streams: Vec<I>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Data>>> {
         merge_streams(

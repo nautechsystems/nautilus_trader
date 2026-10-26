@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added gzip support to buffered HTTP requests (#5420), thanks @cryptolenny3
+- Added `ReplaySource` and `DataIterator::add_source` for fallible replay with pending frontiers
 - Added batched data subscriptions and unsubscriptions, thanks @faysou
 - Added batched historical instrument, quote, and trade requests, thanks @faysou
 - Added `on_data_response` hooks for historical completion and partial failures, thanks @faysou
@@ -48,6 +49,10 @@ Released on TBD (UTC).
 - Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
 - Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
 - Changed buffered `HttpClient` bodies to decode gzip; remove manual decoding or use `get_stream` for raw bytes
+- Changed `DataIterator::{peek, next, next_stream_item}` to return `Result<ReplayPoll<_>>`; handle all states
+- Changed `DataIterator::peek` to require `&mut self` for source polling
+- Changed `DataIterator::reset_all_cursors` to return `Result`; handle unsupported or failed resets
+- Changed `DataIterator` and `BacktestDataIterator` to omit `Send` and `Sync`; construct and use on one thread
 - Changed request and subscription fields to `instrument_ids` and `bar_types` lists, thanks @faysou
 - Changed quote and trade response fields to `instrument_ids` lists, thanks @faysou
 - Changed quote, trade, bar, book-delta, book-depth, and funding responses to `BatchView<T>`, thanks @faysou
