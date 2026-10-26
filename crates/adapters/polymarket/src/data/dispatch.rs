@@ -1532,13 +1532,13 @@ mod tests {
     use nautilus_model::{
         data::{BookOrder, CustomData as ModelCustomData, DataType, OrderBookDelta},
         enums::{
-            BookAction, InstrumentCloseType, MarketStatusAction, OrderSide, PositionSide,
-            RecordFlag,
+            AggressorSide, BookAction, InstrumentCloseType, MarketStatusAction, OrderSide,
+            PositionSide, RecordFlag,
         },
         events::{PositionEvent, PositionOpened},
         identifiers::{
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol,
-            TraderId,
+            TradeId, TraderId,
         },
         instruments::stubs::binary_option,
         types::{Currency, Price, Quantity},
@@ -1570,7 +1570,7 @@ mod tests {
             messages::{
                 PolymarketBestBidAsk, PolymarketBookLevel, PolymarketBookSnapshot,
                 PolymarketMarketResolved, PolymarketQuote, PolymarketQuotes,
-                PolymarketTickSizeChange,
+                PolymarketTickSizeChange, PolymarketTrade,
             },
             pool::PolymarketMarketConnectionPool,
         },
@@ -3996,6 +3996,67 @@ mod tests {
 
         let update_state = client.instrument_update_state.lock();
         assert!(!update_state.contains_live_tick(&token_id));
+    }
+
+    #[rstest]
+    #[case::subscribed(true, false)]
+    #[case::unsubscribed(false, false)]
+    #[case::resolved(true, true)]
+    fn last_trade_dispatch_requires_active_open_subscription(
+        #[case] subscribed: bool,
+        #[case] resolved: bool,
+    ) {
+        let (ctx, mut data_rx) = make_ws_ctx();
+        let trade: PolymarketTrade =
+            serde_json::from_str(include_str!("../../test_data/ws_last_trade.json")).unwrap();
+        let mut instrument = stub_instrument(
+            trade.asset_id.as_str(),
+            Price::from("0.0001"),
+            Quantity::from("0.000001"),
+        );
+
+        let InstrumentAny::BinaryOption(binary) = &mut instrument else {
+            panic!("expected binary option");
+        };
+
+        binary.id = InstrumentId::from(format!("{}-{}.POLYMARKET", trade.market, trade.asset_id));
+        cache_instrument_unchecked(&ctx.instruments, &ctx.subscriptions.token_meta, &instrument);
+        if subscribed {
+            ctx.subscriptions.active_trade_subs.insert(instrument.id());
+        }
+
+        if resolved {
+            ctx.subscriptions
+                .closed_condition_ids
+                .lock()
+                .insert(trade.market.to_string());
+        }
+
+        let before = ctx.clock.get_time_ns();
+        handle_market_message(MarketWsMessage::LastTradePrice(trade), &ctx);
+        let after = ctx.clock.get_time_ns();
+        let events = std::iter::from_fn(|| data_rx.try_recv().ok()).collect::<Vec<_>>();
+
+        if !subscribed || resolved {
+            assert!(events.is_empty());
+            return;
+        }
+
+        assert_eq!(events.len(), 1);
+
+        let DataEvent::Data(NautilusData::Trade(tick)) = &events[0] else {
+            panic!("expected trade tick");
+        };
+
+        assert_eq!(tick.instrument_id, instrument.id());
+        assert_eq!(tick.price, Price::from("0.5100"));
+        assert_eq!(tick.price.precision, 4);
+        assert_eq!(tick.size, Quantity::from("25.000000"));
+        assert_eq!(tick.size.precision, 6);
+        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
+        assert_eq!(tick.trade_id, TradeId::from("9571b9f1372edac4"));
+        assert_eq!(tick.ts_event, UnixNanos::from(1_703_875_202_000_000_000));
+        assert!(tick.ts_init >= before && tick.ts_init <= after);
     }
 
     #[rstest]

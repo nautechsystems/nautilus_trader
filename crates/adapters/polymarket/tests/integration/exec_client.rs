@@ -54,7 +54,10 @@ use nautilus_model::{
     events::{
         AccountState, OrderDeniedReason, OrderEventAny, OrderPendingCancel, OrderPendingUpdate,
         OrderUpdated,
-        order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
+        order::{
+            OrderEventType,
+            spec::{OrderFillVoidedSpec, OrderFilledSpec},
+        },
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
@@ -66,7 +69,7 @@ use nautilus_model::{
         stubs::TestOrderEventStubs,
     },
     position::Position,
-    reports::{FillReport, OrderStatusReport},
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_polymarket::{
@@ -6164,6 +6167,222 @@ async fn test_commission_failure_errors_direct_mass_and_targeted_rest_requests()
     for error in [fill_error, mass_error, targeted_error] {
         assert!(format!("{error:#}").contains("failed to represent commission"));
     }
+}
+
+#[rstest]
+#[case::external(false, false)]
+#[case::cached(true, false)]
+#[case::cached_partial(true, true)]
+fn test_inferred_fill_commission_failure_defers_and_recovers_once(
+    #[case] cached: bool,
+    #[case] prior_fill: bool,
+) {
+    let (mut client, _rx, cache) = create_test_execution_client("127.0.0.1:1".parse().unwrap());
+    let account_id = AccountId::from("POLYMARKET-001");
+    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let venue_order_id = VenueOrderId::from("V-INFERRED-COMMISSION");
+
+    let client_order_id = ClientOrderId::from(if cached {
+        "O-INFERRED-COMMISSION"
+    } else {
+        venue_order_id.as_str()
+    });
+
+    add_test_account_to_cache(&cache, account_id);
+    add_instrument_to_cache_with_tick_and_taker_fee(&cache, instrument_id, "0.0001", 4, None);
+    let invalid_rate = Decimal::MAX / dec!(1000);
+    replace_fee_schedule(&cache, instrument_id, &invalid_rate.to_string(), "2");
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument.clone());
+    let error = client
+        .calculate_commission(
+            &instrument,
+            Quantity::from("10.0000"),
+            Price::from("0.4300"),
+            LiquiditySide::Taker,
+        )
+        .expect_err("venue commission must be unrepresentable");
+    assert!(format!("{error:#}").contains("failed to represent commission"));
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+
+    if cached {
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TESTER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("10.0000"))
+            .time_in_force(TimeInForce::Ioc)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*POLYMARKET_CLIENT_ID), false)
+            .unwrap();
+        submit_and_accept_order(&cache, &mut order, venue_order_id.as_str());
+
+        if prior_fill {
+            let fill = OrderFilledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(instrument_id)
+                .client_order_id(client_order_id)
+                .venue_order_id(venue_order_id)
+                .account_id(account_id)
+                .trade_id(TradeId::from("T-PRIOR-COMMISSION"))
+                .order_side(OrderSide::Buy)
+                .order_type(OrderType::Market)
+                .last_qty(Quantity::from("4.0000"))
+                .last_px(Price::from("0.2000"))
+                .currency(Currency::pUSD())
+                .commission(Money::from("0.000700 pUSD"))
+                .liquidity_side(LiquiditySide::Taker)
+                .ts_event(UnixNanos::from(1_000_000_000))
+                .build();
+            engine.process(&OrderEventAny::Filled(fill));
+        }
+    }
+
+    let engine = RefCell::new(engine);
+    let mut manager =
+        ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default()).unwrap();
+    let report = OrderStatusReport::new(
+        account_id,
+        instrument_id,
+        cached.then_some(client_order_id),
+        venue_order_id,
+        Some(OrderSide::Buy),
+        OrderType::Market,
+        TimeInForce::Ioc,
+        OrderStatus::Filled,
+        Quantity::from("10.0000"),
+        Quantity::from("10.0000"),
+        UnixNanos::from(1_000_000_000),
+        UnixNanos::from(2_000_000_000),
+        UnixNanos::from(3_000_000_000),
+        None,
+    )
+    .with_avg_px(if prior_fill { dec!(0.38) } else { dec!(0.43) });
+
+    let mut mass = ExecutionMassStatus::new(
+        *POLYMARKET_CLIENT_ID,
+        account_id,
+        *POLYMARKET_VENUE,
+        UnixNanos::from(4_000_000_000),
+        None,
+    );
+    mass.add_order_reports(vec![report]);
+
+    let snapshot = || {
+        cache.borrow().order(&client_order_id).map(|order| {
+            (
+                order.status(),
+                order.quantity(),
+                order.filled_qty(),
+                order.avg_px(),
+                order.commissions().clone(),
+                order.events().into_iter().cloned().collect::<Vec<_>>(),
+            )
+        })
+    };
+
+    let before = snapshot();
+
+    let failed = manager.reconcile_execution_mass_status(&mass, &engine);
+    assert!(failed.events.is_empty());
+    assert!(failed.external_orders.is_empty());
+    assert!(failed.unresolved_positions.is_empty());
+    assert_eq!(snapshot(), before);
+
+    replace_fee_schedule(&cache, instrument_id, "0.07", "2");
+    let recovered = manager.reconcile_execution_mass_status(&mass, &engine);
+
+    assert_eq!(
+        recovered
+            .events
+            .iter()
+            .map(OrderEventAny::event_type)
+            .collect::<Vec<_>>(),
+        if cached {
+            vec![OrderEventType::Filled]
+        } else {
+            vec![OrderEventType::Accepted, OrderEventType::Filled]
+        }
+    );
+
+    let fills = recovered
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(fills.len(), 1);
+    let fill = fills[0];
+    assert_eq!(
+        fill.trader_id,
+        TraderId::from(if cached { "TESTER-001" } else { "TRADER-001" })
+    );
+    assert_eq!(
+        fill.strategy_id,
+        StrategyId::from(if cached { "S-001" } else { "EXTERNAL" })
+    );
+    assert_eq!(fill.account_id, account_id);
+    assert_eq!(fill.instrument_id, instrument_id);
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.venue_order_id, venue_order_id);
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert_eq!(fill.order_type, OrderType::Market);
+    assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+    assert_eq!(
+        fill.last_qty,
+        Quantity::from(if prior_fill { "6.0000" } else { "10.0000" })
+    );
+    assert_eq!(
+        fill.last_px,
+        Price::from(if prior_fill { "0.5000" } else { "0.4300" })
+    );
+    assert_eq!(fill.currency, Currency::pUSD());
+    assert_eq!(fill.ts_event, UnixNanos::from(2_000_000_000));
+    assert_eq!(fill.ts_init, UnixNanos::default());
+    assert!(fill.reconciliation);
+    assert_eq!(
+        fill.commission,
+        Some(Money::from(if prior_fill {
+            "0.026250 pUSD"
+        } else {
+            "0.042050 pUSD"
+        }))
+    );
+    let recovered_order = cache.borrow().order(&client_order_id).unwrap().clone();
+    assert_eq!(recovered_order.status(), OrderStatus::Filled);
+    assert_eq!(recovered_order.filled_qty(), Quantity::from("10.0000"));
+    assert_eq!(
+        recovered_order.avg_px(),
+        Some(if prior_fill { dec!(0.38) } else { dec!(0.43) })
+    );
+    assert_eq!(
+        recovered_order
+            .commissions()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![Money::from(if prior_fill {
+            "0.026950 pUSD"
+        } else {
+            "0.042050 pUSD"
+        })]
+    );
+
+    let recovered_snapshot = snapshot();
+    let replay = manager.reconcile_execution_mass_status(&mass, &engine);
+    assert!(replay.events.is_empty());
+    assert_eq!(snapshot(), recovered_snapshot);
 }
 
 #[rstest]
