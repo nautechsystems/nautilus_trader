@@ -479,6 +479,8 @@ cross or immediately match. Other venue rejections leave it `false`.
 | `INVALID_POSITION_ID`                            | The supplied position ID is invalid for the order submission.                         |
 | `UNSUPPORTED_ORDER_LIST`                         | The venue does not support the requested order list.                                  |
 | `UNSUPPORTED_ORDER_TYPE`                         | The order type is not supported.                                                      |
+| `UNSUPPORTED_QUOTE_QUANTITY`                     | The execution client or venue does not support quote quantity for the order.          |
+| `UNSUPPORTED_POST_ONLY`                          | The execution client or venue does not support the requested post-only instruction.   |
 | `UNSUPPORTED_REDUCE_ONLY`                        | The execution client or venue does not support the requested reduce-only instruction. |
 | `UNSUPPORTED_TIME_IN_FORCE`                      | The order's time in force is not supported.                                           |
 | `UNSUPPORTED_TP_SL`                              | The venue does not support the requested take-profit/stop-loss parameters.            |

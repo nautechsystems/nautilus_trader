@@ -397,6 +397,14 @@ pub enum OrderDeniedReason {
         order_type: OrderType,
     },
 
+    /// The execution client or venue does not support quote quantity for the order.
+    #[error("UNSUPPORTED_QUOTE_QUANTITY")]
+    UnsupportedQuoteQuantity,
+
+    /// The execution client or venue does not support the requested post-only instruction.
+    #[error("UNSUPPORTED_POST_ONLY")]
+    UnsupportedPostOnly,
+
     /// The execution client or venue does not support the requested reduce-only instruction.
     #[error("UNSUPPORTED_REDUCE_ONLY")]
     UnsupportedReduceOnly,
@@ -468,6 +476,8 @@ impl OrderDeniedCode {
             Self::InvalidPositionId => "The supplied position ID is invalid for the order submission.",
             Self::UnsupportedOrderList => "The venue does not support the requested order list.",
             Self::UnsupportedOrderType => "The order type is not supported.",
+            Self::UnsupportedQuoteQuantity => "The execution client or venue does not support quote quantity for the order.",
+            Self::UnsupportedPostOnly => "The execution client or venue does not support the requested post-only instruction.",
             Self::UnsupportedReduceOnly => "The execution client or venue does not support the requested reduce-only instruction.",
             Self::UnsupportedTimeInForce => "The order's time in force is not supported.",
             Self::UnsupportedTpSl => "The venue does not support the requested take-profit/stop-loss parameters.",
@@ -739,6 +749,20 @@ mod tests {
     }
 
     #[rstest]
+    #[case(
+        OrderDeniedReason::UnsupportedQuoteQuantity,
+        "UNSUPPORTED_QUOTE_QUANTITY"
+    )]
+    #[case(OrderDeniedReason::UnsupportedPostOnly, "UNSUPPORTED_POST_ONLY")]
+    fn renders_unsupported_instruction(#[case] reason: OrderDeniedReason, #[case] expected: &str) {
+        let code = OrderDeniedCode::from(&reason);
+
+        assert_eq!(reason.to_string(), expected);
+        assert_eq!(code.to_string(), expected);
+        assert_eq!(expected.parse::<OrderDeniedCode>(), Ok(code));
+    }
+
+    #[rstest]
     fn renders_adapter_messages() {
         let invalid_client_order_id = OrderDeniedReason::InvalidClientOrderId {
             detail: "clOrdId must be alphanumeric".to_string(),
@@ -928,6 +952,8 @@ mod tests {
             OrderDeniedReason::UnsupportedOrderType {
                 order_type: OrderType::TrailingStopMarket,
             },
+            OrderDeniedReason::UnsupportedQuoteQuantity,
+            OrderDeniedReason::UnsupportedPostOnly,
             OrderDeniedReason::UnsupportedReduceOnly,
             OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::Gtd),
             OrderDeniedReason::UnsupportedTpSl {
