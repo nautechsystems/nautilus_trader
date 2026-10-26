@@ -255,6 +255,7 @@ Released on TBD (UTC).
 
 - Added deferred finalization for live execution report collection
 - Added `rust-code-analysis-cli` v0.0.25 to `make install-tools`
+- Improved `make pre-commit` to check Rust formatting against `origin/develop` (#5442), thanks @tradatious
 - Improved Dockerfile linting to run Hadolint without Docker
 - Improved live shutdown test coverage for slow position report collection
 - Improved performance CI to fail when any benchmark crate fails

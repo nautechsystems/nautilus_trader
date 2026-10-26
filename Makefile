@@ -436,7 +436,9 @@ format:  #-- Format Rust (with nightly) and Python code
 .PHONY: pre-commit
 pre-commit: check-cargo-cooldown  #-- Run all pre-commit hooks on all files
 	@$(timer_start) \
-		prek run --all-files \
+		CHANGED_BASE_SHA="$${CHANGED_BASE_SHA:-origin/develop}" \
+			bash .pre-commit-hooks/check_formatting_rs.sh \
+		&& prek run --all-files \
 	$(call timer_end,Pre-commit)
 
 # The check-code target uses CARGO_FEATURES which is controlled by the HYPERSYNC flag.
