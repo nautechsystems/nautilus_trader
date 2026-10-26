@@ -4671,14 +4671,17 @@ pub(crate) mod serial_tests {
     }
 
     #[rstest]
-    #[case::inline(false)]
-    #[case::worker(true)]
+    #[case::inline(false, 0)]
+    #[case::worker(true, 0)]
+    #[case::worker_delayed(true, 20_000_000)]
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_position_report_completed_during_shutdown_does_not_start_fill_report(
         #[case] worker: bool,
+        #[case] report_cpu_ns: u64,
     ) {
         let state = BlockingReportClientState::default();
         state.report_worker.store(worker, Ordering::Relaxed);
+        state.report_cpu_ns.store(report_cpu_ns, Ordering::Relaxed);
         let release = Arc::new(tokio::sync::Notify::new());
         let factory = BlockingReportExecutionClientFactory::configurable(
             ClientId::from("BLOCKING-REPORT"),
@@ -4706,6 +4709,7 @@ pub(crate) mod serial_tests {
             driver_handle.stop();
             tokio::time::advance(REPORT_CHECK_INTERVAL).await;
             yield_until(|| driver_handle.state() == NodeState::ShuttingDown).await;
+            let shutdown_time = tokio::time::Instant::now();
             release.notify_one();
             yield_until(|| {
                 if worker {
@@ -4716,18 +4720,23 @@ pub(crate) mod serial_tests {
             })
             .await;
 
+            assert_eq!(tokio::time::Instant::now(), shutdown_time);
+
             tokio::time::advance(Duration::from_secs(5)).await;
         };
 
         let (result, ()) = tokio::join!(node.run(), driver);
 
         assert!(result.is_ok());
+        assert!(state.report_response_returned.load(Ordering::Relaxed));
         assert_eq!(state.fill_report_count.load(Ordering::Relaxed), 0);
         assert_eq!(
             state.position_reports_finalized.load(Ordering::Relaxed),
             usize::from(!worker)
         );
+        assert!(state.position_reports_disposed.load(Ordering::Acquire));
         assert_eq!(state.report_collections_active.load(Ordering::Relaxed), 0);
+        assert_eq!(handle.state(), NodeState::Stopped);
     }
 
     #[rstest]

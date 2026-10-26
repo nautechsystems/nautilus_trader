@@ -244,6 +244,7 @@ Released on TBD (UTC).
 - Added deferred finalization for live execution report collection
 - Added `rust-code-analysis-cli` v0.0.25 to `make install-tools`
 - Improved Dockerfile linting to run Hadolint without Docker
+- Improved live shutdown test coverage for slow position report collection
 - Improved performance CI to fail when any benchmark crate fails
 - Refined live reconciliation report collection and task ownership
 - Restored default-feature compilation of `position_replay_criterion` benchmarks
