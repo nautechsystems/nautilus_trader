@@ -163,6 +163,7 @@ Released on TBD (UTC).
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
 - Fixed Bybit fill prices using the commission currency instead of the quote currency (#5385), thanks @Milchstrassse
 - Fixed Bybit fill-report requests silently dropping fills that fail to parse
+- Fixed Bybit premature order acceptance from invalid WebSocket executions
 - Fixed Bybit unsupported time in force reaching submission for market, limit, and post-only orders
 - Fixed Bybit GTD orders failing validation on HTTP submission
 - Fixed Bybit reconciliation timeouts losing pending cancel and amend rejection events
