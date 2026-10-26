@@ -44,8 +44,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         execution::{
-            CancelOrder, GenerateFillReports, GenerateOrderStatusReport,
-            GenerateOrderStatusReports, GeneratePositionStatusReports, QueryOrder, TradingCommand,
+            GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GeneratePositionStatusReports, QueryOrder, TradingCommand,
         },
         system::{QueueStateChanged, ShutdownSystem},
     },
@@ -63,12 +63,9 @@ use nautilus_live::{
     runner::{AsyncRunner, AsyncTimeEventSender},
 };
 use nautilus_model::{
-    accounts::{AccountAny, MarginAccount},
-    enums::{
-        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce,
-    },
-    events::{OrderEventAny, account::state::AccountState},
+    accounts::AccountAny,
+    enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    events::OrderEventAny,
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId,
         StrategyId, TradeId, TraderId, Venue, VenueOrderId,
@@ -129,21 +126,6 @@ impl TestStrategy {
 impl DataActor for TestStrategy {}
 
 nautilus_strategy!(TestStrategy);
-
-#[derive(Debug)]
-struct PositionStartupActor {
-    core: DataActorCore,
-    start_count: Rc<Cell<usize>>,
-}
-
-impl DataActor for PositionStartupActor {
-    fn on_start(&mut self) -> anyhow::Result<()> {
-        self.start_count.set(self.start_count.get() + 1);
-        Ok(())
-    }
-}
-
-nautilus_actor!(PositionStartupActor);
 
 #[derive(Debug)]
 struct PositionStartupStrategy {
@@ -354,25 +336,19 @@ fn test_builder_accepts_live() {
 // Run with: cargo nextest run -p nautilus-live --test integration node::
 
 pub(crate) mod serial_tests {
-    use super::*;
+    use super::{
+        super::startup::{
+            StartupActor, StartupMassStatusBehavior, StartupMassStatusClientState,
+            StartupMassStatusExecutionClient, StartupMassStatusExecutionClientConfig,
+            StartupMassStatusExecutionClientFactory, add_reconciliation_test_account,
+        },
+        *,
+    };
 
     #[cfg(not(madsim))]
     mod reconciliation_bench;
 
     mod report_acceptance;
-
-    #[derive(Clone, Debug, Default)]
-    struct StartupMassStatusClientState {
-        connected: Arc<AtomicBool>,
-        disconnect_attempted: Arc<AtomicBool>,
-        factory_trader_id: Arc<Mutex<Option<TraderId>>>,
-        factory_clock_id: Arc<Mutex<Option<usize>>>,
-        mass_status_requested: Arc<AtomicBool>,
-        mass_status: Arc<Mutex<Option<ExecutionMassStatus>>>,
-        registered_external_orders: Arc<Mutex<Vec<ClientOrderId>>>,
-        cancel_orders_received: Arc<AtomicUsize>,
-        cancel_orders_while_connected: Arc<AtomicBool>,
-    }
 
     #[derive(Clone, Debug, Default)]
     struct FailingDisconnectDataClientState {
@@ -396,23 +372,6 @@ pub(crate) mod serial_tests {
         DisconnectKeepsConnected,
     }
 
-    #[derive(Clone, Copy, Debug)]
-    enum StartupMassStatusBehavior {
-        Available,
-        Unavailable,
-        Error,
-        Pending,
-    }
-
-    struct StartupMassStatusExecutionClient {
-        state: StartupMassStatusClientState,
-        behavior: StartupMassStatusBehavior,
-        client_id: ClientId,
-        account_id: AccountId,
-        venue: Venue,
-        handles_all_order_venues: bool,
-    }
-
     struct FailingDisconnectDataClient {
         state: FailingDisconnectDataClientState,
     }
@@ -427,28 +386,6 @@ pub(crate) mod serial_tests {
         behavior: LifecycleClientBehavior,
     }
 
-    impl StartupMassStatusExecutionClient {
-        const CLIENT_ID: &'static str = "STARTUP-MASS-STATUS";
-
-        fn new(
-            state: StartupMassStatusClientState,
-            behavior: StartupMassStatusBehavior,
-            client_id: ClientId,
-            account_id: AccountId,
-            venue: Venue,
-            handles_all_order_venues: bool,
-        ) -> Self {
-            Self {
-                state,
-                behavior,
-                client_id,
-                account_id,
-                venue,
-                handles_all_order_venues,
-            }
-        }
-    }
-
     impl FailingDisconnectDataClient {
         const CLIENT_ID: &'static str = "FAILING-DISCONNECT-DATA";
 
@@ -458,9 +395,6 @@ pub(crate) mod serial_tests {
     }
 
     #[derive(Debug)]
-    struct StartupMassStatusExecutionClientConfig;
-
-    #[derive(Debug)]
     struct FailingDisconnectDataClientConfig;
 
     #[derive(Debug)]
@@ -468,12 +402,6 @@ pub(crate) mod serial_tests {
 
     #[derive(Debug)]
     struct LifecycleExecutionClientConfig;
-
-    impl ClientConfig for StartupMassStatusExecutionClientConfig {
-        fn as_any(&self) -> &dyn std::any::Any {
-            self
-        }
-    }
 
     impl ClientConfig for FailingDisconnectDataClientConfig {
         fn as_any(&self) -> &dyn std::any::Any {
@@ -494,16 +422,6 @@ pub(crate) mod serial_tests {
     }
 
     #[derive(Debug)]
-    struct StartupMassStatusExecutionClientFactory {
-        state: StartupMassStatusClientState,
-        behavior: StartupMassStatusBehavior,
-        client_id: ClientId,
-        account_id: AccountId,
-        venue: Venue,
-        handles_all_order_venues: bool,
-    }
-
-    #[derive(Debug)]
     struct FailingDisconnectDataClientFactory {
         state: FailingDisconnectDataClientState,
     }
@@ -518,36 +436,6 @@ pub(crate) mod serial_tests {
     struct LifecycleExecutionClientFactory {
         state: LifecycleClientState,
         behavior: LifecycleClientBehavior,
-    }
-
-    impl StartupMassStatusExecutionClientFactory {
-        fn new(state: StartupMassStatusClientState, behavior: StartupMassStatusBehavior) -> Self {
-            Self {
-                state,
-                behavior,
-                client_id: ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID),
-                account_id: AccountId::from("STARTUP-MASS-STATUS-001"),
-                venue: crypto_perpetual_ethusdt().id().venue,
-                handles_all_order_venues: false,
-            }
-        }
-
-        fn with_identity(
-            mut self,
-            client_id: ClientId,
-            account_id: AccountId,
-            venue: Venue,
-        ) -> Self {
-            self.client_id = client_id;
-            self.account_id = account_id;
-            self.venue = venue;
-            self
-        }
-
-        fn with_handles_all_order_venues(mut self) -> Self {
-            self.handles_all_order_venues = true;
-            self
-        }
     }
 
     impl FailingDisconnectDataClientFactory {
@@ -565,36 +453,6 @@ pub(crate) mod serial_tests {
     impl LifecycleExecutionClientFactory {
         fn new(state: LifecycleClientState, behavior: LifecycleClientBehavior) -> Self {
             Self { state, behavior }
-        }
-    }
-
-    impl ExecutionClientFactory for StartupMassStatusExecutionClientFactory {
-        fn create(
-            &self,
-            trader_id: TraderId,
-            _name: &str,
-            _config: &dyn ClientConfig,
-            _cache: CacheView,
-            clock: Rc<RefCell<dyn Clock>>,
-        ) -> anyhow::Result<Box<dyn ExecutionClient>> {
-            *self.state.factory_trader_id.lock() = Some(trader_id);
-            *self.state.factory_clock_id.lock() = Some(Rc::as_ptr(&clock).cast::<()>() as usize);
-            Ok(Box::new(StartupMassStatusExecutionClient::new(
-                self.state.clone(),
-                self.behavior,
-                self.client_id,
-                self.account_id,
-                self.venue,
-                self.handles_all_order_venues,
-            )))
-        }
-
-        fn name(&self) -> &'static str {
-            "startup-mass-status"
-        }
-
-        fn config_type(&self) -> &'static str {
-            stringify!(StartupMassStatusExecutionClientConfig)
         }
     }
 
@@ -828,112 +686,6 @@ pub(crate) mod serial_tests {
             *state.factory_clock_id.lock(),
             Some(Rc::as_ptr(&node.kernel().clock()).cast::<()>() as usize),
         );
-    }
-
-    #[async_trait(?Send)]
-    impl ExecutionClient for StartupMassStatusExecutionClient {
-        fn is_connected(&self) -> bool {
-            self.state.connected.load(Ordering::Relaxed)
-        }
-
-        fn client_id(&self) -> ClientId {
-            self.client_id
-        }
-
-        fn account_id(&self) -> AccountId {
-            self.account_id
-        }
-
-        fn venue(&self) -> Venue {
-            self.venue
-        }
-
-        fn handles_order_venue(&self, venue: Venue) -> bool {
-            self.handles_all_order_venues || self.venue == venue
-        }
-
-        fn oms_type(&self) -> OmsType {
-            OmsType::Hedging
-        }
-
-        fn get_account(&self) -> Option<AccountAny> {
-            None
-        }
-
-        fn generate_account_state(
-            &self,
-            _balances: Vec<AccountBalance>,
-            _margins: Vec<MarginBalance>,
-            _reported: bool,
-            _ts_event: UnixNanos,
-            _info: Option<Params>,
-        ) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        fn start(&mut self) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        fn stop(&mut self) -> anyhow::Result<()> {
-            Ok(())
-        }
-
-        fn cancel_order(&self, _cmd: CancelOrder) -> anyhow::Result<()> {
-            self.state
-                .cancel_orders_received
-                .fetch_add(1, Ordering::Relaxed);
-            self.state.cancel_orders_while_connected.store(
-                self.state.connected.load(Ordering::Relaxed),
-                Ordering::Relaxed,
-            );
-            Ok(())
-        }
-
-        async fn connect(&mut self) -> anyhow::Result<()> {
-            self.state.connected.store(true, Ordering::Relaxed);
-            Ok(())
-        }
-
-        async fn disconnect(&mut self) -> anyhow::Result<()> {
-            self.state
-                .disconnect_attempted
-                .store(true, Ordering::Relaxed);
-            self.state.connected.store(false, Ordering::Relaxed);
-            Ok(())
-        }
-
-        async fn generate_mass_status(
-            &self,
-            _lookback_mins: Option<u64>,
-        ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-            self.state
-                .mass_status_requested
-                .store(true, Ordering::Relaxed);
-
-            match self.behavior {
-                StartupMassStatusBehavior::Available => Ok(self.state.mass_status.lock().clone()),
-                StartupMassStatusBehavior::Unavailable => Ok(None),
-                StartupMassStatusBehavior::Error => Err(anyhow::anyhow!("mass status failed")),
-                StartupMassStatusBehavior::Pending => {
-                    std::future::pending::<anyhow::Result<Option<ExecutionMassStatus>>>().await
-                }
-            }
-        }
-
-        fn register_external_order(
-            &self,
-            client_order_id: ClientOrderId,
-            _venue_order_id: VenueOrderId,
-            _instrument_id: InstrumentId,
-            _strategy_id: StrategyId,
-            _ts_init: UnixNanos,
-        ) {
-            self.state
-                .registered_external_orders
-                .lock()
-                .push(client_order_id);
-        }
     }
 
     #[async_trait(?Send)]
@@ -1868,34 +1620,6 @@ pub(crate) mod serial_tests {
             .cache
             .borrow_mut()
             .update_order(&accepted)
-            .unwrap();
-    }
-
-    fn add_reconciliation_test_account(node: &LiveNode) {
-        let account_id = AccountId::from("BLOCKING-REPORT-001");
-
-        let account = MarginAccount::new(
-            AccountState::new(
-                account_id,
-                AccountType::Margin,
-                vec![AccountBalance::new(
-                    Money::from("1000000 USDT"),
-                    Money::from("0 USDT"),
-                    Money::from("1000000 USDT"),
-                )],
-                Vec::new(),
-                true,
-                UUID4::new(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-                Some(Currency::USDT()),
-            ),
-            true,
-        );
-        node.kernel()
-            .cache()
-            .borrow_mut()
-            .add_account(AccountAny::Margin(account))
             .unwrap();
     }
 
@@ -3284,9 +3008,9 @@ pub(crate) mod serial_tests {
             .unwrap();
         add_reconciliation_test_account(&node);
         let actor_start_count = Rc::new(Cell::new(0));
-        node.add_actor(PositionStartupActor {
+        node.add_actor(StartupActor {
             core: DataActorCore::new(DataActorConfig::default()),
-            start_count: actor_start_count.clone(),
+            starts: actor_start_count.clone(),
         })
         .unwrap();
 
@@ -3478,9 +3202,9 @@ pub(crate) mod serial_tests {
             .unwrap();
         add_reconciliation_test_account(&node);
         let actor_start_count = Rc::new(Cell::new(0));
-        node.add_actor(PositionStartupActor {
+        node.add_actor(StartupActor {
             core: DataActorCore::new(DataActorConfig::default()),
-            start_count: actor_start_count.clone(),
+            starts: actor_start_count.clone(),
         })
         .unwrap();
 
@@ -4081,68 +3805,6 @@ pub(crate) mod serial_tests {
         let result = node.run().await;
 
         assert!(result.is_ok(), "unexpected error: {result:#?}");
-        assert!(state.mass_status_requested.load(Ordering::Relaxed));
-        assert_eq!(handle.state(), NodeState::Stopped);
-        assert!(!state.connected.load(Ordering::Relaxed));
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_start_aborts_startup_when_mass_status_errors() {
-        let config = LiveNodeConfig {
-            exec_engine: LiveExecutionEngineConfig {
-                reconciliation: true,
-                ..Default::default()
-            },
-            timeout_disconnection: Duration::from_millis(50),
-            ..Default::default()
-        };
-
-        let (mut node, state) = live_node_with_startup_mass_status_client(
-            "StartStartupMassStatusErrorNode",
-            config,
-            StartupMassStatusBehavior::Error,
-        );
-        let handle = node.handle();
-
-        let err = node.start().await.expect_err("start should fail");
-        let err = format!("{err:#}");
-
-        assert!(
-            err.contains("Failed to get mass status from") && err.contains("mass status failed"),
-            "unexpected error: {err}"
-        );
-        assert!(state.mass_status_requested.load(Ordering::Relaxed));
-        assert_eq!(handle.state(), NodeState::Stopped);
-        assert!(!state.connected.load(Ordering::Relaxed));
-    }
-
-    #[rstest]
-    #[tokio::test(flavor = "current_thread")]
-    async fn test_run_aborts_startup_when_mass_status_errors() {
-        let config = LiveNodeConfig {
-            exec_engine: LiveExecutionEngineConfig {
-                reconciliation: true,
-                ..Default::default()
-            },
-            timeout_disconnection: Duration::from_millis(50),
-            ..Default::default()
-        };
-
-        let (mut node, state) = live_node_with_startup_mass_status_client(
-            "StartupMassStatusErrorNode",
-            config,
-            StartupMassStatusBehavior::Error,
-        );
-        let handle = node.handle();
-
-        let err = node.run().await.expect_err("run should fail");
-        let err = format!("{err:#}");
-
-        assert!(
-            err.contains("Failed to get mass status from") && err.contains("mass status failed"),
-            "unexpected error: {err}"
-        );
         assert!(state.mass_status_requested.load(Ordering::Relaxed));
         assert_eq!(handle.state(), NodeState::Stopped);
         assert!(!state.connected.load(Ordering::Relaxed));

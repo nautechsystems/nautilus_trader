@@ -741,6 +741,16 @@ do not require NETTING lifecycle inference.
 
 ### Failure handling
 
+During startup, an execution client's mass-status request has three outcomes:
+
+- **Available (`Ok(Some(...))`)**: Reconcile the supplied reports. An unresolved in-scope position
+  report prevents actors and strategies from starting.
+- **Unavailable (`Ok(None)`)**: Log a warning and continue startup. This compatibility policy does
+  not establish that the venue is flat; no position target can be inferred from the missing report.
+- **Failed (`Err(...)`) or timed out**: Abort startup and follow the startup cleanup path.
+
+Report processing also follows these rules:
+
 - An adapter can preserve successful report legs after an individual source failure. Explicitly
   bounded mass statuses must mark the result incomplete. Incompleteness does not veto an explicit
   position report. A bounded fill with no explicit position report does not change a position.

@@ -22,6 +22,9 @@ url = "https://raw.githubusercontent.com/mozilla/supply-chain/main/audits.toml"
 [imports.zcash]
 url = "https://raw.githubusercontent.com/zcash/rust-ecosystem/main/supply-chain/audits.toml"
 
+[policy."arrow:57.3.1"]
+audit-as-crates-io = false
+
 [policy.nautilus-analysis]
 audit-as-crates-io = false
 
@@ -152,6 +155,9 @@ audit-as-crates-io = false
 audit-as-crates-io = false
 
 [policy.nautilus-trading]
+audit-as-crates-io = false
+
+[policy."parquet:57.3.1"]
 audit-as-crates-io = false
 
 [policy.pyo3-stub-gen]

@@ -17,6 +17,8 @@ mod emitter;
 mod external_account;
 mod manager;
 mod node;
+#[path = "../common/startup.rs"]
+mod startup;
 #[cfg(feature = "streaming")]
 mod streaming;
 mod stress;
