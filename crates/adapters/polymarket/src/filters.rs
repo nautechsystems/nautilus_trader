@@ -47,9 +47,12 @@ pub trait InstrumentFilter: Debug + Send + Sync {
         None
     }
 
-    /// Event query: two-phase fetch that resolves an event slug to condition IDs,
-    /// then queries `/markets` with those IDs and the given params.
-    /// Enables server-side sorting and limiting of markets within an event.
+    /// Event queries with client-side sorting and limiting of embedded markets.
+    ///
+    /// Only `order`, `ascending`, and `max_markets` are supported. Other parameters
+    /// and unsupported order fields cause an error when loading. See
+    /// [`PolymarketGammaHttpClient::request_instruments_by_event_query`](
+    /// crate::http::gamma::PolymarketGammaHttpClient::request_instruments_by_event_query).
     fn event_queries(&self) -> Option<Vec<(String, GetGammaMarketsParams)>> {
         None
     }
@@ -176,11 +179,13 @@ impl InstrumentFilter for GammaQueryFilter {
     }
 }
 
-/// Two-phase event filter: resolves event slug → condition IDs, then queries
-/// `/markets` with those IDs and the given params (sorting, limiting, etc.).
+/// Event filter that sorts and limits an event's embedded markets client-side.
 ///
-/// This enables server-side sorting and limiting of markets within an event,
-/// unlike [`EventSlugFilter`] which returns all markets from the event.
+/// Only `order`, `ascending`, and `max_markets` are supported. Other parameters
+/// and unsupported order fields cause an error when loading. See
+/// [`PolymarketGammaHttpClient::request_instruments_by_event_query`](
+/// crate::http::gamma::PolymarketGammaHttpClient::request_instruments_by_event_query)
+/// for supported order fields. [`EventSlugFilter`] returns all markets from the event.
 #[derive(Debug, Clone)]
 pub struct EventQueryFilter {
     queries: Vec<(String, GetGammaMarketsParams)>,

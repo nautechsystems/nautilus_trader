@@ -102,6 +102,7 @@ Released on TBD (UTC).
 - Changed Polymarket `PolymarketTradeReport.transaction_hash` from `String` to `Option<String>`
 - Changed Polymarket data WebSocket timeouts from 15 to 30 seconds by default; `ws_timeout_secs` must be positive
 - Changed `PolymarketInstrumentDef` to require `market_version: "v1"`; reload cached instruments
+- Changed Polymarket `EventQueryFilter` to reject unsupported inputs; remove unsupported parameters and sort fields
 
 ### Security
 
