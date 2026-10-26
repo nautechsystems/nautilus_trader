@@ -117,6 +117,7 @@ fn assert_request(request: &str, target: &str, config: &CoinApiHttpConfig) {
     assert_eq!(
         headers,
         vec![
+            "accept-encoding: gzip",
             "accept: application/json",
             &host,
             "x-coinapi-key: test-api-key",
@@ -127,7 +128,7 @@ fn assert_request(request: &str, target: &str, config: &CoinApiHttpConfig) {
     assert_eq!(
         request,
         format!(
-            "GET {target} HTTP/1.1\r\naccept: application/json\r\n{host}\r\nx-coinapi-key: test-api-key\r\nx-referrer: nautilus\r\n\r\n"
+            "GET {target} HTTP/1.1\r\naccept: application/json\r\naccept-encoding: gzip\r\n{host}\r\nx-coinapi-key: test-api-key\r\nx-referrer: nautilus\r\n\r\n"
         )
     );
 }
@@ -459,6 +460,7 @@ async fn data_config_routes_rest_through_explicit_proxy() {
     assert_eq!(
         headers,
         vec![
+            "accept-encoding: gzip",
             "accept: application/json",
             "host: coinapi.invalid",
             "proxy-authorization: Basic dXNlcjpzZWNyZXQ=",

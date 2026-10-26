@@ -42,7 +42,11 @@ pub mod time {
 /// Owned tasks selected for deterministic simulation.
 pub mod task {
     #[cfg(all(feature = "simulation", madsim))]
+    pub(crate) use madsim::task::yield_now;
+    #[cfg(all(feature = "simulation", madsim))]
     pub use madsim::task::{JoinHandle, spawn};
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    pub(crate) use tokio::task::yield_now;
     #[cfg(not(all(feature = "simulation", madsim)))]
     pub use tokio::task::{JoinHandle, spawn};
 }
