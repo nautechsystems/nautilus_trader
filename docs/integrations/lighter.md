@@ -644,7 +644,9 @@ a venue rejection reason.
 | Atomic baskets     | -          | -    | *Not currently implemented*.                                |
 | Leverage update    | ✓          | -    | Perp only; submits a signed `UpdateLeverage` tx.            |
 | Native cancel-all  | ✓          | ✓    | Explicit account-wide cancellation through the Rust client. |
-| Dead man's switch  | ✓          | ✓    | Manual venue-scheduled cancellation; see caveats below.     |
+| Dead man's switch  | ✓          | ✓    | Automatic renewal or manual scheduling; see caveats below.  |
+
+#### Account-wide cancellation
 
 Lighter's [`CancelAllOrders`](https://apidocs.lighter.xyz/docs/wasm-signer#signcancelallorders) transaction
 type 16 supports immediate and scheduled account-wide cancellation. The Rust execution client exposes
@@ -657,7 +659,35 @@ Python do not expose them.
 Pass `Some(time)` to schedule cancellation or replace the existing deadline, and `None` to revoke it.
 The deadline is a Unix timestamp in milliseconds, between five minutes and fifteen days after the local
 clock. Allow headroom for rate limiting, latency, and clock skew; the venue can reject a delayed request.
-The client does not renew the deadline or revoke it on disconnect or process exit.
+Manual calls do not start automatic renewal. Disconnect and process exit preserve the last deadline.
+
+Set `scheduled_cancel_timeout_secs` to enable automatic arming and renewal on either deployment:
+
+```python
+from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
+from nautilus_trader.model import AccountId
+
+exec_config = LighterExecutionClientConfig(
+    account_id=AccountId("LIGHTER-001"),
+    scheduled_cancel_timeout_secs=600,
+)
+```
+
+Use this config with `LighterExecutionClientFactory` and the [API credentials](#api-credentials).
+The default `None` leaves the venue schedule untouched, including a deadline from an earlier session.
+Manual revocation is available through the Rust client. When renewal is enabled, startup waits up to
+30 seconds for an executed arming transaction after the execution WebSocket, nonce, and
+[account streams](#account-stream-readiness) are ready. Arming failure fails `connect()` and tears down the local connection; an in-flight
+request can still take effect. Automatic arming and renewal confirm execution without reading back
+the account schedule.
+
+The timeout must be in `[420, 1_295_940]` seconds. These bounds reserve headroom for clock skew
+and request delays within Lighter's deadline window. Keep the host clock synchronized.
+Renewal runs every `min((timeout - 300) // 3, 60)` seconds while connected and the [nonce is ready](#nonce-recovery).
+Failures are logged and retried; an outage or sustained quota contention can let the last deadline expire.
+A timed-out renewal can still submit to preserve transaction ordering.
+Reconnect resumes renewal. Stop, reset, and disconnect stop renewal without
+revoking the deadline. Avoid manual schedule changes while automatic renewal is enabled: it replaces them.
 
 :::warning
 Native cancellation affects all open orders on the configured account, across markets and strategies,
@@ -665,15 +695,17 @@ including orders absent from the local cache. It does not close positions. Use a
 other applications also trade on Lighter.
 :::
 
-These methods use the ordered execution WebSocket and return a transaction hash after a transaction lookup
-confirms acceptance. Cancellation events come from venue order updates;
-acceptance alone does not prove cancellation, or that a schedule was armed, replaced, or revoked.
-Confirm transaction execution and the venue's account schedule before relying on it.
-A transport error, transaction-lookup failure, or confirmation
-timeout can leave the outcome unknown, so check the transaction and venue order state before retrying.
 Venue reads can still list resting orders after a scheduled deadline; treat them as closed only after
 a venue order update or later venue read reports cancellation.
-Dropping or timing out a call's future while waiting for its result does not stop submission, even while
+Autonomous sweeping of resting orders and matching safety after expiry are not proven.
+
+The manual methods use the ordered execution WebSocket and return a transaction hash after a transaction lookup
+confirms acceptance. Cancellation events come from venue order updates;
+acceptance alone does not prove cancellation, or that a schedule was armed, replaced, or revoked.
+Confirm transaction execution and the venue's account schedule before relying on a manual call.
+A transport error, transaction-lookup failure, or confirmation
+timeout can leave the outcome unknown, so check the transaction and venue order state before retrying.
+Dropping or timing out a manual call's future while waiting for its result does not stop submission, even while
 it waits for rate-limit quota. This also applies to revocation: a timed-out call can still revoke the
 schedule. Session shutdown can discard unsent requests; requests already in flight can have unknown outcomes.
 The generic `CancelAllOrders` command keeps its instrument and side filters and continues to use
@@ -1232,25 +1264,26 @@ books, trades, bars, and funding use public endpoints without credentials.
 
 ### Execution client configuration options
 
-| Option                      | Default       | Description                                                   |
-| --------------------------- | ------------- | ------------------------------------------------------------- |
-| `environment`               | `Mainnet`     | `LighterEnvironment::Mainnet` or `Testnet`.                   |
-| `deployment`                | `Lighter`     | `LighterDeployment::Lighter` or `Robinhood`.                  |
-| `venue`                     | `None`        | Optional Nautilus venue override; defaults from `deployment`. |
-| `account_id`                | `LIGHTER-001` | Nautilus account ID; issuer must match the resolved venue.    |
-| `account_index`             | `None`        | Lighter account index.                                        |
-| `api_key_index`             | `None`        | Lighter API key slot.                                         |
-| `private_key`               | `None`        | Hex private key for auth and L2 transaction signing.          |
-| `base_url_http`             | `None`        | Optional REST URL override.                                   |
-| `base_url_ws`               | `None`        | Optional WebSocket URL override.                              |
-| `proxy_url`                 | `None`        | Optional proxy URL for HTTP and WebSocket.                    |
-| `http_timeout_secs`         | `60`          | HTTP request timeout in seconds.                              |
-| `ws_timeout_secs`           | `30`          | WebSocket connection and reconnection timeout.                |
-| `market_order_slippage_bps` | `50`          | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.      |
-| `rest_quota_per_min`        | `None`        | REST quota override; unset keeps 60 req/min.                  |
-| `sendtx_quota_per_min`      | `None`        | Transaction quota override; unset keeps 60 req/min.           |
-| `transport_backend`         | Default       | WebSocket transport backend.                                  |
-| `use_gtd`                   | `true`        | Use venue-native GTD; see [GTD policy](#gtd-policy).          |
+| Option                          | Default       | Description                                                                                             |
+| ------------------------------- | ------------- | ------------------------------------------------------------------------------------------------------- |
+| `environment`                   | `Mainnet`     | `LighterEnvironment::Mainnet` or `Testnet`.                                                             |
+| `deployment`                    | `Lighter`     | `LighterDeployment::Lighter` or `Robinhood`.                                                            |
+| `venue`                         | `None`        | Optional Nautilus venue override; defaults from `deployment`.                                           |
+| `account_id`                    | `LIGHTER-001` | Nautilus account ID; issuer must match the resolved venue.                                              |
+| `account_index`                 | `None`        | Lighter account index.                                                                                  |
+| `api_key_index`                 | `None`        | Lighter API key slot.                                                                                   |
+| `private_key`                   | `None`        | Hex private key for auth and L2 transaction signing.                                                    |
+| `base_url_http`                 | `None`        | Optional REST URL override.                                                                             |
+| `base_url_ws`                   | `None`        | Optional WebSocket URL override.                                                                        |
+| `proxy_url`                     | `None`        | Optional proxy URL for HTTP and WebSocket.                                                              |
+| `http_timeout_secs`             | `60`          | HTTP request timeout in seconds.                                                                        |
+| `ws_timeout_secs`               | `30`          | WebSocket connection and reconnection timeout.                                                          |
+| `market_order_slippage_bps`     | `50`          | Slippage cap (bps) for `MARKET` / `STOP_MARKET` / `MIT`.                                                |
+| `rest_quota_per_min`            | `None`        | REST quota override; unset keeps 60 req/min.                                                            |
+| `sendtx_quota_per_min`          | `None`        | Transaction quota override; unset keeps 60 req/min.                                                     |
+| `transport_backend`             | Default       | WebSocket transport backend.                                                                            |
+| `use_gtd`                       | `true`        | Use venue-native GTD; see [GTD policy](#gtd-policy).                                                    |
+| `scheduled_cancel_timeout_secs` | `None`        | Automatic account-wide cancellation timeout in seconds; see [cancellation](#account-wide-cancellation). |
 
 ### Configuration example
 

@@ -94,7 +94,11 @@ use zeroize::Zeroizing;
 
 use crate::{
     common::{
-        consts::{DISCONNECT_TIMEOUT, LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX},
+        consts::{
+            DISCONNECT_TIMEOUT, LIGHTER_ERROR_CODE_INVALID_NONCE, LIGHTER_MAX_BATCH_TX,
+            SCHEDULED_CANCEL_MAX_DELAY_SECS, SCHEDULED_CANCEL_MIN_DELAY_SECS,
+            SCHEDULED_CANCEL_REQUEST_TIMEOUT,
+        },
         credential::{Credential, scrub_auth},
         deployment,
         enums::{
@@ -106,7 +110,7 @@ use crate::{
         rate_limit::{LighterTxRateLimiter, await_tx_quota, build_tx_rate_limiter, resolve_quota},
         symbol::{MarketRegistry, product_type_from_instrument_id},
     },
-    config::LighterExecutionClientConfig,
+    config::{LighterExecutionClientConfig, validate_scheduled_cancel_timeout},
     http::{
         client::{LIGHTER_REST_PAGE_SIZE, LighterHttpClient, LighterRawHttpClient},
         error::LighterHttpError,
@@ -161,8 +165,6 @@ const ACKED_ORDER_LOOKUP_DELAY: Duration = Duration::from_secs(2);
 const ACKED_ORDER_PROBE_ATTEMPTS: usize = 3;
 const BATCH_ACK_TIMEOUT: Duration = Duration::from_secs(10);
 const ACCOUNT_CANCEL_CONFIRM_TIMEOUT: Duration = Duration::from_secs(10);
-const SCHEDULED_CANCEL_MIN_DELAY_MS: u64 = 5 * 60 * 1_000;
-const SCHEDULED_CANCEL_MAX_DELAY_MS: u64 = 15 * 24 * 60 * 60 * 1_000;
 
 const STRATEGY_REASON_MAX_CHARS: usize = 512;
 
@@ -228,6 +230,8 @@ pub struct LighterExecutionClient {
     ws_disconnect_handle: TaskSlot<Result<(), LighterWsError>>,
     ws_handler_retained: Arc<RetainedTaskSlot>,
     auth_refresh_handle: TaskSlot<()>,
+    scheduled_cancel_handle: TaskSlot<()>,
+    scheduled_cancel_notify: Arc<tokio::sync::Notify>,
     shutdown_errors: Vec<String>,
     cancellation_token: CancellationToken,
     dispatch: WsDispatchState,
@@ -260,12 +264,13 @@ impl LighterExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP client fails to initialize or if any
-    /// supplied credential value cannot be parsed.
+    /// Returns an error if configuration or supplied credentials are invalid,
+    /// or if the HTTP client fails to initialize.
     pub fn new(
         core: ExecutionClientCore,
         config: LighterExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        validate_scheduled_cancel_timeout(config.scheduled_cancel_timeout_secs)?;
         anyhow::ensure!(
             core.venue == config.resolved_venue(),
             "Lighter execution core venue {} does not match configured venue {}",
@@ -353,6 +358,8 @@ impl LighterExecutionClient {
             ws_disconnect_handle: TaskSlot::new(),
             ws_handler_retained: Arc::new(RetainedTaskSlot::new()),
             auth_refresh_handle: TaskSlot::new(),
+            scheduled_cancel_handle: TaskSlot::new(),
+            scheduled_cancel_notify: Arc::new(tokio::sync::Notify::new()),
             shutdown_errors: Vec::new(),
             dispatch: WsDispatchState::new(),
             nonce_recovery_inflight: Arc::new(AtomicBool::new(false)),
@@ -427,7 +434,8 @@ impl LighterExecutionClient {
                     .checked_sub(now)
                     .context("scheduled cancellation is in the past")?;
                 anyhow::ensure!(
-                    (SCHEDULED_CANCEL_MIN_DELAY_MS..=SCHEDULED_CANCEL_MAX_DELAY_MS)
+                    (SCHEDULED_CANCEL_MIN_DELAY_SECS * 1_000
+                        ..=SCHEDULED_CANCEL_MAX_DELAY_SECS * 1_000)
                         .contains(&delay),
                     "scheduled cancellation must be between five minutes and fifteen days ahead",
                 );
@@ -450,127 +458,67 @@ impl LighterExecutionClient {
             .credential
             .as_ref()
             .context("Lighter account cancellation requires credentials")?;
-        let ReservedTxContext {
-            context,
-            mut send_reservation,
-        } = self.build_tx_context(credential)?;
-        let mut rollback_guard =
-            TxDispatchGuard::new(self.dispatch.clone(), credential, None, context.nonce);
-
-        let tx = CancelAllOrdersTxInfo {
-            context,
-            time_in_force: time_in_force as u8,
-            scheduled_time_ms,
-            skip_nonce: 0,
-        };
-
-        let signed = sign_tx(
-            &tx,
-            self.config.chain_id(),
-            &credential.private_key()?,
-            fresh_k(),
-        )?;
-        let tx_info = TxInfoJson::cancel_all_orders(&tx, &signed);
-        let tx_info = serde_json::value::RawValue::from_string(tx_info)
-            .context("failed to wrap signed Lighter account cancellation JSON")?;
-        let tx_hash = signed.tx_hash_hex();
-        let connection_epoch = send_reservation.connection_epoch;
-        let ws_client = self.ws_client.clone();
-        let dispatch = self.dispatch.clone();
-        let credential = credential.clone();
-        let clock = self.clock;
-        let tx_rate_limiter = self.tx_rate_limiter.clone();
-        let dispatched_hash = tx_hash.clone();
-        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
-
-        self.pending_tasks
-            .spawn(async move {
-                send_reservation.wait_for_turn().await;
-                await_tx_quota(&tx_rate_limiter).await;
-                dispatch.enqueue_pending_sendtx(PendingSendTx {
-                    batch_id: None,
-                    connection_epoch,
-                    kind: PendingSendTxKind::Other,
-                    submitted_at: clock.get_time_ns(),
-                    nonce: context.nonce,
-                    api_key_index: context.api_key_index,
-                    tx_hash: dispatched_hash.clone(),
-                });
-
-                rollback_guard.disarm();
-                let response = ws_client
-                    .send_tx_on_connection(
-                        LighterTxType::CancelAllOrders as u8,
-                        tx_info,
-                        connection_epoch,
-                    )
-                    .await;
-
-                if let Err(e) = &response {
-                    let failure =
-                        classify_lighter_ws_command_failure("cancel_all_orders_account", e);
-                    log::warn!(
-                        "Lighter account cancellation transaction {dispatched_hash} dispatch failed, nonce={}: {failure:?}; diagnostic={e}",
-                        context.nonce,
-                    );
-
-                    if !matches!(failure, CommandFailure::Ambiguous(_)) {
-                        dispatch.remove_pending_sendtx_by_hash(connection_epoch, &dispatched_hash);
-                        rollback_tx_dispatch(&dispatch, &credential, None, context.nonce);
-                    }
-                }
-
-                send_reservation.release();
-                let _ = response_tx.send(response);
-            })
-            .context("failed to spawn Lighter account cancellation")?;
-
-        let response = response_rx.await.with_context(|| {
-            format!("Lighter account cancellation transaction {tx_hash} dispatch outcome unknown after session shutdown")
-        })?;
-
-        response.with_context(|| {
-            format!("failed to submit Lighter account cancellation transaction {tx_hash}")
-        })?;
-
-        let confirmation = async {
-            loop {
-                match self.http_client.get_tx(tx_hash.clone()).await {
-                    Ok(tx) => {
-                        anyhow::ensure!(
-                            tx.status != LighterTxStatus::Failed,
-                            "Lighter account cancellation transaction {tx_hash} failed: {}",
-                            tx.event_info,
-                        );
-
-                        let event = parse_acked_tx_event(&tx.event_info).with_context(|| {
-                            format!("failed to parse Lighter account cancellation transaction {tx_hash} event")
-                        })?;
-
-                        anyhow::ensure!(
-                            event.app_error.is_empty(),
-                            "Lighter account cancellation transaction {tx_hash} failed: {}",
-                            event.app_error,
-                        );
-                        return Ok(tx_hash.clone());
-                    }
-                    Err(LighterHttpError::Venue { code: 21500, .. }) => {}
-                    Err(e) => {
-                        return Err(e).with_context(|| {
-                            format!("failed to look up Lighter account cancellation transaction {tx_hash}")
-                        });
-                    }
-                }
-
-                tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY).await;
-            }
-        };
-
-        tokio::time::timeout(ACCOUNT_CANCEL_CONFIRM_TIMEOUT, confirmation)
+        self.fanout_dispatch_context(credential)
+            .context("failed to spawn Lighter account cancellation")?
+            .send_cancel_all(
+                time_in_force,
+                scheduled_time_ms,
+                false,
+                self.cancellation_token.clone(),
+            )
             .await
-            .with_context(|| {
-                format!("Lighter account cancellation transaction {tx_hash} confirmation timed out")
-            })?
+    }
+
+    async fn start_scheduled_cancel(&mut self) -> anyhow::Result<()> {
+        let Some(timeout_secs) = self.config.scheduled_cancel_timeout_secs else {
+            return Ok(());
+        };
+
+        let credential = self
+            .credential
+            .as_ref()
+            .context("scheduled cancellation requires credentials")?;
+        let context = self.fanout_dispatch_context(credential)?;
+        context
+            .refresh_scheduled_cancel(timeout_secs)
+            .await
+            .context("failed to arm Lighter scheduled cancellation")?;
+        let cancellation = self.cancellation_token.clone();
+        let notify = Arc::clone(&self.scheduled_cancel_notify);
+        let refresh_interval =
+            Duration::from_secs(((timeout_secs - SCHEDULED_CANCEL_MIN_DELAY_SECS) / 3).min(60));
+
+        self.scheduled_cancel_handle.spawn(async move {
+            let mut interval = tokio::time::interval_at(tokio::time::Instant::now() + refresh_interval, refresh_interval);
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    () = notify.notified() => {},
+                    _ = interval.tick() => {},
+                }
+
+                if !context.ws_client.is_active()
+                    || context.nonce_ready_connection_epoch.load(Ordering::Acquire) != context.ws_client.connection_epoch() {
+                    continue;
+                }
+
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    result = context.refresh_scheduled_cancel(timeout_secs) => {
+                        if let Err(e) = result {
+                            log::error!("Scheduled cancellation refresh failed; the last deadline may expire: {e:#}");
+                        }
+                    }
+                }
+            }
+        })?;
+
+        log::info!("Scheduled cancellation armed: timeout_secs={timeout_secs}");
+        Ok(())
     }
 
     fn create_ws_client(
@@ -652,6 +600,7 @@ impl LighterExecutionClient {
             && self.ws_disconnect_handle.is_none()
             && self.ws_handler_retained.is_empty()
             && self.auth_refresh_handle.is_none()
+            && self.scheduled_cancel_handle.is_none()
             && self.pending_tasks.is_empty()
             && self.shutdown_errors.is_empty()
     }
@@ -690,6 +639,13 @@ impl LighterExecutionClient {
             self.shutdown_errors
                 .push(format!("client-owned tasks failed: {e}"));
         }
+
+        Self::finish_owned_task(
+            &mut self.scheduled_cancel_handle,
+            "scheduled cancellation refresh",
+            &mut self.shutdown_errors,
+        )
+        .await;
 
         let stale = self.dispatch.take_pending_sendtx();
         warn_pending_sendtx_unknown(&stale, "session shutdown");
@@ -1193,6 +1149,7 @@ impl LighterExecutionClient {
         let auth_refresh_notify = Arc::clone(&self.auth_refresh_notify);
         let nonce_submission_gate = Arc::clone(&self.nonce_submission_gate);
         let nonce_ready_connection_epoch = Arc::clone(&self.nonce_ready_connection_epoch);
+        let scheduled_cancel_notify = Arc::clone(&self.scheduled_cancel_notify);
         let pending_tasks_for_loop = self
             .pending_tasks
             .spawner()
@@ -1423,7 +1380,7 @@ impl LighterExecutionClient {
                                 // Drained creates have unknown outcomes;
                                 // reconciliation resolves them, so warn
                                 // rather than emit rejections.
-                                let _refresh_guard = nonce_submission_gate.write().await;
+                                let refresh_guard = nonce_submission_gate.write().await;
                                 let disconnected_epoch = connection_epoch.saturating_sub(1);
                                 let stale = dispatch.drain_pending_sendtx(disconnected_epoch);
                                 warn_pending_sendtx_unknown(&stale, "reconnect");
@@ -1444,6 +1401,8 @@ impl LighterExecutionClient {
                                             );
                                             nonce_ready_connection_epoch
                                                 .store(connection_epoch, Ordering::Release);
+                                            drop(refresh_guard);
+                                            scheduled_cancel_notify.notify_one();
                                             log::debug!(
                                                 "Refreshed Lighter nonce after reconnect: \
                                                  account_index={}, next_nonce={}",
@@ -3171,6 +3130,194 @@ struct FanoutDispatchContext {
 }
 
 impl FanoutDispatchContext {
+    async fn refresh_scheduled_cancel(&self, timeout_secs: u64) -> anyhow::Result<()> {
+        let deadline = self
+            .clock
+            .get_time_ms()
+            .checked_add(timeout_secs * 1_000)
+            .and_then(|deadline| i64::try_from(deadline).ok())
+            .context("scheduled cancellation deadline overflows milliseconds")?;
+        let cancellation = self.pending_tasks.cancellation_token().child_token();
+        let _guard = cancellation.clone().drop_guard();
+        tokio::time::timeout(
+            SCHEDULED_CANCEL_REQUEST_TIMEOUT,
+            self.send_cancel_all(
+                LighterCancelAllTimeInForce::Scheduled,
+                deadline,
+                true,
+                cancellation,
+            ),
+        )
+        .await
+        .context("scheduled cancellation request timed out")??;
+        Ok(())
+    }
+
+    async fn send_cancel_all(
+        &self,
+        time_in_force: LighterCancelAllTimeInForce,
+        scheduled_time_ms: i64,
+        require_execution: bool,
+        cancellation: CancellationToken,
+    ) -> anyhow::Result<String> {
+        let credential = &self.credential;
+        let ReservedTxContext {
+            context,
+            mut send_reservation,
+        } = self.build_tx_context()?;
+        let mut rollback_guard =
+            TxDispatchGuard::new(self.dispatch.clone(), credential, None, context.nonce);
+
+        let tx = CancelAllOrdersTxInfo {
+            context,
+            time_in_force: time_in_force as u8,
+            scheduled_time_ms,
+            skip_nonce: 0,
+        };
+
+        let signed = sign_tx(&tx, self.chain_id, &credential.private_key()?, fresh_k())?;
+        let tx_info = TxInfoJson::cancel_all_orders(&tx, &signed);
+        let tx_info = serde_json::value::RawValue::from_string(tx_info)
+            .context("failed to wrap signed Lighter account cancellation JSON")?;
+        let tx_hash = signed.tx_hash_hex();
+        let connection_epoch = send_reservation.connection_epoch;
+        let ws_client = self.ws_client.clone();
+        let dispatch = self.dispatch.clone();
+        let credential = credential.clone();
+        let clock = self.clock;
+        let tx_rate_limiter = self.tx_rate_limiter.clone();
+        let dispatched_hash = tx_hash.clone();
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+
+        self.pending_tasks
+            .spawn(async move {
+                {
+                    let ready = async {
+                        send_reservation.wait_for_turn().await;
+                        await_tx_quota(&tx_rate_limiter).await;
+                    };
+
+                    tokio::pin!(ready);
+                    tokio::select! {
+                        biased;
+                        () = cancellation.cancelled() => {
+                            // Later signed commands depend on a non-tail nonce reaching the venue
+                            if matches!(dispatch.nonce_manager.ack_failure_if_latest(
+                                context.account_index, context.api_key_index, context.nonce,
+                            ), Ok(true)) {
+                                rollback_guard.disarm();
+                                return;
+                            }
+                            ready.await;
+                        }
+                        () = &mut ready => {},
+                    }
+                }
+
+                dispatch.enqueue_pending_sendtx(PendingSendTx {
+                    batch_id: None,
+                    connection_epoch,
+                    kind: PendingSendTxKind::Other,
+                    submitted_at: clock.get_time_ns(),
+                    nonce: context.nonce,
+                    api_key_index: context.api_key_index,
+                    tx_hash: dispatched_hash.clone(),
+                });
+
+                rollback_guard.disarm();
+                let response = ws_client.send_tx_on_connection(
+                    LighterTxType::CancelAllOrders as u8, tx_info, connection_epoch,
+                ).await;
+
+                if let Err(e) = &response {
+                    let failure =
+                        classify_lighter_ws_command_failure("cancel_all_orders_account", e);
+                    log::warn!(
+                        "Lighter account cancellation transaction {dispatched_hash} dispatch failed, nonce={}: {failure:?}; diagnostic={e}",
+                        context.nonce,
+                    );
+
+                    if !matches!(failure, CommandFailure::Ambiguous(_)) {
+                        dispatch.remove_pending_sendtx_by_hash(connection_epoch, &dispatched_hash);
+                        rollback_tx_dispatch(&dispatch, &credential, None, context.nonce);
+                    }
+                }
+
+                send_reservation.release();
+                let _ = response_tx.send(response);
+            })
+            .context("failed to spawn Lighter account cancellation")?;
+
+        let response = response_rx.await.with_context(|| {
+            format!("Lighter account cancellation transaction {tx_hash} dispatch outcome unknown after session shutdown")
+        })?;
+
+        response.with_context(|| {
+            format!("failed to submit Lighter account cancellation transaction {tx_hash}")
+        })?;
+
+        let confirmation = async {
+            loop {
+                match self.http_client.get_tx(tx_hash.clone()).await {
+                    Ok(tx) => {
+                        anyhow::ensure!(
+                            tx.status != LighterTxStatus::Failed,
+                            "Lighter account cancellation transaction {tx_hash} failed: {}",
+                            tx.event_info,
+                        );
+
+                        if require_execution && tx.status != LighterTxStatus::Executed {
+                            tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY).await;
+                            continue;
+                        }
+
+                        let event = parse_acked_tx_event(&tx.event_info).with_context(|| {
+                            format!("failed to parse Lighter account cancellation transaction {tx_hash} event")
+                        })?;
+
+                        anyhow::ensure!(
+                            event.app_error.is_empty(),
+                            "Lighter account cancellation transaction {tx_hash} failed: {}",
+                            event.app_error,
+                        );
+
+                        anyhow::ensure!(
+                            !require_execution
+                                || (tx_hash_matches(&tx.hash, &tx_hash)
+                                    && tx.tx_type == LighterTxType::CancelAllOrders as u8
+                                    && tx.account_index == self.credential.account_index()
+                                    && tx.api_key_index == self.credential.api_key_index()
+                                    && tx.nonce == context.nonce),
+                            "Lighter scheduled cancellation transaction identity mismatch",
+                        );
+                        return Ok(tx_hash.clone());
+                    }
+                    Err(LighterHttpError::Venue { code: 21500, .. }) => {}
+                    Err(e) => {
+                        return Err(e).with_context(|| {
+                            format!("failed to look up Lighter account cancellation transaction {tx_hash}")
+                        });
+                    }
+                }
+
+                tokio::time::sleep(ACKED_ORDER_LOOKUP_DELAY).await;
+            }
+        };
+
+        tokio::time::timeout(
+            if require_execution {
+                SCHEDULED_CANCEL_REQUEST_TIMEOUT
+            } else {
+                ACCOUNT_CANCEL_CONFIRM_TIMEOUT
+            },
+            confirmation,
+        )
+        .await
+        .with_context(|| {
+            format!("Lighter account cancellation transaction {tx_hash} confirmation timed out")
+        })?
+    }
+
     async fn dispatch_batch_plans(&self, plans: Vec<BatchOrderPlan>) {
         for chunk in plans.chunks(LIGHTER_MAX_BATCH_TX) {
             let mut batch = Vec::with_capacity(chunk.len());
@@ -5622,6 +5769,7 @@ impl ExecutionClient for LighterExecutionClient {
             ws_client.begin_shutdown();
         });
         self.auth_refresh_notify = Arc::new(tokio::sync::Notify::new());
+        self.scheduled_cancel_notify = Arc::new(tokio::sync::Notify::new());
 
         // Reset the readiness gate and clear derived position/account caches
         // so a prior session's state cannot leak past the strict-await gate.
@@ -5695,7 +5843,13 @@ impl ExecutionClient for LighterExecutionClient {
         self.nonce_ready_connection_epoch
             .store(self.ws_client.connection_epoch(), Ordering::Release);
 
-        if let Err(e) = self.await_account_streams_ready(30.0).await {
+        let ready = async {
+            self.await_account_streams_ready(30.0).await?;
+            self.start_scheduled_cancel().await
+        }
+        .await;
+
+        if let Err(e) = ready {
             log::warn!("Connect failed after WS started, tearing down: {e}");
             self.begin_session_shutdown();
 
@@ -9590,6 +9744,7 @@ mod tests {
             sendtx_quota_per_min: None,
             transport_backend: Default::default(),
             use_gtd,
+            scheduled_cancel_timeout_secs: None,
         }
     }
 
@@ -9735,6 +9890,110 @@ mod tests {
         tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     ) {
         create_execution_client_with_config(test_config())
+    }
+
+    #[rstest]
+    #[case(419)]
+    #[case(1_295_941)]
+    #[case(u64::MAX)]
+    fn scheduled_cancel_constructor_rejects_invalid_timeout(#[case] timeout: u64) {
+        let (client, _, _) = create_execution_client();
+        let mut config = test_config();
+        config.scheduled_cancel_timeout_secs = Some(timeout);
+        let error = LighterExecutionClient::new(client.core, config).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "scheduled_cancel_timeout_secs must be in [420, 1295940]"
+        );
+    }
+
+    #[tokio::test]
+    async fn scheduled_cancel_timeout_preserves_non_tail_nonce() {
+        let (mut client, _, _) = create_execution_client();
+        client.tx_rate_limiter = build_tx_rate_limiter(Some(1));
+        let key = ustr::Ustr::from(crate::common::rate_limit::LIGHTER_TX_BUCKET);
+        assert!(client.tx_rate_limiter.check_key(&key).is_ok());
+        let context = client
+            .fanout_dispatch_context(client.credential.as_ref().unwrap())
+            .unwrap();
+
+        let later = {
+            let renewal = context.refresh_scheduled_cancel(420);
+            tokio::pin!(renewal);
+            tokio::select! {
+                result = &mut renewal => panic!("renewal must wait for quota: {result:?}"),
+                () = tokio::time::sleep(Duration::from_millis(20)) => {},
+            }
+            let later = context.build_tx_context().unwrap();
+            assert_eq!(later.context.nonce, TEST_NEXT_NONCE + 1);
+            assert!(
+                tokio::time::timeout(Duration::from_millis(50), &mut renewal)
+                    .await
+                    .is_err()
+            );
+            later
+        };
+
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(150),
+                later.send_reservation.wait_for_turn()
+            )
+            .await
+            .is_err()
+        );
+        assert!(!client.pending_tasks.all_finished());
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .last_issued(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX),
+            Some(TEST_NEXT_NONCE + 1)
+        );
+        drop(later);
+        client.begin_session_shutdown();
+        client.finish_session_shutdown().await.unwrap();
+        assert!(client.pending_tasks.is_empty());
+    }
+
+    #[tokio::test]
+    async fn scheduled_cancel_timeout_cancels_quota_wait_and_releases_nonce() {
+        let (mut client, _, _) = create_execution_client();
+        client.tx_rate_limiter = build_tx_rate_limiter(Some(1));
+        let key = ustr::Ustr::from(crate::common::rate_limit::LIGHTER_TX_BUCKET);
+        assert!(client.tx_rate_limiter.check_key(&key).is_ok());
+        let context = client
+            .fanout_dispatch_context(client.credential.as_ref().unwrap())
+            .unwrap();
+        assert!(
+            tokio::time::timeout(
+                Duration::from_millis(50),
+                context.refresh_scheduled_cancel(420)
+            )
+            .await
+            .is_err()
+        );
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !client.pending_tasks.all_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            TEST_NEXT_NONCE
+        );
+        client.begin_session_shutdown();
+        client.finish_session_shutdown().await.unwrap();
+        assert!(client.pending_tasks.is_empty());
     }
 
     #[rstest]

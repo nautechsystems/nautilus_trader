@@ -1001,6 +1001,7 @@ fn build_config(addr: SocketAddr) -> LighterExecutionClientConfig {
         sendtx_quota_per_min: None,
         transport_backend: Default::default(),
         use_gtd: true,
+        scheduled_cancel_timeout_secs: None,
     }
 }
 
@@ -12050,4 +12051,237 @@ async fn test_completed_cancel_does_not_consume_queued_rest_token(#[case] reconn
         0,
         "completed cancellation must release its queued recovery lookup"
     );
+}
+
+#[rstest]
+#[case::pending(1)]
+#[case::pending_final(3)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_startup_waits_for_execution(#[case] status: i64) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    state
+        .tx_responses
+        .lock()
+        .await
+        .push_back(json!({"status":status,"event_info":"not executed yet"}));
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    assert_eq!(state.send_txs().await.len(), 1);
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), 2);
+    let info = send_tx_info(&state.send_txs().await[0]);
+    assert_eq!(info["TimeInForce"], 1);
+    assert_eq!(info["Nonce"], TEST_NEXT_NONCE);
+    client.disconnect().await.unwrap();
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.send_txs().await.len(), 1);
+}
+
+#[rstest]
+#[case::failed(0, "rejected control")]
+#[case::application_error(2, r#"{"ae":"rejected schedule"}"#)]
+#[case::wrong_identity(2, "")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_arming_failure_cleans_session(
+    #[case] status: i64,
+    #[case] event: &str,
+) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    let mut response = json!({"status": status, "event_info": event});
+    if status == 2 && event.is_empty() {
+        response["hash"] = json!("wrong-hash");
+    }
+
+    state.tx_responses.lock().await.push_back(response);
+    let error = client.connect().await.unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "failed to arm Lighter scheduled cancellation"
+    );
+    assert!(!client.is_connected());
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.send_txs().await.len(), 1);
+    client.connect().await.unwrap();
+    client.disconnect().await.unwrap();
+    assert_eq!(state.send_txs().await.len(), 2);
+    assert!(
+        state
+            .send_txs()
+            .await
+            .iter()
+            .all(|frame| send_tx_info(frame)["TimeInForce"] == 1)
+    );
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_pending_startup_is_bounded() {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    state
+        .tx_responses_by_nonce
+        .lock()
+        .await
+        .insert(TEST_NEXT_NONCE, json!({"status":1,"event_info":""}));
+    let error = tokio::time::timeout(Duration::from_secs(35), client.connect())
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(format!("{error:#}").contains("timed out"));
+    assert!(!client.is_connected());
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.send_txs().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_refresh_retries_and_reconnects() {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    client.connect().await.unwrap();
+    client.connect().await.unwrap();
+    state.tx_responses_by_nonce.lock().await.insert(
+        TEST_NEXT_NONCE + 1,
+        json!({"status":2,"event_info":r#"{"ae":"temporary failure"}"#}),
+    );
+    wait_until_async(
+        || async { state.send_txs().await.len() == 3 },
+        Duration::from_secs(85),
+    )
+    .await;
+    let frames = state.send_txs().await;
+    assert_eq!(send_tx_info(&frames[1])["Nonce"], TEST_NEXT_NONCE + 1);
+    assert_eq!(send_tx_info(&frames[2])["Nonce"], TEST_NEXT_NONCE + 2);
+    assert!(
+        send_tx_info(&frames[2])["Time"].as_i64().unwrap()
+            > send_tx_info(&frames[0])["Time"].as_i64().unwrap()
+    );
+    state.next_nonce.store(777, Ordering::Release);
+    let subscriptions = state.subscribes().await.len();
+    state.close_after_next_frame.store(true, Ordering::Release);
+    client.cancel_all_orders_account().await.unwrap();
+    await_subscribe_count(&state, subscriptions + 5).await;
+    wait_until_async(
+        || async { state.send_txs().await.len() == 5 },
+        Duration::from_secs(10),
+    )
+    .await;
+    assert_eq!(
+        send_tx_info(&state.send_txs().await[3])["Nonce"],
+        TEST_NEXT_NONCE + 3
+    );
+    assert_eq!(send_tx_info(&state.send_txs().await[4])["Nonce"], 777);
+    client.disconnect().await.unwrap();
+    let retained = state.send_txs().await;
+    tokio::time::sleep(Duration::from_secs(42)).await;
+    assert_eq!(state.send_txs().await, retained);
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
+    assert_eq!(
+        retained
+            .iter()
+            .map(|frame| send_tx_info(frame)["TimeInForce"].as_u64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![1, 1, 1, 0, 1]
+    );
+}
+
+#[rstest]
+#[case::stop(true)]
+#[case::reset(false)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_shutdown_retains_deadline_and_restarts_once(#[case] stop: bool) {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    let (mut client, _, _) = build_client_with(config);
+    client.connect().await.unwrap();
+    if stop {
+        client.stop().unwrap();
+    } else {
+        client.reset().unwrap();
+    }
+
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.send_txs().await.len() == 3 },
+        Duration::from_secs(45),
+    )
+    .await;
+    client.disconnect().await.unwrap();
+    assert!(client.pending_tasks_all_finished());
+    let frames = state.send_txs().await;
+    assert_eq!(frames.len(), 3);
+    assert!(
+        frames
+            .iter()
+            .all(|frame| send_tx_info(frame)["TimeInForce"] == 1)
+    );
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn test_scheduled_cancel_timeout_preserves_order_nonce_on_wire() {
+    let (addr, state) = start_server().await;
+    let mut config = build_config(addr);
+    config.scheduled_cancel_timeout_secs = Some(420);
+    config.sendtx_quota_per_min = Some(1);
+    let (mut client, mut rx, cache) = build_client_with(config);
+    client.connect().await.unwrap();
+    {
+        let earlier = client.cancel_all_orders_account();
+        tokio::pin!(earlier);
+        tokio::select! {
+            result = &mut earlier => panic!("cancellation must wait for quota: {result:?}"),
+            () = tokio::time::sleep(Duration::from_millis(20)) => {},
+        }
+    }
+
+    tokio::time::sleep(Duration::from_secs(45)).await;
+    let order = make_limit_order(
+        "AFTER-RENEWAL",
+        OrderSide::Buy,
+        Quantity::from("0.0050"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    cache_order(&cache, order.clone());
+    client.submit_order(submit_command(&order)).unwrap();
+    let event = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .unwrap();
+    assert!(
+        matches!(event, OrderEventAny::Submitted(ref submitted) if submitted.client_order_id == order.client_order_id())
+    );
+    wait_until_async(
+        || async { state.send_txs().await.len() == 3 },
+        Duration::from_secs(85),
+    )
+    .await;
+    let frames = state.send_txs().await;
+    assert_eq!(
+        frames.iter().map(send_tx_type).collect::<Vec<_>>(),
+        vec![16, 16, 16]
+    );
+    assert_eq!(
+        frames
+            .iter()
+            .map(|frame| send_tx_info(frame)["Nonce"].as_i64().unwrap())
+            .collect::<Vec<_>>(),
+        vec![TEST_NEXT_NONCE, TEST_NEXT_NONCE + 1, TEST_NEXT_NONCE + 2]
+    );
+    assert_eq!(send_tx_info(&frames[2])["TimeInForce"], 1);
+    client.disconnect().await.unwrap();
+    assert!(client.pending_tasks_all_finished());
+    assert_eq!(state.send_txs().await, frames);
 }

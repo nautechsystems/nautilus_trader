@@ -20,6 +20,11 @@ use std::{sync::LazyLock, time::Duration};
 use nautilus_model::identifiers::{ClientId, Venue};
 use ustr::Ustr;
 
+pub(crate) const SCHEDULED_CANCEL_MIN_DELAY_SECS: u64 = 5 * 60;
+pub(crate) const SCHEDULED_CANCEL_MAX_DELAY_SECS: u64 = 15 * 24 * 60 * 60;
+pub(crate) const SCHEDULED_CANCEL_REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const SCHEDULED_CANCEL_CLOCK_HEADROOM_SECS: u64 = 60;
+
 /// Venue name string for Lighter.
 pub const LIGHTER: &str = "LIGHTER";
 

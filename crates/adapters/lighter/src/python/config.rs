@@ -15,14 +15,16 @@
 
 //! Python bindings for Lighter configuration.
 
-use nautilus_core::string::secret::SecretString;
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::{AccountId, Venue};
 use nautilus_network::websocket::TransportBackend;
-use pyo3::pymethods;
+use pyo3::{PyResult, pymethods};
 
 use crate::{
     common::enums::{LighterDeployment, LighterEnvironment},
-    config::{LighterDataClientConfig, LighterExecutionClientConfig},
+    config::{
+        LighterDataClientConfig, LighterExecutionClientConfig, validate_scheduled_cancel_timeout,
+    },
 };
 
 #[pymethods]
@@ -120,6 +122,7 @@ impl LighterExecutionClientConfig {
         deployment = None,
         venue = None,
         use_gtd = true,
+        scheduled_cancel_timeout_secs = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -140,9 +143,11 @@ impl LighterExecutionClientConfig {
         deployment: Option<LighterDeployment>,
         venue: Option<Venue>,
         use_gtd: bool,
-    ) -> Self {
+        scheduled_cancel_timeout_secs: Option<u64>,
+    ) -> PyResult<Self> {
+        validate_scheduled_cancel_timeout(scheduled_cancel_timeout_secs).map_err(to_pyvalue_err)?;
         let defaults = Self::default();
-        Self {
+        Ok(Self {
             environment: environment.unwrap_or(defaults.environment),
             deployment: deployment.unwrap_or(defaults.deployment),
             venue,
@@ -161,7 +166,8 @@ impl LighterExecutionClientConfig {
             sendtx_quota_per_min,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             use_gtd,
-        }
+            scheduled_cancel_timeout_secs,
+        })
     }
 
     #[getter]
@@ -176,9 +182,65 @@ impl LighterExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use pyo3::{
+        PyRef, Python,
+        types::{PyAnyMethods, PyDict, PyDictMethods},
+    };
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(None, true)]
+    #[case(Some(420), true)]
+    #[case(Some(1_295_940), true)]
+    #[case(Some(419), false)]
+    #[case(Some(1_295_941), false)]
+    fn test_python_scheduled_cancel(#[case] timeout: Option<u64>, #[case] valid: bool) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("account_id", AccountId::from("LIGHTER-123"))
+                .unwrap();
+
+            if let Some(timeout) = timeout {
+                kwargs
+                    .set_item("scheduled_cancel_timeout_secs", timeout)
+                    .unwrap();
+            }
+
+            let result = py
+                .get_type::<LighterExecutionClientConfig>()
+                .call((), Some(&kwargs));
+            assert_eq!(result.is_ok(), valid);
+
+            if valid {
+                let config = result.unwrap();
+                assert_eq!(
+                    config
+                        .getattr("scheduled_cancel_timeout_secs")
+                        .unwrap()
+                        .extract::<Option<u64>>()
+                        .unwrap(),
+                    timeout
+                );
+                assert_eq!(
+                    config
+                        .extract::<PyRef<LighterExecutionClientConfig>>()
+                        .unwrap()
+                        .scheduled_cancel_timeout_secs,
+                    timeout
+                );
+            } else {
+                assert!(
+                    result
+                        .unwrap_err()
+                        .is_instance_of::<pyo3::exceptions::PyValueError>(py)
+                );
+            }
+        });
+    }
 
     #[rstest]
     fn test_data_config_py_new_book_timeout() {
