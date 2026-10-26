@@ -152,6 +152,17 @@ fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
     })
 }
 
+fn book_payload_for_channel(raw_snapshot: &Value, channel: &str) -> Value {
+    let mut payload = if channel.split('.').count() == 5 {
+        load_json("ws_book_grouped_snapshot.json")
+    } else {
+        raw_snapshot.clone()
+    };
+
+    payload["params"]["channel"] = json!(channel);
+    payload
+}
+
 fn trade_payload_for_channel(base_payload: &Value, channel: &str, has_combo_parent: bool) -> Value {
     let symbol = trade_symbol_from_channel(channel)
         .expect("trade channel must use trades.{instrument}.{interval} format");
@@ -536,7 +547,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                         has_combo_parent,
                                     ))
                                 } else if channel.starts_with("book.") {
-                                    Some(book_snapshot_payload.clone())
+                                    Some(book_payload_for_channel(&book_snapshot_payload, channel))
                                 } else if let Some(symbol) = channel.strip_prefix("quote.") {
                                     let mut p = quote_payload.clone();
                                     p["params"]["channel"] = json!(channel);
@@ -1457,8 +1468,10 @@ async fn test_data_client_subscribe_quotes() {
 }
 
 #[rstest]
+#[case::deltas(SubscribeKind::BookDeltas)]
+#[case::depth(SubscribeKind::BookDepth)]
 #[tokio::test]
-async fn test_data_client_subscribe_book_deltas() {
+async fn test_data_client_subscribe_book(#[case] kind: SubscribeKind) {
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -1476,19 +1489,7 @@ async fn test_data_client_subscribe_book_deltas() {
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
-    let cmd = SubscribeBookDeltas::new(
-        instrument_id,
-        BookType::L2_MBP,
-        Some(*DERIBIT_CLIENT_ID),
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        false,
-        None,
-        None,
-    );
-    client.subscribe_book_deltas(cmd).unwrap();
+    dispatch_subscribe(&mut client, kind, instrument_id).unwrap();
 
     wait_until_async(
         || async {
@@ -1508,10 +1509,57 @@ async fn test_data_client_subscribe_book_deltas() {
         .expect("timeout waiting for event")
         .expect("channel closed");
 
-    assert!(
-        matches!(event, DataEvent::Data(Data::BookDeltas(_))),
-        "Expected Deltas event, was: {event:?}"
-    );
+    match (kind, event) {
+        (SubscribeKind::BookDeltas, DataEvent::Data(Data::BookDeltas(deltas))) => {
+            assert_eq!(deltas.sequence, 136_725_664_747);
+            assert_eq!(deltas.deltas.len(), 21);
+        }
+        (SubscribeKind::BookDepth, DataEvent::Data(Data::BookDepth(depth))) => {
+            assert_eq!(depth.instrument_id, instrument_id);
+            assert_eq!(depth.sequence, 136_725_664_747);
+            assert_eq!(depth.bids.len(), 10);
+            assert_eq!(depth.asks.len(), 10);
+            assert_eq!(depth.bids[0].price.as_decimal(), dec!(89532.5));
+            assert_eq!(depth.bids[0].size.as_decimal(), dec!(254900));
+            assert_eq!(depth.asks[0].price.as_decimal(), dec!(89533));
+            assert_eq!(depth.asks[0].size.as_decimal(), dec!(91570));
+        }
+        (_, event) => panic!("unexpected book event: {event:?}"),
+    }
+
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let kind_reconnected = if matches!(kind, SubscribeKind::BookDepth) {
+        SubscribeKind::BookDeltas
+    } else {
+        SubscribeKind::BookDepth
+    };
+
+    dispatch_subscribe(&mut client, kind_reconnected, instrument_id).unwrap();
+    let event = tokio::time::timeout(TEST_TIMEOUT, rx.recv())
+        .await
+        .expect("timeout waiting for book after reconnect")
+        .expect("channel closed");
+
+    match (kind_reconnected, event) {
+        (SubscribeKind::BookDeltas, DataEvent::Data(Data::BookDeltas(deltas))) => {
+            assert_eq!(deltas.instrument_id, instrument_id);
+            assert_eq!(deltas.sequence, 136_725_664_747);
+            assert_eq!(deltas.deltas.len(), 21);
+        }
+        (SubscribeKind::BookDepth, DataEvent::Data(Data::BookDepth(depth))) => {
+            assert_eq!(depth.instrument_id, instrument_id);
+            assert_eq!(depth.sequence, 136_725_664_747);
+            assert_eq!(depth.bids.len(), 10);
+            assert_eq!(depth.asks.len(), 10);
+        }
+        (_, event) => panic!("unexpected book event after reconnect: {event:?}"),
+    }
 
     client.disconnect().await.unwrap();
 }

@@ -1015,7 +1015,7 @@ impl DataClient for DeribitDataClient {
                 }
 
                 if let Err(e) = ws
-                    .subscribe_book_grouped(instrument_id, &group, 10, interval)
+                    .subscribe_book_depth(instrument_id, &group, interval)
                     .await
                 {
                     log::error!("Failed to subscribe to book depth for {instrument_id}: {e}");
@@ -1515,7 +1515,7 @@ impl DataClient for DeribitDataClient {
 
             self.spawn_command(async move {
                 if let Err(e) = ws
-                    .unsubscribe_book_grouped(instrument_id, &group, 10, interval)
+                    .unsubscribe_book_depth(instrument_id, &group, interval)
                     .await
                 {
                     log::error!("Failed to unsubscribe from book depth for {instrument_id}: {e}");
