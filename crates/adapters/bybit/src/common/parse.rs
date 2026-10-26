@@ -1703,12 +1703,25 @@ pub fn trigger_direction(
 
 /// Maps Nautilus time-in-force to Bybit's TIF.
 ///
-/// Returns `Err(tif)` with the unsupported value for caller-specific error wrapping.
+/// GTD maps to GTC. Market orders omit TIF; post-only limit orders use `PostOnly`.
+///
+/// # Errors
+///
+/// Returns an error if the time in force is unsupported, including for market and post-only orders.
+/// The error contains the unsupported value.
 pub fn map_time_in_force(
     order_type: BybitOrderType,
     time_in_force: Option<TimeInForce>,
     post_only: Option<bool>,
 ) -> Result<Option<BybitTimeInForce>, TimeInForce> {
+    let mapped = match time_in_force {
+        Some(TimeInForce::Gtc | TimeInForce::Gtd) => Some(BybitTimeInForce::Gtc),
+        Some(TimeInForce::Ioc) => Some(BybitTimeInForce::Ioc),
+        Some(TimeInForce::Fok) => Some(BybitTimeInForce::Fok),
+        Some(tif) => return Err(tif),
+        None => None,
+    };
+
     if order_type == BybitOrderType::Market {
         return Ok(None);
     }
@@ -1717,13 +1730,7 @@ pub fn map_time_in_force(
         return Ok(Some(BybitTimeInForce::PostOnly));
     }
 
-    match time_in_force {
-        Some(TimeInForce::Gtc) => Ok(Some(BybitTimeInForce::Gtc)),
-        Some(TimeInForce::Ioc) => Ok(Some(BybitTimeInForce::Ioc)),
-        Some(TimeInForce::Fok) => Ok(Some(BybitTimeInForce::Fok)),
-        Some(tif) => Err(tif),
-        None => Ok(None),
-    }
+    Ok(mapped)
 }
 
 /// Converts an optional `UnixNanos` timestamp to optional milliseconds.
@@ -2087,6 +2094,42 @@ mod tests {
         let response: BybitInstrumentLinearResponse = serde_json::from_str(&json).unwrap();
         let instrument = &response.result.list[0];
         parse_linear_instrument(instrument, TS, TS).unwrap()
+    }
+
+    #[rstest]
+    fn test_map_time_in_force_rejects_unsupported(
+        #[values(BybitOrderType::Market, BybitOrderType::Limit)] order_type: BybitOrderType,
+        #[values(None, Some(false), Some(true))] post_only: Option<bool>,
+        #[values(TimeInForce::Day, TimeInForce::AtTheOpen, TimeInForce::AtTheClose)]
+        tif: TimeInForce,
+    ) {
+        assert_eq!(
+            map_time_in_force(order_type, Some(tif), post_only),
+            Err(tif)
+        );
+    }
+
+    #[rstest]
+    #[case(Some(TimeInForce::Gtc), Some(BybitTimeInForce::Gtc))]
+    #[case(Some(TimeInForce::Gtd), Some(BybitTimeInForce::Gtc))]
+    #[case(Some(TimeInForce::Ioc), Some(BybitTimeInForce::Ioc))]
+    #[case(Some(TimeInForce::Fok), Some(BybitTimeInForce::Fok))]
+    #[case(None, None)]
+    fn test_map_time_in_force_preserves_supported(
+        #[case] tif: Option<TimeInForce>,
+        #[case] expected: Option<BybitTimeInForce>,
+        #[values(BybitOrderType::Market, BybitOrderType::Limit)] order_type: BybitOrderType,
+        #[values(None, Some(false), Some(true))] post_only: Option<bool>,
+    ) {
+        let expected = if order_type == BybitOrderType::Market {
+            None
+        } else if post_only == Some(true) {
+            Some(BybitTimeInForce::PostOnly)
+        } else {
+            expected
+        };
+
+        assert_eq!(map_time_in_force(order_type, tif, post_only), Ok(expected));
     }
 
     #[rstest]

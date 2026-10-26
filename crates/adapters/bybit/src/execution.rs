@@ -48,7 +48,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{OmsType, OrderStatus, OrderType, TimeInForce},
+    enums::{OmsType, OrderStatus, OrderType},
     events::{OrderCanceled, OrderDeniedReason, OrderEventAny},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -64,14 +64,14 @@ use crate::{
         credential::credential_env_vars,
         enums::{
             BybitAccountType, BybitEnvironment, BybitOrderSide, BybitOrderSmpType, BybitOrderType,
-            BybitPositionIdx, BybitPositionMode, BybitProductType, BybitTimeInForce, BybitTpSlMode,
+            BybitPositionIdx, BybitPositionMode, BybitProductType, BybitTpSlMode,
             resolve_trigger_type,
         },
         parse::{
             BybitTpSlParams, bybit_rejection_due_post_only, extract_raw_symbol, get_price_str,
-            make_hedge_venue_position_id, nanos_to_millis, parse_bybit_tp_sl_params,
-            resolve_position_idx as resolve_bybit_position_idx, spot_leverage, spot_market_unit,
-            trigger_direction,
+            make_hedge_venue_position_id, map_time_in_force, nanos_to_millis,
+            parse_bybit_tp_sl_params, resolve_position_idx as resolve_bybit_position_idx,
+            spot_leverage, spot_market_unit, trigger_direction,
         },
         rate_limit::batch_send_limit,
         symbol::BybitSymbol,
@@ -542,19 +542,6 @@ impl BybitExecutionClient {
         }
     }
 
-    fn map_time_in_force(tif: TimeInForce, is_post_only: bool) -> BybitTimeInForce {
-        if is_post_only {
-            return BybitTimeInForce::PostOnly;
-        }
-
-        match tif {
-            TimeInForce::Gtc => BybitTimeInForce::Gtc,
-            TimeInForce::Ioc => BybitTimeInForce::Ioc,
-            TimeInForce::Fok => BybitTimeInForce::Fok,
-            _ => BybitTimeInForce::Gtc,
-        }
-    }
-
     fn validate_bbo_params(
         order: &OrderAny,
         product_type: BybitProductType,
@@ -594,6 +581,12 @@ impl BybitExecutionClient {
     ) -> anyhow::Result<BybitWsPlaceOrderParams> {
         let bybit_side = BybitOrderSide::from(order.order_side());
         let (bybit_order_type, is_conditional) = Self::map_order_type(order.order_type())?;
+        let time_in_force = map_time_in_force(
+            bybit_order_type,
+            Some(order.time_in_force()),
+            Some(order.is_post_only()),
+        )
+        .map_err(OrderDeniedReason::UnsupportedTimeInForce)?;
         let has_tp_sl = tp_sl.has_tp_sl();
         let trigger_dir = trigger_direction(order.order_type(), order.order_side(), is_conditional);
 
@@ -614,14 +607,7 @@ impl BybitExecutionClient {
             } else {
                 order.price().map(|p: Price| p.to_string())
             },
-            time_in_force: if bybit_order_type == BybitOrderType::Market {
-                None
-            } else {
-                Some(Self::map_time_in_force(
-                    order.time_in_force(),
-                    order.is_post_only(),
-                ))
-            },
+            time_in_force,
             order_link_id: Some(order.client_order_id().to_string()),
             reduce_only: if order.is_reduce_only() {
                 Some(true)
@@ -1308,19 +1294,7 @@ impl ExecutionClient for BybitExecutionClient {
         let product_type = self.get_product_type_for_instrument(instrument_id);
 
         // Validate order params before emitting submitted event
-        let Ok((_, is_conditional)) = Self::map_order_type(order.order_type()) else {
-            let denied = OrderDeniedReason::UnsupportedOrderType {
-                order_type: order.order_type(),
-            };
-            self.emitter.emit_order_denied(&order, &denied.to_string());
-            return Ok(());
-        };
-
-        // Bybit does not support conditional orders for options
-        if product_type == BybitProductType::Option && is_conditional {
-            let denied = OrderDeniedReason::UnsupportedOrderType {
-                order_type: order.order_type(),
-            };
+        if let Err(denied) = validate_order(&order, product_type) {
             self.emitter.emit_order_denied(&order, &denied.to_string());
             return Ok(());
         }
@@ -1586,26 +1560,8 @@ impl ExecutionClient for BybitExecutionClient {
                     break;
                 }
 
-                let Ok((_, is_conditional)) = Self::map_order_type(order.order_type()) else {
-                    denial = Some((
-                        *cid,
-                        OrderDeniedReason::UnsupportedOrderType {
-                            order_type: order.order_type(),
-                        },
-                        list_denied,
-                    ));
-                    break;
-                };
-
-                // Bybit does not support conditional orders for options
-                if product_type == BybitProductType::Option && is_conditional {
-                    denial = Some((
-                        *cid,
-                        OrderDeniedReason::UnsupportedOrderType {
-                            order_type: order.order_type(),
-                        },
-                        list_denied,
-                    ));
+                if let Err(reason) = validate_order(&order, product_type) {
+                    denial = Some((*cid, reason, list_denied));
                     break;
                 }
 
@@ -2381,6 +2337,33 @@ impl ExecutionClient for BybitExecutionClient {
     }
 }
 
+fn validate_order(
+    order: &OrderAny,
+    product_type: BybitProductType,
+) -> Result<(), OrderDeniedReason> {
+    let (bybit_order_type, is_conditional) =
+        BybitExecutionClient::map_order_type(order.order_type()).map_err(|_| {
+            OrderDeniedReason::UnsupportedOrderType {
+                order_type: order.order_type(),
+            }
+        })?;
+
+    map_time_in_force(
+        bybit_order_type,
+        Some(order.time_in_force()),
+        Some(order.is_post_only()),
+    )
+    .map_err(OrderDeniedReason::UnsupportedTimeInForce)?;
+
+    if product_type == BybitProductType::Option && is_conditional {
+        return Err(OrderDeniedReason::UnsupportedOrderType {
+            order_type: order.order_type(),
+        });
+    }
+
+    Ok(())
+}
+
 fn classify_cancel_http_failure(error: &anyhow::Error) -> CommandFailure {
     if error
         .chain()
@@ -2490,7 +2473,7 @@ mod tests {
     use nautilus_core::{Params, UUID4};
     use nautilus_live::ExecutionClientCore;
     use nautilus_model::{
-        enums::{AccountType, OrderSide, OrderStatus},
+        enums::{AccountType, OrderSide, OrderStatus, TimeInForce},
         events::OrderEventAny,
         identifiers::{ClientOrderId, OrderListId, PositionId, StrategyId, TraderId, VenueOrderId},
         instruments::stubs::crypto_perpetual_ethusdt,
@@ -2502,7 +2485,7 @@ mod tests {
     use super::*;
     use crate::common::{
         consts::{BYBIT_CLIENT_ID, BYBIT_VENUE},
-        enums::BybitMarketUnit,
+        enums::{BybitMarketUnit, BybitTimeInForce},
     };
 
     fn test_execution_client() -> (BybitExecutionClient, Rc<RefCell<Cache>>) {
@@ -2791,6 +2774,198 @@ mod tests {
             .unwrap();
 
         assert_no_order_modify_rejected(&mut rx);
+    }
+
+    #[rstest]
+    #[case(OrderType::Limit, false)]
+    #[case(OrderType::Limit, true)]
+    #[case(OrderType::Market, false)]
+    #[case(OrderType::StopLimit, false)]
+    #[case(OrderType::StopMarket, false)]
+    #[case(OrderType::LimitIfTouched, false)]
+    #[case(OrderType::MarketIfTouched, false)]
+    #[tokio::test]
+    async fn test_submit_order_unsupported_time_in_force_denied(
+        #[case] order_type: OrderType,
+        #[case] post_only: bool,
+        #[values(
+            BybitEnvironment::Demo,
+            BybitEnvironment::Mainnet,
+            BybitEnvironment::Testnet
+        )]
+        environment: BybitEnvironment,
+        #[values(TimeInForce::Day, TimeInForce::AtTheOpen, TimeInForce::AtTheClose)]
+        time_in_force: TimeInForce,
+    ) {
+        let (mut client, cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.config.environment = environment;
+        let client_order_id = ClientOrderId::from("O-TIF-DENIED");
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.02"))
+            .price(Price::from("10000.00"))
+            .trigger_price(Price::from("10000.00"))
+            .time_in_force(time_in_force)
+            .post_only(post_only)
+            .build();
+
+        let command = SubmitOrder::new(
+            order.trader_id(),
+            Some(*BYBIT_CLIENT_ID),
+            order.strategy_id(),
+            instrument_id,
+            client_order_id,
+            order.init_event().clone(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        let ts_before = client.clock.get_time_ns();
+
+        client.submit_order(command).unwrap();
+
+        let ts_after = client.clock.get_time_ns();
+
+        let ExecutionEvent::Order(OrderEventAny::Denied(event)) = rx.try_recv().unwrap() else {
+            panic!("Expected OrderDenied before submission");
+        };
+
+        assert_eq!(event.trader_id, TraderId::from("TESTER-001"));
+        assert_eq!(event.strategy_id, StrategyId::from("S-001"));
+        assert_eq!(event.instrument_id, instrument_id);
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(
+            event.reason.as_str(),
+            format!("UNSUPPORTED_TIME_IN_FORCE: {time_in_force}")
+        );
+        assert!(event.ts_event >= ts_before && event.ts_event <= ts_after);
+        assert_eq!(event.ts_init, event.ts_event);
+        assert_eq!(event.causation_id, None);
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert!(client.pending_tasks.is_empty());
+        assert!(client.dispatch_state.order_identities.is_empty());
+        assert!(client.dispatch_state.order_snapshots.is_empty());
+        assert!(client.dispatch_state.pending_requests.is_empty());
+    }
+
+    #[rstest]
+    #[case(OrderType::Limit, false)]
+    #[case(OrderType::Limit, true)]
+    #[case(OrderType::Market, false)]
+    #[tokio::test]
+    async fn test_submit_order_list_unsupported_time_in_force_denied(
+        #[case] order_type: OrderType,
+        #[case] post_only: bool,
+        #[values(
+            BybitEnvironment::Demo,
+            BybitEnvironment::Mainnet,
+            BybitEnvironment::Testnet
+        )]
+        environment: BybitEnvironment,
+        #[values(TimeInForce::Day, TimeInForce::AtTheOpen, TimeInForce::AtTheClose)]
+        time_in_force: TimeInForce,
+    ) {
+        let (mut client, cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.config.environment = environment;
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let client_order_ids = [
+            ClientOrderId::from("O-TIF-VALID"),
+            ClientOrderId::from("O-TIF-DENIED"),
+        ];
+        let mut inits = Vec::new();
+
+        for (cid, tif) in client_order_ids
+            .into_iter()
+            .zip([TimeInForce::Gtc, time_in_force])
+        {
+            let order = OrderTestBuilder::new(order_type)
+                .instrument_id(instrument_id)
+                .client_order_id(cid)
+                .side(OrderSide::Sell)
+                .quantity(Quantity::from("0.03"))
+                .price(Price::from("12000.00"))
+                .time_in_force(tif)
+                .post_only(post_only)
+                .build();
+            inits.push(order.init_event().clone());
+            cache
+                .borrow_mut()
+                .add_order(order, None, None, false)
+                .unwrap();
+        }
+
+        let list_id = OrderListId::from("OL-TIF-DENIED");
+
+        let order_list = OrderList::new(
+            list_id,
+            instrument_id,
+            StrategyId::from("S-001"),
+            client_order_ids.to_vec(),
+            UnixNanos::default(),
+        );
+
+        let command = SubmitOrderList::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-001"),
+            order_list,
+            inits,
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        let ts_before = client.clock.get_time_ns();
+
+        client.submit_order_list(command).unwrap();
+
+        let ts_after = client.clock.get_time_ns();
+
+        for (cid, reason) in client_order_ids.into_iter().zip([
+            format!("ORDER_LIST_DENIED: {list_id}"),
+            format!("UNSUPPORTED_TIME_IN_FORCE: {time_in_force}"),
+        ]) {
+            let ExecutionEvent::Order(OrderEventAny::Denied(event)) = rx.try_recv().unwrap() else {
+                panic!("Expected OrderDenied before any list leg submission");
+            };
+
+            assert_eq!(event.trader_id, TraderId::from("TESTER-001"));
+            assert_eq!(event.strategy_id, StrategyId::from("S-001"));
+            assert_eq!(event.instrument_id, instrument_id);
+            assert_eq!(event.client_order_id, cid);
+            assert_eq!(event.reason.as_str(), reason);
+            assert!(event.ts_event >= ts_before && event.ts_event <= ts_after);
+            assert_eq!(event.ts_init, event.ts_event);
+            assert_eq!(event.causation_id, None);
+        }
+
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+        assert!(client.pending_tasks.is_empty());
+        assert!(client.dispatch_state.order_identities.is_empty());
+        assert!(client.dispatch_state.order_snapshots.is_empty());
+        assert!(client.dispatch_state.pending_requests.is_empty());
     }
 
     #[rstest]
@@ -3537,6 +3712,55 @@ mod tests {
         instrument.id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
         client.http_client.cache_instrument(instrument.into());
         (client, cache, server)
+    }
+
+    #[rstest]
+    #[case(TimeInForce::Gtc, Ok(Some(BybitTimeInForce::Gtc)))]
+    #[case(TimeInForce::Gtd, Ok(Some(BybitTimeInForce::Gtc)))]
+    #[case(TimeInForce::Ioc, Ok(Some(BybitTimeInForce::Ioc)))]
+    #[case(TimeInForce::Fok, Ok(Some(BybitTimeInForce::Fok)))]
+    #[case(
+        TimeInForce::Day,
+        Err(OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::Day))
+    )]
+    #[case(
+        TimeInForce::AtTheOpen,
+        Err(OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::AtTheOpen))
+    )]
+    #[case(
+        TimeInForce::AtTheClose,
+        Err(OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::AtTheClose))
+    )]
+    fn test_ws_params_time_in_force(
+        #[case] tif: TimeInForce,
+        #[case] expected: Result<Option<BybitTimeInForce>, OrderDeniedReason>,
+    ) {
+        let mut builder = OrderTestBuilder::new(OrderType::Limit);
+        builder
+            .instrument_id(InstrumentId::from("BTCUSDT-LINEAR.BYBIT"))
+            .time_in_force(tif)
+            .quantity(Quantity::from("0.02"))
+            .price(Price::from("10000.00"));
+
+        if tif == TimeInForce::Gtd {
+            builder.expire_time(UnixNanos::from(1_900_000_000_000_000_000));
+        }
+
+        let order = builder.build();
+        let params = BybitExecutionClient::build_ws_place_params(
+            &order,
+            BybitProductType::Linear,
+            "BTCUSDT",
+            &BybitTpSlParams::default(),
+            None,
+            None,
+        );
+        assert_eq!(
+            params
+                .map(|p| p.time_in_force)
+                .map_err(|e| e.downcast::<OrderDeniedReason>().unwrap()),
+            expected,
+        );
     }
 
     #[rstest]

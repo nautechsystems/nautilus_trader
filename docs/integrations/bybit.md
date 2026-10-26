@@ -331,12 +331,16 @@ It does not send the order to the venue.
 
 ### Time in force
 
-| Time in force | Spot | Linear | Inverse | Option | Notes                           |
-| ------------- | ---- | ------ | ------- | ------ | ------------------------------- |
-| `GTC`         | ✓    | ✓      | ✓       | ✓      | Good Till Canceled.             |
-| `GTD`         | -    | -      | -       | -      | *Not supported*; sent as `GTC`. |
-| `FOK`         | ✓    | ✓      | ✓       | ✓      | Fill or Kill.                   |
-| `IOC`         | ✓    | ✓      | ✓       | ✓      | Immediate or Cancel.            |
+| Time in force | Spot | Linear | Inverse | Option | Notes                            |
+| ------------- | ---- | ------ | ------- | ------ | -------------------------------- |
+| `GTC`         | ✓    | ✓      | ✓       | ✓      | Good Till Canceled.              |
+| `GTD`         | -    | -      | -       | -      | No native expiry; sent as `GTC`. |
+| `FOK`         | ✓    | ✓      | ✓       | ✓      | Fill or Kill.                    |
+| `IOC`         | ✓    | ✓      | ✓       | ✓      | Immediate or Cancel.             |
+
+Other time in force values (`DAY`, `AT_THE_OPEN`, and `AT_THE_CLOSE`) produce `OrderDenied` with an
+`UNSUPPORTED_TIME_IN_FORCE` reason before HTTP or WebSocket submission. This also applies to market and
+post-only orders. An unsupported TIF in an order list denies every leg before submission.
 
 ### Advanced order features
 

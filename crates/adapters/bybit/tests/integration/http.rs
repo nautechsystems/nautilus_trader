@@ -3421,8 +3421,12 @@ async fn test_submit_order_stop_market_with_trigger_price() {
 }
 
 #[rstest]
+#[case(TimeInForce::Gtc)]
+#[case(TimeInForce::Gtd)]
 #[tokio::test]
-async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
+async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price(
+    #[case] time_in_force: TimeInForce,
+) {
     let (addr, state) = start_order_capture_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
@@ -3464,7 +3468,7 @@ async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
             OrderSide::Sell,
             OrderType::StopLimit,
             quantity,
-            Some(TimeInForce::Gtc),
+            Some(time_in_force),
             Some(limit_price),
             Some(trigger_price),
             None,  // post_only
