@@ -19,7 +19,7 @@ pre-commit-revision = "v{version}"
 
 [ruff]
 kind = "tool"
-version = "0.17.1"
+version = "0.17.2"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
@@ -63,7 +63,7 @@ pre-commit-fragment = "pre-commit/toml.yaml"
 
 [markdownlint-cli2]
 kind = "tool"
-version = "0.23.3"
+version = "0.24.0"
 ci = true
 releases = "npm:markdownlint-cli2"
 pre-commit-repository = "https://github.com/DavidAnson/markdownlint-cli2"
@@ -114,7 +114,7 @@ releases = "crates:rust-code-analysis-cli"
 
 [uv]
 kind = "tool"
-version = "0.13.4"
+version = "0.13.5"
 releases = "pypi:uv"
 
 [pip-audit]

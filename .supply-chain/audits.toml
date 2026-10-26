@@ -1679,6 +1679,13 @@ criteria = "safe-to-deploy"
 delta = "1.6.0 -> 1.8.0"
 notes = "Reviewed the published build-tool delta: compiler probing and environment-sensitive caches, MSVC/LLVM selection, and parallel child polling. Compiler invocations use structured arguments and captured environments; probes use exclusive private temporary files. Owned descriptors remain alive until reactor deregistration."
 
+[[audits.cc]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.8.0 -> 1.10.0"
+importable = false
+notes = "Reviewed published compiler invocation, environment snapshot, object naming, compile-command collection, and jobserver polling changes. New Unix descriptors and Windows handles are checked and owned; process execution remains limited to configured compiler and archiver tools. No network access or credential handling was added."
+
 [[audits.cfg-if]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1858,6 +1865,20 @@ criteria = "safe-to-deploy"
 delta = "1.19.1 -> 1.19.3"
 notes = "Formatter output buffering and cpufeatures deprecation workaround; new slice_assume_init with documented MaybeUninit layout. Existing SIMD encode path unchanged in contract."
 
+[[audits.const_format]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.36 -> 0.2.37"
+importable = false
+notes = "Published delta fixes assertion macro token matching and format-message forwarding. No new unsafe code, build script, or ambient capability."
+
+[[audits.const_format_proc_macros]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.2.34 -> 0.2.37"
+importable = false
+notes = "Published sources preserve procedural macro behavior; changes align package metadata and optional compiler compatibility. No new unsafe code, build script, process, filesystem, or network behavior."
+
 [[audits.cpufeatures]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1929,6 +1950,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.4.3 -> 0.4.4"
 notes = "Reviewed the complete checksum-verified published delta. Fixes RUSTSEC-2026-0385 by routing Choice masks through the existing black_box conversion and using half-width u128 comparisons on 32-bit targets. The 150 unit tests and 41 property tests pass with all features, including comparison boundaries. Runtime dependencies and MSRV are unchanged; unsafe remains forbidden and no build script or ambient capabilities are added."
+
+[[audits.ctutils]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.4 -> 0.4.5"
+importable = false
+notes = "Reviewed published constant-time comparison, borrow, carry, and zero-count primitives. New arithmetic uses wrapping operations and optimization barriers with target-specific software fallbacks; no unsafe code or ambient capability was added."
 
 [[audits.cucumber]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3183,11 +3211,39 @@ criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
 notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 collections crate. Code-point set and trie APIs gain iterator and conversion helpers used by Unicode property data. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.icu_collections]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.3.0 -> 2.4.0"
+importable = false
+notes = "Reviewed published trie cursor, iteration, and code-point trie builder changes. Traversal and building use checked slice operations and safe Rust; new builder data stays in memory. No new unsafe code or ambient capability."
+
 [[audits.icu_locale_core]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
 notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 locale-core crate. Language-tag and Unicode-extension parsing/formatting updates with fixture tests. No new build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_locale_core]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.3.0 -> 2.4.0"
+importable = false
+notes = "Published source changes are documentation, examples, formatting, and dependency alignment. No new unsafe code, build script, or ambient capability."
+
+[[audits.icu_locale_fallback]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+version = "2.4.0"
+importable = false
+notes = "Reviewed published locale fallback iteration, data markers, and built-in provider. The const lifetime transmute only shortens a static borrow. Code processes in-memory locale data; no process, filesystem, or network access."
+
+[[audits.icu_locale_fallback_data]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+version = "2.4.0"
+importable = false
+notes = "Reviewed published static locale fallback data and inclusion macros. Build script only tests ICU4X_DATA_DIR to select caller-provided data. No process execution, network access, or credential handling."
 
 [[audits.icu_normalizer]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3195,11 +3251,25 @@ criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
 notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 normalizer crate. Unicode normalization tables and tests refresh; API remains in-memory string processing. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.icu_normalizer]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.3.0 -> 2.4.0"
+importable = false
+notes = "Published delta uses the checked trie cursor for composition, validates the replacement-character invariant before unchecked UTF-8 fast paths, and distinguishes malformed UTF input in normalization checks. No new unsafe block or ambient capability."
+
 [[audits.icu_normalizer_data]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
 notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 normalizer data crate. Baked NFC/NFD/NFKD/UTS46 tables only. No executable logic, build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_normalizer_data]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.3.0 -> 2.4.0"
+importable = false
+notes = "Reviewed published generated normalization table changes and provider macros. Data remains static, using existing zero-copy representations; no new executable build, process, filesystem, or network behavior."
 
 [[audits.icu_properties]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3207,11 +3277,25 @@ criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
 notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 properties crate. Adds enum value helpers and UnicodeSet parse support around existing property maps. No new build script, filesystem, network, process, or credential behavior."
 
+[[audits.icu_properties]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.3.0 -> 2.4.0"
+importable = false
+notes = "Published delta adds Unicode block constants and provider markers, and handles surrogate code points separately from string characters in Unicode-set parsing. Numeric conversions remain checked; no new unsafe code or ambient capability."
+
 [[audits.icu_properties_data]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.2.0 -> 2.3.0"
 notes = "Reviewed the published ICU4X 2.2.0 -> 2.3.0 properties data crate. Baked Unicode property tables only. No executable logic, build script, filesystem, network, process, or credential behavior."
+
+[[audits.icu_properties_data]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.3.0 -> 2.4.0"
+importable = false
+notes = "Reviewed published generated Unicode property tables and static provider macros. Changes add block-property data and update existing tables without new runtime unsafe operations beyond static zero-copy data construction. No new ambient capability."
 
 [[audits.icu_provider]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3224,6 +3308,27 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "2.3.0 -> 2.3.1"
 notes = "Stops writing locale and marker attributes once a baked ZeroTrie cursor becomes empty. No new dependencies, unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
+
+[[audits.icu_provider]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "2.3.1 -> 2.4.0"
+importable = false
+notes = "Published delta replaces an export-marker array with individually cfg-gated set insertions. No new unsafe code, build script, or ambient capability."
+
+[[audits.icu_segmenter]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+version = "2.4.0"
+importable = false
+notes = "Reviewed published in-memory text segmentation, compiled provider wiring, and optional LSTM matrix code. Unchecked matrix accesses follow equal-length checks. No runtime process, filesystem, or network access; examples and benchmarks are outside the enabled dependency graph."
+
+[[audits.icu_segmenter_data]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+version = "2.4.0"
+importable = false
+notes = "Reviewed published static segmentation tables and provider inclusion macros. Build script only checks ICU4X_DATA_DIR for caller-selected custom data. No process execution, network access, or credential handling."
 
 [[audits.ignore]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -3994,6 +4099,13 @@ criteria = "safe-to-deploy"
 delta = "1.7.0 -> 1.7.1"
 notes = "Adds FT.CREATE field options and small cluster connection adjustments. Commands still go to the caller-supplied Redis endpoint. No new unsafe, build script, or credential disclosure."
 
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.7.1 -> 1.8.0"
+importable = false
+notes = "Reviewed published enabled Tokio, connection-manager, pubsub, Sentinel, and rustls changes. Subscription commands await all confirmations, tuple decoding checks arity, and Debug redacts secrets. Sentinel lookup tries later configured sentinels, validates ROLE before caching, and bounds concurrency. Native-TLS, cluster, and unfinished search additions are outside the enabled graph. No new unsafe code or build script."
+
 [[audits.redox_syscall]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4072,6 +4184,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.20.0 -> 1.20.1"
 notes = "Reviewed 1.20.0 -> 1.20.1. Primitive shifts now use try_from with usize::MAX fallback on every target instead of truncating casts; adds ConstOne/ConstZero. Remaining edits are rustfmt and comments. No new unsafe, build script, or ambient capability."
+
+[[audits.ruint]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.20.1 -> 1.21.1"
+importable = false
+notes = "Reviewed published arithmetic, conversion, optional integration, and build-script changes. New limb division, multiplication, and modular-reduction unsafe calls retain bounded slices and normalized-divisor preconditions; the product buffer has explicit C layout. The build script emits PyO3 cfg only when enabled. No new filesystem, process, network, or credential behavior in the enabled graph."
 
 [[audits.rust_decimal]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4337,6 +4456,13 @@ criteria = "safe-to-deploy"
 delta = "1.16.2 -> 1.16.3"
 notes = "Reviewed the published crate delta. Growth below the current length now returns without reallocating; allocation and pointer invariants are preserved. Remaining changes are tests and package metadata."
 
+[[audits.smallvec]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.16.3 -> 1.16.4"
+importable = false
+notes = "Published delta only changes package version metadata. Library source is unchanged."
+
 [[audits.smawk]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-run"
@@ -4496,6 +4622,13 @@ criteria = "safe-to-deploy"
 version = "0.4.4"
 notes = "Reviewed all published runtime source and unsafe operations on Unix and Windows. Unix queries TTY status and window size through rustix using borrowed descriptors. Windows queries standard handles into an initialized, correctly typed console-info buffer and checks API failure before reading results. Raw descriptor/handle APIs are unsafe with explicit validity requirements; borrowed handles are not closed or retained. No runtime allocation from terminal dimensions, input parsing, writes, process spawning, or network access. The stty subprocess is confined to the upstream unit test."
 
+[[audits.textwrap]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-run"
+delta = "0.16.2 -> 0.16.4"
+importable = false
+notes = "Reviewed published no-std adaptation, optional trailing-whitespace preservation, and replacement of Unicode line breaking with in-memory ICU segmentation. Existing default wrapping behavior remains; no new unsafe code or ambient capability."
+
 [[audits.thiserror]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4531,6 +4664,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.3 -> 0.8.4"
 notes = "Reviewed the published 0.8.3 -> 0.8.4 crate. ASCII TinyAsciiStr integer-ops and unvalidated helpers only. No new unsafe, build script, filesystem, network, process, or credential behavior."
+
+[[audits.tinystr]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.4 -> 0.8.5"
+importable = false
+notes = "Published delta adds a const default constructor returning the existing empty value and delegates Default to it. No new unsafe code or ambient capability."
 
 [[audits.tinyvec]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4814,6 +4954,13 @@ criteria = "safe-to-deploy"
 delta = "1.27.0 -> 1.28.0"
 notes = "Reviewed the published optional compact/text serde adapters and their tests. Adapters preserve fixed-size byte validation and existing UUID generation; no new unsafe code or ambient capabilities."
 
+[[audits.uuid]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.28.0 -> 1.29.0"
+importable = false
+notes = "Published delta adds NonNilUuid constructors that delegate to existing versioned UUID constructors; setting UUID version bits guarantees the unchecked non-nil invariant. Existing UUID generation and entropy sources remain unchanged."
+
 [[audits.value-bag]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4953,11 +5100,25 @@ criteria = "safe-to-deploy"
 delta = "1.0.9 -> 1.0.10"
 notes = "Reviewed the complete published delta and matched all packaged source files to upstream commit 70760478b9d3ea729b22faa0b5324da38a297c1c. Removes only the emSign ECC Root CA - G3 certificate; its SHA256 fingerprint matches the root removed by the Python CA bundle 2026.10.19. No certificates are added. Registry checksums match; publisher cpu has prior releases. No new code, dependencies, build script, or ambient capability."
 
+[[audits.webpki-root-certs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.10 -> 1.0.11"
+importable = false
+notes = "Published data-only delta removes emSign Root CA - C1 and emSign ECC Root CA - C3. No new trust anchor or executable behavior."
+
 [[audits.webpki-roots]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "1.0.9 -> 1.0.10"
 notes = "Reviewed the complete published delta and matched all packaged source files to upstream commit 70760478b9d3ea729b22faa0b5324da38a297c1c. Removes only the emSign ECC Root CA - G3 trust anchor and its certificate comment. No roots are added. The 0.26.11 compatibility crate only re-exports this v1 trust store. Registry checksums match; publisher cpu has prior releases. No new code, dependencies, build script, or ambient capability."
+
+[[audits.webpki-roots]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.0.10 -> 1.0.11"
+importable = false
+notes = "Published data-only delta removes emSign Root CA - C1 and emSign ECC Root CA - C3 trust anchors. No new trust anchor or executable behavior."
 
 [[audits.whoami]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -5000,6 +5161,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.8.2 -> 0.8.3"
 notes = "Fixes unsafe Send and Sync bounds for CartableOptionPointer and adds thread-drop tests. Safety improvement only; no new dependencies, build script, filesystem, or network behavior."
+
+[[audits.yoke]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.8.3 -> 0.8.4"
+importable = false
+notes = "Published delta replaces unchecked NonNull construction with NonNull::from(Box::leak), adds AsRef delegation, and clarifies transmute types in examples. Existing ownership and drop contracts remain; no new ambient capability."
 
 [[audits.yoke-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -5097,6 +5265,13 @@ criteria = "safe-to-deploy"
 delta = "0.11.7 -> 0.11.8"
 notes = "Tightens array ULE validation by rejecting zero-length element arrays and byte lengths that are not multiples of the array size. This strengthens the existing unsafe ULE contract. No new dependencies, build script, filesystem, network, process, credential, or data-exfiltration behavior."
 
+[[audits.zerovec]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.11.8 -> 0.11.9"
+importable = false
+notes = "Published delta uses repr(C) DST metadata with compile-time layout checks and clears partially mutated variable vectors on unwind. Existing unsafe conversions preserve allocation provenance and validation invariants. No new ambient capability."
+
 [[audits.zerovec-derive]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -5108,6 +5283,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.11.4 -> 0.11.6"
 notes = "Fixes generated ULE validation to validate each item in a byte slice and uses the safe raw-slice-pointer constructor for VarULE DST metadata. The only newly added unsafe call is confined to a Miri regression test. Existing procedural-macro entry points are unchanged. No new compile-time filesystem, network, process, credential, or data-exfiltration behavior."
+
+[[audits.zerovec-derive]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.11.6 -> 0.11.7"
+importable = false
+notes = "Published macro delta replaces tuple pointer metadata with repr(C) fields and compile-time size/alignment checks. Generated unsafe conversion still relies on the validated VarULE byte layout. No new ambient capability."
 
 [[audits.zlib-rs]]
 who = "Nautech Systems <info@nautechsystems.io>"

@@ -57,6 +57,14 @@ ignore = [
   # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
   { id = "RUSTSEC-2026-0387", reason = "crypto-bigint timing leaks in signing, accepted pending an upstream-compatible fix" },
 
+  # Arrow IPC and Parquet require zstd 0.13.3 / zstd-safe 7.3.0 but use private
+  # bulk-only contexts with only std enabled. Other streaming consumers use fixed
+  # versions. Recheck these exceptions when either parent's calls or features
+  # change; remove them when both parents permit fixed versions.
+  { id = "RUSTSEC-2026-0391", reason = "zstd borrowed streaming contexts are not used by Arrow IPC or Parquet" },
+  { id = "RUSTSEC-2026-0398", reason = "zstd-safe seekable feature is disabled" },
+  { id = "RUSTSEC-2026-0403", reason = "zstd-safe streaming decompression is not used by Arrow IPC or Parquet; bulk API is unaffected" },
+
   # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative), which cargo-deny
   # does not surface. Its scanner-specific ignores are in .cargo/audit.toml and
   # osv-scanner.toml.

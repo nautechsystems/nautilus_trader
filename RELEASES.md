@@ -130,6 +130,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed account state subscriptions missing accepted updates (#5410), thanks @graceyangfan
 - Fixed unavailable `OrderFilled` commissions displaying as zero
 - Fixed live bulk order reconciliation timeouts discarding finalized adapter reports
 - Fixed live timer backlogs starving data events and commands (#5431), thanks @imbolc
@@ -137,6 +138,7 @@ Released on TBD (UTC).
 - Fixed position reconciliation timeouts discarding finalized snapshots and authoritative fills
 - Fixed Python `LiveNode.add_strategy_from_config` accepting strategies when the node is not idle
 - Fixed Python Parquet catalog typed reads and writes holding the GIL during native I/O
+- Fixed Python statistics and return series ordering (#5432), thanks @mahimn01
 - Fixed targeted order reconciliation discarding accepted statuses and fills after timeout or cancellation
 - Fixed OUO sibling resizes converting base quantities twice when quote-denominated stops trigger
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
@@ -170,6 +172,7 @@ Released on TBD (UTC).
 - Fixed Binance spot SBE exponent overflow aborting user-data decode (#5320), thanks @zifulifufu
 - Fixed Binance Spot SBE stream panics and negative quantities parsed as large sizes
 - Fixed Binance Spot HTTP SBE order reports mapping take-profit orders as stop orders
+- Fixed Binance Futures recovery stalling on expired listen keys (#5446), thanks @Milchstrassse
 - Fixed Bybit fill prices using the commission currency instead of the quote currency (#5385), thanks @Milchstrassse
 - Fixed Bybit fill-report requests silently dropping fills that fail to parse
 - Fixed Bybit premature order acceptance from invalid WebSocket executions
@@ -206,6 +209,7 @@ Released on TBD (UTC).
 - Fixed Interactive Brokers orders and fills for instruments loaded at runtime (#5349), thanks @jweltmer
 - Fixed Interactive Brokers missing or stale bars after resubscription (#5331), thanks @tradatious
 - Fixed Interactive Brokers spread instrument requests at runtime (#5397), thanks @faysou
+- Fixed Interactive Brokers order updates stopping after stream errors (#5427), thanks @tradatious
 - Fixed Kraken Futures batch edits sending `orderId` instead of `order_id` (#5312), thanks @zhaow-de
 - Fixed Kraken Futures client order IDs shortened to 18 characters (#5312), thanks @zhaow-de
 - Fixed Kraken Spot L3 queue priority after same-price order modifications (#5421), thanks @ahmetsbilgin
@@ -271,6 +275,7 @@ Released on TBD (UTC).
 - Optimized virtual hedging fill-history checks during execution and reconciliation
 - Optimized Polymarket instrument caching during bootstrap and refresh (#5373), thanks @imbolc
 - Optimized Polymarket snapshot diffs and trade ID formatting
+- Optimized Polymarket subscription registration and resolution watchlists (#5438), thanks @imbolc
 - Removed unused Interactive Brokers data farm degradation timestamps (#5376), thanks @tradatious
 - Upgraded Rust (MSRV) to 1.99.1
 - Upgraded `cargo-codspeed` tool to v5.0.3
@@ -282,8 +287,9 @@ Released on TBD (UTC).
 - Upgraded `PostgreSQL` container image to v18.6
 - Upgraded `prek` tool to v0.5.7
 - Upgraded `Redis` container image to v8.10.2
-- Upgraded `Socket CLI` tool to v1.9.0
-- Upgraded `uv` tool and pre-commit hook to v0.13.4
+- Upgraded `Socket CLI` tool to v1.10.0
+- Upgraded `uv` tool and pre-commit hook to v0.13.5
+- Upgraded `markdownlint-cli2` pre-commit hook to v0.24.0
 - Upgraded `pyupgrade` pre-commit hook to v3.22.0
 - Upgraded `zizmor` pre-commit hook to v1.31.1
 - Upgraded `arc-swap` crate to v1.9.3
@@ -297,21 +303,23 @@ Released on TBD (UTC).
 - Upgraded `pyo3` crate to v0.30.1
 - Upgraded `pyo3-async-runtimes` crate to v0.30.0
 - Upgraded `redb` crate to v4.4.0
+- Upgraded `redis` crate to v1.8.0
 - Upgraded `rstest` crate to v0.28.0
+- Upgraded `ruint` crate to v1.21.1
 - Upgraded `rustls-webpki` crate to v0.103.16
 - Upgraded `serde_json` crate to v1.0.154
-- Upgraded `smallvec` crate to v1.16.3
+- Upgraded `smallvec` crate to v1.16.4
 - Upgraded `sockudo-ws` crate to v3.1.0 (#5345), thanks @sunlei
 - Upgraded `syn` crate to v3.0.9
 - Upgraded `tokio` crate to v1.54.1
 - Upgraded `toml` crate to v1.1.8
-- Upgraded `uuid` crate to v1.28.0
-- Upgraded `webpki-root-certs` and `webpki-roots` crates to v1.0.10
+- Upgraded `uuid` crate to v1.29.0
+- Upgraded `webpki-roots` crate to v1.0.11
 - Upgraded `certifi` package to v2026.10.19
 - Upgraded `kaleido` package to v1.5.0
 - Upgraded `polars` package (test) to v2.0.0
 - Upgraded `pyarrow` package (test) to v26.0.0
-- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.1
+- Upgraded `ruff` package (dev) and pre-commit hook to v0.17.2
 - Upgraded `ty` package (dev) to v0.0.89
 
 ### Documentation Updates

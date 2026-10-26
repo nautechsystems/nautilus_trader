@@ -235,7 +235,7 @@ rand = { version = "0.10.3", default-features = false, features = [
   "thread_rng",
 ] }
 redb = { version = "4.4.0", default-features = false }
-redis = { version = "1.7.1", default-features = false, features = [
+redis = { version = "1.8.0", default-features = false, features = [
   "connection-manager",
   "sentinel",
   "streams",
@@ -250,7 +250,7 @@ regex = { version = "1.13.1", default-features = false, features = [
   "unicode-perl",
 ] }
 rmp-serde = "1.3.1"
-ruint = { version = "1.20.1", default-features = false }
+ruint = { version = "1.21.1", default-features = false }
 rust_decimal = { version = "1.43.0", features = ["serde-with-float"] }
 rust_decimal_macros = "1.40.0"
 rustls = { version = "0.23.46", default-features = false, features = [
@@ -270,7 +270,7 @@ serde_json = { version = "1.0.154", default-features = false, features = [
   "std",
 ] }
 serde_urlencoded = "0.7.1"
-smallvec = { version = "1.16.3", features = ["serde"] }
+smallvec = { version = "1.16.4", features = ["serde"] }
 socket2 = { version = "0.6.5", features = ["all"] }
 sockudo-ws = { version = "3.1.0", default-features = false, features = [
   "simd",
@@ -324,8 +324,8 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 ] }
 url = { version = "2.5.8", default-features = false }
 ustr = { version = "1.1.0", features = ["serde"] }
-uuid = { version = "1.28.0", features = ["v4", "serde"] }
-webpki-roots = "1.0.10"
+uuid = { version = "1.29.0", features = ["v4", "serde"] }
+webpki-roots = "1.0.11"
 zeroize = { version = "1.9.1", features = ["alloc", "zeroize_derive"] }
 
 # -----------------------------------------------------------------------------
@@ -412,9 +412,6 @@ store = { path = '.supply-chain' }
 [workspace.metadata.cooldown]
 days = 3
 trusted-base = "origin/develop"
-
-[workspace.metadata.cooldown.allow]
-ctutils = "0.4.4"
 
 # -----------------------------------------------------------------------------
 # Profiles
