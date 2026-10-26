@@ -2275,6 +2275,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let history_capped =
             historical_orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT || fills_capped;
 
+        let history_start = if history_capped {
+            fills_response
+                .iter()
+                .map(|fill| UnixNanos::from(fill.time * 1_000_000))
+                .min()
+        } else {
+            None
+        };
+
         if history_capped {
             log::warn!(
                 "Mass-status history response at venue cap ({HYPERLIQUID_RECENT_HISTORY_LIMIT}): \
@@ -2349,7 +2358,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             ts_init,
             None,
         );
-        mass_status.set_report_window(lookback_start, reports_complete);
+        mass_status.set_report_window(lookback_start.or(history_start), reports_complete);
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);

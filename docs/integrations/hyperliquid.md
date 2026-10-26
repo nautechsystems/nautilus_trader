@@ -353,7 +353,11 @@ and each unique HIP-3 dex named by the wallet's recent historical orders or fill
 
 The returned mass status records its coverage under the
 [mass-status history contract](../concepts/execution/reconciliation.md#mass-status-history-contract). With a
-configured lookback, `lookback_start` carries its lower bound. Without one, the snapshot is unbounded.
+configured lookback, `lookback_start` carries its lower bound. Complete snapshots without one remain unbounded.
+If either history response reaches its record limit, an unbounded request instead declares the oldest
+raw fill timestamp as its lower bound when raw fills are available. This declaration preserves all valid
+fills and does not claim complete coverage. Without raw fills, no lower bound is declared.
+Unusable rows without a capped response do not add a time bound.
 `reports_complete` is `false` for either of these conditions:
 
 - A history response reached its record limit and may be truncated.
@@ -361,6 +365,11 @@ configured lookback, `lookback_start` carries its lower bound. Without one, the 
 
 Valid rows remain in the report set. Responses that decode cleanly within the record limits form an
 authoritative snapshot, including when empty.
+
+For a declared window, fills without an explicit position report update orders only. This prevents
+truncated history from creating positions, but can leave a cached position open after an offline close
+when flat positions are omitted from the reports. See
+[bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety).
 
 #### Reduce-only fill quantity
 

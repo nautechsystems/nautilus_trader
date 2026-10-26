@@ -11465,6 +11465,10 @@ async fn test_generate_mass_status_falls_back_for_saturated_history(
         !mass.reports_complete(),
         "a venue-capped history response cannot prove coverage",
     );
+    assert_eq!(
+        mass.lookback_start(),
+        (!saturate_historical_orders).then_some(UnixNanos::from(1_700_000_000_000_000_000)),
+    );
     assert!(
         mass.order_reports()
             .contains_key(&VenueOrderId::from("9999"))
@@ -11501,6 +11505,220 @@ async fn test_generate_mass_status_falls_back_for_saturated_history(
 }
 
 #[rstest]
+#[case::fills_below_cap(false, 1_999)]
+#[case::fills_at_cap(false, 2_000)]
+#[case::historical_orders_below_cap(true, 1_999)]
+#[case::historical_orders_at_cap(true, 2_000)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_mass_status_declares_capped_history_window(
+    #[case] saturate_historical_orders: bool,
+    #[case] response_len: u64,
+    #[values(false, true)] usable_edge: bool,
+) {
+    let state = TestServerState::default();
+    let edge_ms = 1_754_000_000_001u64;
+
+    let fill_count = if saturate_historical_orders {
+        4
+    } else {
+        response_len
+    };
+
+    let mut fills: Vec<_> = (1..=fill_count)
+        .map(|oid| {
+            let mut fill = user_fill("BTC", oid);
+            fill["time"] = json!(edge_ms + 20);
+            fill
+        })
+        .collect();
+
+    for fill in &mut fills[1..3] {
+        fill["time"] = json!(edge_ms);
+        if !usable_edge {
+            fill["coin"] = json!("NOCOIN");
+        }
+    }
+
+    let history_count = if saturate_historical_orders {
+        response_len
+    } else {
+        4
+    };
+
+    let historical_orders: Vec<_> = (1..=history_count)
+        .map(|oid| {
+            let mut order = historical_order("BTC", oid);
+            order["statusTimestamp"] = json!(edge_ms + 20);
+            order
+        })
+        .collect();
+
+    *state.user_fills_response.lock().await = Some(Value::Array(fills));
+    *state.historical_orders_response.lock().await = Some(Value::Array(historical_orders));
+
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.connect().await.unwrap();
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+
+    let edge = UnixNanos::from(1_754_000_000_001_000_000);
+    let fill_reports = mass.fill_reports();
+    let order_reports = mass.order_reports();
+    let spanning_order = &order_reports[&VenueOrderId::from("1")];
+    let capped = response_len == 2_000;
+
+    assert_eq!(mass.lookback_start(), capped.then_some(edge));
+    assert_eq!(mass.reports_complete(), !capped && usable_edge);
+    assert_eq!(
+        fill_reports.values().map(Vec::len).sum::<usize>(),
+        usize::try_from(fill_count).unwrap() - if usable_edge { 0 } else { 2 },
+    );
+    assert_eq!(
+        fill_reports
+            .values()
+            .flatten()
+            .filter(|fill| fill.ts_event == edge)
+            .count(),
+        if usable_edge { 2 } else { 0 },
+    );
+    assert_eq!(spanning_order.order_status, OrderStatus::Filled);
+    assert_eq!(spanning_order.filled_qty, Quantity::from("0.10000"));
+    assert_eq!(
+        spanning_order.ts_accepted,
+        UnixNanos::from(1_700_000_000_000_000_000),
+    );
+    assert_eq!(
+        spanning_order.ts_last,
+        UnixNanos::from(1_754_000_000_021_000_000),
+    );
+}
+
+#[rstest]
+#[case::complete(false, false, false)]
+#[case::capped(true, false, false)]
+#[case::complete_cached(false, true, false)]
+#[case::capped_cached(true, true, false)]
+#[case::capped_cached_flat(true, true, true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_mass_status_capped_history_projects_fills_order_only(
+    #[case] capped: bool,
+    #[case] cached: bool,
+    #[case] explicit_flat: bool,
+) {
+    let state = TestServerState::default();
+    let mut opening_order = historical_order("BTC", 1);
+    opening_order["order"]["orderType"] = json!("Market");
+    opening_order["order"]["tif"] = json!("Ioc");
+    *state.user_fills_response.lock().await = Some(json!([user_fill("BTC", 1)]));
+    *state.historical_orders_response.lock().await = Some(json!([opening_order.clone()]));
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    add_test_perp_instrument_to_cache(&cache);
+    client.connect().await.unwrap();
+    let initial_mass = if cached {
+        client.generate_mass_status(None).await.unwrap()
+    } else {
+        None
+    };
+
+    let mut closing_fill = user_fill("BTC", 2);
+    closing_fill["side"] = json!("A");
+    closing_fill["time"] = json!(1_700_000_001_000u64);
+    closing_fill["startPosition"] = json!("0.10000");
+    closing_fill["dir"] = json!("Close Long");
+    let mut closing_order = historical_order("BTC", 2);
+    closing_order["order"]["side"] = json!("A");
+    closing_order["order"]["orderType"] = json!("Market");
+    closing_order["order"]["tif"] = json!("Ioc");
+    closing_order["statusTimestamp"] = json!(1_700_000_001_001u64);
+    let mut fills = vec![closing_fill];
+    let mut orders = vec![closing_order];
+
+    if capped {
+        fills.extend((3..2_002).map(|oid| {
+            let mut fill = user_fill("ETH", oid);
+            fill["time"] = json!(1_700_000_002_000u64);
+            fill
+        }));
+    } else {
+        fills.insert(0, user_fill("BTC", 1));
+        orders.insert(0, opening_order);
+    }
+
+    *state.user_fills_response.lock().await = Some(Value::Array(fills));
+    *state.historical_orders_response.lock().await = Some(Value::Array(orders));
+
+    *state.perp_clearinghouse_response.lock().await = if explicit_flat {
+        let mut position = clearinghouse_position("BTC");
+        position["assetPositions"][0]["position"]["szi"] = json!("0");
+        Some(position)
+    } else {
+        None
+    };
+
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let engine = RefCell::new(engine);
+    let mut manager =
+        ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default()).unwrap();
+
+    if let Some(initial_mass) = initial_mass {
+        let result = manager.reconcile_execution_mass_status(&initial_mass, &engine);
+        assert!(result.unresolved_positions.is_empty());
+        assert_eq!(
+            cache
+                .borrow()
+                .positions_open(None, None, None, None, None)
+                .len(),
+            1,
+        );
+    }
+
+    let result = manager.reconcile_execution_mass_status(&mass, &engine);
+    let cache = cache.borrow();
+    let order = cache.order(&ClientOrderId::from("2")).unwrap();
+    let positions = cache.positions(None, None, None, None, None);
+    let retains_position = capped && cached && !explicit_flat;
+
+    assert_eq!(positions.len(), usize::from(cached || !capped));
+    assert_eq!(
+        mass.lookback_start(),
+        capped.then_some(UnixNanos::from(1_700_000_001_000_000_000)),
+    );
+    assert_eq!(mass.reports_complete(), !capped);
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("0.10000"));
+
+    for position in positions {
+        assert_eq!(
+            position.side,
+            if retains_position {
+                PositionSide::Long
+            } else {
+                PositionSide::Flat
+            },
+        );
+        assert_eq!(
+            position.quantity,
+            if retains_position {
+                Quantity::from("0.10000")
+            } else {
+                Quantity::zero(5)
+            },
+        );
+    }
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_generate_mass_status_propagates_saturated_dex_discovery_error() {
     let state = TestServerState::default();
@@ -11529,7 +11747,9 @@ async fn test_generate_mass_status_propagates_saturated_dex_discovery_error() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_generate_mass_status_lookback_filters_only_fills() {
+async fn test_generate_mass_status_lookback_filters_only_fills(
+    #[values(false, true)] capped: bool,
+) {
     // generate_mass_status applies the lookback only to fills. Open orders and
     // positions must always be returned in full so reconciliation has the
     // complete current state. A regression that applies the cutoff to other
@@ -11541,7 +11761,7 @@ async fn test_generate_mass_status_lookback_filters_only_fills() {
             "oid": 200001u64, "timestamp": 1u64, "origSz": "0.001",
         },
     ]));
-    *state.user_fills_response.lock().await = Some(json!([
+    let fills = json!([
         {
             "coin": "BTC", "px": "50000.0", "sz": "0.001", "side": "B",
             "time": 1u64, "startPosition": "0",
@@ -11549,7 +11769,11 @@ async fn test_generate_mass_status_lookback_filters_only_fills() {
             "oid": 200001u64, "crossed": true, "fee": "0.01", "tid": 1u64,
             "feeToken": "USDC",
         },
-    ]));
+    ]);
+    let fill = fills[0].clone();
+
+    let fill_count = if capped { 2_000 } else { 1 };
+    *state.user_fills_response.lock().await = Some(Value::Array(vec![fill; fill_count]));
     let addr = start_mock_server(state).await;
     let (mut client, _rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
@@ -11572,6 +11796,11 @@ async fn test_generate_mass_status_lookback_filters_only_fills() {
         mass.fill_reports().is_empty(),
         "old fills must be excluded from the lookback window",
     );
+    assert_eq!(
+        mass.lookback_start(),
+        Some(UnixNanos::from(mass.ts_init.as_u64() - 60_000_000_000)),
+    );
+    assert_eq!(mass.reports_complete(), !capped);
 
     client.disconnect().await.unwrap();
 }
@@ -11913,6 +12142,7 @@ async fn test_generate_mass_status_marks_unusable_fill_row_incomplete() {
         !mass.reports_complete(),
         "an unresolvable fill row must mark the snapshot incomplete",
     );
+    assert_eq!(mass.lookback_start(), None);
 
     client.disconnect().await.unwrap();
 }
@@ -11975,6 +12205,7 @@ async fn test_generate_mass_status_preserves_valid_rows_when_rows_unusable() {
         !mass.reports_complete(),
         "an unresolvable row must mark the snapshot incomplete",
     );
+    assert_eq!(mass.lookback_start(), None);
 
     client.disconnect().await.unwrap();
 }
@@ -12008,6 +12239,7 @@ async fn test_generate_mass_status_marks_unusable_historical_row_incomplete() {
         !mass.reports_complete(),
         "an unresolvable historical row must mark the snapshot incomplete",
     );
+    assert_eq!(mass.lookback_start(), None);
 
     client.disconnect().await.unwrap();
 }
@@ -12087,6 +12319,7 @@ async fn test_generate_mass_status_marks_unusable_spot_balance_incomplete() {
         !mass.reports_complete(),
         "an empty snapshot with an unresolvable spot balance is incomplete, not authoritatively clean",
     );
+    assert_eq!(mass.lookback_start(), None);
 
     client.disconnect().await.unwrap();
 }
