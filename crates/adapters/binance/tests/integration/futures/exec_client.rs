@@ -2085,6 +2085,61 @@ async fn test_submit_order_list_posts_batch_orders_for_independent_limits() {
 }
 
 #[rstest]
+#[case::single(false)]
+#[case::list(true)]
+#[tokio::test]
+async fn test_submit_price_match_post_only_denied_before_request(#[case] as_list: bool) {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let orders = vec![add_limit_order_with_post_only_to_cache(
+        &cache,
+        ClientOrderId::new("post-price-match-001"),
+        true,
+    )];
+
+    let params = Params::new(
+        [(
+            "price_match".to_string(),
+            serde_json::Value::String("OPPONENT_5".to_string()),
+        )]
+        .into(),
+    );
+
+    if as_list {
+        let mut command = submit_order_list_command(&orders);
+        command.params = Some(params);
+        client.submit_order_list(command).unwrap();
+    } else {
+        client
+            .submit_order(submit_order_command_with_params(&orders[0], Some(params)))
+            .unwrap();
+    }
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = rx.try_recv().unwrap() else {
+        panic!("Expected order denial");
+    };
+
+    assert_eq!(denied.client_order_id, orders[0].client_order_id());
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_POST_ONLY");
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    assert!(
+        captured_queries
+            .lock()
+            .iter()
+            .all(|query| query.path != "order" && query.path != "batchOrders")
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_submit_order_list_denies_rpi_without_batch_submit() {
     let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;

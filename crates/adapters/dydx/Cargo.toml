@@ -101,7 +101,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 ] }
 nautilus-trading = { workspace = true }
 
-axum = { workspace = true }
+axum = { workspace = true, features = ["http2"] }
 criterion = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }

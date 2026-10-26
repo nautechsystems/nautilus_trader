@@ -70,6 +70,10 @@ Released on TBD (UTC).
 - Changed Python `SandboxExecutionClientConfig` argument order; pass models and matching options by keyword
 - Changed `MarginModelAny` with the `python` feature enabled; add the `Python` variant to exhaustive matches
 - Changed `SandboxExecutionClientConfig` literals; add `margin_model: None` or use the builder
+- Changed `OrderDeniedReason`: add `UnsupportedQuoteQuantity { detail }` to exhaustive matches
+- Changed `OrderDeniedReason`: add `UnsupportedPostOnly { detail }` to exhaustive matches
+- Changed unsupported quote-quantity denials to `UNSUPPORTED_QUOTE_QUANTITY`; update reason string matching
+- Changed unsupported post-only denials to `UNSUPPORTED_POST_ONLY`; update reason string matching
 - Changed Architect AX WebSocket `submit_order`: pass `&OrderInitialized::from(&order)` for identity and side
 - Changed Architect AX `OrderMetadata` literals: add `order_init` and `is_accepted`
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors

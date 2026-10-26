@@ -1566,9 +1566,7 @@ impl BlockchainExecutionClient {
         }
 
         if order.is_quote_quantity() {
-            anyhow::bail!(
-                "Quote-denominated quantities are not supported; quantity must be denominated in the base token"
-            );
+            anyhow::bail!(OrderDeniedReason::unsupported_quote_quantity());
         }
 
         let fee = pool
@@ -8854,11 +8852,8 @@ mod tests {
         let OrderEventAny::Denied(denied) = &events[0] else {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
-        assert!(
-            denied.reason.contains("Quote-denominated"),
-            "was: {}",
-            denied.reason
-        );
+
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
     }
 
     #[tokio::test]
@@ -9086,11 +9081,8 @@ mod tests {
         let OrderEventAny::Denied(denied) = &events[0] else {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
-        assert!(
-            denied.reason.contains("Quote-denominated"),
-            "was: {}",
-            denied.reason
-        );
+
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
     }
 
     #[tokio::test]

@@ -301,28 +301,28 @@ mod tests {
         OrderType::Limit,
         NautilusTimeInForce::Gtc,
         None,
-        "(IB error 10244 for LIMIT sent as LMT)"
+        "UNSUPPORTED_QUOTE_QUANTITY: Interactive Brokers only accepts a quote quantity (`cash_qty`) for MARKET orders (IB error 10244 for LIMIT sent as LMT); use the base quantity"
     )]
     #[case::market_at_the_close(
         OrderSide::Buy,
         OrderType::Market,
         NautilusTimeInForce::AtTheClose,
         None,
-        "(IB error 10244 for MARKET sent as MOC)"
+        "UNSUPPORTED_QUOTE_QUANTITY: Interactive Brokers only accepts a quote quantity (`cash_qty`) for MARKET orders (IB error 10244 for MARKET sent as MOC); use the base quantity"
     )]
     #[case::market_tagged_limit(
         OrderSide::Buy,
         OrderType::Market,
         NautilusTimeInForce::Gtc,
         Some(r#"{"orderType":"LMT"}"#),
-        "(IB error 10244 for MARKET sent as LMT)"
+        "UNSUPPORTED_QUOTE_QUANTITY: Interactive Brokers only accepts a quote quantity (`cash_qty`) for MARKET orders (IB error 10244 for MARKET sent as LMT); use the base quantity"
     )]
     #[case::sell(
         OrderSide::Sell,
         OrderType::Market,
         NautilusTimeInForce::Gtc,
         None,
-        "only accepts a quote quantity (`cash_qty`) for BUY orders"
+        "UNSUPPORTED_QUOTE_QUANTITY: Interactive Brokers only accepts a quote quantity (`cash_qty`) for BUY orders; a SELL must use the base quantity"
     )]
     #[case::sell_tagged_buy(
         OrderSide::Sell,
@@ -343,7 +343,7 @@ mod tests {
         OrderType::Market,
         NautilusTimeInForce::Gtc,
         Some(r#"{"cashQty":5.0}"#),
-        "IBOrderTags cannot set cash_qty"
+        "IBOrderTags cannot set cash_qty, which the adapter sets from the order"
     )]
     fn test_quote_quantity_order_is_denied_before_submission(
         #[case] side: OrderSide,
@@ -359,7 +359,7 @@ mod tests {
             .expect_err("the quote quantity order must be denied");
 
         let message = format!("{err:#}");
-        assert!(message.contains(expected), "unexpected reason: {message}");
+        assert_eq!(message, expected);
     }
 
     #[rstest]
@@ -381,8 +381,7 @@ mod tests {
 
         assert_eq!(
             format!("{err:#}"),
-            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse \
-             instruments; AAPL.NASDAQ must use the base quantity"
+            "UNSUPPORTED_QUOTE_QUANTITY: Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse instruments; AAPL.NASDAQ must use the base quantity"
         );
     }
 

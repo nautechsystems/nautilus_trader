@@ -10,6 +10,7 @@
 //! Interactive Brokers execution command handling.
 
 use nautilus_common::live::sender::EventSender;
+use nautilus_model::events::OrderDeniedReason;
 
 use super::{
     core::*,
@@ -129,8 +130,11 @@ impl InteractiveBrokersExecutionClient {
         order_submit_lock: &'a Arc<tokio::sync::Mutex<()>>,
     ) -> anyhow::Result<Option<PreparedOrder<'a>>> {
         if cmd.order_init.post_only {
-            let detail = "`post_only` not supported by Interactive Brokers";
-            let reason = coded_denial_reason(DENIAL_POST_ONLY_UNSUPPORTED, detail);
+            let reason = OrderDeniedReason::unsupported_post_only_with_detail(
+                "`post_only` not supported by Interactive Brokers",
+            )
+            .to_string();
+
             return Self::deny_awaiting_order(cmd, &reason, orders, exec_sender, clock);
         }
 
@@ -139,8 +143,11 @@ impl InteractiveBrokersExecutionClient {
             .is_some_and(|instrument| instrument.is_inverse());
 
         if cmd.order_init.quote_quantity && !is_inverse {
-            let detail = "Quote quantity requires an inverse instrument";
-            let reason = coded_denial_reason(DENIAL_QUOTE_QUANTITY_UNSUPPORTED, detail);
+            let reason = OrderDeniedReason::unsupported_quote_quantity_with_detail(
+                "Quote quantity requires an inverse instrument",
+            )
+            .to_string();
+
             return Self::deny_awaiting_order(cmd, &reason, orders, exec_sender, clock);
         }
 
@@ -699,7 +706,7 @@ impl InteractiveBrokersExecutionClient {
         ) {
             Ok(prepared) => prepared,
             Err(e) => {
-                let reason = coded_denial_reason(DENIAL_ORDER_LIST_INVALID, &format!("{e:#}"));
+                let reason = preparation_denial_reason(DENIAL_ORDER_LIST_INVALID, &e);
                 Self::deny_awaiting_order_list(
                     orders,
                     &reason,
@@ -977,7 +984,7 @@ impl InteractiveBrokersExecutionClient {
         exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
     ) -> anyhow::Result<Option<T>> {
-        let reason = coded_denial_reason(DENIAL_ORDER_INVALID, &format!("{error:#}"));
+        let reason = preparation_denial_reason(DENIAL_ORDER_INVALID, error);
         Self::deny_awaiting_order(cmd, &reason, orders, exec_sender, clock)
     }
 
@@ -1075,6 +1082,13 @@ impl InteractiveBrokersExecutionClient {
                 anyhow::bail!(reason);
             }
         }
+    }
+}
+
+fn preparation_denial_reason(code: &str, error: &anyhow::Error) -> String {
+    match error.downcast_ref::<OrderDeniedReason>() {
+        Some(reason) => reason.to_string(),
+        None => coded_denial_reason(code, &format!("{error:#}")),
     }
 }
 

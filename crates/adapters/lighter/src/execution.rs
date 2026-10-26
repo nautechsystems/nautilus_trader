@@ -1945,7 +1945,7 @@ impl LighterExecutionClient {
                 .cloned();
 
             if let Some(reason) = local_submit_denial_reason(order, instrument.as_ref()) {
-                anyhow::bail!("{reason}");
+                return Err(reason);
             }
 
             anyhow::ensure!(
@@ -5905,7 +5905,7 @@ impl ExecutionClient for LighterExecutionClient {
             .cloned();
 
         if let Some(reason) = local_submit_denial_reason(&order, cached_instrument.as_ref()) {
-            self.emitter.emit_order_denied(&order, &reason);
+            self.emitter.emit_order_denied(&order, &reason.to_string());
             return Ok(());
         }
 
@@ -5964,11 +5964,7 @@ impl ExecutionClient for LighterExecutionClient {
                 });
 
             if let Err(e) = result {
-                let reason = OrderDeniedReason::UnsupportedOrderList {
-                    detail: format!("Lighter grouped submit failed: {e}"),
-                }
-                .to_string();
-
+                let reason = grouped_submit_denial_reason(&e);
                 for order in &orders {
                     self.emitter.emit_order_denied(order, &reason);
                 }
@@ -5992,7 +5988,7 @@ impl ExecutionClient for LighterExecutionClient {
                 .cloned();
 
             if let Some(reason) = local_submit_denial_reason(&order, cached_instrument.as_ref()) {
-                self.emitter.emit_order_denied(&order, &reason);
+                self.emitter.emit_order_denied(&order, &reason.to_string());
                 continue;
             }
 
@@ -7988,51 +7984,58 @@ fn restore_reconciled_order(
     }
 }
 
+fn grouped_submit_denial_reason(error: &anyhow::Error) -> String {
+    match error.downcast_ref::<OrderDeniedReason>() {
+        Some(reason) => reason.to_string(),
+        None => OrderDeniedReason::UnsupportedOrderList {
+            detail: format!("Lighter grouped submit failed: {error}"),
+        }
+        .to_string(),
+    }
+}
+
 fn local_submit_denial_reason(
     order: &OrderAny,
     instrument: Option<&InstrumentAny>,
-) -> Option<String> {
+) -> Option<anyhow::Error> {
     if instrument.is_none() {
-        return Some(
+        return Some(anyhow::anyhow!(
             OrderDeniedReason::InstrumentNotFound {
                 instrument_id: order.instrument_id(),
             }
             .to_string(),
-        );
+        ));
     }
 
     if !is_lighter_supported_order_type(order.order_type()) {
-        return Some(unsupported_lighter_order_type_reason(order.order_type()));
+        return Some(anyhow::anyhow!(unsupported_lighter_order_type_reason(
+            order.order_type()
+        )));
     }
 
     if is_lighter_limit_style_order(order.order_type()) && order.price().is_none() {
-        return Some(
+        return Some(anyhow::anyhow!(
             OrderDeniedReason::ValidationFailed {
                 detail: "Lighter limit-style orders require a limit price".to_string(),
             }
             .to_string(),
-        );
+        ));
     }
 
     if order.is_quote_quantity() {
-        return Some(
-            OrderDeniedReason::ValidationFailed {
-                detail:
-                    "Lighter orders do not support quote_quantity; submit base quantity instead"
-                        .to_string(),
-            }
-            .to_string(),
-        );
+        return Some(anyhow::anyhow!(
+            OrderDeniedReason::unsupported_quote_quantity()
+        ));
     }
 
     if order.display_qty().is_some() {
-        return Some(
+        return Some(anyhow::anyhow!(
             OrderDeniedReason::ValidationFailed {
                 detail: "Lighter orders do not support display_qty iceberg instructions"
                     .to_string(),
             }
             .to_string(),
-        );
+        ));
     }
 
     if is_lighter_spot_order(order, instrument) && is_lighter_conditional_order(order.order_type())
@@ -8040,7 +8043,8 @@ fn local_submit_denial_reason(
         let denied = OrderDeniedReason::UnsupportedOrderType {
             order_type: order.order_type(),
         };
-        return Some(format!(
+
+        return Some(anyhow::anyhow!(
             "{denied}; Lighter spot markets do not support conditional orders",
         ));
     }
@@ -8053,7 +8057,7 @@ fn local_submit_denial_reason(
     .err()
     .map(|e| {
         let denied = OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force());
-        format!("{denied}; {e}")
+        anyhow::anyhow!("{denied}; {e}")
     })
 }
 
@@ -12271,6 +12275,79 @@ mod tests {
             }
         }
 
+        assert_eq!(client.dispatch.cloid_map.len(), 0);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_nonce_reusable(&client.dispatch);
+    }
+
+    #[rstest]
+    #[case(LighterGroupingType::OneTriggersTheOther)]
+    #[case(LighterGroupingType::OneCancelsTheOther)]
+    #[case(LighterGroupingType::OneTriggersOneCancelsTheOther)]
+    #[tokio::test]
+    async fn native_group_denies_quote_quantity_without_dispatch(
+        #[case] grouping: LighterGroupingType,
+        #[values(false, true)] first_leg: bool,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let mut orders = test_native_group(instrument, grouping);
+
+        let index = if first_leg { 0 } else { orders.len() - 1 };
+        let order = &orders[index];
+        let mut builder = OrderTestBuilder::new(order.order_type());
+        builder
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(instrument)
+            .client_order_id(order.client_order_id())
+            .side(order.order_side())
+            .quantity(order.quantity())
+            .price(order.price().unwrap())
+            .reduce_only(order.is_reduce_only())
+            .quote_quantity(true)
+            .order_list_id(order.order_list_id().unwrap());
+
+        if let Some(price) = order.trigger_price() {
+            builder.trigger_price(price);
+        }
+
+        if let Some(parent) = order.parent_order_id() {
+            builder.parent_order_id(parent);
+        }
+
+        if let Some(contingency) = order.contingency_type() {
+            builder.contingency_type(contingency);
+        }
+
+        if let Some(linked) = order.linked_order_ids() {
+            builder.linked_order_ids(linked.to_vec());
+        }
+
+        orders[index] = builder.build();
+
+        for order in &orders {
+            cache_order(&cache, order.clone());
+        }
+
+        client
+            .submit_order_list(submit_order_list_command(&orders, "OL-GROUP"))
+            .unwrap();
+
+        for order in &orders {
+            match recv_order_event(&mut rx).await {
+                OrderEventAny::Denied(event) => {
+                    assert_eq!(event.client_order_id, order.client_order_id());
+                    assert_eq!(event.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
+                }
+                event => panic!("expected denied event, was {event:?}"),
+            }
+        }
+
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
         assert_eq!(client.dispatch.cloid_map.len(), 0);
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
         assert_nonce_reusable(&client.dispatch);

@@ -398,12 +398,26 @@ pub enum OrderDeniedReason {
     },
 
     /// The execution client or venue does not support quote quantity for the order.
-    #[error("UNSUPPORTED_QUOTE_QUANTITY")]
-    UnsupportedQuoteQuantity,
+    #[error(
+        "UNSUPPORTED_QUOTE_QUANTITY{}{}",
+        if .detail.as_deref().unwrap_or_default().is_empty() { "" } else { ": " },
+        .detail.as_deref().unwrap_or_default()
+    )]
+    UnsupportedQuoteQuantity {
+        /// Optional venue-specific diagnostic detail.
+        detail: Option<String>,
+    },
 
     /// The execution client or venue does not support the requested post-only instruction.
-    #[error("UNSUPPORTED_POST_ONLY")]
-    UnsupportedPostOnly,
+    #[error(
+        "UNSUPPORTED_POST_ONLY{}{}",
+        if .detail.as_deref().unwrap_or_default().is_empty() { "" } else { ": " },
+        .detail.as_deref().unwrap_or_default()
+    )]
+    UnsupportedPostOnly {
+        /// Optional venue-specific diagnostic detail.
+        detail: Option<String>,
+    },
 
     /// The execution client or venue does not support the requested reduce-only instruction.
     #[error("UNSUPPORTED_REDUCE_ONLY")]
@@ -426,6 +440,36 @@ pub enum OrderDeniedReason {
         /// The validation failure detail.
         detail: String,
     },
+}
+
+impl OrderDeniedReason {
+    /// Creates an unsupported quote-quantity denial without diagnostic detail.
+    #[must_use]
+    pub const fn unsupported_quote_quantity() -> Self {
+        Self::UnsupportedQuoteQuantity { detail: None }
+    }
+
+    /// Creates an unsupported quote-quantity denial with diagnostic detail.
+    #[must_use]
+    pub fn unsupported_quote_quantity_with_detail(detail: impl Into<String>) -> Self {
+        Self::UnsupportedQuoteQuantity {
+            detail: Some(detail.into()),
+        }
+    }
+
+    /// Creates an unsupported post-only denial without diagnostic detail.
+    #[must_use]
+    pub const fn unsupported_post_only() -> Self {
+        Self::UnsupportedPostOnly { detail: None }
+    }
+
+    /// Creates an unsupported post-only denial with diagnostic detail.
+    #[must_use]
+    pub fn unsupported_post_only_with_detail(detail: impl Into<String>) -> Self {
+        Self::UnsupportedPostOnly {
+            detail: Some(detail.into()),
+        }
+    }
 }
 
 impl OrderDeniedCode {
@@ -750,16 +794,47 @@ mod tests {
 
     #[rstest]
     #[case(
-        OrderDeniedReason::UnsupportedQuoteQuantity,
+        OrderDeniedReason::unsupported_quote_quantity(),
+        "UNSUPPORTED_QUOTE_QUANTITY",
         "UNSUPPORTED_QUOTE_QUANTITY"
     )]
-    #[case(OrderDeniedReason::UnsupportedPostOnly, "UNSUPPORTED_POST_ONLY")]
-    fn renders_unsupported_instruction(#[case] reason: OrderDeniedReason, #[case] expected: &str) {
+    #[case(
+        OrderDeniedReason::unsupported_quote_quantity_with_detail(String::new()),
+        "UNSUPPORTED_QUOTE_QUANTITY",
+        "UNSUPPORTED_QUOTE_QUANTITY"
+    )]
+    #[case(
+        OrderDeniedReason::unsupported_quote_quantity_with_detail(
+            "IB error 10244; use base quantity"
+        ),
+        "UNSUPPORTED_QUOTE_QUANTITY",
+        "UNSUPPORTED_QUOTE_QUANTITY: IB error 10244; use base quantity"
+    )]
+    #[case(
+        OrderDeniedReason::unsupported_post_only(),
+        "UNSUPPORTED_POST_ONLY",
+        "UNSUPPORTED_POST_ONLY"
+    )]
+    #[case(
+        OrderDeniedReason::unsupported_post_only_with_detail(String::new()),
+        "UNSUPPORTED_POST_ONLY",
+        "UNSUPPORTED_POST_ONLY"
+    )]
+    #[case(
+        OrderDeniedReason::unsupported_post_only_with_detail("IOC orders cannot be post-only"),
+        "UNSUPPORTED_POST_ONLY",
+        "UNSUPPORTED_POST_ONLY: IOC orders cannot be post-only"
+    )]
+    fn renders_unsupported_instruction(
+        #[case] reason: OrderDeniedReason,
+        #[case] expected_code: &str,
+        #[case] expected_message: &str,
+    ) {
         let code = OrderDeniedCode::from(&reason);
 
-        assert_eq!(reason.to_string(), expected);
-        assert_eq!(code.to_string(), expected);
-        assert_eq!(expected.parse::<OrderDeniedCode>(), Ok(code));
+        assert_eq!(reason.to_string(), expected_message);
+        assert_eq!(code.to_string(), expected_code);
+        assert_eq!(expected_code.parse::<OrderDeniedCode>(), Ok(code));
     }
 
     #[rstest]
@@ -952,8 +1027,8 @@ mod tests {
             OrderDeniedReason::UnsupportedOrderType {
                 order_type: OrderType::TrailingStopMarket,
             },
-            OrderDeniedReason::UnsupportedQuoteQuantity,
-            OrderDeniedReason::UnsupportedPostOnly,
+            OrderDeniedReason::unsupported_quote_quantity(),
+            OrderDeniedReason::unsupported_post_only(),
             OrderDeniedReason::UnsupportedReduceOnly,
             OrderDeniedReason::UnsupportedTimeInForce(TimeInForce::Gtd),
             OrderDeniedReason::UnsupportedTpSl {

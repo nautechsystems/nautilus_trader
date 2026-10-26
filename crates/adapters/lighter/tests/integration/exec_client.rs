@@ -1266,6 +1266,7 @@ async fn assert_local_order_denied_once(
                     "UNSUPPORTED_ORDER_LIST:",
                     "UNSUPPORTED_ORDER_TYPE:",
                     "UNSUPPORTED_TIME_IN_FORCE:",
+                    "UNSUPPORTED_QUOTE_QUANTITY",
                     "VALIDATION_FAILED:",
                 ]
                 .iter()
@@ -3028,7 +3029,7 @@ async fn test_submit_fok_limit_order_denies_once_without_error() {
 #[rstest]
 #[case::quote_quantity(
     make_limit_order_with_quantity_options("O-LIMIT-QUOTE-QTY", true, None),
-    "quote_quantity"
+    "UNSUPPORTED_QUOTE_QUANTITY"
 )]
 #[case::display_qty(
     make_limit_order_with_quantity_options(
@@ -3036,12 +3037,12 @@ async fn test_submit_fok_limit_order_denies_once_without_error() {
         false,
         Some(Quantity::from("0.0010")),
     ),
-    "display_qty"
+    "VALIDATION_FAILED: Lighter orders do not support display_qty iceberg instructions"
 )]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_unsupported_quantity_options_deny_locally(
     #[case] order: OrderAny,
-    #[case] reason_part: &str,
+    #[case] expected_reason: &str,
 ) {
     let (addr, state) = start_server().await;
     let (client, mut rx, cache) = build_client(addr);
@@ -3050,7 +3051,8 @@ async fn test_submit_unsupported_quantity_options_deny_locally(
     client
         .submit_order(submit_command(&order))
         .expect("local denial should not return Err to the engine");
-    assert_local_order_denied_once(&mut rx, &state, reason_part).await;
+    let reason = assert_local_order_denied_once(&mut rx, &state, expected_reason).await;
+    assert_eq!(reason, expected_reason);
 }
 
 #[rstest]

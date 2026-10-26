@@ -32,6 +32,7 @@ use std::{
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
+    events::OrderDeniedReason,
     identifiers::VenueOrderId,
     types::{Price, Quantity},
 };
@@ -510,7 +511,7 @@ impl OrderSubmitter {
         let order = if request.quote_quantity {
             anyhow::ensure!(
                 side == PolymarketOrderSide::Buy,
-                "Limit SELL orders require quote_quantity=false (amount in shares)"
+                OrderDeniedReason::unsupported_quote_quantity()
             );
             self.order_builder.build_limit_order_from_collateral(
                 &request.token_id,

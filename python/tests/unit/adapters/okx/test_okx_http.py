@@ -153,7 +153,7 @@ async def test_place_algo_order_rejects_spot_quote_sell(algo_requests) -> None:
     client, requests = algo_requests
     with pytest.raises(
         ValueError,
-        match="Spot STOP_MARKET algo orders do not support quote quantity in Cash mode",
+        match=r"^Parameter validation error: UNSUPPORTED_QUOTE_QUANTITY$",
     ):
         await client.place_algo_order(
             TraderId("TESTER-001"),

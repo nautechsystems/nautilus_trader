@@ -683,12 +683,9 @@ pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> anyhow::Result
     Ok(())
 }
 
-// TODO: Add UNSUPPORTED_QUOTE_QUANTITY to OrderDeniedReason
-const UNSUPPORTED_QUOTE_QUANTITY: &str = "UNSUPPORTED_QUOTE_QUANTITY";
-
 fn validate_order_flags(order: &OrderAny, order_type: DeriveOrderType) -> anyhow::Result<()> {
     if order.is_quote_quantity() {
-        anyhow::bail!(UNSUPPORTED_QUOTE_QUANTITY);
+        anyhow::bail!(OrderDeniedReason::unsupported_quote_quantity());
     }
 
     if order.display_qty().is_some() {
@@ -700,9 +697,7 @@ fn validate_order_flags(order: &OrderAny, order_type: DeriveOrderType) -> anyhow
     let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())
         .map_err(|_| OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force()))?;
     if order_type == DeriveOrderType::Market && order.is_post_only() {
-        anyhow::bail!(OrderDeniedReason::ValidationFailed {
-            detail: "post-only is not supported for Derive market orders".to_string(),
-        });
+        anyhow::bail!(OrderDeniedReason::unsupported_post_only());
     }
 
     if order.is_reduce_only()
@@ -1614,9 +1609,11 @@ mod tests {
         };
 
         if quote_qty {
+            let error = result.unwrap_err();
+            assert_eq!(error.to_string(), "UNSUPPORTED_QUOTE_QUANTITY");
             assert_eq!(
-                result.unwrap_err().to_string(),
-                "UNSUPPORTED_QUOTE_QUANTITY"
+                error.downcast_ref::<OrderDeniedReason>(),
+                Some(&OrderDeniedReason::unsupported_quote_quantity())
             );
         } else {
             assert_eq!(result.unwrap().amount, dec!(1.237));
