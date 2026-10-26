@@ -604,14 +604,15 @@ pub fn parse_ticker_to_option_greeks(
     let deribit_greeks = msg.greeks.as_ref()?;
     let instrument_id = instrument.id();
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
+    let iv_to_fraction = |iv: Decimal| iv.to_f64().map(|v| v / 100.0);
 
     Some(OptionGreeks {
         instrument_id,
         convention: GreeksConvention::BlackScholes,
         greeks: deribit_greeks.to_greek_values(),
-        mark_iv: msg.mark_iv.and_then(|v| v.to_f64()),
-        bid_iv: msg.bid_iv.and_then(|v| v.to_f64()),
-        ask_iv: msg.ask_iv.and_then(|v| v.to_f64()),
+        mark_iv: msg.mark_iv.and_then(iv_to_fraction),
+        bid_iv: msg.bid_iv.and_then(iv_to_fraction),
+        ask_iv: msg.ask_iv.and_then(iv_to_fraction),
         underlying_price: msg.underlying_price.and_then(|v| v.to_f64()),
         open_interest: Some(msg.open_interest.to_f64().unwrap_or(0.0)),
         ts_event,
@@ -1336,7 +1337,8 @@ pub enum OrderEventType {
 
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
+    use nautilus_model::data::greeks::OptionGreekValues;
+    use rstest::{fixture, rstest};
     use rust_decimal_macros::dec;
     use serde::de::DeserializeOwned;
 
@@ -1927,6 +1929,93 @@ mod tests {
             index_price.ts_event,
             UnixNanos::new(1_765_541_474_086_000_000)
         );
+    }
+
+    #[rstest]
+    #[case::all_present(Some(dec!(55.2)), Some(dec!(54.0)), Some(dec!(56.5)))]
+    #[case::missing_mark(None, Some(dec!(54.0)), Some(dec!(56.5)))]
+    #[case::missing_bid(Some(dec!(55.2)), None, Some(dec!(56.5)))]
+    #[case::missing_ask(Some(dec!(55.2)), Some(dec!(54.0)), None)]
+    #[case::all_missing(None, None, None)]
+    fn test_parse_ticker_to_option_greeks(
+        option_ticker: (DeribitTickerMsg, InstrumentAny),
+        #[case] mark_iv: Option<Decimal>,
+        #[case] bid_iv: Option<Decimal>,
+        #[case] ask_iv: Option<Decimal>,
+    ) {
+        let (mut msg, instrument) = option_ticker;
+        msg.mark_iv = mark_iv;
+        msg.bid_iv = bid_iv;
+        msg.ask_iv = ask_iv;
+        let ts_init = UnixNanos::new(1_765_541_474_087_000_000);
+
+        let greeks = parse_ticker_to_option_greeks(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(
+            greeks.instrument_id,
+            InstrumentId::from("BTC-27DEC24-100000-C.DERIBIT"),
+        );
+        assert_eq!(greeks.convention, GreeksConvention::BlackScholes);
+        assert_eq!(
+            greeks.greeks,
+            OptionGreekValues {
+                delta: 0.45,
+                gamma: 0.00012,
+                vega: 14.25,
+                theta: -23.5,
+                rho: 8.75,
+            },
+        );
+
+        for (actual, expected) in [
+            (greeks.mark_iv, mark_iv.map(|_| 0.552)),
+            (greeks.bid_iv, bid_iv.map(|_| 0.54)),
+            (greeks.ask_iv, ask_iv.map(|_| 0.565)),
+        ] {
+            match expected {
+                Some(expected) => assert!((actual.unwrap() - expected).abs() < 1e-12),
+                None => assert_eq!(actual, None),
+            }
+        }
+
+        assert_eq!(greeks.underlying_price, Some(95000.5));
+        assert_eq!(greeks.open_interest, Some(123.5));
+        assert_eq!(greeks.ts_event, UnixNanos::new(1_765_541_474_086_000_000));
+        assert_eq!(greeks.ts_init, ts_init);
+        assert_eq!(msg.mark_iv, mark_iv);
+        assert_eq!(msg.bid_iv, bid_iv);
+        assert_eq!(msg.ask_iv, ask_iv);
+    }
+
+    #[rstest]
+    fn test_parse_ticker_to_option_greeks_without_greeks(
+        option_ticker: (DeribitTickerMsg, InstrumentAny),
+    ) {
+        let (mut msg, instrument) = option_ticker;
+        msg.greeks = None;
+
+        assert_eq!(
+            parse_ticker_to_option_greeks(&msg, &instrument, UnixNanos::default()),
+            None,
+        );
+    }
+
+    #[fixture]
+    fn option_ticker() -> (DeribitTickerMsg, InstrumentAny) {
+        let json = load_test_json("http_get_instrument_option.json");
+        let response: DeribitJsonRpcResponse<DeribitInstrument> =
+            serde_json::from_str(&json).unwrap();
+        let instrument = parse_deribit_instrument_any(
+            &response.result.unwrap(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        let json = load_test_json("ws_ticker_option.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let msg = serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
+        (msg, instrument)
     }
 
     #[rstest]

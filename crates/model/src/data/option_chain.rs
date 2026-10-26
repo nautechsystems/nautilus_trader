@@ -263,11 +263,11 @@ pub struct OptionGreeks {
     pub convention: GreeksConvention,
     /// Core Greek sensitivity values.
     pub greeks: OptionGreekValues,
-    /// Mark implied volatility.
+    /// Mark implied volatility as a fraction (0.552 represents 55.2%).
     pub mark_iv: Option<f64>,
-    /// Bid implied volatility.
+    /// Bid implied volatility as a fraction (0.552 represents 55.2%).
     pub bid_iv: Option<f64>,
-    /// Ask implied volatility.
+    /// Ask implied volatility as a fraction (0.552 represents 55.2%).
     pub ask_iv: Option<f64>,
     /// Underlying price at time of Greeks calculation.
     pub underlying_price: Option<f64>,

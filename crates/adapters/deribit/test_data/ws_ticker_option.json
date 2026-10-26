@@ -1,0 +1,42 @@
+{
+  "jsonrpc": "2.0",
+  "method": "subscription",
+  "params": {
+    "channel": "ticker.BTC-27DEC24-100000-C.100ms",
+    "data": {
+      "timestamp": 1765541474086,
+      "state": "open",
+      "stats": {
+        "high": 0.045,
+        "low": 0.039,
+        "price_change": 2.5,
+        "volume": 10.5,
+        "volume_usd": 997505.25
+      },
+      "index_price": 95000.25,
+      "instrument_name": "BTC-27DEC24-100000-C",
+      "last_price": 0.0415,
+      "settlement_price": 0.043,
+      "min_price": 0.0005,
+      "max_price": 0.5,
+      "open_interest": 123.5,
+      "mark_price": 0.042,
+      "best_ask_price": 0.043,
+      "best_bid_price": 0.041,
+      "estimated_delivery_price": 95000.25,
+      "best_ask_amount": 2.5,
+      "best_bid_amount": 3.5,
+      "mark_iv": 55.2,
+      "bid_iv": 54.0,
+      "ask_iv": 56.5,
+      "underlying_price": 95000.5,
+      "greeks": {
+        "delta": 0.45,
+        "gamma": 0.00012,
+        "vega": 14.25,
+        "theta": -23.5,
+        "rho": 8.75
+      }
+    }
+  }
+}
