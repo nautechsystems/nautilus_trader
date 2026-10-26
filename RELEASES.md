@@ -106,6 +106,7 @@ Released on TBD (UTC).
 - Fixed matching-engine restarts reusing position IDs for independent hedging orders
 - Fixed `DataType::from_str` panics on repeated identifier suffixes
 - Fixed custom-data deserialization panics on metadata containing the reserved `identifier` key
+- Fixed exchange-rate calculation panics on decimal overflow
 - Fixed Parquet period consolidation and delete losing rows when rewrites share a file name (#5422), thanks @faysou
 - Fixed Parquet catalog queries reading NaN floats back as another row's value (#5422), thanks @faysou
 - Fixed Python order `from_dict` methods aborting on invalid identifiers, quantities, and prices

@@ -1612,6 +1612,42 @@ fn test_reset_honors_drop_instruments_on_reset(
 }
 
 #[rstest]
+#[case(PriceType::Bid)]
+#[case(PriceType::Ask)]
+#[case(PriceType::Mid)]
+fn test_try_get_xrate_path_overflow_returns_error(#[case] price_type: PriceType) {
+    let mut cache = Cache::default();
+    let venue = Venue::from("SIM");
+    let price = Price::from("1000000000");
+
+    for symbol in ["EUR/USD", "USD/GBP", "GBP/AUD", "AUD/JPY"] {
+        let instrument = default_fx_ccy(Symbol::from(symbol), Some(venue));
+        let instrument_id = instrument.id;
+        cache
+            .add_instrument(InstrumentAny::CurrencyPair(instrument))
+            .unwrap();
+
+        let quote = QuoteTick::new(
+            instrument_id,
+            price,
+            price,
+            Quantity::from("1"),
+            Quantity::from("2"),
+            UnixNanos::from(1),
+            UnixNanos::from(2),
+        );
+        cache.add_quote(quote).unwrap();
+    }
+
+    let result = cache.try_get_xrate(venue, Currency::EUR(), Currency::JPY(), price_type);
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Decimal overflow multiplying exchange rates for EUR/JPY at AUD/JPY"
+    );
+}
+
+#[rstest]
 #[case(2000)]
 #[case(1000)]
 fn test_get_xrate_from_bars_selects_latest_bar_per_side(

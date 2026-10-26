@@ -36,6 +36,7 @@ use ustr::Ustr;
 /// - `quotes_bid` and `quotes_ask` lengths are not equal.
 /// - `price_type` is equal to `Last` or `Mark` (cannot calculate from quotes).
 /// - The bid or ask side of a pair is missing.
+/// - An exchange rate calculation exceeds the decimal range.
 ///
 /// These conditions apply only to conversions between distinct currencies. Identical
 /// `from_currency` and `to_currency` return a rate of one without inspecting the quotes.
@@ -88,7 +89,7 @@ pub fn get_exchange_rate(
 
         let base = Ustr::from(base);
         let quote = Ustr::from(quote);
-        let (forward_rate, reverse_rate) = directional_rates(bid, ask, price_type);
+        let (forward_rate, reverse_rate) = directional_rates(pair, bid, ask, price_type)?;
 
         graph.entry(base).or_default().push((quote, forward_rate));
         graph.entry(quote).or_default().push((base, reverse_rate));
@@ -113,7 +114,13 @@ pub fn get_exchange_rate(
         if let Some(neighbors) = graph.get(&current) {
             for (neighbor, rate) in neighbors {
                 if visited.insert(*neighbor) {
-                    stack.push((*neighbor, current_rate * rate));
+                    let next_rate = current_rate.checked_mul(*rate).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "Decimal overflow multiplying exchange rates for {from_currency}/{to_currency} at {current}/{neighbor}"
+                        )
+                    })?;
+
+                    stack.push((*neighbor, next_rate));
                 }
             }
         }
@@ -123,16 +130,33 @@ pub fn get_exchange_rate(
     Ok(None)
 }
 
-fn directional_rates(bid: Decimal, ask: Decimal, price_type: PriceType) -> (Decimal, Decimal) {
-    match price_type {
-        PriceType::Bid => (bid, Decimal::ONE / ask),
-        PriceType::Ask => (ask, Decimal::ONE / bid),
+fn directional_rates(
+    pair: Ustr,
+    bid: Decimal,
+    ask: Decimal,
+    price_type: PriceType,
+) -> anyhow::Result<(Decimal, Decimal)> {
+    let (forward_rate, reverse_divisor) = match price_type {
+        PriceType::Bid => (bid, ask),
+        PriceType::Ask => (ask, bid),
         PriceType::Mid => {
-            let mid = (bid + ask) / Decimal::TWO;
-            (mid, Decimal::ONE / mid)
+            let mid = bid
+                .checked_add(ask)
+                .and_then(|sum| sum.checked_div(Decimal::TWO))
+                .ok_or_else(|| {
+                    anyhow::anyhow!("Decimal overflow calculating midpoint for pair {pair}")
+                })?;
+
+            (mid, mid)
         }
         _ => unreachable!("Price type was validated before graph construction"),
-    }
+    };
+
+    let reverse_rate = Decimal::ONE.checked_div(reverse_divisor).ok_or_else(|| {
+        anyhow::anyhow!("Decimal overflow calculating inverse rate for pair {pair}")
+    })?;
+
+    Ok((forward_rate, reverse_rate))
 }
 
 #[cfg(test)]
@@ -358,6 +382,69 @@ mod tests {
         let expected = dec!(1.1001) * dec!(110.01);
 
         assert_eq!(rate, Some(expected));
+    }
+
+    #[rstest]
+    fn test_midpoint_overflow_returns_error() {
+        let quotes_bid = AHashMap::from([(Ustr::from("EUR/USD"), Decimal::MAX)]);
+        let quotes_ask = quotes_bid.clone();
+
+        let result = get_exchange_rate(
+            Ustr::from("EUR"),
+            Ustr::from("USD"),
+            PriceType::Mid,
+            quotes_bid,
+            quotes_ask,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Decimal overflow calculating midpoint for pair EUR/USD"
+        );
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid)]
+    #[case(PriceType::Ask)]
+    #[case(PriceType::Mid)]
+    fn test_path_overflow_returns_error(#[case] price_type: PriceType) {
+        let quotes_bid = AHashMap::from([
+            (Ustr::from("EUR/USD"), dec!(100000000000000000000)),
+            (Ustr::from("USD/JPY"), dec!(100000000000000000000)),
+        ]);
+        let quotes_ask = quotes_bid.clone();
+
+        let result = get_exchange_rate(
+            Ustr::from("EUR"),
+            Ustr::from("JPY"),
+            price_type,
+            quotes_bid,
+            quotes_ask,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Decimal overflow multiplying exchange rates for EUR/JPY at USD/JPY"
+        );
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid)]
+    #[case(PriceType::Ask)]
+    fn test_direct_decimal_max_rate(#[case] price_type: PriceType) {
+        let quotes_bid = AHashMap::from([(Ustr::from("EUR/USD"), Decimal::MAX)]);
+        let quotes_ask = quotes_bid.clone();
+
+        let rate = get_exchange_rate(
+            Ustr::from("EUR"),
+            Ustr::from("USD"),
+            price_type,
+            quotes_bid,
+            quotes_ask,
+        )
+        .unwrap();
+
+        assert_eq!(rate, Some(Decimal::MAX));
     }
 
     #[rstest]
