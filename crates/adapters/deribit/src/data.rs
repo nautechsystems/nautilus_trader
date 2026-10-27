@@ -64,6 +64,7 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     types::Price,
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use tokio_util::sync::CancellationToken;
 
@@ -100,6 +101,7 @@ pub struct DeribitDataClient {
     command_tasks: TaskGroup,
     data_sender: EventSender<DataEvent>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    instruments_lock: Arc<Mutex<()>>,
     mark_price_subs: Arc<AtomicSet<InstrumentId>>,
     index_price_subs: Arc<AtomicSet<InstrumentId>>,
     option_greeks_subs: Arc<AtomicSet<InstrumentId>>,
@@ -187,6 +189,7 @@ impl DeribitDataClient {
             command_tasks,
             data_sender,
             instruments: Arc::new(AtomicMap::new()),
+            instruments_lock: Arc::new(Mutex::new(())),
             mark_price_subs: Arc::new(AtomicSet::new()),
             index_price_subs: Arc::new(AtomicSet::new()),
             option_greeks_subs: Arc::new(AtomicSet::new()),
@@ -322,6 +325,66 @@ impl DeribitDataClient {
         self.session_tasks
             .spawn(future)
             .context("failed to register Deribit WebSocket stream task")?;
+        Ok(())
+    }
+
+    /// Spawns a task that refreshes instruments for the configured product types.
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let minutes = self.config.update_instruments_interval_mins;
+
+        if minutes == 0 {
+            return Ok(());
+        }
+
+        let product_types = if self.config.product_types.is_empty() {
+            vec![DeribitProductType::Future]
+        } else {
+            self.config.product_types.clone()
+        };
+        let interval = Duration::from_secs(minutes.saturating_mul(60));
+        let cancellation = self.cancellation_token.clone();
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
+        let instruments = Arc::clone(&self.instruments);
+        let instruments_lock = Arc::clone(&self.instruments_lock);
+        let sender = self.data_sender.clone();
+
+        let future = async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    () = tokio::time::sleep(interval) => {}
+                }
+
+                for product_type in &product_types {
+                    let result = tokio::select! {
+                        biased;
+                        () = cancellation.cancelled() => return,
+                        result = http_client.request_instruments(DeribitCurrency::ANY, Some(*product_type)) => result,
+                    };
+
+                    match result {
+                        Ok(fetched) => cache_instruments(
+                            fetched,
+                            &instruments,
+                            &http_client,
+                            ws_client.as_ref(),
+                            &sender,
+                            &cancellation,
+                            &instruments_lock,
+                        ),
+                        Err(e) => {
+                            log::warn!("Failed to refresh instruments for {product_type:?}: {e}");
+                        }
+                    }
+                }
+            }
+        };
+
+        self.session_tasks
+            .spawn(future)
+            .context("failed to register Deribit instrument refresh task")?;
         Ok(())
     }
 
@@ -657,6 +720,7 @@ impl DataClient for DeribitDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping data client: {}", self.client_id);
         self.session_tasks.begin_shutdown();
+        let _guard = self.instruments_lock.lock();
         self.command_tasks.begin_shutdown();
         if let Some(ws) = self.ws_client.as_ref() {
             ws.begin_shutdown();
@@ -674,7 +738,10 @@ impl DataClient for DeribitDataClient {
         }
         self.is_connected.store(false, Ordering::Relaxed);
 
-        self.instruments.store(AHashMap::new());
+        {
+            let _guard = self.instruments_lock.lock();
+            self.instruments.store(AHashMap::new());
+        }
         self.combo_leg_trade_subs.store(AHashMap::new());
         Ok(())
     }
@@ -806,7 +873,10 @@ impl DataClient for DeribitDataClient {
             }
         };
 
-        if let Err(e) = self.spawn_stream_task(stream) {
+        if let Err(e) = self
+            .spawn_stream_task(stream)
+            .and_then(|()| self.spawn_instrument_refresh())
+        {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
                     "Deribit data startup teardown failed: {teardown_error}"
@@ -2327,5 +2397,122 @@ impl DeribitDataClient {
         }
 
         subscription_ids
+    }
+}
+
+// Caches and publishes refreshed instruments unless shutdown has begun. Taking the lock orders
+// a refresh against `stop` and `reset`, so one finishing during either cannot repopulate the
+// cache or publish after it.
+fn cache_instruments(
+    mut fetched: Vec<InstrumentAny>,
+    instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+    http_client: &DeribitHttpClient,
+    ws_client: Option<&DeribitWebSocketClient>,
+    sender: &EventSender<DataEvent>,
+    cancellation: &CancellationToken,
+    instruments_lock: &Mutex<()>,
+) {
+    fetched.sort_by_key(|instrument| instrument.id());
+    let _guard = instruments_lock.lock();
+
+    if cancellation.is_cancelled() {
+        return;
+    }
+
+    instruments.rcu(|m| {
+        for instrument in &fetched {
+            m.insert(instrument.id(), instrument.clone());
+        }
+    });
+    http_client.cache_instruments(&fetched);
+
+    if let Some(ws) = ws_client {
+        ws.cache_instruments(&fetched);
+    }
+
+    for instrument in fetched {
+        if let Err(e) = sender.send(DataEvent::Data(instrument.into())) {
+            log::warn!("Failed to send instrument: {e}");
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::live::runner::replace_data_event_sender;
+    use nautilus_core::UnixNanos;
+    use rstest::rstest;
+
+    use super::*;
+    use crate::{
+        common::{
+            consts::DERIBIT_CLIENT_ID, parse::parse_deribit_instrument_any,
+            rpc::DeribitJsonRpcResponse, testing::load_test_json,
+        },
+        http::models::DeribitInstrument,
+    };
+
+    fn perpetual(ts_init: u64) -> InstrumentAny {
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&load_test_json("http_get_instruments.json")).unwrap();
+        let definition = response
+            .result
+            .unwrap()
+            .into_iter()
+            .find(|instrument| instrument.instrument_name == "BTC-PERPETUAL")
+            .unwrap();
+        let ts_init = UnixNanos::from(ts_init);
+        parse_deribit_instrument_any(&definition, ts_init, ts_init)
+            .unwrap()
+            .unwrap()
+    }
+
+    #[rstest]
+    #[case::stop("stop")]
+    #[case::reset("reset")]
+    #[case::dispose("dispose")]
+    #[tokio::test]
+    async fn test_cache_instruments_rejects_completion_after_shutdown(#[case] shutdown: &str) {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let mut client =
+            DeribitDataClient::new(*DERIBIT_CLIENT_ID, DeribitDataClientConfig::default()).unwrap();
+        let original = perpetual(1);
+        let instrument_id = original.id();
+        client.instruments.insert(instrument_id, original);
+        let cancellation = client.cancellation_token.clone();
+
+        match shutdown {
+            "stop" => client.stop().unwrap(),
+            "reset" => client.reset().unwrap(),
+            "dispose" => client.dispose().unwrap(),
+            _ => unreachable!(),
+        }
+
+        cache_instruments(
+            vec![perpetual(2)],
+            &client.instruments,
+            &client.http_client,
+            client.ws_client.as_ref(),
+            &client.data_sender,
+            &cancellation,
+            &client.instruments_lock,
+        );
+
+        let expected = (shutdown != "reset").then_some(UnixNanos::from(1));
+        assert_eq!(
+            client
+                .instruments
+                .get_cloned(&instrument_id)
+                .map(|instrument| instrument.ts_init()),
+            expected
+        );
+        assert!(
+            client
+                .http_client
+                .get_instrument(&instrument_id.symbol.inner())
+                .is_none()
+        );
+        assert!(receiver.try_recv().is_err());
     }
 }
