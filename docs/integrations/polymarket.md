@@ -1282,6 +1282,12 @@ it by ID from the authenticated REST trades endpoint (`GET /data/trades`) when:
 The first read starts immediately. Until REST returns a terminal status, the adapter retries after
 500 ms, doubling the delay up to 30 seconds, so a long `RETRYING` period leaves the trade quarantined.
 
+Only valid terminal REST evidence resolves a quarantined trade. A repaired WebSocket replay
+with the same trade ID cannot release quarantine, even with status `CONFIRMED`.
+
+An invalid commission emits no fallback fill and applies no owned leg. Apply the Polymarket exception in
+[TC-E89](../developer_guide/spec_exec_testing.md#tc-e89-websocket-commission-failure) when testing recovery.
+
 The first terminal REST result is final. Another REST read starts for a contradictory WebSocket status or new
 or changed evidence for fills the engine has not applied. It never reverses the first result.
 

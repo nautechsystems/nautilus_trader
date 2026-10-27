@@ -1285,6 +1285,10 @@ or mark them permanently unreconcilable. A duplicate or reconnect replay can ret
 reconciliation stays the authoritative recovery path. The WebSocket handler does not start an immediate REST
 request.
 
+Polymarket instead quarantines invalid trades and immediately starts targeted REST resolution;
+repaired WebSocket replays remain quarantined. Apply its
+[TC-E89 exception](spec_exec_testing.md#tc-e89-websocket-commission-failure) for recovery and deduplication.
+
 #### Bounded mass-status reports
 
 When an execution client applies a lower time bound to historical reconciliation reports, record
