@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Added Python-subclassable latency models with command and clock time context
 - Added custom Python fill models in backtest venue and sandbox configuration
 - Added custom Python margin models in backtest venue and sandbox configuration
+- Added Binance Spot JSON `update_speed` subscription parameter for 100ms depth streams
 - Added Binance Spot SBE list-status decoding with child acceptance and rejection
 - Added Derive explicit WebSocket cancel-on-disconnect control
 - Added Derive execution-client cancel-on-disconnect configuration for resting limit orders
@@ -85,6 +86,7 @@ Released on TBD (UTC).
 - Changed Architect AX WebSocket `submit_order`: pass `&OrderInitialized::from(&order)` for identity and side
 - Changed Architect AX `OrderMetadata` literals: add `order_init` and `is_accepted`
 - Changed Architect AX `AxMdTrade.d` to required `AxOrderSide`; replace `Some(side)` with `side`
+- Changed Binance Spot JSON depth subscriptions to default to 100ms; set `update_speed=1000` for 1000ms
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
 - Changed Binance Spot SBE `parse_depth_snapshot` and `parse_depth_diff` to return `Result`; handle parse errors
 - Changed Binance spot `BinanceAccountInfo::to_account_state` and `parse_spot_account_position` to return `Result`
