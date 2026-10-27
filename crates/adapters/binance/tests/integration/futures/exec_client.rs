@@ -4010,7 +4010,7 @@ async fn test_sided_cancel_all_scopes_requests_and_events_to_account(
         else {
             unreachable!()
         };
-        // Restored venue orders may have no persisted execution-client origin.
+        // Restored venue orders may have no persisted execution-client origin
         accepted.reconciliation = client_id.is_none();
         cache
             .borrow_mut()
