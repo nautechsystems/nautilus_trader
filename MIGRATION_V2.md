@@ -1059,6 +1059,26 @@ and migration guidance.
 - Query chunk sizes are targets. Equal-timestamp groups can exceed them; instrument and custom queries can collect
   all results before yielding batches.
 
+### Option-chain selection
+
+`StrikeRange` is non-exhaustive. Existing variants support direct construction, but Rust matches outside
+`nautilus-model` require a wildcard arm. Delegate model-level selection to `StrikeRange::resolve`, or return
+an explicit unsupported-mode error from a custom selector. Matches inside `nautilus-model` remain exhaustive.
+
+This extension boundary covers `StrikeRange` only. `OptionSideFilter` retains its exhaustive `Both`,
+`Calls`, `Puts`, and `Otm` variants. `StrikeSearchProfile` uses checked construction and private fields.
+`SubscribeOptionChain` retains its existing fields and constructor.
+
+Existing selection behavior, serialized variant names, and variant order are unchanged. New variants
+are appended after existing ones, preserving variant indices for downstream index-based Serde formats.
+Older readers still reject new variants during deserialization.
+
+The [Python v2 API stability goal](README.md#versioning-and-releases) does not change the Rust crates'
+separate `0.x` versioning. Pin compatible crate versions independently of Python. Additional `StrikeRange`
+variants preserve source compatibility for downstream wildcard matches. Changing existing variant fields
+or the signatures of `SubscribeOptionChain::new` or `StrikeSearchProfile::new` still requires release notes
+and migration guidance for affected callers.
+
 ### Data variants
 
 | v1 Rust variant           | v2 Rust variant     |

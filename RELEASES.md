@@ -62,6 +62,7 @@ Released on TBD (UTC).
 - Changed backtest registration to reject conflicting definitions for an instrument ID (#5407), thanks @mahimn01
 - Changed `nautilus-pyo3` without default features to omit standard adapter bindings; enable `adapters` to include them
 - Changed `BusPayloadType`: add `RequestCommand` and `DataResponse` arms to exhaustive matches
+- Changed `StrikeRange` to non-exhaustive; add a wildcard arm to downstream matches
 - Changed `Money` display and decimal conversion to retain finer digits; round to currency precision explicitly
 - Changed `Money` deserialization to reject excess precision instead of rounding; round inputs before loading
 - Changed SBE depth encoding for padded or variable levels and nonzero order IDs; update readers for the new layout
