@@ -83,6 +83,7 @@ Released on TBD (UTC).
 - Changed unsupported post-only denials to `UNSUPPORTED_POST_ONLY`; update reason string matching
 - Changed Architect AX WebSocket `submit_order`: pass `&OrderInitialized::from(&order)` for identity and side
 - Changed Architect AX `OrderMetadata` literals: add `order_init` and `is_accepted`
+- Changed Architect AX `AxMdTrade.d` to required `AxOrderSide`; replace `Some(side)` with `side`
 - Changed Binance Spot SBE `parse_trades_event` and `parse_bbo_event` to return `Result`; handle parse errors
 - Changed Binance Spot SBE `parse_depth_snapshot` and `parse_depth_diff` to return `Result`; handle parse errors
 - Changed Binance spot `BinanceAccountInfo::to_account_state` and `parse_spot_account_position` to return `Result`
@@ -169,6 +170,7 @@ Released on TBD (UTC).
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
 - Fixed Architect AX special-fill reconciliation, fill-history windows, and cached flat-position recovery
 - Fixed Architect AX position-report requests dropping flat rows and skipping invalid rows
+- Fixed Architect AX WebSocket trades accepting missing aggressor sides
 - Fixed Binance Spot and Futures overlapping instrument-status updates losing or duplicating changes
 - Fixed Binance USD-M and COIN-M aggregate trade requests rejecting history between 24 and 48 hours old
 - Fixed Binance Futures funding-fee account updates discarding symbol attribution
