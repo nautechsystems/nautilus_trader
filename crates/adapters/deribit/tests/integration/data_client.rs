@@ -215,6 +215,11 @@ struct TestServerState {
     // When set, public/get_instruments waits for a permit after counting the request.
     instruments_gate: Arc<tokio::sync::Mutex<Option<Arc<tokio::sync::Semaphore>>>>,
     get_instruments_request_count: Arc<AtomicUsize>,
+    // When true, public/get_combos responds with a JSON-RPC error.
+    fail_get_combos: Arc<AtomicBool>,
+    // When true, WebSocket upgrades are refused, holding the client in reconnect.
+    reject_ws_upgrades: Arc<AtomicBool>,
+    rejected_ws_upgrades: Arc<AtomicUsize>,
 }
 
 #[derive(Default)]
@@ -277,7 +282,7 @@ async fn handle_jsonrpc_request(
 
     match method {
         "public/get_instruments" => handle_get_instruments(&state, id, params).await,
-        "public/get_combos" => handle_get_combos(id).await,
+        "public/get_combos" => handle_get_combos(&state, id).await,
         "public/get_order_book" => {
             let mut data = load_json("http_get_order_book.json");
             data["id"] = json!(id);
@@ -390,7 +395,17 @@ async fn handle_get_combo_instrument(id: u64) -> Response {
     .into_response()
 }
 
-async fn handle_get_combos(id: u64) -> Response {
+async fn handle_get_combos(state: &TestServerState, id: u64) -> Response {
+    if state.fail_get_combos.load(Ordering::Relaxed) {
+        return Json(json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "error": {"code": 10000, "message": "temporary combos failure"},
+            "testnet": true
+        }))
+        .into_response();
+    }
+
     Json(json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -485,6 +500,11 @@ async fn handle_get_instruments(
 }
 
 async fn handle_ws_upgrade(ws: WebSocketUpgrade, State(state): State<TestServerState>) -> Response {
+    if state.reject_ws_upgrades.load(Ordering::Relaxed) {
+        state.rejected_ws_upgrades.fetch_add(1, Ordering::SeqCst);
+        return axum::http::StatusCode::SERVICE_UNAVAILABLE.into_response();
+    }
+
     ws.on_upgrade(move |socket| handle_socket(socket, state))
 }
 
@@ -2382,6 +2402,76 @@ async fn test_scheduled_instrument_refresh_publishes_and_caches_definitions(
 
 #[rstest]
 #[tokio::test]
+async fn test_scheduled_instrument_refresh_during_reconnect_reaches_handler() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.update_instruments_interval_mins = 1;
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let listing_id = InstrumentId::from("BTC-27JUN25.DERIBIT");
+    let mut rows = instrument_rows();
+    let mut listing = instrument_row_mut(&mut rows, "BTC-27DEC24").clone();
+    listing["instrument_name"] = json!("BTC-27JUN25");
+    listing["instrument_id"] = json!(345_678);
+    listing["expiration_timestamp"] = json!(1_751_011_200_000_i64);
+    rows.push(listing);
+    *state.instruments_response.lock().await = Some(instruments_body(&rows));
+
+    // Drop the socket and refuse upgrades so the refresh lands while reconnecting
+    state.reject_ws_upgrades.store(true, Ordering::SeqCst);
+    state.disconnect_trigger.store(true, Ordering::SeqCst);
+    client
+        .subscribe_quotes(subscribe_quotes(InstrumentId::from(
+            "BTC-PERPETUAL.DERIBIT",
+        )))
+        .unwrap();
+    wait_until_async(
+        || async { state.rejected_ws_upgrades.load(Ordering::SeqCst) > 0 },
+        TEST_TIMEOUT,
+    )
+    .await;
+
+    loop {
+        let instrument = recv_instrument(&mut rx, Duration::from_secs(65)).await;
+        if instrument.id() == listing_id {
+            break;
+        }
+    }
+    assert_eq!(*state.connection_count.lock().await, 0);
+
+    state.disconnect_trigger.store(false, Ordering::SeqCst);
+    state.reject_ws_upgrades.store(false, Ordering::SeqCst);
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(45),
+    )
+    .await;
+
+    client
+        .subscribe_quotes(subscribe_quotes(listing_id))
+        .unwrap();
+    tokio::time::timeout(TEST_TIMEOUT, async {
+        loop {
+            if let Some(DataEvent::Data(Data::Quote(quote))) = rx.recv().await
+                && quote.instrument_id == listing_id
+            {
+                break;
+            }
+        }
+    })
+    .await
+    .expect("handler did not parse quotes for the listing refreshed during reconnect");
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_scheduled_instrument_refresh_retries_after_failure() {
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
@@ -2433,6 +2523,71 @@ async fn test_scheduled_instrument_refresh_retries_after_failure() {
     assert!(started.elapsed() >= Duration::from_secs(120));
     assert_eq!(refreshed.id().venue, *DERIBIT_VENUE);
     assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_scheduled_instrument_refresh_preserves_combo_legs_when_combos_fail() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.product_types = vec![DeribitProductType::Future, DeribitProductType::FutureCombo];
+    config.update_instruments_interval_mins = 1;
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    state.fail_get_combos.store(true, Ordering::Relaxed);
+    let combo_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
+    let refreshed = loop {
+        let instrument = recv_instrument(&mut rx, Duration::from_secs(65)).await;
+        if instrument.id() == combo_id {
+            break instrument;
+        }
+    };
+
+    let InstrumentAny::CryptoFuturesSpread(spread) = refreshed else {
+        panic!("expected futures spread, was {refreshed:?}");
+    };
+    let legs = spread
+        .info
+        .as_ref()
+        .and_then(|info| info.get("deribit_combo_legs"))
+        .and_then(Value::as_array)
+        .expect("combo legs missing after refresh");
+    assert_eq!(legs.len(), 2);
+
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        TEST_TIMEOUT,
+    )
+    .await;
+    state.subscription_events.lock().await.clear();
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            combo_id,
+            Some(*DERIBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            Some(params),
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async {
+            subscription_event_trade_symbols(&state, true).await
+                == sorted_strings(&["BTC-27DEC24", "BTC-COMBO-1", "BTC-PERPETUAL"])
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
+
     client.disconnect().await.unwrap();
 }
 

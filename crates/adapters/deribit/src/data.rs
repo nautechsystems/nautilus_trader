@@ -27,6 +27,7 @@ use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::StreamExt;
+use indexmap::IndexMap;
 use nautilus_common::{
     clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{runner::get_data_event_sender, sender::EventSender},
@@ -2400,7 +2401,7 @@ impl DeribitDataClient {
     }
 }
 
-// Caches and publishes refreshed instruments unless shutdown has begun. Taking the lock orders
+// Caches and publishes refreshed instruments unless shutdown has begun, taking the lock orders
 // a refresh against `stop` and `reset`, so one finishing during either cannot repopulate the
 // cache or publish after it.
 fn cache_instruments(
@@ -2419,6 +2420,14 @@ fn cache_instruments(
         return;
     }
 
+    let cached = instruments.load();
+    for instrument in &mut fetched {
+        if let Some(cached) = cached.get(&instrument.id()) {
+            preserve_combo_leg_info(instrument, cached);
+        }
+    }
+    drop(cached);
+
     instruments.rcu(|m| {
         for instrument in &fetched {
             m.insert(instrument.id(), instrument.clone());
@@ -2435,6 +2444,52 @@ fn cache_instruments(
             log::warn!("Failed to send instrument: {e}");
         }
     }
+}
+
+// `request_instruments` still succeeds when its supplementary `get_combos` request fails, returning
+// combos without leg metadata, so carry the last known legs forward until a later refresh reloads
+// them and combo leg subscriptions keep working.
+fn preserve_combo_leg_info(instrument: &mut InstrumentAny, cached: &InstrumentAny) {
+    let (info, cached_info) = match (instrument, cached) {
+        (InstrumentAny::CryptoOptionSpread(spread), InstrumentAny::CryptoOptionSpread(cached)) => {
+            (&mut spread.info, &cached.info)
+        }
+        (
+            InstrumentAny::CryptoFuturesSpread(spread),
+            InstrumentAny::CryptoFuturesSpread(cached),
+        ) => (&mut spread.info, &cached.info),
+        _ => return,
+    };
+
+    if info
+        .as_ref()
+        .is_some_and(|info| info.contains_key("deribit_combo_legs"))
+    {
+        return;
+    }
+
+    let Some(cached_info) = cached_info
+        .as_ref()
+        .filter(|cached_info| cached_info.contains_key("deribit_combo_legs"))
+    else {
+        return;
+    };
+
+    let mut merged = info
+        .as_ref()
+        .map(|info| IndexMap::clone(info))
+        .unwrap_or_default();
+
+    for key in [
+        "deribit_combo_id",
+        "deribit_combo_state",
+        "deribit_combo_legs",
+    ] {
+        if let Some(value) = cached_info.get(key) {
+            merged.insert(key.to_string(), value.clone());
+        }
+    }
+    *info = Some(Params::new(merged));
 }
 
 #[cfg(test)]
@@ -2514,5 +2569,71 @@ mod tests {
                 .is_none()
         );
         assert!(receiver.try_recv().is_err());
+    }
+
+    fn combo(fixture: &str, legs: Option<&str>) -> InstrumentAny {
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&load_test_json(fixture)).unwrap();
+        let definition = response.result.unwrap().remove(0);
+        let ts_init = UnixNanos::default();
+        let mut instrument = parse_deribit_instrument_any(&definition, ts_init, ts_init)
+            .unwrap()
+            .unwrap();
+        let info = legs.map(|leg| {
+            Params::new(IndexMap::from([(
+                "deribit_combo_legs".to_string(),
+                serde_json::json!([{ "instrument_name": leg }]),
+            )]))
+        });
+
+        match &mut instrument {
+            InstrumentAny::CryptoOptionSpread(spread) => spread.info = info,
+            InstrumentAny::CryptoFuturesSpread(spread) => spread.info = info,
+            _ => panic!("expected spread, was {instrument:?}"),
+        }
+        instrument
+    }
+
+    fn combo_leg_name(instrument: &InstrumentAny) -> Option<&str> {
+        let info = match instrument {
+            InstrumentAny::CryptoOptionSpread(spread) => spread.info.as_ref(),
+            InstrumentAny::CryptoFuturesSpread(spread) => spread.info.as_ref(),
+            _ => None,
+        }?;
+        info.get("deribit_combo_legs")?[0]["instrument_name"].as_str()
+    }
+
+    #[rstest]
+    #[case::option_preserved(
+        "http_get_instruments_option_combo.json",
+        None,
+        Some("cached"),
+        Some("cached")
+    )]
+    #[case::futures_preserved(
+        "http_get_instruments_future_combo.json",
+        None,
+        Some("cached"),
+        Some("cached")
+    )]
+    #[case::fresh_wins(
+        "http_get_instruments_future_combo.json",
+        Some("fresh"),
+        Some("cached"),
+        Some("fresh")
+    )]
+    #[case::nothing_cached("http_get_instruments_future_combo.json", None, None, None)]
+    fn test_preserve_combo_leg_info(
+        #[case] fixture: &str,
+        #[case] fetched_legs: Option<&str>,
+        #[case] cached_legs: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let mut fetched = combo(fixture, fetched_legs);
+        let cached = combo(fixture, cached_legs);
+
+        preserve_combo_leg_info(&mut fetched, &cached);
+
+        assert_eq!(combo_leg_name(&fetched), expected);
     }
 }
