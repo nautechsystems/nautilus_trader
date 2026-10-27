@@ -135,6 +135,7 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed backtest `MARK_PRICE` triggers ignoring mark prices (#5264), thanks for reporting @rubix28
+- Fixed NETTING PnL statistics losing cycles with the same open timestamp (#5288), thanks for reporting @qOeOp
 - Fixed account state subscriptions missing accepted updates (#5410), thanks @graceyangfan
 - Fixed unavailable `OrderFilled` commissions displaying as zero
 - Fixed live bulk order reconciliation timeouts discarding finalized adapter reports
