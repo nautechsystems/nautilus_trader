@@ -3415,7 +3415,8 @@ impl OrderMatchingEngine {
                                     contingency_type,
                                     Some(ContingencyType::Oco | ContingencyType::Ouo)
                                 ) && !order.is_closed()
-                                    && contingent_order.is_closed() =>
+                                    && contingent_order.is_closed()
+                                    && !Self::is_rejected_oto_sibling(order, &contingent_order) =>
                             {
                                 break 'validate Some(
                                     format!("Contingent order {client_order_id} already closed")
@@ -3531,6 +3532,13 @@ impl OrderMatchingEngine {
             OrderType::TrailingStopMarket => self.process_trailing_stop_order(order),
             OrderType::TrailingStopLimit => self.process_trailing_stop_order(order),
         }
+    }
+
+    fn is_rejected_oto_sibling(order: &OrderAny, sibling: &OrderAny) -> bool {
+        sibling.status() == OrderStatus::Rejected
+            && order
+                .parent_order_id()
+                .is_some_and(|parent_id| sibling.parent_order_id() == Some(parent_id))
     }
 
     fn order_position_rejection(&mut self, order: &OrderAny) -> anyhow::Result<Option<Ustr>> {
@@ -6326,7 +6334,7 @@ impl OrderMatchingEngine {
                 .order_snapshot(*id)
                 .ok_or_else(|| anyhow::anyhow!("Order {id} not found in cache"))?;
 
-            if child.is_closed() || child.is_active_local() {
+            if self.contingent_order_is_closed(&child) || child.is_active_local() {
                 continue;
             }
 
@@ -7949,7 +7957,7 @@ impl OrderMatchingEngine {
                     continue;
                 }
 
-                if !contingent_order.is_closed() {
+                if !self.contingent_order_is_closed(&contingent_order) {
                     self.cancel_order(&contingent_order, Some(false));
                 }
             }

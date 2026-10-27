@@ -142,6 +142,7 @@ Released on TBD (UTC).
 - Fixed Python statistics and return series ordering (#5432), thanks @mahimn01
 - Fixed targeted order reconciliation discarding accepted statuses and fills after timeout or cancellation
 - Fixed OUO sibling resizes converting base quantities twice when quote-denominated stops trigger
+- Fixed matching engine bracket exit rejections cascading to valid siblings (#5460), thanks for reporting @luk911
 - Fixed LAST and MID bar execution skipping positive volume when OHLC prices repeat
 - Fixed matching engine liquidity overconsumption with market-to-limit, reduce-only, and queue position tracking
 - Fixed expiration settlement missing final-tick fills when position updates are deferred
