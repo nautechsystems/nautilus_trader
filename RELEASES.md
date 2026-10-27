@@ -278,6 +278,7 @@ Released on TBD (UTC).
 - Improved live shutdown test coverage for slow position report collection
 - Improved performance CI to fail when any benchmark crate fails
 - Refined live reconciliation report collection and task ownership
+- Refined live execution reconciliation to share cached-order processing and simplify position coverage checks
 - Restored default-feature compilation of `position_replay_criterion` benchmarks
 - Standardized Architect AX owned execution report tasks
 - Standardized Blockchain Clippy exceptions to preserve workspace checks

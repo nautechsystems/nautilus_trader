@@ -942,57 +942,23 @@ impl ExecutionManager {
                     orders_skipped_duplicate += 1;
                     continue;
                 }
+            }
 
-                if let Some(order) = order_client {
-                    let instrument = self.get_instrument(&report.instrument_id);
+            if let Some(order) = order.as_ref() {
+                let instrument = self.get_instrument(&report.instrument_id);
+
+                if order_client.is_some() {
                     log::info!(
                         color = LogColor::Blue as u8;
                         "Reconciling {} {} {} [{}] -> [{}]",
-                        client_order_id,
+                        order.client_order_id(),
                         report.venue_order_id,
                         report.instrument_id,
                         order.status(),
                         report.order_status,
                     );
-
-                    let order_fills: Vec<&FillReport> = fill_reports
-                        .get(&report.venue_order_id)
-                        .map(|f| f.iter().collect())
-                        .unwrap_or_default();
-                    let engine_ref = exec_engine.borrow();
-                    let commission_client = engine_ref.get_client(&mass_status.client_id);
-
-                    let order_events = self.reconcile_order_with_fills(
-                        true,
-                        order,
-                        report,
-                        &order_fills,
-                        instrument.as_ref(),
-                        &mut fill_queue,
-                        commission_client,
-                    );
-
-                    drop(engine_ref);
-
-                    orders_reconciled += usize::from(!order_events.is_empty());
-                    fills_applied += order_events
-                        .iter()
-                        .filter(|e| matches!(e, OrderEventAny::Filled(_)))
-                        .count();
-                    events.extend(order_events);
-
-                    // Always ensure venue_order_id is indexed after reconciliation
-                    if let Err(e) = self
-                        .cache
-                        .borrow_mut()
-                        .index_venue_order_id(client_order_id, &report.venue_order_id)
-                    {
-                        log::warn!("Failed to index venue order ID: {e}");
-                    }
-                } else if let Some(order) = order.as_ref() {
+                } else {
                     // Fallback: match by venue_order_id
-                    let instrument = self.get_instrument(&report.instrument_id);
-
                     log::info!(
                         color = LogColor::Blue as u8;
                         "Reconciling {} (matched by venue_order_id {}) {} [{}] -> [{}]",
@@ -1002,41 +968,44 @@ impl ExecutionManager {
                         order.status(),
                         report.order_status,
                     );
+                }
 
-                    let order_fills: Vec<&FillReport> = fill_reports
-                        .get(&report.venue_order_id)
-                        .map(|f| f.iter().collect())
-                        .unwrap_or_default();
-                    let engine_ref = exec_engine.borrow();
-                    let commission_client = engine_ref.get_client(&mass_status.client_id);
+                let order_fills: Vec<&FillReport> = fill_reports
+                    .get(&report.venue_order_id)
+                    .map(|f| f.iter().collect())
+                    .unwrap_or_default();
+                let engine_ref = exec_engine.borrow();
+                let commission_client = engine_ref.get_client(&mass_status.client_id);
 
-                    let order_events = self.reconcile_order_with_fills(
-                        true,
-                        order,
-                        report,
-                        &order_fills,
-                        instrument.as_ref(),
-                        &mut fill_queue,
-                        commission_client,
-                    );
+                let order_events = self.reconcile_order_with_fills(
+                    true,
+                    order,
+                    report,
+                    &order_fills,
+                    instrument.as_ref(),
+                    &mut fill_queue,
+                    commission_client,
+                );
 
-                    drop(engine_ref);
+                drop(engine_ref);
 
-                    orders_reconciled += usize::from(!order_events.is_empty());
-                    fills_applied += order_events
-                        .iter()
-                        .filter(|e| matches!(e, OrderEventAny::Filled(_)))
-                        .count();
-                    events.extend(order_events);
+                orders_reconciled += usize::from(!order_events.is_empty());
+                fills_applied += order_events
+                    .iter()
+                    .filter(|e| matches!(e, OrderEventAny::Filled(_)))
+                    .count();
+                events.extend(order_events);
 
-                    if let Err(e) = self
-                        .cache
-                        .borrow_mut()
-                        .index_venue_order_id(&order.client_order_id(), &report.venue_order_id)
-                    {
-                        log::warn!("Failed to index venue order ID: {e}");
-                    }
-                } else if let Some(instrument) = self.get_instrument(&report.instrument_id) {
+                // Always ensure venue_order_id is indexed after reconciliation
+                if let Err(e) = self
+                    .cache
+                    .borrow_mut()
+                    .index_venue_order_id(&order.client_order_id(), &report.venue_order_id)
+                {
+                    log::warn!("Failed to index venue order ID: {e}");
+                }
+            } else if let Some(client_order_id) = &report.client_order_id {
+                if let Some(instrument) = self.get_instrument(&report.instrument_id) {
                     let venue_order_ids = order_venue_ids
                         .as_ref()
                         .and_then(|histories| histories.get(client_order_id));
@@ -1086,52 +1055,6 @@ impl ExecutionManager {
                     }
                 } else {
                     orders_skipped_no_instrument += 1;
-                }
-            } else if let Some(order) = order.as_ref() {
-                // Fallback: match by venue_order_id
-                let instrument = self.get_instrument(&report.instrument_id);
-                log::info!(
-                    color = LogColor::Blue as u8;
-                    "Reconciling {} (matched by venue_order_id {}) {} [{}] -> [{}]",
-                    order.client_order_id(),
-                    report.venue_order_id,
-                    report.instrument_id,
-                    order.status(),
-                    report.order_status,
-                );
-
-                let order_fills: Vec<&FillReport> = fill_reports
-                    .get(&report.venue_order_id)
-                    .map(|f| f.iter().collect())
-                    .unwrap_or_default();
-                let engine_ref = exec_engine.borrow();
-                let commission_client = engine_ref.get_client(&mass_status.client_id);
-
-                let order_events = self.reconcile_order_with_fills(
-                    true,
-                    order,
-                    report,
-                    &order_fills,
-                    instrument.as_ref(),
-                    &mut fill_queue,
-                    commission_client,
-                );
-
-                drop(engine_ref);
-
-                orders_reconciled += usize::from(!order_events.is_empty());
-                fills_applied += order_events
-                    .iter()
-                    .filter(|e| matches!(e, OrderEventAny::Filled(_)))
-                    .count();
-                events.extend(order_events);
-
-                if let Err(e) = self
-                    .cache
-                    .borrow_mut()
-                    .index_venue_order_id(&order.client_order_id(), &report.venue_order_id)
-                {
-                    log::warn!("Failed to index venue order ID: {e}");
                 }
             } else if let Some(instrument) = self.get_instrument(&report.instrument_id) {
                 // Synthetic orders (S- prefix) are generated by reconciliation logic
@@ -3160,7 +3083,7 @@ impl ExecutionManager {
         let venue_positions = self.group_position_reports(reports);
         let mut events = Vec::new();
 
-        for key in check.client_coverage.keys() {
+        for (key, coverage) in &check.client_coverage {
             let prepared_revision = check
                 .activity_revisions
                 .get(key)
@@ -3182,12 +3105,8 @@ impl ExecutionManager {
                 .unwrap_or_default();
 
             if venue_reports.is_empty() {
-                match check.client_coverage.get(key) {
-                    Some(ReportClientCoverage::Resolved(responsible_clients))
-                        if !responsible_clients.is_empty()
-                            && responsible_clients.is_subset(queried_clients)
-                            && responsible_clients.is_disjoint(failed_clients) => {}
-                    Some(ReportClientCoverage::Resolved(responsible_clients))
+                match coverage {
+                    ReportClientCoverage::Resolved(responsible_clients)
                         if responsible_clients.is_empty() =>
                     {
                         log::warn!(
@@ -3197,7 +3116,7 @@ impl ExecutionManager {
                         );
                         continue;
                     }
-                    Some(ReportClientCoverage::Resolved(responsible_clients))
+                    ReportClientCoverage::Resolved(responsible_clients)
                         if !responsible_clients.is_subset(queried_clients) =>
                     {
                         log::warn!(
@@ -3207,7 +3126,9 @@ impl ExecutionManager {
                         );
                         continue;
                     }
-                    Some(ReportClientCoverage::Resolved(responsible_clients)) => {
+                    ReportClientCoverage::Resolved(responsible_clients)
+                        if !responsible_clients.is_disjoint(failed_clients) =>
+                    {
                         let failed_responsible_clients = responsible_clients
                             .intersection(failed_clients)
                             .copied()
@@ -3219,7 +3140,8 @@ impl ExecutionManager {
                         );
                         continue;
                     }
-                    Some(ReportClientCoverage::Unavailable(responsible_clients)) => {
+                    ReportClientCoverage::Resolved(_) => {}
+                    ReportClientCoverage::Unavailable(responsible_clients) => {
                         log::debug!(
                             "Skipping position reconciliation for {}/{}: complete bulk position coverage is unavailable from responsible execution clients: {responsible_clients:?}",
                             key.0,
@@ -3227,7 +3149,7 @@ impl ExecutionManager {
                         );
                         continue;
                     }
-                    Some(ReportClientCoverage::Unresolved) | None => {
+                    ReportClientCoverage::Unresolved => {
                         log::warn!(
                             "Skipping position reconciliation for {}/{}: responsible execution client coverage is unresolved",
                             key.0,
@@ -7315,6 +7237,55 @@ mod tests {
             Some(&ReportClientCoverage::Unresolved)
         );
         assert_eq!(check.activity_revisions.get(&key), Some(&0));
+    }
+
+    #[rstest]
+    #[case::unresolved(ReportClientCoverage::Unresolved)]
+    #[case::empty(ReportClientCoverage::Resolved(IndexSet::new()))]
+    #[case::unqueried(ReportClientCoverage::Resolved(IndexSet::from([ClientId::from("BYBIT")])))]
+    fn test_position_reconciliation_preserves_position_without_client_coverage(
+        #[case] coverage: ReportClientCoverage,
+    ) {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let mut manager = ExecutionManager::new(
+            clock,
+            cache.clone(),
+            ExecutionManagerConfig {
+                position_check_threshold_ns: DurationNanos::ZERO,
+                ..Default::default()
+            },
+        )
+        .expect("valid config");
+
+        let instrument = test_bybit_spot_instrument();
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        let position = insert_open_position(
+            &cache,
+            &instrument,
+            PositionId::from("P-COVERAGE-PRESERVED"),
+            OrderSide::Buy,
+            "5.0",
+            "3000.00",
+        );
+        let key = (position.instrument_id, position.account_id);
+        let mut check = manager.prepare_position_report_check(UUID4::new(), &[]);
+        check.client_coverage.insert(key, coverage);
+        manager.set_position_reconciliation_retries(key, PositionReportShape::Unambiguous, 1);
+
+        let events = manager.reconcile_position_reports(
+            &check,
+            Vec::new(),
+            &IndexSet::new(),
+            &IndexSet::new(),
+        );
+
+        assert!(events.is_empty());
+        assert_eq!(manager.position_recon_retry_count(&key), 1);
     }
 
     #[rstest]
