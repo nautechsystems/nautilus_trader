@@ -345,7 +345,10 @@ impl LiveNode {
             let mut applied_fill = false;
             let mut blocked = false;
 
-            for mut report in reports {
+            let contained = self
+                .exec_manager
+                .position_fill_reports_contained_prefix(&reports);
+            for mut report in reports.into_iter().skip(contained) {
                 if self.exec_manager.position_activity_revision(&key) != expected_revision {
                     blocked = true;
                     break;

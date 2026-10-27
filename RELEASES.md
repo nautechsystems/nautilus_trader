@@ -277,6 +277,7 @@ Released on TBD (UTC).
 - Optimized order last-event reads to avoid collecting history (#5412), thanks @graceyangfan
 - Optimized passive limit matching and L1 queue tracking with many orders behind the BBO
 - Optimized position purging to avoid cloning fill and replay history (#5414), thanks @graceyangfan
+- Optimized position reconciliation checks for already-applied fill reports
 - Optimized typed message router subscription registration and removal (#5426), thanks @imbolc
 - Optimized virtual hedging fill-history checks during execution and reconciliation
 - Optimized Polymarket instrument caching during bootstrap and refresh (#5373), thanks @imbolc

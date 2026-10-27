@@ -3584,6 +3584,7 @@ mod tests {
             Order, OrderAny, OrderList, OrderTestBuilder,
             stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
         },
+        position::PositionReplayEvent,
         reports::{FillReport, PositionStatusReport},
         types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
@@ -5679,6 +5680,112 @@ mod tests {
         assert_eq!(
             node.exec_manager.position_activity_revision(&key),
             revision + 1
+        );
+    }
+
+    #[rstest]
+    fn test_position_fill_prefix_rechecks_history_after_dispatch_callback() {
+        let (mut node, venue_report, mut first) =
+            position_fill_test_fixture("PositionPrefixCallbackNode", Quantity::from("0.5"));
+        first.commission = Money::from("0.13 USDT");
+        let key = (first.instrument_id, first.account_id);
+        let client_order_id = first.client_order_id.unwrap();
+        let position_result = position_report_result(&node, venue_report.clone());
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![first.clone()])]),
+        });
+
+        let mut second = first.clone();
+        second.trade_id = TradeId::from("T-PREFIX-SECOND");
+        second.last_qty = Quantity::from("0.75");
+        second.commission = Money::from("0.29 USDT");
+        let mut third = first.clone();
+        third.trade_id = TradeId::from("T-PREFIX-THIRD");
+        third.last_qty = Quantity::from("0.25");
+        third.commission = Money::from("0.07 USDT");
+        let revision = node.exec_manager.position_activity_revision(&key);
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let cache = node.kernel.cache.clone();
+        let callback_received = received.clone();
+        let second_trade_id = second.trade_id;
+
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            let OrderEventAny::Filled(fill) = event else {
+                return;
+            };
+
+            callback_received.borrow_mut().push(fill.trade_id);
+            if fill.trade_id == second_trade_id {
+                let mut cache = cache.borrow_mut();
+                let position_id = *cache.position_id(&fill.client_order_id).unwrap();
+                let mut position = cache.position_mut(&position_id).unwrap();
+                position.replay_events.retain(|event| !matches!(event, PositionReplayEvent::Filled(fill) if fill.trade_id == second_trade_id));
+            }
+        });
+
+        let strategy_id = node
+            .kernel
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .strategy_id();
+        let topic = nautilus_common::msgbus::switchboard::get_event_order_topic(strategy_id);
+        msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+        let position_result = position_report_result(&node, venue_report);
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(
+                key,
+                vec![first.clone(), first.clone(), second.clone(), third.clone()],
+            )]),
+        });
+
+        msgbus::unsubscribe_order_events(topic.into(), &handler);
+        let cache = node.kernel.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let position_id = cache.position_id(&client_order_id).unwrap();
+        let position = cache.position_ref(position_id).unwrap();
+
+        assert_eq!(*received.borrow(), vec![second.trade_id]);
+        assert_eq!(order.filled_qty(), Quantity::from("2.25"));
+        assert_eq!(order.events().len(), 6);
+        assert_eq!(
+            order.trade_ids(),
+            vec![
+                &TradeId::from("T-POSITION-INITIAL"),
+                &first.trade_id,
+                &second.trade_id
+            ]
+        );
+        assert_eq!(
+            order.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from("0.42 USDT")]
+        );
+        assert_eq!(position.quantity, Quantity::from("2.25"));
+        assert_eq!(position.commissions(), vec![Money::from("0.42 USDT")]);
+        assert_eq!(position.replay_events.len(), 2);
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            1
+        );
+        assert_eq!(
+            node.exec_manager.position_activity_revision(&key),
+            revision + 1
+        );
+        assert!(node.exec_manager.position_contains_fill_report(&first));
+        assert!(!node.exec_manager.position_contains_fill_report(&second));
+        assert!(!node.exec_manager.position_contains_fill_report(&third));
+        assert!(
+            !node
+                .exec_manager
+                .is_fill_recently_processed(key.1, key.0, second.trade_id)
+        );
+        assert!(
+            !node
+                .exec_manager
+                .is_fill_recently_processed(key.1, key.0, third.trade_id)
         );
     }
 

@@ -36,7 +36,7 @@ use std::{
 use anyhow::Context;
 use indexmap::{IndexMap, IndexSet};
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, refs::PositionRef},
     clients::{DEFAULT_POSITION_RECONCILIATION_TOLERANCE, ExecutionClient},
     clock::Clock,
     config::ConfigResult,
@@ -3077,63 +3077,69 @@ impl ExecutionManager {
     #[must_use]
     pub fn position_contains_fill_report(&self, report: &FillReport) -> bool {
         let cache = self.cache();
-        let client_order_id = report
-            .client_order_id
-            .or_else(|| cache.client_order_id(&report.venue_order_id).copied());
-
-        let flip = match client_order_id
-            .map(|id| cache.hedging_flip_position_ids(id))
-            .transpose()
-        {
-            Ok(flip) => flip.flatten(),
-            Err(_) => return false,
-        };
-
-        if let (Some(ids), Some(id)) = (flip, report.venue_position_id)
-            && !ids.contains(&id)
-        {
-            return false;
-        }
-
-        let positions = cache.positions(
+        let positions = cache.positions_refs(
             None,
             Some(&report.instrument_id),
             None,
             Some(&report.account_id),
             None,
         );
-        let mut matched = false;
-        let mut quantity = Quantity::zero(report.last_qty.precision);
-        let mut commission = Money::zero(report.commission.currency);
+        position_fill_report_matches(
+            &cache,
+            report,
+            &positions,
+            |id| cache.hedging_flip_position_ids(id),
+            None,
+        )
+    }
 
-        for position in positions {
-            if flip.map_or_else(
-                || report.venue_position_id.is_some_and(|id| position.id != id),
-                |ids| !ids.contains(&position.id),
-            ) {
-                continue;
-            }
+    /// Counts leading reports already matched by the current immutable cache snapshot.
+    ///
+    /// Stops at the first mismatch or account/instrument change. Reuse ends before dispatch.
+    #[cfg(feature = "node")]
+    pub(crate) fn position_fill_reports_contained_prefix(&self, reports: &[FillReport]) -> usize {
+        let Some(first) = reports.first() else {
+            return 0;
+        };
 
-            let Some((position_quantity, position_commission)) =
-                position_fill_report_totals(&position, report, client_order_id, flip.is_some())
-            else {
-                return false;
-            };
-
-            let Some(next_quantity) = quantity.checked_add(position_quantity) else {
-                return false;
-            };
-
-            let Some(next_commission) = commission.checked_add(position_commission) else {
-                return false;
-            };
-
-            matched |= position_quantity.non_zero();
-            quantity = next_quantity;
-            commission = next_commission;
+        if reports.len() == 1 {
+            return usize::from(self.position_contains_fill_report(first));
         }
 
-        matched && quantity == report.last_qty && commission == report.commission
+        let cache = self.cache();
+        let positions = cache.positions_refs(
+            None,
+            Some(&first.instrument_id),
+            None,
+            Some(&first.account_id),
+            None,
+        );
+        let mut replay = IndexMap::new();
+
+        // Reuse is confined to this immutable borrow and ends before any fill dispatch
+        let mut flips = IndexMap::new();
+        reports
+            .iter()
+            .take_while(|report| {
+                report.instrument_id == first.instrument_id
+                    && report.account_id == first.account_id
+                    && position_fill_report_matches(
+                        &cache,
+                        report,
+                        &positions,
+                        |id| {
+                            if let Some(flip) = flips.get(&id) {
+                                return Ok(*flip);
+                            }
+
+                            let flip = cache.hedging_flip_position_ids(id)?;
+                            flips.insert(id, flip);
+                            Ok(flip)
+                        },
+                        Some(&mut replay),
+                    )
+            })
+            .count()
     }
 
     /// Reconciles cached positions against venue position reports.
@@ -5287,31 +5293,120 @@ impl ExecutionManager {
     }
 }
 
-fn position_fill_report_totals(
+fn position_fill_report_matches(
+    cache: &Cache,
+    report: &FillReport,
+    positions: &[PositionRef<'_>],
+    mut flip_for_order: impl FnMut(ClientOrderId) -> anyhow::Result<Option<[PositionId; 2]>>,
+    mut replay: Option<&mut IndexMap<PositionId, IndexMap<TradeId, Vec<usize>>>>,
+) -> bool {
+    let client_order_id = report
+        .client_order_id
+        .or_else(|| cache.client_order_id(&report.venue_order_id).copied());
+
+    let flip = match client_order_id.map(&mut flip_for_order).transpose() {
+        Ok(flip) => flip.flatten(),
+        Err(_) => return false,
+    };
+
+    if let (Some(ids), Some(id)) = (flip, report.venue_position_id)
+        && !ids.contains(&id)
+    {
+        return false;
+    }
+
+    let mut matched = false;
+    let mut quantity = Quantity::zero(report.last_qty.precision);
+    let mut commission = Money::zero(report.commission.currency);
+
+    for position in positions {
+        if flip.map_or_else(
+            || report.venue_position_id.is_some_and(|id| position.id != id),
+            |ids| !ids.contains(&position.id),
+        ) {
+            continue;
+        }
+
+        let totals = if let Some(replay) = replay.as_deref_mut() {
+            let indexes = replay
+                .entry(position.id)
+                .or_insert_with(|| position_fill_report_indexes(position))
+                .get(&report.trade_id);
+            position_fill_report_totals(
+                position,
+                report,
+                client_order_id,
+                flip.is_some(),
+                indexes
+                    .into_iter()
+                    .flatten()
+                    .map(|&index| &position.replay_events[index]),
+            )
+        } else {
+            position_fill_report_totals(
+                position,
+                report,
+                client_order_id,
+                flip.is_some(),
+                position.replay_events.iter(),
+            )
+        };
+
+        let Some((position_quantity, position_commission)) = totals else {
+            return false;
+        };
+
+        let Some(next_quantity) = quantity.checked_add(position_quantity) else {
+            return false;
+        };
+
+        let Some(next_commission) = commission.checked_add(position_commission) else {
+            return false;
+        };
+
+        matched |= position_quantity.non_zero();
+        quantity = next_quantity;
+        commission = next_commission;
+    }
+
+    matched && quantity == report.last_qty && commission == report.commission
+}
+
+fn position_fill_report_indexes(position: &Position) -> IndexMap<TradeId, Vec<usize>> {
+    let mut replay = IndexMap::<_, Vec<usize>>::new();
+
+    for (index, event) in position.replay_events.iter().enumerate() {
+        if let PositionReplayEvent::Filled(fill) = event {
+            replay.entry(fill.trade_id).or_default().push(index);
+        }
+    }
+
+    replay
+}
+
+fn position_fill_report_totals<'a>(
     position: &Position,
     report: &FillReport,
     client_order_id: Option<ClientOrderId>,
     apply_voids: bool,
+    replay: impl Iterator<Item = &'a PositionReplayEvent>,
 ) -> Option<(Quantity, Money)> {
-    let mut fills = position
-        .replay_events
-        .iter()
-        .filter_map(|event| match event {
-            PositionReplayEvent::Filled(fill)
-                if fill.position_id == Some(position.id)
-                    && fill.account_id == report.account_id
-                    && fill.instrument_id == report.instrument_id
-                    && fill.venue_order_id == report.venue_order_id
-                    && fill.trade_id == report.trade_id
-                    && fill.order_side == report.order_side
-                    && fill.last_px == report.last_px
-                    && fill.liquidity_side == report.liquidity_side
-                    && client_order_id.is_none_or(|id| fill.client_order_id == id) =>
-            {
-                Some(fill)
-            }
-            _ => None,
-        });
+    let mut fills = replay.filter_map(|event| match event {
+        PositionReplayEvent::Filled(fill)
+            if fill.position_id == Some(position.id)
+                && fill.account_id == report.account_id
+                && fill.instrument_id == report.instrument_id
+                && fill.venue_order_id == report.venue_order_id
+                && fill.trade_id == report.trade_id
+                && fill.order_side == report.order_side
+                && fill.last_px == report.last_px
+                && fill.liquidity_side == report.liquidity_side
+                && client_order_id.is_none_or(|id| fill.client_order_id == id) =>
+        {
+            Some(fill)
+        }
+        _ => None,
+    });
 
     let (mut position_quantity, mut position_commission) = fills.try_fold(
         (
@@ -7671,8 +7766,609 @@ mod tests {
 
     #[cfg(feature = "node")]
     mod node {
+        use nautilus_model::events::order::spec::OrderFillVoidedSpec;
+
         use super::*;
         use crate::execution::client::LiveExecutionClient;
+
+        #[rstest]
+        fn test_position_fill_reports_contained_prefix_matches_full_report(
+            #[values(
+                "account",
+                "instrument",
+                "venue_order",
+                "client_order",
+                "trade",
+                "position",
+                "side",
+                "price",
+                "liquidity",
+                "quantity",
+                "commission",
+                "currency"
+            )]
+            field: &str,
+        ) {
+            let (manager, _, report) = position_history_fixture();
+            let mut changed = report.clone();
+            match field {
+                "account" => changed.account_id = AccountId::from("OTHER-002"),
+                "instrument" => changed.instrument_id = InstrumentId::from("OTHER.SIM"),
+                "venue_order" => changed.venue_order_id = VenueOrderId::from("V-OTHER"),
+                "client_order" => changed.client_order_id = Some(ClientOrderId::from("O-OTHER")),
+                "trade" => changed.trade_id = TradeId::from("T-OTHER"),
+                "position" => changed.venue_position_id = Some(PositionId::from("P-OTHER")),
+                "side" => changed.order_side = OrderSide::Sell,
+                "price" => changed.last_px = Price::from("3101.00"),
+                "liquidity" => changed.liquidity_side = LiquiditySide::Maker,
+                "quantity" => changed.last_qty = Quantity::from("3.000"),
+                "commission" => changed.commission = Money::from("0.17 USDT"),
+                "currency" => changed.commission = Money::from("0.13 USD"),
+                _ => unreachable!(),
+            }
+
+            let reports = [report.clone(), changed, report.clone()];
+            let scalar: Vec<_> = reports
+                .iter()
+                .map(|report| manager.position_contains_fill_report(report))
+                .collect();
+            let prefix = manager.position_fill_reports_contained_prefix(&reports);
+            let repeated =
+                manager.position_fill_reports_contained_prefix(&[report.clone(), report]);
+
+            assert_eq!(scalar, vec![true, false, true]);
+            assert_eq!(prefix, 1);
+            assert_eq!(repeated, 2);
+            assert_eq!(manager.position_fill_reports_contained_prefix(&[]), 0);
+        }
+
+        #[rstest]
+        fn test_position_fill_reports_contained_prefix_indexes_only_routed_positions(
+            #[values(false, true)] closed: bool,
+            #[values(false, true)] missing: bool,
+        ) {
+            let (manager, cache, mut report) = position_history_fixture();
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let position = insert_open_position(
+                &cache,
+                &instrument,
+                PositionId::from("P-UNRELATED"),
+                OrderSide::Buy,
+                "4.000",
+                "3101.00",
+            );
+
+            if closed {
+                let position =
+                    close_long_position(position, &instrument, TradeId::from("T-UNRELATED-CLOSE"));
+                cache.borrow_mut().update_position(&position).unwrap();
+            }
+
+            let trade_id = report.trade_id;
+            if missing {
+                report.trade_id = TradeId::from("T-MISSING");
+            }
+
+            let prefix =
+                manager.position_fill_reports_contained_prefix(&[report.clone(), report.clone()]);
+            let cache = cache.borrow();
+            let positions = cache.positions_refs(
+                None,
+                Some(&report.instrument_id),
+                None,
+                Some(&report.account_id),
+                None,
+            );
+            let mut replay = IndexMap::new();
+            let contained = position_fill_report_matches(
+                &cache,
+                &report,
+                &positions,
+                |id| cache.hedging_flip_position_ids(id),
+                Some(&mut replay),
+            );
+
+            assert_eq!(positions.len(), 2);
+            assert_eq!(contained, !missing);
+            assert_eq!(prefix, if missing { 0 } else { 2 });
+            assert_eq!(
+                replay,
+                IndexMap::from([(
+                    report.venue_position_id.unwrap(),
+                    IndexMap::from([(trade_id, vec![0])]),
+                )]),
+            );
+        }
+
+        #[rstest]
+        fn test_position_fill_reports_contained_prefix_resolves_client_order() {
+            let (manager, cache, mut report) = position_history_fixture();
+            let position_id = report.venue_position_id.unwrap();
+            cache
+                .borrow_mut()
+                .add_venue_order_id(
+                    &report.client_order_id.unwrap(),
+                    &report.venue_order_id,
+                    false,
+                )
+                .unwrap();
+            report.client_order_id = None;
+            let before =
+                manager.position_fill_reports_contained_prefix(&[report.clone(), report.clone()]);
+            {
+                let mut cache = cache.borrow_mut();
+                let mut position = cache.position_mut(&position_id).unwrap();
+
+                let PositionReplayEvent::Filled(fill) = &mut position.replay_events[0] else {
+                    unreachable!()
+                };
+
+                fill.client_order_id = ClientOrderId::from("O-OTHER");
+            }
+
+            let after = manager.position_fill_reports_contained_prefix(&[report.clone(), report]);
+
+            assert_eq!(before, 2);
+            assert_eq!(after, 0);
+        }
+
+        #[rstest]
+        fn test_position_fill_reports_contained_prefix_retains_reordered_fragments(
+            #[values(false, true)] reverse: bool,
+        ) {
+            let (manager, cache, mut report) = position_history_fixture();
+            let position_id = report.venue_position_id.unwrap();
+            {
+                let mut cache = cache.borrow_mut();
+                let mut position = cache.position_mut(&position_id).unwrap();
+
+                let PositionReplayEvent::Filled(mut fragment) = position.replay_events[0].clone()
+                else {
+                    unreachable!()
+                };
+
+                fragment.last_qty = Quantity::from("3.000");
+                fragment.commission = Some(Money::from("0.29 USDT"));
+                let mut unrelated = fragment.clone();
+                unrelated.trade_id = TradeId::from("T-UNRELATED");
+                position
+                    .replay_events
+                    .push(PositionReplayEvent::Filled(unrelated));
+                position
+                    .replay_events
+                    .push(PositionReplayEvent::Filled(fragment));
+
+                if reverse {
+                    position.replay_events.reverse();
+                }
+            }
+
+            let original =
+                manager.position_fill_reports_contained_prefix(&[report.clone(), report.clone()]);
+            report.last_qty = Quantity::from("5.000");
+            report.commission = Money::from("0.42 USDT");
+            let combined =
+                manager.position_fill_reports_contained_prefix(&[report.clone(), report.clone()]);
+            let scalar = manager.position_contains_fill_report(&report);
+
+            assert_eq!(original, 0);
+            assert_eq!(combined, 2);
+            assert!(scalar);
+        }
+
+        #[rstest]
+        fn test_position_fill_reports_contained_prefix_rechecks_after_applied_fill() {
+            let (manager, cache, first) = position_history_fixture();
+            let position_id = first.venue_position_id.unwrap();
+            let mut second = first.clone();
+            second.trade_id = TradeId::from("T-NEXT");
+            second.last_qty = Quantity::from("1.500");
+            second.last_px = Price::from("3110.00");
+            second.commission = Money::from("0.29 USDT");
+            let reports = [first, second.clone()];
+            let before = manager.position_fill_reports_contained_prefix(&reports);
+            {
+                let mut cache = cache.borrow_mut();
+                let mut position = cache.position_mut(&position_id).unwrap();
+
+                let PositionReplayEvent::Filled(mut fill) = position.replay_events[0].clone()
+                else {
+                    unreachable!()
+                };
+
+                fill.trade_id = second.trade_id;
+                fill.last_qty = second.last_qty;
+                fill.last_px = second.last_px;
+                fill.commission = Some(second.commission);
+                fill.event_id = UUID4::new();
+                position.apply(&fill);
+            }
+
+            let after = manager.position_fill_reports_contained_prefix(&reports);
+            let cache = cache.borrow();
+            let position = cache.position_ref(&position_id).unwrap();
+
+            assert_eq!(before, 1);
+            assert_eq!(after, 2);
+            assert_eq!(position.quantity, Quantity::from("3.500"));
+            assert_eq!(position.commissions(), vec![Money::from("0.42 USDT")]);
+            assert_eq!(position.replay_events.len(), 2);
+            assert_eq!(
+                manager.position_activity_revision(&(second.instrument_id, second.account_id)),
+                0
+            );
+        }
+
+        #[rstest]
+        fn test_position_fill_reports_contained_prefix_rebuilds_after_history_changes(
+            #[values("missing_commission", "currency", "payload", "removal")] mutation: &str,
+        ) {
+            let (manager, cache, report) = position_history_fixture();
+            let reports = [report.clone(), report.clone()];
+            let before = manager.position_fill_reports_contained_prefix(&reports);
+            let revision =
+                manager.position_activity_revision(&(report.instrument_id, report.account_id));
+            {
+                let mut cache = cache.borrow_mut();
+
+                if mutation == "removal" {
+                    let position_id = report.venue_position_id.unwrap();
+                    {
+                        let mut position = cache.position_mut(&position_id).unwrap();
+
+                        let PositionReplayEvent::Filled(mut closing) =
+                            position.replay_events[0].clone()
+                        else {
+                            unreachable!()
+                        };
+
+                        closing.trade_id = TradeId::from("T-HISTORY-CLOSE");
+                        closing.order_side = OrderSide::Sell;
+                        closing.event_id = UUID4::new();
+                        position.apply(&closing);
+                    }
+
+                    cache.purge_position(position_id);
+                } else {
+                    let mut position = cache
+                        .position_mut(&report.venue_position_id.unwrap())
+                        .unwrap();
+
+                    let PositionReplayEvent::Filled(fill) = &mut position.replay_events[0] else {
+                        unreachable!()
+                    };
+
+                    match mutation {
+                        "missing_commission" => fill.commission = None,
+                        "currency" => fill.commission = Some(Money::from("0.13 USD")),
+                        "payload" => fill.last_px = Price::from("3101.00"),
+                        _ => unreachable!(),
+                    }
+                }
+            }
+
+            let after = manager.position_fill_reports_contained_prefix(&reports);
+            let revision_after =
+                manager.position_activity_revision(&(report.instrument_id, report.account_id));
+
+            assert_eq!(before, 2);
+            assert_eq!(after, 0);
+            assert_eq!(revision, 0);
+            assert_eq!(revision_after, 0);
+        }
+
+        #[rstest]
+        fn test_position_fill_reports_contained_prefix_preserves_virtual_flip_proof(
+            #[values(
+                "unchanged",
+                "missing_source",
+                "conflicting_fragment",
+                "opening_void",
+                "closing_void"
+            )]
+            change: &str,
+        ) {
+            let (manager, cache, first) = position_history_fixture();
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let source_id = first.venue_position_id.unwrap();
+            let destination_id = PositionId::from("P-HISTORY-DESTINATION");
+            let mut order = OrderTestBuilder::new(OrderType::Market)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from("O-HISTORY-FLIP"))
+                .side(OrderSide::Sell)
+                .quantity(Quantity::from("5.000"))
+                .build();
+            order
+                .apply(TestOrderEventStubs::submitted(&order, first.account_id))
+                .unwrap();
+            order
+                .apply(TestOrderEventStubs::accepted(
+                    &order,
+                    first.account_id,
+                    VenueOrderId::from("V-HISTORY-FLIP"),
+                ))
+                .unwrap();
+            let event = TestOrderEventStubs::filled(
+                &order,
+                &instrument,
+                Some(TradeId::from("T-HISTORY-FLIP")),
+                Some(source_id),
+                Some(Price::from("3100.00")),
+                Some(Quantity::from("3.000")),
+                Some(LiquiditySide::Taker),
+                Some(Money::from("0.75 USDT")),
+                None,
+                Some(first.account_id),
+            );
+
+            let OrderEventAny::Filled(fill) = event.clone() else {
+                unreachable!()
+            };
+
+            order.apply(event).unwrap();
+            let (closing, opening) = fill
+                .split_for_position_flip(
+                    Quantity::from("2.000"),
+                    Some(destination_id),
+                    UUID4::new(),
+                )
+                .unwrap();
+            {
+                let mut cache = cache.borrow_mut();
+                cache.position_mut(&source_id).unwrap().apply(&closing);
+                cache
+                    .add_order(order, Some(source_id), None, false)
+                    .unwrap();
+                cache
+                    .add_position(&Position::new(&instrument, opening), OmsType::Hedging)
+                    .unwrap();
+            }
+
+            let mut report = FillReport::new(
+                fill.account_id,
+                fill.instrument_id,
+                fill.venue_order_id,
+                fill.trade_id,
+                fill.order_side,
+                fill.last_qty,
+                fill.last_px,
+                fill.commission.unwrap(),
+                fill.liquidity_side,
+                Some(fill.client_order_id),
+                Some(source_id),
+                fill.ts_event,
+                fill.ts_init,
+                None,
+            );
+            let before =
+                manager.position_fill_reports_contained_prefix(&[report.clone(), report.clone()]);
+            {
+                let mut cache = cache.borrow_mut();
+
+                match change {
+                    "unchanged" => {}
+                    "missing_source" => cache.purge_position(source_id),
+                    "conflicting_fragment" => {
+                        let mut position = cache.position_mut(&destination_id).unwrap();
+
+                        let PositionReplayEvent::Filled(fragment) = &mut position.replay_events[0]
+                        else {
+                            unreachable!()
+                        };
+
+                        fragment.last_px = Price::from("3101.00");
+                    }
+                    "opening_void" | "closing_void" => void_position_history_flip(
+                        &mut cache,
+                        &fill,
+                        source_id,
+                        destination_id,
+                        change == "closing_void",
+                    ),
+                    _ => unreachable!(),
+                }
+            }
+
+            let original_after =
+                manager.position_fill_reports_contained_prefix(&[report.clone(), report.clone()]);
+            if change == "missing_source" {
+                report.venue_position_id = None;
+                report.last_qty = Quantity::from("1.000");
+                report.commission = Money::from("0.25 USDT");
+            } else if change == "conflicting_fragment" {
+                report.last_qty = Quantity::from("2.000");
+                report.commission = Money::from("0.50 USDT");
+            } else if change == "opening_void" {
+                report.last_qty = Quantity::from("2.500");
+                report.commission = Money::from("0.625 USDT");
+            } else if change == "closing_void" {
+                report.last_qty = Quantity::from("1.500");
+                report.commission = Money::from("0.375 USDT");
+            }
+
+            let after =
+                manager.position_fill_reports_contained_prefix(&[report.clone(), report.clone()]);
+            let scalar = manager.position_contains_fill_report(&report);
+            let mixed = manager.position_fill_reports_contained_prefix(&[
+                first,
+                report.clone(),
+                report.clone(),
+            ]);
+            let expected = !matches!(change, "missing_source" | "conflicting_fragment");
+
+            assert_eq!(before, 2);
+            assert_eq!(original_after, if change == "unchanged" { 2 } else { 0 });
+            assert_eq!(after, if expected { 2 } else { 0 });
+            assert_eq!(scalar, expected);
+
+            let expected_mixed = match change {
+                "missing_source" => 0,
+                "conflicting_fragment" => 1,
+                _ => 3,
+            };
+
+            assert_eq!(mixed, expected_mixed);
+            assert_eq!(
+                manager.position_activity_revision(&(report.instrument_id, report.account_id)),
+                0
+            );
+
+            if expected {
+                let cache = cache.borrow();
+                let source = cache.position_ref(&source_id).unwrap();
+                let destination = cache.position_ref(&destination_id).unwrap();
+                assert_eq!(
+                    source.quantity,
+                    Quantity::from(if change == "closing_void" {
+                        "0.500"
+                    } else {
+                        "0.000"
+                    })
+                );
+                assert_eq!(
+                    destination.quantity,
+                    Quantity::from(match change {
+                        "closing_void" => "0.000",
+                        "opening_void" => "0.500",
+                        _ => "1.000",
+                    })
+                );
+                assert_eq!(
+                    source.commissions(),
+                    vec![Money::from(if change == "closing_void" {
+                        "0.505 USDT"
+                    } else {
+                        "0.63 USDT"
+                    })]
+                );
+
+                let destination_commissions = if change == "closing_void" {
+                    Vec::new()
+                } else {
+                    vec![Money::from(if change == "opening_void" {
+                        "0.125 USDT"
+                    } else {
+                        "0.25 USDT"
+                    })]
+                };
+
+                assert_eq!(destination.commissions(), destination_commissions);
+            }
+        }
+
+        fn void_position_history_flip(
+            cache: &mut Cache,
+            fill: &OrderFilled,
+            source_id: PositionId,
+            destination_id: PositionId,
+            closing_void: bool,
+        ) {
+            let correction = OrderFillVoidedSpec::builder()
+                .trader_id(fill.trader_id)
+                .strategy_id(fill.strategy_id)
+                .instrument_id(fill.instrument_id)
+                .client_order_id(fill.client_order_id)
+                .venue_order_id(fill.venue_order_id)
+                .account_id(fill.account_id)
+                .trade_id(fill.trade_id)
+                .voided_qty(Quantity::from(if closing_void { "1.500" } else { "0.500" }))
+                .order_side(fill.order_side)
+                .order_type(fill.order_type)
+                .last_px(fill.last_px)
+                .currency(fill.currency)
+                .liquidity_side(fill.liquidity_side)
+                .position_id(source_id)
+                .commission_voided(Money::from(if closing_void {
+                    "0.375 USDT"
+                } else {
+                    "0.125 USDT"
+                }))
+                .is_reopened(true)
+                .build();
+
+            cache
+                .position_mut(&destination_id)
+                .unwrap()
+                .apply_fill_void(
+                    correction.clone(),
+                    Quantity::from(if closing_void { "1.000" } else { "0.500" }),
+                    Some(Money::from(if closing_void {
+                        "0.25 USDT"
+                    } else {
+                        "0.125 USDT"
+                    })),
+                )
+                .unwrap();
+
+            if closing_void {
+                cache
+                    .position_mut(&source_id)
+                    .unwrap()
+                    .apply_fill_void(
+                        correction,
+                        Quantity::from("0.500"),
+                        Some(Money::from("0.125 USDT")),
+                    )
+                    .unwrap();
+            }
+        }
+
+        fn position_history_fixture() -> (ExecutionManager, Rc<RefCell<Cache>>, FillReport) {
+            let cache = Rc::new(RefCell::new(Cache::default()));
+            let manager = ExecutionManager::new(
+                Rc::new(RefCell::new(VirtualClock::new())),
+                cache.clone(),
+                ExecutionManagerConfig::default(),
+            )
+            .unwrap();
+            let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+            let order = OrderTestBuilder::new(OrderType::Market)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from("O-HISTORY"))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("10.000"))
+                .build();
+            let position_id = PositionId::from("P-HISTORY");
+            let event = TestOrderEventStubs::filled(
+                &order,
+                &instrument,
+                Some(TradeId::from("T-HISTORY")),
+                Some(position_id),
+                Some(Price::from("3100.00")),
+                Some(Quantity::from("2.000")),
+                Some(LiquiditySide::Taker),
+                Some(Money::from("0.13 USDT")),
+                None,
+                Some(AccountId::from("TEST-001")),
+            );
+
+            let OrderEventAny::Filled(fill) = event else {
+                unreachable!()
+            };
+
+            let report = FillReport::new(
+                fill.account_id,
+                fill.instrument_id,
+                fill.venue_order_id,
+                fill.trade_id,
+                fill.order_side,
+                fill.last_qty,
+                fill.last_px,
+                fill.commission.unwrap(),
+                fill.liquidity_side,
+                Some(fill.client_order_id),
+                Some(position_id),
+                fill.ts_event,
+                fill.ts_init,
+                None,
+            );
+            let position = Position::new(&instrument, fill);
+            cache
+                .borrow_mut()
+                .add_position(&position, OmsType::Hedging)
+                .unwrap();
+            (manager, cache, report)
+        }
 
         #[rstest]
         fn test_plan_position_fill_reports_uses_configured_lookback() {
