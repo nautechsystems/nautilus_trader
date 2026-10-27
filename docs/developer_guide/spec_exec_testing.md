@@ -1224,6 +1224,9 @@ ExecTesterConfig::builder()
 - This is the required path for venues that do not support native trigger-order replace.
 - After the new stop is accepted, restart or force reconciliation and verify exactly one
   current trigger order remains.
+- ExecTester keeps replacements pending after reconciliation-generated cancellations and logs an error.
+  Mark the case inconclusive, then check and cancel any remaining test orders at the venue;
+  the original stop may still be working.
 
 **Python config**:
 

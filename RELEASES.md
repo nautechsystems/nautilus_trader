@@ -166,6 +166,7 @@ Released on TBD (UTC).
 - Fixed non-ASCII signal topics to use Unicode titlecase mappings
 - Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
 - Fixed `RetryManager` skipping minimum retry delays after operation timeouts (#5406), thanks @imbolc
+- Fixed `ExecTester` submitting replacement stop orders before cancellation acknowledgment
 - Fixed Architect AX handler stalls during book writes and uncanceled queued book replacements
 - Fixed Architect AX order tracking across uncertain submits, replacements, and simulated market order fills
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
