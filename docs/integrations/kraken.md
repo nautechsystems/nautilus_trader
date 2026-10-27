@@ -861,13 +861,15 @@ second, opposite position. It does not close the cached one. Net exposure reache
 and its realized PnL remain.
 
 Until this is addressed, reconcile a margin position closed during downtime manually. Cash mode does not avoid
-it. With default keys it declares no bulk position coverage either, so the same applies. With
-`use_spot_position_reports=True`, a fully sold holding has a zero balance, so the wallet read returns no
-report for it, and startup projects its closing fill as order-only all the same, since that projection keys on
-the report rather than on coverage. A periodic position check, when enabled, cannot apply that fill either,
-because the order already holds its trade ID. It falls back to a synthetic order at the position's average
-entry price, attributed as above, so it opens an offsetting `EXTERNAL` position under the same conditions.
-Either way the closing PnL and fees are not recorded.
+it. With `use_spot_position_reports=False`, the default, or for an instrument outside
+`spot_positions_quote_currency`, it declares no bulk position coverage either, so the same applies. For a
+covered instrument, a fully sold holding has a zero balance, so the wallet read returns no report for it, and
+startup projects its closing fill as order-only all the same, since that projection keys on the report rather
+than on coverage. A periodic position check, when enabled, cannot apply that fill either, because the order
+already holds its trade ID. It logs the fill as not applied, then, with `generate_missing_orders` enabled (the
+default), falls back to a synthetic order at the position's average entry price, attributed as above, so it
+opens an offsetting `EXTERNAL` position under the same conditions. Either way the closing PnL and fees are not
+recorded.
 :::
 
 ### Futures reconciliation
