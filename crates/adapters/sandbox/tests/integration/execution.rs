@@ -24,14 +24,18 @@ use std::{
 };
 
 use nautilus_common::{
-    cache::Cache,
-    clients::ExecutionClient,
+    cache::{Cache, OrderBookSource},
+    clients::{DataClient, ExecutionClient},
     clock::{Clock, VirtualClock},
     config::ConfigError,
     factories::SimulatedExecutionClientFactory,
     live::set_exec_event_sender,
     messages::{
         ExecutionEvent,
+        data::{
+            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand, UnsubscribeBookDeltas,
+            UnsubscribeBookDepth,
+        },
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
             SubmitOrder, SubmitOrderList, TradingCommand,
@@ -39,7 +43,9 @@ use nautilus_common::{
     },
     msgbus::{
         self, MessageBus, MessagingSwitchboard, TypedHandler,
-        stubs::get_typed_into_message_saving_handler, typed_handler::TypedIntoHandler,
+        stubs::{get_typed_into_message_saving_handler, get_typed_message_saving_handler},
+        switchboard,
+        typed_handler::TypedIntoHandler,
     },
     runner::{
         SyncTradingCommandSender, TimeEventMessage, TimeEventSender, drain_trading_cmd_queue,
@@ -47,7 +53,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
-use nautilus_data::engine::DataEngine;
+use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
 #[cfg(feature = "python")]
 use nautilus_execution::python::{
     fee::{PythonFeeModel, fee_model_any_to_pyobject},
@@ -71,8 +77,8 @@ use nautilus_model::{
         margin_model::{LeveragedMarginModel, MarginModel, MarginModelAny, StandardMarginModel},
     },
     data::{
-        Bar, BarType, BookOrder, Data, InstrumentClose, InstrumentStatus, OrderBookDepth,
-        QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, Data, InstrumentClose, InstrumentStatus, OrderBookDeltas,
+        OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType, LiquiditySide,
@@ -91,6 +97,7 @@ use nautilus_model::{
         CryptoPerpetual, Instrument, InstrumentAny,
         stubs::{binary_option, crypto_perpetual_ethusdt, futures_contract_es},
     },
+    orderbook::OrderBook,
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     types::{Currency, Money, Price, Quantity},
@@ -10776,39 +10783,6 @@ model = RecordedLatency()
     })
 }
 
-fn book_depth(
-    instrument_id: InstrumentId,
-    bids: &[(&str, &str)],
-    asks: &[(&str, &str)],
-) -> OrderBookDepth {
-    let orders = |levels: &[(&str, &str)], side| {
-        levels
-            .iter()
-            .map(|(price, size)| {
-                BookOrder::new(side, Price::from(*price), Quantity::from(*size), 0)
-            })
-            .collect::<Vec<_>>()
-    };
-    OrderBookDepth::new(
-        instrument_id,
-        orders(bids, OrderSide::Buy),
-        orders(asks, OrderSide::Sell),
-        vec![0; bids.len()],
-        vec![0; asks.len()],
-        RecordFlag::F_SNAPSHOT as u8,
-        0,
-        1.into(),
-        1.into(),
-    )
-}
-
-fn publish_depth(depth: &OrderBookDepth) {
-    msgbus::publish_depth(
-        nautilus_common::msgbus::switchboard::get_book_depth_topic(depth.instrument_id),
-        depth,
-    );
-}
-
 #[rstest]
 #[case::l1(BookType::L1_MBP, 1)]
 #[case::l2(BookType::L2_MBP, 12)]
@@ -10852,7 +10826,7 @@ fn test_book_depth_callback_order_uses_current_snapshot(
             );
         })
     };
-    let topic = nautilus_common::msgbus::switchboard::get_book_depth_topic(instrument.id());
+    let topic = switchboard::get_book_depth_topic(instrument.id());
     msgbus::subscribe_book_depth(topic.into(), handler.clone(), None);
 
     publish_depth(&depth);
@@ -10973,7 +10947,7 @@ fn test_book_depth_isolates_instruments_and_venues(trader_id: TraderId, instrume
 
     // Use a matching topic with a foreign payload to also exercise the handler's venue guard
     msgbus::publish_depth(
-        nautilus_common::msgbus::switchboard::get_book_depth_topic(instrument.id()),
+        switchboard::get_book_depth_topic(instrument.id()),
         &book_depth(foreign.id(), &[], &[("1000.00", "1.000")]),
     );
     assert!(harness.settle().is_empty());
@@ -11002,7 +10976,7 @@ fn test_book_depth_handler_stop_restart(
         .unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
     set_exec_event_sender(tx);
-    let topic = nautilus_common::msgbus::switchboard::get_book_depth_topic(instrument.id());
+    let topic = switchboard::get_book_depth_topic(instrument.id());
     context.client.start().unwrap();
     context.client.start().unwrap();
     assert_eq!(msgbus::subscriber_count_depth(topic), 1);
@@ -11024,7 +10998,7 @@ fn test_book_depth_handler_stop_restart(
     msgbus::publish_depth(topic, &foreign_depth);
     publish_depth(&book_depth(InstrumentId::from("UNKNOWN.BINANCE"), &[], &[]));
     msgbus::publish_depth(
-        nautilus_common::msgbus::switchboard::get_pipeline_book_depth_topic(instrument.id()),
+        switchboard::get_pipeline_book_depth_topic(instrument.id()),
         &book_depth(instrument.id(), &[], &[("1000.00", "1.000")]),
     );
     assert_eq!(context.client.matching_engine_count(), 0);
@@ -11293,4 +11267,593 @@ fn test_book_depth_orders_share_available_liquidity(
             (Price::from("1000.00"), Quantity::from("0.250")),
         ]
     );
+}
+
+#[rstest]
+#[case::managed_deltas(false)]
+#[case::managed_depth(true)]
+fn test_book_source_filters_unmanaged_updates(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] managed_depth: bool,
+    #[values(false, true)] unmanaged_first: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut data_engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    data_engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            managed_depth,
+            true,
+        ))
+        .unwrap();
+    data_engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            !managed_depth,
+            false,
+        ))
+        .unwrap();
+    let (depth_handler, depths) = get_typed_message_saving_handler::<OrderBookDepth>(None);
+    let (deltas_handler, deltas) = get_typed_message_saving_handler::<OrderBookDeltas>(None);
+    let depth_topic = switchboard::get_book_depth_topic(instrument.id());
+    let deltas_topic = switchboard::get_book_deltas_topic(instrument.id());
+    msgbus::subscribe_book_depth(depth_topic.into(), depth_handler.clone(), None);
+    msgbus::subscribe_book_deltas(deltas_topic.into(), deltas_handler.clone(), None);
+    let full = book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[
+            ("1000.00", "1.000"),
+            ("1001.00", "1.000"),
+            ("1002.00", "1.000"),
+        ],
+    );
+    let shallow = book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[("1000.00", "1.000")],
+    );
+    let (selected, unmanaged) = if managed_depth {
+        (&shallow, &full)
+    } else {
+        (&full, &shallow)
+    };
+
+    if unmanaged_first {
+        data_engine.process_data(book_source_data(unmanaged, !managed_depth));
+        let early =
+            submit_through_engine(&harness, trader_id, &instrument, "SOURCE-EARLY", "1002.00");
+        assert!(
+            !harness
+                .settle()
+                .iter()
+                .any(|e| matches!(e, OrderEventAny::Filled(_)))
+        );
+        assert_eq!(cached_status(&harness.cache, &early), OrderStatus::Accepted);
+    }
+
+    data_engine.process_data(book_source_data(selected, managed_depth));
+    harness.settle();
+    data_engine.process_data(book_source_data(unmanaged, !managed_depth));
+    harness.settle();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("SOURCE-PROBE".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1002.00"))
+        .quantity(Quantity::from("3.000"))
+        .build();
+    let order_id = order.client_order_id();
+    send_through_engine(&harness, trader_id, order);
+    let fills: Vec<_> = harness
+        .settle()
+        .into_iter()
+        .filter_map(|e| match e {
+            OrderEventAny::Filled(fill) if fill.client_order_id == order_id => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+    let expected: Vec<_> = selected.asks.iter().map(|o| (o.price, o.size)).collect();
+    assert_eq!(fills, expected);
+    let cache = harness.cache.borrow();
+    let book = cache.order_book(&instrument.id()).unwrap();
+    let mut expected_book = OrderBook::new(instrument.id(), BookType::L2_MBP);
+    expected_book.apply_depth(selected).unwrap();
+    assert_eq!(book.bids_as_map(None), expected_book.bids_as_map(None));
+    assert_eq!(book.asks_as_map(None), expected_book.asks_as_map(None));
+    let unmanaged_count = 1 + usize::from(unmanaged_first);
+    assert_eq!(
+        depths.get_messages().len(),
+        if managed_depth { 1 } else { unmanaged_count }
+    );
+    assert_eq!(
+        deltas.get_messages().len(),
+        if managed_depth { unmanaged_count } else { 1 }
+    );
+    assert_eq!(
+        harness
+            .published
+            .borrow()
+            .iter()
+            .filter(|e| matches!(e, OrderEventAny::Filled(f) if f.client_order_id == order_id))
+            .count(),
+        expected.len(),
+    );
+    msgbus::unsubscribe_book_depth(depth_topic.into(), &depth_handler);
+    msgbus::unsubscribe_book_deltas(deltas_topic.into(), &deltas_handler);
+}
+
+#[rstest]
+#[case::managed_deltas(false)]
+#[case::managed_depth(true)]
+fn test_book_direct_processing_uses_explicit_input(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] managed_depth: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let mut engine = book_data_engine(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            managed_depth,
+            true,
+        ))
+        .unwrap();
+    let selected = book_depth(instrument.id(), &[], &[("1000.00", "1.000")]);
+    let explicit = book_depth(instrument.id(), &[], &[("1001.00", "1.000")]);
+    engine.process_data(book_source_data(&selected, managed_depth));
+
+    match book_source_data(&explicit, !managed_depth) {
+        Data::BookDepth(depth) => context.client.process_order_book_depth(&depth).unwrap(),
+        Data::BookDeltas(deltas) => context.client.process_order_book_deltas(&deltas).unwrap(),
+        _ => unreachable!(),
+    }
+
+    let later = book_depth(instrument.id(), &[], &[("1002.00", "1.000")]);
+    engine.process_data(book_source_data(&later, !managed_depth));
+
+    let order = resting_limit(&instrument, "SOURCE-DIRECT", "1002.00", 0.into());
+    submit_to_client(&context, trader_id, &order);
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+    let cache = context.cache.borrow();
+    assert_eq!(
+        cache.order_book_source(&instrument.id()),
+        Some(if managed_depth {
+            OrderBookSource::Depth
+        } else {
+            OrderBookSource::Deltas
+        }),
+    );
+    assert_eq!(
+        cache.order_book(&instrument.id()).unwrap().best_ask_price(),
+        Some(Price::from("1000.00"))
+    );
+    drop(cache);
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::unsubscribe(BookSourceRelease::Unsubscribe)]
+#[case::reset(BookSourceRelease::Reset)]
+#[case::dispose(BookSourceRelease::Dispose)]
+fn test_book_source_tracks_owner_lifecycle(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] release: BookSourceRelease,
+    #[values(false, true)] managed_depth: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let mut engine = book_data_engine(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        instrument.id().venue,
+    );
+    let first = book_source_subscription(instrument.id(), managed_depth, true);
+    let second = book_source_subscription(instrument.id(), managed_depth, true);
+    engine.execute_subscribe(first.clone()).unwrap();
+    engine.execute_subscribe(second.clone()).unwrap();
+    let unsubscribe = |command: &SubscribeCommand| {
+        command
+            .clone()
+            .into_unsubscribe(UUID4::new(), 2.into(), Some(command.command_id()))
+    };
+    engine.execute_unsubscribe(&unsubscribe(&first)).unwrap();
+    engine.execute_unsubscribe(&unsubscribe(&first)).unwrap();
+    let selected = book_depth(instrument.id(), &[], &[("1000.00", "1.000")]);
+    let other = book_depth(instrument.id(), &[], &[("1001.00", "1.000")]);
+    engine.process_data(book_source_data(&selected, managed_depth));
+    context.client.reset();
+    context.client.stop().unwrap();
+    context.client.start().unwrap();
+    engine.process_data(book_source_data(&other, !managed_depth));
+    let order = resting_limit(&instrument, "SOURCE-RETAINED", "1002.00", 0.into());
+    submit_to_client(&context, trader_id, &order);
+    assert!(
+        !drain_order_events(&mut rx)
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Filled(_)))
+    );
+    engine.process_data(book_source_data(&selected, managed_depth));
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1002.00"), Quantity::from("1.000"))]
+    );
+
+    match release {
+        BookSourceRelease::Unsubscribe => {
+            engine.execute_unsubscribe(&unsubscribe(&second)).unwrap();
+        }
+        BookSourceRelease::Reset => engine.reset(),
+        BookSourceRelease::Dispose => {
+            engine.dispose();
+            engine = book_data_engine(
+                context.test_clock.clone(),
+                context.cache.clone(),
+                instrument.id().venue,
+            );
+        }
+    }
+
+    context.client.reset();
+    engine.process_data(book_source_data(&other, !managed_depth));
+    let fallback = resting_limit(&instrument, "SOURCE-FALLBACK", "1002.00", 0.into());
+    submit_to_client(&context, trader_id, &fallback);
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            !managed_depth,
+            true,
+        ))
+        .unwrap();
+    context.client.reset();
+    engine.process_data(book_source_data(&selected, managed_depth));
+    let replacement = resting_limit(&instrument, "SOURCE-REPLACED", "1002.00", 0.into());
+    submit_to_client(&context, trader_id, &replacement);
+    assert!(
+        !drain_order_events(&mut rx)
+            .iter()
+            .any(|e| matches!(e, OrderEventAny::Filled(_)))
+    );
+    engine.process_data(book_source_data(&other, !managed_depth));
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1002.00"), Quantity::from("1.000"))]
+    );
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::reset(false)]
+#[case::dispose(true)]
+fn test_book_source_after_cache_reset(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] dispose: bool,
+    #[values(false, true)] managed_depth: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let mut engine = book_data_engine(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            managed_depth,
+            true,
+        ))
+        .unwrap();
+    let selected = book_depth(instrument.id(), &[], &[("1000.00", "1.000")]);
+    let unmanaged = book_depth(instrument.id(), &[], &[("1001.00", "1.000")]);
+    engine.process_data(book_source_data(&selected, managed_depth));
+    context.cache.borrow_mut().reset();
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    engine.process_data(book_source_data(&unmanaged, !managed_depth));
+    let order = resting_limit(&instrument, "SOURCE-CACHE-RESET", "1002.00", 0.into());
+    submit_to_client(&context, trader_id, &order);
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1000.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(
+        context.cache.borrow().order_book_source(&instrument.id()),
+        Some(if managed_depth {
+            OrderBookSource::Depth
+        } else {
+            OrderBookSource::Deltas
+        })
+    );
+
+    if dispose {
+        engine.dispose();
+    } else {
+        engine.reset();
+    }
+
+    context.client.reset();
+    assert_eq!(
+        context.cache.borrow().order_book_source(&instrument.id()),
+        None
+    );
+    engine.process_data(book_source_data(&unmanaged, !managed_depth));
+    let fallback = resting_limit(
+        &instrument,
+        "SOURCE-CACHE-RESET-FALLBACK",
+        "1002.00",
+        0.into(),
+    );
+    submit_to_client(&context, trader_id, &fallback);
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+    context.client.stop().unwrap();
+}
+
+#[derive(Clone, Copy)]
+enum BookSourceRelease {
+    Unsubscribe,
+    Reset,
+    Dispose,
+}
+
+fn book_depth(
+    instrument_id: InstrumentId,
+    bids: &[(&str, &str)],
+    asks: &[(&str, &str)],
+) -> OrderBookDepth {
+    let orders = |levels: &[(&str, &str)], side| {
+        levels
+            .iter()
+            .map(|(price, size)| {
+                BookOrder::new(side, Price::from(*price), Quantity::from(*size), 0)
+            })
+            .collect::<Vec<_>>()
+    };
+    OrderBookDepth::new(
+        instrument_id,
+        orders(bids, OrderSide::Buy),
+        orders(asks, OrderSide::Sell),
+        vec![0; bids.len()],
+        vec![0; asks.len()],
+        RecordFlag::F_SNAPSHOT as u8,
+        0,
+        1.into(),
+        1.into(),
+    )
+}
+
+fn publish_depth(depth: &OrderBookDepth) {
+    msgbus::publish_depth(
+        switchboard::get_book_depth_topic(depth.instrument_id),
+        depth,
+    );
+}
+
+fn book_data_engine(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    venue: Venue,
+) -> DataEngine {
+    let mut engine = DataEngine::new(clock, cache, None);
+    let client = BookDataClient { venue };
+    engine.register_client(
+        DataClientAdapter::new(
+            client.client_id(),
+            Some(venue),
+            true,
+            true,
+            Box::new(client),
+        ),
+        None,
+    );
+    engine
+}
+
+fn book_source_subscription(
+    instrument_id: InstrumentId,
+    depth: bool,
+    managed: bool,
+) -> SubscribeCommand {
+    if depth {
+        SubscribeCommand::BookDepth(SubscribeBookDepth::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(ClientId::new("BOOK")),
+            Some(instrument_id.venue),
+            UUID4::new(),
+            1.into(),
+            None,
+            managed,
+            None,
+            None,
+        ))
+    } else {
+        SubscribeCommand::BookDeltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(ClientId::new("BOOK")),
+            Some(instrument_id.venue),
+            UUID4::new(),
+            1.into(),
+            None,
+            managed,
+            None,
+            None,
+        ))
+    }
+}
+
+fn book_source_data(snapshot: &OrderBookDepth, depth: bool) -> Data {
+    if depth {
+        Data::BookDepth(Box::new(snapshot.clone()))
+    } else {
+        let mut book = OrderBook::new(snapshot.instrument_id, BookType::L2_MBP);
+        book.apply_depth(snapshot).unwrap();
+        Data::BookDeltas(Box::new(
+            book.to_deltas(snapshot.ts_event, snapshot.ts_init),
+        ))
+    }
+}
+
+struct BookDataClient {
+    venue: Venue,
+}
+
+impl DataClient for BookDataClient {
+    fn client_id(&self) -> ClientId {
+        ClientId::new("BOOK")
+    }
+
+    fn venue(&self) -> Option<Venue> {
+        Some(self.venue)
+    }
+
+    fn start(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn stop(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn reset(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn dispose(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn is_connected(&self) -> bool {
+        true
+    }
+
+    fn is_disconnected(&self) -> bool {
+        false
+    }
+
+    fn subscribe_book_deltas(&mut self, _: SubscribeBookDeltas) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn subscribe_book_depth(&mut self, _: SubscribeBookDepth) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_book_deltas(&mut self, _: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn unsubscribe_book_depth(&mut self, _: &UnsubscribeBookDepth) -> anyhow::Result<()> {
+        Ok(())
+    }
 }

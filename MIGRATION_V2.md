@@ -129,10 +129,11 @@ venue/run, live reconciliation, and data/execution tester settings.
 
 Potential credentials use bounded inspection properties instead of raw readback:
 
-| Constructor field                                    | Inspection property                   |
-| ---------------------------------------------------- | ------------------------------------- |
-| `BacktestDataConfig.catalog_fs_storage_options`      | `catalog_fs_storage_option_keys`      |
-| `BacktestDataConfig.catalog_fs_rust_storage_options` | `catalog_fs_rust_storage_option_keys` |
+| Constructor field                           | Inspection property           |
+| ------------------------------------------- | ----------------------------- |
+| `DataCatalogConfig.fs_rust_storage_options` | `fs_rust_storage_option_keys` |
+
+For `BacktestDataConfig`, inspect `config.catalog.fs_rust_storage_option_keys`.
 
 Raw storage-option fields and adapter credentials remain private. Some configs offer `has_*` checks for proxy,
 database, or gateway credentials without returning values. Retain reusable secrets in application state.
@@ -909,6 +910,10 @@ the new schema. Regenerate or migrate that data before upgrading a catalog in pl
 existing built-in-data catalog queries and Feather output through `BacktestEngineConfig`. These configs do not
 restore the v1 factory, download, custom-data, or generic serialization workflows.
 
+For replay inputs, pass `catalog=DataCatalogConfig(...)` to each `BacktestDataConfig` instead of flat
+catalog arguments. See [migrate flat catalog settings](docs/concepts/data/catalog.md#migrate-flat-catalog-settings)
+for the field mapping and storage-option precedence.
+
 ### Streaming output and rotation
 
 `StreamingConfig` writes Feather files to a local `writer_path` and promotes them into an optional `catalog`,
@@ -939,9 +944,9 @@ unknown codes. Both `lz4` and code `5` write Parquet `LZ4_RAW`; see [compression
 groups](docs/concepts/data/catalog.md#compression-and-row-groups).
 
 Catalog storage options are `object_store` configuration keys. V1's Rust backend logged and ignored an unknown
-key, such as GCS `project_id`; v2 fails with an error that names the key. `BacktestDataConfig` passes
-`catalog_fs_storage_options` to the same backend when `catalog_fs_rust_storage_options` is unset, so translate
-fsspec-only options to `object_store` keys, such as `anon` to `skip_signature`. See [storage
+key, such as GCS `project_id`; v2 fails with an error that names the key. Pass native options through
+`DataCatalogConfig.fs_rust_storage_options`. Translate fsspec-only options to `object_store` keys,
+such as `anon` to `skip_signature`. See [storage
 options](docs/concepts/data/catalog.md#filesystem-protocols-and-storage-options).
 
 ## Update Rust integrations
@@ -1053,6 +1058,26 @@ and migration guidance.
   `Parquet catalog does not support historical queries`, rather than `PersistenceError::Unsupported`.
 - Query chunk sizes are targets. Equal-timestamp groups can exceed them; instrument and custom queries can collect
   all results before yielding batches.
+
+### Option-chain selection
+
+`StrikeRange` is non-exhaustive. Existing variants support direct construction, but Rust matches outside
+`nautilus-model` require a wildcard arm. Delegate model-level selection to `StrikeRange::resolve`, or return
+an explicit unsupported-mode error from a custom selector. Matches inside `nautilus-model` remain exhaustive.
+
+This extension boundary covers `StrikeRange` only. `OptionSideFilter` retains its exhaustive `Both`,
+`Calls`, `Puts`, and `Otm` variants. `StrikeSearchProfile` uses checked construction and private fields.
+`SubscribeOptionChain` retains its existing fields and constructor.
+
+Existing selection behavior, serialized variant names, and variant order are unchanged. New variants
+are appended after existing ones, preserving variant indices for downstream index-based Serde formats.
+Older readers still reject new variants during deserialization.
+
+The [Python v2 API stability goal](README.md#versioning-and-releases) does not change the Rust crates'
+separate `0.x` versioning. Pin compatible crate versions independently of Python. Additional `StrikeRange`
+variants preserve source compatibility for downstream wildcard matches. Changing existing variant fields
+or the signatures of `SubscribeOptionChain::new` or `StrikeSearchProfile::new` still requires release notes
+and migration guidance for affected callers.
 
 ### Data variants
 

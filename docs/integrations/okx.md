@@ -93,8 +93,8 @@ are never republished.
 | REST reconciliation | `update_instruments_interval_mins` (default 60) | New or changed definitions only                        |
 
 Each update first writes the data client, HTTP, and WebSocket caches. Then it publishes new or changed
-definitions as `DataEvent::Instrument`. Thus, consumers never observe a definition absent from the caches. A
-material change is any serialized field other than `ts_event` and `ts_init`.
+definitions as `DataEvent::Data(Data::Instrument(_))`. Thus, consumers never observe a definition absent from
+the caches. A material change is any serialized field other than `ts_event` and `ts_init`.
 
 - The instruments channel is incremental rather than a snapshot feed. A subscription or reconnect can begin
   without an initial payload. Thus, reconnect replay alone does not reconcile the instrument cache.

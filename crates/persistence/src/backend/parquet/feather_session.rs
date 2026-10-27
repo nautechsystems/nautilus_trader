@@ -60,7 +60,11 @@ use crate::{
     backend::parquet::{
         catalog::ParquetDataCatalog,
         intervals::are_intervals_disjoint,
-        paths::{catalog_filename, make_object_store_path, urisafe_instrument_id},
+        io::read_parquet_from_object_store,
+        paths::{
+            catalog_filename, make_object_store_path, query_intersects_filename,
+            urisafe_instrument_id,
+        },
     },
     catalog::types::{
         CatalogDataType, instrument_path_prefix, parquet_data_path_prefix, record_path_prefix,
@@ -771,9 +775,8 @@ impl ParquetDataCatalog {
         }
 
         let mut ready = Vec::new();
-
         for (directory, plans) in by_directory {
-            ready.extend(self.ready_directory_plans(&directory, plans)?);
+            ready.extend(self.ready_directory_plans(data_type, &directory, plans)?);
         }
 
         for mut plan in ready {
@@ -868,6 +871,7 @@ impl ParquetDataCatalog {
 
     fn ready_directory_plans(
         &self,
+        data_type: &CatalogDataType,
         directory: &str,
         plans: Vec<PlannedCatalogWrite>,
     ) -> anyhow::Result<Vec<PlannedCatalogWrite>> {
@@ -891,6 +895,24 @@ impl ParquetDataCatalog {
         }
 
         let existing = self.get_directory_intervals(directory)?;
+
+        if *data_type == CatalogDataType::Data(NautilusDataType::Bar) {
+            let mut filtered = Vec::new();
+
+            for plan in remaining {
+                if !existing
+                    .iter()
+                    .any(|&(start, end)| plan.start_ts <= end && start <= plan.end_ts)
+                {
+                    filtered.push(plan);
+                } else if let Some(plan) = self.remove_replayed_bar_rows(directory, plan)? {
+                    filtered.push(plan);
+                }
+            }
+
+            remaining = filtered;
+        }
+
         let mut intervals = existing.clone();
         intervals.extend(remaining.iter().map(|plan| (plan.start_ts, plan.end_ts)));
 
@@ -902,6 +924,75 @@ impl ParquetDataCatalog {
         }
 
         Ok(remaining)
+    }
+
+    fn remove_replayed_bar_rows(
+        &self,
+        directory: &str,
+        mut plan: PlannedCatalogWrite,
+    ) -> anyhow::Result<Option<PlannedCatalogWrite>> {
+        let row_index = plan.batch.schema().index_of(PROMOTION_ROW_INDEX)?;
+        let columns = (0..plan.batch.num_columns())
+            .filter(|&index| index != row_index)
+            .collect::<Vec<_>>();
+        let incoming = plan.batch.project(&columns)?;
+        let mut persisted = Vec::new();
+        let mut rows_by_timestamp: AHashMap<u64, Vec<(usize, usize)>> = AHashMap::new();
+
+        for file in self.list_parquet_files(directory)? {
+            if !query_intersects_filename(&file, Some(plan.start_ts), Some(plan.end_ts)) {
+                continue;
+            }
+
+            let path = self.to_object_path_parsed(&file)?;
+            let (batches, schema) = self.execute_async(|| {
+                read_parquet_from_object_store(self.object_store.clone(), &path)
+            })?;
+
+            for batch in batches {
+                let batch = RecordBatch::try_new(schema.clone(), batch.columns().to_vec())?;
+                let timestamps = Self::ts_init_array(&batch)?;
+                for row in 0..batch.num_rows() {
+                    let timestamp = timestamps
+                        .value(row)
+                        .ok_or_else(|| anyhow::anyhow!("ts_init value cannot be negative"))?;
+                    rows_by_timestamp
+                        .entry(timestamp)
+                        .or_default()
+                        .push((persisted.len(), row));
+                }
+
+                persisted.push(batch);
+            }
+        }
+
+        let timestamps = Self::ts_init_array(&incoming)?;
+        let mut keep = Vec::new();
+
+        for row in 0..incoming.num_rows() {
+            let timestamp = timestamps
+                .value(row)
+                .ok_or_else(|| anyhow::anyhow!("ts_init value cannot be negative"))?;
+
+            let replayed = rows_by_timestamp.get(&timestamp).is_some_and(|matches| {
+                let incoming_row = incoming.slice(row, 1);
+                matches
+                    .iter()
+                    .all(|&(batch, index)| persisted[batch].slice(index, 1) == incoming_row)
+            });
+
+            if !replayed {
+                keep.push(row as u64);
+            }
+        }
+
+        if keep.is_empty() {
+            return Ok(None);
+        }
+
+        plan.batch = take_record_batch(&plan.batch, &UInt64Array::from(keep))?;
+        (plan.start_ts, plan.end_ts) = Self::ts_init_range(&plan.batch)?;
+        Ok(Some(plan))
     }
 
     fn with_catalog_identifier_metadata(

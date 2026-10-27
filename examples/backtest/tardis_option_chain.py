@@ -37,6 +37,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.config import ImportableStrategyConfig
 from nautilus_trader.config import StrategyConfig
 from nautilus_trader.core import UUID4
@@ -333,12 +334,12 @@ def main() -> None:
     data = [
         BacktestDataConfig(
             data_type=NautilusDataType.QuoteTick,
-            catalog_path=str(args.catalog_path),
+            catalog=DataCatalogConfig(path=str(args.catalog_path)),
             instrument_ids=selection.instrument_ids,
         ),
         BacktestDataConfig(
             data_type=NautilusDataType.OptionGreeks,
-            catalog_path=str(args.catalog_path),
+            catalog=DataCatalogConfig(path=str(args.catalog_path)),
             instrument_ids=selection.instrument_ids,
         ),
     ]

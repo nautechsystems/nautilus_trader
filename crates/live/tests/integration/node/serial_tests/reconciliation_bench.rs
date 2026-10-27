@@ -56,6 +56,8 @@ const SAMPLES: usize = 30_000;
 #[case::position_256("position", 256, 0)]
 #[case::position_1024("position", 1024, 0)]
 #[case::position_history_1024("position", 1, 1024)]
+#[case::position_recent_history_1024("position_recent", 2, 1024)]
+#[case::position_recent_history_8192("position_recent", 2, 8192)]
 #[case::baseline_warm("baseline", 0, 1)]
 #[case::targeted_warm_1("targeted", 1, 1)]
 #[case::targeted_warm_1024("targeted", 1024, 1)]
@@ -121,6 +123,12 @@ async fn reconciliation_latency(
         })
         .collect::<Vec<_>>();
 
+    let queried_fills = if scenario == "position_recent" {
+        fills[history..].to_vec()
+    } else {
+        fills.clone()
+    };
+
     let mut factory = BlockingReportExecutionClientFactory::configurable(
         client_id,
         AccountId::from("BLOCKING-REPORT-001"),
@@ -131,7 +139,7 @@ async fn reconciliation_latency(
     .with_position_reports(vec![reconciliation_position_report(
         Quantity::from_decimal_dp(expected_qty, 3).unwrap(),
     )])
-    .with_fill_report_responses([fills.clone()], None)
+    .with_fill_report_responses([queried_fills.clone()], None)
     .with_fill_reports_at_window_end();
     factory.report_release = Some(release.clone());
     factory.report_release_once = true;
@@ -153,7 +161,8 @@ async fn reconciliation_latency(
             | "collection_sustained_cancel_worker_many"
     )
     .then_some(0.05);
-    config.exec_engine.position_check_interval_secs = (scenario == "position").then_some(0.05);
+    config.exec_engine.position_check_interval_secs =
+        matches!(scenario, "position" | "position_recent").then_some(0.05);
     config.exec_engine.position_check_threshold_ms = 0;
     config.exec_engine.position_check_retries = 100;
     let mut node = reconciliation_node("ReconciliationBench", config, factory);
@@ -185,6 +194,17 @@ async fn reconciliation_latency(
             .without_position_id()
             .build();
         apply_reconciliation_events(&mut node, &[event]);
+    }
+
+    if scenario == "position_recent" {
+        let cache = node.kernel().cache();
+        let cache = cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(queried_fills.len(), missing);
+
+        for fill in &queried_fills {
+            assert!(!order.trade_ids().contains(&&fill.trade_id));
+        }
     }
 
     let origin = Instant::now();
@@ -428,7 +448,9 @@ async fn reconciliation_latency(
         | "collection_sustained_cancel_worker_many" => {
             assert!(state.bulk_order_report_count.load(Ordering::Relaxed) > 0);
         }
-        "position" => assert!(state.position_report_count.load(Ordering::Relaxed) > 0),
+        "position" | "position_recent" => {
+            assert!(state.position_report_count.load(Ordering::Relaxed) > 0);
+        }
         _ => unreachable!(),
     }
 

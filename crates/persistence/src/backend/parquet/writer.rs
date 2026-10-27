@@ -27,8 +27,13 @@ use super::catalog::ParquetDataCatalog;
 use crate::{
     catalog::factory::CatalogConnectConfig,
     common::{
-        conversion::FeatherConversionSummary, datafusion::identifiers_from_record_batches,
-        paths::create_local_directory, storage::create_storage_backend_from_path,
+        conversion::FeatherConversionSummary,
+        datafusion::identifiers_from_record_batches,
+        paths::{
+            catalog_data_type_from_session_feather_path, create_local_directory,
+            identifier_from_session_feather_path,
+        },
+        storage::create_storage_backend_from_path,
     },
     writer::{
         factory::{PARQUET_WRITER_FACTORY_NAME, WriterConnectConfig, WriterFactoryRegistry},
@@ -485,7 +490,27 @@ impl PromotionBackend for ParquetPromotionBackend {
         );
 
         if self.identity_recorded(&identity)? {
-            return Ok(None);
+            let identifier = match identifiers {
+                Some(mut identifiers) if identifiers.len() == 1 => identifiers.pop(),
+                Some(_) => None,
+                None => identifier_from_session_feather_path(
+                    file,
+                    source.environment,
+                    &source.instance_id,
+                ),
+            };
+
+            return Ok(Some(FeatherConversionSummary {
+                data_type: catalog_data_type_from_session_feather_path(
+                    file,
+                    source.environment,
+                    &source.instance_id,
+                )?,
+                identifier,
+                feather_path: file.to_string(),
+                native_version: None,
+                unmatched_identifiers: None,
+            }));
         }
 
         let summary = self.catalog.promote_feather_file(
@@ -576,8 +601,8 @@ mod tests {
     use nautilus_core::{Params, UnixNanos};
     use nautilus_model::{
         data::{
-            BookOrder, Data, DataBatch, NautilusDataType, NautilusRecordType, OrderBookDelta,
-            QuoteTick,
+            Bar, BarType, BookOrder, Data, DataBatch, NautilusDataType, NautilusRecordType,
+            OrderBookDelta, QuoteTick,
         },
         enums::{BookAction, OrderSide, RecordFlag},
         identifiers::InstrumentId,
@@ -2424,6 +2449,274 @@ mod tests {
     }
 
     #[rstest]
+    #[case::ascii("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL")]
+    #[case::non_ascii("CAFÉ.SIM-1-MINUTE-LAST-EXTERNAL")]
+    fn bar_replay_across_promotions_is_idempotent(
+        #[case] bar_type: &str,
+        #[values(false, true)] restart: bool,
+        #[values(false, true)] replay_only: bool,
+        #[values(false, true)] use_ts_event: bool,
+    ) {
+        let directory = TempDir::new().unwrap();
+
+        let mut config = WriterConnectConfig::new(
+            directory.path().join("live/run-bars").to_string_lossy(),
+            Some(local_catalog(&directory)),
+        );
+        config.use_ts_event_for_ts_init = use_ts_event;
+        config.delete_feather_after_promotion = true;
+        config.promote_on_close = false;
+        let clock = Arc::new(AtomicU64::new(1));
+        let mut writer = ParquetWriter::new(&config, WriterClock::Test(clock.clone())).unwrap();
+
+        let first = Bar {
+            bar_type: BarType::from(bar_type),
+            ..sample_bar()
+        };
+
+        writer.core.write_data(Data::Bar(first)).unwrap();
+        assert_eq!(writer.promote_now().unwrap().len(), 1);
+
+        if restart {
+            drop(writer);
+            writer = ParquetWriter::new(&config, WriterClock::Test(clock.clone())).unwrap();
+        }
+
+        clock.store(2, Ordering::Relaxed);
+
+        let replay = Bar {
+            ts_init: if use_ts_event {
+                UnixNanos::from(63_000_000_000)
+            } else {
+                first.ts_init
+            },
+            ..first
+        };
+
+        let next = Bar {
+            ts_event: UnixNanos::from(120_000_000_000),
+            ts_init: UnixNanos::from(121_000_000_000),
+            ..first
+        };
+
+        writer.core.write_data(Data::Bar(replay)).unwrap();
+        if !replay_only {
+            writer.core.write_data(Data::Bar(next)).unwrap();
+        }
+
+        let promoted = writer.promote_now().unwrap();
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+
+        let DataBatch::Bar(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::Bar))
+            .unwrap()
+        else {
+            panic!("expected bars")
+        };
+
+        let mut expected = vec![Bar {
+            ts_init: if use_ts_event {
+                first.ts_event
+            } else {
+                first.ts_init
+            },
+            ..first
+        }];
+
+        if !replay_only {
+            expected.push(Bar {
+                ts_init: if use_ts_event {
+                    next.ts_event
+                } else {
+                    next.ts_init
+                },
+                ..next
+            });
+        }
+
+        assert_eq!(promoted.len(), 1);
+        assert_eq!(rows.as_ref(), expected.as_slice());
+        assert_eq!(
+            catalog
+                .get_file_list_from_data_cls(&NautilusDataType::Bar.into())
+                .unwrap()
+                .len(),
+            expected.len()
+        );
+        assert!(
+            list_session_feather_files(&writer.source.storage, Environment::Live, "run-bars")
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    #[case::open("open")]
+    #[case::high("high")]
+    #[case::low("low")]
+    #[case::close("close")]
+    #[case::volume("volume")]
+    #[case::price_precision("price_precision")]
+    #[case::size_precision("size_precision")]
+    #[case::event_timestamp("ts_event")]
+    #[case::init_timestamp("ts_init")]
+    fn bar_replay_rejects_changed_values(#[case] field: &str) {
+        let directory = TempDir::new().unwrap();
+
+        let mut config = WriterConnectConfig::new(
+            directory.path().join("live/run-conflict").to_string_lossy(),
+            Some(local_catalog(&directory)),
+        );
+        config.use_ts_event_for_ts_init = !matches!(field, "ts_event" | "ts_init");
+        config.delete_feather_after_promotion = true;
+        config.promote_on_close = false;
+        let clock = Arc::new(AtomicU64::new(1));
+        let mut writer = ParquetWriter::new(&config, WriterClock::Test(clock.clone())).unwrap();
+        let first = sample_bar();
+        writer.core.write_data(Data::Bar(first)).unwrap();
+        writer.promote_now().unwrap();
+        clock.store(2, Ordering::Relaxed);
+        let mut correction = first;
+        match field {
+            "open" => correction.open = Price::from("1.02"),
+            "high" => correction.high = Price::from("1.06"),
+            "low" => correction.low = Price::from("0.98"),
+            "close" => correction.close = Price::from("1.04"),
+            "volume" => correction.volume = Quantity::from("18.000"),
+            "price_precision" => {
+                correction.open = Price::from("1.010");
+                correction.high = Price::from("1.050");
+                correction.low = Price::from("0.990");
+                correction.close = Price::from("1.030");
+            }
+            "size_precision" => correction.volume = Quantity::from("17.0000"),
+            "ts_event" => correction.ts_event = UnixNanos::from(59_000_000_000),
+            "ts_init" => correction.ts_init = UnixNanos::from(60_500_000_000),
+            _ => unreachable!(),
+        }
+
+        let next = Bar {
+            ts_event: UnixNanos::from(120_000_000_000),
+            ts_init: UnixNanos::from(121_000_000_000),
+            ..first
+        };
+
+        writer.core.write_data(Data::Bar(correction)).unwrap();
+        writer.core.write_data(Data::Bar(next)).unwrap();
+        let work = writer.prepare_promotion().unwrap().unwrap();
+        let files = work.files().to_vec();
+        let error = writer.finalize(work.execute()).unwrap_err();
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+
+        let DataBatch::Bar(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::Bar))
+            .unwrap()
+        else {
+            panic!("expected bars")
+        };
+
+        let expected = if config.use_ts_event_for_ts_init {
+            Bar {
+                ts_init: first.ts_event,
+                ..first
+            }
+        } else {
+            first
+        };
+
+        assert!(error.to_string().contains("non-disjoint intervals"));
+        assert_eq!(rows.as_ref(), &[expected]);
+        assert_eq!(
+            catalog
+                .get_file_list_from_data_cls(&NautilusDataType::Bar.into())
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(files.len(), 1);
+        assert!(directory.path().join(&files[0]).exists());
+    }
+
+    #[rstest]
+    fn bar_replay_manual_conversion_is_idempotent() {
+        let directory = TempDir::new().unwrap();
+        let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
+        let first = sample_bar();
+
+        let next = Bar {
+            ts_event: UnixNanos::from(120_000_000_000),
+            ts_init: UnixNanos::from(121_000_000_000),
+            ..first
+        };
+
+        for run in ["first", "restart"] {
+            let mut writer = FeatherWriter::new(
+                directory.path().join("backtest").join(run),
+                WriterClock::Test(Arc::new(AtomicU64::new(0))),
+                RotationConfig::NoRotation,
+                None,
+                None,
+            );
+            writer.write(first).unwrap();
+            if run == "restart" {
+                writer.write(next).unwrap();
+            }
+
+            writer.close().unwrap();
+            catalog
+                .convert_stream_to_data(
+                    run,
+                    &NautilusDataType::Bar.into(),
+                    Environment::Backtest,
+                    None,
+                    true,
+                )
+                .unwrap();
+        }
+
+        let DataBatch::Bar(rows) = catalog
+            .query_batch(&CatalogQuery::new(NautilusDataType::Bar))
+            .unwrap()
+        else {
+            panic!("expected bars")
+        };
+
+        assert_eq!(
+            rows.as_ref(),
+            &[
+                Bar {
+                    ts_init: first.ts_event,
+                    ..first
+                },
+                Bar {
+                    ts_init: next.ts_event,
+                    ..next
+                },
+            ]
+        );
+        assert_eq!(
+            catalog
+                .get_file_list_from_data_cls(&NautilusDataType::Bar.into())
+                .unwrap()
+                .len(),
+            2
+        );
+    }
+
+    fn sample_bar() -> Bar {
+        Bar::new(
+            BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL"),
+            Price::from("1.01"),
+            Price::from("1.05"),
+            Price::from("0.99"),
+            Price::from("1.03"),
+            Quantity::from("17.000"),
+            UnixNanos::from(60_000_000_000),
+            UnixNanos::from(61_000_000_000),
+        )
+    }
+
+    #[rstest]
     fn kept_promotions_release_scheduled_paths() {
         let directory = TempDir::new().unwrap();
         let config = WriterConnectConfig::new(
@@ -2530,14 +2823,15 @@ mod tests {
         writer.core.write_data(Data::Quote(quote)).unwrap();
         let work = writer.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files(), &["live/run-root/quotes/quotes_0.feather"]);
-        assert_eq!(writer.finalize(work.execute()).unwrap().len(), 1);
+        let promoted = writer.finalize(work.execute()).unwrap();
+        assert_eq!(promoted.len(), 1);
         assert!(writer.prepare_promotion().unwrap().is_none());
         drop(writer);
 
         let mut restarted = ParquetWriter::new(&config, clock).unwrap();
         let work = restarted.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files(), &["live/run-root/quotes/quotes_0.feather"]);
-        assert!(restarted.finalize(work.execute()).unwrap().is_empty());
+        assert_eq!(restarted.finalize(work.execute()).unwrap(), promoted);
         assert!(restarted.prepare_promotion().unwrap().is_none());
 
         let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
@@ -2566,14 +2860,15 @@ mod tests {
         writer.core.write_data(Data::Quote(quote)).unwrap();
         let work = writer.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files(), &["live/run-relative/quotes/quotes_0.feather"]);
-        assert_eq!(writer.finalize(work.execute()).unwrap().len(), 1);
+        let promoted = writer.finalize(work.execute()).unwrap();
+        assert_eq!(promoted.len(), 1);
         assert!(writer.prepare_promotion().unwrap().is_none());
         drop(writer);
 
         let mut restarted = ParquetWriter::new(&config, clock).unwrap();
         let work = restarted.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files(), &["live/run-relative/quotes/quotes_0.feather"]);
-        assert!(restarted.finalize(work.execute()).unwrap().is_empty());
+        assert_eq!(restarted.finalize(work.execute()).unwrap(), promoted);
         assert!(restarted.prepare_promotion().unwrap().is_none());
 
         let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
@@ -2589,7 +2884,11 @@ mod tests {
     #[rstest]
     #[case::sealed(false)]
     #[case::partial(true)]
-    fn restart_discovers_crashed_files_and_deduplicates_kept_promotions(#[case] partial: bool) {
+    fn restart_discovers_crashed_files_and_deduplicates_promotions(
+        #[case] partial: bool,
+        #[values(false, true)] delete_source: bool,
+        #[values(false, true)] restage: bool,
+    ) {
         let directory = TempDir::new().unwrap();
         let staging = directory.path().join("backtest/run-restart");
         let quote = sample_quote();
@@ -2609,26 +2908,42 @@ mod tests {
         }
 
         drop(crashed);
-        let config =
+        let mut config =
             WriterConnectConfig::new(staging.to_string_lossy(), Some(local_catalog(&directory)));
+        config.delete_feather_after_promotion = restage;
         let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
         let mut writer = ParquetWriter::new(&config, clock.clone()).unwrap();
+        let source_bytes = fs::read(&sealed).unwrap();
         let work = writer.prepare_promotion().unwrap().unwrap();
         assert_eq!(
             work.files(),
             &["backtest/run-restart/quotes/quotes_0.feather".to_string()]
         );
-        assert_eq!(writer.finalize(work.execute()).unwrap().len(), 1);
+        let promoted = writer.finalize(work.execute()).unwrap();
+        assert_eq!(promoted.len(), 1);
         assert!(writer.prepare_promotion().unwrap().is_none());
         drop(writer);
 
+        if restage {
+            assert!(!sealed.exists());
+            fs::write(&sealed, source_bytes).unwrap();
+        }
+
+        config.delete_feather_after_promotion = delete_source;
         let mut restarted = ParquetWriter::new(&config, clock).unwrap();
         let work = restarted.prepare_promotion().unwrap().unwrap();
         assert_eq!(work.files().len(), 1);
-        assert!(restarted.finalize(work.execute()).unwrap().is_empty());
+        let files = work.files().to_vec();
+        let result = work.execute();
+        assert_eq!(result.committed_paths, files);
+        assert_eq!(
+            result.deleted_paths,
+            if delete_source { files } else { Vec::new() }
+        );
+        assert_eq!(restarted.finalize(result).unwrap(), promoted);
         assert!(restarted.prepare_promotion().unwrap().is_none());
         assert_scheduled_count(&restarted.core.promotion_driver.schedule(), 0);
-        assert!(sealed.exists());
+        assert_eq!(sealed.exists(), !delete_source);
 
         let mut catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
         let DataBatch::Quote(rows) = catalog

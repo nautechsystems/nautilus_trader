@@ -197,8 +197,9 @@ frames (`st: false`) to avoid clearing unchanged book levels.
 
 :::note
 AX publishes no trade identifier for market data. Thus, the adapter derives `TradeTick.trade_id` from the
-trade's timestamp, price, size, and aggressor side. REST and WebSocket agree on the same trade whenever both
-report its aggressor side. Prints that AX reports identically share an ID. This affects only consumers that
+trade's timestamp, price, size, and aggressor side. The adapter rejects REST and WebSocket trades with a
+missing or invalid aggressor side, so the same print has the same ID across transports. Prints that AX
+reports identically share an ID. This affects only consumers that
 deduplicate market data on `trade_id`, because fills carry the venue's own trade IDs.
 :::
 

@@ -68,8 +68,8 @@ RotationConfig.scheduled_dates(
 midnight, in its IANA `timezone`, which defaults to `UTC`. Sizes and intervals must be positive.
 
 Rotation and interval-based promotion seal open Feather files and can split rows with the same `ts_init` across files.
-Promotion of the later file then rejects the overlapping catalog interval and retains that source. Use no rotation
-and leave `promotion_interval_ms` unset when rows sharing a `ts_init` must stay in one file.
+Unless the later rows are exact bar replays, promotion rejects the overlapping catalog interval and retains that source.
+Use no rotation and leave `promotion_interval_ms` unset when rows sharing a `ts_init` must stay in one file.
 
 ## Understand query visibility
 
@@ -109,7 +109,8 @@ when that interval is due. Closing waits for pending work and, by default, promo
 Keep `delete_feather_after_promotion=False` to retain the Feather source after successful promotion.
 Enable it only when source cleanup is desired. Cleanup follows a successful commit; it is separate
 from making catalog data queryable. Promotion identities prevent a repeated completed source from
-being imported again.
+being imported again. The active deletion policy also applies when a restarted writer finds an
+identical source whose promotion is already recorded.
 
 Use explicit close and handle its error. Dropping a writer only provides best-effort cleanup and is
 not evidence of successful promotion. If a promotion fails, preserve its staged files and investigate
@@ -150,8 +151,14 @@ only CLEAR rows for an instrument, their zero precision stays unchanged. Raw pri
 stay unchanged; zero fields decode with the chosen precision, while an undefined price remains
 undefined at precision zero.
 
-The catalog requires disjoint closed `ts_init` intervals per identifier directory. Before writing one
-Feather file, promotion unifies groups whose precision metadata differs only by a zero precision and
+The catalog requires disjoint closed `ts_init` intervals per identifier directory. For bars, promotion
+removes rows that exactly match all persisted rows at the same `ts_init`, including schema, precision
+metadata, OHLCV, and `ts_event`. With `use_ts_event_for_ts_init=True`, `ts_init` is replaced with
+`ts_event` before this comparison. The same OHLCV at a different `ts_init` is not a replay; promotion
+still requires disjoint intervals. A differing bar at the same `ts_init` fails the interval check,
+and its Feather source is retained.
+
+Before writing one Feather file, promotion unifies groups whose precision metadata differs only by a zero precision and
 whose zero-precision group has no decimal values. Promotion writes one file for the combined interval
 and preserves source order among rows with equal `ts_init`, including nonadjacent batches with the
 same schema.

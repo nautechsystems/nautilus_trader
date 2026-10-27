@@ -634,8 +634,7 @@ impl OKXExecutionClient {
             order_side,
             order_type,
             context.is_quote_quantity,
-        )
-        .map_err(anyhow::Error::msg)?;
+        )?;
 
         let trailing_offset = order.trailing_offset();
         let trailing_offset_type = order.trailing_offset_type();
@@ -3627,8 +3626,7 @@ fn validate_order(
         order.order_side(),
         order.order_type(),
         order.is_quote_quantity(),
-    )
-    .map_err(|detail| OrderDeniedReason::ValidationFailed { detail })?;
+    )?;
 
     validate_algo_trigger_type(
         okx_instrument_type_from_symbol(order.instrument_id().symbol.as_str()),
@@ -5750,43 +5748,43 @@ mod tests {
         OrderType::StopMarket,
         OrderSide::Sell,
         true,
-        "OKX Spot STOP_MARKET algo orders do not support quote quantity"
+        "UNSUPPORTED_QUOTE_QUANTITY"
     )]
     #[case(
         OrderType::MarketIfTouched,
         OrderSide::Sell,
         true,
-        "OKX Spot MARKET_IF_TOUCHED algo orders do not support quote quantity"
+        "UNSUPPORTED_QUOTE_QUANTITY"
     )]
     #[case(
         OrderType::TrailingStopMarket,
         OrderSide::Sell,
         true,
-        "OKX Spot TRAILING_STOP_MARKET algo orders do not support quote quantity"
+        "UNSUPPORTED_QUOTE_QUANTITY"
     )]
     #[case(
         OrderType::StopLimit,
         OrderSide::Sell,
         true,
-        "OKX Spot STOP_LIMIT algo orders do not support quote quantity"
+        "UNSUPPORTED_QUOTE_QUANTITY"
     )]
     #[case(
         OrderType::LimitIfTouched,
         OrderSide::Sell,
         true,
-        "OKX Spot LIMIT_IF_TOUCHED algo orders do not support quote quantity"
+        "UNSUPPORTED_QUOTE_QUANTITY"
     )]
     #[case(
         OrderType::StopLimit,
         OrderSide::Buy,
         true,
-        "OKX Spot STOP_LIMIT algo orders do not support quote quantity"
+        "UNSUPPORTED_QUOTE_QUANTITY"
     )]
     #[case(
         OrderType::LimitIfTouched,
         OrderSide::Buy,
         true,
-        "OKX Spot LIMIT_IF_TOUCHED algo orders do not support quote quantity"
+        "UNSUPPORTED_QUOTE_QUANTITY"
     )]
     #[case(
         OrderType::TrailingStopMarket,
@@ -5859,7 +5857,9 @@ mod tests {
 
         assert_eq!(denied.client_order_id, order.client_order_id());
 
-        let expected = if expected_reason.ends_with("triggers") {
+        let expected = if expected_reason == "UNSUPPORTED_QUOTE_QUANTITY" {
+            expected_reason.to_string()
+        } else if expected_reason.ends_with("triggers") {
             format!("VALIDATION_FAILED: {expected_reason}")
         } else {
             format!("VALIDATION_FAILED: {expected_reason} in {trade_mode} mode")

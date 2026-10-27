@@ -341,6 +341,11 @@ flowchart TD
 Default bracket metadata connects the entry to both exits with OTO and links the exits to each other
 with OUO.
 
+In backtest and sandbox matching engines, a rejected OTO exit does not cause another exit with
+the same parent to be rejected. Each exit must still pass its own validation. With
+`StrategyConfig.manage_contingent_orders` enabled, a rejected, canceled, or expired OCO/OUO exit
+can cause cancellation of its open siblings.
+
 Create brackets with
 [`OrderFactory`](/docs/python-api-latest/common.html#nautilus_trader.common.OrderFactory), which
 also supports different entry and exit types, trigger settings, and execution instructions.

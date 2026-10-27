@@ -52,10 +52,13 @@ use nautilus_execution::{
 use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelHandle},
     data::{
-        Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
-    enums::{AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType},
+    enums::{
+        AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType,
+        PriceType,
+    },
     events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
     identifiers::{AccountId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -1064,6 +1067,40 @@ impl SimulatedExchange {
         Ok(())
     }
 
+    /// Processes a mark price update and updates the matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if module pre-processing or matching engine initialization fails.
+    pub fn process_mark_price(&mut self, mark: &MarkPriceUpdate) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::MarkPrice(*mark))?;
+
+        if !self.matching_engines.contains_key(&mark.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&mark.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument)?;
+            } else {
+                anyhow::bail!(
+                    "No matching engine found for instrument {}",
+                    mark.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&mark.instrument_id) {
+            matching_engine.process_mark_price(mark);
+        } else {
+            anyhow::bail!("Matching engine should be initialized");
+        }
+
+        self.drain_oto_commands();
+        Ok(())
+    }
+
     /// Processes a quote tick and updates the matching engine.
     ///
     /// # Errors
@@ -1136,8 +1173,21 @@ impl SimulatedExchange {
     ///
     /// # Errors
     ///
-    /// Returns an error if module pre-processing or matching engine processing fails.
+    /// Returns an error if L1 bar execution receives a non-time external bar other
+    /// than a mark-price bar, or if module pre-processing or matching engine processing fails.
     pub fn process_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
+        if self.bar_execution
+            && self.book_type == BookType::L1_MBP
+            && bar.bar_type.is_externally_aggregated()
+            && bar.bar_type.spec().price_type != PriceType::Mark
+        {
+            anyhow::ensure!(
+                bar.bar_type.spec().is_time_aggregated(),
+                "Bar execution requires time-aggregated bars, received {}",
+                bar.bar_type,
+            );
+        }
+
         self.pre_process_modules(&Data::Bar(bar))?;
 
         if !self.matching_engines.contains_key(&bar.instrument_id()) {

@@ -482,7 +482,7 @@ impl DeriveExecutionClient {
             let sender = try_get_data_event_sender()
                 .context("Derive instrument event sender is unavailable")?;
             sender
-                .send(DataEvent::Instrument(instrument))
+                .send(DataEvent::Data(instrument.into()))
                 .map_err(|e| {
                     anyhow::anyhow!("Failed to publish required Derive instrument {id}: {e}")
                 })?;

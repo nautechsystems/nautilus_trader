@@ -375,7 +375,7 @@ impl InteractiveBrokersExecutionClient {
             .chain(std::iter::once(spread))
         {
             if self.core.cache().instrument(&instrument.id()).is_none()
-                && let Err(e) = data_sender.send(DataEvent::Instrument(instrument))
+                && let Err(e) = data_sender.send(DataEvent::Data(instrument.into()))
             {
                 tracing::warn!("Failed to publish IB spread instrument: {e}");
             }
@@ -420,7 +420,7 @@ impl InteractiveBrokersExecutionClient {
                 continue;
             }
 
-            if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = data_sender.send(DataEvent::Data(instrument.into())) {
                 tracing::warn!("Failed to publish IB position instrument: {e}");
             }
         }

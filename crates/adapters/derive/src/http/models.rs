@@ -22,8 +22,8 @@
 //! adapted to project conventions:
 //!
 //! - `bigdecimal::BigDecimal` -> [`rust_decimal::Decimal`]. Required account and order
-//!   financial fields, private fill amount/price/fee, and public trade amount/price
-//!   use strict raw-token decimal decoding;
+//!   financial fields, private fill amount/price/fee, public trade amount/price,
+//!   ticker mark/index prices, candles, and funding history use strict raw-token decimal decoding;
 //!   other fields retain `deserialize_decimal` / `deserialize_optional_decimal`.
 //! - Hot-path string identifiers (`instrument_name`, `currency`) -> [`Ustr`]
 //!   for interning across decoded messages.
@@ -364,14 +364,14 @@ pub struct DeriveTickerSnapshot {
     #[serde(
         rename = "I",
         alias = "index_price",
-        deserialize_with = "deserialize_decimal"
+        deserialize_with = "deserialize_decimal_token"
     )]
     pub index_price: Decimal,
     /// Current mark price.
     #[serde(
         rename = "M",
         alias = "mark_price",
-        deserialize_with = "deserialize_decimal"
+        deserialize_with = "deserialize_decimal_token"
     )]
     pub mark_price: Decimal,
     /// Maximum allowed price.
@@ -435,7 +435,7 @@ pub struct DeriveTicker {
     #[serde(deserialize_with = "deserialize_decimal")]
     pub best_bid_price: Decimal,
     /// Current oracle index price for the underlying.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub index_price: Decimal,
     /// Instrument identifier.
     pub instrument_name: Ustr,
@@ -447,7 +447,7 @@ pub struct DeriveTicker {
     #[serde(deserialize_with = "deserialize_decimal")]
     pub maker_fee_rate: Decimal,
     /// Current mark price.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub mark_price: Decimal,
     /// Optional fee-rate cap derived from mark price.
     #[serde(default, deserialize_with = "deserialize_optional_decimal")]
@@ -1175,22 +1175,22 @@ pub struct DerivePublicTradesResult {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DerivePublicCandle {
     /// Open price for the bucket.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub open_price: Decimal,
     /// High price for the bucket.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub high_price: Decimal,
     /// Low price for the bucket.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub low_price: Decimal,
     /// Close price for the bucket.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub close_price: Decimal,
     /// Notional volume in USD over the bucket.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub volume_usd: Decimal,
     /// Base-asset volume (contracts) over the bucket.
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub volume_contracts: Decimal,
     /// Sample timestamp (UNIX seconds).
     pub timestamp: i64,
@@ -1202,7 +1202,7 @@ pub struct DerivePublicCandle {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DerivePublicFundingRate {
     /// Funding rate observed at `timestamp` (fraction per funding interval).
-    #[serde(deserialize_with = "deserialize_decimal")]
+    #[serde(deserialize_with = "deserialize_decimal_token")]
     pub funding_rate: Decimal,
     /// Sample timestamp (UNIX ms).
     pub timestamp: i64,
@@ -2184,6 +2184,87 @@ mod tests {
             result.funding_rate_history.last().unwrap().timestamp,
             1_700_007_200_000,
         );
+    }
+
+    #[rstest]
+    #[case("index_price")]
+    #[case("mark_price")]
+    fn test_required_ticker_decimals_reject_missing_tokens(
+        #[case] field: &str,
+        #[values(Value::Null, json!(""))] invalid: Value,
+    ) {
+        let mut ticker = load_json("perps/http_ticker_eth_snapshot.json");
+        ticker[field] = invalid.clone();
+        assert!(serde_json::from_value::<DeriveTicker>(ticker.clone()).is_err());
+        assert!(serde_json::from_value::<DeriveTickerSnapshot>(ticker).is_err());
+
+        let mut slim = load_json("perps/ws_ticker_slim_eth.json")["instrument_ticker"].clone();
+        slim[if field == "index_price" { "I" } else { "M" }] = invalid;
+        assert!(serde_json::from_value::<DeriveTickerSnapshot>(slim).is_err());
+    }
+
+    #[rstest]
+    #[case("open_price")]
+    #[case("high_price")]
+    #[case("low_price")]
+    #[case("close_price")]
+    #[case("volume_usd")]
+    #[case("volume_contracts")]
+    fn test_required_candle_decimals_reject_missing_tokens(
+        #[case] field: &str,
+        #[values(Value::Null, json!(""))] invalid: Value,
+    ) {
+        let mut candle = load_json("perps/http_public_candles_eth.json")[0].clone();
+        candle[field] = invalid;
+        assert!(serde_json::from_value::<DerivePublicCandle>(candle).is_err());
+    }
+
+    #[rstest]
+    fn test_required_funding_decimal_rejects_missing_tokens(
+        #[values(Value::Null, json!(""))] invalid: Value,
+    ) {
+        let mut rates = load_json("perps/http_public_funding_rate_history_eth.json");
+        rates["funding_rate_history"][0]["funding_rate"] = invalid;
+        assert!(serde_json::from_value::<DerivePublicFundingRateHistoryResult>(rates).is_err());
+    }
+
+    #[rstest]
+    fn test_required_market_data_decimals_preserve_zero(
+        #[values(json!(0), json!("0"))] zero: Value,
+    ) {
+        let mut ticker = load_json("perps/http_ticker_eth_snapshot.json");
+        ticker["index_price"] = zero.clone();
+        ticker["mark_price"] = zero.clone();
+        let full: DeriveTicker = serde_json::from_value(ticker.clone()).unwrap();
+        let snapshot: DeriveTickerSnapshot = serde_json::from_value(ticker).unwrap();
+        let mut candle = load_json("perps/http_public_candles_eth.json")[0].clone();
+        for field in [
+            "open_price",
+            "high_price",
+            "low_price",
+            "close_price",
+            "volume_usd",
+            "volume_contracts",
+        ] {
+            candle[field] = zero.clone();
+        }
+
+        let candle: DerivePublicCandle = serde_json::from_value(candle).unwrap();
+        let mut rates = load_json("perps/http_public_funding_rate_history_eth.json");
+        rates["funding_rate_history"][0]["funding_rate"] = zero;
+        let rates: DerivePublicFundingRateHistoryResult = serde_json::from_value(rates).unwrap();
+
+        assert_eq!(full.index_price, Decimal::ZERO);
+        assert_eq!(full.mark_price, Decimal::ZERO);
+        assert_eq!(snapshot.index_price, Decimal::ZERO);
+        assert_eq!(snapshot.mark_price, Decimal::ZERO);
+        assert_eq!(candle.open_price, Decimal::ZERO);
+        assert_eq!(candle.high_price, Decimal::ZERO);
+        assert_eq!(candle.low_price, Decimal::ZERO);
+        assert_eq!(candle.close_price, Decimal::ZERO);
+        assert_eq!(candle.volume_usd, Decimal::ZERO);
+        assert_eq!(candle.volume_contracts, Decimal::ZERO);
+        assert_eq!(rates.funding_rate_history[0].funding_rate, Decimal::ZERO);
     }
 
     #[rstest]

@@ -58,8 +58,8 @@ use nautilus_model::{
         TimeInForce,
     },
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderEventAny, OrderExpired,
-        OrderFilled, OrderInitialized, OrderRejected, OrderUpdated,
+        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDeniedReason, OrderEventAny,
+        OrderExpired, OrderFilled, OrderInitialized, OrderRejected, OrderUpdated,
     },
     fees::MakerTakerFeeRates,
     identifiers::{
@@ -3110,9 +3110,7 @@ fn validate_order_instructions(
     }
 
     if quote_quantity {
-        anyhow::bail!(
-            "Architect AX adapter cannot encode quote_quantity; submit a base quantity instead"
-        );
+        anyhow::bail!(OrderDeniedReason::unsupported_quote_quantity());
     }
 
     if has_display_qty {
@@ -5967,7 +5965,7 @@ mod tests {
 
         let err = validate_order_for_ax_submit(&order).unwrap_err();
 
-        assert!(err.to_string().contains("quote_quantity"));
+        assert_eq!(err.to_string(), "UNSUPPORTED_QUOTE_QUANTITY");
     }
 
     #[rstest]

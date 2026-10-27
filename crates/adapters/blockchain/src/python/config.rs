@@ -149,9 +149,9 @@ impl BlockchainVerificationConfig {
         chain_anchor: BlockchainChainAnchorConfig,
         manifest_version: String,
         manifest_digest: String,
-        deployment_manifest_json: String,
+        deployment_manifest_json: &str,
     ) -> PyResult<Self> {
-        let deployment_manifest = serde_json::from_str(&deployment_manifest_json)
+        let deployment_manifest = serde_json::from_str(deployment_manifest_json)
             .map_err(|_| to_pyvalue_err("Invalid deployment manifest JSON"))?;
         Ok(Self::builder()
             .authoritative(authoritative)

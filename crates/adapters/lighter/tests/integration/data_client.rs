@@ -667,14 +667,14 @@ async fn test_connect_emits_instrument_event() {
     client.connect().await.expect("connect");
 
     // The orderBookDetails fixture carries one perp (ETH); `connect()` fans it
-    // out through the data event channel as a single `DataEvent::Instrument`.
+    // out through the data event channel as a single `DataEvent::Data(Data::Instrument(...))`.
     let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
         .await
         .expect("timeout waiting for instrument event")
         .expect("channel closed");
 
     match event {
-        DataEvent::Instrument(instrument) => {
+        DataEvent::Data(Data::Instrument(instrument)) => {
             assert_eq!(instrument.id(), eth_perp_id());
         }
         other => panic!("expected Instrument event, was {other:?}"),
@@ -705,11 +705,12 @@ async fn test_subscribe_instrument_replays_cached_instrument() {
         .expect("subscribe_instrument");
 
     let event = next_event_matching(&mut rx, Duration::from_secs(2), |event| {
-        matches!(event, DataEvent::Instrument(_))
+        matches!(event, DataEvent::Data(Data::Instrument(_)))
     })
     .await
     .expect("expected cached instrument replay");
-    let DataEvent::Instrument(instrument) = event else {
+
+    let DataEvent::Data(Data::Instrument(instrument)) = event else {
         unreachable!("event predicate requires instrument")
     };
 
@@ -1117,7 +1118,7 @@ async fn test_subscribe_mark_index_funding_share_one_ws_subscription() {
                 saw_index = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }
-            DataEvent::FundingRate(update) => {
+            DataEvent::Data(Data::FundingRate(update)) => {
                 saw_funding = true;
                 assert_eq!(update.instrument_id, instrument_id);
             }

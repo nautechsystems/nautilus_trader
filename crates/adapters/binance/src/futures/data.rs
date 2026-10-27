@@ -461,7 +461,7 @@ impl BinanceFuturesDataClient {
         }
 
         for instrument in &instruments {
-            if let Err(e) = sender.send(DataEvent::Instrument(instrument.clone())) {
+            if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
                 log::warn!("Failed to send refreshed Binance Futures instrument: {e}");
             }
         }
@@ -781,7 +781,9 @@ impl BinanceFuturesDataClient {
                         Ok((mark_update, index_update, funding_update, custom_update)) => {
                             Self::send_data(data_sender, Data::MarkPrice(mark_update));
                             Self::send_data(data_sender, Data::IndexPrice(index_update));
-                            if let Err(e) = data_sender.send(DataEvent::FundingRate(funding_update))
+
+                            if let Err(e) =
+                                data_sender.send(DataEvent::Data(Data::FundingRate(funding_update)))
                             {
                                 log::error!("Failed to emit funding rate: {e}");
                             }

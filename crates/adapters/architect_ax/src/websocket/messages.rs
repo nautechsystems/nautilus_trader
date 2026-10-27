@@ -299,9 +299,8 @@ pub struct AxMdTrade {
     pub p: Decimal,
     /// Trade quantity.
     pub q: u64,
-    /// Trade direction: "B" (buy) or "S" (sell). Optional for some message types.
-    #[serde(default)]
-    pub d: Option<AxOrderSide>,
+    /// Aggressor side of the trade: "B" (buy) or "S" (sell).
+    pub d: AxOrderSide,
 }
 
 /// Candle/OHLCV message from market data WebSocket.
@@ -1262,7 +1261,45 @@ mod tests {
     fn test_load_md_trade_from_file() {
         let json = include_str!("../../test_data/ws_md_trade.json");
         let msg: AxMdTrade = serde_json::from_str(json).unwrap();
-        assert_eq!(msg.d, Some(AxOrderSide::Buy));
+        assert_eq!(msg.d, AxOrderSide::Buy);
+    }
+
+    #[rstest]
+    #[case(None, "missing field `d`")]
+    #[case(Some(serde_json::Value::Null), "invalid type: null")]
+    #[case(Some(serde_json::json!("X")), "unknown variant `X`")]
+    #[case(Some(serde_json::json!("b")), "unknown variant `b`")]
+    fn test_md_trade_rejects_missing_or_invalid_side(
+        #[case] side: Option<serde_json::Value>,
+        #[case] expected_error: &str,
+    ) {
+        let json = include_str!("../../test_data/ws_md_trade.json");
+        let mut value: serde_json::Value = serde_json::from_str(json).unwrap();
+        let fields = value.as_object_mut().unwrap();
+        fields.remove("t");
+        fields.remove("d");
+        if let Some(side) = side {
+            fields.insert("d".to_string(), side);
+        }
+
+        let raw = serde_json::to_string(&value).unwrap();
+        let fallback_raw = format!("{},\"t\":\"t\"}}", &raw[..raw.len() - 1]);
+        let fast_raw = format!("{{\"t\":\"t\",{}", &raw[1..]);
+
+        serde_json::from_str::<serde_json::Value>(&fast_raw).unwrap();
+
+        let model_error = serde_json::from_value::<AxMdTrade>(value).unwrap_err();
+        let message_error = parse_md_message(&fallback_raw).unwrap_err();
+        parse_md_message(&fast_raw).unwrap_err();
+
+        assert!(
+            model_error.to_string().contains(expected_error),
+            "{model_error}"
+        );
+        assert!(
+            message_error.to_string().contains(expected_error),
+            "{message_error}"
+        );
     }
 
     #[rstest]

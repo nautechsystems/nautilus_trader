@@ -444,7 +444,7 @@ impl PolymarketDataClient {
                                     instrument,
                                     |instrument| {
                                         if let Err(e) = data_sender
-                                            .send(DataEvent::Instrument(instrument.clone()))
+                                            .send(DataEvent::Data(instrument.clone().into()))
                                         {
                                             log::error!(
                                                 "Failed to emit auto-loaded instrument {instrument_id}: {e}"
@@ -492,7 +492,7 @@ impl PolymarketDataClient {
                                     instrument,
                                     |instrument| {
                                         if let Err(e) = data_sender
-                                            .send(DataEvent::Instrument(instrument.clone()))
+                                            .send(DataEvent::Data(instrument.clone().into()))
                                         {
                                             log::error!(
                                                 "Failed to emit auto-loaded instrument {instrument_id}: {e}"

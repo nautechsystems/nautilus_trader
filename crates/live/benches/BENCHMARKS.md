@@ -63,6 +63,7 @@ order count and open position count and quantity.
 | Targeted                   | One accepted order.                | 1, 10, 64, 256, or 1,024 missing fills.          |
 | Position                   | One accepted order.                | The same missing-fill sizes, capped per cycle.   |
 | Position history           | 1,024 existing fills on one order. | Repeated history plus one missing fill.          |
+| Position recent history    | 1,024 or 8,192 existing fills.     | Two new fills; response omits the cached prefix. |
 | Warm baseline and recovery | One existing fill on one order.    | Baseline, or 1 / 1,024 missing fills.            |
 | Stall control              | One accepted order.                | A deliberate 5 ms data-callback stall.           |
 
@@ -185,3 +186,19 @@ case. Background load, OS scheduling, power management, and first-use initializa
 - Compare small recovery cases with baseline spread from the same run. If the distributions overlap,
   do not attribute a small difference to reconciliation.
 - Warm recovery is sampled only at 1 and 1,024 missing fills. Intermediate warm costs remain unmeasured.
+
+## Criterion history lookups
+
+The Criterion `position_history` group measures scalar fill containment (`containment`) and HEDGING
+history lookup (`hedging_route`) for one unflipped virtual position with 1, 64, and 1,024 fills.
+Setup checks exact position quantity, aggregate commissions, and replay count before timing.
+Fixture construction and destruction remain outside measurement.
+
+```bash
+CARGO_BUILD_JOBS=4 cargo bench --locked --profile bench-lto \
+  -p nautilus-live --bench reconciliation -- position_history
+```
+
+These cases isolate per-call cost. The `position_1024`, `position_history_1024`, and
+`position_warm_1024` latency cases measure end-to-end recovery with responses that repeat fills
+already applied to the cache.

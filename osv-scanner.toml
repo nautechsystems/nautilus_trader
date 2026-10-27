@@ -69,3 +69,66 @@ reason = "faster-hex unsound hex_decode_unchecked, transitive via hypersync, no 
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0387"
 reason = "crypto-bigint timing leaks in signing, accepted pending an upstream-compatible fix"
+
+# Arrow IPC and Parquet require zstd 0.13.3 / zstd-safe 7.3.0 but use private
+# bulk-only contexts with only std enabled. Other streaming consumers use fixed
+# versions. Recheck these exceptions when either parent's calls or features
+# change; remove them when both parents permit fixed versions.
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0391"
+reason = "zstd borrowed streaming contexts are not used by Arrow IPC or Parquet"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0395"
+reason = "zstd-safe experimental stable-input buffers are disabled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0396"
+reason = "zstd-safe seekable contexts are disabled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0397"
+reason = "zstd-safe streaming OutBuffer::around_pos is not used by Arrow IPC or Parquet"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0398"
+reason = "zstd-safe seekable feature is disabled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0399"
+reason = "zstd-safe experimental dictionary initialization is disabled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0400"
+reason = "zstd-safe bulk contexts in Arrow IPC and Parquet are never mixed with unfinished streams"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0401"
+reason = "zstd-safe dictionary training is disabled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0402"
+reason = "zstd-safe experimental context cloning and multithreading are disabled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0403"
+reason = "zstd-safe streaming decompression is not used by Arrow IPC or Parquet; bulk API is unaffected"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0404"
+reason = "zstd-safe experimental decompression-context cloning is disabled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0405"
+reason = "zstd-safe seekable streaming compression is disabled"
+
+[[IgnoredVulns]]
+id = "RUSTSEC-2026-0406"
+reason = "zstd-safe multithreaded contexts are disabled"
+
+# The advisory describes cursor bytes stored inside block data. Versions 0.9.0
+# and 0.10.4 store position separately and have no ReadBuffer. The 0.12 series
+# resolves to patched 0.12.1; recheck this exception if these versions change.
+[[IgnoredVulns]]
+id = "GHSA-qwgh-2vcv-g2f7"
+reason = "block-buffer 0.9.0 and 0.10.4 use separate cursor fields; inline-cursor corruption does not apply"

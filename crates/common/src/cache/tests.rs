@@ -83,7 +83,7 @@ use crate::{
         ACCOUNT_NOT_FOUND, AccountLookupError, CURRENCY_NOT_FOUND, Cache, CacheApi, CacheConfig,
         CacheView, CurrencyLookupError, INSTRUMENT_NOT_FOUND, InstrumentLookupError,
         ORDER_BOOK_NOT_FOUND, ORDER_LIST_NOT_FOUND, ORDER_NOT_FOUND, OWN_ORDER_BOOK_NOT_FOUND,
-        OrderBookLookupError, OrderListLookupError, OrderLookupError, OrderRef,
+        OrderBookLookupError, OrderBookSource, OrderListLookupError, OrderLookupError, OrderRef,
         OwnOrderBookLookupError, POSITION_NOT_FOUND, PositionLookupError,
         SYNTHETIC_INSTRUMENT_NOT_FOUND, SyntheticInstrumentLookupError, VenueOrderIdOwnershipError,
         database::{CacheDatabaseAdapter, CacheMap},
@@ -14518,4 +14518,57 @@ fn test_cache_api_infallible_borrow_conflict_panics_with_context() {
     let api = CacheApi::new(&cell);
     let _guard = cell.borrow_mut();
     let _ = api.order(&ClientOrderId::from("BORROW-ORDER"));
+}
+
+#[rstest]
+fn test_order_book_source_preserves_selection_and_isolates_instruments(mut cache: Cache) {
+    let first = InstrumentId::from("ETHUSDT.BINANCE");
+    let second = InstrumentId::from("BTCUSDT.BINANCE");
+    assert_eq!(cache.order_book_source(&first), None);
+    cache
+        .set_order_book_source(first, OrderBookSource::Deltas)
+        .unwrap();
+    cache
+        .set_order_book_source(first, OrderBookSource::Deltas)
+        .unwrap();
+    cache
+        .set_order_book_source(second, OrderBookSource::Depth)
+        .unwrap();
+    assert!(
+        cache
+            .set_order_book_source(first, OrderBookSource::Depth)
+            .is_err()
+    );
+    assert_eq!(
+        cache.order_book_source(&first),
+        Some(OrderBookSource::Deltas)
+    );
+    cache.clear_order_book_source(&first);
+    assert_eq!(cache.order_book_source(&first), None);
+    assert_eq!(
+        cache.order_book_source(&second),
+        Some(OrderBookSource::Depth)
+    );
+    cache
+        .set_order_book_source(first, OrderBookSource::Depth)
+        .unwrap();
+    assert_eq!(
+        cache.order_book_source(&first),
+        Some(OrderBookSource::Depth)
+    );
+}
+
+#[rstest]
+#[case::deltas(OrderBookSource::Deltas)]
+#[case::depth(OrderBookSource::Depth)]
+fn test_reset_preserves_order_book_source_registrations(
+    mut cache: Cache,
+    #[case] source: OrderBookSource,
+) {
+    let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
+    cache.set_order_book_source(instrument_id, source).unwrap();
+    cache.reset();
+    assert_eq!(cache.order_book_source(&instrument_id), Some(source));
+    cache.clear_order_book_source(&instrument_id);
+    assert_eq!(cache.order_book_source(&instrument_id), None);
 }

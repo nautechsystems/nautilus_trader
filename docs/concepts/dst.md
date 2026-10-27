@@ -440,7 +440,7 @@ has set semantics.
 #### Instrument store
 
 `InstrumentStore.instruments` in `crates/common/src/providers.rs` uses `IndexMap` with the `ahash`
-hasher. The order is observable in adapters that publish one `DataEvent::Instrument` per entry
+hasher. The order is observable in adapters that publish one `DataEvent::Data(Data::Instrument(_))` per entry
 from `get_all()` or `list_all()`.
 
 #### Order emulator

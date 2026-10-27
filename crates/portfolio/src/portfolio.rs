@@ -63,7 +63,7 @@ struct PortfolioState {
     analyzer: PortfolioAnalyzer,
     unrealized_pnls: IndexMap<InstrumentId, Money>,
     realized_pnls: IndexMap<InstrumentId, Money>,
-    recorded_closed_position_cycles: AHashSet<(PositionId, UnixNanos)>,
+    recorded_closed_position_cycles: AHashSet<(PositionId, UnixNanos, Option<[u8; 16]>)>,
     snapshot_sum_per_position: AHashMap<PositionId, Money>,
     snapshot_last_per_position: AHashMap<PositionId, Money>,
     snapshot_currency_mismatches: AHashSet<PositionId>,
@@ -4167,6 +4167,38 @@ fn record_closed_position_pnl(
         return;
     };
 
+    let cycle_key = (position.id, position.ts_opened, None);
+    let mut inner_ref = inner.borrow_mut();
+
+    if !position.is_closed()
+        && !inner_ref
+            .recorded_closed_position_cycles
+            .contains(&cycle_key)
+    {
+        return;
+    }
+
+    // Corrections can remove the opening fill, so remember every fill in the cycle
+    let cycle_keys = position
+        .events
+        .iter()
+        .map(|fill| {
+            (
+                position.id,
+                position.ts_opened,
+                Some(fill.event_id.as_bytes()),
+            )
+        })
+        .chain(position.events.is_empty().then_some(cycle_key));
+
+    if cycle_keys
+        .clone()
+        .any(|key| inner_ref.recorded_closed_position_cycles.contains(&key))
+    {
+        inner_ref.recorded_closed_position_cycles.extend(cycle_keys);
+        return;
+    }
+
     if !position.is_closed() {
         return;
     }
@@ -4175,14 +4207,8 @@ fn record_closed_position_pnl(
         return;
     };
 
-    let mut inner_ref = inner.borrow_mut();
-
-    if !inner_ref
-        .recorded_closed_position_cycles
-        .insert((position.id, position.ts_opened))
-    {
-        return;
-    }
+    inner_ref.recorded_closed_position_cycles.extend(cycle_keys);
+    inner_ref.recorded_closed_position_cycles.insert(cycle_key);
 
     let converted_pnl =
         converted_realized_pnl(&cache_ref, config, event, position_id, realized_pnl);

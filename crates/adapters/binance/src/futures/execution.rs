@@ -1580,7 +1580,7 @@ fn build_futures_order_list_batch(
     let mut batch_items = Vec::with_capacity(orders.len());
     for order in orders {
         if price_match.is_some() && order.is_post_only() {
-            return Err("price_match cannot be combined with post-only orders".to_string());
+            return Err(OrderDeniedReason::unsupported_post_only().to_string());
         }
 
         if price_match.is_some() && order.order_type() != OrderType::Limit {
@@ -1686,9 +1686,7 @@ fn determine_futures_order_lifetime(
     }
 
     if post_only {
-        return Err(OrderDeniedReason::ValidationFailed {
-            detail: "Binance Futures GTD cannot be post-only".to_string(),
-        });
+        return Err(OrderDeniedReason::unsupported_post_only());
     }
 
     if product_type != BinanceProductType::UsdM {
@@ -4032,9 +4030,7 @@ fn validate_order(
         let order_type = order.order_type();
 
         if order.is_post_only() {
-            return Err(OrderDeniedReason::ValidationFailed {
-                detail: "price_match cannot be combined with post-only orders".to_string(),
-            });
+            return Err(OrderDeniedReason::unsupported_post_only());
         }
 
         if order_type != OrderType::Limit {
@@ -4556,7 +4552,7 @@ mod tests {
         OrderType::Limit,
         UnixNanos::from_seconds(1_700_000_601),
         true,
-        "cannot be post-only"
+        "UNSUPPORTED_POST_ONLY"
     )]
     fn test_futures_order_lifetime_rejects_invalid_gtd(
         #[case] product_type: BinanceProductType,

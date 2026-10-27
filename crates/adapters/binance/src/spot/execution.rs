@@ -2298,9 +2298,7 @@ fn validate_order(order: &impl Order, use_gtd: bool) -> Result<(), OrderDeniedRe
     }
 
     if order.is_quote_quantity() && order_type != OrderType::Market {
-        return Err(OrderDeniedReason::ValidationFailed {
-            detail: "Quote quantity requires a MARKET order on Binance Spot".to_string(),
-        });
+        return Err(OrderDeniedReason::unsupported_quote_quantity());
     }
 
     Ok(())
@@ -3203,7 +3201,7 @@ fn build_spot_oco_order_list_params(
     }
 
     if first.is_quote_quantity() || second.is_quote_quantity() {
-        return Err("Binance Spot OCO order-list legs do not support quote quantity".to_string());
+        return Err(OrderDeniedReason::unsupported_quote_quantity().to_string());
     }
 
     let mut above = None;
@@ -4282,7 +4280,12 @@ mod tests {
         false,
         Some(OrderDeniedReason::UnsupportedReduceOnly)
     )]
-    #[case::limit_quote_quantity(OrderType::Limit, false, true, Some(OrderDeniedReason::ValidationFailed { detail: "Quote quantity requires a MARKET order on Binance Spot".to_string() }))]
+    #[case::limit_quote_quantity(
+        OrderType::Limit,
+        false,
+        true,
+        Some(OrderDeniedReason::unsupported_quote_quantity())
+    )]
     #[case::market_quote_quantity(OrderType::Market, false, true, None)]
     fn test_validate_order_fields(
         #[case] order_type: OrderType,

@@ -385,7 +385,7 @@ impl AsyncRunner {
             // Events drain before commands here even though the runtime select
             // prefers the opposite for everything-else: `LiveNode::start()`
             // calls this after `connect_data_clients()` to push queued
-            // `DataEvent::Instrument` items into the cache. A pending
+            // instrument definitions into the cache. A pending
             // subscription command (e.g. `SubscribeBars`) processed before the
             // matching instrument lands would be rejected by the data engine.
             while let Ok(evt) = self.channels.data_evt_rx.try_recv() {
@@ -547,9 +547,6 @@ impl AsyncRunner {
             DataEvent::Data(data) => {
                 msgbus::send_data(MessagingSwitchboard::data_engine_process_data(), data);
             }
-            DataEvent::Instrument(data) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &data);
-            }
             DataEvent::ResponseEnvelope(response) => {
                 msgbus::send_any(MessagingSwitchboard::data_engine_process(), &response);
             }
@@ -558,15 +555,6 @@ impl AsyncRunner {
             }
             DataEvent::Response(resp) => {
                 msgbus::send_data_response(MessagingSwitchboard::data_engine_response(), resp);
-            }
-            DataEvent::FundingRate(funding_rate) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &funding_rate);
-            }
-            DataEvent::InstrumentStatus(status) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &status);
-            }
-            DataEvent::OptionGreeks(greeks) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &greeks);
             }
             #[cfg(feature = "defi")]
             DataEvent::DeFi(data) => {
@@ -821,7 +809,10 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::ExecutionEngine;
     use nautilus_model::{
-        data::{Data, DataType, quote::QuoteTick},
+        data::{
+            Data, DataType, FundingRateUpdate, InstrumentStatus, OptionGreeks, quote::QuoteTick,
+            stubs::stub_instrument_status,
+        },
         enums::{
             AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
             TimeInForce,
@@ -835,6 +826,7 @@ mod tests {
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
             TraderId, Venue, VenueOrderId,
         },
+        instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt},
         reports::{FillReport, OrderStatusReport, PositionStatusReport},
         types::{Money, Price, Quantity},
     };
@@ -842,6 +834,58 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+
+    #[rstest]
+    fn test_runner_dispatches_typed_data_once_in_order() {
+        let mut runner = AsyncRunner::new();
+        let expected = vec![
+            Data::from(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt())),
+            Data::FundingRate(FundingRateUpdate::new(
+                InstrumentId::from("ETHUSDT.BINANCE"),
+                "0.00012".parse().unwrap(),
+                Some(480),
+                Some(UnixNanos::from(300)),
+                UnixNanos::from(100),
+                UnixNanos::from(200),
+            )),
+            Data::InstrumentStatus(InstrumentStatus {
+                ts_event: UnixNanos::from(400),
+                ts_init: UnixNanos::from(500),
+                ..stub_instrument_status()
+            }),
+            Data::OptionGreeks(OptionGreeks {
+                instrument_id: InstrumentId::from("BTC-20270101-50000-C.DERIBIT"),
+                mark_iv: Some(0.55),
+                bid_iv: Some(0.54),
+                ask_iv: Some(0.56),
+                underlying_price: Some(50001.0),
+                open_interest: Some(123.0),
+                ts_event: UnixNanos::from(600),
+                ts_init: UnixNanos::from(700),
+                ..OptionGreeks::default()
+            }),
+        ];
+        let received = Rc::new(RefCell::new(Vec::<Data>::new()));
+        let observed = received.clone();
+        msgbus::register_data_endpoint(
+            MessagingSwitchboard::data_engine_process_data(),
+            TypedIntoHandler::from(move |data| observed.borrow_mut().push(data)),
+        );
+
+        for data in &expected {
+            runner
+                .data_evt_tx
+                .send(DataEvent::Data(data.clone()).into())
+                .unwrap();
+        }
+
+        runner.flush_pending_data();
+
+        assert_eq!(
+            serde_json::to_value(&*received.borrow()).unwrap(),
+            serde_json::to_value(&expected).unwrap(),
+        );
+    }
 
     #[rstest]
     #[case(false)]

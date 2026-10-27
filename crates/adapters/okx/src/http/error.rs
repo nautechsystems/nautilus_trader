@@ -20,6 +20,7 @@
 
 use std::time::Duration;
 
+use nautilus_model::events::OrderDeniedReason;
 use nautilus_network::http::{HttpClientError, StatusCode};
 use thiserror::Error;
 
@@ -119,6 +120,15 @@ impl From<serde_json::Error> for OKXHttpError {
 }
 
 impl OKXHttpError {
+    pub(crate) fn from_order_denial(reason: OrderDeniedReason) -> Self {
+        let detail = match reason {
+            OrderDeniedReason::ValidationFailed { detail } => detail,
+            reason => reason.to_string(),
+        };
+
+        Self::ValidationError(detail)
+    }
+
     pub(crate) fn from_venue_response(
         error_code: String,
         message: String,

@@ -81,6 +81,18 @@ uses the trigger price. For example:
 This rule assumes a continuous move through the trigger. Use quote, trade, or order book data when
 the strategy requires more precise gap and path behavior.
 
+### Mark-price triggers
+
+Orders with `trigger_type=MARK_PRICE` use `MarkPriceUpdate` data for triggering and trailing-stop
+activation and repricing. Quote and trade prices do not substitute for a missing mark. The latest mark
+remains valid until another mark replaces it or the engine resets; there is no age-based expiry.
+Mark prices can use any precision supported by the build, including precision finer than the
+instrument's tick size.
+
+Marks supply no executable prices or liquidity. Triggered orders use the normal fill rules against
+the executable market. Mark-triggered market orders use market prices even during bar execution;
+they do not use the bar trigger-price rule above. Mark-price bars do not drive execution.
+
 ## Price protection
 
 **Price protection** limits how far `MARKET` and `STOP_MARKET` orders can walk the book. Configure the

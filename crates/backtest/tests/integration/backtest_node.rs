@@ -28,7 +28,7 @@ use nautilus_backtest::{
     result::BacktestResult,
 };
 use nautilus_common::{actor::DataActor, component::Component};
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
 use nautilus_model::{
     data::{
@@ -55,6 +55,7 @@ use nautilus_persistence::{
         traits::{CatalogReader, CatalogWriter},
         types::{CatalogInstrumentQuery, CatalogQuery},
     },
+    config::{CatalogBackendType, DataCatalogConfig},
 };
 use nautilus_trading::{Strategy, StrategyConfig, StrategyCore, nautilus_strategy};
 use rstest::*;
@@ -196,7 +197,7 @@ fn binance_venue_config() -> BacktestVenueConfig {
 fn data_config(catalog_path: &str, instrument_id: InstrumentId) -> BacktestDataConfig {
     BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.to_string())
+        .catalog(DataCatalogConfig::new(catalog_path.to_string(), None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap()
@@ -505,7 +506,11 @@ fn test_build_respects_raise_exception(#[case] raise_exception: bool) {
     let temp_dir = TempDir::new().unwrap();
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(temp_dir.path().to_str().unwrap().to_string())
+        .catalog(DataCatalogConfig::new(
+            temp_dir.path().to_str().unwrap().to_string(),
+            None,
+            None,
+        ))
         .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
         .build()
         .unwrap();
@@ -634,7 +639,11 @@ fn test_data_config_rejects_inverted_time_range(crypto_perpetual_ethusdt: Crypto
 
     let result = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(instrument.id())
         .start_time(UnixNanos::from(5_000_000_000u64))
         .end_time(UnixNanos::from(1_000_000_000u64))
@@ -718,7 +727,7 @@ fn test_run_oneshot_with_time_bounds(crypto_perpetual_ethusdt: CryptoPerpetual) 
 
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -746,7 +755,7 @@ fn test_run_oneshot_loads_funding_rates_from_catalog(crypto_perpetual_ethusdt: C
 
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::FundingRateUpdate)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -996,6 +1005,51 @@ fn test_load_catalog(crypto_perpetual_ethusdt: CryptoPerpetual) {
 }
 
 #[rstest]
+#[case::params(
+    CatalogBackendType::Parquet,
+    Some(Params::new(indexmap::IndexMap::from([(
+        "unsupported_setting".to_string(), serde_json::json!(7),
+    )]))),
+    "Unknown Parquet catalog param 'unsupported_setting': this catalog takes no params",
+)]
+#[case::backend(
+    CatalogBackendType::External("Unregistered".to_string()),
+    None,
+    "No catalog factory registered for 'Unregistered'",
+)]
+fn test_node_passes_catalog_settings_to_instrument_and_data_loading(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] backend: CatalogBackendType,
+    #[case] params: Option<Params>,
+    #[case] expected_error: &str,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
+    let catalog = DataCatalogConfig::new(catalog_path, None, Some(backend)).with_params(params);
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::QuoteTick)
+        .catalog(catalog)
+        .instrument_id(instrument.id())
+        .build()
+        .unwrap();
+    let run = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![data.clone()])
+        .raise_exception(true)
+        .build()
+        .unwrap();
+    let mut node = BacktestNode::new(vec![run]).unwrap();
+
+    let instrument_error = node.build().unwrap_err().to_string();
+    let data_error = BacktestNode::load_data_config(&data, None, None)
+        .unwrap_err()
+        .to_string();
+
+    assert_eq!(instrument_error, expected_error);
+    assert_eq!(data_error, instrument_error);
+}
+
+#[rstest]
 fn test_load_data_config(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
@@ -1028,7 +1082,11 @@ fn test_data_config_query_identifiers_simple() {
     let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
@@ -1044,7 +1102,11 @@ fn test_data_config_query_identifiers_bar_with_spec() {
 
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::Bar)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(instrument_id)
         .bar_spec(bar_spec)
         .build()
@@ -1058,7 +1120,11 @@ fn test_data_config_query_identifiers_bar_with_spec() {
 fn test_data_config_query_identifiers_explicit_bar_types() {
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::Bar)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .bar_types(vec![
             "ETH/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL".to_string(),
             "BTC/USDT.BINANCE-1-MINUTE-LAST-EXTERNAL".to_string(),
@@ -1076,7 +1142,11 @@ fn test_data_config_query_identifiers_explicit_bar_types() {
 fn test_data_config_query_identifiers_multiple_instruments() {
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_ids(vec![
             InstrumentId::from("ETH/USDT.BINANCE"),
             InstrumentId::from("BTC/USDT.BINANCE"),
@@ -1092,7 +1162,11 @@ fn test_data_config_query_identifiers_multiple_instruments() {
 fn test_data_config_requires_identifier() {
     let result = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .build();
 
     assert!(result.is_err());
@@ -1104,7 +1178,11 @@ fn test_data_config_get_instrument_ids_from_single() {
     let instrument_id = InstrumentId::from("ETH/USDT.BINANCE");
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
@@ -1119,7 +1197,11 @@ fn test_data_config_get_instrument_ids_from_multiple() {
     let id2 = InstrumentId::from("BTC/USDT.BINANCE");
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_ids(vec![id1, id2])
         .build()
         .unwrap();
@@ -1268,13 +1350,13 @@ fn test_multiple_data_configs_mixed_types(crypto_perpetual_ethusdt: CryptoPerpet
 
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.clone())
+        .catalog(DataCatalogConfig::new(catalog_path.clone(), None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
     let trade_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::TradeTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -1301,13 +1383,13 @@ fn test_multiple_data_configs_share_one_matching_engine(crypto_perpetual_ethusdt
 
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.clone())
+        .catalog(DataCatalogConfig::new(catalog_path.clone(), None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
     let trade_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::TradeTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -1348,13 +1430,13 @@ fn test_run_streaming_multiple_data_configs(crypto_perpetual_ethusdt: CryptoPerp
 
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.clone())
+        .catalog(DataCatalogConfig::new(catalog_path.clone(), None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
     let trade_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::TradeTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .build()
         .unwrap();
@@ -1423,7 +1505,11 @@ fn test_multiple_run_configs_rejected() {
 fn test_get_instrument_ids_from_composite_bar_types() {
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::Bar)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .bar_types(vec![
             "ETH/USDT.BINANCE-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL".to_string(),
         ])
@@ -1439,7 +1525,11 @@ fn test_get_instrument_ids_from_composite_bar_types() {
 fn test_get_instrument_ids_rejects_invalid_bar_types() {
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::Bar)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .bar_types(vec!["not-a-valid-bar-type".to_string()])
         .build()
         .unwrap();
@@ -1460,7 +1550,7 @@ fn test_data_config_time_bounds_intersect_with_run_bounds(
     // Data config restricts to [5s, 15s]
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .start_time(UnixNanos::from(base_ts + 5_000_000_000))
         .end_time(UnixNanos::from(base_ts + 15_000_000_000))
@@ -1493,7 +1583,7 @@ fn test_empty_catalog_data_handled_gracefully(crypto_perpetual_ethusdt: CryptoPe
     // Query time range with no data (far in the future)
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument.id())
         .start_time(UnixNanos::from(999_000_000_000u64))
         .end_time(UnixNanos::from(999_999_000_000u64))
@@ -1562,7 +1652,11 @@ fn test_l2_venue_with_book_data_accepted(#[case] data_type: NautilusDataType) {
 
     let book_data = BacktestDataConfig::builder()
         .data_type(data_type)
-        .catalog_path("/tmp/catalog".to_string())
+        .catalog(DataCatalogConfig::new(
+            "/tmp/catalog".to_string(),
+            None,
+            None,
+        ))
         .instrument_id(InstrumentId::from("ETH/USDT.BINANCE"))
         .build()
         .unwrap();
@@ -1627,13 +1721,13 @@ fn test_l2_streaming_accepts_quote_chunk_after_book_chunk(
         .unwrap();
     let book_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path.clone())
+        .catalog(DataCatalogConfig::new(catalog_path.clone(), None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
     let quote_data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
@@ -1919,7 +2013,7 @@ fn unterminated_book_data(instrument: &InstrumentAny) -> (TempDir, BacktestDataC
     let (temp_dir, catalog_path) = create_catalog_with_deltas(instrument, &[&deltas]);
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
@@ -1998,7 +2092,7 @@ fn test_run_replays_book_deltas_per_batching_setting(
     let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .batch_deltas(batch_deltas)
         .build()
@@ -2058,7 +2152,7 @@ fn test_run_batches_book_deltas_spanning_catalog_files(
         create_catalog_with_deltas(&instrument, &[&[opening], &[closing]]);
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .optimize_file_loading(optimize_file_loading)
         .build()
@@ -2197,7 +2291,7 @@ fn test_run_replays_deltas_without_f_last_when_unbatched(
     let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .batch_deltas(false)
         .build()
@@ -2267,7 +2361,7 @@ fn test_run_batched_book_deltas_skip_intermediate_book_states(
     let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .batch_deltas(batch_deltas)
         .build()
@@ -2321,7 +2415,7 @@ fn test_load_data_config_batches_book_deltas(crypto_perpetual_ethusdt: CryptoPer
     let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap();
@@ -2372,7 +2466,7 @@ fn test_load_data_config_returns_individual_book_deltas_when_unbatched(
     let (_temp_dir, catalog_path) = create_catalog_with_deltas(&instrument, &[&deltas]);
     let config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .batch_deltas(false)
         .build()
@@ -2457,7 +2551,11 @@ fn test_catalog_replay_rows_match_timestamp_aligned_batches(
         .data_type(data_type.clone())
         .instrument_id(sample.instrument_id())
         .maybe_bar_types(bar_types)
-        .catalog_path(temp.path().to_string_lossy().to_string())
+        .catalog(DataCatalogConfig::new(
+            temp.path().to_string_lossy().to_string(),
+            None,
+            None,
+        ))
         .batch_deltas(false)
         .build()
         .unwrap();

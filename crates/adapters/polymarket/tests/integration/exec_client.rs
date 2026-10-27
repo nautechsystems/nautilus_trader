@@ -11635,7 +11635,8 @@ async fn test_submit_market_order_denied_sell_with_quote_quantity() {
     client.submit_order(cmd).unwrap();
 
     let event = rx.try_recv().unwrap();
-    assert_order_event(event, "Denied");
+    let denied = assert_order_event(event, "Denied");
+    assert_eq!(order_event_reason(&denied), "UNSUPPORTED_QUOTE_QUANTITY");
 }
 
 fn make_market_order(
@@ -14245,10 +14246,7 @@ async fn test_submit_collateral_limit_sell_is_denied_before_post() {
         .unwrap();
 
     let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
-    assert_eq!(
-        order_event_reason(&denied),
-        "VALIDATION_FAILED: Limit SELL orders require quote_quantity=false (amount in shares)",
-    );
+    assert_eq!(order_event_reason(&denied), "UNSUPPORTED_QUOTE_QUANTITY");
     assert_eq!(*state.order_post_count.lock().await, 0);
 }
 
@@ -14373,7 +14371,7 @@ async fn test_submit_collateral_limit_buy_rejects_inexact_local_quantity_before_
 #[tokio::test]
 async fn test_submit_order_denied_for_post_only_with_ioc() {
     let state = TestServerState::default();
-    let addr = start_mock_server(state).await;
+    let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     client.start().unwrap();
 
@@ -14396,7 +14394,9 @@ async fn test_submit_order_denied_for_post_only_with_ioc() {
     client.submit_order(cmd).unwrap();
 
     let event = rx.try_recv().unwrap();
-    assert_order_event(event, "Denied");
+    let denied = assert_order_event(event, "Denied");
+    assert_eq!(order_event_reason(&denied), "UNSUPPORTED_POST_ONLY");
+    assert_eq!(*state.order_post_count.lock().await, 0);
 }
 
 #[rstest]
@@ -17213,10 +17213,7 @@ async fn test_submit_order_list_denies_invalid_collateral_limit_orders_before_po
         .unwrap();
 
     let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
-    assert_eq!(
-        order_event_reason(&denied),
-        "VALIDATION_FAILED: Limit SELL orders require quote_quantity=false (amount in shares)",
-    );
+    assert_eq!(order_event_reason(&denied), "UNSUPPORTED_QUOTE_QUANTITY");
     let denied = assert_order_event(rx.try_recv().unwrap(), "Denied");
     assert_eq!(
         order_event_reason(&denied),

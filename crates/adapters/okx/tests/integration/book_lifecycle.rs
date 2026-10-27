@@ -753,7 +753,7 @@ async fn depth_and_deltas_use_independent_feeds(
         {
             DataEvent::Data(Data::BookDepth(value)) => depth = Some(value),
             DataEvent::Data(Data::BookDeltas(value)) => deltas = Some(value),
-            DataEvent::Instrument(_) => {}
+            DataEvent::Data(Data::Instrument(_)) => {}
             other => panic!("unexpected event: {other:?}"),
         }
     }
@@ -970,7 +970,7 @@ async fn spread_depth_and_deltas_keep_shared_feed_until_last_unsubscribe(
         {
             DataEvent::Data(Data::BookDepth(depth)) => initial_depth = Some(depth),
             DataEvent::Data(Data::BookDeltas(deltas)) => initial_deltas = Some(deltas),
-            DataEvent::Instrument(_) => {}
+            DataEvent::Data(Data::Instrument(_)) => {}
             other => panic!("unexpected event: {other:?}"),
         }
     }

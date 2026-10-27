@@ -19,7 +19,9 @@ use ahash::{AHashMap, AHashSet};
 use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::InstrumentStatus, enums::MarketStatusAction, identifiers::InstrumentId,
+    data::{Data, InstrumentStatus},
+    enums::MarketStatusAction,
+    identifiers::InstrumentId,
 };
 
 use super::enums::HyperliquidProductType;
@@ -122,7 +124,7 @@ fn emit_status(
         None,
     );
 
-    if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+    if let Err(e) = sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
         log::error!("Failed to emit instrument status event: {e}");
     }
 }
@@ -135,7 +137,7 @@ mod tests {
 
     fn recv_status(rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>) -> InstrumentStatus {
         match rx.try_recv().expect("expected status event") {
-            DataEvent::InstrumentStatus(status) => status,
+            DataEvent::Data(Data::InstrumentStatus(status)) => status,
             other => panic!("expected InstrumentStatus event, was {other:?}"),
         }
     }

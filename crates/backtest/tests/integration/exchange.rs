@@ -36,7 +36,7 @@ use nautilus_backtest::{
     },
 };
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, OrderBookSource},
     clock::VirtualClock,
     messages::execution::{CancelOrder, ModifyOrder, SubmitOrder, SubmitOrderList, TradingCommand},
     msgbus::{
@@ -62,7 +62,7 @@ use nautilus_model::{
     accounts::{Account, AccountAny, CashAccount, MarginAccount},
     data::{
         Bar, BarType, BookOrder, Data, FundingRateUpdate, InstrumentStatus, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggressorSide, AssetClass, BookAction, BookType, ContingencyType,
@@ -85,6 +85,7 @@ use nautilus_model::{
             gbpusd_sim,
         },
     },
+    orderbook::OrderBook,
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     stubs::TestDefault,
@@ -1415,6 +1416,99 @@ fn matching_option_quantity(instrument: &InstrumentAny) -> Quantity {
     } else {
         Quantity::from("1.0")
     }
+}
+
+#[rstest]
+#[case::tick("TICK")]
+#[case::tick_imbalance("TICK_IMBALANCE")]
+#[case::tick_runs("TICK_RUNS")]
+#[case::volume("VOLUME")]
+#[case::volume_imbalance("VOLUME_IMBALANCE")]
+#[case::volume_runs("VOLUME_RUNS")]
+#[case::value("VALUE")]
+#[case::value_imbalance("VALUE_IMBALANCE")]
+#[case::value_runs("VALUE_RUNS")]
+#[case::renko("RENKO")]
+fn test_exchange_process_bar_rejects_non_time_aggregation(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] aggregation: &str,
+) {
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let bar_type =
+        BarType::from(format!("ETHUSDT-PERP.BINANCE-200-{aggregation}-LAST-EXTERNAL").as_str());
+
+    let bar = Bar::new(
+        bar_type,
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1490.00"),
+        Price::from("1502.00"),
+        Quantity::from("100.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+
+    let error = exchange.borrow_mut().process_bar(bar).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Bar execution requires time-aggregated bars, received {bar_type}")
+    );
+    let exchange = exchange.borrow();
+    assert_eq!(exchange.best_bid_price(crypto_perpetual_ethusdt.id), None);
+    assert_eq!(exchange.best_ask_price(crypto_perpetual_ethusdt.id), None);
+}
+
+#[rstest]
+#[case::disabled(false, BookType::L1_MBP, "LAST-EXTERNAL")]
+#[case::l2(true, BookType::L2_MBP, "LAST-EXTERNAL")]
+#[case::l3(true, BookType::L3_MBO, "LAST-EXTERNAL")]
+#[case::internal(true, BookType::L1_MBP, "LAST-INTERNAL")]
+#[case::mark(true, BookType::L1_MBP, "MARK-EXTERNAL")]
+fn test_exchange_process_bar_non_time_aggregation_without_execution(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] bar_execution: bool,
+    #[case] book_type: BookType,
+    #[case] suffix: &str,
+) {
+    let config = SimulatedVenueConfig::builder()
+        .venue(Venue::new("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(book_type)
+        .bar_execution(bar_execution)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    let exchange = get_exchange_with_config(config);
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let bar_type = BarType::from(format!("ETHUSDT-PERP.BINANCE-200-VALUE-{suffix}").as_str());
+
+    let bar = Bar::new(
+        bar_type,
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1490.00"),
+        Price::from("1502.00"),
+        Quantity::from("100.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+
+    exchange.borrow_mut().process_bar(bar).unwrap();
+
+    let exchange = exchange.borrow();
+    assert_eq!(exchange.best_bid_price(crypto_perpetual_ethusdt.id), None);
+    assert_eq!(exchange.best_ask_price(crypto_perpetual_ethusdt.id), None);
 }
 
 #[rstest]
@@ -7419,5 +7513,89 @@ fn test_same_instrument_oto_resize_preserves_valid_quantity_precision(
             .unwrap()
             .order_exists(child_id),
         !full_trigger
+    );
+}
+
+#[rstest]
+#[case::deltas(false)]
+#[case::depth(true)]
+fn test_exchange_book_processing_uses_explicit_input(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] depth: bool,
+) {
+    let instrument_id = crypto_perpetual_ethusdt.id;
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let selected = if depth {
+        OrderBookSource::Deltas
+    } else {
+        OrderBookSource::Depth
+    };
+    cache
+        .borrow_mut()
+        .set_order_book_source(instrument_id, selected)
+        .unwrap();
+    let exchange = get_exchange(
+        instrument_id.venue,
+        AccountType::Margin,
+        BookType::L2_MBP,
+        Some(cache.clone()),
+    );
+    exchange
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt))
+        .unwrap();
+    let snapshot = OrderBookDepth::new(
+        instrument_id,
+        vec![BookOrder::new(
+            OrderSide::Buy,
+            Price::from("999.00"),
+            Quantity::from("1.000"),
+            0,
+        )],
+        vec![
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("1000.00"),
+                Quantity::from("1.000"),
+                0,
+            ),
+            BookOrder::new(
+                OrderSide::Sell,
+                Price::from("1001.00"),
+                Quantity::from("2.000"),
+                0,
+            ),
+        ],
+        vec![0],
+        vec![0, 0],
+        0,
+        19,
+        1.into(),
+        1.into(),
+    );
+    let mut expected = OrderBook::new(instrument_id, BookType::L2_MBP);
+    expected.apply_depth(&snapshot).unwrap();
+
+    if depth {
+        exchange
+            .borrow_mut()
+            .process_order_book_depth(&snapshot)
+            .unwrap();
+    } else {
+        let deltas = expected.to_deltas(snapshot.ts_event, snapshot.ts_init);
+        exchange
+            .borrow_mut()
+            .process_order_book_deltas(&deltas)
+            .unwrap();
+    }
+
+    let exchange = exchange.borrow();
+    let book = exchange.get_book(instrument_id).unwrap();
+    assert_eq!(book.bids_as_map(None), expected.bids_as_map(None));
+    assert_eq!(book.asks_as_map(None), expected.asks_as_map(None));
+    assert_eq!(book.best_ask_price(), Some(Price::from("1000.00")));
+    assert_eq!(
+        cache.borrow().order_book_source(&instrument_id),
+        Some(selected)
     );
 }

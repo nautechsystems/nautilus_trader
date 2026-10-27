@@ -25,8 +25,8 @@ use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessError};
 use nautilus_model::orderbook::BookLevel;
 use nautilus_model::{
     data::{
-        Bar, BarType, DEPTH10_LEN, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick,
-        TradeTick,
+        Bar, BarType, DEPTH10_LEN, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
+        OrderBookDepth, QuoteTick, TradeTick,
         option_chain::OptionGreeks,
         order::{BookOrder, OrderId},
     },
@@ -4908,6 +4908,109 @@ fn test_bar_gap_stop_fills_at_open() {
 }
 
 #[rstest]
+#[case::zero("0.000")]
+#[case::one("0.001")]
+#[case::two("0.002")]
+#[case::three("0.003")]
+#[case::four("0.004")]
+#[case::many("10.000")]
+fn test_bar_trade_ticks_without_orders_match_per_tick_processing(
+    #[case] volume: &str,
+    #[values(false, true)] adaptive_ordering: bool,
+    #[values(false, true)] liquidity_consumption: bool,
+) {
+    // A resting order away from the market keeps the second engine on the per-tick path
+    let mut engines = [false, true].map(|with_order| {
+        let (mut engine, events) =
+            custom_book_engine(BookType::L1_MBP, liquidity_consumption, false);
+        engine.config.bar_execution = true;
+        engine.config.bar_adaptive_high_low_ordering = adaptive_ordering;
+
+        if with_order {
+            let mut order = OrderTestBuilder::new(OrderType::Limit)
+                .instrument_id(engine.instrument.id())
+                .client_order_id(ClientOrderId::from("AWAY"))
+                .side(OrderSide::Buy)
+                .price(Price::from("1.00"))
+                .quantity(Quantity::from("1.000"))
+                .submit(true)
+                .build();
+            process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+        }
+
+        (engine, events)
+    });
+    let bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+    // The last bar is stale, so the book skips its trade ticks
+    let bars = [
+        (2, ["100.00", "102.00", "99.00", "101.00"]),
+        (3, ["103.00", "103.00", "100.00", "100.00"]),
+        (4, ["100.00", "100.00", "100.00", "100.00"]),
+        (5, ["98.00", "101.00", "97.50", "99.00"]),
+        (4, ["99.50", "100.50", "98.50", "100.00"]),
+    ];
+
+    for (ts, [open, high, low, close]) in bars {
+        let ts = UnixNanos::from(ts);
+        let bar = Bar::new(
+            bar_type,
+            Price::from(open),
+            Price::from(high),
+            Price::from(low),
+            Price::from(close),
+            Quantity::from(volume),
+            ts,
+            ts,
+        );
+        let [(idle_updates, idle), (busy_updates, busy)] = engines.each_mut().map(|(engine, _)| {
+            let sequence = engine.book.sequence;
+            engine.process_bar(&bar);
+            let state = (
+                engine.core.last,
+                engine.core.bid,
+                engine.core.ask,
+                engine.book.best_bid_price(),
+                engine.book.best_bid_size(),
+                engine.book.best_ask_price(),
+                engine.book.best_ask_size(),
+                engine.book.ts_last,
+                engine.fill_at_market,
+                engine.l1_trade_size,
+                engine.trade_consumption,
+            );
+            (engine.book.sequence - sequence, state)
+        });
+
+        assert_eq!(idle, busy);
+        assert_eq!(idle_updates, busy_updates.min(1));
+    }
+
+    let [idle_fill, busy_fill] = engines.each_mut().map(|(engine, events)| {
+        events.borrow_mut().clear();
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(engine.instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("0.001"))
+            .submit(true)
+            .build();
+        process_cached_order(engine, &mut order, AccountId::from("SIM-001"));
+
+        events
+            .borrow()
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty, fill.trade_id)),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+    });
+
+    // Zero volume bars apply no trades, which leaves no market to fill against
+    assert_eq!(idle_fill.is_empty(), volume == "0.000");
+    assert_eq!(idle_fill, busy_fill);
+}
+
+#[rstest]
 fn test_quote_bar_close_restores_market_fill_and_clears_pair() {
     let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
     engine.config.bar_execution = true;
@@ -6919,4 +7022,457 @@ fn test_restore_open_order_respects_oto_terminal(#[case] terminal: Option<OrderE
 
     let expected: Vec<_> = terminal.into_iter().map(|kind| (child_id, kind)).collect();
     assert_eq!(terminals, expected);
+}
+
+#[rstest]
+fn test_mark_price_trailing_stop_uses_mark(
+    #[values(OrderType::TrailingStopMarket, OrderType::TrailingStopLimit)] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(false, true)] explicit_activation: bool,
+    #[values(false, true)] fill_at_market: bool,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, true, false);
+    let instrument_id = engine.instrument.id();
+
+    let (activation, favorable, improved, reversal, trigger) = if side == OrderSide::Buy {
+        ("1490.00", "1480.00", "1460.00", "1470.00", "1465.00")
+    } else {
+        ("1510.00", "1520.00", "1540.00", "1530.00", "1535.00")
+    };
+
+    let id = ClientOrderId::from("MARK-TRAILING");
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .instrument_id(instrument_id)
+        .client_order_id(id)
+        .side(side)
+        .trigger_type(TriggerType::MarkPrice)
+        .trailing_offset(dec!(5))
+        .limit_offset(dec!(100))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .quantity(Quantity::from("1.000"))
+        .submit(true);
+
+    if explicit_activation {
+        builder.activation_price(Price::from(activation));
+    }
+
+    let mut order = builder.build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from(favorable),
+        Price::from(favorable),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        2.into(),
+        2.into(),
+    ));
+    assert!(!engine.core.get_order(id).unwrap().is_activated);
+    assert_eq!(
+        engine.cache.borrow().order(&id).unwrap().trigger_price(),
+        None
+    );
+
+    for (ts, value) in [(3_u64, favorable), (4, improved)] {
+        engine.process_mark_price(&MarkPriceUpdate::new(
+            instrument_id,
+            Price::from(value),
+            ts.into(),
+            ts.into(),
+        ));
+    }
+
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        5.into(),
+        5.into(),
+    ));
+    {
+        let cache = engine.cache.borrow();
+        let order = cache.order(&id).unwrap();
+        assert_eq!(order.status(), OrderStatus::Accepted);
+        assert_eq!(order.trigger_price(), Some(Price::from(trigger)));
+        assert_eq!(
+            order.activation_price(),
+            Some(Price::from(if explicit_activation {
+                activation
+            } else {
+                favorable
+            }))
+        );
+    }
+
+    events.borrow_mut().clear();
+    engine.fill_at_market = fill_at_market;
+    engine.process_mark_price(&MarkPriceUpdate::new(
+        instrument_id,
+        Price::from(reversal),
+        6.into(),
+        6.into(),
+    ));
+    let cache = engine.cache.borrow();
+    let order = cache.order(&id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert_eq!(
+        order.avg_px(),
+        Some(
+            Price::from(if side == OrderSide::Buy {
+                "1501.00"
+            } else {
+                "1499.00"
+            })
+            .as_decimal()
+        )
+    );
+    assert_eq!(engine.core.mark, Some(Price::from(reversal)));
+    assert_eq!(engine.core.last, None);
+}
+
+#[rstest]
+fn test_mark_price_update_without_liquidity_does_not_create_a_market() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let (mut engine, cache) = get_queue_engine(instrument, BookType::L2_MBP);
+    let id = ClientOrderId::from("MARK-NO-LIQUIDITY");
+    let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("110.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+
+    let mark = MarkPriceUpdate::new(
+        engine.instrument.id(),
+        Price::from("120.00"),
+        3.into(),
+        3.into(),
+    );
+    engine.process_mark_price(&mark);
+    assert_eq!(engine.core.mark, Some(Price::from("120.00")));
+    assert_eq!(engine.core.bid, None);
+    assert_eq!(engine.core.ask, None);
+    assert_eq!(engine.core.last, None);
+    assert_eq!(engine.book.best_bid_price(), None);
+    assert_eq!(engine.book.best_ask_price(), None);
+    assert_eq!(engine.book.ts_last, UnixNanos::default());
+    let order = cache.borrow().order(&id).unwrap().clone();
+    assert_eq!(order.status(), OrderStatus::Canceled);
+    assert_eq!(order.filled_qty(), Quantity::from("0.000"));
+    assert_eq!(order.avg_px(), None);
+    engine.reset();
+    assert_eq!(engine.core.mark, None);
+}
+
+#[rstest]
+#[case::limit(OrderType::Limit, TriggerType::Default)]
+#[case::quote_stop(OrderType::StopMarket, TriggerType::BidAsk)]
+#[case::last_stop(OrderType::StopMarket, TriggerType::LastPrice)]
+fn test_mark_price_update_does_not_match_other_sources(
+    #[case] order_type: OrderType,
+    #[case] trigger_type: TriggerType,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
+    let instrument_id = engine.instrument.id();
+    let id = ClientOrderId::from("OTHER-SOURCE");
+    let mut order = OrderTestBuilder::new(order_type)
+        .instrument_id(instrument_id)
+        .client_order_id(id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from("1498.00"))
+        .trigger_price(Price::from("1505.00"))
+        .trigger_type(trigger_type)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    events.borrow_mut().clear();
+
+    let price = match order_type {
+        OrderType::Limit => "1497.00",
+        _ => "1510.00",
+    };
+
+    engine
+        .book
+        .update_quote_tick(&QuoteTick::new(
+            instrument_id,
+            Price::from(price),
+            Price::from(price),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            2.into(),
+            2.into(),
+        ))
+        .unwrap();
+    engine.core.last = Some(Price::from("1510.00"));
+    engine.process_mark_price(&MarkPriceUpdate::new(
+        instrument_id,
+        Price::from("1520.00"),
+        3.into(),
+        3.into(),
+    ));
+    assert_eq!(
+        engine.cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    assert!(events.borrow().is_empty());
+}
+
+#[rstest]
+fn test_mark_price_snapshot_remains_valid_for_later_submissions() {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
+    engine.config.reject_stop_orders = false;
+    let instrument_id = engine.instrument.id();
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        1.into(),
+        1.into(),
+    ));
+    engine.process_mark_price(&MarkPriceUpdate::new(
+        instrument_id,
+        Price::from("1520.00"),
+        2.into(),
+        2.into(),
+    ));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(3_600_000_000_000_u64), true);
+    engine.clock = clock;
+    let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("1510.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    let cache = engine.cache.borrow();
+    let order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.avg_px(), Some(dec!(1501)));
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.clone()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].last_px, Price::from("1501.00"));
+    assert_eq!(fills[0].ts_event, UnixNanos::from(3_600_000_000_000_u64));
+}
+
+#[rstest]
+fn test_mark_price_limit_uses_executable_marketability(
+    #[values(OrderType::StopLimit, OrderType::TrailingStopLimit)] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(false, true)] post_only: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let (mut engine, cache) = get_queue_engine(instrument, BookType::L1_MBP);
+    let instrument_id = engine.instrument.id();
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        1.into(),
+        1.into(),
+    ));
+
+    let (trigger, limit, fill_price) = match side {
+        OrderSide::Buy => ("1505.00", "1503.00", "1501.00"),
+        OrderSide::Sell => ("1495.00", "1497.00", "1499.00"),
+    };
+
+    let id = ClientOrderId::from("MARK-LIMIT-MARKETABILITY");
+    let mut order = OrderTestBuilder::new(order_type)
+        .instrument_id(instrument_id)
+        .client_order_id(id)
+        .side(side)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from(limit))
+        .trigger_price(Price::from(trigger))
+        .trigger_type(TriggerType::MarkPrice)
+        .post_only(post_only)
+        .trailing_offset(dec!(5))
+        .limit_offset(dec!(3))
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    if order_type == OrderType::TrailingStopLimit {
+        engine.process_mark_price(&MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1500.00"),
+            2.into(),
+            2.into(),
+        ));
+    }
+
+    assert_eq!(
+        engine.cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    engine.process_mark_price(&MarkPriceUpdate::new(
+        instrument_id,
+        Price::from(trigger),
+        3.into(),
+        3.into(),
+    ));
+    let cache = cache.borrow();
+    let order = cache.order(&id).unwrap();
+
+    if post_only {
+        assert_eq!(order.status(), OrderStatus::Rejected);
+        assert_eq!(order.filled_qty(), Quantity::from("0.000"));
+        assert_eq!(order.avg_px(), None);
+
+        let rejected = order
+            .events()
+            .iter()
+            .find_map(|event| match event {
+                OrderEventAny::Rejected(event) => Some(event),
+                _ => None,
+            })
+            .unwrap();
+
+        assert_eq!(
+            rejected.reason,
+            format!(
+                "POST_ONLY {order_type} {side} order limit px of {limit} would have been a TAKER: bid=1499.00, ask=1501.00"
+            )
+        );
+    } else {
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+        assert_eq!(order.avg_px(), Some(Price::from(fill_price).as_decimal()));
+        assert_eq!(order.liquidity_side(), Some(LiquiditySide::Taker));
+    }
+}
+
+#[rstest]
+fn test_mark_price_precision_is_independent_of_trading_tick(
+    #[values(1, 3, FIXED_PRECISION)] precision: u8,
+) {
+    let (mut engine, _) = custom_book_engine(BookType::L1_MBP, false, false);
+    let instrument_id = engine.instrument.id();
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        1.into(),
+        1.into(),
+    ));
+    let mut order = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("1505.00"))
+        .trigger_type(TriggerType::MarkPrice)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    engine.precision_mismatch_streak = 19;
+    let value = Price::from_decimal_dp(dec!(1505.123456789), precision).unwrap();
+    engine.process_mark_price(&MarkPriceUpdate::new(
+        instrument_id,
+        value,
+        2.into(),
+        2.into(),
+    ));
+    let cache = engine.cache.borrow();
+    let order = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert_eq!(order.avg_px(), Some(dec!(1501)));
+    assert_eq!(engine.core.mark, Some(value));
+    assert_eq!(engine.precision_mismatch_streak, 19);
+}
+
+#[rstest]
+fn test_mark_price_limit_if_touched_rests_as_maker(
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let (mut engine, cache) = get_queue_engine(instrument, BookType::L1_MBP);
+    let instrument_id = engine.instrument.id();
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        1.into(),
+        1.into(),
+    ));
+
+    let (trigger, limit, bid, ask) = match side {
+        OrderSide::Buy => ("1495.00", "1497.00", "1496.00", "1497.00"),
+        OrderSide::Sell => ("1505.00", "1503.00", "1503.00", "1504.00"),
+    };
+
+    let id = ClientOrderId::from("MARK-RESTING-LIMIT");
+    let mut order = OrderTestBuilder::new(OrderType::LimitIfTouched)
+        .instrument_id(instrument_id)
+        .client_order_id(id)
+        .side(side)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from(limit))
+        .trigger_price(Price::from(trigger))
+        .trigger_type(TriggerType::MarkPrice)
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    engine.process_mark_price(&MarkPriceUpdate::new(
+        instrument_id,
+        Price::from(trigger),
+        2.into(),
+        2.into(),
+    ));
+    {
+        let cache = cache.borrow();
+        let order = cache.order(&id).unwrap();
+        assert_eq!(order.status(), OrderStatus::Triggered);
+        assert_eq!(order.liquidity_side(), Some(LiquiditySide::Maker));
+        assert_eq!(order.filled_qty(), Quantity::from("0.000"));
+    }
+
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from(bid),
+        Price::from(ask),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        3.into(),
+        3.into(),
+    ));
+    let cache = cache.borrow();
+    let order = cache.order(&id).unwrap();
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.liquidity_side(), Some(LiquiditySide::Maker));
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert_eq!(order.avg_px(), Some(Price::from(limit).as_decimal()));
 }

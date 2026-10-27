@@ -747,6 +747,10 @@ global quota. If the JSON-RPC method belongs to the order or account category, i
 
 ### WebSocket limits
 
+The adapter combines adjacent queued subscribe requests that use the same public or private method without adding a delay.
+It splits large subscribe and unsubscribe sets so each serialized JSON-RPC request stays within 32,000 bytes, including
+the envelope. Restored subscriptions use the same size bound after reconnect.
+
 | Operation             | Adapter bucket      | Notes                                                          |
 | --------------------- | ------------------- | -------------------------------------------------------------- |
 | Subscribe/unsubscribe | 3 req/sec, 10 burst | Also the default bucket for every non-order WebSocket request. |

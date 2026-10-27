@@ -66,7 +66,7 @@ pub enum CatalogCompression {
     Zstd,
 }
 
-/// Configuration for a catalog available to request-time historical data loading.
+/// Configuration for catalog connection and storage settings.
 #[cfg_attr(
     feature = "python",
     expect(

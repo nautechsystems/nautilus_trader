@@ -830,7 +830,7 @@ async fn drain_initial_events(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Data
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|event| matches!(event, DataEvent::Instrument(_)));
+                .is_ok_and(|event| matches!(event, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -903,7 +903,7 @@ fn assert_new_listing_published_before_response(events: &[DataEvent]) {
     let new_listing = published
         .iter()
         .find_map(|event| match event {
-            DataEvent::Instrument(instrument)
+            DataEvent::Data(Data::Instrument(instrument))
                 if instrument.id() == InstrumentId::from("NEWCOIN-USD-PERP.HYPERLIQUID") =>
             {
                 Some(instrument)
@@ -1192,7 +1192,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     let mut instrument_count = 0;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             instrument_count += 1;
         }
     }
@@ -1223,7 +1223,7 @@ async fn test_data_client_emits_hip3_instruments() {
     let mut spot_symbols = Vec::new();
 
     while let Ok(event) = rx.try_recv() {
-        if let DataEvent::Instrument(instrument) = event {
+        if let DataEvent::Data(Data::Instrument(instrument)) = event {
             let symbol = instrument.id().symbol.to_string();
             if symbol.contains(':') {
                 hip3_settlements.push((
@@ -2058,7 +2058,9 @@ async fn test_data_client_concurrent_requests_publish_latest_definition_last() {
         .iter()
         .rev()
         .find_map(|event| match event {
-            DataEvent::Instrument(instrument) if instrument.id() == btc => Some(instrument),
+            DataEvent::Data(Data::Instrument(instrument)) if instrument.id() == btc => {
+                Some(instrument)
+            }
             _ => None,
         })
         .expect("changed BTC definition was never published");
@@ -2891,7 +2893,7 @@ fn instrument_statuses(events: &[DataEvent]) -> Vec<InstrumentStatus> {
     events
         .iter()
         .filter_map(|event| match event {
-            DataEvent::InstrumentStatus(status) => Some(*status),
+            DataEvent::Data(Data::InstrumentStatus(status)) => Some(*status),
             _ => None,
         })
         .collect()
@@ -3017,7 +3019,7 @@ async fn test_data_client_periodic_instrument_refresh_survives_reconnect(#[case]
 
         let refreshed = tokio::time::timeout(Duration::from_secs(70), async {
             loop {
-                if let Some(DataEvent::Instrument(instrument)) = rx.recv().await
+                if let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await
                     && instrument.id() == btc_id
                 {
                     break instrument;

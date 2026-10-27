@@ -28,6 +28,7 @@ use std::{
 };
 
 use ahash::AHashMap;
+use futures_util::future::BoxFuture;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{
     AtomicSet, AtomicTime, UUID4, UnixNanos,
@@ -78,12 +79,18 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE},
+        consts::{
+            DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE,
+            DERIBIT_WS_SUBSCRIPTION_KEY,
+        },
         enums::DeribitInstrumentState,
         parse::{parse_portfolio_to_account_state, use_cost_for_bar_volume},
     },
     data_types::DeribitVolatilityIndex,
 };
+
+// Deribit documents a 32 kB frame limit: https://docs.deribit.com/articles/errors
+const SUBSCRIPTION_REQUEST_MAX_BYTES: usize = 32_000;
 
 /// Type of pending request for request ID correlation.
 #[derive(Debug, Clone)]
@@ -235,8 +242,11 @@ pub type OrderSignature = (Decimal, Option<Decimal>, Option<Decimal>);
 pub struct DeribitWsFeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
-    inner: Option<WebSocketClient>,
+    inner: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
+    pending_command: Option<HandlerCommand>,
+    subscription_requests: VecDeque<(u64, String)>,
+    subscription_send: Option<SubscriptionSend>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     out_tx: tokio::sync::mpsc::UnboundedSender<NautilusWsMessage>,
     auth_tracker: AuthTracker,
@@ -289,6 +299,9 @@ impl DeribitWsFeedHandler {
             signal,
             inner: None,
             cmd_rx,
+            pending_command: None,
+            subscription_requests: VecDeque::new(),
+            subscription_send: None,
             raw_rx,
             out_tx,
             auth_tracker,
@@ -335,6 +348,8 @@ impl DeribitWsFeedHandler {
         let outgoing_count = self.pending_outgoing.len();
 
         self.pending_requests.clear();
+        self.subscription_requests.clear();
+        self.subscription_send = None;
         self.pending_bars.clear();
         self.last_account_states.clear();
         self.book_sequence.clear();
@@ -379,28 +394,34 @@ impl DeribitWsFeedHandler {
     }
 
     /// Sends a message over the WebSocket with retry logic.
-    async fn send_with_retry(
+    fn send_with_retry(
         &self,
         payload: String,
         rate_limit_keys: Option<&[Ustr]>,
-    ) -> Result<(), DeribitWsError> {
+    ) -> BoxFuture<'static, Result<(), DeribitWsError>> {
         self.send_secret_with_retry(payload.into(), rate_limit_keys)
-            .await
     }
 
-    async fn send_secret_with_retry(
+    fn send_secret_with_retry(
         &self,
         payload: SecretString,
         rate_limit_keys: Option<&[Ustr]>,
-    ) -> Result<(), DeribitWsError> {
-        if let Some(client) = &self.inner {
-            let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(<[Ustr]>::to_vec);
-            self.retry_manager
+    ) -> BoxFuture<'static, Result<(), DeribitWsError>> {
+        let client = self.inner.clone();
+        let retry_manager = self.retry_manager.clone();
+        let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(<[Ustr]>::to_vec);
+        Box::pin(async move {
+            let Some(client) = client else {
+                return Err(DeribitWsError::NotConnected);
+            };
+
+            retry_manager
                 .invocation(
                     "websocket_send",
                     || {
                         let payload = payload.clone();
                         let keys = keys_owned.clone();
+                        let client = client.clone();
                         async move {
                             client
                                 .send_text(payload.expose_secret().to_owned(), keys.as_deref())
@@ -413,9 +434,7 @@ impl DeribitWsFeedHandler {
                 )
                 .execute()
                 .await
-        } else {
-            Err(DeribitWsError::NotConnected)
-        }
+        })
     }
 
     async fn handle_authenticate(&mut self, auth_params: SecretString) {
@@ -462,76 +481,89 @@ impl DeribitWsFeedHandler {
     /// Handles a subscribe command.
     ///
     /// Note: The client has already called `mark_subscribe` before sending this command.
-    async fn handle_subscribe(&mut self, channels: Vec<String>) -> Result<(), DeribitWsError> {
-        let request_id = self.next_request_id();
+    fn handle_subscribe(&mut self, channels: Vec<String>) -> Result<(), DeribitWsError> {
+        let result = self.queue_subscription_requests(channels, true);
+        if let Err(e) = &result {
+            self.subscribe_errors.lock().push(e.to_string());
+        }
 
-        // Track this request for response correlation
-        self.pending_requests.insert(
-            request_id,
-            PendingRequestType::Subscribe {
-                channels: channels.clone(),
-            },
-        );
-
-        // Deribit requires private/subscribe for authenticated channels
-        let method = if channels
-            .iter()
-            .any(|ch| DeribitWsChannel::requires_auth(ch))
-        {
-            DeribitWsMethod::PrivateSubscribe
-        } else {
-            DeribitWsMethod::PublicSubscribe
-        };
-
-        let request = DeribitJsonRpcRequest::new(
-            request_id,
-            method.as_method_str(),
-            DeribitSubscribeParams {
-                channels: channels.clone(),
-            },
-        );
-
-        let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
-
-        log::debug!("Subscribing to channels: request_id={request_id}, channels={channels:?}");
-        self.send_tracked_request(request_id, payload, None).await
+        result
     }
 
     /// Handles an unsubscribe command.
-    async fn handle_unsubscribe(&mut self, channels: Vec<String>) -> Result<(), DeribitWsError> {
-        let request_id = self.next_request_id();
+    fn handle_unsubscribe(&mut self, channels: Vec<String>) -> Result<(), DeribitWsError> {
+        self.queue_subscription_requests(channels, false)
+    }
 
-        // Track this request for response correlation
-        self.pending_requests.insert(
-            request_id,
-            PendingRequestType::Unsubscribe {
-                channels: channels.clone(),
-            },
-        );
-
-        let method = if channels
+    fn queue_subscription_requests(
+        &mut self,
+        channels: Vec<String>,
+        subscribe: bool,
+    ) -> Result<(), DeribitWsError> {
+        let private = channels
             .iter()
-            .any(|ch| DeribitWsChannel::requires_auth(ch))
-        {
-            DeribitWsMethod::PrivateUnsubscribe
-        } else {
-            DeribitWsMethod::PublicUnsubscribe
+            .any(|ch| DeribitWsChannel::requires_auth(ch));
+
+        let method = match (subscribe, private) {
+            (true, true) => DeribitWsMethod::PrivateSubscribe,
+            (true, false) => DeribitWsMethod::PublicSubscribe,
+            (false, true) => DeribitWsMethod::PrivateUnsubscribe,
+            (false, false) => DeribitWsMethod::PublicUnsubscribe,
         };
 
-        let request = DeribitJsonRpcRequest::new(
-            request_id,
-            method.as_method_str(),
-            DeribitSubscribeParams {
-                channels: channels.clone(),
-            },
-        );
+        let batches = subscription_batches(channels, &method)?;
+        for channels in batches {
+            let request_id = self.next_request_id();
 
-        let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
+            let request = DeribitJsonRpcRequest::new(
+                request_id,
+                method.as_method_str(),
+                DeribitSubscribeParams { channels },
+            );
+            let payload =
+                serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+            let channels = request.params.channels;
+            let pending = if subscribe {
+                PendingRequestType::Subscribe { channels }
+            } else {
+                PendingRequestType::Unsubscribe { channels }
+            };
 
-        log::debug!("Unsubscribing from channels: request_id={request_id}, channels={channels:?}");
-        self.send_tracked_request(request_id, payload, None).await
+            self.pending_requests.insert(request_id, pending);
+            self.subscription_requests.push_back((request_id, payload));
+        }
+
+        Ok(())
+    }
+
+    fn coalesce_subscriptions(&mut self, mut channels: Vec<String>) -> Vec<String> {
+        let private = channels
+            .iter()
+            .any(|ch| DeribitWsChannel::requires_auth(ch));
+        let mut bytes = channels.iter().map(|ch| ch.len() + 3).sum::<usize>();
+        while bytes < SUBSCRIPTION_REQUEST_MAX_BYTES {
+            let Ok(cmd) = self.cmd_rx.try_recv() else {
+                break;
+            };
+
+            match cmd {
+                HandlerCommand::Subscribe { channels: adjacent }
+                    if adjacent
+                        .iter()
+                        .any(|ch| DeribitWsChannel::requires_auth(ch))
+                        == private =>
+                {
+                    bytes += adjacent.iter().map(|ch| ch.len() + 3).sum::<usize>() + 1;
+                    channels.extend(adjacent);
+                }
+                cmd => {
+                    self.pending_command = Some(cmd);
+                    break;
+                }
+            }
+        }
+
+        channels
     }
 
     /// Handles enabling heartbeat.
@@ -838,7 +870,7 @@ impl DeribitWsFeedHandler {
         match cmd {
             HandlerCommand::SetClient(client) => {
                 log::debug!("Setting WebSocket client");
-                self.inner = Some(client);
+                self.inner = Some(Arc::new(client));
             }
             HandlerCommand::Disconnect => {
                 log::debug!("Disconnecting WebSocket");
@@ -869,7 +901,7 @@ impl DeribitWsFeedHandler {
                     .insert(instrument.raw_symbol().inner(), *instrument);
             }
             HandlerCommand::Subscribe { channels } => {
-                if let Err(e) = self.handle_subscribe(channels).await {
+                if let Err(e) = self.handle_subscribe(channels) {
                     log::error!("Subscribe failed: {e}");
                 }
             }
@@ -878,7 +910,7 @@ impl DeribitWsFeedHandler {
                 // for these channels so we don't re-subscribe against user intent
                 self.pending_book_resync.retain(|ch| !channels.contains(ch));
 
-                if let Err(e) = self.handle_unsubscribe(channels).await {
+                if let Err(e) = self.handle_unsubscribe(channels) {
                     log::error!("Unsubscribe failed: {e}");
                 }
             }
@@ -1112,7 +1144,7 @@ impl DeribitWsFeedHandler {
                                     .collect();
 
                                 if !resync.is_empty() {
-                                    let _ = self.handle_subscribe(resync).await;
+                                    let _ = self.handle_subscribe(resync);
                                 }
                             }
                         }
@@ -2599,7 +2631,7 @@ impl DeribitWsFeedHandler {
         }
 
         // Defer resubscribe until unsubscribe ack
-        let _ = self.handle_unsubscribe(book_channels).await;
+        let _ = self.handle_unsubscribe(book_channels);
     }
 
     fn order_signature(order: &DeribitOrderMsg) -> OrderSignature {
@@ -2763,6 +2795,12 @@ impl DeribitWsFeedHandler {
     /// Data messages are sent directly to `out_tx` for the user stream.
     pub async fn next(&mut self) -> Option<NautilusWsMessage> {
         loop {
+            if self.signal.load(Ordering::Relaxed) {
+                self.subscription_send = None;
+                self.process_command(HandlerCommand::Disconnect).await;
+                return None;
+            }
+
             if let Some(msg) = self.pending_outgoing.pop_front() {
                 match msg {
                     NautilusWsMessage::Reconnected
@@ -2777,9 +2815,49 @@ impl DeribitWsFeedHandler {
                 }
             }
 
+            if self.subscription_send.is_none()
+                && let Some((request_id, payload)) = self.subscription_requests.pop_front()
+            {
+                let send = self.send_secret_with_retry(
+                    payload.into(),
+                    Some(&[Ustr::from(DERIBIT_WS_SUBSCRIPTION_KEY)]),
+                );
+                self.subscription_send = Some(Box::pin(async move { (request_id, send.await) }));
+            }
+
             tokio::select! {
-                // Process commands from client
-                Some(cmd) = self.cmd_rx.recv() => {
+                (request_id, result) = async {
+                    match &mut self.subscription_send {
+                        Some(send) => send.await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    self.subscription_send = None;
+
+                    if let Err(e) = result {
+                        if matches!(
+                            self.pending_requests.remove(&request_id),
+                            Some(PendingRequestType::Subscribe { .. })
+                        ) {
+                            self.subscribe_errors.lock().push(e.to_string());
+                        }
+                        log::error!("Subscription request send failed: request_id={request_id}, {e}");
+                    }
+                }
+                // Keep later commands behind all queued subscription batches
+                Some(cmd) = async {
+                    match self.pending_command.take() {
+                        Some(cmd) => Some(cmd),
+                        None => self.cmd_rx.recv().await,
+                    }
+                }, if self.subscription_send.is_none() && self.subscription_requests.is_empty() => {
+                    let cmd = match cmd {
+                        HandlerCommand::Subscribe { channels } => {
+                            let channels = self.coalesce_subscriptions(channels);
+                            HandlerCommand::Subscribe { channels }
+                        }
+                        cmd => cmd,
+                    };
                     self.process_command(cmd).await;
                 }
                 // Process raw WebSocket messages
@@ -2842,14 +2920,58 @@ impl DeribitWsFeedHandler {
                 }
                 // Check for stop signal
                 () = tokio::time::sleep(tokio::time::Duration::from_millis(100)) => {
-                    if self.signal.load(Ordering::Relaxed) {
-                        log::debug!("Stop signal received");
-                        return None;
-                    }
                 }
             }
         }
     }
+}
+
+type SubscriptionSend = BoxFuture<'static, (u64, Result<(), DeribitWsError>)>;
+
+fn subscription_batches(
+    channels: Vec<String>,
+    method: &DeribitWsMethod,
+) -> Result<Vec<Vec<String>>, DeribitWsError> {
+    let envelope = DeribitJsonRpcRequest::new(
+        u64::MAX,
+        method.as_method_str(),
+        DeribitSubscribeParams {
+            channels: Vec::new(),
+        },
+    );
+
+    let overhead = serde_json::to_string(&envelope)
+        .map_err(|e| DeribitWsError::Json(e.to_string()))?
+        .len();
+    let mut batches = Vec::new();
+    let mut batch = Vec::new();
+    let mut bytes = overhead;
+
+    for channel in channels {
+        let encoded =
+            serde_json::to_string(&channel).map_err(|e| DeribitWsError::Json(e.to_string()))?;
+
+        if overhead + encoded.len() > SUBSCRIPTION_REQUEST_MAX_BYTES {
+            return Err(DeribitWsError::Subscribe(
+                "Channel exceeds the WebSocket request byte limit".to_string(),
+            ));
+        }
+
+        let separator = usize::from(!batch.is_empty());
+        if bytes + separator + encoded.len() > SUBSCRIPTION_REQUEST_MAX_BYTES {
+            batches.push(std::mem::take(&mut batch));
+            bytes = overhead;
+        }
+
+        bytes += usize::from(!batch.is_empty()) + encoded.len();
+        batch.push(channel);
+    }
+
+    if !batch.is_empty() {
+        batches.push(batch);
+    }
+
+    Ok(batches)
 }
 
 fn is_instrument_book_channel(channel: &str, instrument_name: &str) -> bool {
@@ -2867,11 +2989,18 @@ fn is_grouped_book_channel(channel: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use futures_util::{SinkExt, StreamExt};
     use nautilus_model::{
         enums::{BookType, LiquiditySide},
         instruments::Instrument,
         orderbook::OrderBook,
         types::{Money, Price, Quantity},
+    };
+    use nautilus_network::{
+        ratelimiter::quota::Quota,
+        websocket::{WebSocketConfig, channel_message_handler},
     };
     use rstest::rstest;
 
@@ -4352,5 +4481,485 @@ mod tests {
             );
             assert!(handler.pending_requests.is_empty());
         }
+    }
+
+    #[rstest]
+    #[case(DeribitWsMethod::PublicSubscribe)]
+    #[case(DeribitWsMethod::PrivateSubscribe)]
+    #[case(DeribitWsMethod::PublicUnsubscribe)]
+    #[case(DeribitWsMethod::PrivateUnsubscribe)]
+    fn subscription_batches_bound_serialized_bytes(#[case] method: DeribitWsMethod) {
+        let mut channels: Vec<String> = (0..1500)
+            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100000 + i))
+            .collect();
+        channels.push("quoted.\"\\\n.é".repeat(100));
+        let batches = subscription_batches(channels.clone(), &method).unwrap();
+        assert_eq!(batches.len(), 3);
+        let mut actual = Vec::new();
+
+        for channels in batches {
+            let request = DeribitJsonRpcRequest::new(
+                u64::MAX,
+                method.as_method_str(),
+                DeribitSubscribeParams { channels },
+            );
+            let payload = serde_json::to_string(&request).unwrap();
+            assert!(payload.len() <= SUBSCRIPTION_REQUEST_MAX_BYTES);
+            actual.extend(request.params.channels);
+        }
+
+        assert_eq!(actual, channels);
+    }
+
+    #[rstest]
+    fn subscription_batches_exact_boundary_and_oversized_channel() {
+        let method = DeribitWsMethod::PrivateSubscribe;
+
+        let request = DeribitJsonRpcRequest::new(
+            u64::MAX,
+            method.as_method_str(),
+            DeribitSubscribeParams {
+                channels: vec![String::new()],
+            },
+        );
+
+        let overhead = serde_json::to_string(&request).unwrap().len();
+        let channel = "a".repeat(SUBSCRIPTION_REQUEST_MAX_BYTES - overhead);
+        assert_eq!(
+            subscription_batches(vec![channel.clone()], &method).unwrap(),
+            vec![vec![channel.clone()]],
+        );
+        assert!(matches!(
+            subscription_batches(vec![format!("{channel}a")], &method),
+            Err(DeribitWsError::Subscribe(_)),
+        ));
+        assert!(
+            subscription_batches(Vec::new(), &method)
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn subscription_batches_correlate_rejections_and_reconnect() {
+        let mut handler = routing_test_handler();
+        let channels: Vec<String> = (0..1500)
+            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100000 + i))
+            .collect();
+
+        for channel in &channels {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+        }
+
+        handler.handle_subscribe(channels.clone()).unwrap();
+        assert_eq!(handler.subscription_requests.len(), 2);
+        let requests: Vec<_> = handler.subscription_requests.iter().cloned().collect();
+        for (index, (request_id, payload)) in requests.iter().enumerate() {
+            let request: serde_json::Value = serde_json::from_str(payload).unwrap();
+
+            let result = if index == 0 {
+                serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": request["params"]["channels"]})
+            } else {
+                serde_json::json!({"jsonrpc": "2.0", "id": request_id, "error": {"code": 10028, "message": "too_many_requests"}})
+            };
+
+            handler.process_raw_message(&result.to_string()).await;
+        }
+
+        let rejected: serde_json::Value = serde_json::from_str(&requests[1].1).unwrap();
+        let rejected: Vec<String> =
+            serde_json::from_value(rejected["params"]["channels"].clone()).unwrap();
+        let mut pending = handler.subscriptions_state.pending_subscribe_topics();
+        pending.sort();
+        assert_eq!(pending, rejected);
+        assert!(handler.pending_requests.is_empty());
+        assert_eq!(handler.subscribe_errors.lock().len(), 1);
+        let mut restored = handler.subscriptions_state.reset_after_reconnect();
+        restored.sort();
+        assert_eq!(restored, channels);
+        handler.process_raw_message(RECONNECTED).await;
+        assert!(handler.subscription_requests.is_empty());
+        assert!(handler.subscription_send.is_none());
+        assert_eq!(
+            handler
+                .subscriptions_state
+                .get_reference_count(&channels[0]),
+            1
+        );
+    }
+
+    #[rstest]
+    fn subscription_coalescing_preserves_barriers_and_authentication() {
+        let mut handler = routing_test_handler();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.cmd_rx = cmd_rx;
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channels: vec!["ticker.ETH-PERPETUAL.100ms".into()],
+            })
+            .unwrap();
+
+        cmd_tx
+            .send(HandlerCommand::Unsubscribe {
+                channels: vec!["ticker.BTC-PERPETUAL.100ms".into()],
+            })
+            .unwrap();
+
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channels: vec!["ticker.SOL_USDC-PERPETUAL.100ms".into()],
+            })
+            .unwrap();
+
+        let combined = handler.coalesce_subscriptions(vec!["ticker.BTC-PERPETUAL.100ms".into()]);
+        assert_eq!(
+            combined,
+            vec!["ticker.BTC-PERPETUAL.100ms", "ticker.ETH-PERPETUAL.100ms"]
+        );
+        assert!(matches!(
+            handler.pending_command.take(),
+            Some(HandlerCommand::Unsubscribe { .. })
+        ));
+        assert!(matches!(
+            handler.cmd_rx.try_recv(),
+            Ok(HandlerCommand::Subscribe { .. })
+        ));
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channels: vec!["user.orders.any.any.raw".into()],
+            })
+            .unwrap();
+
+        let combined = handler.coalesce_subscriptions(vec!["ticker.BTC-PERPETUAL.100ms".into()]);
+        assert_eq!(combined, vec!["ticker.BTC-PERPETUAL.100ms"]);
+        assert!(matches!(
+            handler.pending_command,
+            Some(HandlerCommand::Subscribe { .. })
+        ));
+    }
+
+    #[rstest]
+    #[case::reconnect(true)]
+    #[case::shutdown(false)]
+    #[tokio::test]
+    async fn subscription_quota_wait_keeps_messages_and_lifecycle_responsive(
+        #[case] reconnect: bool,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio_tungstenite::accept_async(stream).await.unwrap()
+        });
+
+        let (message_handler, raw_rx) = channel_message_handler();
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{addr}"))
+            .build()
+            .unwrap();
+        let quota = Quota::with_period(Duration::from_secs(60)).unwrap();
+        let ws_client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .keyed_quotas(vec![(DERIBIT_WS_SUBSCRIPTION_KEY.to_string(), quota)])
+            .connect()
+            .await
+            .unwrap();
+        let mut socket = server.await.unwrap();
+        ws_client
+            .send_text(
+                "reserve".to_string(),
+                Some(&[Ustr::from(DERIBIT_WS_SUBSCRIPTION_KEY)]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            socket.next().await.unwrap().unwrap(),
+            Message::Text("reserve".into())
+        );
+
+        let mut handler = routing_test_handler();
+        handler.inner = Some(Arc::new(ws_client));
+        handler.raw_rx = raw_rx;
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.out_tx = out_tx;
+        handler
+            .handle_authenticate(
+                serde_json::json!({"grant_type":"client_credentials"})
+                    .to_string()
+                    .into(),
+            )
+            .await;
+        let auth: serde_json::Value =
+            serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+        assert_eq!(auth["method"], "public/auth");
+        assert_eq!(auth["id"], 1);
+        let channels = vec![
+            "ticker.BTC-PERPETUAL.100ms".to_string(),
+            "ticker.ETH-PERPETUAL.100ms".to_string(),
+        ];
+
+        for channel in &channels {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+            handler.handle_subscribe(vec![channel.clone()]).unwrap();
+        }
+
+        handler.subscriptions_state.add_reference(&channels[0]);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), handler.next())
+                .await
+                .is_err()
+        );
+        assert!(handler.subscription_send.is_some());
+        assert_eq!(handler.subscription_requests.len(), 1);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), socket.next())
+                .await
+                .is_err()
+        );
+
+        let incoming = serde_json::json!({"value":17});
+        socket
+            .send(Message::Text(
+                subscription("unknown.channel", &incoming).into(),
+            ))
+            .await
+            .unwrap();
+        socket.send(Message::Text(serde_json::json!({"jsonrpc":"2.0","method":"heartbeat","params":{"type":"test_request"}}).to_string().into())).await.unwrap();
+        socket
+            .send(Message::Ping(vec![7, 11].into()))
+            .await
+            .unwrap();
+        socket
+            .send(Message::Text(
+                serde_json::json!({
+                    "jsonrpc":"2.0", "id":1, "result":{
+                        "access_token":"access", "refresh_token":"refresh", "expires_in":901,
+                        "scope":"session:test", "token_type":"bearer", "enabled_features":[]
+                    }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        let authenticated = tokio::time::timeout(Duration::from_millis(500), handler.next())
+            .await
+            .unwrap();
+
+        let Some(NautilusWsMessage::Authenticated(auth)) = authenticated else {
+            panic!("Expected authentication response during quota wait");
+        };
+
+        assert_eq!(auth.access_token.expose_secret(), "access");
+        assert_eq!(auth.refresh_token.expose_secret(), "refresh");
+        assert_eq!(auth.expires_in, 901);
+        assert_eq!(auth.scope, "session:test");
+        assert_eq!(auth.token_type, "bearer");
+        assert_eq!(auth.enabled_features, Vec::<String>::new());
+        assert!(
+            matches!(out_rx.try_recv().unwrap(), NautilusWsMessage::Raw(data) if serde_json::from_str::<serde_json::Value>(data.get()).unwrap() == incoming)
+        );
+        let mut heartbeat = None;
+        let mut pong = None;
+
+        for _ in 0..2 {
+            let message = tokio::time::timeout(Duration::from_millis(500), socket.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+
+            match message {
+                Message::Text(text) => {
+                    heartbeat = Some(serde_json::from_str::<serde_json::Value>(&text).unwrap());
+                }
+                Message::Pong(data) => pong = Some(data.to_vec()),
+                message => panic!("Unexpected response: {message:?}"),
+            }
+        }
+
+        assert_eq!(
+            heartbeat,
+            Some(serde_json::json!({"jsonrpc":"2.0", "id":4, "method":"public/test", "params":{}}))
+        );
+        assert_eq!(pong, Some(vec![7, 11]));
+        assert!(handler.subscription_send.is_some());
+        assert_eq!(handler.subscription_requests.len(), 1);
+
+        if reconnect {
+            socket
+                .send(Message::Text(RECONNECTED.into()))
+                .await
+                .unwrap();
+            let result = tokio::time::timeout(Duration::from_millis(500), handler.next())
+                .await
+                .unwrap();
+            assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
+            assert!(handler.subscription_send.is_none());
+            assert!(handler.subscription_requests.is_empty());
+            assert!(handler.pending_requests.is_empty());
+            let mut restored = handler.subscriptions_state.reset_after_reconnect();
+            restored.sort();
+            assert_eq!(restored, channels);
+            assert_eq!(
+                handler
+                    .subscriptions_state
+                    .get_reference_count(&channels[0]),
+                2
+            );
+            assert_eq!(
+                handler
+                    .subscriptions_state
+                    .get_reference_count(&channels[1]),
+                1
+            );
+        }
+
+        handler.signal.store(true, Ordering::Relaxed);
+        let result = tokio::time::timeout(Duration::from_millis(500), handler.next())
+            .await
+            .unwrap();
+        assert!(result.is_none());
+        assert!(handler.subscription_send.is_none());
+        let close = tokio::time::timeout(Duration::from_millis(500), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(matches!(close, Message::Close(_)));
+    }
+
+    #[rstest]
+    #[case(true, "private/subscribe")]
+    #[case(false, "private/unsubscribe")]
+    fn mixed_subscription_batches_keep_original_private_method(
+        #[case] subscribe: bool,
+        #[case] method: &str,
+    ) {
+        let mut handler = routing_test_handler();
+        let mut channels: Vec<String> = (0..1500)
+            .map(|i| format!("ticker.BTC-27DEC30-{}-C.100ms", 100000 + i))
+            .collect();
+        channels.push("user.orders.any.any.raw".into());
+        handler
+            .queue_subscription_requests(channels.clone(), subscribe)
+            .unwrap();
+        assert_eq!(handler.subscription_requests.len(), 2);
+        let mut actual = Vec::new();
+
+        for (_, payload) in &handler.subscription_requests {
+            let request: serde_json::Value = serde_json::from_str(payload).unwrap();
+            assert_eq!(request["method"], method);
+            actual.extend(
+                serde_json::from_value::<Vec<String>>(request["params"]["channels"].clone())
+                    .unwrap(),
+            );
+        }
+
+        assert_eq!(actual, channels);
+    }
+
+    #[tokio::test]
+    async fn subscription_send_wait_processes_heartbeat_and_authentication() {
+        let mut handler = routing_test_handler();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.raw_rx = raw_rx;
+        handler.subscription_send = Some(Box::pin(std::future::pending()));
+        handler
+            .pending_requests
+            .insert(42, PendingRequestType::Authenticate);
+        raw_tx
+            .send(Message::Text(load_test_json("ws_test_request.json").into()))
+            .unwrap();
+        let response = serde_json::json!({
+            "jsonrpc": "2.0", "id": 42,
+            "result": {
+                "access_token": "test-access", "refresh_token": "test-refresh", "expires_in": 900,
+                "scope": "connection", "token_type": "bearer"
+            }
+        });
+        raw_tx
+            .send(Message::Text(response.to_string().into()))
+            .unwrap();
+        let result = tokio::time::timeout(std::time::Duration::from_millis(500), handler.next())
+            .await
+            .unwrap();
+        assert!(matches!(result, Some(NautilusWsMessage::Authenticated(_))));
+        assert!(handler.subscription_send.is_some());
+        assert!(!handler.pending_requests.contains_key(&42));
+        assert!(matches!(
+            handler.pending_requests.get(&1),
+            Some(PendingRequestType::Test)
+        ));
+    }
+
+    #[tokio::test]
+    async fn subscription_send_wait_preserves_command_order() {
+        let mut handler = routing_test_handler();
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.cmd_rx = cmd_rx;
+        handler.subscription_send = Some(Box::pin(std::future::pending()));
+        cmd_tx
+            .send(HandlerCommand::SetHeartbeat { interval: 37 })
+            .unwrap();
+        {
+            let next = handler.next();
+            tokio::pin!(next);
+            assert!(futures_util::poll!(next).is_pending());
+        }
+
+        assert!(handler.pending_requests.is_empty());
+        assert_eq!(handler.cmd_rx.len(), 1);
+        handler.subscription_send = None;
+        {
+            let next = handler.next();
+            tokio::pin!(next);
+            assert!(futures_util::poll!(next).is_pending());
+        }
+
+        assert_eq!(handler.cmd_rx.len(), 0);
+        assert_eq!(handler.pending_requests.len(), 1);
+        assert!(matches!(
+            handler.pending_requests.get(&1),
+            Some(PendingRequestType::SetHeartbeat)
+        ));
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    #[tokio::test]
+    async fn subscription_send_failure_removes_request_correlation(#[case] subscribe: bool) {
+        let mut handler = routing_test_handler();
+        let channels = vec!["ticker.BTC-PERPETUAL.100ms".into()];
+        let request = if subscribe {
+            PendingRequestType::Subscribe { channels }
+        } else {
+            PendingRequestType::Unsubscribe { channels }
+        };
+
+        handler.pending_requests.insert(73, request);
+
+        handler.subscription_send =
+            Some(Box::pin(async { (73, Err(DeribitWsError::NotConnected)) }));
+        {
+            let next = handler.next();
+            tokio::pin!(next);
+            assert!(futures_util::poll!(next).is_pending());
+        }
+
+        assert!(handler.pending_requests.is_empty());
+        assert!(handler.subscription_send.is_none());
+
+        let expected_errors = if subscribe {
+            vec![DeribitWsError::NotConnected.to_string()]
+        } else {
+            Vec::new()
+        };
+
+        assert_eq!(*handler.subscribe_errors.lock(), expected_errors);
     }
 }

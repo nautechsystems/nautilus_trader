@@ -1224,6 +1224,9 @@ ExecTesterConfig::builder()
 - This is the required path for venues that do not support native trigger-order replace.
 - After the new stop is accepted, restart or force reconciliation and verify exactly one
   current trigger order remains.
+- ExecTester keeps replacements pending after reconciliation-generated cancellations and logs an error.
+  Mark the case inconclusive, then check and cancel any remaining test orders at the venue;
+  the original stop may still be working.
 
 **Python config**:
 
@@ -2095,13 +2098,13 @@ ExecTesterConfig::builder()
 
 ### TC-E89: WebSocket commission failure
 
-| Field              | Value                                                                                                                |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| **Prerequisite**   | A private fill fixture produces an out-of-range commission and has a stable venue trade ID.                          |
-| **Action**         | Deliver the invalid trade, replace its commission with a valid value, then redeliver the same trade ID.              |
-| **Event sequence** | The first delivery emits no fill and changes no fill, terminal, or deduplication state. The replay emits one fill.   |
-| **Pass criteria**  | No panic or fallback occurs. The valid replay applies exactly once. REST reconciliation can recover a missed replay. |
-| **Skip when**      | The adapter has no private fill stream or does not calculate commission for private fills.                           |
+| Field              | Value                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A private fill fixture produces an out-of-range commission and has a stable venue trade ID.                               |
+| **Action**         | Deliver the invalid trade, repair its commission, then replay the same trade ID. For Polymarket, use the exception below. |
+| **Event sequence** | The first delivery emits no fill and changes no fill, terminal, or deduplication state. The replay emits one fill.        |
+| **Pass criteria**  | No panic or fallback occurs. The valid replay applies exactly once. REST reconciliation can recover a missed replay.      |
+| **Skip when**      | The adapter has no private fill stream or does not calculate commission for private fills.                                |
 
 **Considerations**:
 
@@ -2110,6 +2113,26 @@ ExecTesterConfig::builder()
 - Assert that the adapter consumes the deduplication key only after all reports construct and route
   successfully.
 - Assert that a failed trade does not confirm or terminalize its order.
+
+**Polymarket exception**:
+
+Invalid commission evidence quarantines the whole trade for targeted REST resolution. The failed
+delivery emits no fill, applies no owned leg, and does not confirm or terminalize the order. Quarantine
+state persists across repaired WebSocket replays with the same trade ID, including `CONFIRMED` updates.
+The default WebSocket replay recovery, unchanged deduplication state, and REST reconciliation fallback
+requirements above do not apply to Polymarket, including the deduplication-key consideration.
+Targeted terminal REST evidence supplies recovery.
+
+After repairing the commission inputs, verify that:
+
+1. A same-ID WebSocket replay emits no fill and leaves the trade quarantined.
+1. A targeted non-terminal REST result emits no fill and leaves the trade quarantined.
+1. A valid targeted REST `CONFIRMED` result emits the exact fill quantity, price, and commission once.
+1. Repeated REST evidence emits no duplicate, both before and after the engine applies the fill.
+
+Use distinct REST fill values to prove that recovery uses REST evidence. For terminal `FAILED`
+evidence, verify that no previously unemitted fill appears. See
+[Polymarket settlement resolution](../integrations/polymarket.md#failed-trades-and-rest-resolution).
 
 ---
 

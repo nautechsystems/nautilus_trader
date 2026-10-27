@@ -20,6 +20,7 @@ use std::sync::LazyLock;
 use ahash::AHashSet;
 use nautilus_model::{
     enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
+    events::OrderDeniedReason,
     identifiers::{ClientId, Venue},
 };
 use ustr::Ustr;
@@ -171,7 +172,7 @@ pub(crate) fn okx_algo_target_currency(
     order_side: OrderSide,
     order_type: OrderType,
     quote_quantity: bool,
-) -> Result<Option<OKXTargetCurrency>, String> {
+) -> Result<Option<OKXTargetCurrency>, OrderDeniedReason> {
     if !OKX_CONDITIONAL_ORDER_TYPES.contains(&order_type) {
         return Ok(None);
     }
@@ -192,17 +193,17 @@ pub(crate) fn okx_algo_target_currency(
             return if quote_quantity {
                 Ok(None)
             } else {
-                Err(format!(
-                    "OKX {instrument_type} {order_type} algo buys require quote quantity in {td_mode} mode"
-                ))
+                Err(OrderDeniedReason::ValidationFailed {
+                    detail: format!(
+                        "OKX {instrument_type} {order_type} algo buys require quote quantity in {td_mode} mode"
+                    ),
+                })
             };
         }
     }
 
     if quote_quantity {
-        return Err(format!(
-            "OKX {instrument_type} {order_type} algo orders do not support quote quantity in {td_mode} mode"
-        ));
+        return Err(OrderDeniedReason::unsupported_quote_quantity());
     }
 
     Ok(None)
@@ -566,9 +567,7 @@ mod tests {
                 order_type,
                 true,
             ),
-            Err(format!(
-                "OKX Spot {order_type} algo orders do not support quote quantity in {trade_mode} mode"
-            )),
+            Err(OrderDeniedReason::unsupported_quote_quantity()),
         );
     }
 
@@ -663,9 +662,7 @@ mod tests {
     ) {
         assert_eq!(
             okx_algo_target_currency(instrument_type, trade_mode, side, order_type, true),
-            Err(format!(
-                "OKX {instrument_type} {order_type} algo orders do not support quote quantity in {trade_mode} mode"
-            )),
+            Err(OrderDeniedReason::unsupported_quote_quantity()),
         );
     }
 
@@ -679,10 +676,11 @@ mod tests {
                 OrderType::TrailingStopMarket,
                 false,
             ),
-            Err(
-                "OKX Spot TRAILING_STOP_MARKET algo buys require quote quantity in Cash mode"
-                    .to_string()
-            ),
+            Err(OrderDeniedReason::ValidationFailed {
+                detail:
+                    "OKX Spot TRAILING_STOP_MARKET algo buys require quote quantity in Cash mode"
+                        .to_string(),
+            }),
         );
     }
 

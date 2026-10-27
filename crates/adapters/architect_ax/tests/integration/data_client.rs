@@ -321,7 +321,7 @@ async fn test_data_client_emits_quote_tick_via_channel() {
                 assert!(quote.ask_price.as_f64() > 0.0);
                 break;
             }
-            Ok(Some(DataEvent::Instrument(_))) => {}
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {}
             Ok(Some(other)) => panic!("Expected Quote data event, was {other:?}"),
             Ok(None) => panic!("Channel closed unexpectedly"),
             Err(_) => panic!("Timeout waiting for quote event"),
@@ -483,7 +483,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     let mut instrument_count = 0;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             instrument_count += 1;
         }
     }
@@ -550,7 +550,7 @@ async fn test_data_client_subscribe_book_deltas_via_channel() {
                 assert_eq!(deltas.instrument_id.symbol.as_str(), "EURUSD-PERP");
                 break;
             }
-            Ok(Some(DataEvent::Instrument(_))) => {}
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {}
             Ok(Some(_)) => {}
             Ok(None) => panic!("Channel closed unexpectedly"),
             Err(_) => panic!("Timeout waiting for book deltas event"),
@@ -612,7 +612,7 @@ async fn test_data_client_subscribe_bars_via_channel() {
                 assert_eq!(bar.bar_type.instrument_id().symbol.as_str(), "EURUSD-PERP");
                 break;
             }
-            Ok(Some(DataEvent::Instrument(_))) => {}
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {}
             Ok(Some(_)) => {}
             Ok(None) => panic!("Channel closed unexpectedly"),
             Err(_) => panic!("Timeout waiting for bar event"),

@@ -404,7 +404,7 @@ pub fn parse_trade_tick(
 
     let price = decimal_to_price_dp(trade.p, price_precision, "trade.price")?;
     let size = Quantity::from_decimal_dp(Decimal::from(trade.q), size_precision)?;
-    let aggressor_side: AggressorSide = trade.d.map_or(AggressorSide::NoAggressor, |d| d.into());
+    let aggressor_side: AggressorSide = trade.d.into();
 
     let ts_event = ax_timestamp_stn_to_unix_nanos(trade.ts, trade.tn)?;
     let trade_id = create_architect_trade_id(ts_event, price, size, aggressor_side)?;
@@ -708,24 +708,29 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_tick() {
+    #[case(AxOrderSide::Buy, AggressorSide::Buy)]
+    #[case(AxOrderSide::Sell, AggressorSide::Sell)]
+    fn test_parse_trade_tick(#[case] side: AxOrderSide, #[case] expected_side: AggressorSide) {
         let trade = AxMdTrade {
             ts: 1700000000,
             tn: 12345,
             s: Ustr::from("BTC-PERP"),
             p: dec!(50000.50),
             q: 100,
-            d: Some(AxOrderSide::Buy),
+            d: side,
         };
 
         let instrument = create_test_instrument();
-        let ts_init = UnixNanos::default();
+        let ts_init = UnixNanos::from(1700000001000000000);
 
         let tick = parse_trade_tick(&trade, &instrument, ts_init).unwrap();
 
-        assert_eq!(tick.price.as_f64(), 50000.50);
-        assert_eq!(tick.size.as_f64(), 100.0);
-        assert_eq!(tick.aggressor_side, AggressorSide::Buy);
+        assert_eq!(tick.instrument_id, instrument.id());
+        assert_eq!(tick.price.as_decimal(), dec!(50000.50));
+        assert_eq!(tick.size.as_decimal(), dec!(100));
+        assert_eq!(tick.aggressor_side, expected_side);
+        assert_eq!(tick.ts_event, UnixNanos::from(1700000000000012345));
+        assert_eq!(tick.ts_init, ts_init);
     }
 
     #[rstest]
@@ -828,7 +833,7 @@ mod tests {
         assert_eq!(trade.s, "EURUSD-PERP");
         assert_eq!(trade.p, dec!(1.1719));
         assert_eq!(trade.q, 400);
-        assert_eq!(trade.d, Some(AxOrderSide::Buy));
+        assert_eq!(trade.d, AxOrderSide::Buy);
 
         let instrument = create_eurusd_instrument();
         let ts_init = UnixNanos::default();
@@ -846,18 +851,22 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_trade_tick_matches_rest_trade_id_for_the_same_trade() {
+    #[case(AxOrderSide::Buy)]
+    #[case(AxOrderSide::Sell)]
+    fn test_parse_trade_tick_matches_rest_trade_id_for_the_same_trade(#[case] side: AxOrderSide) {
         // The same trade fetched from `GET /trades` and received on the market-data WebSocket must
         // carry one identity, otherwise a request and subscribe overlap double-counts it.
         let json = include_str!("../../../test_data/ws_md_trade_captured.json");
-        let ws_trade: AxMdTrade = serde_json::from_str(json).unwrap();
+        let mut ws_trade: AxMdTrade = serde_json::from_str(json).unwrap();
+        ws_trade.d = side;
+
         let rest_trade = AxRestTrade {
             ts: ws_trade.ts,
             tn: ws_trade.tn,
             p: ws_trade.p,
             q: ws_trade.q as i64,
             s: ws_trade.s,
-            d: ws_trade.d.unwrap(),
+            d: ws_trade.d,
         };
         let instrument = create_eurusd_instrument();
         let ts_init = UnixNanos::default();
@@ -865,11 +874,7 @@ mod tests {
         let ws_tick = parse_trade_tick(&ws_trade, &instrument, ts_init).unwrap();
         let rest_tick = parse_rest_trade_tick(&rest_trade, &instrument, ts_init).unwrap();
 
-        assert_eq!(ws_tick.trade_id, rest_tick.trade_id);
-        assert_eq!(ws_tick.ts_event, rest_tick.ts_event);
-        assert_eq!(ws_tick.price, rest_tick.price);
-        assert_eq!(ws_tick.size, rest_tick.size);
-        assert_eq!(ws_tick.aggressor_side, rest_tick.aggressor_side);
+        assert_eq!(ws_tick, rest_tick);
     }
 
     #[rstest]

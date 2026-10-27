@@ -39,7 +39,9 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+use nautilus_persistence::{
+    backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
+};
 use nautilus_trading::examples::strategies::EmaCross;
 use rust_decimal_macros::dec;
 use tempfile::TempDir;
@@ -133,7 +135,7 @@ fn main() -> anyhow::Result<()> {
 
     let data_config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .build()?;
 

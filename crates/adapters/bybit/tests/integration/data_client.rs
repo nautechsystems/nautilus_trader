@@ -1300,7 +1300,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     wait_until_async(
         || {
             while let Ok(event) = rx.try_recv() {
-                if matches!(event, DataEvent::Instrument(_)) {
+                if matches!(event, DataEvent::Data(Data::Instrument(_))) {
                     counter.fetch_add(1, Ordering::Relaxed);
                 }
             }

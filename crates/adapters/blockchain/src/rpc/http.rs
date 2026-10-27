@@ -961,9 +961,7 @@ fn is_canonical_loopback_endpoint(endpoint: &str) -> bool {
 
     let raw_host = if let Some(suffix) = authority.strip_prefix("[::1]") {
         if suffix.is_empty() || suffix.starts_with(':') {
-            return Url::parse(endpoint)
-                .ok()
-                .is_some_and(|url| url.host_str() == Some("[::1]"));
+            return Url::parse(endpoint).is_ok_and(|url| url.host_str() == Some("[::1]"));
         }
         return false;
     } else if authority.starts_with('[') {
@@ -977,9 +975,10 @@ fn is_canonical_loopback_endpoint(endpoint: &str) -> bool {
     let Ok(address) = raw_host.parse::<Ipv4Addr>() else {
         return false;
     };
+
     address.is_loopback()
         && raw_host == address.to_string()
-        && Url::parse(endpoint).ok().is_some_and(|url| {
+        && Url::parse(endpoint).is_ok_and(|url| {
             url.host_str()
                 .and_then(|host| host.parse::<Ipv4Addr>().ok())
                 == Some(address)

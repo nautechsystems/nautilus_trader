@@ -654,7 +654,7 @@ async fn apply_condition_resolution_inner(
                 binary.ts_event = ts_init;
             }
 
-            if let Err(e) = ctx.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = ctx.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::error!("Failed to emit admitted resolution instrument: {e}");
                 return ResolveApplyResult::Ignored;
             }
@@ -677,7 +677,10 @@ async fn apply_condition_resolution_inner(
                     None,
                 );
 
-                if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
+                if let Err(e) = ctx
+                    .data_sender
+                    .send(DataEvent::Data(NautilusData::InstrumentStatus(status)))
+                {
                     log::error!(
                         "Failed to emit instrument status for {}: {e}",
                         tracked.instrument_id
@@ -847,7 +850,7 @@ mod tests {
         );
         assert!(matches!(
             data_rx.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(NautilusData::InstrumentStatus(_)))
         ));
         assert!(data_rx.try_recv().is_err());
     }
@@ -944,7 +947,7 @@ mod tests {
         assert!(ctx.subscriptions.is_condition_closed("0xCOND"));
         assert!(matches!(
             data_rx.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(NautilusData::InstrumentStatus(_)))
         ));
         assert!(matches!(
             data_rx.try_recv(),

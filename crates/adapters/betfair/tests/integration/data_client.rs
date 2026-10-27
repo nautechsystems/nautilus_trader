@@ -569,7 +569,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     let mut instrument_count = 0;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             instrument_count += 1;
         }
     }
@@ -917,13 +917,13 @@ async fn test_data_client_emits_instrument_before_status_on_market_definition() 
 
     for _ in 0..30 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::Instrument(_))) => {
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {
                 if instrument_arrival.is_none() {
                     instrument_arrival = Some(seen);
                 }
                 seen += 1;
             }
-            Ok(Some(DataEvent::InstrumentStatus(event))) => {
+            Ok(Some(DataEvent::Data(Data::InstrumentStatus(event)))) => {
                 if status_arrival.is_none() {
                     status_arrival = Some(seen);
                     status_action = Some(event.action);
@@ -997,7 +997,7 @@ async fn test_data_client_handles_sub_image_snapshot() {
                     break;
                 }
             }
-            Ok(Some(DataEvent::Instrument(_))) => {
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {
                 found_instrument = true;
 
                 if found_deltas {
@@ -1191,7 +1191,7 @@ async fn test_data_client_handles_bsp_settled_emits_close_status() {
 
     for _ in 0..40 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::InstrumentStatus(event)))
+            Ok(Some(DataEvent::Data(Data::InstrumentStatus(event))))
                 if event.action == MarketStatusAction::Close =>
             {
                 close_status_seen = true;
@@ -1257,7 +1257,7 @@ async fn test_data_client_handles_bsp_sub_image_emits_instrument_and_deltas() {
 
     for _ in 0..40 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::Instrument(_))) => {
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {
                 if !instrument_seen {
                     instrument_seen = true;
                     instrument_idx = Some(idx);
@@ -1381,7 +1381,7 @@ async fn test_data_client_connect_is_idempotent() {
     let mut first_instruments = 0usize;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             first_instruments += 1;
         }
     }
@@ -1427,7 +1427,7 @@ async fn test_data_client_connect_is_idempotent() {
     let mut second_instruments = 0usize;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             second_instruments += 1;
         }
     }

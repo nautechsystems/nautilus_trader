@@ -20,11 +20,10 @@
 //! and system control messages.
 
 use nautilus_model::{
-    data::{Data, FundingRateUpdate, InstrumentStatus, option_chain::OptionGreeks},
+    data::Data,
     events::{
         AccountState, OrderAcceptedBatch, OrderCanceledBatch, OrderEventAny, OrderSubmittedBatch,
     },
-    instruments::InstrumentAny,
 };
 use strum::Display;
 
@@ -46,15 +45,10 @@ pub use execution::ExecutionReport;
 )]
 #[derive(Debug, Display)]
 pub enum DataEvent {
+    Data(Data),
     Response(DataResponse),
     RequestFailed(data::DataRequestFailed),
     ResponseEnvelope(data::DataResponseEnvelope),
-    Data(Data),
-    // Kept separate from `Data` pending the decision on generic dispatch versus this routing enum
-    Instrument(InstrumentAny),
-    FundingRate(FundingRateUpdate),
-    InstrumentStatus(InstrumentStatus),
-    OptionGreeks(OptionGreeks),
     // nautilus-import-ok: conditional compilation import
     #[cfg(feature = "defi")]
     DeFi(nautilus_model::defi::data::DefiData),

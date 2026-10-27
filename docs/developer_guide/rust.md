@@ -253,9 +253,14 @@ The formatting hook:
 
 - Checks existing control-flow, spawn, and module-ordering rules at changed boundaries.
 - Compares staged and unstaged changes against `HEAD`, or against the merge base with `CHANGED_BASE_SHA` when set.
-- Falls back to checking all tracked Rust files when a CI base is unavailable.
+- Checks all tracked Rust files under `crates`, `examples`, and `docs` when the configured base cannot be resolved.
 - Reads complete changed files for context and includes lines used by exemption checks when selecting diagnostics.
 - Does not modify files.
+
+`make pre-commit` checks committed, staged, and unstaged Rust changes against the merge base with the
+local `origin/develop` ref, then runs prek if formatting passes. Set `CHANGED_BASE_SHA` to select
+another base. The default applies only to this formatting check. Commit-time hooks and direct
+`prek run --all-files` compare against `HEAD` unless `CHANGED_BASE_SHA` is set.
 
 These remain review conventions:
 

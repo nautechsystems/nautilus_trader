@@ -28,6 +28,7 @@ from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestEngineConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.execution import FillModel
 from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import ClientOrderId
@@ -226,7 +227,7 @@ def test_node_dispatches_configured_python_fill_model(
         venues=[venue],
         data=[
             BacktestDataConfig(
-                catalog_path=str(tmp_path),
+                catalog=DataCatalogConfig(path=str(tmp_path)),
                 data_type=NautilusDataType.QuoteTick,
                 instrument_id=instrument.id,
             ),

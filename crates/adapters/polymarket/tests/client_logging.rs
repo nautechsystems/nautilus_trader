@@ -67,20 +67,49 @@ async fn test_polymarket_connection_logging(#[case] backend: TransportBackend) {
 }
 
 #[rstest]
-#[case("gamma_market_fee_crypto.json", false, Some(true), false)]
-#[case("gamma_market_fee_crypto.json", true, Some(true), true)]
-#[case("gamma_market_fee_zero_rate.json", false, Some(true), true)]
-#[case("gamma_market_fee_unclassifiable.json", false, Some(true), true)]
-#[case("gamma_market_fee_unclassifiable.json", true, Some(true), true)]
-#[case("gamma_market_fee_free.json", true, Some(false), false)]
-#[case("gamma_market_fee_crypto.json", true, None, true)]
-#[case("gamma_market_fee_crypto.json", true, Some(false), false)]
-#[case("gamma_market_fee_unclassifiable.json", true, None, false)]
+#[case("gamma_market_fee_crypto.json", false, Some(true), None, false)]
+#[case("gamma_market_fee_crypto.json", true, Some(true), None, true)]
+#[case("gamma_market_fee_zero_rate.json", false, Some(true), None, true)]
+#[case(
+    "gamma_market_fee_zero_rate.json",
+    false,
+    Some(true),
+    Some("zero_fees"),
+    false
+)]
+#[case(
+    "gamma_market_fee_zero_rate.json",
+    false,
+    Some(true),
+    Some(" ZERO_FEES "),
+    false
+)]
+#[case(
+    "gamma_market_fee_zero_rate.json",
+    true,
+    Some(true),
+    Some("zero_fees"),
+    false
+)]
+#[case(
+    "gamma_market_fee_zero_rate.json",
+    false,
+    Some(true),
+    Some("unknown_fees"),
+    true
+)]
+#[case("gamma_market_fee_unclassifiable.json", false, Some(true), None, true)]
+#[case("gamma_market_fee_unclassifiable.json", true, Some(true), None, true)]
+#[case("gamma_market_fee_free.json", true, Some(false), None, false)]
+#[case("gamma_market_fee_crypto.json", true, None, None, true)]
+#[case("gamma_market_fee_crypto.json", true, Some(false), None, false)]
+#[case("gamma_market_fee_unclassifiable.json", true, None, None, false)]
 #[tokio::test]
 async fn test_polymarket_missing_taker_rate_warning(
     #[case] filename: &str,
     #[case] missing_schedule: bool,
     #[case] fees_enabled: Option<bool>,
+    #[case] fee_type: Option<&str>,
     #[case] warns: bool,
 ) {
     let _capture = capture_logs().await;
@@ -95,6 +124,10 @@ async fn test_polymarket_missing_taker_rate_warning(
     }
 
     market["feesEnabled"] = serde_json::to_value(fees_enabled).unwrap();
+    if let Some(fee_type) = fee_type {
+        market["feeType"] = fee_type.into();
+    }
+
     let market_id = market["id"].as_str().unwrap().to_string();
     let response = serde_json::to_string(&vec![market]).unwrap();
     let router = axum::Router::new().route(

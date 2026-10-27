@@ -44,7 +44,7 @@ fn economics_differ(a: &InstrumentAny, b: &InstrumentAny) -> bool {
         || a.max_price() != b.max_price()
 }
 
-/// Compares a fresh instrument snapshot against cached definitions, emitting [`DataEvent::Instrument`]
+/// Compares a fresh instrument snapshot against cached definitions, emitting [`DataEvent::Data`]
 /// events for new and economically-changed instruments.
 ///
 /// The cache is updated to reflect each meaningful change regardless of subscription, while emissions
@@ -67,7 +67,7 @@ pub fn diff_and_emit_instruments(
         if changed {
             cached.insert(id, instrument.clone());
             if is_subscribed(&id)
-                && let Err(e) = sender.send(DataEvent::Instrument(instrument.clone()))
+                && let Err(e) = sender.send(DataEvent::Data(instrument.clone().into()))
             {
                 log::error!("Failed to emit instrument event: {e}");
             }
@@ -79,6 +79,7 @@ pub fn diff_and_emit_instruments(
 mod tests {
     use nautilus_core::UnixNanos;
     use nautilus_model::{
+        data::Data,
         identifiers::{InstrumentId, Symbol},
         instruments::{CryptoPerpetual, InstrumentAny},
         types::{Currency, Money, Price, Quantity},
@@ -135,7 +136,7 @@ mod tests {
         );
 
         match rx.try_recv().expect("expected instrument event") {
-            DataEvent::Instrument(emitted) => assert_eq!(emitted.id(), instrument.id()),
+            DataEvent::Data(Data::Instrument(emitted)) => assert_eq!(emitted.id(), instrument.id()),
             _ => panic!("expected Instrument event"),
         }
         assert!(cached.contains_key(&instrument.id()));
@@ -168,7 +169,9 @@ mod tests {
             .try_recv()
             .expect("expected instrument event on margin change")
         {
-            DataEvent::Instrument(emitted) => assert_eq!(emitted.margin_init(), Decimal::ONE),
+            DataEvent::Data(Data::Instrument(emitted)) => {
+                assert_eq!(emitted.margin_init(), Decimal::ONE);
+            }
             _ => panic!("expected Instrument event"),
         }
     }

@@ -676,6 +676,10 @@ impl BlockchainExecutionClient {
     /// configured, the WETH balance does not increase by `amount_wei`, or any RPC, policy, signing,
     /// persistence, or broadcast step fails. A persistence failure after signing, or a failed
     /// postcondition after finality, leaves the in-flight slot occupied.
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     pub async fn wrap(&mut self, amount_wei: U256) -> anyhow::Result<B256> {
         if amount_wei.is_zero() {
             anyhow::bail!("Wrap amount must be positive");
@@ -726,6 +730,10 @@ impl BlockchainExecutionClient {
     /// the resulting allowance differs from the target, or any RPC, signing, persistence, or
     /// broadcast step fails. A persistence failure after signing, or a failed postcondition after
     /// finality, leaves the in-flight slot occupied.
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     pub async fn approve(
         &mut self,
         token: Address,
@@ -1096,7 +1104,7 @@ impl BlockchainExecutionClient {
             order.order_side(),
             pool.get_base_token().address,
             quote_token.address,
-        )?;
+        );
         let factory = self.uniswap_v3_factory()?;
         anyhow::ensure!(
             pool.dex.factory == factory,
@@ -1124,6 +1132,10 @@ impl BlockchainExecutionClient {
         })
     }
 
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     async fn reconcile_unresolved_execution(&self) -> anyhow::Result<()> {
         let database = self.cache.database.clone().ok_or_else(|| {
             anyhow::anyhow!("No durable store configured for execution reconciliation")
@@ -1566,9 +1578,7 @@ impl BlockchainExecutionClient {
         }
 
         if order.is_quote_quantity() {
-            anyhow::bail!(
-                "Quote-denominated quantities are not supported; quantity must be denominated in the base token"
-            );
+            anyhow::bail!(OrderDeniedReason::unsupported_quote_quantity());
         }
 
         let fee = pool
@@ -1587,7 +1597,7 @@ impl BlockchainExecutionClient {
             CurrencyType::Crypto,
         )?;
         let (token_in, token_out) =
-            swap_token_pair(order.order_side(), base_token.address, quote_token.address)?;
+            swap_token_pair(order.order_side(), base_token.address, quote_token.address);
 
         if !self
             .transaction_limits
@@ -2094,6 +2104,10 @@ impl TransactionExecutor {
     /// Order of operations: claim the in-flight slot, chain ID verification, nonce and fee and
     /// gas policy checks, local signing, persist-before-broadcast, broadcast, inclusion
     /// observation. The persisted record guarantees a signed transaction is never forgotten.
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     async fn transact(
         &self,
         to: Address,
@@ -2229,6 +2243,10 @@ impl TransactionExecutor {
         clippy::too_many_arguments,
         reason = "Security-critical transaction fields stay explicit at the signing boundary"
     )]
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     async fn prepare_and_sign(
         &self,
         intent_id: i64,
@@ -2252,6 +2270,10 @@ impl TransactionExecutor {
         .await
     }
 
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     async fn prepare_and_sign_swap(
         &self,
         intent_id: i64,
@@ -2277,6 +2299,10 @@ impl TransactionExecutor {
     #[expect(
         clippy::too_many_arguments,
         reason = "Security-critical transaction fields and verification anchors stay explicit"
+    )]
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
     )]
     async fn prepare_and_sign_with_anchors(
         &self,
@@ -2856,6 +2882,10 @@ impl TransactionExecutor {
         }
     }
 
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     async fn authorize_rebroadcast(
         &self,
         prepared: &PreparedTransaction,
@@ -3281,6 +3311,10 @@ impl TransactionExecutor {
     }
 
     /// Polls until the receipt is canonical at a stable finalized boundary.
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     async fn await_finality(
         &self,
         prepared: &PreparedTransaction,
@@ -3351,9 +3385,7 @@ impl TransactionExecutor {
                         };
                     }
                 }
-                VerificationOutcome::Retryable(_) => {
-                    continue;
-                }
+                VerificationOutcome::Retryable(_) => {}
                 VerificationOutcome::Disagreement(_) => {
                     return Ok(InclusionOutcome::Pending(format!(
                         "Receipt verification disagreed for transaction {tx_hash}; the intent stays occupied for reconciliation"
@@ -3712,6 +3744,10 @@ enum SwapQuoteKind {
 /// first inclusion; fills arrive with finality reconciliation. Ambiguous outcomes keep the
 /// order submitted untouched while the persisted record reconciles. The client retains
 /// unresolved submissions, so an exhausted in-flight check leaves the order submitted.
+#[allow(
+    clippy::large_futures,
+    reason = "keeps transaction verification futures inline without additional boxing"
+)]
 async fn execute_swap(
     mut plan: SwapPlan,
     executor: TransactionExecutor,
@@ -4306,6 +4342,10 @@ fn validate_rpc_transaction_matches_payload(
     Ok(())
 }
 
+#[allow(
+    clippy::large_futures,
+    reason = "keeps transaction verification futures inline without additional boxing"
+)]
 async fn verify_finalized_transaction(
     included: &IncludedTransaction,
     intent: &ExecutionIntentRow,
@@ -5229,14 +5269,10 @@ fn quantity_to_raw_amount(quantity: Quantity, decimals: u8) -> anyhow::Result<U2
     }
 }
 
-fn swap_token_pair(
-    side: OrderSide,
-    base: Address,
-    quote: Address,
-) -> anyhow::Result<(Address, Address)> {
+fn swap_token_pair(side: OrderSide, base: Address, quote: Address) -> (Address, Address) {
     match side {
-        OrderSide::Sell => Ok((base, quote)),
-        OrderSide::Buy => Ok((quote, base)),
+        OrderSide::Sell => (base, quote),
+        OrderSide::Buy => (quote, base),
     }
 }
 
@@ -5304,6 +5340,10 @@ fn derive_min_amount_out(quoted_amount_out: U256, slippage_bps: u32) -> anyhow::
 }
 
 impl BlockchainExecutionClient {
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     async fn build_execution_verification_migration(
         &self,
         snapshot: ExecutionVerificationMigrationSnapshot,
@@ -5680,6 +5720,10 @@ impl ExecutionClient for BlockchainExecutionClient {
         Ok(())
     }
 
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
         let order = self.core.cache().try_order_owned(&cmd.client_order_id)?;
 
@@ -5837,6 +5881,10 @@ impl ExecutionClient for BlockchainExecutionClient {
         true
     }
 
+    #[allow(
+        clippy::large_futures,
+        reason = "keeps transaction verification futures inline without additional boxing"
+    )]
     async fn connect(&mut self) -> anyhow::Result<()> {
         if self.core.is_connected() {
             log::warn!("Blockchain execution client already connected");
@@ -6236,7 +6284,6 @@ impl ExecutionClient for BlockchainExecutionClient {
         self.signer = None;
         self.core.set_disconnected();
         tasks_result
-            .map(|_| ())
             .map_err(|e| anyhow::anyhow!("Failed to terminate blockchain submissions: {e}"))?;
         Ok(())
     }
@@ -6292,6 +6339,11 @@ fn validate_order(order: &impl Order) -> Result<(), OrderDeniedReason> {
 
 #[cfg(test)]
 mod tests {
+    #![allow(
+        clippy::large_futures,
+        reason = "exercises inline transaction futures without changing their allocation behavior"
+    )]
+
     use std::{
         cell::RefCell,
         rc::Rc,
@@ -7349,7 +7401,8 @@ mod tests {
             .collect::<Vec<_>>();
         // SAFETY: each invocation uses unique variable names and removes them before returning
         unsafe { std::env::set_var(&active_env, hex::encode(active)) };
-        for (env, key) in retired_envs.iter().zip(&retired) {
+
+        for (env, key) in retired_envs.iter().zip(retired) {
             // SAFETY: the retired variable name is unique to this invocation
             unsafe { std::env::set_var(env, hex::encode(key)) };
         }
@@ -8266,11 +8319,11 @@ mod tests {
     #[rstest]
     fn swap_token_pair_is_directional() {
         assert_eq!(
-            swap_token_pair(OrderSide::Sell, WETH_ADDRESS, USDC_ADDRESS).unwrap(),
+            swap_token_pair(OrderSide::Sell, WETH_ADDRESS, USDC_ADDRESS),
             (WETH_ADDRESS, USDC_ADDRESS)
         );
         assert_eq!(
-            swap_token_pair(OrderSide::Buy, WETH_ADDRESS, USDC_ADDRESS).unwrap(),
+            swap_token_pair(OrderSide::Buy, WETH_ADDRESS, USDC_ADDRESS),
             (USDC_ADDRESS, WETH_ADDRESS)
         );
     }
@@ -8854,11 +8907,8 @@ mod tests {
         let OrderEventAny::Denied(denied) = &events[0] else {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
-        assert!(
-            denied.reason.contains("Quote-denominated"),
-            "was: {}",
-            denied.reason
-        );
+
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
     }
 
     #[tokio::test]
@@ -9086,11 +9136,8 @@ mod tests {
         let OrderEventAny::Denied(denied) = &events[0] else {
             panic!("expected OrderDenied, was {:?}", events[0]);
         };
-        assert!(
-            denied.reason.contains("Quote-denominated"),
-            "was: {}",
-            denied.reason
-        );
+
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
     }
 
     #[tokio::test]
@@ -14488,7 +14535,7 @@ mod tests {
             std::env::set_var(
                 "BLOCKCHAIN_TEST_PRIVATE_KEY_MISMATCH",
                 "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d",
-            )
+            );
         };
 
         let error = client.connect().await.unwrap_err();

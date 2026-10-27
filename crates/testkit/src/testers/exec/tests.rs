@@ -40,8 +40,8 @@ use nautilus_model::{
     events::{
         OrderAccepted, OrderEventAny, OrderRejected,
         order::spec::{
-            OrderAcceptedSpec, OrderCanceledSpec, OrderFilledSpec, OrderPendingCancelSpec,
-            OrderRejectedSpec, OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderExpiredSpec,
+            OrderFilledSpec, OrderPendingCancelSpec, OrderRejectedSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -62,6 +62,7 @@ use nautilus_portfolio::portfolio::Portfolio;
 use nautilus_trading::Strategy;
 use rstest::*;
 use rust_decimal::Decimal;
+use ustr::Ustr;
 
 use super::*;
 use crate::testers::exec::strategy::LimitOrderMaintenanceState;
@@ -2063,23 +2064,23 @@ fn test_limit_cancel_replace_guard_fires_once(
 }
 
 #[rstest]
-#[case::buy(OrderSide::Buy, "3001.0", "3002.0", "3002.0", "3003.0")]
-#[case::sell(OrderSide::Sell, "2999.0", "3000.0", "2998.0", "2999.0")]
-fn test_stop_cancel_replace_guard_fires_once(
+#[case::buy(OrderSide::Buy, ("3001.0", "3002.0"), ("3002.0", "3003.0"))]
+#[case::sell(OrderSide::Sell, ("2999.0", "3000.0"), ("2998.0", "2999.0"))]
+fn test_stop_cancel_replace_waits_for_acknowledgment_once(
     mut config: ExecTesterConfig,
     instrument: InstrumentAny,
     #[case] side: OrderSide,
-    #[case] second_bid: &str,
-    #[case] second_ask: &str,
-    #[case] third_bid: &str,
-    #[case] third_ask: &str,
+    #[values(OrderType::StopMarket, OrderType::StopLimit)] stop_order_type: OrderType,
+    #[case] second_quote: (&str, &str),
+    #[case] third_quote: (&str, &str),
 ) {
     config.enable_limit_buys = false;
     config.enable_limit_sells = false;
     config.enable_stop_buys = side == OrderSide::Buy;
     config.enable_stop_sells = side == OrderSide::Sell;
     config.cancel_replace_stop_orders_to_maintain_offset = true;
-    config.stop_order_type = OrderType::StopMarket;
+    config.stop_order_type = stop_order_type;
+    config.stop_limit_offset_ticks = Some(3);
     config.stop_offset_ticks = 5;
     let cache = create_cache_with_instrument(&instrument);
     let mut tester = ExecTester::new(config);
@@ -2092,21 +2093,450 @@ fn test_stop_cancel_replace_guard_fires_once(
     let exec_saver = capture_exec_commands();
     let risk_saver = capture_risk_commands();
 
-    tester.maintain_orders(Price::from(second_bid), Price::from(second_ask));
+    tester.maintain_orders(Price::from(second_quote.0), Price::from(second_quote.1));
+    let canceled = OrderCanceledSpec::builder()
+        .client_order_id(first_id)
+        .build();
+    let unrelated = OrderCanceledSpec::builder()
+        .client_order_id(ClientOrderId::from("UNRELATED"))
+        .build();
+    tester.on_order_canceled(&unrelated);
+    for _ in 0..3 {
+        tester.maintain_orders(Price::from(third_quote.0), Price::from(third_quote.1));
+    }
+
+    assert_eq!(
+        tracked_stop_order(&tester, side).client_order_id(),
+        first_id
+    );
+    assert_eq!(cancel_order_ids(&exec_saver), vec![first_id]);
+    assert!(submit_orders(&risk_saver).is_empty());
+
+    cancel_order(&mut tester, &cache, first_id);
+    tester.on_order_canceled(&canceled);
     let replacement_id = tracked_stop_order(&tester, side).client_order_id();
     ack_order_in_cache(&cache, replacement_id, "V-REPLACEMENT");
-    tester.maintain_orders(Price::from(third_bid), Price::from(third_ask));
+    tester.maintain_orders(Price::from(third_quote.0), Price::from(third_quote.1));
 
     let submits = submit_orders(&risk_saver);
     assert_ne!(replacement_id, first_id);
     assert_eq!(cancel_order_ids(&exec_saver), vec![first_id]);
     assert_eq!(submits.len(), 1, "expected one replacement SubmitOrder");
     assert_eq!(submits[0].client_order_id, replacement_id);
-    assert_eq!(submits[0].order_init.order_type, OrderType::StopMarket);
+    assert_eq!(submits[0].order_init.order_type, stop_order_type);
+    assert_eq!(submits[0].order_init.order_side, side);
+    assert_eq!(submits[0].order_init.quantity, Quantity::from("0.001"));
+
+    let (trigger, price) = match side {
+        OrderSide::Buy => (Price::from("3003.05"), Price::from("3003.08")),
+        OrderSide::Sell => (Price::from("2997.95"), Price::from("2997.92")),
+    };
+
+    assert_eq!(submits[0].order_init.trigger_price, Some(trigger));
+    assert_eq!(
+        submits[0].order_init.price,
+        (stop_order_type == OrderType::StopLimit).then_some(price)
+    );
+    assert_eq!(
+        cache.borrow().order(&first_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
     assert!(
         stop_cancel_replace_attempted(&tester, side),
         "stop cancel-replace guard should be consumed",
     );
+
+    cancel_order(&mut tester, &cache, replacement_id);
+    tester.maintain_orders(Price::from(third_quote.0), Price::from(third_quote.1));
+    let next_id = tracked_stop_order(&tester, side).client_order_id();
+    assert_ne!(next_id, replacement_id);
+    ack_order_in_cache(&cache, next_id, "V-NEXT");
+    tester.maintain_orders(Price::from(second_quote.0), Price::from(second_quote.1));
+
+    let submits = submit_orders(&risk_saver);
+    assert_eq!(cancel_order_ids(&exec_saver), vec![first_id]);
+    assert_eq!(submits.len(), 2);
+    assert_eq!(submits[1].client_order_id, next_id);
+    assert_eq!(submits[1].order_init.order_type, stop_order_type);
+    assert_eq!(submits[1].order_init.order_side, side);
+    assert_eq!(submits[1].order_init.quantity, Quantity::from("0.001"));
+    assert_eq!(submits[1].order_init.trigger_price, Some(trigger));
+    assert_eq!(
+        submits[1].order_init.price,
+        (stop_order_type == OrderType::StopLimit).then_some(price)
+    );
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy, "3001.0", "3002.0")]
+#[case::sell(OrderSide::Sell, "2999.0", "3000.0")]
+fn test_stop_cancel_replace_rejection_abandons_replacement(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] side: OrderSide,
+    #[values(TimeInForce::Gtc, TimeInForce::Ioc)] time_in_force: TimeInForce,
+    #[case] next_bid: &str,
+    #[case] next_ask: &str,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = side == OrderSide::Buy;
+    config.enable_stop_sells = side == OrderSide::Sell;
+    config.cancel_replace_stop_orders_to_maintain_offset = true;
+    config.stop_offset_ticks = 5;
+    config.stop_time_in_force = Some(time_in_force);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+    let original_id = tracked_stop_order(&tester, side).client_order_id();
+    ack_order_in_cache(&cache, original_id, "V-ORIGINAL");
+    let exec_saver = capture_exec_commands();
+    let risk_saver = capture_risk_commands();
+
+    tester.maintain_orders(Price::from(next_bid), Price::from(next_ask));
+    let order = tracked_stop_order(&tester, side);
+    let rejected = OrderCancelRejectedSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(original_id)
+        .build();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::CancelRejected(rejected))
+        .unwrap();
+    tester.on_order_cancel_rejected(rejected);
+    for _ in 0..3 {
+        tester.maintain_orders(Price::from(next_bid), Price::from(next_ask));
+    }
+
+    assert!(submit_orders(&risk_saver).is_empty());
+
+    cancel_order(&mut tester, &cache, original_id);
+    tester.maintain_orders(Price::from(next_bid), Price::from(next_ask));
+    if time_in_force == TimeInForce::Gtc {
+        let replenished_id = tracked_stop_order(&tester, side).client_order_id();
+        assert_ne!(replenished_id, original_id);
+        ack_order_in_cache(&cache, replenished_id, "V-REPLENISHED");
+        tester.maintain_orders(Price::from("3004.0"), Price::from("3005.0"));
+    }
+
+    let submits = submit_orders(&risk_saver);
+    assert_eq!(cancel_order_ids(&exec_saver), vec![original_id]);
+    assert_eq!(
+        submits.len(),
+        usize::from(time_in_force == TimeInForce::Gtc)
+    );
+
+    if let Some(submit) = submits.first() {
+        assert_ne!(submit.client_order_id, original_id);
+        assert_eq!(
+            tracked_stop_order(&tester, side).client_order_id(),
+            submit.client_order_id
+        );
+        assert_eq!(submit.order_init.order_type, OrderType::StopMarket);
+        assert_eq!(submit.order_init.order_side, side);
+        assert_eq!(submit.order_init.quantity, Quantity::from("0.001"));
+
+        let expected_trigger = match side {
+            OrderSide::Buy => Price::from("3002.05"),
+            OrderSide::Sell => Price::from("2998.95"),
+        };
+
+        assert_eq!(submit.order_init.trigger_price, Some(expected_trigger));
+        assert_eq!(submit.order_init.price, None);
+        assert_eq!(submit.order_init.time_in_force, TimeInForce::Gtc);
+    } else {
+        assert_eq!(
+            tracked_stop_order(&tester, side).client_order_id(),
+            original_id
+        );
+    }
+
+    assert!(stop_cancel_replace_attempted(&tester, side));
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy, "3001.0", "3002.0")]
+#[case::sell(OrderSide::Sell, "2999.0", "3000.0")]
+fn test_stop_cancel_replace_terminal_order_abandons_replacement(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] side: OrderSide,
+    #[values(OrderStatus::Filled, OrderStatus::Expired)] status: OrderStatus,
+    #[case] next_bid: &str,
+    #[case] next_ask: &str,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = side == OrderSide::Buy;
+    config.enable_stop_sells = side == OrderSide::Sell;
+    config.cancel_replace_stop_orders_to_maintain_offset = true;
+    config.stop_offset_ticks = 5;
+    config.stop_time_in_force = Some(TimeInForce::Ioc);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument.clone());
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+    let original_id = tracked_stop_order(&tester, side).client_order_id();
+    ack_order_in_cache(&cache, original_id, "V-ORIGINAL");
+    let exec_saver = capture_exec_commands();
+    let risk_saver = capture_risk_commands();
+
+    tester.maintain_orders(Price::from(next_bid), Price::from(next_ask));
+    let order = tracked_stop_order(&tester, side).clone();
+
+    match status {
+        OrderStatus::Filled => fill_order(
+            &mut tester,
+            &cache,
+            original_id,
+            &instrument,
+            order.quantity(),
+            Price::from("3000.5"),
+        ),
+        OrderStatus::Expired => {
+            let expired = OrderExpiredSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(original_id)
+                .build();
+            cache
+                .borrow_mut()
+                .update_order(&OrderEventAny::Expired(expired))
+                .unwrap();
+            tester.on_order_expired(expired);
+        }
+        _ => unreachable!(),
+    }
+
+    let canceled = OrderCanceledSpec::builder()
+        .client_order_id(original_id)
+        .build();
+    tester.on_order_canceled(&canceled);
+    tester.maintain_orders(Price::from(next_bid), Price::from(next_ask));
+
+    assert_eq!(cache.borrow().order(&original_id).unwrap().status(), status);
+    assert_eq!(cancel_order_ids(&exec_saver), vec![original_id]);
+    assert!(submit_orders(&risk_saver).is_empty());
+    assert_eq!(
+        tracked_stop_order(&tester, side).client_order_id(),
+        original_id
+    );
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy, "3001.0", "3002.0")]
+#[case::sell(OrderSide::Sell, "2999.0", "3000.0")]
+fn test_stop_cancel_replace_shutdown_abandons_replacement(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] next_bid: &str,
+    #[case] next_ask: &str,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = side == OrderSide::Buy;
+    config.enable_stop_sells = side == OrderSide::Sell;
+    config.cancel_replace_stop_orders_to_maintain_offset = true;
+    config.stop_offset_ticks = 5;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+    let original_id = tracked_stop_order(&tester, side).client_order_id();
+    ack_order_in_cache(&cache, original_id, "V-ORIGINAL");
+    let exec_saver = capture_exec_commands();
+    let risk_saver = capture_risk_commands();
+
+    tester.maintain_orders(Price::from(next_bid), Price::from(next_ask));
+    tester.on_stop().unwrap();
+    cancel_order(&mut tester, &cache, original_id);
+
+    assert_eq!(cancel_order_ids(&exec_saver), vec![original_id]);
+    assert!(submit_orders(&risk_saver).is_empty());
+    assert_eq!(
+        tracked_stop_order(&tester, side).client_order_id(),
+        original_id
+    );
+}
+
+#[rstest]
+#[case::buy(OrderSide::Buy, ("3001.0", "3002.0"))]
+#[case::sell(OrderSide::Sell, ("2999.0", "3000.0"))]
+fn test_stop_cancel_replace_reconciliation_cancel_keeps_replacement_pending(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] next_quote: (&str, &str),
+    #[values(None, Some("USER_REQUESTED"))] reason: Option<&str>,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = side == OrderSide::Buy;
+    config.enable_stop_sells = side == OrderSide::Sell;
+    config.cancel_replace_stop_orders_to_maintain_offset = true;
+    config.stop_offset_ticks = 5;
+    config.stop_time_in_force = Some(TimeInForce::Gtc);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+    let original_id = tracked_stop_order(&tester, side).client_order_id();
+    ack_order_in_cache(&cache, original_id, "V-ORIGINAL");
+    let exec_saver = capture_exec_commands();
+    let risk_saver = capture_risk_commands();
+
+    tester.maintain_orders(Price::from(next_quote.0), Price::from(next_quote.1));
+    let order = tracked_stop_order(&tester, side);
+    let canceled = OrderCanceledSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(original_id)
+        .reconciliation(true)
+        .maybe_reason(reason.map(Ustr::from))
+        .build();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Canceled(canceled))
+        .unwrap();
+    tester.on_order_canceled(&canceled);
+    for _ in 0..3 {
+        tester.maintain_orders(Price::from(next_quote.0), Price::from(next_quote.1));
+    }
+
+    assert_eq!(cancel_order_ids(&exec_saver), vec![original_id]);
+    assert!(submit_orders(&risk_saver).is_empty());
+    assert_eq!(
+        tracked_stop_order(&tester, side).client_order_id(),
+        original_id
+    );
+    assert_eq!(
+        cache.borrow().order(&original_id).unwrap().status(),
+        OrderStatus::Canceled
+    );
+    assert!(stop_cancel_replace_attempted(&tester, side));
+}
+
+#[rstest]
+#[case::buy_partial(OrderSide::Buy, ("3001.0", "3002.0"), "0.004", OrderStatus::Canceled)]
+#[case::buy_full(OrderSide::Buy, ("3001.0", "3002.0"), "0.010", OrderStatus::Filled)]
+#[case::sell_partial(OrderSide::Sell, ("2999.0", "3000.0"), "0.004", OrderStatus::Canceled)]
+#[case::sell_full(OrderSide::Sell, ("2999.0", "3000.0"), "0.010", OrderStatus::Filled)]
+fn test_stop_cancel_replace_reconciliation_cancel_late_fill(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] next_quote: (&str, &str),
+    #[case] fill_qty: &str,
+    #[case] expected_status: OrderStatus,
+) {
+    config.enable_limit_buys = false;
+    config.enable_limit_sells = false;
+    config.enable_stop_buys = side == OrderSide::Buy;
+    config.enable_stop_sells = side == OrderSide::Sell;
+    config.cancel_replace_stop_orders_to_maintain_offset = true;
+    config.order_qty = Quantity::from("0.010");
+    config.stop_order_type = OrderType::StopLimit;
+    config.stop_offset_ticks = 5;
+    config.stop_limit_offset_ticks = Some(3);
+    config.stop_time_in_force = Some(TimeInForce::Gtc);
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument.clone());
+    tester.maintain_orders(Price::from("3000.0"), Price::from("3001.0"));
+    let original_id = tracked_stop_order(&tester, side).client_order_id();
+    ack_order_in_cache(&cache, original_id, "V-ORIGINAL");
+    let exec_saver = capture_exec_commands();
+    let risk_saver = capture_risk_commands();
+
+    tester.maintain_orders(Price::from(next_quote.0), Price::from(next_quote.1));
+    let order = tracked_stop_order(&tester, side).clone();
+    let canceled = OrderCanceledSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(original_id)
+        .reconciliation(true)
+        .build();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Canceled(canceled))
+        .unwrap();
+    tester.on_order_canceled(&canceled);
+    let fill_qty = Quantity::from(fill_qty);
+    fill_order(
+        &mut tester,
+        &cache,
+        original_id,
+        &instrument,
+        fill_qty,
+        order.price().unwrap(),
+    );
+
+    for _ in 0..3 {
+        tester.maintain_orders(Price::from(next_quote.0), Price::from(next_quote.1));
+    }
+
+    let submits = submit_orders(&risk_saver);
+    assert_eq!(
+        cache.borrow().order(&original_id).unwrap().status(),
+        expected_status
+    );
+    assert_eq!(
+        cache.borrow().order(&original_id).unwrap().filled_qty(),
+        fill_qty
+    );
+
+    let expected_leaves = if expected_status == OrderStatus::Filled {
+        Quantity::from("0.000")
+    } else {
+        Quantity::from("0.006")
+    };
+
+    assert_eq!(
+        cache.borrow().order(&original_id).unwrap().leaves_qty(),
+        expected_leaves
+    );
+    assert_eq!(cancel_order_ids(&exec_saver), vec![original_id]);
+    assert_eq!(
+        submits.len(),
+        usize::from(expected_status == OrderStatus::Filled)
+    );
+
+    if let Some(submit) = submits.first() {
+        assert_ne!(submit.client_order_id, original_id);
+        assert_eq!(
+            tracked_stop_order(&tester, side).client_order_id(),
+            submit.client_order_id
+        );
+        assert_eq!(submit.order_init.order_type, OrderType::StopLimit);
+        assert_eq!(submit.order_init.order_side, side);
+        assert_eq!(submit.order_init.quantity, Quantity::from("0.010"));
+
+        let (trigger, price) = match side {
+            OrderSide::Buy => (Price::from("3002.05"), Price::from("3002.08")),
+            OrderSide::Sell => (Price::from("2998.95"), Price::from("2998.92")),
+        };
+
+        assert_eq!(submit.order_init.trigger_price, Some(trigger));
+        assert_eq!(submit.order_init.price, Some(price));
+        assert_eq!(submit.order_init.time_in_force, TimeInForce::Gtc);
+    } else {
+        assert_eq!(
+            tracked_stop_order(&tester, side).client_order_id(),
+            original_id
+        );
+    }
 }
 
 // `limit_aggressive` flips BUY pricing to cross the spread (place at/above ask).

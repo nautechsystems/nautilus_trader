@@ -265,22 +265,11 @@ report_control_flow() {
   done <<< "$control_flow_output"
 }
 
-echo "Checking for blank line above \`if\` statements (Rust)..."
 report_control_flow if
-
-echo "Checking for blank line above \`match\` blocks (Rust)..."
 report_control_flow match
-
-echo "Checking for blank line above \`for\` loops (Rust)..."
 report_control_flow for
-
-echo "Checking for blank line above \`while\` loops (Rust)..."
 report_control_flow while
-
-echo "Checking for blank line above \`loop\` blocks (Rust)..."
 report_control_flow loop
-
-echo "Checking for blank line above \`spawn\` calls (Rust)..."
 report_control_flow spawn
 
 # Check: module declaration ordering in `mod.rs`
@@ -288,8 +277,6 @@ report_control_flow spawn
 # External module declarations must be alphabetized within these sections:
 # `#[macro_use]`, public, restricted, cfg-gated, private, and test-only.
 # Adjacent non-empty sections must have exactly one blank line between them.
-
-echo "Checking module declaration ordering (Rust)..."
 
 CONTROL_FLOW_VIOLATIONS=$VIOLATIONS
 MODULE_ORDER_VIOLATIONS=0
@@ -493,5 +480,5 @@ if [ $VIOLATIONS -gt 0 ]; then
   exit 1
 fi
 
-echo "Formatting conventions are valid (Rust)"
+echo "Rust formatting conventions passed"
 exit 0

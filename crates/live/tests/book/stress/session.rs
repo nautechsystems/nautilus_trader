@@ -573,7 +573,7 @@ impl<V: StressVenue> Session<V> {
 
     fn apply(&mut self, event: DataEvent) {
         let deltas = match event {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 self.instruments.insert(instrument.id());
                 return;
             }

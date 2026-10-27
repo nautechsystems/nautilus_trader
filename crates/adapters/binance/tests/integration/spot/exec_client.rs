@@ -3701,6 +3701,67 @@ async fn test_submit_independent_order_list_is_denied_without_http_request() {
 }
 
 #[rstest]
+#[case::single(false, false)]
+#[case::list(true, false)]
+#[case::oco_builder(true, true)]
+#[tokio::test]
+async fn test_submit_quote_quantity_denied_before_request(
+    #[case] as_list: bool,
+    #[case] market_leg: bool,
+) {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    while rx.try_recv().is_ok() {}
+    let mut orders = add_spot_oco_orders_to_cache(&cache);
+    if market_leg {
+        orders[1] = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(test_trader_id())
+            .strategy_id(test_strategy_id())
+            .instrument_id(test_instrument_id())
+            .client_order_id(orders[1].client_order_id())
+            .side(orders[1].order_side())
+            .quantity(orders[1].quantity())
+            .contingency_type(ContingencyType::Oco)
+            .order_list_id(orders[1].order_list_id().unwrap())
+            .linked_order_ids(vec![orders[0].client_order_id()])
+            .build();
+    }
+
+    orders[1].set_is_quote_quantity(true);
+    cache
+        .borrow_mut()
+        .add_order(orders[1].clone(), None, None, true)
+        .unwrap();
+
+    if as_list {
+        client
+            .submit_order_list(submit_order_list_command(&orders))
+            .unwrap();
+    } else {
+        client
+            .submit_order(submit_order_command(&orders[1]))
+            .unwrap();
+    }
+
+    let expected_orders = if as_list { &orders[..] } else { &orders[1..] };
+    for order in expected_orders {
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = rx.try_recv().unwrap() else {
+            panic!("Expected order denial");
+        };
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
+    }
+
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_submit_order_list_denies_all_orders_when_reduce_only_is_present() {
     let (client, mut rx, cache, request_count) =

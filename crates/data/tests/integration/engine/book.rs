@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashSet;
+use nautilus_common::cache::OrderBookSource;
 
 use super::*;
 
@@ -1220,6 +1221,13 @@ fn test_book_snapshot_retains_existing_deltas_source(
         ),
     )));
     assert_eq!(recorder.borrow().len(), 1);
+    assert_eq!(
+        data_engine
+            .cache()
+            .borrow()
+            .order_book_source(&audusd_sim.id),
+        Some(OrderBookSource::Deltas)
+    );
 
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(
         UnsubscribeBookDeltas::new(
@@ -1233,6 +1241,13 @@ fn test_book_snapshot_retains_existing_deltas_source(
         ),
     )));
     assert_eq!(recorder.borrow().len(), 1);
+    assert_eq!(
+        data_engine
+            .cache()
+            .borrow()
+            .order_book_source(&audusd_sim.id),
+        Some(OrderBookSource::Deltas)
+    );
 
     data_engine.execute(DataCommand::Unsubscribe(UnsubscribeCommand::BookSnapshots(
         UnsubscribeBookSnapshots::new(
@@ -1246,6 +1261,14 @@ fn test_book_snapshot_retains_existing_deltas_source(
             None,
         ),
     )));
+
+    assert_eq!(
+        data_engine
+            .cache()
+            .borrow()
+            .order_book_source(&audusd_sim.id),
+        None
+    );
 
     let recorded = recorder.borrow();
     assert_eq!(recorded.len(), 2);
@@ -1864,6 +1887,15 @@ fn test_managed_book_rejects_other_source_and_ignores_unmanaged_updates(
     let mut engine = managed_book_engine.borrow_mut();
     let owner = book_source_command(audusd_sim.id, client_id, depth_source, true);
     engine.execute_subscribe(owner).unwrap();
+    let source = if depth_source {
+        OrderBookSource::Depth
+    } else {
+        OrderBookSource::Deltas
+    };
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        Some(source)
+    );
     let conflicting = book_source_command(audusd_sim.id, client_id, !depth_source, true);
     let error = engine.execute_subscribe(conflicting.clone()).unwrap_err();
     assert!(
@@ -1881,6 +1913,10 @@ fn test_managed_book_rejects_other_source_and_ignores_unmanaged_updates(
 
     let unmanaged = book_source_command(audusd_sim.id, client_id, !depth_source, false);
     engine.execute_subscribe(unmanaged).unwrap();
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        Some(source)
+    );
     let (depth_handler, depths) = get_typed_message_saving_handler::<OrderBookDepth>(None);
     let (delta_handler, deltas) = get_typed_message_saving_handler::<OrderBookDeltas>(None);
     msgbus::subscribe_book_depth(
@@ -1980,11 +2016,24 @@ fn test_managed_book_owners_release_independently(
 
     release(&mut engine, &first);
     assert_eq!(subscribers(), 1);
+    let source = if depth_source {
+        OrderBookSource::Depth
+    } else {
+        OrderBookSource::Deltas
+    };
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        Some(source)
+    );
     // Releasing the same owner twice must not remove the remaining owner.
     release(&mut engine, &first);
     assert_eq!(subscribers(), 1);
     release(&mut engine, &second);
     assert_eq!(subscribers(), 0);
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        None
+    );
     let replacement = book_source_command(audusd_sim.id, client_id, !depth_source, true);
     engine.execute_subscribe(replacement).unwrap();
 
@@ -2147,6 +2196,14 @@ fn test_parent_book_owner_keeps_original_targets(
     command.command_id = UUID4::new();
     engine.execute_subscribe(expanded.clone()).unwrap();
     assert_eq!(
+        cache.borrow().order_book_source(&first_id),
+        Some(OrderBookSource::Deltas)
+    );
+    assert_eq!(
+        cache.borrow().order_book_source(&second_id),
+        Some(OrderBookSource::Deltas)
+    );
+    assert_eq!(
         msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(first_id)),
         1
     );
@@ -2164,6 +2221,11 @@ fn test_parent_book_owner_keeps_original_targets(
         ))
         .unwrap();
     assert_eq!(
+        cache.borrow().order_book_source(&first_id),
+        Some(OrderBookSource::Deltas)
+    );
+    assert_eq!(cache.borrow().order_book_source(&second_id), None);
+    assert_eq!(
         msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(first_id)),
         1
     );
@@ -2175,6 +2237,10 @@ fn test_parent_book_owner_keeps_original_targets(
     engine
         .execute_subscribe(book_source_command(second_id, client_id, true, true))
         .unwrap();
+    assert_eq!(
+        cache.borrow().order_book_source(&second_id),
+        Some(OrderBookSource::Depth)
+    );
     let original_id = original.command_id();
     engine
         .execute_unsubscribe(&original.into_unsubscribe(
@@ -2183,6 +2249,11 @@ fn test_parent_book_owner_keeps_original_targets(
             Some(original_id),
         ))
         .unwrap();
+    assert_eq!(cache.borrow().order_book_source(&first_id), None);
+    assert_eq!(
+        cache.borrow().order_book_source(&second_id),
+        Some(OrderBookSource::Depth)
+    );
     assert_eq!(
         msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(first_id)),
         0
@@ -2453,5 +2524,71 @@ fn test_book_preparation_error_continues_without_releasing_peers(
     assert_eq!(
         serde_json::to_value(actual).unwrap(),
         serde_json::to_value(expected).unwrap()
+    );
+}
+
+#[rstest]
+#[case::reset(false)]
+#[case::dispose(true)]
+fn test_book_source_selection_clears_on_teardown(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] dispose: bool,
+    #[values(false, true)] depth_source: bool,
+    #[values(false, true)] cache_reset: bool,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    engine
+        .execute_subscribe(book_source_command(
+            audusd_sim.id,
+            client_id,
+            depth_source,
+            true,
+        ))
+        .unwrap();
+    let source = if depth_source {
+        OrderBookSource::Depth
+    } else {
+        OrderBookSource::Deltas
+    };
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        Some(source)
+    );
+
+    if cache_reset {
+        engine.cache().borrow_mut().reset();
+        assert_eq!(
+            engine.cache().borrow().order_book_source(&audusd_sim.id),
+            Some(source)
+        );
+        assert_eq!(
+            msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id)),
+            usize::from(!depth_source)
+        );
+        assert_eq!(
+            msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(audusd_sim.id)),
+            usize::from(depth_source)
+        );
+    }
+
+    if dispose {
+        engine.dispose();
+    } else {
+        engine.reset();
+    }
+
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        None
+    );
+    assert_eq!(
+        msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id)),
+        0
+    );
+    assert_eq!(
+        msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(audusd_sim.id)),
+        0
     );
 }

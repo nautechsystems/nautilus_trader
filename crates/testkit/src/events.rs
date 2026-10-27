@@ -182,9 +182,9 @@ mod tests {
         let other_id = UUID4::new();
         let request_id = UUID4::new();
         let trailing_id = UUID4::new();
-        tx.send(DataEvent::Instrument(InstrumentAny::Equity(
-            equity_aapl_itch(),
-        )))
+        tx.send(DataEvent::Data(
+            InstrumentAny::Equity(equity_aapl_itch()).into(),
+        ))
         .unwrap();
         tx.send(instruments_response(other_id)).unwrap();
         tx.send(instruments_response(request_id)).unwrap();

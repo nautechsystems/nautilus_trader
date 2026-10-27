@@ -330,7 +330,7 @@ zero price or size, the adapter clears that instrument's internal quote state an
 prices and sizes.
 
 The last published quote remains in the Nautilus cache with its original timestamps. Suppressing
-quote output does not withdraw that cached quote. Other subscribed ticker fields, including mark
+quote output does not withdraw that cached quote. For decoded tickers, other subscribed fields, including mark
 and index prices, funding rates, and option greeks, continue to emit independently.
 
 #### Instrument loading
@@ -364,6 +364,10 @@ fields fail that currency's fetch. A fetch error during initial loading also fai
 | Trades        | `public/get_trade_history`          |
 | Bars          | `public/get_tradingview_chart_data` |
 | Funding rates | `public/get_funding_rate_history`   |
+
+Null or empty required candle values or historical funding rates fail the request with a logged
+error and no data response. A malformed candle page also discards previously fetched pages in that
+request. Subsequent valid requests continue normally.
 
 ##### Trade direction and deduplication
 
@@ -1185,6 +1189,12 @@ feeds work on either:
 | `funding_rate`              | Optional; perpetuals only | Supplies funding-rate events.                                              |
 | `option_pricing`            | Optional; options only    | Supplies option greeks.                                                    |
 | Bid/ask                     | Present in both shapes    | Quote feed works with either shape.                                        |
+
+Null or empty required mark/index prices reject the whole WebSocket ticker frame, including its
+quote, funding rate, and greeks. The adapter logs a warning. On REST, one malformed ticker rejects
+the entire `public/get_tickers` response: quote requests emit no response, option-chain reference
+prices are unavailable, and market-order quote refreshes fail. Subsequent valid updates and requests
+continue normally. Zero (`0` or `"0"`) remains valid; null optional fields produce no corresponding event.
 
 #### Instrument class restrictions
 

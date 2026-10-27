@@ -67,6 +67,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["live"] }
 nautilus-core = { workspace = true }
+nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true }
 nautilus-model = { workspace = true }
 nautilus-network = { workspace = true, features = ["transport-sockudo"] }
@@ -104,7 +105,6 @@ pyo3-stub-gen = { workspace = true, optional = true }
 serde_urlencoded = { workspace = true, optional = true }
 
 [dev-dependencies]
-nautilus-execution = { workspace = true }
 nautilus-live = { workspace = true, features = ["test-support"] }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",

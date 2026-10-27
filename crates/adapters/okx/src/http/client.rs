@@ -6691,6 +6691,7 @@ impl OKXHttpClient {
         let okx_side = OKXSide::from(order_side);
 
         let instrument_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
+
         let tgt_ccy = okx_algo_target_currency(
             instrument_type,
             td_mode,
@@ -6698,7 +6699,7 @@ impl OKXHttpClient {
             order_type,
             quote_quantity,
         )
-        .map_err(OKXHttpError::ValidationError)?;
+        .map_err(OKXHttpError::from_order_denial)?;
 
         validate_algo_trigger_type(instrument_type, td_mode, order_type, trigger_type)
             .map_err(OKXHttpError::ValidationError)?;

@@ -4464,13 +4464,24 @@ async fn test_submit_order_denies_reduce_only(
 }
 
 #[rstest]
-#[case("quote_quantity", OrderType::Market, TimeInForce::Ioc)]
-#[case("display_qty", OrderType::Limit, TimeInForce::Gtc)]
+#[case(
+    "quote_quantity",
+    OrderType::Market,
+    TimeInForce::Ioc,
+    "UNSUPPORTED_QUOTE_QUANTITY"
+)]
+#[case(
+    "display_qty",
+    OrderType::Limit,
+    TimeInForce::Gtc,
+    "Architect AX adapter cannot encode display_qty iceberg instructions"
+)]
 #[tokio::test]
 async fn test_submit_order_denies_unsupported_instruction(
     #[case] instruction: &str,
     #[case] order_type: OrderType,
     #[case] time_in_force: TimeInForce,
+    #[case] expected_reason: &str,
 ) {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -4523,7 +4534,7 @@ async fn test_submit_order_denies_unsupported_instruction(
     };
 
     assert_eq!(denied.client_order_id, client_order_id);
-    assert!(denied.reason.contains(instruction));
+    assert_eq!(denied.reason.as_str(), expected_reason);
     assert_eq!(
         state
             .preview_count

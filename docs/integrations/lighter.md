@@ -81,7 +81,12 @@ Capability matrices describe adapter support. *Not supported by Lighter* identif
 | Spot              | ✓         | ✓       | Spot markets; new listings use 64-bit ids from 4095.      |
 | Perpetual futures | ✓         | ✓       | Linear perpetuals; new listings use 64-bit ids from 4095. |
 | Dated futures     | -         | -       | *Not supported by Lighter*.                               |
-| Options           | -         | -       | *Not supported by Lighter*.                               |
+| Options           | -         | -       | *Not currently implemented*; venue API available.         |
+
+Lighter provides a [binary options API](https://apidocs.lighter.xyz/docs/binary-options-trading-and-fees).
+The adapter does not discover or map binary-options instruments; its binary-options trading and
+settlement support remain unverified. Shared transaction formats and 64-bit market IDs do not
+establish support.
 
 ## Limitations
 
@@ -215,13 +220,16 @@ repository or share it in logs.
 
 ## Integrator attribution
 
-The execution client attributes create and modify transactions through `L2TxAttributes` to NautilusTrader's
+The execution client attributes create and modify transactions to NautilusTrader's
 [Lighter Mainnet integrator account](https://apidocs.lighter.xyz/docs/partner-integration) (`723813`) or
 [Robinhood Mainnet integrator account](https://apidocs.rh.lighter.xyz/docs/partner-attribution) (`17725`).
 This covers every tier, including Standard, and every order in a list. Maker and taker integrator fees are zero.
 
 On both mainnets, non-maker-only keys submit `ApproveIntegrator` at startup with an L2 signature and
-zero maximum fees. No L1 signature is required.
+zero maximum fees. No L1 signature is required. Official
+[Lighter](https://apidocs.lighter.xyz/docs/partner-integration#requirements) and
+[Robinhood](https://apidocs.rh.lighter.xyz/docs/partner-attribution#requirements) rules allow zero-fee
+attribution on Standard accounts; only nonzero integrator fees require Plus or Premium.
 
 Both testnets send no integrator attributes and skip `ApproveIntegrator` at startup.
 
@@ -293,9 +301,12 @@ update produces a refreshed top-10 depth view.
 
 ### Bars
 
-Bar subscriptions use `candle/{market_id}/{resolution}`, with open-candle updates about every 500 ms.
-The adapter emits one closed-period `Bar` only when the candle start timestamp advances. Reconnect and
-unsubscribe clear the in-progress cache.
+Bars require `EXTERNAL` aggregation and `LAST` prices. The adapter does not expose the venue's
+`mark_price_candle` stream.
+
+Bar subscriptions use `candle/{market_id}/{resolution}`, with open-candle updates batched every 500 ms
+when trades occur. The adapter emits one closed-period `Bar` only when the candle start timestamp
+advances. Reconnect and unsubscribe clear the in-progress cache.
 
 REST and WebSocket support `1m`, `5m`, `15m`, `30m`, `1h`, `4h`, `12h`, and `1d`. For weekly bars, aggregate
 shorter periods: subscriptions reject `1w` locally. REST requests accept it, but Lighter Mainnet returns
@@ -405,15 +416,15 @@ flags and output format.
 Lighter uses a numeric venue order index and caller-supplied `client_order_index`. The adapter derives a
 31-bit index from Nautilus `ClientOrderId`, probing forward on collision.
 
-Queries use the venue order ID for active and terminal history. Before that ID is known, the derived client
-index can query only active orders. Assigning the caller's client order ID requires a registered selected-index
-binding. Otherwise, query reports use the client order ID from an exact venue binding, or the unique venue
-order ID as an external client order ID. Duplicate active matches fail as ambiguous.
+**Live queries**: use the venue order ID for active and terminal history. Before that ID is known,
+the derived client index can query only active orders. Assigning the caller's client order ID requires
+a registered binding to the selected index. Otherwise, reports use an exact venue binding's client
+order ID or the unique venue order ID as an external client order ID. Duplicate active matches fail as ambiguous.
 
-Probed indexes cannot be re-derived after restart. Before translating order and fill reports, reconciliation
-restores the actual client index through the core cache's venue-order-ID mapping. It must include the order,
-and the cache must retain that mapping. Open cached orders return to active tracking; terminal orders use
-bounded replay tracking.
+**Restart recovery**: probed indexes cannot be re-derived. Before translating order and fill reports,
+reconciliation restores the actual client index through the cache's venue-order-ID mapping. The order
+must be in scope, and the cache must retain that mapping. Open cached orders return to active tracking;
+terminal orders use bounded replay tracking.
 
 Recovery never infers a client order ID from the integer alone. Without a recoverable binding, reports use
 the unique venue order ID as an external client order ID.
@@ -486,7 +497,8 @@ Venue expiries depend on the leg:
 - Market and IOC limit parents use zero expiry.
 - Other limit parents share the child expiry.
 
-Defaults use one timestamp. Explicit GTD expiries must match all other nonzero group expiries before dispatch.
+Default expiries use one timestamp. Explicit GTD expiries must match all other nonzero group expiries
+before dispatch.
 
 The wire shapes follow the [Go SDK validation](https://github.com/elliottech/lighter-go/blob/9d38261d1a4cc5c7211b383ba07a4d6e41604708/types/txtypes/create_grouped_orders.go).
 The adapter also requires reduce-only OTO children and matching requested quantities to preserve Nautilus exit semantics.
@@ -538,7 +550,6 @@ Triggered conditional limits retain their Nautilus type and last known trigger p
 ones without a recoverable trigger price report as working `LIMIT` orders.
 
 After triggering, price and quantity modifications send zero trigger price. Changing it again is unsupported.
-Independent transaction batches do not acquire contingency relationships.
 
 ### Order options
 
@@ -559,40 +570,45 @@ Independent transaction batches do not acquire contingency relationships.
 | `post_only` through `SubmitOrder.params`   | -          | -    | *Not currently implemented*; use the order flag.     |
 | `reduce_only` through `SubmitOrder.params` | -          | -    | *Not currently implemented*; use the order flag.     |
 
+#### Self-trade prevention
+
 Self-trade params accept case-insensitive strings on `SubmitOrder` and `SubmitOrderList`:
 
 - `self_trade_behavior_mode`: `expire_maker` (default), `expire_taker`, `cancel_both`, or `reduce`.
 - `self_trade_equality_mode`: `account_index` (default) or `master_account_index`. Master-account equality
   also prevents matches between subaccounts of the same master account.
 
-The adapter sends both defaults explicitly. Each native group uses one pair for all legs. Unknown names,
-non-string values, and `reduce` with `master_account_index` deny the order before submission.
-Non-default modes require zero integrator fees, which the adapter uses.
+The adapter sends both defaults explicitly. Each native group uses one pair for all legs.
+Unknown names, non-string values, and `reduce` with `master_account_index` deny the order before
+submission. Non-default modes require zero integrator fees, which the adapter uses.
 
-`reduce` nets overlapping quantities without a fill. Working-order quantities and reports show the remainder
-plus actual fills; price-only amendments preserve this quantity.
+**Reduction**: `reduce` nets overlapping quantities without a fill. Working-order quantities and
+reports show the remainder plus actual fills; price-only amendments preserve this quantity.
 
-Modify requests omit the self-trade modes. For perpetual limit orders amended to take a resting order from the
-same account, price-only and combined price/quantity changes use `expire_maker`, regardless of the submitted
-behavior. Quantity-only changes, amended maker behavior, equality-scope persistence, and spot or conditional
-amendments remain unverified.
+**Amendments**: modify requests omit the self-trade modes. For perpetual limit orders amended to take
+a resting order from the same account, price-only and combined price/quantity changes use
+`expire_maker`, regardless of the submitted behavior. These cases remain unverified:
+
+- Quantity-only changes and amended maker behavior.
+- Equality-scope persistence.
+- Spot and conditional amendments.
 
 ### Time in force
 
 | Time in force  | Perpetuals | Spot | Notes                                                                         |
 | -------------- | ---------- | ---- | ----------------------------------------------------------------------------- |
 | `GTC`          | ✓          | ✓    | Limit-style uses `GoodTillTime`; market-style uses `IOC`.                     |
-| `DAY`          | ✓          | ✓    | Limit-style and conditional orders use a positive order expiry.               |
-| `GTD`          | ✓          | ✓    | Native expiry is 5 minutes to 30 days; see the managed-GTD policy below.      |
+| `DAY`          | ✓          | ✓    | Limit and conditional orders only; uses the 28-day fallback expiry.           |
+| `GTD`          | ✓          | ✓    | Limit and conditional orders only; see [GTD policy](#gtd-policy).             |
 | `IOC`          | ✓          | ✓    | Plain `MARKET`/`LIMIT` use expiry `0`; conditional limit uses trigger expiry. |
 | `FOK`          | -          | -    | *Not supported by Lighter*.                                                   |
 | `AT_THE_OPEN`  | -          | -    | *Not supported by Lighter*.                                                   |
 | `AT_THE_CLOSE` | -          | -    | *Not supported by Lighter*.                                                   |
 
-`MARKET`, `STOP_MARKET`, and `MARKET_IF_TOUCHED` use `ImmediateOrCancel` because Lighter rejects market-style
-`GoodTillTime`. Expiry and Nautilus `IOC` support depend on order type:
+`MARKET`, `STOP_MARKET`, and `MARKET_IF_TOUCHED` use venue `ImmediateOrCancel` because Lighter rejects
+market-style `GoodTillTime`. Nautilus time-in-force support and expiry depend on order type:
 
-- Plain `MARKET` uses `OrderExpiry = 0`.
+- Plain `MARKET` accepts only Nautilus `GTC` or `IOC` and uses `OrderExpiry = 0`.
 - Conditional market orders retain positive expiry until triggering. The adapter rejects Nautilus
   `IOC` for them because Lighter reserves IOC for post-trigger execution.
 - Conditional limit orders accept Nautilus `IOC`: the trigger rests with positive expiry, then
@@ -603,15 +619,17 @@ limit-style `IOC` use now plus 28 days. Lighter rejected `-1` in these paths wit
 
 #### GTD policy
 
-With `use_gtd = true` (default), the strategy's `expire_time` sets venue `GoodTillTime` expiry.
-Accepted lifetimes are `[5 minutes + 1 second, 30 days]`, allowing one second for signing and transport.
+With `use_gtd = true` (default), the strategy's `expire_time` sets venue order expiry.
+The adapter accepts lifetimes in `[5 minutes + 1 second, 30 days]` when it prepares the order.
+The extra second allows for signing and transport. If your caller sets expiry in whole minutes,
+use at least six minutes; an expiry exactly five minutes ahead is denied.
 
 For shorter lifetimes, set `use_gtd = false` only with `manage_gtd_expiry = true` on the submitting strategy.
 The local GTD manager requests cancellation at strategy expiry; without it, orders can rest until the
 28-day venue fallback.
 
-The wire time-in-force stays `GoodTillTime`: Lighter has no `GoodTillCancel`, so `use_gtd = false`
-cannot switch it as on Binance.
+Limit-style orders keep wire time-in-force `GoodTillTime`: Lighter has no `GoodTillCancel`, so
+`use_gtd = false` changes their expiry rather than their wire time-in-force.
 
 Local management skips the native 5-minute minimum but rejects expiries beyond 28 days, when the venue
 would expire first. Use native GTD for longer lifetimes. Venue cancellation latency still delays removal.
@@ -625,6 +643,9 @@ would expire first. Use native GTD for longer lifetimes. Venue cancellation late
 | Self-trade prevention | ✓          | ✓    | Behavior and account scope set through order params.      |
 
 Use `post_only` on limit-style orders. The adapter does not synthesize maker-only market orders.
+
+The adapter maps Lighter's `canceled-post-only` status to `OrderCanceled` after acceptance or fills,
+otherwise to `OrderRejected` with `due_post_only=true`.
 
 Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only
 opens can be dropped without a venue order report and reconcile as `INFLIGHT_TIMEOUT`, without
@@ -646,6 +667,10 @@ a venue rejection reason.
 | Native cancel-all  | ✓          | ✓    | Explicit account-wide cancellation through the Rust client. |
 | Dead man's switch  | ✓          | ✓    | Automatic renewal or manual scheduling; see caveats below.  |
 
+Venue
+[chase limit orders and atomic baskets](https://docs.lighter.xyz/trading/order-types-and-matching#advanced-orders)
+are not exposed. Ordinary transaction batches execute each child independently.
+
 #### Account-wide cancellation
 
 Lighter's [`CancelAllOrders`](https://apidocs.lighter.xyz/docs/wasm-signer#signcancelallorders) transaction
@@ -656,12 +681,29 @@ These methods require access to the concrete Rust execution client; `ExecutionCl
 Python do not expose them.
 `lighter-flatten` also uses immediate native account-wide cancellation.
 
-Pass `Some(time)` to schedule cancellation or replace the existing deadline, and `None` to revoke it.
-The deadline is a Unix timestamp in milliseconds, between five minutes and fifteen days after the local
-clock. Allow headroom for rate limiting, latency, and clock skew; the venue can reject a delayed request.
-Manual calls do not start automatic renewal. Disconnect and process exit preserve the last deadline.
+The generic `CancelAllOrders` command retains its instrument and side filters and uses per-order
+cancellations.
 
-Set `scheduled_cancel_timeout_secs` to enable automatic arming and renewal on either deployment:
+:::warning
+Native cancellation affects **all open orders on the account**, across markets and strategies,
+including orders absent from the local cache. It does not close positions. Use a dedicated account
+when other applications also trade on Lighter.
+:::
+
+##### Manual scheduling
+
+Use `schedule_cancel(time)` with:
+
+- `Some(time)` to arm or replace a deadline: a Unix timestamp in milliseconds, five minutes to
+  fifteen days after the local clock. Allow headroom for rate limiting, latency, and clock skew;
+  the venue can reject delayed requests.
+- `None` to revoke the deadline.
+
+Manual calls do not start renewal. Disconnect and process exit preserve the last deadline.
+
+##### Automatic renewal
+
+Set `scheduled_cancel_timeout_secs` on either deployment:
 
 ```python
 from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
@@ -674,46 +716,39 @@ exec_config = LighterExecutionClientConfig(
 ```
 
 Use this config with `LighterExecutionClientFactory` and the [API credentials](#api-credentials).
-The default `None` leaves the venue schedule untouched, including a deadline from an earlier session.
-Manual revocation is available through the Rust client. When renewal is enabled, startup waits up to
-30 seconds for an executed arming transaction after the execution WebSocket, nonce, and
-[account streams](#account-stream-readiness) are ready. Arming failure fails `connect()` and tears down the local connection; an in-flight
-request can still take effect. Automatic arming and renewal confirm execution without reading back
-the account schedule.
+The default `None` leaves the venue schedule untouched, including deadlines from earlier sessions.
+Manual revocation requires the Rust client.
 
-The timeout must be in `[420, 1_295_940]` seconds. These bounds reserve headroom for clock skew
-and request delays within Lighter's deadline window. Keep the host clock synchronized.
-Renewal runs every `min((timeout - 300) // 3, 60)` seconds while connected and the [nonce is ready](#nonce-recovery).
-Failures are logged and retried; an outage or sustained quota contention can let the last deadline expire.
-A timed-out renewal can still submit to preserve transaction ordering.
-Reconnect resumes renewal. Stop, reset, and disconnect stop renewal without
-revoking the deadline. Avoid manual schedule changes while automatic renewal is enabled: it replaces them.
+The timeout must be in `[420, 1_295_940]` seconds. These bounds allow for clock skew and request delays
+within Lighter's deadline window. Keep the host clock synchronized.
 
-:::warning
-Native cancellation affects all open orders on the configured account, across markets and strategies,
-including orders absent from the local cache. It does not close positions. Use a dedicated account when
-other applications also trade on Lighter.
-:::
+- **Startup**: after the execution WebSocket, nonce, and [account streams](#account-stream-readiness)
+  are ready, startup waits up to 30 seconds for the arming transaction to execute. Failure fails
+  `connect()` and tears down the local connection; an in-flight request can still take effect.
+- **Renewal**: runs every `min((timeout - 300) // 3, 60)` seconds while connected and the
+  [nonce is ready](#nonce-recovery). Failures are logged and retried. Outages or sustained quota
+  contention can let the deadline expire; a timed-out renewal can still submit to preserve ordering.
+- **Lifecycle**: reconnect resumes renewal. Stop, reset, and disconnect stop renewal without revoking
+  the deadline. Avoid manual schedule changes while renewal is enabled: renewal replaces them.
 
-Venue reads can still list resting orders after a scheduled deadline; treat them as closed only after
-a venue order update or later venue read reports cancellation.
-Autonomous sweeping of resting orders and matching safety after expiry are not proven.
+Automatic arming and renewal confirm execution without reading back the account schedule.
 
-The manual methods use the ordered execution WebSocket and return a transaction hash after a transaction lookup
-confirms acceptance. Cancellation events come from venue order updates;
-acceptance alone does not prove cancellation, or that a schedule was armed, replaced, or revoked.
-Confirm transaction execution and the venue's account schedule before relying on a manual call.
-A transport error, transaction-lookup failure, or confirmation
-timeout can leave the outcome unknown, so check the transaction and venue order state before retrying.
-Dropping or timing out a manual call's future while waiting for its result does not stop submission, even while
-it waits for rate-limit quota. This also applies to revocation: a timed-out call can still revoke the
-schedule. Session shutdown can discard unsent requests; requests already in flight can have unknown outcomes.
-The generic `CancelAllOrders` command keeps its instrument and side filters and continues to use
-explicit per-order cancellations.
+##### Confirmation and unknown outcomes
 
-Venue
-[chase limit orders and atomic baskets](https://docs.lighter.xyz/trading/order-types-and-matching#advanced-orders)
-are not exposed. Ordinary transaction batches execute each child independently.
+Cancellation events come from venue order updates. After **any scheduled deadline**, manual or
+automatic, venue reads can still list resting orders. Treat them as closed only when an order update
+or later read reports cancellation. Autonomous sweeping and matching safety after expiry are not proven.
+
+`cancel_all_orders_account()` and `schedule_cancel(time)` use the ordered execution WebSocket.
+They return a transaction hash after a lookup confirms **acceptance**. Acceptance does not prove
+cancellation or that a schedule was armed, replaced, or revoked. Confirm transaction execution and the
+venue's account schedule before relying on a manual call.
+
+- Transport errors, lookup failures, and confirmation timeouts can leave outcomes unknown.
+  Check the transaction and venue order state before retrying.
+- Dropping or timing out a manual call's future does not stop submission, even while waiting for
+  rate-limit quota. A timed-out revocation can still revoke the schedule.
+- Shutdown can discard unsent requests; in-flight requests can have unknown outcomes.
 
 ### Order operations
 
@@ -734,8 +769,8 @@ are not exposed. Ordinary transaction batches execute each child independently.
 #### Order lists and batch operations
 
 Non-contingent `SubmitOrderList`, `BatchModifyOrders`, and `BatchCancelOrders` use WebSocket
-`jsonapi/sendtxbatch`. Each child retains its signed transaction and order-event attribution, without
-atomic execution or contingency relationships.
+`jsonapi/sendtxbatch`. Each child has its own signed transaction and order events. Execution is neither
+atomic nor contingent on other children.
 
 Local validation denies invalid submit children or rejects invalid modify children; supported siblings continue.
 Batches hold up to 15 transactions: 31 supported children normally produce 15, 15, and 1.
@@ -848,6 +883,53 @@ their connection changes; the pending cancel keeps its submission identity for r
 Cancellation recovery includes orders outside `PendingCancel`, such as `CancelAllOrders` targets.
 Only cached orders in `PendingCancel` at dispatch receive `OrderCancelRejected`; other failures are logged.
 
+#### Terminal events and missing fills
+
+Cancellation and expiry events wait until **real fills cover the venue's cumulative filled quantity**.
+Events with no missing fills publish immediately.
+
+##### Recovery limits
+
+Recovery fetches the order's trades and skips fills already published:
+
+- **Normal operation**: starts two seconds after the event begins waiting, with at most three
+  attempts and a two-second timeout per attempt. Interrupted requests count toward this limit.
+  Reconnect starts recovery immediately.
+- **Shutdown**: first stops tasks that produce order events, then retries waiting events within
+  their remaining attempts for up to seven seconds. If those tasks do not stop, shutdown fails;
+  events stay withheld until a later shutdown completes.
+
+While an event waits, reconciliation withholds its order and fill reports and its instrument's
+position report. When recovery exhausts its retries or shutdown deadline, the adapter logs the missing quantity
+and publishes the original terminal event **without creating fills**. Reconciliation must recover
+the missing quantity.
+
+Targeted and bulk status collection can return cancellation and expiry reports before real fills
+arrive, so native reconciliation can fetch companion fills. Other statuses, direct event publication,
+and startup mass status retain the real-fill coverage check. Filled-order collection fetches missing
+trades; direct order queries also start recovery for missed terminal frames.
+
+Unresolved modifications and deferred fills retain their existing holds. Native child fills also
+retain their holds unless the order has inferred fills.
+
+##### Inferred or unverifiable fills
+
+Inferred fills do not count as real coverage. The adapter does not replace them with real trades.
+
+If a cached order has active inferred fills or unverifiable fill history:
+
+- The adapter withholds all further trades and order and fill reports for that order to prevent
+  double-counting. It does not queue live trades.
+- Terminal recovery still exhausts its bounded attempts, including for native child orders,
+  subject to the other holds above.
+- The order's reports stay withheld while inferred fills remain active or its history is unverifiable.
+  Position reconciliation stays incomplete while the order is open, its history is unverifiable,
+  or other execution holds remain.
+
+After a verifiable order closes and its pending events drain, native reconciliation can correct the
+**net position** from venue evidence. It may create synthetic position adjustments; these do not
+recover the original trade IDs or fees.
+
 #### Leverage updates and signing validation
 
 Call `LighterExecutionClient::update_leverage(instrument_id, initial_margin_fraction, margin_mode)`.
@@ -896,7 +978,7 @@ Pagination walks back from the newest trade; only a trade older than the lookbac
 
 - Trade older than the lookback start: the report set stays complete.
 - Cursor exhausted first: the adapter logs the uncovered span and marks the report set incomplete.
-- No retained trades: nothing can have been truncated, so the report set stays complete.
+- No retained trades: the adapter treats the report set as complete.
 
 Cursor exhaustion cannot distinguish truncation from no older trades. Young accounts can report incomplete
 with nothing missing. Choose a lookback the venue can serve.
@@ -951,25 +1033,33 @@ and retain omitted markets. Empty updates retain all positions.
 | Collateral-mode changes | -          | -    | *Not currently implemented*; configure with venue tools.    |
 | Deposits / withdrawals  | -          | -    | *Not currently implemented*; use venue tools or APIs.       |
 
-Lighter's [multi-asset margin](https://docs.lighter.xyz/trading/multi-asset-margin) supports non-USDC perpetual
-collateral. Its documentation describes spot use cases but excludes spot at launch. The adapter exposes
-neither spot borrowing nor collateral-mode changes; the spot-margin row describes an adapter gap, not a venue limit.
+Lighter's [multi-asset margin](https://docs.lighter.xyz/trading/multi-asset-margin) lets Unified Trading
+Accounts use supported collateral assets for perpetual and spot trading. The adapter exposes neither
+spot borrowing nor collateral-mode changes. Its settlement currency remains USDC on Lighter and USDG on
+Robinhood; the spot-margin row describes an adapter gap.
 
 ## Liquidation and ADL handling
 
-| Event or field              | Support | Notes                                                         |
-| --------------------------- | ------- | ------------------------------------------------------------- |
-| Liquidation trades          | ✓       | Account trade rows can parse as fills, with no special event. |
-| Deleverage trades           | ✓       | Account trade rows can parse as fills, with no special event. |
-| Liquidation price reporting | ✓       | Position reports include the venue-reported value.            |
-| ADL event stream            | -       | *Not currently implemented*; no notification subscription.    |
+| Event or field              | Support | Notes                                                       |
+| --------------------------- | ------- | ----------------------------------------------------------- |
+| Public liquidation trades   | ✓       | Emitted as `TradeTick`; liquidation classification is lost. |
+| Account liquidation trades  | ✓       | Normal fill path; liquidation classification is lost.       |
+| Account deleverage trades   | ✓       | Normal fill path; deleverage classification is lost.        |
+| Liquidation price reporting | ✓       | Position reports include the venue-reported value.          |
+| ADL event stream            | -       | *Not currently implemented*; no notification subscription.  |
 
 `PositionStatusReport.liquidation_price` preserves the venue's decimal value, including zero.
 Synthetic flat reports leave it unset.
 
+For the public [trade stream](https://apidocs.lighter.xyz/docs/websocket-reference#trade), the adapter
+merges `trades` and `liquidation_trades` into `TradeTick` values. Strategies cannot distinguish
+liquidations from ordinary trades in these ticks.
+
+Account liquidation and deleverage trades use the normal fill path: `OrderFilled` for tracked orders
+or `FillReport` for reconciliation. Neither type preserves the venue's trade classification.
 The adapter does not subscribe to the authenticated
 [`notification` stream](https://apidocs.lighter.xyz/docs/websocket-reference#notification) for liquidation
-and deleverage alerts. These trades use the normal fill-report path.
+and deleverage alerts.
 
 ## Funding rates
 
@@ -993,25 +1083,44 @@ Historical funding requests use public `/api/v1/fundings`, not account-specific 
 
 ## Account tiers
 
-Account tiers set latency, rate limits, and fees. The client logs `GET /api/v1/account`'s tier, including
-unknown `account_type` values.
+Account tiers set latency, rate limits, and fees. Standard is the default tier on both deployments.
+The client logs `GET /api/v1/account`'s tier, including unknown `account_type` values.
 
 All tiers on both mainnets use [zero-fee integrator attribution](#integrator-attribution).
 Quotas never rise automatically, and local overrides do not grant higher venue limits.
 
-For [Lighter Mainnet](https://apidocs.lighter.xyz/docs/account-types):
+### Lighter Mainnet
 
-| Tier     | Latency (maker / taker) | REST weighted limit | `sendTx` limit          | Fees (maker / taker)            | Notes                                   |
-| -------- | ----------------------- | ------------------- | ----------------------- | ------------------------------- | --------------------------------------- |
-| Standard | 0 ms / 300 ms           | 60 req/min          | 60 req/min              | 0 / 0                           | Zero-fee default tier.                  |
-| Premium  | 0 ms / 140 ms           | 24,000 req/min      | [4,000, 57,600] req/min | [0.28, 0.40] / [1.96, 2.80] bps | Lowest latency; scales with staked LIT. |
-| Plus     | 0 ms / 300 ms           | 24,000 req/min      | 4,000 req/min           | 0.5 / 0.5 bps                   | Raised limits, standard latency.        |
-| Builder  | -                       | 240,000 req/min     | -                       | -                               | Highest REST throughput.                |
+[Lighter account types](https://apidocs.lighter.xyz/docs/account-types) and
+[rate limits](https://apidocs.lighter.xyz/docs/rate-limits) specify:
 
-Premium limits and fees scale with staked LIT. Robinhood has different fees and limits, with
-[Premium tiers](https://apidocs.lighter.xyz/docs/lighter-rh#account-tiers)
-based on 14-day trading volume. Confirm deployment limits before raising local quotas; see
-[Rate limiting](#rate-limiting).
+| Tier     | Maker / taker latency | Cancel latency | REST limit per minute | `sendTx` / `sendTxBatch` per minute | Maker / taker fees              |
+| -------- | --------------------- | -------------- | --------------------- | ----------------------------------- | ------------------------------- |
+| Standard | 0 ms / 300 ms         | 300 ms         | 60 requests           | Shared 60 requests with REST        | 0 / 0                           |
+| Premium  | 0 ms / 140 ms         | 0 ms           | 24,000 weighted       | [4,000, 72,000] requests            | [0.28, 0.40] / [1.96, 2.80] bps |
+| Plus     | 0 ms / 300 ms         | 300 ms         | 24,000 weighted       | 4,000 requests                      | 0.5 / 0.5 bps                   |
+| Builder  | -                     | -              | 240,000 weighted      | Standard limits                     | -                               |
+
+Premium limits and fee discounts scale with staked LIT, including fee credits. The maximum
+72,000-request transaction quota requires the 500,000-LIT tier. Standard and Plus modifications have
+300 ms latency. The zero maker delay applies to post-only orders.
+
+### Robinhood Mainnet
+
+Use Robinhood's [account types](https://apidocs.rh.lighter.xyz/docs/account-types) and
+[rate limits](https://apidocs.rh.lighter.xyz/docs/rate-limits), which differ from Lighter Mainnet:
+
+| Tier     | Maker / taker latency | Cancel latency | REST limit per minute | `sendTx` / `sendTxBatch` per minute | Maker / taker fees              |
+| -------- | --------------------- | -------------- | --------------------- | ----------------------------------- | ------------------------------- |
+| Standard | 200 ms / 300 ms       | 200 ms         | 60 requests           | Shared 60 requests with REST        | 0 / 0                           |
+| Premium  | 0 ms / [150, 200] ms  | 0 ms           | 24,000 weighted       | [4,000, 24,000] requests            | [0.84, 1.20] / [2.45, 3.50] bps |
+| Plus     | 200 ms / 300 ms       | 200 ms         | 120,000 weighted      | 8,000 requests                      | 1.5 / 1.5 bps                   |
+| Builder  | -                     | -              | 150,000 weighted      | 25,000 requests                     | -                               |
+
+Premium tiers depend on 14-day trading volume, with the best tier above $500 million. The Plus fee
+is 1.5 bps for all order types from
+[October 4, 2026, at 11:00 UTC](https://t.me/lighter_api_updates/183). Standard native TWAP orders cost
+1 bp on both mainnets; **the adapter does not implement native TWAP**.
 
 ## Rate limiting
 
@@ -1027,7 +1136,7 @@ Higher [tiers](#account-tiers) require explicit local quotas:
 Overrides change only local pacing. Public data remains unauthenticated and does not gain account-level
 venue limits through higher local quotas.
 
-### Request buckets and endpoint weights
+### Request buckets and REST budgets
 
 HTTP and WebSocket share one venue transaction bucket per L1 address. WebSocket `sendTxBatch` counts once
 for up to 15 adapter transactions.
@@ -1037,12 +1146,22 @@ venue buckets. Local buckets are separate on every tier, so Standard users must 
 including nonce and reconciliation reads.
 
 The REST limiter spends one token per call, ignoring venue weights. Set `rest_quota_per_min` for the
-endpoint mix. Before other requests, Lighter Mainnet's 24,000 weighted req/min Premium limit permits either:
+endpoint mix. Lighter Mainnet's 24,000-weight Premium or Plus budget permits these individual endpoint
+budgets, **before other traffic**:
 
 - 40 `/api/v1/recentTrades` calls/minute (weight 600).
 - 120 `/api/v1/trades` calls/minute (weight 200).
+- 240 `/api/v1/accountActiveOrders` or `/api/v1/accountOrders` calls/minute (weight 100).
+- 200 `/api/v1/exchangeMetrics` calls/minute (weight 120).
 
-Confirm weights for your deployment.
+The [weight reductions](https://t.me/lighter_api_updates/177) increase these budgets from 40 to 120 for
+`trades`, 80 to 240 for active or targeted order lookup, and 80 to 200 for `exchangeMetrics`.
+`recentTrades` remains weight 600. The adapter queries active orders once per selected market;
+reserve budget for inactive-order pages, fills, and nonce reads before increasing local quotas.
+
+The default stays 60 calls/minute because Standard limits are unchanged and the limiter does not
+weight mixed requests. Standard accounts also inherit a lower weighted endpoint ceiling when it is
+stricter than 60 calls/minute. For example, weight-3,000 endpoints permit only eight calls/minute.
 
 ### Transaction type limits
 
@@ -1081,6 +1200,7 @@ not send rate. It does not enforce the venue's 50-message per-IP ceiling across 
 `sendTx` and `sendTxBatch` consume neither the client-message bucket nor the venue inflight cap.
 
 The tier limits below apply to [Lighter Mainnet](https://apidocs.lighter.xyz/docs/rate-limits).
+For Robinhood quotas, use its [account-tier table](#robinhood-mainnet).
 
 | Scope                                | Venue limit              | Adapter behavior                                     |
 | ------------------------------------ | ------------------------ | ---------------------------------------------------- |
@@ -1089,15 +1209,16 @@ The tier limits below apply to [Lighter Mainnet](https://apidocs.lighter.xyz/doc
 | REST, plus account                   | 24,000 weighted req/min  | Local override required; venue attribution applies.  |
 | REST, builder account                | 240,000 weighted req/min | Local override required; venue attribution applies.  |
 | `sendTx` / `sendTxBatch`, standard   | 60 req/min               | Shared with REST reads; includes HTTP and WebSocket. |
-| `sendTx` / `sendTxBatch`, premium    | [4,000, 57,600] req/min  | Set `sendtx_quota_per_min` (scales with staked LIT). |
+| `sendTx` / `sendTxBatch`, premium    | [4,000, 72,000] req/min  | Set `sendtx_quota_per_min` (scales with staked LIT). |
 | `sendTx` / `sendTxBatch`, plus       | 4,000 req/min            | Set `sendtx_quota_per_min` to use it.                |
 | Default transaction type limit       | 40 req/min               | Applies to tx types not covered by volume quota.     |
 | `L2UpdateLeverage` transaction limit | 40 req/min               | Relevant to `update_leverage`.                       |
 
 ### Active and pending order limits
 
-Lighter's [tier limits](https://apidocs.lighter.xyz/docs/rate-limits) apply per account and per market
-within that account:
+Order limits apply per account and per market within that account.
+
+**Lighter Mainnet** ([source](https://apidocs.lighter.xyz/docs/rate-limits#orders)):
 
 | Account tier | Active per account | Active per market | Pending per account | Pending per market |
 | ------------ | ------------------ | ----------------- | ------------------- | ------------------ |
@@ -1105,27 +1226,40 @@ within that account:
 | Plus         | 750                | 250               | 500                 | 100                |
 | Premium      | 1,500              | 1,000             | 1,000               | 100                |
 
+**Robinhood Mainnet** ([source](https://apidocs.rh.lighter.xyz/docs/rate-limits#orders)):
+
+| Account tier | Active per account | Active per market | Pending per account | Pending per market |
+| ------------ | ------------------ | ----------------- | ------------------- | ------------------ |
+| Standard     | 1,000              | 1,000             | 200                 | 16                 |
+| Plus         | 1,000              | 1,000             | 200                 | 16                 |
+| Premium      | 1,000              | 1,000             | 2,000               | 160                |
+
 Active orders rest on the book. Venue-pending orders include untriggered take-profit, stop-loss, and TWAP,
 not Nautilus `PendingCancel` or unacknowledged requests. The adapter does not pre-count these orders;
 leave room for existing orders. Local quotas do not raise venue caps.
 
-### Endpoint weights and transport limits
+### Endpoint weights
 
-Common REST weights from the [Lighter Mainnet rate limits](https://apidocs.lighter.xyz/docs/rate-limits)
-are below. The adapter charges one REST token per HTTP call; `sendTx` and `sendTxBatch` use the transaction
-limiter, while `nextNonce` uses REST.
+Common REST weights differ by deployment. The adapter charges one REST token per HTTP call;
+`sendTx` and `sendTxBatch` use the transaction limiter, while `nextNonce` uses REST.
 
-| Endpoint group                                                  | Weight |
-| --------------------------------------------------------------- | ------ |
-| `sendTx`, `sendTxBatch`, `nextNonce`                            | 6      |
-| `accountInactiveOrders`, `accountActiveOrders`, `accountOrders` | 100    |
-| `apikeys`                                                       | 150    |
-| `trades`                                                        | 200    |
-| `recentTrades`                                                  | 600    |
-| Endpoints without an explicit venue weight                      | 300    |
+| Endpoint group                                                  | Lighter Mainnet | Robinhood Mainnet |
+| --------------------------------------------------------------- | --------------- | ----------------- |
+| `sendTx`, `sendTxBatch`, `nextNonce`                            | 6               | 6                 |
+| `accountInactiveOrders`, `accountActiveOrders`, `accountOrders` | 100             | 100               |
+| `exchangeMetrics`                                               | 120             | 120               |
+| `apikeys`                                                       | 150             | 150               |
+| `account`                                                       | 300             | 150               |
+| `trades`                                                        | 200             | 600               |
+| `recentTrades`                                                  | 600             | 600               |
+| Endpoints without an explicit venue weight                      | 300             | 300               |
 
-Check official weights for other named endpoints before budgeting calls.
-[Robinhood weights](https://apidocs.lighter.xyz/docs/lighter-rh#rate-limits) can differ.
+Check the [Lighter](https://apidocs.lighter.xyz/docs/rate-limits#weights) or
+[Robinhood](https://apidocs.rh.lighter.xyz/docs/rate-limits#weights) reference for other named endpoints.
+The general Lighter RH overview lists different active-order lookup weights; this table uses
+Robinhood's dedicated rate-limit reference.
+
+### Transport limits
 
 | Endpoint or transport                  | Limit               | Notes                                                            |
 | -------------------------------------- | ------------------- | ---------------------------------------------------------------- |

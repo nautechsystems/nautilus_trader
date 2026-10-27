@@ -46,6 +46,7 @@ use nautilus_model::{
     identifiers::InstrumentId,
     types::Quantity,
 };
+use nautilus_persistence::config::DataCatalogConfig;
 use nautilus_trading::examples::strategies::EmaCross;
 use rust_decimal_macros::dec;
 use serde_json::Value;
@@ -96,7 +97,7 @@ fn run_workload(catalog_path: &Path, result_path: &Path) -> anyhow::Result<()> {
         .build()?;
     let data_config = BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path)
+        .catalog(DataCatalogConfig::new(catalog_path, None, None))
         .instrument_id(instrument_id)
         .build()?;
     let run_config = BacktestRunConfig::builder()

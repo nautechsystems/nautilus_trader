@@ -56,8 +56,8 @@ use nautilus_execution::{
 use nautilus_model::{
     accounts::{CashAccount, MarginAccount},
     data::{
-        Bar, BarType, BookOrder, DEPTH10_LEN, IndexPriceUpdate, InstrumentClose, OptionGreeks,
-        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, DEPTH10_LEN, IndexPriceUpdate, InstrumentClose, MarkPriceUpdate,
+        OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
         stubs::OrderBookDeltaTestBuilder,
     },
     enums::{
@@ -27026,4 +27026,210 @@ fn route_oto_releases(
             parent.process_oto_resize(parent_order_id, quantity);
         }
     }
+}
+
+#[rstest]
+#[case::stop_market(OrderType::StopMarket, false)]
+#[case::stop_limit(OrderType::StopLimit, false)]
+#[case::market_if_touched(OrderType::MarketIfTouched, true)]
+#[case::limit_if_touched(OrderType::LimitIfTouched, true)]
+fn test_mark_price_stop_uses_mark_and_fills_from_book(
+    #[case] order_type: OrderType,
+    #[case] touched: bool,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+    #[values(false, true)] trade_execution: bool,
+    #[values(false, true)] amended: bool,
+    #[values(false, true)] initial_mark: bool,
+) {
+    let instrument_eth_usdt = instrument_eth_usdt(crypto_perpetual_ethusdt());
+    let order_event_handler = order_event_handler();
+    let account_id = account_id();
+    let instrument_id = instrument_eth_usdt.id();
+
+    let config = OrderMatchingEngineConfig {
+        trade_execution,
+        ..Default::default()
+    };
+
+    let mut engine = build_caching_engine(
+        instrument_eth_usdt,
+        book_type,
+        None,
+        None,
+        None,
+        Some(config),
+    );
+    let crosses_above = (side == OrderSide::Buy) != touched;
+
+    let (trigger, amended_trigger, crossed) = if crosses_above {
+        ("1505.00", "1506.00", "1510.00")
+    } else {
+        ("1495.00", "1494.00", "1490.00")
+    };
+
+    let quote = |bid: &str, ask: &str, ts: u64| {
+        QuoteTick::new(
+            instrument_id,
+            Price::from(bid),
+            Price::from(ask),
+            Quantity::from("10.000"),
+            Quantity::from("10.000"),
+            ts.into(),
+            ts.into(),
+        )
+    };
+
+    let apply_quote = |engine: &mut CachingEngine, quote: &QuoteTick| {
+        if book_type == BookType::L1_MBP {
+            engine.process_quote_tick(quote);
+        } else {
+            engine
+                .process_order_book_delta(&OrderBookDelta::clear(
+                    instrument_id,
+                    0,
+                    quote.ts_event,
+                    quote.ts_init,
+                ))
+                .unwrap();
+
+            for (side, price, id) in [
+                (OrderSide::Buy, quote.bid_price, 1),
+                (OrderSide::Sell, quote.ask_price, 2),
+            ] {
+                let delta = OrderBookDelta::new(
+                    instrument_id,
+                    BookAction::Update,
+                    BookOrder::new(side, price, Quantity::from("10.000"), id),
+                    0,
+                    0,
+                    quote.ts_event,
+                    quote.ts_init,
+                );
+                engine.process_order_book_delta(&delta).unwrap();
+            }
+        }
+    };
+
+    apply_quote(&mut engine, &quote("1499.00", "1501.00", 1));
+    if initial_mark {
+        engine.process_mark_price(&MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1500.00"),
+            1.into(),
+            1.into(),
+        ));
+    }
+
+    let mut trigger_price = Price::from(trigger);
+    let id = ClientOrderId::from("MARK-STOP");
+
+    let mut order = OrderTestBuilder::new(order_type)
+        .instrument_id(instrument_id)
+        .client_order_id(id)
+        .side(side)
+        .quantity(Quantity::from("1.000"))
+        .price(Price::from(match side {
+            OrderSide::Buy => "1600.00",
+            OrderSide::Sell => "1400.00",
+        }))
+        .trigger_price(trigger_price)
+        .trigger_type(TriggerType::MarkPrice)
+        .submit(true)
+        .build();
+
+    engine.process_order(&mut order, account_id);
+    assert_eq!(
+        get_order_event_handler_messages(&order_event_handler).len(),
+        1
+    );
+    assert!(engine.order_exists(id));
+    clear_order_event_handler_messages(&order_event_handler);
+
+    apply_quote(&mut engine, &quote(crossed, crossed, 2));
+    engine.process_trade_tick(&TradeTick::new(
+        instrument_id,
+        Price::from(crossed),
+        Quantity::from("1.000"),
+        AggressorSide::NoAggressor,
+        TradeId::from("CROSSING-LAST"),
+        3.into(),
+        3.into(),
+    ));
+
+    if amended {
+        trigger_price = Price::from(amended_trigger);
+
+        let command = ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument_id,
+            id,
+            order.venue_order_id(),
+            None,
+            None,
+            Some(Price::from(amended_trigger)),
+            UUID4::new(),
+            4.into(),
+            None,
+            None,
+        );
+        engine.process_modify(&command, account_id);
+        let events = get_order_event_handler_messages(&order_event_handler);
+
+        let [OrderEventAny::Updated(event)] = events.as_slice() else {
+            panic!("expected only the trigger amendment, received {events:?}");
+        };
+
+        assert_eq!(event.client_order_id, id);
+        assert_eq!(event.trigger_price, Some(Price::from(amended_trigger)));
+        clear_order_event_handler_messages(&order_event_handler);
+        engine.process_mark_price(&MarkPriceUpdate::new(
+            instrument_id,
+            Price::from(trigger),
+            4.into(),
+            4.into(),
+        ));
+    }
+
+    assert!(get_order_event_handler_messages(&order_event_handler).is_empty());
+    assert!(engine.order_exists(id));
+
+    apply_quote(&mut engine, &quote("1499.00", "1501.00", 5));
+    engine.process_mark_price(&MarkPriceUpdate::new(
+        instrument_id,
+        trigger_price,
+        6.into(),
+        6.into(),
+    ));
+    let events = get_order_event_handler_messages(&order_event_handler);
+
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    let [fill] = fills.as_slice() else {
+        panic!("expected one fill, received {events:?}");
+    };
+
+    assert_eq!(fill.client_order_id, id);
+    assert_eq!(fill.order_type, order_type);
+    assert_eq!(fill.order_side, side);
+    assert_eq!(fill.last_qty, Quantity::from("1.000"));
+    assert_eq!(
+        fill.last_px,
+        Price::from(match side {
+            OrderSide::Buy => "1501.00",
+            OrderSide::Sell => "1499.00",
+        })
+    );
+    assert_eq!(fill.ts_event, UnixNanos::default());
+    assert!(!engine.order_exists(id));
+    assert_eq!(engine.best_bid_price(), Some(Price::from("1499.00")));
+    assert_eq!(engine.best_ask_price(), Some(Price::from("1501.00")));
 }

@@ -159,7 +159,7 @@ pub(super) fn emit_ws_message(
                 return false;
             }
 
-            if let Err(e) = sender.send(DataEvent::FundingRate(*funding_rate)) {
+            if let Err(e) = sender.send(DataEvent::Data(Data::FundingRate(*funding_rate))) {
                 log::error!("Failed to send funding rate: {e}");
             }
             true

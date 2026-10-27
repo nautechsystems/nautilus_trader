@@ -20,7 +20,7 @@ use std::{cell::RefCell, collections::BinaryHeap, fmt::Debug, rc::Rc};
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, OrderBookSource},
     clients::ExecutionClient,
     clock::Clock,
     factories::OrderEventFactory,
@@ -558,6 +558,8 @@ impl SandboxExecutionClient {
 
     /// Processes order book deltas through the matching engine.
     ///
+    /// Processes caller-supplied input independently of live book-source selection.
+    ///
     /// # Errors
     ///
     /// Returns an error if the instrument is not found in the cache.
@@ -578,6 +580,8 @@ impl SandboxExecutionClient {
     }
 
     /// Processes an order book depth snapshot through the matching engine.
+    ///
+    /// Processes caller-supplied input independently of live book-source selection.
     ///
     /// # Errors
     ///
@@ -1844,12 +1848,20 @@ impl SandboxInner {
 
     fn on_order_book_deltas(inner: &Rc<RefCell<Self>>, deltas: &OrderBookDeltas) {
         Self::drain_inbound(inner);
-        inner.borrow_mut().process_order_book_deltas(deltas);
+        let mut inner = inner.borrow_mut();
+
+        if inner.accepts_book_source(&deltas.instrument_id, OrderBookSource::Deltas) {
+            inner.process_order_book_deltas(deltas);
+        }
     }
 
     fn on_order_book_depth(inner: &Rc<RefCell<Self>>, depth: &OrderBookDepth) {
         Self::drain_inbound(inner);
-        inner.borrow_mut().process_order_book_depth(depth);
+        let mut inner = inner.borrow_mut();
+
+        if inner.accepts_book_source(&depth.instrument_id, OrderBookSource::Depth) {
+            inner.process_order_book_depth(depth);
+        }
     }
 
     fn on_instrument_status(inner: &Rc<RefCell<Self>>, status: &InstrumentStatus) {
@@ -1884,6 +1896,13 @@ impl SandboxInner {
 
         inner.sync_expired_cleanup(instrument_id);
         inner.drain_oto_commands();
+    }
+
+    fn accepts_book_source(&self, instrument_id: &InstrumentId, source: OrderBookSource) -> bool {
+        self.cache
+            .borrow()
+            .order_book_source(instrument_id)
+            .is_none_or(|selected| selected == source)
     }
 
     /// Applies every inbound command whose latency has elapsed, in `(due_ns, seq)` order, then

@@ -136,7 +136,28 @@ impl<'de> Deserialize<'de> for StrikeSearchProfile {
 }
 
 /// Defines which strikes to include in an option chain subscription.
+///
+/// Existing variants support direct construction. Downstream matches require a
+/// wildcard arm so new selection modes can be added without changing those matches.
+/// Use [`Self::resolve`] for model-level selection, or reject unsupported modes
+/// explicitly when implementing a custom selector.
+///
+/// An exhaustive match outside this crate does not compile:
+///
+/// ```compile_fail,E0004
+/// use nautilus_model::data::StrikeRange;
+///
+/// fn is_fixed(range: &StrikeRange) -> bool {
+///     match range {
+///         StrikeRange::Fixed(_) => true,
+///         StrikeRange::AtmRelative { .. } => false,
+///         StrikeRange::AtmPercent { .. } => false,
+///         StrikeRange::Delta { .. } => false,
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum StrikeRange {
     /// Subscribe to a fixed set of strike prices.
     Fixed(Vec<Price>),

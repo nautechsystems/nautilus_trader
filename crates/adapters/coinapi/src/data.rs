@@ -553,7 +553,7 @@ impl DataClient for CoinApiDataClient {
         for instrument in loaded {
             if let Err(e) = self
                 .data_sender
-                .send(DataEvent::Instrument(instrument.instrument))
+                .send(DataEvent::Data(instrument.instrument.into()))
             {
                 log::warn!("Failed to send instrument: {e}");
             }

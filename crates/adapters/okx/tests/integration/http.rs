@@ -5373,7 +5373,7 @@ async fn test_http_place_algo_order_cash_spot_buy_requires_trigger(
     OrderType::StopMarket,
     true,
     TriggerType::LastPrice,
-    "OKX Spot STOP_MARKET algo orders do not support quote quantity"
+    "UNSUPPORTED_QUOTE_QUANTITY"
 )]
 #[case(
     "BTC-USDT.OKX",
@@ -5389,7 +5389,7 @@ async fn test_http_place_algo_order_cash_spot_buy_requires_trigger(
     OrderType::StopLimit,
     true,
     TriggerType::LastPrice,
-    "OKX Spot STOP_LIMIT algo orders do not support quote quantity"
+    "UNSUPPORTED_QUOTE_QUANTITY"
 )]
 #[case(
     "BTC-USDT-SWAP.OKX",
@@ -5397,7 +5397,7 @@ async fn test_http_place_algo_order_cash_spot_buy_requires_trigger(
     OrderType::StopMarket,
     true,
     TriggerType::LastPrice,
-    "OKX Swap STOP_MARKET algo orders do not support quote quantity"
+    "UNSUPPORTED_QUOTE_QUANTITY"
 )]
 #[case(
     "BTC-USDT.OKX",
@@ -5462,7 +5462,7 @@ async fn test_http_place_algo_order_unsupported_terms_are_not_sent(
         )
         .await;
 
-    let expected = if reason.ends_with("triggers") {
+    let expected = if reason == "UNSUPPORTED_QUOTE_QUANTITY" || reason.ends_with("triggers") {
         reason.to_string()
     } else {
         format!("{reason} in {trade_mode} mode")

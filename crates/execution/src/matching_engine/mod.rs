@@ -47,8 +47,8 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos, correctness::CorrectnessResult};
 use nautilus_model::{
     data::{
-        Bar, BarType, InstrumentClose, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick,
-        TradeTick,
+        Bar, BarType, InstrumentClose, MarkPriceUpdate, OrderBookDelta, OrderBookDeltas,
+        OrderBookDepth, QuoteTick, TradeTick,
         order::{BookOrder, OrderId},
     },
     enums::{
@@ -127,6 +127,8 @@ pub struct OrderMatchingEngine {
     last_bar_bid: Option<Bar>,
     last_bar_ask: Option<Bar>,
     fill_at_market: bool,
+    collapse_bar_trades: bool,
+    last_bar_trade: Option<(Price, Quantity, AggressorSide)>,
     execution_bar_types: IndexMap<InstrumentId, BarType>,
     execution_bar_deltas: IndexMap<BarType, SignedDuration>,
     account_ids: IndexMap<TraderId, AccountId>,
@@ -222,6 +224,8 @@ impl OrderMatchingEngine {
             last_bar_bid: None,
             last_bar_ask: None,
             fill_at_market: true,
+            collapse_bar_trades: false,
+            last_bar_trade: None,
             execution_bar_types: IndexMap::new(),
             execution_bar_deltas: IndexMap::new(),
             account_ids: IndexMap::new(),
@@ -1881,6 +1885,18 @@ impl OrderMatchingEngine {
         order.map_or_else(|| Quantity::zero(size_precision), |order| order.size)
     }
 
+    /// Processes a mark price update for order triggering without changing executable liquidity.
+    ///
+    /// The latest mark remains valid until replaced or the engine is reset.
+    pub fn process_mark_price(&mut self, mark: &MarkPriceUpdate) {
+        self.core.mark = Some(mark.value);
+        self.iterate_with_mode(
+            mark.ts_init,
+            AggressorSide::NoAggressor,
+            OrderMatchMode::StopTriggers(TriggerType::MarkPrice),
+        );
+    }
+
     /// Processes a quote tick to update the market state.
     pub fn process_quote_tick(&mut self, quote: &QuoteTick) {
         log::debug!("Processing {quote}");
@@ -2054,6 +2070,10 @@ impl OrderMatchingEngine {
     }
 
     fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
+        // With nothing to match, each trade tick only replaces the L1 book, so walk the
+        // legs updating `core.last` and apply just the last trade tick
+        self.collapse_bar_trades = self.has_nothing_to_match(bar.ts_init);
+
         let sizes = BarTickSizes::from_volume(bar.volume, self.instrument.size_increment());
 
         let aggressor_side = if self.core.last.is_none_or(|last| bar.open > last) {
@@ -2106,6 +2126,15 @@ impl OrderMatchingEngine {
             }
         }
 
+        self.collapse_bar_trades = false;
+
+        if let Some((price, size, aggressor_side)) = self.last_bar_trade.take() {
+            // A zero size close sets `core.last` without a trade tick, so keep it
+            let last = self.core.last;
+            self.process_bar_trade_tick(bar, price, size, aggressor_side, "bar trade tick");
+            self.core.last = last;
+        }
+
         self.fill_at_market = true;
     }
 
@@ -2147,6 +2176,16 @@ impl OrderMatchingEngine {
         }
 
         if size.is_zero() {
+            self.core.set_last_raw(price);
+            return true;
+        }
+
+        if self.collapse_bar_trades {
+            // The replaced trade still consumes its trade ID
+            if self.last_bar_trade.is_some() {
+                self.ids_generator.skip_trade_id();
+            }
+            self.last_bar_trade = Some((price, size, aggressor_side));
             self.core.set_last_raw(price);
             return true;
         }
@@ -2455,7 +2494,7 @@ impl OrderMatchingEngine {
                 self.iterate_with_mode(
                     trade.ts_init,
                     AggressorSide::NoAggressor,
-                    OrderMatchMode::LastPriceStopTriggers,
+                    OrderMatchMode::StopTriggers(TriggerType::LastPrice),
                 );
             }
 
@@ -3415,7 +3454,8 @@ impl OrderMatchingEngine {
                                     contingency_type,
                                     Some(ContingencyType::Oco | ContingencyType::Ouo)
                                 ) && !order.is_closed()
-                                    && contingent_order.is_closed() =>
+                                    && contingent_order.is_closed()
+                                    && !Self::is_rejected_oto_sibling(order, &contingent_order) =>
                             {
                                 break 'validate Some(
                                     format!("Contingent order {client_order_id} already closed")
@@ -3531,6 +3571,13 @@ impl OrderMatchingEngine {
             OrderType::TrailingStopMarket => self.process_trailing_stop_order(order),
             OrderType::TrailingStopLimit => self.process_trailing_stop_order(order),
         }
+    }
+
+    fn is_rejected_oto_sibling(order: &OrderAny, sibling: &OrderAny) -> bool {
+        sibling.status() == OrderStatus::Rejected
+            && order
+                .parent_order_id()
+                .is_some_and(|parent_id| sibling.parent_order_id() == Some(parent_id))
     }
 
     fn order_position_rejection(&mut self, order: &OrderAny) -> anyhow::Result<Option<Ustr>> {
@@ -4375,7 +4422,7 @@ impl OrderMatchingEngine {
         let trigger_type = order.trigger_type().unwrap_or(TriggerType::Default);
 
         if let Some(activation_price) = order.activation_price()
-            && self.core.is_touch_triggered(side, activation_price)
+            && self.trailing_stop_activates_now(order)
             && self.config.reject_stop_orders
         {
             self.generate_order_rejected(
@@ -4435,7 +4482,15 @@ impl OrderMatchingEngine {
     fn trailing_stop_activates_now(&self, order: &OrderAny) -> bool {
         let side = order.order_side();
         match order.activation_price() {
-            Some(activation_price) => self.core.is_touch_triggered(side, activation_price),
+            Some(activation_price) => self.core.is_touch_triggered_with_trigger_type(
+                side,
+                activation_price,
+                if order.trigger_type() == Some(TriggerType::MarkPrice) {
+                    TriggerType::MarkPrice
+                } else {
+                    TriggerType::BidAsk
+                },
+            ),
             None => self
                 .get_trailing_activation_price(
                     order.trigger_type().unwrap_or(TriggerType::Default),
@@ -4668,11 +4723,11 @@ impl OrderMatchingEngine {
 
         match match_mode {
             OrderMatchMode::All => true,
-            OrderMatchMode::LastPriceStopTriggers => match action {
+            OrderMatchMode::StopTriggers(trigger_type) => match action {
                 MatchAction::TriggerStop(client_order_id) => self
                     .core
                     .get_order(client_order_id)
-                    .is_some_and(|order| order.trigger_type == Some(TriggerType::LastPrice)),
+                    .is_some_and(|order| order.trigger_type == Some(trigger_type)),
                 MatchAction::FillLimit(_) => false,
             },
         }
@@ -4688,12 +4743,13 @@ impl OrderMatchingEngine {
     ) -> Option<Price> {
         match trigger_type {
             TriggerType::LastPrice => last,
+            TriggerType::MarkPrice => self.core.mark,
             TriggerType::LastOrBidAsk => last.or(match order_side {
                 OrderSide::Buy => ask,
                 OrderSide::Sell => bid,
             }),
 
-            // Default, BidAsk, DoubleBidAsk, DoubleLastPrice, IndexPrice, MarkPrice
+            // Default, BidAsk, DoubleBidAsk, DoubleLastPrice, IndexPrice
             _ => match order_side {
                 OrderSide::Buy => ask,
                 OrderSide::Sell => bid,
@@ -4708,87 +4764,60 @@ impl OrderMatchingEngine {
         ask: Option<Price>,
         last: Option<Price>,
     ) -> bool {
+        let is_activated = match order {
+            OrderAny::TrailingStopMarket(inner) => inner.is_activated,
+            OrderAny::TrailingStopLimit(inner) => inner.is_activated,
+            _ => return true,
+        };
+
+        if is_activated {
+            return true;
+        }
+
+        let (bid, ask) = if order.trigger_type() == Some(TriggerType::MarkPrice) {
+            (self.core.mark, self.core.mark)
+        } else {
+            (bid, ask)
+        };
+
+        let activation_price = match order.activation_price() {
+            Some(price) => {
+                let hit = match order.order_side() {
+                    OrderSide::Buy => ask.is_some_and(|ask| ask <= price),
+                    OrderSide::Sell => bid.is_some_and(|bid| bid >= price),
+                };
+
+                hit.then_some(price)
+            }
+            None => self.get_trailing_activation_price(
+                order
+                    .trigger_type()
+                    .expect("Trailing order has a trigger type"),
+                order.order_side(),
+                bid,
+                ask,
+                last,
+            ),
+        };
+
+        let Some(activation_price) = activation_price else {
+            return false;
+        };
+
         match order {
             OrderAny::TrailingStopMarket(inner) => {
-                if inner.is_activated {
-                    return true;
-                }
-
-                if inner.activation_price.is_none() {
-                    let px = self.get_trailing_activation_price(
-                        inner.trigger_type,
-                        inner.order_side(),
-                        bid,
-                        ask,
-                        last,
-                    );
-
-                    if let Some(p) = px {
-                        inner.activation_price = Some(p);
-                        inner.set_activated();
-
-                        store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
-                        return true;
-                    }
-
-                    return false;
-                }
-
-                let activation_price = inner.activation_price.unwrap();
-                let hit = match inner.order_side() {
-                    OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
-                    OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
-                };
-
-                if hit {
-                    inner.set_activated();
-
-                    store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
-                }
-
-                hit
+                inner.activation_price = Some(activation_price);
+                inner.set_activated();
             }
             OrderAny::TrailingStopLimit(inner) => {
-                if inner.is_activated {
-                    return true;
-                }
-
-                if inner.activation_price.is_none() {
-                    let px = self.get_trailing_activation_price(
-                        inner.trigger_type,
-                        inner.order_side(),
-                        bid,
-                        ask,
-                        last,
-                    );
-
-                    if let Some(p) = px {
-                        inner.activation_price = Some(p);
-                        inner.set_activated();
-
-                        store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
-                        return true;
-                    }
-
-                    return false;
-                }
-
-                let activation_price = inner.activation_price.unwrap();
-                let hit = match inner.order_side() {
-                    OrderSide::Buy => ask.is_some_and(|a| a <= activation_price),
-                    OrderSide::Sell => bid.is_some_and(|b| b >= activation_price),
-                };
-
-                if hit {
-                    inner.set_activated();
-
-                    store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
-                }
-
-                hit
+                inner.activation_price = Some(activation_price);
+                inner.set_activated();
             }
-            _ => true,
+            _ => unreachable!("only trailing orders require activation"),
         }
+
+        store_trailing_stop_activation(&mut self.cache.borrow_mut(), order);
+        true
     }
 
     fn determine_limit_price_and_volume(
@@ -4892,13 +4921,15 @@ impl OrderMatchingEngine {
                     .liquidity_side()
                     .is_some_and(|liquidity_side| liquidity_side == LiquiditySide::Maker)
                 {
+                    let trigger_price = order
+                        .trigger_price()
+                        .filter(|_| order.trigger_type() != Some(TriggerType::MarkPrice));
                     match order.order_side() {
                         OrderSide::Buy => {
-                            let target_price = if order
-                                .trigger_price()
+                            let target_price = if trigger_price
                                 .is_some_and(|trigger_price| order_price > trigger_price)
                             {
-                                order.trigger_price().unwrap()
+                                trigger_price.unwrap()
                             } else {
                                 order_price
                             };
@@ -4917,11 +4948,10 @@ impl OrderMatchingEngine {
                             }
                         }
                         OrderSide::Sell => {
-                            let target_price = if order
-                                .trigger_price()
+                            let target_price = if trigger_price
                                 .is_some_and(|trigger_price| order_price < trigger_price)
                             {
-                                order.trigger_price().unwrap()
+                                trigger_price.unwrap()
                             } else {
                                 order_price
                             };
@@ -4975,6 +5005,7 @@ impl OrderMatchingEngine {
         // For stop market and market-if-touched orders during bar H/L/C processing, fill at trigger price
         // (market moved through the trigger). For gaps/immediate triggers, fill at market.
         if !self.fill_at_market
+            && order.trigger_type() != Some(TriggerType::MarkPrice)
             && self.book_type == BookType::L1_MBP
             && !fills.is_empty()
             && matches!(
@@ -5143,6 +5174,7 @@ impl OrderMatchingEngine {
         // Skip consumption for synthetic fill-model books (prices may not exist
         // in the real book) and trigger price fills (gap price may not exist)
         let is_trigger_price_fill = !self.fill_at_market
+            && order.trigger_type() != Some(TriggerType::MarkPrice)
             && self.book_type == BookType::L1_MBP
             && matches!(
                 order.order_type(),
@@ -6326,7 +6358,7 @@ impl OrderMatchingEngine {
                 .order_snapshot(*id)
                 .ok_or_else(|| anyhow::anyhow!("Order {id} not found in cache"))?;
 
-            if child.is_closed() || child.is_active_local() {
+            if self.contingent_order_is_closed(&child) || child.is_active_local() {
                 continue;
             }
 
@@ -6663,6 +6695,25 @@ impl OrderMatchingEngine {
         }
     }
 
+    /// Returns whether `iterate` at `timestamp_ns` would only reset bid and ask from the book.
+    fn has_nothing_to_match(&self, timestamp_ns: UnixNanos) -> bool {
+        self.core.iter_orders().next().is_none()
+            && self.post_match_order_ids.is_empty()
+            && self.pending_fills.is_empty()
+            && self.orders.cached_filled_qty.borrow().is_empty()
+            && self.orders.pending_updates.borrow().is_empty()
+            && self.orders.rejected_oto_parent_ids.borrow().is_empty()
+            && self.orders.closed_oto_order_ids.borrow().is_empty()
+            && self.target_bid.is_none()
+            && self.target_ask.is_none()
+            && self.target_last.is_none()
+            && self.instrument_close.is_none()
+            && self
+                .instrument
+                .expiration_ns()
+                .is_none_or(|expiration_ns| timestamp_ns < expiration_ns)
+    }
+
     fn purge_closed_cached_filled_qty(&self) {
         let client_order_ids: Vec<ClientOrderId> = self
             .orders
@@ -6909,7 +6960,11 @@ impl OrderMatchingEngine {
             order,
             self.core.bid,
             self.core.ask,
-            self.core.last,
+            if order.trigger_type() == Some(TriggerType::MarkPrice) {
+                self.core.mark
+            } else {
+                self.core.last
+            },
         ) {
             Ok(prices) => prices,
             Err(e) => {
@@ -7318,10 +7373,11 @@ impl OrderMatchingEngine {
     fn trigger_limit_style_stop_order(&mut self, client_order_id: ClientOrderId, order: OrderAny) {
         if order.is_triggered().is_some_and(|triggered| triggered) {
             let liquidity_side = match (order.price(), order.trigger_price()) {
-                (Some(price), Some(trigger_price)) => Self::determine_triggered_limit_liquidity(
+                (Some(price), Some(trigger_price)) => self.determine_triggered_limit_liquidity(
                     order.order_side(),
                     price,
                     trigger_price,
+                    order.trigger_type(),
                 ),
                 _ => LiquiditySide::Maker,
             };
@@ -7362,15 +7418,22 @@ impl OrderMatchingEngine {
             .price()
             .expect("Limit-style stop order must have a price");
 
+        let liquidity_side = self.determine_triggered_limit_liquidity(
+            order.order_side(),
+            price,
+            trigger_price,
+            order.trigger_type(),
+        );
+
         let maker_inside = match order.order_side() {
             OrderSide::Buy => self
                 .core
                 .ask
-                .is_some_and(|ask| trigger_price > price && price > ask),
+                .is_some_and(|ask| liquidity_side == LiquiditySide::Maker && price > ask),
             OrderSide::Sell => self
                 .core
                 .bid
-                .is_some_and(|bid| trigger_price < price && price < bid),
+                .is_some_and(|bid| liquidity_side == LiquiditySide::Maker && price < bid),
         };
 
         if maker_inside {
@@ -7428,21 +7491,27 @@ impl OrderMatchingEngine {
         }
 
         if let Some(mut cached_order) = self.cache.borrow_mut().order_mut(&client_order_id) {
-            cached_order.set_liquidity_side(Self::determine_triggered_limit_liquidity(
-                order.order_side(),
-                price,
-                trigger_price,
-            ));
+            cached_order.set_liquidity_side(liquidity_side);
         }
 
         self.resync_core_entry(client_order_id);
     }
 
     fn determine_triggered_limit_liquidity(
+        &self,
         side: OrderSide,
         price: Price,
         trigger_price: Price,
+        trigger_type: Option<TriggerType>,
     ) -> LiquiditySide {
+        if trigger_type == Some(TriggerType::MarkPrice) {
+            return if self.core.is_limit_matched(side, price) {
+                LiquiditySide::Taker
+            } else {
+                LiquiditySide::Maker
+            };
+        }
+
         if (side == OrderSide::Buy && trigger_price > price)
             || (side == OrderSide::Sell && trigger_price < price)
         {
@@ -7949,7 +8018,7 @@ impl OrderMatchingEngine {
                     continue;
                 }
 
-                if !contingent_order.is_closed() {
+                if !self.contingent_order_is_closed(&contingent_order) {
                     self.cancel_order(&contingent_order, Some(false));
                 }
             }
@@ -8346,7 +8415,7 @@ enum ModifyOutcome {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum OrderMatchMode {
     All,
-    LastPriceStopTriggers,
+    StopTriggers(TriggerType),
 }
 
 #[derive(Debug)]

@@ -17,7 +17,7 @@ use std::{cell::RefCell, num::NonZeroUsize, rc::Rc};
 
 use indexmap::IndexMap;
 use nautilus_common::{
-    cache::Cache,
+    cache::{Cache, OrderBookSource},
     messages::data::{SubscribeBookSnapshots, SubscribeCommand},
     msgbus::{self, Handler, MStr, Topic, switchboard},
     timer::TimeEvent,
@@ -430,6 +430,7 @@ impl DataEngine {
                 continue;
             };
 
+            self.cache.borrow_mut().clear_order_book_source(&target_id);
             let deltas_handler: TypedHandler<OrderBookDeltas> =
                 TypedHandler::new(Rc::clone(&updater));
             let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
@@ -746,6 +747,12 @@ impl DataEngine {
         book_type: BookType,
         depth: bool,
     ) -> anyhow::Result<()> {
+        let source = if depth {
+            OrderBookSource::Depth
+        } else {
+            OrderBookSource::Deltas
+        };
+
         {
             let mut cache = self.cache.borrow_mut();
 
@@ -753,6 +760,10 @@ impl DataEngine {
                 if !cache.has_order_book(target_id) {
                     cache.add_order_book(OrderBook::new(*target_id, book_type))?;
                 }
+            }
+
+            for &target_id in target_ids {
+                cache.set_order_book_source(target_id, source)?;
             }
         }
 
@@ -781,6 +792,27 @@ impl DataEngine {
         }
 
         Ok(())
+    }
+
+    pub(super) fn clear_book_updaters(&mut self) {
+        let updaters: Vec<_> = self.book_updaters.drain().collect();
+
+        for (instrument_id, updater) in updaters {
+            self.cache
+                .borrow_mut()
+                .clear_order_book_source(&instrument_id);
+            let deltas_handler: TypedHandler<OrderBookDeltas> =
+                TypedHandler::new(Rc::clone(&updater));
+            let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
+            msgbus::unsubscribe_book_deltas(
+                switchboard::get_book_deltas_topic(instrument_id).into(),
+                &deltas_handler,
+            );
+            msgbus::unsubscribe_book_depth(
+                switchboard::get_book_depth_topic(instrument_id).into(),
+                &depth_handler,
+            );
+        }
     }
 }
 

@@ -1753,6 +1753,8 @@ impl Cache {
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
     /// and execution client account, route, and external client registrations are retained so
     /// registered strategy and client routing remain configured across resets.
+    ///
+    /// Managed order-book source registrations are retained until the data engine releases them.
     #[pyo3(name = "reset")]
     fn py_reset(&mut self) {
         self.reset();

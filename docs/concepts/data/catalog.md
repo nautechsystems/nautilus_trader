@@ -244,23 +244,46 @@ Catalog write failures are logged and do not discard the returned data.
   `OrderBookDepth`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`,
   `OptionGreeks`, `InstrumentClose`, or `Instrument`. `Instrument` loads each instrument class the catalog
   holds for the selected identifiers.
-- `catalog_path` identifies the catalog root.
+- `catalog` is a required `DataCatalogConfig` that supplies the source for instrument and replay data loading.
 - One of `instrument_id`, `instrument_ids`, or `bar_types` is required.
 - `start_time` and `end_time` are optional UNIX nanosecond bounds.
 - `filter_expr` is an optional DataFusion SQL predicate.
-- `catalog_fs_protocol` prefixes `catalog_path` for remote storage.
-- `catalog_fs_rust_storage_options` supplies the Rust backend options. If it is unset,
-  `BacktestNode` falls back to `catalog_fs_storage_options`.
 - For bars, `bar_spec` combines with the instrument ID to select an `EXTERNAL` bar type. Explicit
   `bar_types` can select internal, external, or composite bars.
 - `optimize_file_loading` registers whole directories when possible.
 - `batch_deltas` (default `True`) replays `OrderBookDelta` data as `OrderBookDeltas` batches closed
   by `F_LAST`. See [order book delta replay](../backtesting/apis-and-runs.md#order-book-delta-replay).
 
+### Migrate flat catalog settings
+
+Replace the flat catalog arguments and property access with `catalog=DataCatalogConfig(...)`
+and `config.catalog.<field>`:
+
+| Removed argument                  | `DataCatalogConfig` argument |
+| --------------------------------- | ---------------------------- |
+| `catalog_path`                    | `path`                       |
+| `catalog_backend`                 | `catalog_backend`            |
+| `catalog_fs_protocol`             | `fs_protocol`                |
+| `catalog_fs_rust_storage_options` | `fs_rust_storage_options`    |
+| `catalog_fs_storage_options`      | `fs_rust_storage_options`    |
+
+If `catalog_fs_rust_storage_options` was supplied, migrate that entire map. Otherwise, migrate
+`catalog_fs_storage_options`. Do not merge the maps. Use native object-store
+option keys, as described in [filesystem protocols and storage options](#filesystem-protocols-and-storage-options).
+
+A catalog defaults to Parquet and the `file` protocol. Set `batch_size`, `compression`, and
+`max_row_group_size` as typed catalog arguments; `params` is reserved for external backend options.
+Catalog `batch_size` controls catalog batches; run-level `chunk_size` controls replay chunks.
+For replay, `name` and `read_only` do not affect loading; `compression` and `max_row_group_size`
+apply only to catalog writes.
+Storage-option readback exposes keys through `config.catalog.fs_rust_storage_option_keys`, and
+representations redact the values.
+
 ### Basic usage examples
 
 ```python
 from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.model import BarAggregation
 from nautilus_trader.model import BarSpecification
 from nautilus_trader.model import InstrumentId
@@ -269,7 +292,7 @@ from nautilus_trader.model import PriceType
 
 quote_data = BacktestDataConfig(
     data_type=NautilusDataType.QuoteTick,
-    catalog_path="/path/to/catalog",
+    catalog=DataCatalogConfig(path="/path/to/catalog"),
     instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     start_time=1704067200000000000,
     end_time=1704153600000000000,
@@ -277,7 +300,7 @@ quote_data = BacktestDataConfig(
 
 trade_data = BacktestDataConfig(
     data_type=NautilusDataType.TradeTick,
-    catalog_path="/path/to/catalog",
+    catalog=DataCatalogConfig(path="/path/to/catalog"),
     instrument_ids=[
         InstrumentId.from_str("BTC/USD.BINANCE"),
         InstrumentId.from_str("ETH/USD.BINANCE"),
@@ -286,7 +309,7 @@ trade_data = BacktestDataConfig(
 
 bar_data = BacktestDataConfig(
     data_type=NautilusDataType.Bar,
-    catalog_path="/path/to/catalog",
+    catalog=DataCatalogConfig(path="/path/to/catalog"),
     instrument_id=InstrumentId.from_str("AAPL.NASDAQ"),
     bar_spec=BarSpecification(5, BarAggregation.MINUTE, PriceType.LAST),
 )
@@ -299,13 +322,15 @@ This bar config selects `AAPL.NASDAQ-5-MINUTE-LAST-EXTERNAL`.
 ```python
 book_data = BacktestDataConfig(
     data_type=NautilusDataType.OrderBookDelta,
-    catalog_path="my-bucket/nautilus-data",
-    catalog_fs_protocol="s3",
-    catalog_fs_rust_storage_options={
-        "access_key_id": "your-access-key",
-        "secret_access_key": "your-secret-key",
-        "region": "us-east-1",
-    },
+    catalog=DataCatalogConfig(
+        path="my-bucket/nautilus-data",
+        fs_protocol="s3",
+        fs_rust_storage_options={
+            "access_key_id": "your-access-key",
+            "secret_access_key": "your-secret-key",
+            "region": "us-east-1",
+        },
+    ),
     instrument_id=InstrumentId.from_str("BTC/USD.COINBASE"),
     filter_expr="ts_init >= 1704067200000000000",
 )
@@ -321,6 +346,7 @@ from decimal import Decimal
 from nautilus_trader.config import BacktestDataConfig
 from nautilus_trader.config import BacktestRunConfig
 from nautilus_trader.config import BacktestVenueConfig
+from nautilus_trader.config import DataCatalogConfig
 from nautilus_trader.execution import MakerTakerFeeModel
 from nautilus_trader.model import AccountType
 from nautilus_trader.model import BookType
@@ -331,7 +357,7 @@ from nautilus_trader.model import OmsType
 data_configs = [
     BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/path/to/catalog",
+        catalog=DataCatalogConfig(path="/path/to/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     ),
 ]

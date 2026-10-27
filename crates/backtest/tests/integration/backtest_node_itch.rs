@@ -37,7 +37,9 @@ use nautilus_model::{
     orderbook::OrderBook,
     types::{Currency, Quantity},
 };
-use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+use nautilus_persistence::{
+    backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
+};
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_testkit::common::{itch_aapl_equity, load_itch_aapl_deltas};
 use nautilus_trading::{
@@ -82,7 +84,7 @@ fn xnas_venue_config() -> BacktestVenueConfig {
 fn quote_data_config(catalog_path: &str, instrument_id: InstrumentId) -> BacktestDataConfig {
     BacktestDataConfig::builder()
         .data_type(NautilusDataType::QuoteTick)
-        .catalog_path(catalog_path.to_string())
+        .catalog(DataCatalogConfig::new(catalog_path.to_string(), None, None))
         .instrument_id(instrument_id)
         .build()
         .unwrap()

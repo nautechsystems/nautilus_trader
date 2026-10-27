@@ -279,7 +279,7 @@ impl AxDataClient {
                                 http_client.cache_instruments(&instruments);
                                 for inst in &instruments {
                                     if let Err(e) = data_sender
-                                        .send(DataEvent::Instrument(inst.clone()))
+                                        .send(DataEvent::Data(inst.clone().into()))
                                     {
                                         log::warn!("Failed to send refreshed instrument: {e}");
                                     }
@@ -533,7 +533,7 @@ impl DataClient for AxDataClient {
         for instrument in &instruments {
             if let Err(e) = self
                 .data_sender
-                .send(DataEvent::Instrument(instrument.clone()))
+                .send(DataEvent::Data(instrument.clone().into()))
             {
                 log::warn!("Failed to send instrument: {e}");
             }
@@ -756,7 +756,7 @@ impl DataClient for AxDataClient {
                                                 .insert(instrument_id, update);
 
                                             if let Err(e) = sender.send(
-                                                DataEvent::FundingRate(update),
+                                                DataEvent::Data(Data::FundingRate(update)),
                                             ) {
                                                 log::error!(
                                                     "Failed to send funding rate for {symbol}: {e}"
@@ -1415,7 +1415,7 @@ fn handle_md_message(
                             None,
                             None,
                         );
-                        let _ = sender.send(DataEvent::InstrumentStatus(status));
+                        let _ = sender.send(DataEvent::Data(Data::InstrumentStatus(status)));
                     }
                 }
             }
@@ -1628,7 +1628,7 @@ mod tests {
         let mut statuses = Vec::new();
 
         while let Ok(event) = rx.try_recv() {
-            if let DataEvent::InstrumentStatus(status) = event {
+            if let DataEvent::Data(Data::InstrumentStatus(status)) = event {
                 statuses.push(status);
             }
         }

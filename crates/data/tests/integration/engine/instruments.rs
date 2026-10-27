@@ -17,6 +17,7 @@ use super::*;
 
 #[rstest]
 fn test_process_instrument(
+    #[values(false, true)] typed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     data_client: DataClientAdapter,
@@ -46,7 +47,12 @@ fn test_process_instrument(
     msgbus::subscribe_instruments(topic.into(), handler, None);
 
     let mut data_engine = data_engine.borrow_mut();
-    data_engine.process(&audusd_sim as &dyn Any);
+    if typed {
+        data_engine.process_data(audusd_sim.clone().into());
+    } else {
+        data_engine.process(&audusd_sim as &dyn Any);
+    }
+
     let cache = &data_engine.cache().borrow();
     let messages = saving_handler.get_messages();
 

@@ -616,7 +616,7 @@ impl LighterDataClient {
                                     );
 
                                     if let Err(e) = data_sender
-                                        .send(DataEvent::Instrument(instrument.clone()))
+                                        .send(DataEvent::Data(instrument.clone().into()))
                                     {
                                         log::warn!(
                                             "Failed to send refreshed Lighter instrument: {e}"
@@ -899,7 +899,7 @@ fn emit_lighter_instrument_status(
         None,
     );
 
-    if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+    if let Err(e) = sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
         log::error!("Failed to send Lighter instrument status: {e}");
     }
 }
@@ -999,7 +999,7 @@ impl DataClient for LighterDataClient {
             .context("failed to bootstrap Lighter instruments")?;
 
         for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::warn!("Failed to send instrument: {e}");
             }
         }
@@ -1077,7 +1077,7 @@ impl DataClient for LighterDataClient {
             if let Some(instrument) = instruments.get(&instrument_id) {
                 if let Err(e) = self
                     .data_sender
-                    .send(DataEvent::Instrument(instrument.clone()))
+                    .send(DataEvent::Data(instrument.clone().into()))
                 {
                     log::error!("Failed to send instrument {instrument_id}: {e}");
                 }
@@ -2018,7 +2018,7 @@ mod tests {
 
         let event = receiver.recv().await.expect("instrument status event");
         match event {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(status.instrument_id, instrument_id);
                 assert_eq!(status.action, MarketStatusAction::Trading);
                 assert_eq!(status.is_trading, Some(true));
@@ -2058,7 +2058,7 @@ mod tests {
             .expect("instrument status event");
 
         match event {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(status.instrument_id, instrument_id);
                 assert_eq!(status.action, MarketStatusAction::Trading);
                 assert_eq!(status.is_trading, Some(true));
@@ -2290,7 +2290,7 @@ mod tests {
         }
 
         match receiver.try_recv().unwrap() {
-            DataEvent::FundingRate(update) => {
+            DataEvent::Data(Data::FundingRate(update)) => {
                 assert_eq!(update.instrument_id, instrument_id);
                 assert_eq!(update.rate, Decimal::new(12, 6));
             }
@@ -2959,7 +2959,7 @@ mod tests {
 
         let sender = client.data_sender.clone();
         client.spawn_task(async move {
-            let _ = sender.send(DataEvent::Instrument(instrument));
+            let _ = sender.send(DataEvent::Data(instrument.into()));
         });
 
         let result = tokio::time::timeout(Duration::from_millis(200), receiver.recv()).await;
@@ -3001,7 +3001,7 @@ mod tests {
         let (hold_tx, hold_rx) = tokio::sync::oneshot::channel::<()>();
         client.spawn_task(async move {
             let _ = hold_rx.await;
-            let _ = sender.send(DataEvent::Instrument(instrument));
+            let _ = sender.send(DataEvent::Data(instrument.into()));
         });
         assert_eq!(client.tasks.len(), 1);
 

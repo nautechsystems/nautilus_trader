@@ -103,6 +103,15 @@ pub use view::CacheView; // Re-export
 
 use crate::xrate::get_exchange_rate;
 
+/// The live data source selected by the data engine to maintain an order book.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OrderBookSource {
+    /// Incremental order book deltas.
+    Deltas,
+    /// Order book depth snapshots.
+    Depth,
+}
+
 /// A common in-memory `Cache` for market and execution related data.
 #[cfg_attr(
     feature = "python",
@@ -118,6 +127,7 @@ pub struct Cache {
     instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
     synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     books: AHashMap<InstrumentId, OrderBook>,
+    book_sources: AHashMap<InstrumentId, OrderBookSource>,
     own_books: AHashMap<InstrumentId, OwnOrderBook>,
     quotes: AHashMap<InstrumentId, BoundedVecDeque<QuoteTick>>,
     trades: AHashMap<InstrumentId, BoundedVecDeque<TradeTick>>,
@@ -157,6 +167,7 @@ impl Debug for Cache {
             .field("instruments", &self.instruments)
             .field("synthetics", &self.synthetics)
             .field("books", &self.books)
+            .field("book_sources", &self.book_sources)
             .field("own_books", &self.own_books)
             .field("quotes", &self.quotes)
             .field("trades", &self.trades)
@@ -232,6 +243,7 @@ impl Cache {
             instrument_closes: AHashMap::new(),
             synthetics: AHashMap::new(),
             books: AHashMap::new(),
+            book_sources: AHashMap::new(),
             own_books: AHashMap::new(),
             quotes: AHashMap::new(),
             trades: AHashMap::new(),
@@ -452,6 +464,42 @@ impl Cache {
     /// Registrations survive [`Self::clear_index`] and [`Self::reset`].
     pub fn add_external_exec_client(&mut self, client_id: ClientId) {
         self.external_exec_clients.insert(client_id);
+    }
+
+    /// Returns the managed live source selected for an instrument, if any.
+    ///
+    /// This runtime metadata is maintained by the data engine and is not persisted.
+    /// Registrations survive [`Self::reset`] until the data engine releases its book updaters.
+    #[must_use]
+    pub fn order_book_source(&self, instrument_id: &InstrumentId) -> Option<OrderBookSource> {
+        self.book_sources.get(instrument_id).copied()
+    }
+
+    /// Records the data engine's managed live source for an instrument.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a different source is already selected.
+    pub fn set_order_book_source(
+        &mut self,
+        instrument_id: InstrumentId,
+        source: OrderBookSource,
+    ) -> anyhow::Result<()> {
+        if let Some(active) = self.book_sources.get(&instrument_id)
+            && *active != source
+        {
+            anyhow::bail!(
+                "Conflicting managed book source for {instrument_id}: {active:?} is already selected"
+            );
+        }
+
+        self.book_sources.insert(instrument_id, source);
+        Ok(())
+    }
+
+    /// Releases the managed live source when the data engine removes its book updater.
+    pub fn clear_order_book_source(&mut self, instrument_id: &InstrumentId) {
+        self.book_sources.remove(instrument_id);
     }
 
     /// Sets the cache database adapter for persistence.
@@ -2089,6 +2137,8 @@ impl Cache {
     /// is `false` so that repeated backtest runs can reuse the same dataset. External order claims
     /// and execution client account, route, and external client registrations are retained so
     /// registered strategy and client routing remain configured across resets.
+    ///
+    /// Managed order-book source registrations are retained until the data engine releases them.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
 
