@@ -915,7 +915,9 @@ pub(crate) fn parse_lighter_order_event(
             );
             Ok(Some(ParsedOrderEvent::Expired(expired)))
         }
-        LighterOrderStatus::CanceledPostOnly => {
+        LighterOrderStatus::CanceledPostOnly
+            if !open_ctx.accepted_already_emitted && order.filled_base_amount.is_zero() =>
+        {
             let rejected = OrderRejected::new(
                 trader_id,
                 identity.strategy_id,
@@ -931,7 +933,8 @@ pub(crate) fn parse_lighter_order_event(
             );
             Ok(Some(ParsedOrderEvent::Rejected(rejected)))
         }
-        LighterOrderStatus::Canceled
+        LighterOrderStatus::CanceledPostOnly
+        | LighterOrderStatus::Canceled
         | LighterOrderStatus::CanceledReduceOnly
         | LighterOrderStatus::CanceledPositionNotAllowed
         | LighterOrderStatus::CanceledMarginNotAllowed
@@ -1332,8 +1335,9 @@ fn nautilus_order_status(status: LighterOrderStatus, filled_qty: &Quantity) -> O
         }
         LighterOrderStatus::Filled => OrderStatus::Filled,
         LighterOrderStatus::CanceledExpired => OrderStatus::Expired,
-        LighterOrderStatus::CanceledPostOnly => OrderStatus::Rejected,
-        LighterOrderStatus::Canceled
+        LighterOrderStatus::CanceledPostOnly if filled_qty.is_zero() => OrderStatus::Rejected,
+        LighterOrderStatus::CanceledPostOnly
+        | LighterOrderStatus::Canceled
         | LighterOrderStatus::CanceledReduceOnly
         | LighterOrderStatus::CanceledPositionNotAllowed
         | LighterOrderStatus::CanceledMarginNotAllowed
@@ -2035,15 +2039,21 @@ mod tests {
     }
 
     #[rstest]
-    fn test_parse_ws_order_status_report_post_only_cancel_is_rejected() {
+    #[case::unfilled("0", OrderStatus::Rejected)]
+    #[case::partially_filled("0.0020", OrderStatus::Canceled)]
+    fn test_parse_ws_order_status_report_post_only_cancel(
+        #[case] filled_qty: &str,
+        #[case] expected: OrderStatus,
+    ) {
         let instrument = create_test_instrument();
-        let order = stub_order(LighterOrderStatus::CanceledPostOnly);
+        let mut order = stub_order(LighterOrderStatus::CanceledPostOnly);
+        order.filled_base_amount = Decimal::from_str(filled_qty).unwrap();
 
         let report =
             parse_ws_order_status_report(&order, &instrument, account_id(), UnixNanos::from(1))
                 .unwrap();
 
-        assert_eq!(report.order_status, OrderStatus::Rejected);
+        assert_eq!(report.order_status, expected);
         assert_eq!(report.cancel_reason.as_deref(), Some("post-only"));
     }
 
@@ -3240,9 +3250,18 @@ mod tests {
     }
 
     #[rstest]
-    fn parse_lighter_order_event_emits_rejected_for_post_only_cancel() {
+    #[case::new_unfilled(false, "0", false)]
+    #[case::new_traded(false, "0.0020", true)]
+    #[case::accepted_unfilled(true, "0", true)]
+    #[case::accepted_traded(true, "0.0020", true)]
+    fn parse_lighter_order_event_post_only_cancel(
+        #[case] accepted: bool,
+        #[case] filled_qty: &str,
+        #[case] canceled: bool,
+    ) {
         let instrument = create_test_instrument();
-        let order = stub_order(LighterOrderStatus::CanceledPostOnly);
+        let mut order = stub_order(LighterOrderStatus::CanceledPostOnly);
+        order.filled_base_amount = Decimal::from_str(filled_qty).unwrap();
 
         let event = parse_lighter_order_event(
             &order,
@@ -3252,21 +3271,26 @@ mod tests {
             account_id(),
             test_trader_id(),
             OpenFrameContext {
-                accepted_already_emitted: false,
+                accepted_already_emitted: accepted,
                 triggered_already_emitted: false,
                 shape_changed: false,
             },
             UnixNanos::from(7),
         )
         .unwrap()
-        .expect("post-only cancel emits Rejected");
+        .expect("post-only cancellation emits an event");
 
         match event {
             ParsedOrderEvent::Rejected(e) => {
+                assert!(!canceled);
                 assert!(e.due_post_only);
                 assert_eq!(e.reason, "post-only");
             }
-            other => panic!("expected Rejected, was {other:?}"),
+            ParsedOrderEvent::Canceled(e) => {
+                assert!(canceled);
+                assert_eq!(e.reason.as_deref(), Some("post-only"));
+            }
+            other => panic!("expected post-only terminal, was {other:?}"),
         }
     }
 

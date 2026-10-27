@@ -36,6 +36,7 @@ use anyhow::Context;
 use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::messages::execution::ModifyOrder;
 use nautilus_core::{AtomicTime, UUID4, UnixNanos, string::secret::SecretString};
+use nautilus_execution::reconciliation::inferred_reconciliation_trade_ids;
 use nautilus_model::{
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{AccountState, OrderEventAny, OrderFilled},
@@ -62,7 +63,7 @@ use crate::{
         query::{LighterAccountActiveOrdersQuery, LighterAccountInactiveOrdersQuery},
     },
     signing::{auth_token::build_auth_token_for, nonce::NonceManager},
-    websocket::parse::parse_ws_order_status_report,
+    websocket::parse::{ParsedOrderEvent, parse_ws_order_status_report},
 };
 
 /// Default GTC / Day order lifetime when the caller did not specify an
@@ -116,6 +117,9 @@ struct OrderIdentityBinding {
     publication: Option<OrderPublication>,
     child_fills: Option<ChildFillBaseline>,
     reduced_qty: Decimal,
+    filled_qty: Decimal,
+    fill_ids: AHashSet<TradeId>,
+    fills_inferred: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -200,6 +204,7 @@ impl OrderIdentity {
         });
 
         drop(binding);
+        self.sync_fills(order);
         self
     }
 
@@ -276,6 +281,8 @@ impl OrderIdentity {
 
     pub(crate) fn publish_child(&self, report: &OrderStatusReport, trade_ids: Vec<TradeId>) {
         let mut binding = self.binding.lock();
+        binding.filled_qty = binding.filled_qty.max(report.filled_qty.as_decimal());
+        binding.fill_ids.extend(trade_ids.iter().copied());
         if let Some(baseline) = &mut binding.child_fills {
             baseline.quantity = report.filled_qty;
             baseline.trade_ids.extend(trade_ids.iter().copied());
@@ -288,8 +295,13 @@ impl OrderIdentity {
         });
     }
 
-    pub(crate) fn publish_fill(&self, fill: &OrderFilled) {
+    pub(crate) fn publish_fill(&self, fill: &OrderFilled) -> bool {
         let mut binding = self.binding.lock();
+        if binding.fills_inferred || !binding.fill_ids.insert(fill.trade_id) {
+            return false;
+        }
+
+        binding.filled_qty += fill.last_qty.as_decimal();
         if let Some(baseline) = &mut binding.child_fills
             && baseline.trade_ids.insert(fill.trade_id)
         {
@@ -301,6 +313,81 @@ impl OrderIdentity {
         } else {
             binding.publication = Some(OrderPublication::Fills(vec![fill.trade_id]));
         }
+
+        true
+    }
+
+    pub(crate) fn filled_qty(&self) -> Decimal {
+        self.binding.lock().filled_qty
+    }
+
+    pub(crate) fn sync_fills(&self, order: &OrderAny) {
+        let inferred = inferred_reconciliation_trade_ids(order);
+        let mut binding = self.binding.lock();
+
+        let inferred = match inferred {
+            Ok(ids) => ids,
+            Err(e) => {
+                binding.fills_inferred = true;
+                log::error!(
+                    "Cannot establish Lighter real fill coverage for {}: {e}",
+                    order.client_order_id()
+                );
+                return;
+            }
+        };
+
+        binding.fills_inferred = !inferred.is_empty();
+        let mut active_ids = None;
+
+        for event in order.events() {
+            if let OrderEventAny::Filled(fill) = event
+                && !binding.fill_ids.contains(&fill.trade_id)
+                && !inferred.contains(&fill.trade_id)
+                && active_ids
+                    .get_or_insert_with(|| {
+                        order
+                            .trade_ids()
+                            .into_iter()
+                            .copied()
+                            .collect::<AHashSet<_>>()
+                    })
+                    .contains(&fill.trade_id)
+            {
+                binding.fill_ids.insert(fill.trade_id);
+                binding.filled_qty += fill.last_qty.as_decimal();
+                if let Some(baseline) = &mut binding.child_fills
+                    && baseline.trade_ids.insert(fill.trade_id)
+                {
+                    baseline.quantity = baseline.quantity + fill.last_qty;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn has_inferred_fills(&self) -> bool {
+        self.binding.lock().fills_inferred
+    }
+
+    pub(crate) fn report_fills_covered(
+        &self,
+        report: &OrderStatusReport,
+        fills: &[FillReport],
+    ) -> bool {
+        let binding = self.binding.lock();
+        if binding.fills_inferred {
+            return false;
+        }
+
+        let mut quantity = binding.filled_qty;
+        let mut seen = AHashSet::new();
+        for fill in fills_for_order(report, fills) {
+            if !binding.fill_ids.contains(&fill.trade_id) && seen.insert(fill.trade_id) {
+                quantity += fill.last_qty.as_decimal();
+            }
+        }
+
+        quantity >= report.filled_qty.as_decimal()
     }
 
     fn mark_submission(&self, nonce: i64) {
@@ -414,6 +501,18 @@ impl OrderIdentity {
         }
         true
     }
+}
+
+pub(crate) fn fills_for_order<'a>(
+    report: &'a OrderStatusReport,
+    fills: &'a [FillReport],
+) -> impl Iterator<Item = &'a FillReport> {
+    fills.iter().filter(|fill| {
+        fill.venue_order_id == report.venue_order_id
+            && fill.account_id == report.account_id
+            && fill.instrument_id == report.instrument_id
+            && Some(fill.order_side) == report.order_side
+    })
 }
 
 /// In-flight sendTx awaiting a venue response.
@@ -672,6 +771,14 @@ pub(crate) struct DeferredOrderEvents {
     pub(crate) recovery_epoch: Option<u64>,
 }
 
+#[derive(Debug)]
+pub(crate) struct PendingTerminal {
+    pub(crate) order: LighterOrder,
+    pub(crate) event: ParsedOrderEvent,
+    pub(crate) retry_at: tokio::time::Instant,
+    pub(crate) attempts: usize,
+}
+
 impl DeferredOrderEvents {
     pub(crate) fn store_order(&mut self, order: &LighterOrder) {
         if self
@@ -807,6 +914,8 @@ pub(crate) struct WsDispatchState {
     /// on every emitted `OrderUpdated`.
     pub(crate) order_snapshots: Arc<DashMap<ClientOrderId, OrderShapeSnapshot>>,
     pub(crate) order_events: Arc<Mutex<AHashMap<ClientOrderId, DeferredOrderEvents>>>,
+    pub(crate) terminals_pending: Arc<Mutex<AHashMap<ClientOrderId, PendingTerminal>>>,
+    pub(crate) terminals_recover: Arc<tokio::sync::Notify>,
     fill_sequence: Arc<AtomicU64>,
     /// Local lifecycle action that a venue frame or reconciliation report
     /// must not bypass before its confirming event or rejection arrives.
@@ -1032,6 +1141,8 @@ impl WsDispatchState {
             triggered_emitted: Arc::new(DashSet::new()),
             order_snapshots: Arc::new(DashMap::new()),
             order_events: Arc::new(Mutex::new(AHashMap::new())),
+            terminals_pending: Arc::new(Mutex::new(AHashMap::new())),
+            terminals_recover: Arc::new(tokio::sync::Notify::new()),
             fill_sequence: Arc::new(AtomicU64::new(0)),
             pending_order_actions: Arc::new(DashMap::new()),
             pending_sendtx: Arc::new(Mutex::new(VecDeque::new())),
@@ -1627,12 +1738,12 @@ impl WsDispatchState {
 
     pub(crate) fn any_order_identity(
         &self,
-        mut predicate: impl FnMut(&ClientOrderId, &OrderIdentity) -> bool,
+        mut predicate: impl FnMut(&ClientOrderId, &OrderIdentity, bool) -> bool,
     ) -> bool {
         if self
             .order_identities
             .iter()
-            .any(|entry| predicate(entry.key(), entry.value()))
+            .any(|entry| predicate(entry.key(), entry.value(), false))
         {
             return true;
         }
@@ -1645,7 +1756,7 @@ impl WsDispatchState {
             .any(|bindings| {
                 bindings
                     .values()
-                    .any(|(retired, _)| predicate(&retired.cloid, &retired.identity))
+                    .any(|(retired, _)| predicate(&retired.cloid, &retired.identity, true))
             })
     }
 
@@ -1715,6 +1826,15 @@ impl WsDispatchState {
         self.seen_trade_ids
             .insert(trade_id, TradeDedupSource::Live)
             .is_none()
+    }
+
+    pub(crate) fn trade_source(&self, trade_id: TradeId) -> Option<TradeDedupSource> {
+        self.seen_trade_ids
+            .inner
+            .lock()
+            .entries
+            .get(&trade_id)
+            .map(|(source, _)| *source)
     }
 
     /// Record a reconciliation fill and return its prior delivery source.
@@ -2078,6 +2198,10 @@ impl WsDispatchState {
             .and_then(|cloid| self.order_identity(&cloid))
             && identity.matches_venue_order_id(report.venue_order_id)
         {
+            if report.order_status == OrderStatus::Rejected && identity.accepted_was_emitted() {
+                report.order_status = OrderStatus::Canceled;
+            }
+
             if report.order_type == OrderType::Limit
                 && STOP_ORDER_TYPES.contains(&identity.order_type)
                 && report.order_status == OrderStatus::Accepted

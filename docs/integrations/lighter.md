@@ -626,6 +626,9 @@ would expire first. Use native GTD for longer lifetimes. Venue cancellation late
 
 Use `post_only` on limit-style orders. The adapter does not synthesize maker-only market orders.
 
+The adapter maps Lighter's `canceled-post-only` status to `OrderCanceled` after acceptance or fills,
+otherwise to `OrderRejected` with `due_post_only=true`.
+
 Lighter Mainnet testing confirms `reduce_only=true` closes perpetual positions. Invalid reduce-only
 opens can be dropped without a venue order report and reconcile as `INFLIGHT_TIMEOUT`, without
 a venue rejection reason.
@@ -646,6 +649,10 @@ a venue rejection reason.
 | Native cancel-all  | ✓          | ✓    | Explicit account-wide cancellation through the Rust client. |
 | Dead man's switch  | ✓          | ✓    | Automatic renewal or manual scheduling; see caveats below.  |
 
+Venue
+[chase limit orders and atomic baskets](https://docs.lighter.xyz/trading/order-types-and-matching#advanced-orders)
+are not exposed. Ordinary transaction batches execute each child independently.
+
 #### Account-wide cancellation
 
 Lighter's [`CancelAllOrders`](https://apidocs.lighter.xyz/docs/wasm-signer#signcancelallorders) transaction
@@ -656,12 +663,29 @@ These methods require access to the concrete Rust execution client; `ExecutionCl
 Python do not expose them.
 `lighter-flatten` also uses immediate native account-wide cancellation.
 
-Pass `Some(time)` to schedule cancellation or replace the existing deadline, and `None` to revoke it.
-The deadline is a Unix timestamp in milliseconds, between five minutes and fifteen days after the local
-clock. Allow headroom for rate limiting, latency, and clock skew; the venue can reject a delayed request.
-Manual calls do not start automatic renewal. Disconnect and process exit preserve the last deadline.
+The generic `CancelAllOrders` command retains its instrument and side filters and uses per-order
+cancellations.
 
-Set `scheduled_cancel_timeout_secs` to enable automatic arming and renewal on either deployment:
+:::warning
+Native cancellation affects **all open orders on the account**, across markets and strategies,
+including orders absent from the local cache. It does not close positions. Use a dedicated account
+when other applications also trade on Lighter.
+:::
+
+##### Manual scheduling
+
+Use `schedule_cancel(time)` with:
+
+- `Some(time)` to arm or replace a deadline: a Unix timestamp in milliseconds, five minutes to
+  fifteen days after the local clock. Allow headroom for rate limiting, latency, and clock skew;
+  the venue can reject delayed requests.
+- `None` to revoke the deadline.
+
+Manual calls do not start renewal. Disconnect and process exit preserve the last deadline.
+
+##### Automatic renewal
+
+Set `scheduled_cancel_timeout_secs` on either deployment:
 
 ```python
 from nautilus_trader.adapters.lighter import LighterExecutionClientConfig
@@ -674,46 +698,39 @@ exec_config = LighterExecutionClientConfig(
 ```
 
 Use this config with `LighterExecutionClientFactory` and the [API credentials](#api-credentials).
-The default `None` leaves the venue schedule untouched, including a deadline from an earlier session.
-Manual revocation is available through the Rust client. When renewal is enabled, startup waits up to
-30 seconds for an executed arming transaction after the execution WebSocket, nonce, and
-[account streams](#account-stream-readiness) are ready. Arming failure fails `connect()` and tears down the local connection; an in-flight
-request can still take effect. Automatic arming and renewal confirm execution without reading back
-the account schedule.
+The default `None` leaves the venue schedule untouched, including deadlines from earlier sessions.
+Manual revocation requires the Rust client.
 
-The timeout must be in `[420, 1_295_940]` seconds. These bounds reserve headroom for clock skew
-and request delays within Lighter's deadline window. Keep the host clock synchronized.
-Renewal runs every `min((timeout - 300) // 3, 60)` seconds while connected and the [nonce is ready](#nonce-recovery).
-Failures are logged and retried; an outage or sustained quota contention can let the last deadline expire.
-A timed-out renewal can still submit to preserve transaction ordering.
-Reconnect resumes renewal. Stop, reset, and disconnect stop renewal without
-revoking the deadline. Avoid manual schedule changes while automatic renewal is enabled: it replaces them.
+The timeout must be in `[420, 1_295_940]` seconds. These bounds allow for clock skew and request delays
+within Lighter's deadline window. Keep the host clock synchronized.
 
-:::warning
-Native cancellation affects all open orders on the configured account, across markets and strategies,
-including orders absent from the local cache. It does not close positions. Use a dedicated account when
-other applications also trade on Lighter.
-:::
+- **Startup**: after the execution WebSocket, nonce, and [account streams](#account-stream-readiness)
+  are ready, startup waits up to 30 seconds for the arming transaction to execute. Failure fails
+  `connect()` and tears down the local connection; an in-flight request can still take effect.
+- **Renewal**: runs every `min((timeout - 300) // 3, 60)` seconds while connected and the
+  [nonce is ready](#nonce-recovery). Failures are logged and retried. Outages or sustained quota
+  contention can let the deadline expire; a timed-out renewal can still submit to preserve ordering.
+- **Lifecycle**: reconnect resumes renewal. Stop, reset, and disconnect stop renewal without revoking
+  the deadline. Avoid manual schedule changes while renewal is enabled: renewal replaces them.
 
-Venue reads can still list resting orders after a scheduled deadline; treat them as closed only after
-a venue order update or later venue read reports cancellation.
-Autonomous sweeping of resting orders and matching safety after expiry are not proven.
+Automatic arming and renewal confirm execution without reading back the account schedule.
 
-The manual methods use the ordered execution WebSocket and return a transaction hash after a transaction lookup
-confirms acceptance. Cancellation events come from venue order updates;
-acceptance alone does not prove cancellation, or that a schedule was armed, replaced, or revoked.
-Confirm transaction execution and the venue's account schedule before relying on a manual call.
-A transport error, transaction-lookup failure, or confirmation
-timeout can leave the outcome unknown, so check the transaction and venue order state before retrying.
-Dropping or timing out a manual call's future while waiting for its result does not stop submission, even while
-it waits for rate-limit quota. This also applies to revocation: a timed-out call can still revoke the
-schedule. Session shutdown can discard unsent requests; requests already in flight can have unknown outcomes.
-The generic `CancelAllOrders` command keeps its instrument and side filters and continues to use
-explicit per-order cancellations.
+##### Confirmation and unknown outcomes
 
-Venue
-[chase limit orders and atomic baskets](https://docs.lighter.xyz/trading/order-types-and-matching#advanced-orders)
-are not exposed. Ordinary transaction batches execute each child independently.
+Cancellation events come from venue order updates. After **any scheduled deadline**, manual or
+automatic, venue reads can still list resting orders. Treat them as closed only when an order update
+or later read reports cancellation. Autonomous sweeping and matching safety after expiry are not proven.
+
+`cancel_all_orders_account()` and `schedule_cancel(time)` use the ordered execution WebSocket.
+They return a transaction hash after a lookup confirms **acceptance**. Acceptance does not prove cancellation or that a schedule was armed,
+replaced, or revoked. Confirm transaction execution and the venue's account schedule before relying
+on a manual call.
+
+- Transport errors, lookup failures, and confirmation timeouts can leave outcomes unknown.
+  Check the transaction and venue order state before retrying.
+- Dropping or timing out a manual call's future does not stop submission, even while waiting for
+  rate-limit quota. A timed-out revocation can still revoke the schedule.
+- Shutdown can discard unsent requests; in-flight requests can have unknown outcomes.
 
 ### Order operations
 
@@ -847,6 +864,53 @@ their connection changes; the pending cancel keeps its submission identity for r
 
 Cancellation recovery includes orders outside `PendingCancel`, such as `CancelAllOrders` targets.
 Only cached orders in `PendingCancel` at dispatch receive `OrderCancelRejected`; other failures are logged.
+
+#### Terminal events and missing fills
+
+Cancellation and expiry events wait until **real fills cover the venue's cumulative filled quantity**.
+Events with no missing fills publish immediately.
+
+##### Recovery limits
+
+Recovery fetches the order's trades and skips fills already published:
+
+- **Normal operation**: starts two seconds after the event begins waiting, with at most three
+  attempts and a two-second timeout per attempt. Interrupted requests count toward this limit.
+  Reconnect starts recovery immediately.
+- **Shutdown**: first stops tasks that produce order events, then retries waiting events within
+  their remaining attempts for up to seven seconds. If those tasks do not stop, shutdown fails;
+  events stay withheld until a later shutdown completes.
+
+While an event waits, reconciliation withholds its order and fill reports and its instrument's
+position report. When recovery exhausts its retries or shutdown deadline, the adapter logs the missing quantity
+and publishes the original terminal event **without creating fills**. Reconciliation must recover
+the missing quantity.
+
+Targeted and bulk status collection can return cancellation and expiry reports before real fills
+arrive, so native reconciliation can fetch companion fills. Other statuses, direct event publication,
+and startup mass status retain the real-fill coverage check. Filled-order collection fetches missing
+trades; direct order queries also start recovery for missed terminal frames.
+
+Unresolved modifications and deferred fills retain their existing holds. Native child fills also
+retain their holds unless the order has inferred fills.
+
+##### Inferred or unverifiable fills
+
+Inferred fills do not count as real coverage. The adapter does not replace them with real trades.
+
+If a cached order has active inferred fills or unverifiable fill history:
+
+- The adapter withholds all further trades and order and fill reports for that order to prevent
+  double-counting. It does not queue live trades.
+- Terminal recovery still exhausts its bounded attempts, including for native child orders,
+  subject to the other holds above.
+- The order's reports stay withheld while inferred fills remain active or its history is unverifiable.
+  Position reconciliation stays incomplete while the order is open, its history is unverifiable,
+  or other execution holds remain.
+
+After a verifiable order closes and its pending events drain, native reconciliation can correct the
+**net position** from venue evidence. It may create synthetic position adjustments; these do not
+recover the original trade IDs or fees.
 
 #### Leverage updates and signing validation
 

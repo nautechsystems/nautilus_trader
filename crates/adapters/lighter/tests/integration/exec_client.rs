@@ -6153,7 +6153,7 @@ async fn test_generate_mass_status_restores_filled_orders_from_trade_market() {
         .expect("reused-index historical fill report");
 
     assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
-    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 1);
     assert_eq!(state.trades_calls.load(Ordering::Relaxed), 1);
     assert_eq!(order_report.client_order_id, Some(client_order_id));
     assert_eq!(order_report.venue_order_id, venue_order_id);
@@ -6716,7 +6716,7 @@ async fn test_mass_status_keeps_fill_market_orders_when_history_is_incomplete() 
     assert_eq!(fill_report.venue_order_id, venue_order_id);
     assert_eq!(fill_report.client_order_id, order_report.client_order_id);
     assert_eq!(state.active_orders_calls.load(Ordering::Relaxed), 1);
-    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 3);
+    assert_eq!(state.inactive_orders_calls.load(Ordering::Relaxed), 2);
 
     client.disconnect().await.expect("disconnect");
 }
@@ -11282,10 +11282,40 @@ async fn process_execution_event(
     event
 }
 
+#[rstest]
+#[case::untracked(false, false)]
+#[case::unapplied(true, false)]
+#[case::applied(true, true)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn shutdown_gap_fill_reconciles_without_duplicate_late_live_delivery() {
+async fn shutdown_gap_fill_delivery_tracks_application(
+    #[case] tracked: bool,
+    #[case] applied: bool,
+) {
+    set_message_bus(Rc::new(RefCell::new(MessageBus::new(
+        trader_id(),
+        UUID4::new(),
+        None,
+        None,
+    ))));
     let (address, state) = start_server().await;
-    let (mut client, mut events, _cache) = build_client(address);
+    let (mut client, mut events, cache) = build_client(address);
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    let cloid = ClientOrderId::from("562947905631053");
+
+    if tracked {
+        let order = make_limit_order(
+            cloid.as_str(),
+            OrderSide::Buy,
+            Quantity::from("0.1336"),
+            Price::from("2361.31"),
+            TimeInForce::Gtc,
+            false,
+            false,
+        );
+        cache_accepted_order(&cache, order, VenueOrderId::from("562947905631053"));
+    }
+
     client.connect().await.unwrap();
     let original_subscriptions = state.subscribes().await.len();
     state.push_frame(&json!({"type":"shutdown", "close_in_ms":10000}));
@@ -11325,6 +11355,33 @@ async fn shutdown_gap_fill_reconciles_without_duplicate_late_live_delivery() {
     let repeated = client.generate_fill_reports(command).await.unwrap();
     assert_eq!(repeated.len(), 1);
     assert_eq!(repeated[0].trade_id, report.trade_id);
+
+    if applied {
+        engine.reconcile_fill_report(report);
+        let cached = cache.borrow().order(&cloid).unwrap().clone();
+        assert_eq!(cached.filled_qty(), report.last_qty);
+        assert_eq!(cached.trade_ids(), vec![&report.trade_id]);
+    }
+
+    state.push_frame(&json!({"type":"update/account_all_trades", "channel":format!("account_all_trades:{TEST_ACCOUNT_INDEX}"), "trades":{"0":[trade.clone()]}}));
+
+    if !applied {
+        let delivered = process_execution_event(&mut events, &mut engine).await;
+        match delivered {
+            ExecutionEvent::Order(OrderEventAny::Filled(fill)) => {
+                assert!(tracked);
+                assert_eq!(fill.trade_id, report.trade_id);
+                assert_eq!(fill.last_qty, report.last_qty);
+            }
+            ExecutionEvent::Report(ExecutionReport::Fill(fill)) => {
+                assert!(!tracked);
+                assert_eq!(fill.trade_id, report.trade_id);
+                assert_eq!(fill.last_qty, report.last_qty);
+            }
+            other => panic!("expected gap fill, was {other:?}"),
+        }
+    }
+
     state.push_frame(&json!({"type":"update/account_all_trades", "channel":format!("account_all_trades:{TEST_ACCOUNT_INDEX}"), "trades":{"0":[trade]}}));
 
     let duplicate = next_event_matching(&mut events, Duration::from_millis(300), |event| {
@@ -11340,6 +11397,14 @@ async fn shutdown_gap_fill_reconciles_without_duplicate_late_live_delivery() {
         duplicate.is_none(),
         "reconciled fill must not be delivered again as live: {duplicate:?}"
     );
+
+    if tracked {
+        let cached = cache.borrow().order(&cloid).unwrap().clone();
+        assert_eq!(cached.status(), OrderStatus::Filled);
+        assert_eq!(cached.filled_qty(), report.last_qty);
+        assert_eq!(cached.trade_ids(), vec![&report.trade_id]);
+    }
+
     client.disconnect().await.unwrap();
 }
 
