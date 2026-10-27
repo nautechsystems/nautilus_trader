@@ -55,7 +55,10 @@ use nautilus_model::{
         Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
         OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
-    enums::{AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType},
+    enums::{
+        AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType,
+        PriceType,
+    },
     events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
     identifiers::{AccountId, InstrumentId, Venue},
     instruments::{Instrument, InstrumentAny},
@@ -1136,8 +1139,21 @@ impl SimulatedExchange {
     ///
     /// # Errors
     ///
-    /// Returns an error if module pre-processing or matching engine processing fails.
+    /// Returns an error if L1 bar execution receives a non-time external bar other
+    /// than a mark-price bar, or if module pre-processing or matching engine processing fails.
     pub fn process_bar(&mut self, bar: Bar) -> anyhow::Result<()> {
+        if self.bar_execution
+            && self.book_type == BookType::L1_MBP
+            && bar.bar_type.is_externally_aggregated()
+            && bar.bar_type.spec().price_type != PriceType::Mark
+        {
+            anyhow::ensure!(
+                bar.bar_type.spec().is_time_aggregated(),
+                "Bar execution requires time-aggregated bars, received {}",
+                bar.bar_type,
+            );
+        }
+
         self.pre_process_modules(&Data::Bar(bar))?;
 
         if !self.matching_engines.contains_key(&bar.instrument_id()) {

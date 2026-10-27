@@ -1418,6 +1418,99 @@ fn matching_option_quantity(instrument: &InstrumentAny) -> Quantity {
 }
 
 #[rstest]
+#[case::tick("TICK")]
+#[case::tick_imbalance("TICK_IMBALANCE")]
+#[case::tick_runs("TICK_RUNS")]
+#[case::volume("VOLUME")]
+#[case::volume_imbalance("VOLUME_IMBALANCE")]
+#[case::volume_runs("VOLUME_RUNS")]
+#[case::value("VALUE")]
+#[case::value_imbalance("VALUE_IMBALANCE")]
+#[case::value_runs("VALUE_RUNS")]
+#[case::renko("RENKO")]
+fn test_exchange_process_bar_rejects_non_time_aggregation(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] aggregation: &str,
+) {
+    let exchange = get_exchange(
+        Venue::new("BINANCE"),
+        AccountType::Margin,
+        BookType::L1_MBP,
+        None,
+    );
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let bar_type =
+        BarType::from(format!("ETHUSDT-PERP.BINANCE-200-{aggregation}-LAST-EXTERNAL").as_str());
+
+    let bar = Bar::new(
+        bar_type,
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1490.00"),
+        Price::from("1502.00"),
+        Quantity::from("100.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+
+    let error = exchange.borrow_mut().process_bar(bar).unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Bar execution requires time-aggregated bars, received {bar_type}")
+    );
+    let exchange = exchange.borrow();
+    assert_eq!(exchange.best_bid_price(crypto_perpetual_ethusdt.id), None);
+    assert_eq!(exchange.best_ask_price(crypto_perpetual_ethusdt.id), None);
+}
+
+#[rstest]
+#[case::disabled(false, BookType::L1_MBP, "LAST-EXTERNAL")]
+#[case::l2(true, BookType::L2_MBP, "LAST-EXTERNAL")]
+#[case::l3(true, BookType::L3_MBO, "LAST-EXTERNAL")]
+#[case::internal(true, BookType::L1_MBP, "LAST-INTERNAL")]
+#[case::mark(true, BookType::L1_MBP, "MARK-EXTERNAL")]
+fn test_exchange_process_bar_non_time_aggregation_without_execution(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] bar_execution: bool,
+    #[case] book_type: BookType,
+    #[case] suffix: &str,
+) {
+    let config = SimulatedVenueConfig::builder()
+        .venue(Venue::new("BINANCE"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(book_type)
+        .bar_execution(bar_execution)
+        .starting_balances(vec![Money::from("1_000_000 USDT")])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    let exchange = get_exchange_with_config(config);
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+    exchange.borrow_mut().add_instrument(instrument).unwrap();
+    let bar_type = BarType::from(format!("ETHUSDT-PERP.BINANCE-200-VALUE-{suffix}").as_str());
+
+    let bar = Bar::new(
+        bar_type,
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1490.00"),
+        Price::from("1502.00"),
+        Quantity::from("100.000"),
+        UnixNanos::from(1),
+        UnixNanos::from(1),
+    );
+
+    exchange.borrow_mut().process_bar(bar).unwrap();
+
+    let exchange = exchange.borrow();
+    assert_eq!(exchange.best_bid_price(crypto_perpetual_ethusdt.id), None);
+    assert_eq!(exchange.best_ask_price(crypto_perpetual_ethusdt.id), None);
+}
+
+#[rstest]
 fn test_exchange_process_bar_last_bar_spec(crypto_perpetual_ethusdt: CryptoPerpetual) {
     let exchange = get_exchange(
         Venue::new("BINANCE"),

@@ -116,6 +116,7 @@ Released on TBD (UTC).
 
 ### Security
 
+- Fixed backtest aborts on non-time execution bars (#5271), thanks for reporting @axlnur
 - Fixed order fills accepting cumulative commissions beyond `Money` bounds or panicking after partial state changes
 - Fixed matching-engine restarts reusing position IDs for independent hedging orders
 - Fixed `DataType::from_str` panics on repeated identifier suffixes

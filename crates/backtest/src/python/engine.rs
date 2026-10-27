@@ -1643,26 +1643,90 @@ fn pyobject_to_data(_py: Python, obj: &Bound<'_, PyAny>) -> PyResult<Data> {
 
 #[cfg(test)]
 mod model_tests {
-    use nautilus_execution::python::{fee::PyFeeModel, fill::PyFillModel};
+    use nautilus_execution::{
+        models::fee::{FeeModelAny, MakerTakerFeeModel},
+        python::{fee::PyFeeModel, fill::PyFillModel},
+    };
     use nautilus_model::{
         accounts::AccountAny,
         data::{
-            Data,
+            Bar, BarType, Data,
             stubs::{quote_audusd, stub_custom_data},
         },
         enums::{AccountType, BookType, OmsType, OtoTriggerMode},
         identifiers::Venue,
-        instruments::{InstrumentAny, stubs::audusd_sim},
+        instruments::{
+            InstrumentAny,
+            stubs::{audusd_sim, crypto_perpetual_ethusdt},
+        },
         types::{Currency, Money, Price, Quantity},
     };
     use pyo3::{
         IntoPyObjectExt, Python,
+        exceptions::PyRuntimeError,
         ffi::c_str,
         types::{PyAnyMethods, PyDict, PyDictMethods},
     };
     use rstest::rstest;
 
-    use crate::{config::BacktestEngineConfig, engine::BacktestEngine};
+    use crate::{
+        config::{BacktestEngineConfig, SimulatedVenueConfig},
+        engine::BacktestEngine,
+    };
+
+    #[rstest]
+    #[case::tick("TICK")]
+    #[case::volume("VOLUME")]
+    #[case::value("VALUE")]
+    fn test_run_non_time_bar_raises_runtime_error(#[case] aggregation: &str) {
+        Python::initialize();
+
+        let mut engine =
+            super::PyBacktestEngine(BacktestEngine::new(BacktestEngineConfig::default()).unwrap());
+        let config = SimulatedVenueConfig::builder()
+            .venue(Venue::from("BINANCE"))
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .build()
+            .unwrap();
+        engine.0.add_venue(config).unwrap();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        engine.0.add_instrument(&instrument).unwrap();
+        let bar_type =
+            BarType::from(format!("ETHUSDT-PERP.BINANCE-200-{aggregation}-LAST-EXTERNAL").as_str());
+
+        let bar = Bar::new(
+            bar_type,
+            Price::from("1500.00"),
+            Price::from("1505.00"),
+            Price::from("1490.00"),
+            Price::from("1502.00"),
+            Quantity::from("100.000"),
+            1_000_000_000.into(),
+            1_000_000_000.into(),
+        );
+        engine
+            .0
+            .add_data(vec![Data::Bar(bar)], None, true, true)
+            .unwrap();
+
+        let error = engine.py_run(None, None, None, false).unwrap_err();
+        engine.0.dispose();
+
+        Python::attach(|py| {
+            assert!(error.is_instance_of::<PyRuntimeError>(py));
+        });
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "RuntimeError: Bar execution requires time-aggregated bars, received {bar_type}"
+            )
+        );
+    }
 
     #[rstest]
     fn test_pyobject_to_data_accepts_custom_data() {
