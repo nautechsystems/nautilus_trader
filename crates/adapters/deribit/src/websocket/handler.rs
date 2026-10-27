@@ -79,7 +79,10 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE},
+        consts::{
+            DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE,
+            DERIBIT_WS_SUBSCRIPTION_KEY,
+        },
         enums::DeribitInstrumentState,
         parse::{parse_portfolio_to_account_state, use_cost_for_bar_volume},
     },
@@ -2815,7 +2818,10 @@ impl DeribitWsFeedHandler {
             if self.subscription_send.is_none()
                 && let Some((request_id, payload)) = self.subscription_requests.pop_front()
             {
-                let send = self.send_secret_with_retry(payload.into(), None);
+                let send = self.send_secret_with_retry(
+                    payload.into(),
+                    Some(&[Ustr::from(DERIBIT_WS_SUBSCRIPTION_KEY)]),
+                );
                 self.subscription_send = Some(Box::pin(async move { (request_id, send.await) }));
             }
 
@@ -2983,11 +2989,18 @@ fn is_grouped_book_channel(channel: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use futures_util::{SinkExt, StreamExt};
     use nautilus_model::{
         enums::{BookType, LiquiditySide},
         instruments::Instrument,
         orderbook::OrderBook,
         types::{Money, Price, Quantity},
+    };
+    use nautilus_network::{
+        ratelimiter::quota::Quota,
+        websocket::{WebSocketConfig, channel_message_handler},
     };
     use rstest::rstest;
 
@@ -4626,30 +4639,197 @@ mod tests {
         ));
     }
 
+    #[rstest]
+    #[case::reconnect(true)]
+    #[case::shutdown(false)]
     #[tokio::test]
-    async fn subscription_send_wait_keeps_reconnect_and_shutdown_responsive() {
-        let mut handler = routing_test_handler();
-        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
-        handler.raw_rx = raw_rx;
-        handler.subscription_send = Some(Box::pin(std::future::pending()));
-        raw_tx.send(Message::Text(RECONNECTED.into())).unwrap();
-        let result = tokio::time::timeout(std::time::Duration::from_millis(500), handler.next())
-            .await
-            .unwrap();
-        assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
-        assert!(handler.subscription_send.is_none());
-        handler.subscription_send = Some(Box::pin(std::future::pending()));
-        let signal = handler.signal.clone();
-
-        tokio::spawn(async move {
-            tokio::task::yield_now().await;
-            signal.store(true, Ordering::Relaxed);
+    async fn subscription_quota_wait_keeps_messages_and_lifecycle_responsive(
+        #[case] reconnect: bool,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            tokio_tungstenite::accept_async(stream).await.unwrap()
         });
 
-        let result = tokio::time::timeout(std::time::Duration::from_millis(500), handler.next())
+        let (message_handler, raw_rx) = channel_message_handler();
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{addr}"))
+            .build()
+            .unwrap();
+        let quota = Quota::with_period(Duration::from_secs(60)).unwrap();
+        let ws_client = WebSocketClient::builder()
+            .config(config)
+            .message_handler(message_handler)
+            .keyed_quotas(vec![(DERIBIT_WS_SUBSCRIPTION_KEY.to_string(), quota)])
+            .connect()
+            .await
+            .unwrap();
+        let mut socket = server.await.unwrap();
+        ws_client
+            .send_text(
+                "reserve".to_string(),
+                Some(&[Ustr::from(DERIBIT_WS_SUBSCRIPTION_KEY)]),
+            )
+            .await
+            .unwrap();
+        assert_eq!(
+            socket.next().await.unwrap().unwrap(),
+            Message::Text("reserve".into())
+        );
+
+        let mut handler = routing_test_handler();
+        handler.inner = Some(Arc::new(ws_client));
+        handler.raw_rx = raw_rx;
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.out_tx = out_tx;
+        handler
+            .handle_authenticate(
+                serde_json::json!({"grant_type":"client_credentials"})
+                    .to_string()
+                    .into(),
+            )
+            .await;
+        let auth: serde_json::Value =
+            serde_json::from_str(socket.next().await.unwrap().unwrap().to_text().unwrap()).unwrap();
+        assert_eq!(auth["method"], "public/auth");
+        assert_eq!(auth["id"], 1);
+        let channels = vec![
+            "ticker.BTC-PERPETUAL.100ms".to_string(),
+            "ticker.ETH-PERPETUAL.100ms".to_string(),
+        ];
+
+        for channel in &channels {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+            handler.handle_subscribe(vec![channel.clone()]).unwrap();
+        }
+
+        handler.subscriptions_state.add_reference(&channels[0]);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), handler.next())
+                .await
+                .is_err()
+        );
+        assert!(handler.subscription_send.is_some());
+        assert_eq!(handler.subscription_requests.len(), 1);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(20), socket.next())
+                .await
+                .is_err()
+        );
+
+        let incoming = serde_json::json!({"value":17});
+        socket
+            .send(Message::Text(
+                subscription("unknown.channel", &incoming).into(),
+            ))
+            .await
+            .unwrap();
+        socket.send(Message::Text(serde_json::json!({"jsonrpc":"2.0","method":"heartbeat","params":{"type":"test_request"}}).to_string().into())).await.unwrap();
+        socket
+            .send(Message::Ping(vec![7, 11].into()))
+            .await
+            .unwrap();
+        socket
+            .send(Message::Text(
+                serde_json::json!({
+                    "jsonrpc":"2.0", "id":1, "result":{
+                        "access_token":"access", "refresh_token":"refresh", "expires_in":901,
+                        "scope":"session:test", "token_type":"bearer", "enabled_features":[]
+                    }
+                })
+                .to_string()
+                .into(),
+            ))
+            .await
+            .unwrap();
+        let authenticated = tokio::time::timeout(Duration::from_millis(500), handler.next())
+            .await
+            .unwrap();
+
+        let Some(NautilusWsMessage::Authenticated(auth)) = authenticated else {
+            panic!("Expected authentication response during quota wait");
+        };
+
+        assert_eq!(auth.access_token.expose_secret(), "access");
+        assert_eq!(auth.refresh_token.expose_secret(), "refresh");
+        assert_eq!(auth.expires_in, 901);
+        assert_eq!(auth.scope, "session:test");
+        assert_eq!(auth.token_type, "bearer");
+        assert_eq!(auth.enabled_features, Vec::<String>::new());
+        assert!(
+            matches!(out_rx.try_recv().unwrap(), NautilusWsMessage::Raw(data) if serde_json::from_str::<serde_json::Value>(data.get()).unwrap() == incoming)
+        );
+        let mut heartbeat = None;
+        let mut pong = None;
+
+        for _ in 0..2 {
+            let message = tokio::time::timeout(Duration::from_millis(500), socket.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+
+            match message {
+                Message::Text(text) => {
+                    heartbeat = Some(serde_json::from_str::<serde_json::Value>(&text).unwrap());
+                }
+                Message::Pong(data) => pong = Some(data.to_vec()),
+                message => panic!("Unexpected response: {message:?}"),
+            }
+        }
+
+        assert_eq!(
+            heartbeat,
+            Some(serde_json::json!({"jsonrpc":"2.0", "id":4, "method":"public/test", "params":{}}))
+        );
+        assert_eq!(pong, Some(vec![7, 11]));
+        assert!(handler.subscription_send.is_some());
+        assert_eq!(handler.subscription_requests.len(), 1);
+
+        if reconnect {
+            socket
+                .send(Message::Text(RECONNECTED.into()))
+                .await
+                .unwrap();
+            let result = tokio::time::timeout(Duration::from_millis(500), handler.next())
+                .await
+                .unwrap();
+            assert!(matches!(result, Some(NautilusWsMessage::Reconnected)));
+            assert!(handler.subscription_send.is_none());
+            assert!(handler.subscription_requests.is_empty());
+            assert!(handler.pending_requests.is_empty());
+            let mut restored = handler.subscriptions_state.reset_after_reconnect();
+            restored.sort();
+            assert_eq!(restored, channels);
+            assert_eq!(
+                handler
+                    .subscriptions_state
+                    .get_reference_count(&channels[0]),
+                2
+            );
+            assert_eq!(
+                handler
+                    .subscriptions_state
+                    .get_reference_count(&channels[1]),
+                1
+            );
+        }
+
+        handler.signal.store(true, Ordering::Relaxed);
+        let result = tokio::time::timeout(Duration::from_millis(500), handler.next())
             .await
             .unwrap();
         assert!(result.is_none());
+        assert!(handler.subscription_send.is_none());
+        let close = tokio::time::timeout(Duration::from_millis(500), socket.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        assert!(matches!(close, Message::Close(_)));
     }
 
     #[rstest]

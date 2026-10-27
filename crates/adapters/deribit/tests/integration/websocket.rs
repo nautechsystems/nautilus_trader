@@ -22,7 +22,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicUsize, Ordering},
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use axum::{
@@ -39,7 +39,7 @@ use nautilus_common::testing::wait_until_async;
 use nautilus_core::{AtomicSet, UnixNanos};
 use nautilus_deribit::{
     common::{
-        consts::{DERIBIT_VENUE, DERIBIT_WS_SUBSCRIPTION_QUOTA},
+        consts::{DERIBIT_VENUE, DERIBIT_WS_SUBSCRIPTION_KEY, DERIBIT_WS_SUBSCRIPTION_QUOTA},
         enums::DeribitEnvironment,
     },
     data_types::DeribitVolatilityIndex,
@@ -118,6 +118,7 @@ struct TestServerState {
     connection_total: Arc<AtomicUsize>,
     close_frames: Arc<AtomicUsize>,
     requests: Arc<tokio::sync::Mutex<Vec<(usize, String)>>>,
+    request_times: Arc<tokio::sync::Mutex<Vec<Instant>>>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
     subscription_events: Arc<tokio::sync::Mutex<Vec<(String, bool)>>>,
     unsubscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -210,6 +211,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                     .lock()
                     .await
                     .push((connection, text.to_string()));
+
+                state.request_times.lock().await.push(Instant::now());
 
                 match method {
                     Some("public/subscribe") => {
@@ -2206,13 +2209,21 @@ async fn test_subscription_batching_preserves_unsubscribe_barrier() {
     client.connect().await.unwrap();
     let first = "ticker.BTC-PERPETUAL.100ms".to_string();
     let last = "ticker.ETH-PERPETUAL.100ms".to_string();
-    client.subscribe(vec![first.clone()]).await.unwrap();
-    client.unsubscribe(vec![first.clone()]).await.unwrap();
+
+    let started = Instant::now();
+
+    for _ in 0..6 {
+        client.subscribe(vec![first.clone()]).await.unwrap();
+        client.unsubscribe(vec![first.clone()]).await.unwrap();
+    }
+
     client.subscribe(vec![last.clone()]).await.unwrap();
+    client.subscribe(vec![last.clone()]).await.unwrap();
+    client.unsubscribe(vec![last.clone()]).await.unwrap();
     wait_until_async(
         || async {
-            state.subscription_events.lock().await.len() == 2
-                && state.unsubscriptions.lock().await.len() == 1
+            state.subscription_events.lock().await.len() == 7
+                && state.unsubscriptions.lock().await.len() == 6
         },
         Duration::from_secs(5),
     )
@@ -2228,13 +2239,35 @@ async fn test_subscription_batching_preserves_unsubscribe_barrier() {
         .map(|(_, text)| serde_json::from_str(text).unwrap())
         .filter(|request: &Value| request["method"].as_str().unwrap().contains("subscribe"))
         .collect();
-    assert_eq!(requests.len(), 3);
-    assert_eq!(requests[0]["method"], "public/subscribe");
-    assert_eq!(requests[0]["params"]["channels"], json!([first]));
-    assert_eq!(requests[1]["method"], "public/unsubscribe");
-    assert_eq!(requests[1]["params"]["channels"], json!([first]));
-    assert_eq!(requests[2]["method"], "public/subscribe");
-    assert_eq!(requests[2]["params"]["channels"], json!([last]));
+    assert_eq!(requests.len(), 13);
+
+    for pair in requests[..12].as_chunks::<2>().0 {
+        assert_eq!(pair[0]["method"], "public/subscribe");
+        assert_eq!(pair[0]["params"]["channels"], json!([first]));
+        assert_eq!(pair[1]["method"], "public/unsubscribe");
+        assert_eq!(pair[1]["params"]["channels"], json!([first]));
+    }
+
+    assert_eq!(requests[12]["method"], "public/subscribe");
+    assert_eq!(requests[12]["params"]["channels"], json!([last]));
+    let last_request = *state.request_times.lock().await.last().unwrap();
+    assert!(
+        last_request.duration_since(started)
+            >= DERIBIT_WS_SUBSCRIPTION_QUOTA.replenish_interval() * 3
+    );
+    let mut active = std::collections::BTreeSet::new();
+
+    for request in &requests {
+        for channel in request["params"]["channels"].as_array().unwrap() {
+            if request["method"] == "public/subscribe" {
+                active.insert(channel.as_str().unwrap());
+            } else {
+                active.remove(channel.as_str().unwrap());
+            }
+        }
+    }
+
+    assert_eq!(active, std::collections::BTreeSet::from([last.as_str()]));
 }
 
 #[tokio::test]
@@ -2410,4 +2443,128 @@ async fn test_close_during_subscription_batches_sends_close_frame() {
     assert_eq!(state.close_frames.load(Ordering::Relaxed), 1);
     assert_eq!(*state.connection_count.lock().await, 0);
     drop(handler);
+}
+
+#[rstest]
+#[case::public_subscribe(false, true, "public/subscribe")]
+#[case::private_subscribe(true, true, "private/subscribe")]
+#[case::public_unsubscribe(false, false, "public/unsubscribe")]
+#[case::private_unsubscribe(true, false, "private/unsubscribe")]
+#[tokio::test]
+async fn test_subscription_batches_exhaust_named_quota(
+    #[case] private: bool,
+    #[case] subscribe: bool,
+    #[case] method: &str,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let ws_url = format!("ws://{addr}/ws/api/v2");
+    let (message_handler, raw_rx) = channel_message_handler();
+    let config = WebSocketConfig::builder().url(ws_url).build().unwrap();
+    let ws_client = WebSocketClient::builder()
+        .config(config)
+        .message_handler(message_handler)
+        .keyed_quotas(vec![(
+            DERIBIT_WS_SUBSCRIPTION_KEY.to_string(),
+            *DERIBIT_WS_SUBSCRIPTION_QUOTA,
+        )])
+        .connect()
+        .await
+        .unwrap();
+    let signal = Arc::new(AtomicBool::new(false));
+    let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+    let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+    let mut handler = DeribitWsFeedHandler::new(
+        signal.clone(),
+        cmd_rx,
+        raw_rx,
+        out_tx,
+        AuthTracker::new(),
+        SubscriptionState::new('.'),
+        Arc::new(AtomicSet::new()),
+        Arc::new(AtomicSet::new()),
+        Arc::new(AtomicSet::new()),
+        None,
+        true,
+        Arc::new(Mutex::new(Vec::new())),
+    );
+    cmd_tx.send(HandlerCommand::SetClient(ws_client)).unwrap();
+
+    let channels: Vec<String> = (0..11000)
+        .map(|i| {
+            if private {
+                format!("user.changes.BTC-27DEC30-{}-C.100ms", 100000 + i)
+            } else {
+                format!("ticker.BTC-27DEC30-{}-C.100ms", 100000 + i)
+            }
+        })
+        .collect();
+
+    let command = if subscribe {
+        HandlerCommand::Subscribe {
+            channels: channels.clone(),
+        }
+    } else {
+        HandlerCommand::Unsubscribe {
+            channels: channels.clone(),
+        }
+    };
+
+    cmd_tx.send(command).unwrap();
+    cmd_tx
+        .send(HandlerCommand::SetHeartbeat { interval: 37 })
+        .unwrap();
+    let started = Instant::now();
+
+    let task = tokio::spawn(async move { handler.next().await });
+    wait_until_async(
+        || async { state.heartbeat_enabled.load(Ordering::Relaxed) },
+        Duration::from_secs(10),
+    )
+    .await;
+    signal.store(true, Ordering::Relaxed);
+    assert!(task.await.unwrap().is_none());
+
+    let requests = state.requests.lock().await;
+
+    let batches: Vec<Value> = requests[..requests.len() - 1]
+        .iter()
+        .map(|(_, text)| {
+            assert!(text.len() <= 32_000);
+            serde_json::from_str(text).unwrap()
+        })
+        .collect();
+
+    let actual: Vec<String> = batches
+        .iter()
+        .flat_map(|request| {
+            assert_eq!(request["method"], method);
+            request["params"]["channels"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|ch| ch.as_str().unwrap().to_string())
+        })
+        .collect();
+
+    let times = state.request_times.lock().await;
+    let burst = DERIBIT_WS_SUBSCRIPTION_QUOTA.burst_size().get() as usize;
+    assert!(batches.len() > burst + 1);
+    assert_eq!(times.len(), requests.len());
+    assert_eq!(actual, channels);
+    assert_eq!(
+        serde_json::from_str::<Value>(&requests.last().unwrap().1).unwrap(),
+        json!({"jsonrpc":"2.0","id":batches.len() + 1,"method":"public/set_heartbeat","params":{"interval":37}})
+    );
+
+    for (index, time) in times.iter().take(batches.len()).enumerate().skip(burst) {
+        let minimum =
+            DERIBIT_WS_SUBSCRIPTION_QUOTA.replenish_interval() * (index - burst + 1) as u32;
+        assert!(
+            time.duration_since(started) >= minimum,
+            "Request {index} arrived before quota replenished: {:?} < {minimum:?}",
+            time.duration_since(started)
+        );
+    }
 }
