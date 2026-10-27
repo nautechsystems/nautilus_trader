@@ -185,6 +185,11 @@ impl IdsGenerator {
         }
     }
 
+    /// Advances the execution counter as if a trade ID was generated.
+    pub(crate) const fn skip_trade_id(&mut self) {
+        self.execution_count += 1;
+    }
+
     /// Generates a deterministic trade ID.
     ///
     /// # Panics
@@ -794,6 +799,21 @@ mod tests {
         generator.reset();
         let trade_id = generator.generate_trade_id(UnixNanos::from(1_700_000_000_000_000_000_u64));
         assert_eq!(trade_id.as_str(), "T-5c080ffb681dc0d4-001");
+    }
+
+    #[rstest]
+    fn test_skip_trade_id_matches_a_generated_trade_id() {
+        let ts_init = UnixNanos::from(1_700_000_000_000_000_000_u64);
+        let mut generated = build_ids_generator(Venue::from("BINANCE"), 1);
+        let mut skipped = build_ids_generator(Venue::from("BINANCE"), 1);
+
+        generated.generate_trade_id(ts_init);
+        skipped.skip_trade_id();
+
+        assert_eq!(
+            skipped.generate_trade_id(ts_init),
+            generated.generate_trade_id(ts_init)
+        );
     }
 
     #[rstest]

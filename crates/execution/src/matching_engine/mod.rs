@@ -127,6 +127,8 @@ pub struct OrderMatchingEngine {
     last_bar_bid: Option<Bar>,
     last_bar_ask: Option<Bar>,
     fill_at_market: bool,
+    collapse_bar_trades: bool,
+    last_bar_trade: Option<(Price, Quantity, AggressorSide)>,
     execution_bar_types: IndexMap<InstrumentId, BarType>,
     execution_bar_deltas: IndexMap<BarType, SignedDuration>,
     account_ids: IndexMap<TraderId, AccountId>,
@@ -222,6 +224,8 @@ impl OrderMatchingEngine {
             last_bar_bid: None,
             last_bar_ask: None,
             fill_at_market: true,
+            collapse_bar_trades: false,
+            last_bar_trade: None,
             execution_bar_types: IndexMap::new(),
             execution_bar_deltas: IndexMap::new(),
             account_ids: IndexMap::new(),
@@ -2054,6 +2058,10 @@ impl OrderMatchingEngine {
     }
 
     fn process_trade_ticks_from_bar(&mut self, bar: &Bar) {
+        // With nothing to match, each trade tick only replaces the L1 book, so walk the
+        // legs updating `core.last` and apply just the last trade tick
+        self.collapse_bar_trades = self.has_nothing_to_match(bar.ts_init);
+
         let sizes = BarTickSizes::from_volume(bar.volume, self.instrument.size_increment());
 
         let aggressor_side = if self.core.last.is_none_or(|last| bar.open > last) {
@@ -2106,6 +2114,15 @@ impl OrderMatchingEngine {
             }
         }
 
+        self.collapse_bar_trades = false;
+
+        if let Some((price, size, aggressor_side)) = self.last_bar_trade.take() {
+            // A zero size close sets `core.last` without a trade tick, so keep it
+            let last = self.core.last;
+            self.process_bar_trade_tick(bar, price, size, aggressor_side, "bar trade tick");
+            self.core.last = last;
+        }
+
         self.fill_at_market = true;
     }
 
@@ -2147,6 +2164,16 @@ impl OrderMatchingEngine {
         }
 
         if size.is_zero() {
+            self.core.set_last_raw(price);
+            return true;
+        }
+
+        if self.collapse_bar_trades {
+            // The replaced trade still consumes its trade ID
+            if self.last_bar_trade.is_some() {
+                self.ids_generator.skip_trade_id();
+            }
+            self.last_bar_trade = Some((price, size, aggressor_side));
             self.core.set_last_raw(price);
             return true;
         }
@@ -6669,6 +6696,25 @@ impl OrderMatchingEngine {
                 .borrow_mut()
                 .swap_remove(&client_order_id);
         }
+    }
+
+    /// Returns whether `iterate` at `timestamp_ns` would only reset bid and ask from the book.
+    fn has_nothing_to_match(&self, timestamp_ns: UnixNanos) -> bool {
+        self.core.iter_orders().next().is_none()
+            && self.post_match_order_ids.is_empty()
+            && self.pending_fills.is_empty()
+            && self.orders.cached_filled_qty.borrow().is_empty()
+            && self.orders.pending_updates.borrow().is_empty()
+            && self.orders.rejected_oto_parent_ids.borrow().is_empty()
+            && self.orders.closed_oto_order_ids.borrow().is_empty()
+            && self.target_bid.is_none()
+            && self.target_ask.is_none()
+            && self.target_last.is_none()
+            && self.instrument_close.is_none()
+            && self
+                .instrument
+                .expiration_ns()
+                .is_none_or(|expiration_ns| timestamp_ns < expiration_ns)
     }
 
     fn purge_closed_cached_filled_qty(&self) {
