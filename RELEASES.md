@@ -135,6 +135,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed Parquet promotion rejecting bar replays and skipping cleanup (#5400), thanks for reporting @onixlab-ai
 - Fixed backtest `MARK_PRICE` triggers ignoring mark prices (#5264), thanks for reporting @rubix28
 - Fixed NETTING PnL statistics losing cycles with the same open timestamp (#5288), thanks for reporting @qOeOp
 - Fixed account state subscriptions missing accepted updates (#5410), thanks @graceyangfan
