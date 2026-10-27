@@ -1038,7 +1038,7 @@ impl VerificationCoordinator {
             self.sources[1].receipt(tx_hash),
             self.sources[2].receipt(tx_hash),
         );
-        classify_receipt_absence([a, b, c], &self.sources)
+        classify_receipt_absence(&[a, b, c], &self.sources)
     }
 
     pub(crate) async fn verify_transaction(
@@ -1050,7 +1050,7 @@ impl VerificationCoordinator {
             self.sources[1].transaction(tx_hash),
             self.sources[2].transaction(tx_hash),
         );
-        classify_propagating(VerificationRead::Transaction, [a, b, c], &self.sources)
+        classify_propagating(VerificationRead::Transaction, &[a, b, c], &self.sources)
     }
 
     pub(crate) async fn verify_replacement_block(
@@ -1545,7 +1545,7 @@ fn classify_all<T, U: NormalizedValue>(
 
 fn classify_propagating<T: Clone + Eq + NormalizedValue>(
     read: VerificationRead,
-    results: [anyhow::Result<Option<T>>; VERIFICATION_SOURCE_COUNT],
+    results: &[anyhow::Result<Option<T>>; VERIFICATION_SOURCE_COUNT],
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
 ) -> VerificationOutcome<T> {
     let provider_ids = source_provider_ids(sources);
@@ -1623,7 +1623,7 @@ fn classify_receipts(
 }
 
 fn classify_receipt_absence(
-    results: [anyhow::Result<Option<RpcTransactionReceipt>>; VERIFICATION_SOURCE_COUNT],
+    results: &[anyhow::Result<Option<RpcTransactionReceipt>>; VERIFICATION_SOURCE_COUNT],
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
 ) -> VerificationOutcome<bool> {
     let read = VerificationRead::Receipt;
@@ -1632,7 +1632,8 @@ fn classify_receipt_absence(
         read,
         provider_ids: provider_ids.clone(),
     };
-    let normalized = normalize_receipts(&results);
+
+    let normalized = normalize_receipts(results);
     let present = normalized
         .iter()
         .filter_map(|result| result.as_ref().ok().and_then(Option::as_ref))

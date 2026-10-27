@@ -188,7 +188,23 @@ def _test_precedence(root: Path) -> None:
     local_exception = (
         '#[allow(clippy::cast_possible_truncation, reason = "probe intentionally truncates")]\n'
     )
+    blockchain = (REPO_ROOT / "crates/adapters/blockchain/src/lib.rs").read_text(encoding="utf-8")
+    blockchain_attributes = blockchain[blockchain.index("#![warn(rustc::all)]") :].split(
+        "\npub mod ",
+        1,
+    )[0]
     cases = [
+        (
+            "blockchain_workspace_check",
+            blockchain_attributes
+            + "\n#[must_use]\npub fn mapped(value: Option<u8>) -> u8 { "
+            + "value.map(|value| value.wrapping_add(1)).unwrap_or(0) }\n",
+            "",
+            (),
+            CARGO_FAILURE,
+            "map_unwrap_or",
+        ),
+        ("blockchain_staged_adoption", blockchain_attributes + CAST, "", (), 0, ""),
         ("cargo_source_precedence", OPT_IN + SIMILAR_NAMES, "", (), CARGO_FAILURE, "similar_names"),
         ("source_allowance", enabled + SIMILAR_NAMES, "", (), 0, ""),
         ("deny_opt_in", enabled.replace("warn(", "deny(") + SIMILAR_NAMES, "", (), 0, ""),

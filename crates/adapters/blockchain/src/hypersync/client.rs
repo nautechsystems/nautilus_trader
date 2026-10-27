@@ -754,7 +754,7 @@ impl HyperSyncClient {
         .await;
 
         match outcome {
-            None | Some(TaskJoinOutcome::Completed(())) | Some(TaskJoinOutcome::Aborted) => true,
+            None | Some(TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted) => true,
             Some(TaskJoinOutcome::Failed(error)) => {
                 log::error!("HyperSync DEX event stream task for {dex} failed: {error}");
                 true

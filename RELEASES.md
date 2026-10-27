@@ -269,6 +269,7 @@ Released on TBD (UTC).
 - Refined live reconciliation report collection and task ownership
 - Restored default-feature compilation of `position_replay_criterion` benchmarks
 - Standardized Architect AX owned execution report tasks
+- Standardized Blockchain Clippy exceptions to preserve workspace checks
 - Updated Nautilus Engineering common tooling
 - Optimized JSON and MessagePack decoding and custom data response encoding
 - Optimized order last-event reads to avoid collecting history (#5412), thanks @graceyangfan

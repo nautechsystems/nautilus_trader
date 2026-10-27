@@ -43,10 +43,6 @@
 //!   [turmoil](https://crates.io/crates/turmoil).
 
 #![warn(rustc::all)]
-#![allow(
-    clippy::pedantic,
-    reason = "shield the CLI --all-features pedantic gate until the blockchain slice migrates"
-)]
 #![warn(clippy::clone_on_ref_ptr)]
 #![deny(unsafe_code)]
 #![deny(nonstandard_style)]
