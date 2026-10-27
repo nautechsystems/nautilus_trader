@@ -71,6 +71,7 @@ struct RegistryInner {
     hydrated: usize,
     account_refresh_requested: bool,
     client_fault: Option<String>,
+    faulted_trade_id: Option<String>,
 }
 
 impl Default for RegistryInner {
@@ -89,6 +90,7 @@ impl Default for RegistryInner {
             hydrated: 0,
             account_refresh_requested: false,
             client_fault: None,
+            faulted_trade_id: None,
         }
     }
 }
@@ -809,6 +811,24 @@ impl SettlementRegistry {
         self.inner.lock().client_fault.clone()
     }
 
+    pub(crate) fn ensure_submission_allowed(&self) -> anyhow::Result<()> {
+        let inner = self.inner.lock();
+        if let Some(reason) = &inner.client_fault {
+            anyhow::bail!("Polymarket execution client is faulted closed until restart: {reason}");
+        }
+
+        if let Some(key) = &inner.faulted_trade_id {
+            let record = &inner.records[key];
+            let reason = record.hard_fault.as_deref().unwrap_or_default();
+            anyhow::bail!(
+                "Polymarket submissions for account {} are blocked until restart: settlement trade {key} is hard-faulted: {reason}",
+                self.account_id,
+            );
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn record_count(&self) -> usize {
         self.inner.lock().records.len()
     }
@@ -1365,8 +1385,13 @@ fn hard_fault(inner: &mut RegistryInner, key: &str, reason: String) {
         return;
     }
 
-    log::error!("Polymarket settlement trade {key} entered hard fault: {reason}");
+    log::error!(
+        "Polymarket settlement trade {key} entered hard fault: {reason}; new submissions and replacements are blocked for this account until restart"
+    );
     record.hard_fault = Some(reason);
+    inner
+        .faulted_trade_id
+        .get_or_insert_with(|| key.to_string());
     inner.account_refresh_requested = true;
 }
 
@@ -1652,6 +1677,43 @@ pub(crate) mod tests {
 
     pub(crate) fn force_client_fault(registry: &SettlementRegistry, reason: &str) {
         fault_client(&mut registry.inner.lock(), reason.to_string());
+    }
+
+    pub(crate) fn force_trade_fault(registry: &SettlementRegistry, key: &str, reason: &str) {
+        let mut inner = registry.inner.lock();
+        ensure_record(&mut inner, key, 0);
+        hard_fault(&mut inner, key, reason.to_string());
+    }
+
+    #[rstest]
+    fn test_submission_gate_retains_first_trade_fault_until_reset() {
+        let registry = live_registry();
+        registry.quarantine_invalid_trade("quarantined");
+        let quarantined = registry.ensure_submission_allowed();
+        force_trade_fault(&registry, "first-trade", "first correction declined");
+        force_trade_fault(&registry, "second-trade", "second correction declined");
+        let first_fault = registry
+            .ensure_submission_allowed()
+            .unwrap_err()
+            .to_string();
+        registry.mark_hydrating();
+        registry.begin_session();
+        registry.mark_live();
+        let reconnected = registry
+            .ensure_submission_allowed()
+            .unwrap_err()
+            .to_string();
+        let client_faulted = registry.client_faulted();
+        registry.clear();
+
+        assert!(quarantined.is_ok());
+        assert_eq!(
+            first_fault,
+            "Polymarket submissions for account POLYMARKET-001 are blocked until restart: settlement trade first-trade is hard-faulted: first correction declined"
+        );
+        assert_eq!(reconnected, first_fault);
+        assert!(!client_faulted);
+        assert!(registry.ensure_submission_allowed().is_ok());
     }
 
     const TRADE: &str = "trade-1";
@@ -3202,9 +3264,11 @@ pub(crate) mod tests {
             registry.admit_rest_result(&trade(PolymarketTradeStatus::Failed, vec![leg.clone()]));
         let fill = applied_fill(&leg, Some(TRADE));
 
+        force_trade_fault(&registry, TRADE, "terminal contradiction");
         let first = registry.observe_fill_applied(&fill);
         let duplicate = registry.observe_fill_applied(&fill);
 
+        assert!(registry.ensure_submission_allowed().is_err());
         assert!(voided_trade_ids(&failed).is_empty());
         assert_eq!(
             first.map(|(key, fill)| (key, fill.trade_id)),

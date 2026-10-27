@@ -266,6 +266,7 @@ Released on TBD (UTC).
 - Fixed Polymarket trade history and settlement recovery failing on missing or null transaction hashes
 - Fixed Polymarket taker fill prices and fees across price levels and complementary tokens (#5404), thanks @SoYuCry
 - Fixed Polymarket accepting unsupported market protocols during discovery, trading, and position operations
+- Fixed Polymarket accepting new submissions and replacements after settlement hard faults (#4876)
 - Fixed sandbox restarts reviving closed OTO children while the cache still shows them open
 - Fixed sandbox position checks creating spurious closing trades (#5357), thanks @awss1i
 

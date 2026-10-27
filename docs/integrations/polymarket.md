@@ -1343,7 +1343,18 @@ A trade enters a hard fault when its venue outcome and the engine's state cannot
 A hard-faulted trade admits no further fills or voids, except the one void owed for a fill applied
 after REST reported `FAILED`. The adapter logs the fault at error level, refreshes the account, and
 blocks reconciliation for the trade (see [settlement precedence](#settlement-precedence)) until the
-node restarts.
+client resets or the node restarts.
+
+##### Submissions
+
+A hard fault blocks new single and batch orders and cancel-replace modifications for the account.
+The client stays connected for cancellations, account refreshes, and required correction voids.
+Quarantine alone does not block submissions.
+
+Rejections identify the account, faulted trade, and cause. A fault during modification can leave the
+old order canceled without a replacement. In-flight requests can still complete; unknown submission
+outcomes require reconciliation. The block survives reconnects and stop/start. Reset the client or
+restart the node to clear it.
 
 ##### Quantity and cancellation
 

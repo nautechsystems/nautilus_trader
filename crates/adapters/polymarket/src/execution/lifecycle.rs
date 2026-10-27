@@ -1843,7 +1843,10 @@ mod tests {
         live::runner::set_exec_event_sender,
         messages::{
             ExecutionEvent,
-            execution::{CancelAllOrders, GenerateFillReportsBuilder},
+            execution::{
+                CancelAllOrders, GenerateFillReportsBuilder, ModifyOrder, SubmitOrder,
+                SubmitOrderList,
+            },
         },
         msgbus::{publish_order_event, publish_position_event, switchboard},
     };
@@ -1855,18 +1858,20 @@ mod tests {
             TimeInForce,
         },
         events::{
-            OrderEventAny, PositionClosed, PositionEvent,
+            OrderEventAny, OrderInitialized, PositionClosed, PositionEvent,
             order::spec::{
                 OrderFillVoidedSpec, OrderFilledSpec, OrderPendingCancelSpec,
                 OrderPendingUpdateSpec, OrderUpdatedSpec,
             },
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId,
-            TraderId, VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol,
+            TradeId, TraderId, VenueOrderId,
         },
         instruments::stubs::binary_option,
-        orders::{LimitOrder, Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{
+            LimitOrder, Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs,
+        },
         position::Position,
         types::{Currency, Money, Price, Price as ModelPrice, Quantity, Quantity as ModelQuantity},
     };
@@ -1879,7 +1884,9 @@ mod tests {
         execution::settlement::{
             AdmittedLeg,
             admission::AdmittedTrade,
-            registry::tests::{force_client_fault, leg_application, trade_hard_fault},
+            registry::tests::{
+                force_client_fault, force_trade_fault, leg_application, trade_hard_fault,
+            },
             state::LegApplication,
         },
         factories::spawn_rejecting_proxy,
@@ -3831,6 +3838,112 @@ mod tests {
             leg_application(&client.settlement, &fill.trade_id),
             Some(LegApplication::VoidObserved)
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn trade_fault_blocks_submissions_and_modifies_but_keeps_cancellation_available() {
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("FAULT", false, false);
+        let instrument_id = instrument.id();
+
+        let order = {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(instrument).unwrap();
+            cache_accepted_open_order(&mut cache, instrument_id)
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.core.set_connected();
+        force_trade_fault(&client.settlement, "fault-trade", "correction declined");
+        let expected = "Polymarket submissions for account POLYMARKET-001 are blocked until restart: settlement trade fault-trade is hard-faulted: correction declined";
+        let submit = SubmitOrder::from_order(
+            &order,
+            order.trader_id(),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+        let submit_error = client.submit_order(submit).unwrap_err().to_string();
+
+        let list = OrderList::new(
+            OrderListId::from("LIST-001"),
+            instrument_id,
+            order.strategy_id(),
+            vec![order.client_order_id()],
+            UnixNanos::default(),
+        );
+
+        let submit_list = SubmitOrderList::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            list,
+            vec![OrderInitialized::from(&order)],
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        let batch_error = client
+            .submit_order_list(submit_list)
+            .unwrap_err()
+            .to_string();
+
+        let modify = ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument_id,
+            order.client_order_id(),
+            order.venue_order_id(),
+            None,
+            Some(Price::from("0.60")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.modify_order(modify).unwrap();
+        let rejected = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = rejected else {
+            panic!("Expected ModifyRejected, was {rejected:?}");
+        };
+
+        let cancel = CancelAllOrders::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            InstrumentId::from("MISSING.POLYMARKET"),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let cancel_error = client.cancel_all_orders(cancel).unwrap_err().to_string();
+
+        assert_eq!(submit_error, expected);
+        assert_eq!(batch_error, expected);
+        assert_eq!(rejected.trader_id, order.trader_id());
+        assert_eq!(rejected.strategy_id, order.strategy_id());
+        assert_eq!(rejected.instrument_id, instrument_id);
+        assert_eq!(rejected.client_order_id, order.client_order_id());
+        assert_eq!(rejected.venue_order_id, order.venue_order_id());
+        assert_eq!(rejected.account_id, Some(client.core.account_id));
+        assert_eq!(rejected.reason, expected);
+        assert_eq!(
+            cancel_error,
+            "Cannot cancel all orders: instrument not found in cache for MISSING.POLYMARKET"
+        );
+        assert!(client.is_connected());
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

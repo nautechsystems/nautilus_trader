@@ -375,18 +375,31 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        self.check_not_faulted()?;
+        self.settlement.ensure_submission_allowed()?;
         self.submit_order_command(&cmd)
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
-        self.check_not_faulted()?;
+        self.settlement.ensure_submission_allowed()?;
         self.submit_order_list_command(&cmd);
         Ok(())
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         self.check_not_faulted()?;
+
+        if let Err(e) = self.settlement.ensure_submission_allowed() {
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                &e.to_string(),
+                self.clock.get_time_ns(),
+            );
+            return Ok(());
+        }
+
         self.modify_order_command(&cmd);
         Ok(())
     }
