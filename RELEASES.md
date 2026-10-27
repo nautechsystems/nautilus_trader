@@ -49,6 +49,7 @@ Released on TBD (UTC).
 - Replaced flat `BacktestDataConfig` catalog fields with `catalog: DataCatalogConfig`
 - Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
 - Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
+- Changed simulated `MARK_PRICE` triggers to require mark updates; sandbox mark triggers remain unsupported
 - Changed buffered `HttpClient` bodies to decode gzip; remove manual decoding or use `get_stream` for raw bytes
 - Changed `DataIterator::{peek, next, next_stream_item}` to return `Result<ReplayPoll<_>>`; handle all states
 - Changed `DataIterator::peek` to require `&mut self` for source polling
@@ -132,6 +133,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed backtest `MARK_PRICE` triggers ignoring mark prices (#5264), thanks for reporting @rubix28
 - Fixed account state subscriptions missing accepted updates (#5410), thanks @graceyangfan
 - Fixed unavailable `OrderFilled` commissions displaying as zero
 - Fixed live bulk order reconciliation timeouts discarding finalized adapter reports

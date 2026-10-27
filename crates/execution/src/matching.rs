@@ -147,6 +147,7 @@ pub struct OrderMatchingCore {
     pending_bid: SmallVec<[RestingOrder; 2]>,
     pending_ask: SmallVec<[RestingOrder; 2]>,
     order_index: AHashMap<ClientOrderId, (OrderSide, Option<(BookKind, Price)>)>,
+    pub(crate) mark: Option<Price>,
 }
 
 impl OrderMatchingCore {
@@ -167,6 +168,7 @@ impl OrderMatchingCore {
             pending_bid: SmallVec::new(),
             pending_ask: SmallVec::new(),
             order_index: AHashMap::new(),
+            mark: None,
         }
     }
 
@@ -264,11 +266,12 @@ impl OrderMatchingCore {
         self.price_increment = price_increment;
     }
 
-    /// Clears all orders and resets bid/ask/last to uninitialized.
+    /// Clears all orders and resets bid, ask, last, and mark prices to uninitialized.
     pub fn reset(&mut self) {
         self.bid = None;
         self.ask = None;
         self.last = None;
+        self.mark = None;
         self.bid_limits.clear();
         self.ask_limits.clear();
         self.bid_stops.clear();
@@ -589,6 +592,7 @@ impl OrderMatchingCore {
 
         match trigger_type {
             TriggerType::LastPrice => self.last,
+            TriggerType::MarkPrice => self.mark,
             TriggerType::LastOrBidAsk => self.last.or(quote_price),
             _ => quote_price,
         }
@@ -1033,6 +1037,31 @@ mod tests {
         );
 
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::missing(None, false)]
+    #[case::safe(Some(Price::from("100.00")), false)]
+    #[case::crossed(Some(Price::from("110.00")), true)]
+    fn test_mark_price_trigger_ignores_quote_and_last(
+        #[case] mark: Option<Price>,
+        #[case] expected: bool,
+    ) {
+        let mut core = create_matching_core(InstrumentId::from("AAPL.XNAS"), Price::from("0.01"));
+        core.bid = Some(Price::from("120.00"));
+        core.ask = Some(Price::from("121.00"));
+        core.last = Some(Price::from("122.00"));
+        core.mark = mark;
+        assert_eq!(
+            core.is_stop_matched_with_trigger_type(
+                OrderSide::Buy,
+                Price::from("105.00"),
+                TriggerType::MarkPrice
+            ),
+            expected
+        );
+        core.reset();
+        assert_eq!(core.mark, None);
     }
 
     #[rstest]

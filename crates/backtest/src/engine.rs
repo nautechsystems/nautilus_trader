@@ -978,8 +978,9 @@ impl BacktestEngine {
             | DataRef::BookDepth(_)
             | DataRef::Quote(_)
             | DataRef::Trade(_)
-            | DataRef::Bar(_) => SettlementScope::Data(Some(data.instrument_id())),
-            DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => SettlementScope::Data(None),
+            | DataRef::Bar(_)
+            | DataRef::MarkPrice(_) => SettlementScope::Data(Some(data.instrument_id())),
+            DataRef::IndexPrice(_) => SettlementScope::Data(None),
             DataRef::FundingRate(_) => SettlementScope::Data(Some(data.instrument_id())),
             DataRef::OptionGreeks(_) => SettlementScope::Data(None),
             DataRef::InstrumentStatus(_) | DataRef::InstrumentClose(_) => {
@@ -1587,7 +1588,6 @@ impl BacktestEngine {
         if matches!(
             data,
             DataRef::Instrument(_)
-                | DataRef::MarkPrice(_)
                 | DataRef::IndexPrice(_)
                 | DataRef::OptionGreeks(_)
                 | DataRef::Custom(_)
@@ -1620,7 +1620,8 @@ impl BacktestEngine {
                 DataRef::Quote(quote) => exchange_ref.process_quote_tick(quote)?,
                 DataRef::Trade(trade) => exchange_ref.process_trade_tick(trade)?,
                 DataRef::Bar(bar) => exchange_ref.process_bar(*bar)?,
-                DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => {
+                DataRef::MarkPrice(mark) => exchange_ref.process_mark_price(mark)?,
+                DataRef::IndexPrice(_) => {
                     unreachable!("filtered before exchange routing")
                 }
                 DataRef::FundingRate(funding) => {

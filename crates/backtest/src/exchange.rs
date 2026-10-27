@@ -52,8 +52,8 @@ use nautilus_execution::{
 use nautilus_model::{
     accounts::{Account, AccountAny, margin_model::MarginModelHandle},
     data::{
-        Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, OrderBookDelta,
-        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        Bar, Data, FundingRateUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{
         AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType,
@@ -1059,6 +1059,40 @@ impl SimulatedExchange {
 
         if let Some(matching_engine) = self.matching_engines.get_mut(&depth.instrument_id) {
             matching_engine.process_order_book_depth(depth)?;
+        } else {
+            anyhow::bail!("Matching engine should be initialized");
+        }
+
+        self.drain_oto_commands();
+        Ok(())
+    }
+
+    /// Processes a mark price update and updates the matching engine.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if module pre-processing or matching engine initialization fails.
+    pub fn process_mark_price(&mut self, mark: &MarkPriceUpdate) -> anyhow::Result<()> {
+        self.pre_process_modules(&Data::MarkPrice(*mark))?;
+
+        if !self.matching_engines.contains_key(&mark.instrument_id) {
+            let instrument = {
+                let cache = self.cache.as_ref().borrow();
+                cache.instrument(&mark.instrument_id).cloned()
+            };
+
+            if let Some(instrument) = instrument {
+                self.add_instrument(instrument)?;
+            } else {
+                anyhow::bail!(
+                    "No matching engine found for instrument {}",
+                    mark.instrument_id
+                );
+            }
+        }
+
+        if let Some(matching_engine) = self.matching_engines.get_mut(&mark.instrument_id) {
+            matching_engine.process_mark_price(mark);
         } else {
             anyhow::bail!("Matching engine should be initialized");
         }
