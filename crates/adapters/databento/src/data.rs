@@ -427,7 +427,7 @@ impl DatabentoDataClient {
                             }
                             Some(DatabentoMessage::Instrument(instrument)) => {
                                 log::debug!("Received instrument definition: {}", instrument.id());
-                                if let Err(e) = data_sender.send(DataEvent::Instrument(*instrument)) {
+                                if let Err(e) = data_sender.send(DataEvent::Data(Data::Instrument(instrument))) {
                                     log::error!("Failed to send instrument: {e}");
                                 }
                             }

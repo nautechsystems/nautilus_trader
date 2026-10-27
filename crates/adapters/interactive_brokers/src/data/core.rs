@@ -688,7 +688,7 @@ impl DataClient for InteractiveBrokersDataClient {
             );
 
             for instrument in self.instrument_provider.get_all() {
-                if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                     tracing::warn!("Failed to publish startup-loaded instrument: {e}");
                     break;
                 }
@@ -2485,7 +2485,7 @@ async fn load_requested_instrument(
         .collect::<Vec<_>>();
 
     for leg in instrument_provider.find_all(&leg_ids) {
-        if let Err(e) = data_sender.send(DataEvent::Instrument(leg)) {
+        if let Err(e) = data_sender.send(DataEvent::Data(leg.into())) {
             tracing::error!("Failed to send spread leg instrument: {e}");
         }
     }

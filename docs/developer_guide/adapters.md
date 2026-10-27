@@ -873,15 +873,15 @@ Keep their freshness semantics distinct:
 The shared [`DataEvent`](../../crates/common/src/messages/mod.rs) envelope determines how data
 enters the engine:
 
-| Variant                       | Use                                                                 | Contract to preserve                                                                |
-| ----------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `DataEvent::Instrument`       | Instrument definitions from bootstrap, requests, or updates.        | Preserve complete identity, precision, and venue timestamps when available.         |
-| `DataEvent::InstrumentStatus` | Trading or availability status changes.                             | Emit meaningful transitions rather than unchanged polling snapshots.                |
-| `DataEvent::Data`             | Trades, quotes, order-book data, bars, and other typed market data. | Complete parsing and event boundary construction before emission.                   |
-| `DataEvent::Response`         | Results for current or historical data requests.                    | Preserve request correlation, parameters, filters, and freshness semantics.         |
-| `DataEvent::FundingRate`      | Funding rate updates for derivatives.                               | Preserve the venue's effective or event time and instrument identity.               |
-| `DataEvent::OptionGreeks`     | Venue-provided option greeks.                                       | Preserve the source instrument and distinguish venue values from local calculation. |
-| `DataEvent::DeFi`             | Feature-gated decentralized finance data.                           | Emit only when the adapter and build expose the shared `defi` feature.              |
+| Variant                                      | Use                                                            | Contract to preserve                                                                |
+| -------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `DataEvent::Data(Data::Instrument(_))`       | Instrument definitions from bootstrap, requests, or updates.   | Preserve complete identity, precision, and venue timestamps when available.         |
+| `DataEvent::Data(Data::InstrumentStatus(_))` | Trading or availability status changes.                        | Emit meaningful transitions rather than unchanged polling snapshots.                |
+| `DataEvent::Data`                            | All typed data, including the payloads listed above and below. | Complete parsing and event boundary construction before emission.                   |
+| `DataEvent::Response`                        | Results for current or historical data requests.               | Preserve request correlation, parameters, filters, and freshness semantics.         |
+| `DataEvent::Data(Data::FundingRate(_))`      | Funding rate updates for derivatives.                          | Preserve the venue's effective or event time and instrument identity.               |
+| `DataEvent::Data(Data::OptionGreeks(_))`     | Venue-provided option greeks.                                  | Preserve the source instrument and distinguish venue values from local calculation. |
+| `DataEvent::DeFi`                            | Feature-gated decentralized finance data.                      | Emit only when the adapter and build expose the shared `defi` feature.              |
 
 Add a regression test that changes the upstream instrument response between two requests. The
 second response must reflect the new venue state rather than a private cache entry.

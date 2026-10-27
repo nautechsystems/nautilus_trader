@@ -4177,11 +4177,11 @@ async fn recv_instrument(
         .unwrap()
         .unwrap();
 
-    let DataEvent::Instrument(instrument) = event else {
+    let DataEvent::Data(Data::Instrument(instrument)) = event else {
         panic!("expected instrument event, was {event:?}");
     };
 
-    instrument
+    *instrument
 }
 
 #[tokio::test]
@@ -4206,7 +4206,7 @@ async fn test_scheduled_instrument_refresh_mainnet() {
     let mut initial = Vec::new();
 
     while let Ok(event) = rx.try_recv() {
-        let DataEvent::Instrument(instrument) = event else {
+        let DataEvent::Data(Data::Instrument(instrument)) = event else {
             panic!("expected startup instrument, was {event:?}");
         };
 

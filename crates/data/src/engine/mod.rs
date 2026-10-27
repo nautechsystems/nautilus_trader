@@ -1645,9 +1645,7 @@ impl DataEngine {
         }
 
         self.data_count += 1;
-        // Dynamically-typed entry point: `FundingRateUpdate`, `OptionGreeks`, `InstrumentStatus`,
-        // and custom data are also `Data` enum variants handled in `process_data`, but can arrive
-        // here as typed data, whereas `InstrumentAny` is not a `Data` variant.
+
         if let Some(instrument) = data.downcast_ref::<InstrumentAny>() {
             self.handle_instrument(instrument);
         } else if let Some(funding_rate) = data.downcast_ref::<FundingRateUpdate>() {

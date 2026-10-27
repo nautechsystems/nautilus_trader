@@ -10335,7 +10335,7 @@ mod tests {
 
         let mut pending = PendingEvents::default();
         pending.data_evts.push(
-            DataEvent::Instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            DataEvent::Data(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()).into())
                 .into(),
         );
 
@@ -10346,7 +10346,7 @@ mod tests {
     fn stub_data_event() -> DataEvent {
         use nautilus_model::instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt};
 
-        DataEvent::Instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+        DataEvent::Data(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()).into())
     }
 
     fn stub_data_command() -> DataCommand {

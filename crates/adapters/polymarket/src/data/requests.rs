@@ -347,7 +347,7 @@ pub(super) fn request_instrument(
                     |instrument| {
                         // Publish onto the data bus so other clients (e.g. the exec
                         // client's token map) can update from the same fetch.
-                        if let Err(e) = sender.send(DataEvent::Instrument(instrument.clone())) {
+                        if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
                             log::warn!("Failed to publish instrument {instrument_id}: {e}");
                         }
                     },

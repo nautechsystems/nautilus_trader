@@ -1040,7 +1040,7 @@ mod tests {
     }
 
     fn stub_data_event() -> DataEvent {
-        DataEvent::Instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+        DataEvent::Data(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()).into())
     }
 
     fn stub_data_command() -> DataCommand {

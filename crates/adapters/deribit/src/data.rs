@@ -344,12 +344,12 @@ impl DeribitDataClient {
                 let instrument_any = *instrument;
                 instruments.insert(instrument_any.id(), instrument_any.clone());
 
-                if let Err(e) = sender.send(DataEvent::Instrument(instrument_any)) {
+                if let Err(e) = sender.send(DataEvent::Data(instrument_any.into())) {
                     log::warn!("Failed to send instrument update: {e}");
                 }
             }
             NautilusWsMessage::OptionGreeks(greeks) => {
-                if let Err(e) = sender.send(DataEvent::OptionGreeks(greeks)) {
+                if let Err(e) = sender.send(DataEvent::Data(Data::OptionGreeks(greeks))) {
                     log::error!("Failed to send option greeks: {e}");
                 }
             }
@@ -367,13 +367,13 @@ impl DeribitDataClient {
             }
             NautilusWsMessage::FundingRates(funding_rates) => {
                 for funding_rate in funding_rates {
-                    if let Err(e) = sender.send(DataEvent::FundingRate(funding_rate)) {
+                    if let Err(e) = sender.send(DataEvent::Data(Data::FundingRate(funding_rate))) {
                         log::error!("Failed to send funding rate: {e}");
                     }
                 }
             }
             NautilusWsMessage::InstrumentStatus(status) => {
-                if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+                if let Err(e) = sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
                     log::error!("Failed to send instrument status event: {e}");
                 }
             }
@@ -749,7 +749,7 @@ impl DataClient for DeribitDataClient {
         for instrument in &all_instruments {
             if let Err(e) = self
                 .data_sender
-                .send(DataEvent::Instrument(instrument.clone()))
+                .send(DataEvent::Data(instrument.clone().into()))
             {
                 log::warn!("Failed to send instrument: {e}");
             }

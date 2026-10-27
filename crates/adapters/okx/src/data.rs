@@ -796,8 +796,8 @@ impl OKXDataClient {
                                         ts_init,
                                     ) {
                                         Ok(greeks) => {
-                                            if let Err(e) =
-                                                data_sender.send(DataEvent::OptionGreeks(greeks))
+                                            if let Err(e) = data_sender
+                                                .send(DataEvent::Data(Data::OptionGreeks(greeks)))
                                             {
                                                 log::error!(
                                                     "Failed to emit option greeks event: {e}"
@@ -1606,13 +1606,13 @@ fn dispatch_parsed_data(
             instruments_by_symbol.insert(instrument.symbol().inner(), *instrument);
 
             if let Some(status) = status
-                && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status))
+                && let Err(e) = data_sender.send(DataEvent::Data(Data::InstrumentStatus(status)))
             {
                 log::error!("Failed to emit instrument status event: {e}");
             }
         }
         NautilusWsMessage::InstrumentStatus(status) => {
-            if let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status)) {
+            if let Err(e) = data_sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
                 log::error!("Failed to emit instrument status event: {e}");
             }
         }
@@ -1622,7 +1622,7 @@ fn dispatch_parsed_data(
 
 fn emit_funding_rates(sender: &EventSender<DataEvent>, updates: Vec<FundingRateUpdate>) {
     for update in updates {
-        if let Err(e) = sender.send(DataEvent::FundingRate(update)) {
+        if let Err(e) = sender.send(DataEvent::Data(Data::FundingRate(update))) {
             log::error!("Failed to emit funding rate event: {e}");
         }
     }
@@ -1647,7 +1647,7 @@ fn emit_instrument_status(
         None,
     );
 
-    if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+    if let Err(e) = sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
         log::error!("Failed to emit instrument status event: {e}");
     }
 }
@@ -1702,7 +1702,7 @@ fn cache_instrument_updates(
         .fetch_add(1, Ordering::SeqCst);
 }
 
-/// Publishes new or changed definitions as [`DataEvent::Instrument`] after
+/// Publishes new or changed definitions as [`DataEvent::Data`] after
 /// updating every cache, so consumers never observe a definition the caches
 /// do not yet hold. Callers serialize diff-update-publish sequences through
 /// the instrument update lock.
@@ -1725,7 +1725,7 @@ fn publish_instrument_updates(
     );
 
     for instrument in changed {
-        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument.clone())) {
+        if let Err(e) = data_sender.send(DataEvent::Data(instrument.clone().into())) {
             log::error!("Failed to emit instrument event: {e}");
         }
     }
@@ -1910,7 +1910,7 @@ struct InstrumentReconciliation {
 /// Fetches every configured instrument type and family, plus spread instruments
 /// when `load_spreads` is set, then updates the data client, HTTP client, and
 /// WebSocket caches with new or materially changed definitions before
-/// publishing them as [`DataEvent::Instrument`]. Unchanged definitions are
+/// publishing them as [`DataEvent::Data`]. Unchanged definitions are
 /// not republished. Cached instruments missing from the response are retained
 /// because they may still back open subscriptions; the instruments WebSocket
 /// channel communicates state changes such as suspension or delisting.
@@ -3571,8 +3571,8 @@ mod tests {
         );
 
         match receiver.try_recv().expect("instrument status event") {
-            DataEvent::InstrumentStatus(received) => assert_eq!(received, status),
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            DataEvent::Data(Data::InstrumentStatus(received)) => assert_eq!(received, status),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(instruments_by_symbol.load().is_empty());
     }
@@ -4261,22 +4261,22 @@ mod tests {
         );
 
         match receiver.try_recv().expect("instrument event") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.id(), InstrumentId::from("BTC-USDT-SWAP.OKX"));
                 assert_eq!(instrument.price_increment(), Price::from("0.1"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
 
         match receiver.try_recv().expect("instrument status event") {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
                 assert_eq!(status.action, MarketStatusAction::Trading);
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(receiver.try_recv().is_err());
 
@@ -4318,23 +4318,26 @@ mod tests {
             );
         }
 
-        assert!(matches!(receiver.try_recv(), Ok(DataEvent::Instrument(_))));
         assert!(matches!(
             receiver.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(Data::Instrument(_)))
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(DataEvent::Data(Data::InstrumentStatus(_)))
         ));
 
         match receiver
             .try_recv()
             .expect("status event for repeat definition")
         {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4367,31 +4370,34 @@ mod tests {
             ws_instruments_message(swap_definition("0.5")),
         );
 
-        assert!(matches!(receiver.try_recv(), Ok(DataEvent::Instrument(_))));
         assert!(matches!(
             receiver.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(Data::Instrument(_)))
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(DataEvent::Data(Data::InstrumentStatus(_)))
         ));
 
         match receiver.try_recv().expect("republished instrument") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.id(), InstrumentId::from("BTC-USDT-SWAP.OKX"));
                 assert_eq!(instrument.price_increment(), Price::from("0.5"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
 
         match receiver
             .try_recv()
             .expect("status for republished instrument")
         {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(receiver.try_recv().is_err());
 
@@ -4423,13 +4429,13 @@ mod tests {
             .try_recv()
             .expect("status event for invalid definition")
         {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4467,8 +4473,10 @@ mod tests {
 
         while let Ok(event) = receiver.try_recv() {
             match event {
-                DataEvent::Instrument(instrument) => published.push(instrument.id()),
-                DataEvent::InstrumentStatus(status) => statuses.push(status.instrument_id),
+                DataEvent::Data(Data::Instrument(instrument)) => published.push(instrument.id()),
+                DataEvent::Data(Data::InstrumentStatus(status)) => {
+                    statuses.push(status.instrument_id);
+                }
                 other => panic!("Unexpected event {other:?}"),
             }
         }
@@ -4512,13 +4520,13 @@ mod tests {
         );
 
         match receiver.try_recv().expect("status event") {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4543,14 +4551,14 @@ mod tests {
         );
 
         match receiver.try_recv().expect("instrument event") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.id(), InstrumentId::from("BTC-USD-SWAP.OKX"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
         assert!(matches!(
             receiver.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(Data::InstrumentStatus(_)))
         ));
         assert_eq!(instruments_by_symbol.load().len(), 1);
     }
@@ -4580,13 +4588,13 @@ mod tests {
         );
 
         match receiver.try_recv().expect("status event") {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("ETH-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4605,14 +4613,14 @@ mod tests {
         );
 
         match receiver.try_recv().expect("instrument event") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.id(), InstrumentId::from("BTC-USDT-SWAP.OKX"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
         assert!(matches!(
             receiver.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(Data::InstrumentStatus(_)))
         ));
         assert_eq!(instruments_by_symbol.load().len(), 1);
     }
@@ -4754,13 +4762,13 @@ mod tests {
         );
 
         match receiver.try_recv().expect("status event") {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4943,8 +4951,8 @@ mod tests {
         receiver: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) -> Vec<InstrumentAny> {
         let mut events = Vec::new();
-        while let Ok(DataEvent::Instrument(instrument)) = receiver.try_recv() {
-            events.push(instrument);
+        while let Ok(DataEvent::Data(Data::Instrument(instrument))) = receiver.try_recv() {
+            events.push(*instrument);
         }
         events
     }
@@ -5282,8 +5290,9 @@ mod tests {
         });
 
         let event = receiver.recv().await.expect("instrument event");
-        let DataEvent::Instrument(instrument) = event else {
-            panic!("Expected DataEvent::Instrument, was {event:?}");
+
+        let DataEvent::Data(Data::Instrument(instrument)) = event else {
+            panic!("Expected DataEvent::Data(Data::Instrument(...)), was {event:?}");
         };
 
         assert!(
@@ -5386,10 +5395,10 @@ mod tests {
         }
 
         match receiver.try_recv().expect("concurrent update event") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.price_increment(), Price::from("0.5"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
 
         gate.add_permits(1);

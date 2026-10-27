@@ -598,7 +598,7 @@ impl HyperliquidDataClient {
                                 }
                                 NautilusWsMessage::FundingRate(update) => {
                                     if let Err(e) = data_sender
-                                        .send(DataEvent::FundingRate(update))
+                                        .send(DataEvent::Data(Data::FundingRate(update)))
                                     {
                                         log::error!("Failed to send funding rate update: {e}");
                                     }
@@ -752,7 +752,7 @@ impl DataClient for HyperliquidDataClient {
             .context("failed to bootstrap instruments")?;
 
         for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::warn!("Failed to send instrument: {e}");
             }
         }
@@ -974,7 +974,7 @@ impl DataClient for HyperliquidDataClient {
             if let Some(instrument) = instruments.get(&instrument_id) {
                 if let Err(e) = self
                     .data_sender
-                    .send(DataEvent::Instrument(instrument.clone()))
+                    .send(DataEvent::Data(instrument.clone().into()))
                 {
                     log::error!("Failed to send instrument {instrument_id}: {e}");
                 }
@@ -1792,7 +1792,7 @@ async fn refresh_instruments(
 /// Reconciles the instrument caches against a fetched instrument universe.
 ///
 /// Caches and publishes new or materially changed definitions as
-/// [`DataEvent::Instrument`]. Unchanged definitions are not republished. Cached
+/// [`DataEvent::Data`]. Unchanged definitions are not republished. Cached
 /// instruments absent from `fetched` are retained because they may still back
 /// open subscriptions.
 ///
@@ -1823,7 +1823,7 @@ async fn reconcile_instruments(
     // publish before awaiting the mapping rebuild, so a pass cancelled during the
     // rebuild cannot leave these definitions cached but unpublished
     for instrument in &changed {
-        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument.clone())) {
+        if let Err(e) = data_sender.send(DataEvent::Data(instrument.clone().into())) {
             log::warn!("Failed to send instrument: {e}");
         }
     }

@@ -470,9 +470,9 @@ impl ClientOutput {
     #[pyo3(name = "instrument")]
     fn py_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.sender()?;
-        self.send(DataEvent::Instrument(pyobject_to_instrument_any(
-            py, instrument,
-        )?))
+        self.send(DataEvent::Data(
+            pyobject_to_instrument_any(py, instrument)?.into(),
+        ))
     }
 
     #[pyo3(name = "data")]

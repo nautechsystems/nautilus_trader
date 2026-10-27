@@ -350,7 +350,7 @@ async fn connected(
     let mut client = CoinApiDataClient::new(client_id(), config(http, ws, &[BTC_USD])).unwrap();
     client.connect().await.unwrap();
 
-    let DataEvent::Instrument(instrument) = next_event(rx).await else {
+    let DataEvent::Data(Data::Instrument(instrument)) = next_event(rx).await else {
         panic!("expected instrument");
     };
 
@@ -372,7 +372,7 @@ async fn connect_loads_selection_and_streams_domain_events() {
         client.connect().await.unwrap();
 
         // The response also lists COINBASE_SPOT_BTC_USDT, which is not selected
-        let DataEvent::Instrument(instrument) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(instrument)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -456,7 +456,7 @@ async fn price_precision_override_loads_finer_instrument_and_admits_its_prices()
         let mut client = CoinApiDataClient::new(client_id(), config).unwrap();
         client.connect().await.unwrap();
 
-        let DataEvent::Instrument(instrument) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(instrument)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -1363,7 +1363,7 @@ async fn missing_initial_snapshot_restarts_pair_after_deadline() {
         let mut client = CoinApiDataClient::new(client_id(), config).unwrap();
         client.connect().await.unwrap();
 
-        let DataEvent::Instrument(_) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(_)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -1460,7 +1460,7 @@ async fn missing_replayed_snapshot_restarts_pair_after_reconnect() {
         client.connect().await.unwrap();
         assert!(matches!(
             next_event(&mut rx).await,
-            DataEvent::Instrument(_)
+            DataEvent::Data(Data::Instrument(_))
         ));
         let mut checker = BookStreamChecker::new(BookType::L2_MBP, true);
         checker.open(instrument_id());
@@ -1551,7 +1551,7 @@ async fn shutdown_closes_socket_and_reconnects_with_fresh_book_scope(
 
         drop(socket);
         client.connect().await.unwrap();
-        assert!(matches!(next_event(&mut rx).await, DataEvent::Instrument(_)));
+        assert!(matches!(next_event(&mut rx).await, DataEvent::Data(Data::Instrument(_))));
         subscribe_book_deltas(&mut client, BookType::L2_MBP).unwrap();
         let mut socket = accept(&ws_listener).await;
         let replay = next_text(&mut socket).await;
@@ -1842,7 +1842,7 @@ async fn instrument_refresh_preserves_stream_symbol(#[case] plural: bool) {
         client.disconnect().await.unwrap();
         client.connect().await.unwrap();
 
-        let DataEvent::Instrument(instrument) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(instrument)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -1877,7 +1877,7 @@ async fn connect_after_disconnect_restores_streaming() {
         assert!(client.is_disconnected());
         client.connect().await.unwrap();
 
-        let DataEvent::Instrument(instrument) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(instrument)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 

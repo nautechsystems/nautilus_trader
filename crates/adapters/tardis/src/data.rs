@@ -346,7 +346,9 @@ impl TardisDataClient {
     ) -> bool {
         if let Some(funding) = parse_tardis_ws_message_funding_rate(ws_msg.clone(), info)
             && cache.should_emit_funding_rate(&funding)
-            && sender.send(DataEvent::FundingRate(funding)).is_err()
+            && sender
+                .send(DataEvent::Data(Data::FundingRate(funding)))
+                .is_err()
         {
             return false;
         }
@@ -609,7 +611,7 @@ impl DataClient for TardisDataClient {
             .map_err(|e| anyhow::anyhow!("Failed to bootstrap instruments: {e}"))?;
 
         for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::error!("Failed to send instrument event: {e}");
             }
         }

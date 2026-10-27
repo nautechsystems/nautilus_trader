@@ -715,7 +715,9 @@ fn handle_ws_message(
 
                     match parse_ticker_linear_funding(&merged, instrument_id, ts_event, ts_init) {
                         Ok(update) => {
-                            if let Err(e) = data_sender.send(DataEvent::FundingRate(update)) {
+                            if let Err(e) =
+                                data_sender.send(DataEvent::Data(Data::FundingRate(update)))
+                            {
                                 log::error!("Failed to emit funding rate event: {e}");
                             }
                         }
@@ -781,7 +783,9 @@ fn handle_ws_message(
             if option_greeks_subs.contains(&instrument_id) {
                 match parse_ticker_option_greeks(msg, instrument, ts_init) {
                     Ok(greeks) => {
-                        if let Err(e) = data_sender.send(DataEvent::OptionGreeks(greeks)) {
+                        if let Err(e) =
+                            data_sender.send(DataEvent::Data(Data::OptionGreeks(greeks)))
+                        {
                             log::error!("Failed to send option greeks: {e}");
                         }
                     }
@@ -1051,7 +1055,7 @@ impl DataClient for BybitDataClient {
         }
 
         for instrument in all_instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::warn!("Failed to send instrument: {e}");
             }
         }
@@ -3625,7 +3629,7 @@ pub(crate) mod tests {
         );
 
         let event = rx.try_recv().unwrap();
-        assert!(matches!(event, DataEvent::FundingRate(_)));
+        assert!(matches!(event, DataEvent::Data(Data::FundingRate(_))));
 
         // Send same message again, funding unchanged so should be deduped
         let ws_msg2 = BybitWsMessage::TickerLinear(msg);
@@ -3921,7 +3925,7 @@ pub(crate) mod tests {
         );
 
         let event = rx.try_recv().unwrap();
-        assert!(matches!(event, DataEvent::OptionGreeks(_)));
+        assert!(matches!(event, DataEvent::Data(Data::OptionGreeks(_))));
     }
 
     #[rstest]

@@ -242,7 +242,7 @@ pub(super) fn publish_cached_condition_closed(
     for instrument in &updated {
         let instrument_id = instrument.id();
         if let Some(latest) = instruments.get_cloned(&instrument_id)
-            && let Err(e) = data_sender.send(DataEvent::Instrument(latest))
+            && let Err(e) = data_sender.send(DataEvent::Data(latest.into()))
         {
             log::warn!("Failed to publish market closure update for {instrument_id}: {e}");
         }
@@ -323,7 +323,7 @@ pub(super) fn cache_and_publish_instruments(
     // Keep the update guard through publication so live tick updates cannot overtake this batch
     for instrument in pending {
         let instrument_id = instrument.id();
-        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument)) {
+        if let Err(e) = data_sender.send(DataEvent::Data(instrument.into())) {
             log::warn!("Failed to publish instrument {instrument_id}: {e}");
         }
     }
@@ -526,7 +526,7 @@ pub(super) async fn refresh_expired_market_closure(
 
         // Retirement wins if the instrument was removed after the cache update
         if let Some(latest) = cache.get_cloned(&instrument_id)
-            && let Err(e) = sender.send(DataEvent::Instrument(latest))
+            && let Err(e) = sender.send(DataEvent::Data(latest.into()))
         {
             log::warn!("Failed to publish market closure update for {instrument_id}: {e}");
         }
@@ -655,6 +655,7 @@ mod tests {
     use nautilus_common::live::runner::replace_data_event_sender;
     use nautilus_core::UnixNanos;
     use nautilus_model::{
+        data::Data,
         enums::AssetClass,
         identifiers::{ClientId, Symbol},
         instruments::BinaryOption,
@@ -902,7 +903,7 @@ mod tests {
         );
         let events = std::iter::from_fn(|| rx.try_recv().ok())
             .map(|event| match event {
-                DataEvent::Instrument(instrument) => instrument,
+                DataEvent::Data(Data::Instrument(instrument)) => *instrument,
                 _ => panic!("Expected instrument event"),
             })
             .collect::<Vec<_>>();
@@ -1002,7 +1003,7 @@ mod tests {
             assert_eq!(token.instrument_id, instrument.id());
             assert_eq!(token.neg_risk, Some(true));
             assert!(
-                matches!(&events[0], DataEvent::Instrument(published) if published == &instrument)
+                matches!(&events[0], DataEvent::Data(Data::Instrument(published)) if published.as_ref() == &instrument)
             );
         }
     }
@@ -1059,7 +1060,7 @@ mod tests {
         assert_eq!(events.len(), 2);
 
         for event in events {
-            let DataEvent::Instrument(instrument) = event else {
+            let DataEvent::Data(Data::Instrument(instrument)) = event else {
                 panic!("expected instrument");
             };
 
@@ -1067,7 +1068,7 @@ mod tests {
             assert_eq!(market_closed(&instrument), Some(false));
             assert_eq!(
                 client.instruments.get_cloned(&instrument.id()),
-                Some(instrument)
+                Some(*instrument)
             );
         }
     }
@@ -1151,7 +1152,8 @@ mod tests {
         };
 
         assert_eq!(publish(), 1);
-        let DataEvent::Instrument(published) = rx.try_recv().unwrap() else {
+
+        let DataEvent::Data(Data::Instrument(published)) = rx.try_recv().unwrap() else {
             panic!("Expected closure instrument event");
         };
         let cached = instruments.get_cloned(&instrument.id()).unwrap();
@@ -1281,7 +1283,8 @@ mod tests {
             assert_eq!(cached.ts_init(), observed_at);
             assert_eq!(cached.ts_event(), observed_at);
             let event = rx.try_recv().expect("closure instrument event");
-            let DataEvent::Instrument(published) = event else {
+
+            let DataEvent::Data(Data::Instrument(published)) = event else {
                 panic!("Expected instrument event, was {event:?}");
             };
             assert_eq!(published.id(), instrument.id());

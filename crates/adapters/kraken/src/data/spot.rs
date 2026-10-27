@@ -1045,7 +1045,7 @@ impl DataClient for KrakenSpotDataClient {
         }
 
         for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::error!("Failed to send instrument: {e}");
             }
         }

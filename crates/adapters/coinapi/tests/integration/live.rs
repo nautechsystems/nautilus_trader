@@ -538,7 +538,7 @@ async fn bounded_data_client_smoke() {
     let mut client = CoinApiDataClient::new(client_id, config).unwrap();
     client.connect().await.unwrap();
 
-    let Some(DataEvent::Instrument(instrument)) = rx.recv().await else {
+    let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await else {
         panic!("expected instrument");
     };
 
@@ -820,7 +820,7 @@ async fn bounded_book_smoke() {
     let mut client = CoinApiDataClient::new(client_id, config).unwrap();
     client.connect().await.unwrap();
 
-    let Some(DataEvent::Instrument(instrument)) = rx.recv().await else {
+    let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await else {
         panic!("expected instrument");
     };
 
@@ -1110,7 +1110,7 @@ async fn bounded_history_smoke() {
     let mut client = CoinApiDataClient::new(client_id, config).unwrap();
     client.connect().await.unwrap();
 
-    let Some(DataEvent::Instrument(instrument)) = rx.recv().await else {
+    let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await else {
         panic!("expected instrument");
     };
 

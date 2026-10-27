@@ -383,7 +383,9 @@ fn dispatch_ws_message(
             // Coinbase publishes status for every product on a single feed,
             // so filter to currently-subscribed instruments before emitting.
             let subscribed = status_subs.lock().contains(&status.instrument_id);
-            if subscribed && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(*status)) {
+            if subscribed
+                && let Err(e) = data_sender.send(DataEvent::Data(Data::InstrumentStatus(*status)))
+            {
                 log::error!("Failed to send instrument status: {e}");
             }
         }
@@ -478,7 +480,7 @@ impl DataClient for CoinbaseDataClient {
                 .context("failed to bootstrap instruments")?;
 
             for instrument in instruments {
-                if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+                if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                     log::warn!("Failed to send instrument: {e}");
                 }
             }
@@ -528,7 +530,7 @@ impl DataClient for CoinbaseDataClient {
             if let Some(instrument) = instruments.get(&instrument_id) {
                 if let Err(e) = self
                     .data_sender
-                    .send(DataEvent::Instrument(instrument.clone()))
+                    .send(DataEvent::Data(instrument.clone().into()))
                 {
                     log::error!("Failed to send instrument {instrument_id}: {e}");
                 }
@@ -1284,10 +1286,10 @@ mod tests {
         dispatch_ws_message(make_status_event(instrument_id), &tx.into(), &subs);
 
         match rx.try_recv() {
-            Ok(DataEvent::InstrumentStatus(status)) => {
+            Ok(DataEvent::Data(Data::InstrumentStatus(status))) => {
                 assert_eq!(status.instrument_id, instrument_id);
             }
-            other => panic!("expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
     }
 

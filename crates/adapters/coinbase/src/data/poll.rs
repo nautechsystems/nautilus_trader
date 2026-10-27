@@ -347,7 +347,7 @@ pub(crate) fn emit_deriv_updates(
                     ts_now,
                 );
 
-                if let Err(e) = sender.send(DataEvent::FundingRate(update)) {
+                if let Err(e) = sender.send(DataEvent::Data(Data::FundingRate(update))) {
                     log::error!("Failed to send FundingRateUpdate for {instrument_id}: {e}");
                 }
             }
@@ -455,7 +455,7 @@ mod tests {
                 DataEvent::Data(Data::IndexPrice(ip)) => {
                     got_index = Some(ip);
                 }
-                DataEvent::FundingRate(fr) => got_funding = Some(fr),
+                DataEvent::Data(Data::FundingRate(fr)) => got_funding = Some(fr),
                 _ => {}
             }
         }
@@ -813,7 +813,7 @@ mod tests {
                 DataEvent::Data(Data::IndexPrice(_)) => {
                     got_index = true;
                 }
-                DataEvent::FundingRate(_) => got_funding = true,
+                DataEvent::Data(Data::FundingRate(_)) => got_funding = true,
                 _ => {}
             }
         }
@@ -891,7 +891,7 @@ mod tests {
                 DataEvent::Data(Data::IndexPrice(_)) => {
                     got_index = true;
                 }
-                DataEvent::FundingRate(_) => got_funding = true,
+                DataEvent::Data(Data::FundingRate(_)) => got_funding = true,
                 _ => {}
             }
         }
@@ -922,7 +922,7 @@ mod tests {
         let mut got_funding = None;
 
         while let Ok(evt) = rx.try_recv() {
-            if let DataEvent::FundingRate(fr) = evt {
+            if let DataEvent::Data(Data::FundingRate(fr)) = evt {
                 got_funding = Some(fr);
             }
         }

@@ -380,7 +380,7 @@ impl BetfairDataClient {
 
                                     for inst in new_instruments {
                                         if let Err(e) =
-                                            data_sender.send(DataEvent::Instrument(inst))
+                                            data_sender.send(DataEvent::Data(inst.into()))
                                         {
                                             log::warn!("Failed to send instrument: {e}");
                                         }
@@ -400,8 +400,8 @@ impl BetfairDataClient {
                                 for event in
                                     parse_instrument_statuses(&mc.id, def, ts_event, ts_init)
                                 {
-                                    if let Err(e) =
-                                        data_sender.send(DataEvent::InstrumentStatus(event))
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::Data(Data::InstrumentStatus(event)))
                                     {
                                         log::warn!("Failed to send instrument status: {e}");
                                     }
@@ -805,7 +805,7 @@ impl DataClient for BetfairDataClient {
         });
 
         for inst in &loaded {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(inst.clone())) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(inst.clone().into())) {
                 log::warn!("Failed to send instrument: {e}");
             }
         }

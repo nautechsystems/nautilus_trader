@@ -368,7 +368,7 @@ impl KrakenFuturesDataClient {
                 }
 
                 if let Some(funding) = parse_futures_ws_funding_rate(&ticker, instrument, ts_init)
-                    && let Err(e) = sender.send(DataEvent::FundingRate(funding))
+                    && let Err(e) = sender.send(DataEvent::Data(Data::FundingRate(funding)))
                 {
                     log::error!("Failed to send funding rate: {e}");
                 }
@@ -633,7 +633,7 @@ impl DataClient for KrakenFuturesDataClient {
         }
 
         for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::error!("Failed to send instrument: {e}");
             }
         }
