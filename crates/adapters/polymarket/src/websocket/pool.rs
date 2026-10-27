@@ -35,6 +35,7 @@ use std::sync::{
 };
 
 use ahash::AHashMap;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use nautilus_live::{
     SocketControlFactory,
     book::snapshot::SnapshotGate,
@@ -97,17 +98,30 @@ struct PoolState {
 struct PoolDrain<'a> {
     owner: &'a Mutex<PoolState>,
     state: PoolState,
+    completed: Vec<usize>,
 }
 
 impl<'a> PoolDrain<'a> {
     fn take(owner: &'a Mutex<PoolState>) -> Self {
         let state = std::mem::take(&mut *owner.lock());
-        Self { owner, state }
+        Self {
+            owner,
+            state,
+            completed: Vec::new(),
+        }
     }
 }
 
 impl Drop for PoolDrain<'_> {
     fn drop(&mut self) {
+        for id in &self.completed {
+            self.state.shards.remove(id);
+        }
+
+        // Prune once, including when cancellation interrupts the drain
+        self.state
+            .assignments
+            .retain(|_, id| self.state.shards.contains_key(id));
         *self.owner.lock() = std::mem::take(&mut self.state);
     }
 }
@@ -308,55 +322,56 @@ impl PolymarketMarketConnectionPool {
         let _wire = self.inner.wire_mutex.lock().await;
 
         let mut drain = PoolDrain::take(&self.inner.state);
-        let shard_ids = drain.state.shards.keys().copied().collect::<Vec<_>>();
-        for shard_id in shard_ids {
-            let shard = drain
+        {
+            let errors = Mutex::new(&mut drain.state.shutdown_errors);
+            let mut disconnects = drain
                 .state
                 .shards
-                .get_mut(&shard_id)
-                .expect("market shard ID collected from pool state");
-            let mut shard_failed = false;
+                .iter_mut()
+                .map(|(&shard_id, shard)| {
+                    let errors = &errors;
+                    async move {
+                        let mut failed = false;
+                        shard.forwarder.abort();
+                        if let Some(outcome) = finish_task(
+                            &mut shard.forwarder,
+                            std::time::Duration::ZERO,
+                            std::time::Duration::from_secs(2),
+                        )
+                        .await
+                        {
+                            match outcome {
+                                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                                TaskJoinOutcome::Failed(error) => {
+                                    failed = true;
+                                    errors.lock().push(format!(
+                                        "market shard {shard_id} forwarder failed: {error}"
+                                    ));
+                                }
+                                TaskJoinOutcome::Incomplete => {
+                                    failed = true;
+                                    errors.lock().push(format!(
+                                        "market shard {shard_id} forwarder did not stop after abort"
+                                    ));
+                                }
+                            }
+                        }
 
-            shard.forwarder.abort();
-            if let Some(outcome) = finish_task(
-                &mut shard.forwarder,
-                std::time::Duration::ZERO,
-                std::time::Duration::from_secs(2),
-            )
-            .await
-            {
-                match outcome {
-                    TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
-                    TaskJoinOutcome::Failed(error) => {
-                        shard_failed = true;
-                        drain
-                            .state
-                            .shutdown_errors
-                            .push(format!("market shard {shard_id} forwarder failed: {error}"));
+                        if let Err(e) = shard.client.disconnect().await {
+                            failed = true;
+                            errors
+                                .lock()
+                                .push(format!("market shard {shard_id} disconnect failed: {e}"));
+                        }
+                        (shard_id, failed)
                     }
-                    TaskJoinOutcome::Incomplete => {
-                        shard_failed = true;
-                        drain.state.shutdown_errors.push(format!(
-                            "market shard {shard_id} forwarder did not stop after abort"
-                        ));
-                    }
+                })
+                .collect::<FuturesUnordered<_>>();
+
+            while let Some((shard_id, failed)) = disconnects.next().await {
+                if !failed {
+                    drain.completed.push(shard_id);
                 }
-            }
-
-            if let Err(e) = shard.client.disconnect().await {
-                shard_failed = true;
-                drain
-                    .state
-                    .shutdown_errors
-                    .push(format!("market shard {shard_id} disconnect failed: {e}"));
-            }
-
-            if !shard_failed {
-                drain.state.shards.remove(&shard_id);
-                drain
-                    .state
-                    .assignments
-                    .retain(|_, assigned_id| *assigned_id != shard_id);
             }
         }
 
@@ -1191,6 +1206,83 @@ mod tests {
             restored.shutdown_errors,
             vec!["before drain", "during drain"]
         );
+    }
+
+    async fn blocked_forwarder() -> (TaskSlot<()>, std::sync::mpsc::Sender<()>) {
+        let (release, blocked) = std::sync::mpsc::channel();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let handle = tokio::task::spawn_blocking(move || {
+            let _ = started.send(());
+            let _ = blocked.recv();
+        });
+        ready.await.unwrap();
+        (TaskSlot::from_handle(handle), release)
+    }
+
+    #[rstest]
+    #[case::single(1)]
+    #[case::many(64)]
+    #[tokio::test(start_paused = true)]
+    async fn pool_disconnects_concurrently_and_preserves_failures(#[case] count: usize) {
+        let pool = PolymarketMarketConnectionPool::new(None, false, TransportBackend::default(), 1);
+        let mut state = state_with_shards(&vec![1; count]);
+        let mut releases = Vec::new();
+
+        for (&id, shard) in &mut state.shards {
+            let (forwarder, release) = blocked_forwarder().await;
+            shard.forwarder = forwarder;
+            releases.push(release);
+            state.assignments.insert(Ustr::from(&id.to_string()), id);
+        }
+        *pool.inner.state.lock() = state;
+
+        let started = tokio::time::Instant::now();
+        let expected = Duration::from_secs(2);
+        let mut disconnect = std::pin::pin!(pool.disconnect());
+        let result = loop {
+            if let std::task::Poll::Ready(result) = futures_util::poll!(disconnect.as_mut()) {
+                break result;
+            }
+            assert!(started.elapsed() < expected + Duration::from_secs(1));
+            tokio::time::advance(Duration::from_millis(100)).await;
+        };
+        assert!(started.elapsed() >= expected);
+        let error = result.unwrap_err().to_string();
+        let failures = error.matches("forwarder did not stop after abort");
+        assert_eq!(failures.count(), count);
+        assert_eq!(pool.connection_count(), count);
+        assert_eq!(pool.subscription_count(), count);
+
+        drop(releases);
+        pool.disconnect().await.expect("cleanup retry");
+        assert_eq!(pool.connection_count(), 0);
+        assert_eq!(pool.subscription_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn canceled_pool_disconnect_restores_only_unfinished_ownership() {
+        let pool = PolymarketMarketConnectionPool::new(None, false, TransportBackend::default(), 1);
+        let mut state = state_with_shards(&[1, 1]);
+        let (forwarder, release) = blocked_forwarder().await;
+        state.shards.get_mut(&1).unwrap().forwarder = forwarder;
+        state.assignments = AHashMap::from([(Ustr::from("done"), 0), (Ustr::from("pending"), 1)]);
+        *pool.inner.state.lock() = state;
+
+        {
+            let mut disconnect = std::pin::pin!(pool.disconnect());
+            assert!(futures_util::poll!(disconnect.as_mut()).is_pending());
+        }
+        assert_eq!(pool.connection_count(), 1);
+        assert_eq!(
+            pool.inner.state.lock().assignments,
+            AHashMap::from([(Ustr::from("pending"), 1)])
+        );
+
+        drop(release);
+        pool.disconnect().await.expect("cleanup retry");
+        assert_eq!(pool.connection_count(), 0);
+        assert_eq!(pool.subscription_count(), 0);
     }
 
     #[rstest]
