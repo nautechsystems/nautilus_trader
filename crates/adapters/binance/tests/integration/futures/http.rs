@@ -45,7 +45,10 @@ use nautilus_binance::{
     },
 };
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{
+    nanos::UnixNanos,
+    time::{AtomicTime, get_atomic_clock_realtime},
+};
 use nautilus_model::{
     data::BarType,
     enums::{AssetClass, MarketStatusAction},
@@ -698,6 +701,40 @@ async fn test_request_instruments_applies_filters_and_retains_raw_metadata() {
             .instruments_cache()
             .contains_key(&Ustr::from("BTCUSDT_260925"))
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_instruments_stamps_ts_init_from_clock() {
+    let addr = start_test_server(TestServerState::default()).await.unwrap();
+    let now = UnixNanos::from(1_700_000_000_000_000_001u64);
+    let clock = Box::leak(Box::new(AtomicTime::new(false, now)));
+    let client = BinanceFuturesHttpClient::new(
+        BinanceProductType::UsdM,
+        BinanceEnvironment::Live,
+        clock,
+        None,
+        None,
+        Some(format!("http://{addr}")),
+        None,
+        Some(60),
+        None,
+        false,
+    )
+    .unwrap();
+
+    let instruments = client.request_instruments().await.unwrap();
+
+    assert!(!instruments.is_empty());
+    for instrument in &instruments {
+        assert_eq!(
+            instrument.ts_init(),
+            now,
+            "instrument {} must carry the client clock, not Unix epoch",
+            instrument.id()
+        );
+        assert_eq!(instrument.ts_event(), now);
+    }
 }
 
 #[rstest]
