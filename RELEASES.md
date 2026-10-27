@@ -1,6 +1,6 @@
 # NautilusTrader 2.0.0rc8
 
-Released on TBD (UTC).
+Released on 28th October 2026 (UTC).
 
 ### Enhancements
 
@@ -34,7 +34,7 @@ Released on TBD (UTC).
 - Added Interactive Brokers `max_reconnect_attempts` configuration (#5392), thanks @tradatious
 - Added liquidation prices to Lighter position status reports
 - Added proactive Lighter WebSocket reconnects on venue `shutdown` notices
-- Added Lighter Rust APIs for account-wide cancellation and manual scheduled cancellation with revocation
+- Added Lighter APIs for account-wide cancellation and manual scheduled cancellation with revocation
 - Added Lighter execution-client scheduled cancellation with automatic renewal
 - Added Lighter self-trade behavior and account-scope order params with explicit defaults
 - Added OKX startup reconciliation history page limits (#5279), thanks for reporting @almostintuitive
@@ -48,8 +48,8 @@ Released on TBD (UTC).
 - Removed Hyperliquid `Secrets::from_file` and `from_json`; use `from_private_key` or `from_env`
 - Removed Polymarket `FeeRateResponse::to_rate` and Gamma `set_clob_client` and `clob_client` methods
 - Replaced flat `BacktestDataConfig` catalog fields with `catalog: DataCatalogConfig`
-- Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
 - Replaced `ExecutionReportTask.result` with synchronous `finish`; join the collection worker first
+- Renamed `Params::new()` to `Params::empty()` and `Params::from_index_map` to `Params::new(map)`
 - Changed simulated `MARK_PRICE` triggers to require mark updates; sandbox mark triggers remain unsupported
 - Changed buffered `HttpClient` bodies to decode gzip; remove manual decoding or use `get_stream` for raw bytes
 - Changed `DataIterator::{peek, next, next_stream_item}` to return `Result<ReplayPoll<_>>`; handle all states
@@ -134,6 +134,7 @@ Released on TBD (UTC).
 - Fixed Python margin balance and account reconstruction aborting on invalid instrument IDs
 - Fixed JSON decimal deserialization panics on `i32::MIN` exponents in builds with overflow checks enabled
 - Fixed HTTP `Referer` headers exposing URL paths and query parameters on cross-origin redirects
+- Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
 
 ### Fixes
 
@@ -160,7 +161,6 @@ Released on TBD (UTC).
 - Fixed external JSON and MessagePack DeFi blocks losing their chain identity
 - Fixed DeFi swap simulation and replay hanging at bounds or accepting unreachable price limits
 - Fixed SBE market data decoding panics on invalid prices and quantities
-- Fixed Feather run recovery modifying files outside the catalog through path traversal or symlinks
 - Fixed Parquet writes of mixed custom data; conflicting file groups fail before writing (#5405), thanks @faysou
 - Fixed reconciliation leaving amended orders in `PendingUpdate` after working reports confirm changed terms
 - Fixed startup reconciliation leaving orders partially filled after venue quantity reductions
@@ -171,6 +171,8 @@ Released on TBD (UTC).
 - Fixed unbounded memory growth in `SubscriptionState` from unknown WebSocket subscription acknowledgments
 - Fixed `RetryManager` skipping minimum retry delays after operation timeouts (#5406), thanks @imbolc
 - Fixed `ExecTester` submitting replacement stop orders before cancellation acknowledgment
+- Fixed sandbox restarts reviving closed OTO children while the cache still shows them open
+- Fixed sandbox position checks creating spurious closing trades (#5357), thanks @awss1i
 - Fixed Architect AX handler stalls during book writes and uncanceled queued book replacements
 - Fixed Architect AX order tracking across uncertain submits, replacements, and simulated market order fills
 - Fixed Architect AX closed-order reports preceding their fills during reconciliation
@@ -269,8 +271,6 @@ Released on TBD (UTC).
 - Fixed Polymarket taker fill prices and fees across price levels and complementary tokens (#5404), thanks @SoYuCry
 - Fixed Polymarket accepting unsupported market protocols during discovery, trading, and position operations
 - Fixed Polymarket accepting new submissions and replacements after settlement hard faults (#4876)
-- Fixed sandbox restarts reviving closed OTO children while the cache still shows them open
-- Fixed sandbox position checks creating spurious closing trades (#5357), thanks @awss1i
 
 ### Internal Improvements
 
@@ -283,9 +283,8 @@ Released on TBD (UTC).
 - Refined live reconciliation report collection and task ownership
 - Refined live execution reconciliation to share cached-order processing and simplify position coverage checks
 - Restored default-feature compilation of `position_replay_criterion` benchmarks
-- Standardized Architect AX owned execution report tasks
 - Standardized Blockchain Clippy exceptions to preserve workspace checks
-- Updated Nautilus Engineering common tooling
+- Optimized bar execution when no orders are working (#5454), thanks @mi-netizen007
 - Optimized JSON and MessagePack decoding and custom data response encoding
 - Optimized order last-event reads to avoid collecting history (#5412), thanks @graceyangfan
 - Optimized passive limit matching and L1 queue tracking with many orders behind the BBO
@@ -293,10 +292,13 @@ Released on TBD (UTC).
 - Optimized position reconciliation checks for already-applied fill reports
 - Optimized typed message router subscription registration and removal (#5426), thanks @imbolc
 - Optimized virtual hedging fill-history checks during execution and reconciliation
+- Standardized Architect AX owned execution report tasks
+- Removed unused Interactive Brokers data farm degradation timestamps (#5376), thanks @tradatious
 - Optimized Polymarket instrument caching during bootstrap and refresh (#5373), thanks @imbolc
+- Optimized Polymarket market WebSocket shutdown (#5443), thanks @imbolc
 - Optimized Polymarket snapshot diffs and trade ID formatting
 - Optimized Polymarket subscription registration and resolution watchlists (#5438), thanks @imbolc
-- Removed unused Interactive Brokers data farm degradation timestamps (#5376), thanks @tradatious
+- Updated Nautilus Engineering common tooling
 - Upgraded Rust (MSRV) to 1.99.1
 - Upgraded `cargo-codspeed` tool to v5.0.3
 - Upgraded `cargo-edit` tool to v0.13.14
@@ -316,7 +318,6 @@ Released on TBD (UTC).
 - Upgraded `arrow` and `parquet` crates to v59.3.1
 - Upgraded `aws-lc-rs` crate to v1.18.2
 - Upgraded `codspeed-criterion-compat` crate to v5.0.3
-- Upgraded `inventory` crate to v0.3.25
 - Upgraded `libc` crate to v0.2.191
 - Upgraded `parking_lot` crate to v0.13.0
 - Upgraded `proptest` crate to v1.12.0
@@ -326,7 +327,6 @@ Released on TBD (UTC).
 - Upgraded `redis` crate to v1.8.0
 - Upgraded `rstest` crate to v0.28.0
 - Upgraded `ruint` crate to v1.21.1
-- Upgraded `rustls-webpki` crate to v0.103.16
 - Upgraded `serde_json` crate to v1.0.154
 - Upgraded `smallvec` crate to v1.16.4
 - Upgraded `sockudo-ws` crate to v3.1.0 (#5345), thanks @sunlei
@@ -337,18 +337,21 @@ Released on TBD (UTC).
 - Upgraded `webpki-roots` crate to v1.0.11
 - Upgraded `certifi` package to v2026.10.19
 - Upgraded `kaleido` package to v1.5.0
-- Upgraded `polars` package (test) to v2.0.0
-- Upgraded `pyarrow` package (test) to v26.0.0
+- Upgraded `polars` package (dev) to v2.0.0
+- Upgraded `pyarrow` package (dev) to v26.0.0
 - Upgraded `ruff` package (dev) and pre-commit hook to v0.17.2
 - Upgraded `ty` package (dev) to v0.0.89
 
 ### Documentation Updates
 
 - Added `Money` exact-construction and persistence guidance
+- Added historical request batching, callback, and completion group guidance
+- Added custom Python fill, fee, margin, and latency model guidance
+- Added BDD guidance for startup reconciliation scenarios
+- Added partial release recovery and verification procedures
+- Clarified cache history ordering, indexing, and Python accessors
 - Updated Lighter funding rate units and live interval documentation (#5356), thanks @dxwil
 - Documented Polymarket taker fill averaging, fees, and settlement precision (#5415), thanks @SoYuCry
-
-### Deprecations
 
 ---
 
