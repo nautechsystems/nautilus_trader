@@ -4195,12 +4195,17 @@ impl OKXHttpClient {
 
         // Floor start to bar boundaries for cleaner API requests, then step back one bar: OKX
         // filters candles by open time, while the window is defined on the close (`ts_init`),
-        // so the bar that closes at or just after the start opens before it
+        // so the bar that closes at or just after the start opens before it. The month slot is
+        // an approximate 30 days, so months step back two slots to cover 31-day months
+        let is_month = spec.aggregation == BarAggregation::Month;
+        let lookback_ms = if is_month { 2 * slot_ms } else { slot_ms };
         let start_ms = start.map(|s| {
             let ms = s.as_millisecond();
 
             if slot_ms > 0 {
-                ((ms / slot_ms) * slot_ms).saturating_sub(slot_ms)
+                ((ms / slot_ms) * slot_ms)
+                    .saturating_sub(lookback_ms)
+                    .max(0)
             } else {
                 ms
             }
@@ -4621,6 +4626,7 @@ impl OKXHttpClient {
         let coverage = if truncated {
             OKXHistoryCoverage::Truncated
         } else if !limited
+            && !is_month
             && let (Some(sns), Some(first)) = (start_ns, out.first())
             && first.ts_init.as_i64() < sns.saturating_add(slot_ns)
         {

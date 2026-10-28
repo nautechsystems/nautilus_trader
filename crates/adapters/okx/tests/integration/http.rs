@@ -9685,6 +9685,59 @@ async fn test_request_bars_window_follows_the_bar_close_time(
     assert_eq!(coverage, OKXHistoryCoverage::Complete);
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_request_bars_month_window_keeps_the_bar_that_closes_after_a_31_day_month() {
+    // OKX month candles open at midnight UTC+8 on the 1st; August 2021 has 31 days
+    let template = load_test_data("http_get_candlesticks.json")["data"][0].clone();
+    let utc8 = jiff::tz::TimeZone::fixed(jiff::tz::offset(8));
+    let candles: Vec<Value> = (0..18)
+        .map(|index| {
+            let open = jiff::civil::date(2021, 1, 1)
+                .checked_add(jiff::Span::new().months(index))
+                .unwrap()
+                .at(0, 0, 0, 0)
+                .to_zoned(utc8.clone())
+                .unwrap()
+                .timestamp();
+            let mut candle = template.clone();
+            candle[0] = json!(open.as_millisecond().to_string());
+            candle[8] = json!("1");
+            candle
+        })
+        .collect();
+    let addr = start_candlestick_server(candles).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+    let bar_type = BarType::from("BTC-USD.OKX-1-MONTH-LAST-EXTERNAL");
+    let start: Timestamp = "2021-08-31T00:00:00Z".parse().unwrap();
+    let end: Timestamp = "2022-03-01T00:00:00Z".parse().unwrap();
+
+    let (bars, coverage) = client
+        .request_bars_with_coverage(bar_type, Some(start), Some(end), None)
+        .await
+        .unwrap();
+
+    let august_close: Timestamp = "2021-08-31T16:00:00Z".parse().unwrap();
+    let to_nanos = |ts: Timestamp| UnixNanos::from(u64::try_from(ts.as_nanosecond()).unwrap());
+    assert_eq!(bars.first().unwrap().ts_init, to_nanos(august_close));
+    assert_eq!(bars.len(), 7);
+    // Month lengths vary, so a month window is never certified as covered
+    assert_eq!(coverage, OKXHistoryCoverage::Unverified);
+}
+
 /// Funding records every eight hours for the last `days`, answered as OKX does: newest first,
 /// `before` and `after` as exclusive bounds, at most 100 a page.
 async fn start_funding_rate_server(days: i64) -> SocketAddr {
