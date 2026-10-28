@@ -744,14 +744,14 @@ fn test_instrument_close_settles_open_binary_positions(
         assert_eq!(closed.closing_order_id, None);
         assert_eq!(closed.entry, OrderSide::Buy);
         assert_eq!(closed.side, PositionSide::Flat);
-        assert_eq!(closed.signed_qty, 0.0);
+        assert_eq!(closed.signed_qty, Decimal::ZERO);
         assert_eq!(closed.quantity, Quantity::from("0.00"));
         assert_eq!(closed.peak_quantity, Quantity::from(last_qty));
         assert_eq!(closed.last_qty, Quantity::from(last_qty));
         assert_eq!(closed.last_px, close.close_price);
         assert_eq!(closed.currency, Currency::USDC());
-        assert_eq!(closed.avg_px_open, avg_px_open);
-        assert_eq!(closed.avg_px_close, Some(close.close_price.as_f64()));
+        assert_eq!(closed.avg_px_open, Decimal::try_from(avg_px_open).unwrap());
+        assert_eq!(closed.avg_px_close, Some(close.close_price.as_decimal()));
         assert_eq!(closed.realized_return, position.realized_return);
         assert_eq!(closed.realized_pnl, position.realized_pnl);
         assert_eq!(closed.duration, DurationNanos::new(duration));
@@ -1823,10 +1823,12 @@ fn test_cancel_all_orders_fans_out_with_one_resolved_client_and_shared_lineage()
         cache.build_index();
     }
 
-    let mut params = Params::new();
-    params.insert(
-        "routing_hint".to_string(),
-        Value::String("cancel_all".to_string()),
+    let params = Params::new(
+        [(
+            "routing_hint".to_string(),
+            Value::String("cancel_all".to_string()),
+        )]
+        .into(),
     );
     let command_id = UUID4::new();
     let correlation_id = UUID4::new();
@@ -8641,7 +8643,7 @@ fn test_fill_price_restatement_keeps_quantity_and_updates_averages(
         assert_eq!(order.avg_px(), Some(dec!(9.47)));
         assert_eq!(stored_px, Some(original_px));
         assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
-        assert_eq!(position.avg_px_open, restated_px.as_f64());
+        assert_eq!(position.avg_px_open, restated_px.as_decimal());
         let portfolio_fills = portfolio_events
             .borrow()
             .iter()
@@ -8675,7 +8677,7 @@ fn test_fill_price_restatement_keeps_quantity_and_updates_averages(
     assert_eq!(order.filled_qty().as_decimal(), Decimal::from(2));
     assert_eq!(order.avg_px(), Some(dec!(12)));
     assert_eq!(position.quantity.as_decimal(), Decimal::from(2));
-    assert_eq!(position.avg_px_open, original_px.as_f64());
+    assert_eq!(position.avg_px_open, original_px.as_decimal());
 }
 
 #[rstest]
@@ -8817,7 +8819,7 @@ fn test_fill_price_restatement_does_not_flip_netting_position(
 
     assert_eq!(position.side, PositionSide::Short);
     assert_eq!(position.quantity.as_decimal(), Decimal::from(1));
-    assert_eq!(position.avg_px_open, Price::from("10").as_f64());
+    assert_eq!(position.avg_px_open, Price::from("10").as_decimal());
     assert_eq!(buy_order.filled_qty().as_decimal(), Decimal::from(2));
     assert_eq!(buy_order.avg_px(), Some(dec!(10.2)));
 }
@@ -10569,7 +10571,8 @@ fn test_flip_position_on_flat_position_then_filled_reusing_position_id(
         let position = cache.position(&position_id).expect("Position should exist");
         assert!(position.is_closed(), "Position should be closed (flat)");
         assert_eq!(
-            position.signed_qty, 0.0,
+            position.signed_qty,
+            Decimal::ZERO,
             "Position signed quantity should be 0"
         );
     }
@@ -16196,7 +16199,17 @@ fn test_set_manage_own_order_books(mut execution_engine: ExecutionEngine) {
 }
 
 #[rstest]
-fn test_netting_flip_creates_snapshot(mut execution_engine: ExecutionEngine) {
+#[case("100000", "150000", "0 USD", "0 USD", "0 USD")]
+#[case("1.00", "2.00", "0.000002 USD", "0.000001 USD", "0.000001 USD")]
+#[case("0.90", "1.00", "0.006000 USD", "0.005400 USD", "0.000600 USD")]
+fn test_netting_flip_creates_snapshot(
+    mut execution_engine: ExecutionEngine,
+    #[case] opening_qty: &str,
+    #[case] reversal_qty: &str,
+    #[case] commission: &str,
+    #[case] closing_commission: &str,
+    #[case] opening_commission: &str,
+) {
     let trader_id = TraderId::test_default();
     let strategy_id = StrategyId::test_default();
     let instrument = audusd_sim();
@@ -16231,7 +16244,7 @@ fn test_netting_flip_creates_snapshot(mut execution_engine: ExecutionEngine) {
         .instrument_id(instrument.id)
         .client_order_id(ClientOrderId::from("O-1"))
         .side(OrderSide::Buy)
-        .quantity(Quantity::from(100_000))
+        .quantity(Quantity::from(opening_qty))
         .build();
 
     execution_engine
@@ -16256,10 +16269,10 @@ fn test_netting_flip_creates_snapshot(mut execution_engine: ExecutionEngine) {
         &instrument.clone().into(),
         Some(TradeId::new("T-1")),
         Some(position_id),
+        Some(Price::from("1")),
         None,
         None,
-        None,
-        None,
+        Some(Money::zero(Currency::USD())),
         None,
         Some(AccountId::test_default()),
     ));
@@ -16278,7 +16291,7 @@ fn test_netting_flip_creates_snapshot(mut execution_engine: ExecutionEngine) {
         .instrument_id(instrument.id)
         .client_order_id(ClientOrderId::from("O-2"))
         .side(OrderSide::Sell)
-        .quantity(Quantity::from(150_000))
+        .quantity(Quantity::from(reversal_qty))
         .build();
 
     execution_engine
@@ -16301,10 +16314,10 @@ fn test_netting_flip_creates_snapshot(mut execution_engine: ExecutionEngine) {
         &instrument.into(),
         Some(TradeId::new("T-2")),
         Some(position_id),
+        Some(Price::from("1")),
         None,
         None,
-        None,
-        None,
+        Some(Money::from_str_exact(commission).unwrap()),
         None,
         Some(AccountId::test_default()),
     ));
@@ -16318,10 +16331,120 @@ fn test_netting_flip_creates_snapshot(mut execution_engine: ExecutionEngine) {
     let position = cache.position(&position_id).unwrap();
     assert_eq!(position.side, PositionSide::Short);
     assert!(!position.is_closed());
-    assert_eq!(position.quantity, Quantity::from(50_000));
+    let expected_qty = Quantity::from(reversal_qty)
+        .checked_sub(Quantity::from(opening_qty))
+        .unwrap();
+    assert_eq!(position.quantity, expected_qty);
+    let closed = cache.position_snapshots(Some(&position_id), None);
+    assert_eq!(closed.len(), 1);
+    let closing_fee = Money::from_str_exact(closing_commission).unwrap();
+    let opening_fee = Money::from_str_exact(opening_commission).unwrap();
+    assert_eq!(closed[0].commissions(), vec![closing_fee]);
+    assert_eq!(closed[0].realized_pnl, Some(-closing_fee));
+    assert_eq!(position.commissions(), vec![opening_fee]);
+    assert_eq!(position.realized_pnl, Some(-opening_fee));
+    assert_eq!(
+        closing_fee.checked_add(opening_fee),
+        Some(Money::from_str_exact(commission).unwrap())
+    );
 
     assert!(cache.is_position_open(&position_id));
     assert!(!cache.is_position_closed(&position_id));
+}
+
+#[rstest]
+#[case::opening_fee("1.00", "1.0000", "1.0000", "0.000001 USD", "-0.000001 USD")]
+#[case::micro_profit("0.01", "0.1234", "0.1235", "0 USD", "0.000001 USD")]
+fn test_netting_preserves_micro_fee_and_profit(
+    mut execution_engine: ExecutionEngine,
+    #[case] quantity: &str,
+    #[case] opening_px: &str,
+    #[case] closing_px: &str,
+    #[case] opening_fee: &str,
+    #[case] expected_pnl: &str,
+) {
+    let instrument = audusd_sim();
+    let strategy_id = StrategyId::test_default();
+    let position_id = PositionId::new(format!("{}-{strategy_id}", instrument.id));
+    let client_id = ClientId::from("STUB");
+
+    let stub_client = StubExecutionClient::new(
+        client_id,
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    {
+        let mut cache = execution_engine.cache().borrow_mut();
+        cache.add_instrument(instrument.clone().into()).unwrap();
+        cache.add_account(CashAccount::default().into()).unwrap();
+    }
+
+    let fee = Money::from_str_exact(opening_fee).unwrap();
+
+    for (index, side, price, commission) in [
+        (1, OrderSide::Buy, opening_px, fee),
+        (2, OrderSide::Sell, closing_px, Money::zero(Currency::USD())),
+    ] {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument.id)
+            .client_order_id(ClientOrderId::new(format!("O-MICRO-{index}")))
+            .side(side)
+            .quantity(Quantity::from(quantity))
+            .build();
+        execution_engine
+            .cache()
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(client_id), true)
+            .unwrap();
+        execution_engine.process(&TestOrderEventStubs::submitted(
+            &order,
+            AccountId::test_default(),
+        ));
+        execution_engine.process(&TestOrderEventStubs::accepted(
+            &order,
+            AccountId::test_default(),
+            VenueOrderId::new(format!("V-MICRO-{index}")),
+        ));
+        let fill = TestOrderEventStubs::filled(
+            &order,
+            &instrument.clone().into(),
+            Some(TradeId::new(format!("T-MICRO-{index}"))),
+            Some(position_id),
+            Some(Price::from(price)),
+            None,
+            None,
+            Some(commission),
+            None,
+            Some(AccountId::test_default()),
+        );
+        execution_engine.process(&fill);
+        if index == 1 {
+            let cache = execution_engine.cache().borrow();
+            let position = cache.position(&position_id).unwrap();
+            assert_eq!(position.realized_pnl, Some(-fee));
+            assert_eq!(position.quantity, Quantity::from(quantity));
+        }
+    }
+
+    let cache = execution_engine.cache().borrow();
+    let position = cache.position(&position_id).unwrap();
+
+    assert_eq!(
+        position.realized_pnl,
+        Some(Money::from_str_exact(expected_pnl).unwrap())
+    );
+    assert_eq!(position.commissions(), vec![fee]);
+    assert_eq!(position.quantity, Quantity::zero(position.size_precision));
+    assert_eq!(position.signed_qty, Decimal::ZERO);
+    assert_eq!(position.cost_open, Decimal::ZERO);
+    assert_eq!(position.realized_pnl_remainder, Decimal::ZERO);
+    assert!(cache.is_position_closed(&position_id));
 }
 
 #[rstest]

@@ -38,6 +38,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::{get, post},
 };
+use futures_util::{SinkExt, stream};
 use nautilus_binance::{
     common::{
         consts::{
@@ -71,8 +72,14 @@ use nautilus_core::UnixNanos;
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
-    enums::{AccountType, ContingencyType, OmsType, OrderSide, TimeInForce, TriggerType},
-    events::{AccountState, OrderAccepted, OrderEventAny},
+    enums::{
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        TimeInForce, TriggerType,
+    },
+    events::{
+        AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderUpdated,
+        order::spec::{OrderFilledSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
+    },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
         VenueOrderId,
@@ -81,8 +88,11 @@ use nautilus_model::{
         any::InstrumentAny,
         stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt},
     },
-    orders::{LimitOrder, Order, OrderAny, OrderList, StopLimitOrder, stubs::TestOrderEventStubs},
-    types::{AccountBalance, Money, Price, Quantity},
+    orders::{
+        LimitOrder, Order, OrderAny, OrderList, OrderTestBuilder, StopLimitOrder,
+        stubs::TestOrderEventStubs,
+    },
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -635,6 +645,7 @@ struct WsSetupState {
     user_data_subscription_rejections: Arc<AtomicUsize>,
     user_data_subscription_acks: Arc<AtomicUsize>,
     user_data_subscription_release: Arc<tokio::sync::Notify>,
+    execution_reports: Vec<serde_json::Value>,
 }
 
 impl WsSetupState {
@@ -646,6 +657,7 @@ impl WsSetupState {
             user_data_subscription_rejections: Arc::new(AtomicUsize::new(0)),
             user_data_subscription_acks: Arc::new(AtomicUsize::new(0)),
             user_data_subscription_release: Arc::new(tokio::sync::Notify::new()),
+            execution_reports: Vec::new(),
         }
     }
 
@@ -1404,6 +1416,19 @@ async fn handle_ws_setup_socket(mut socket: WebSocket, state: WsSetupState) {
                             Ok(()) => {}
                             Err(_) => break,
                         }
+
+                        let reports = state
+                            .execution_reports
+                            .iter()
+                            .map(|report| {
+                                let event = json!({"subscriptionId": 1, "event": report});
+                                Ok(Message::Text(event.to_string().into()))
+                            })
+                            .collect::<Vec<_>>();
+
+                        let mut reports = stream::iter(reports);
+
+                        socket.send_all(&mut reports).await.unwrap();
                     }
                     _ => {}
                 }
@@ -1545,6 +1570,11 @@ async fn start_exec_test_server_with_command_responses(
 
 async fn start_ws_setup_test_server(behavior: WsSetupBehavior) -> (SocketAddr, WsSetupState) {
     let state = WsSetupState::new(behavior);
+    let addr = start_ws_setup_server(state.clone()).await;
+    (addr, state)
+}
+
+async fn start_ws_setup_server(state: WsSetupState) -> SocketAddr {
     let router = Router::new()
         .route("/ws-api/v3", get(handle_ws_setup))
         .with_state(state.clone());
@@ -1557,7 +1587,7 @@ async fn start_ws_setup_test_server(behavior: WsSetupBehavior) -> (SocketAddr, W
             .unwrap();
     });
 
-    (addr, state)
+    addr
 }
 
 fn create_test_execution_client(
@@ -1738,6 +1768,889 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
 
     let account = AccountAny::Cash(CashAccount::new(account_state, true, false));
     cache.borrow_mut().add_account(account).unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_restores_active_order_ownership(
+    #[values(false, true)] partially_filled: bool,
+) {
+    let addr = start_exec_test_server().await;
+    let account_id = AccountId::from("BINANCE-001");
+    let cid = ClientOrderId::from("retained-owner");
+    let mut state = WsSetupState::new(WsSetupBehavior::CompleteSetup);
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../test_data/spot/user_data_json/execution_report_new.json"
+    ))
+    .unwrap();
+    report["s"] = json!("BTCUSDT");
+    report["c"] = json!(encode_broker_id(&cid, BINANCE_NAUTILUS_SPOT_BROKER_ID));
+    report["q"] = json!("0.00300000");
+    report["p"] = json!("50000.00000000");
+    if partially_filled {
+        let mut replay = report.clone();
+        replay["x"] = json!("TRADE");
+        replay["X"] = json!("PARTIALLY_FILLED");
+        replay["l"] = json!("0.00050000");
+        replay["z"] = json!("0.00050000");
+        replay["L"] = json!("50000.00000000");
+        replay["t"] = json!(4242);
+        state.execution_reports.push(replay);
+    }
+
+    state.execution_reports.push(report.clone());
+    report["q"] = json!("0.00400000");
+    report["p"] = json!("51000.00000000");
+    state.execution_reports.push(report.clone());
+    report["x"] = json!("TRADE");
+    report["X"] = json!("PARTIALLY_FILLED");
+    report["l"] = json!("0.00100000");
+    report["z"] = json!("0.00100000");
+    report["L"] = json!("51000.00000000");
+    report["t"] = json!(98765432);
+    state.execution_reports.push(report.clone());
+    report["x"] = json!("CANCELED");
+    report["X"] = json!("CANCELED");
+    state.execution_reports.push(report.clone());
+    for external in [
+        "external-order",
+        "retained-other-product",
+        "retained-claimed",
+    ] {
+        report["c"] = json!(external);
+        state.execution_reports.push(report.clone());
+    }
+
+    let ws_addr = start_ws_setup_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_ws_trading(
+        format!("http://{addr}"),
+        format!("ws://{ws_addr}/ws-api/v3"),
+    );
+    add_test_account_to_cache(&cache, account_id);
+
+    for (index, (id, instrument_id, reconciled)) in [
+        (cid, test_instrument_id(), false),
+        (
+            ClientOrderId::from("retained-other-product"),
+            InstrumentId::from("BTCUSDT-PERP.BINANCE"),
+            false,
+        ),
+        (
+            ClientOrderId::from("retained-claimed"),
+            test_instrument_id(),
+            true,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(id)
+            .strategy_id(test_strategy_id())
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("0.00300000"))
+            .price(Price::from("50000.00"))
+            .build();
+
+        let OrderEventAny::Accepted(mut accepted) = TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            VenueOrderId::from((12345678 + index).to_string()),
+        ) else {
+            panic!("Expected acceptance stub")
+        };
+
+        accepted.reconciliation = reconciled;
+        let accepted = OrderEventAny::Accepted(accepted);
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+            .unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+
+        if id == cid && partially_filled {
+            let fill = OrderFilledSpec::builder()
+                .strategy_id(test_strategy_id())
+                .instrument_id(instrument_id)
+                .client_order_id(id)
+                .account_id(account_id)
+                .venue_order_id(VenueOrderId::from("12345678"))
+                .order_type(OrderType::Limit)
+                .trade_id(TradeId::from("4242"))
+                .last_qty(Quantity::from("0.00050000"))
+                .last_px(Price::from("50000.00"))
+                .build();
+            cache
+                .borrow_mut()
+                .update_order(&OrderEventAny::Filled(fill))
+                .unwrap();
+        }
+    }
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let expected_events = ["updated", "filled", "canceled"];
+
+    for expected in expected_events {
+        let event = recv_until(&mut rx, |event| {
+            !matches!(event, ExecutionEvent::Account(_))
+        })
+        .await;
+
+        let ExecutionEvent::Order(event) = event else {
+            panic!("Expected typed {expected}, received {event:?}")
+        };
+
+        assert_eq!(event.strategy_id(), test_strategy_id());
+        assert_eq!(event.client_order_id(), cid);
+        assert_eq!(event.instrument_id(), test_instrument_id());
+        assert_eq!(event.account_id(), Some(account_id));
+        assert_eq!(event.venue_order_id(), Some(VenueOrderId::from("12345678")));
+
+        match (expected, event) {
+            ("updated", OrderEventAny::Updated(event)) => {
+                let expected = OrderUpdated::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    Quantity::from("0.00400000"),
+                    event.event_id,
+                    UnixNanos::from_millis(1709654400000),
+                    event.ts_init,
+                    false,
+                    Some(VenueOrderId::from("12345678")),
+                    Some(account_id),
+                    Some(Price::from("51000.00")),
+                    None,
+                    None,
+                    false,
+                );
+                assert_eq!(event, expected);
+            }
+            ("filled", OrderEventAny::Filled(event)) => {
+                let expected = OrderFilled::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    VenueOrderId::from("12345678"),
+                    account_id,
+                    TradeId::from("98765432"),
+                    OrderSide::Buy,
+                    OrderType::Limit,
+                    Quantity::from("0.00100000"),
+                    Price::from("51000.00"),
+                    Currency::USDT(),
+                    LiquiditySide::Taker,
+                    event.event_id,
+                    UnixNanos::from_millis(1709654400000),
+                    event.ts_init,
+                    false,
+                    None,
+                    Some(Money::from("0 USDT")),
+                    None,
+                );
+                assert_eq!(event, expected);
+            }
+            ("canceled", OrderEventAny::Canceled(event)) => {
+                let expected = OrderCanceled::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    event.event_id,
+                    UnixNanos::from_millis(1709654400000),
+                    event.ts_init,
+                    false,
+                    Some(VenueOrderId::from("12345678")),
+                    Some(account_id),
+                    None,
+                );
+                assert_eq!(event, expected);
+            }
+            (_, event) => panic!("Expected {expected}, received {event:?}"),
+        }
+    }
+
+    for external in [
+        "external-order",
+        "retained-other-product",
+        "retained-claimed",
+    ] {
+        let event = recv_until(&mut rx, |event| {
+            !matches!(event, ExecutionEvent::Account(_))
+        })
+        .await;
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("Expected external report, received {event:?}")
+        };
+
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from(external)));
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, test_instrument_id());
+    }
+
+    assert_eq!(
+        state.received_methods().await,
+        vec!["session.logon", "userDataStream.subscribe"]
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_restores_order_canceled_after_offline_replacement(
+    #[values(false, true)] pending_update: bool,
+) {
+    let addr = start_exec_test_server().await;
+    let cid = ClientOrderId::from("retained-replacement");
+    let account_id = AccountId::from("BINANCE-001");
+    let old_id = VenueOrderId::from("12345677");
+    let current_id = VenueOrderId::from("12345678");
+    let mut state = WsSetupState::new(WsSetupBehavior::CompleteSetup);
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../test_data/spot/user_data_json/execution_report_canceled.json"
+    ))
+    .unwrap();
+    report["s"] = json!("BTCUSDT");
+    report["c"] = json!(encode_broker_id(&cid, BINANCE_NAUTILUS_SPOT_BROKER_ID));
+    report["C"] = report["c"].clone();
+    state.execution_reports.push(report);
+    let ws_addr = start_ws_setup_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_ws_trading(
+        format!("http://{addr}"),
+        format!("ws://{ws_addr}/ws-api/v3"),
+    );
+    add_test_account_to_cache(&cache, account_id);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(cid)
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .quantity(Quantity::from("0.00300000"))
+        .price(Price::from("50000.00"))
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, old_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+        .unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+
+    if pending_update {
+        let pending = OrderPendingUpdateSpec::builder()
+            .strategy_id(test_strategy_id())
+            .instrument_id(test_instrument_id())
+            .client_order_id(cid)
+            .account_id(account_id)
+            .venue_order_id(old_id)
+            .build();
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::PendingUpdate(pending))
+            .unwrap();
+    }
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let event = recv_until(&mut rx, |event| {
+        !matches!(event, ExecutionEvent::Account(_))
+    })
+    .await;
+
+    let ExecutionEvent::Order(OrderEventAny::Canceled(event)) = event else {
+        panic!("Expected retained replacement cancellation, received {event:?}")
+    };
+
+    let expected = OrderCanceled::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        cid,
+        event.event_id,
+        UnixNanos::from_millis(1709654402000),
+        event.ts_init,
+        false,
+        Some(current_id),
+        Some(account_id),
+        None,
+    );
+    assert_eq!(event, expected);
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_connect_restores_replacement_history(
+    #[values(false, true)] history_retained: bool,
+    #[values(false, true)] partially_filled: bool,
+) {
+    let addr = start_exec_test_server().await;
+    let cid = ClientOrderId::from("retained-history");
+    let account_id = AccountId::from("BINANCE-001");
+    let old_id = VenueOrderId::from("12345677");
+    let current_id = VenueOrderId::from("12345678");
+    let quantity = Quantity::from("0.00300000");
+    let price = Price::from("50000.00");
+    let mut state = WsSetupState::new(WsSetupBehavior::CompleteSetup);
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../test_data/spot/user_data_json/execution_report_new.json"
+    ))
+    .unwrap();
+    report["s"] = json!("BTCUSDT");
+    report["c"] = json!(encode_broker_id(&cid, BINANCE_NAUTILUS_SPOT_BROKER_ID));
+    report["q"] = json!("0.00300000");
+    report["p"] = json!("50000.00000000");
+    state.execution_reports.push(report.clone());
+    report["i"] = json!(12345677);
+    report["q"] = json!("0.00400000");
+    report["p"] = json!("49000.00000000");
+    state.execution_reports.push(report.clone());
+    report["x"] = json!("TRADE");
+    report["X"] = json!("PARTIALLY_FILLED");
+    report["l"] = json!("0.00100000");
+    report["z"] = json!("0.00100000");
+    report["L"] = json!("49000.00000000");
+    report["t"] = json!(98765432);
+    state.execution_reports.push(report.clone());
+    report["x"] = json!("CANCELED");
+    report["X"] = json!("CANCELED");
+    report["C"] = report["c"].clone();
+    state.execution_reports.push(report.clone());
+    report["i"] = json!(12345678);
+    state.execution_reports.push(report);
+    let ws_addr = start_ws_setup_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_ws_trading(
+        format!("http://{addr}"),
+        format!("ws://{ws_addr}/ws-api/v3"),
+    );
+    add_test_account_to_cache(&cache, account_id);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(cid)
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .quantity(quantity)
+        .price(price)
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, old_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+        .unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+
+    if partially_filled {
+        let fill = OrderFilledSpec::builder()
+            .strategy_id(test_strategy_id())
+            .instrument_id(test_instrument_id())
+            .client_order_id(cid)
+            .account_id(account_id)
+            .venue_order_id(old_id)
+            .order_type(OrderType::Limit)
+            .trade_id(TradeId::from("4242"))
+            .last_qty(Quantity::from("0.00050000"))
+            .last_px(price)
+            .build();
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(fill))
+            .unwrap();
+    }
+
+    let retained_event = if history_retained {
+        OrderEventAny::Updated(
+            OrderUpdatedSpec::builder()
+                .strategy_id(test_strategy_id())
+                .instrument_id(test_instrument_id())
+                .client_order_id(cid)
+                .account_id(account_id)
+                .venue_order_id(current_id)
+                .quantity(quantity)
+                .price(price)
+                .build(),
+        )
+    } else {
+        OrderEventAny::PendingUpdate(
+            OrderPendingUpdateSpec::builder()
+                .strategy_id(test_strategy_id())
+                .instrument_id(test_instrument_id())
+                .client_order_id(cid)
+                .account_id(account_id)
+                .venue_order_id(old_id)
+                .build(),
+        )
+    };
+
+    cache.borrow_mut().update_order(&retained_event).unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let expected_events = if history_retained {
+        vec!["filled", "canceled"]
+    } else {
+        vec!["updated", "filled", "canceled"]
+    };
+
+    for expected in expected_events {
+        let event = recv_until(&mut rx, |event| {
+            !matches!(event, ExecutionEvent::Account(_))
+        })
+        .await;
+
+        let ExecutionEvent::Order(event) = event else {
+            panic!("Expected typed {expected}, received {event:?}")
+        };
+
+        let expected_event = match (expected, &event) {
+            ("updated", OrderEventAny::Updated(event)) => {
+                OrderEventAny::Updated(OrderUpdated::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    quantity,
+                    event.event_id,
+                    UnixNanos::from_millis(1709654400000),
+                    event.ts_init,
+                    false,
+                    Some(current_id),
+                    Some(account_id),
+                    Some(price),
+                    None,
+                    None,
+                    false,
+                ))
+            }
+            ("filled", OrderEventAny::Filled(event)) => OrderEventAny::Filled(OrderFilled::new(
+                test_trader_id(),
+                test_strategy_id(),
+                test_instrument_id(),
+                cid,
+                old_id,
+                account_id,
+                TradeId::from("98765432"),
+                OrderSide::Buy,
+                OrderType::Limit,
+                Quantity::from("0.00100000"),
+                Price::from("49000.00"),
+                Currency::USDT(),
+                LiquiditySide::Taker,
+                event.event_id,
+                UnixNanos::from_millis(1709654400000),
+                event.ts_init,
+                false,
+                None,
+                Some(Money::from("0 USDT")),
+                None,
+            )),
+            ("canceled", OrderEventAny::Canceled(event)) => {
+                OrderEventAny::Canceled(OrderCanceled::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    event.event_id,
+                    UnixNanos::from_millis(1709654400000),
+                    event.ts_init,
+                    false,
+                    Some(current_id),
+                    Some(account_id),
+                    None,
+                ))
+            }
+            (_, event) => panic!("Expected {expected}, received {event:?}"),
+        };
+
+        assert_eq!(event, expected_event);
+        let order = cache.borrow_mut().update_order(&event).unwrap();
+        assert_eq!(order.venue_order_id(), Some(current_id));
+        assert_eq!(order.quantity(), quantity);
+        assert_eq!(order.price(), Some(price));
+
+        if expected == "updated" {
+            assert_eq!(
+                order.status(),
+                if partially_filled {
+                    OrderStatus::PartiallyFilled
+                } else {
+                    OrderStatus::Accepted
+                }
+            );
+        }
+    }
+
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::larger("0.00400000", "51000.00", "0.00300000")]
+#[case::same_shape("0.00300000", "50000.00", "0.00100000")]
+#[tokio::test]
+async fn test_connect_restores_replacement_from_trade(
+    #[case] venue_qty: &str,
+    #[case] venue_price: &str,
+    #[case] fill_qty: &str,
+    #[values(false, true)] partially_filled: bool,
+) {
+    let addr = start_exec_test_server().await;
+    let cid = ClientOrderId::from("retained-trade-first");
+    let account_id = AccountId::from("BINANCE-001");
+    let old_id = VenueOrderId::from("12345677");
+    let current_id = VenueOrderId::from("12345678");
+    let quantity = Quantity::from(venue_qty);
+    let price = Price::from(venue_price);
+    let last_qty = Quantity::from(fill_qty);
+    let historical_qty = Quantity::from("0.00010000");
+
+    let retained_qty = if partially_filled {
+        Quantity::from("0.00050000")
+    } else {
+        Quantity::from("0.00000000")
+    };
+
+    let mut state = WsSetupState::new(WsSetupBehavior::CompleteSetup);
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../test_data/spot/user_data_json/execution_report_trade.json"
+    ))
+    .unwrap();
+    report["s"] = json!("BTCUSDT");
+    report["c"] = json!(encode_broker_id(&cid, BINANCE_NAUTILUS_SPOT_BROKER_ID));
+    report["q"] = json!(venue_qty);
+    report["p"] = json!(venue_price);
+    report["l"] = json!(fill_qty);
+    report["z"] = json!(fill_qty);
+    report["L"] = json!(venue_price);
+    report["X"] = json!("PARTIALLY_FILLED");
+    report["n"] = json!("0.01");
+    report["N"] = json!("USDT");
+    report["m"] = json!(false);
+    state
+        .execution_reports
+        .extend([report.clone(), report.clone()]);
+    report["i"] = json!(12345677);
+    report["q"] = json!("0.00300000");
+    report["p"] = json!("50000.00");
+    report["x"] = json!("NEW");
+    report["X"] = json!("NEW");
+    state.execution_reports.push(report.clone());
+    report["x"] = json!("TRADE");
+    report["X"] = json!("PARTIALLY_FILLED");
+    report["l"] = json!("0.00010000");
+    report["z"] = json!((retained_qty + historical_qty).to_string());
+    report["L"] = json!("50000.00");
+    report["t"] = json!(98765433);
+    state.execution_reports.push(report.clone());
+    report["x"] = json!("CANCELED");
+    report["X"] = json!("CANCELED");
+    report["C"] = report["c"].clone();
+    state.execution_reports.push(report.clone());
+    report["i"] = json!(12345678);
+    report["q"] = json!(venue_qty);
+    report["p"] = json!(venue_price);
+    state.execution_reports.push(report);
+    let ws_addr = start_ws_setup_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_ws_trading(
+        format!("http://{addr}"),
+        format!("ws://{ws_addr}/ws-api/v3"),
+    );
+    add_test_account_to_cache(&cache, account_id);
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(cid)
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .quantity(Quantity::from("0.00300000"))
+        .price(Price::from("50000.00"))
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, old_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+        .unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+
+    if partially_filled {
+        let fill = OrderFilledSpec::builder()
+            .strategy_id(test_strategy_id())
+            .instrument_id(test_instrument_id())
+            .client_order_id(cid)
+            .account_id(account_id)
+            .venue_order_id(old_id)
+            .order_type(OrderType::Limit)
+            .trade_id(TradeId::from("4242"))
+            .last_qty(retained_qty)
+            .last_px(Price::from("50000.00"))
+            .build();
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Filled(fill))
+            .unwrap();
+    }
+
+    let pending = OrderPendingUpdateSpec::builder()
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(cid)
+        .account_id(account_id)
+        .venue_order_id(old_id)
+        .build();
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingUpdate(pending))
+        .unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    for expected in ["updated", "replacement_fill", "historical_fill", "canceled"] {
+        let event = recv_until(&mut rx, |event| {
+            !matches!(event, ExecutionEvent::Account(_))
+        })
+        .await;
+
+        let ExecutionEvent::Order(event) = event else {
+            panic!("Expected typed {expected}, received {event:?}")
+        };
+
+        let expected_event = match (expected, &event) {
+            ("updated", OrderEventAny::Updated(event)) => {
+                OrderEventAny::Updated(OrderUpdated::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    quantity,
+                    event.event_id,
+                    UnixNanos::from_millis(1709654401000),
+                    event.ts_init,
+                    false,
+                    Some(current_id),
+                    Some(account_id),
+                    Some(price),
+                    None,
+                    None,
+                    false,
+                ))
+            }
+            ("replacement_fill", OrderEventAny::Filled(event)) => {
+                OrderEventAny::Filled(OrderFilled::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    current_id,
+                    account_id,
+                    TradeId::from("98765432"),
+                    OrderSide::Buy,
+                    OrderType::Limit,
+                    last_qty,
+                    price,
+                    Currency::USDT(),
+                    LiquiditySide::Taker,
+                    event.event_id,
+                    UnixNanos::from_millis(1709654401000),
+                    event.ts_init,
+                    false,
+                    None,
+                    Some(Money::from("0.01 USDT")),
+                    None,
+                ))
+            }
+            ("historical_fill", OrderEventAny::Filled(event)) => {
+                OrderEventAny::Filled(OrderFilled::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    old_id,
+                    account_id,
+                    TradeId::from("98765433"),
+                    OrderSide::Buy,
+                    OrderType::Limit,
+                    historical_qty,
+                    Price::from("50000.00"),
+                    Currency::USDT(),
+                    LiquiditySide::Taker,
+                    event.event_id,
+                    UnixNanos::from_millis(1709654401000),
+                    event.ts_init,
+                    false,
+                    None,
+                    Some(Money::from("0.01 USDT")),
+                    None,
+                ))
+            }
+            ("canceled", OrderEventAny::Canceled(event)) => {
+                OrderEventAny::Canceled(OrderCanceled::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    test_instrument_id(),
+                    cid,
+                    event.event_id,
+                    UnixNanos::from_millis(1709654401000),
+                    event.ts_init,
+                    false,
+                    Some(current_id),
+                    Some(account_id),
+                    None,
+                ))
+            }
+            (_, event) => panic!("Expected {expected}, received {event:?}"),
+        };
+
+        assert_eq!(event, expected_event);
+        let order = cache.borrow_mut().update_order(&event).unwrap();
+
+        let expected_filled = match expected {
+            "updated" => retained_qty,
+            "replacement_fill" => retained_qty + last_qty,
+            _ => retained_qty + last_qty + historical_qty,
+        };
+
+        let expected_status = match expected {
+            "updated" if !partially_filled => OrderStatus::Accepted,
+            "canceled" => OrderStatus::Canceled,
+            _ => OrderStatus::PartiallyFilled,
+        };
+
+        assert_eq!(order.venue_order_id(), Some(current_id));
+        assert_eq!(order.quantity(), quantity);
+        assert_eq!(order.price(), Some(price));
+        assert_eq!(order.filled_qty(), expected_filled);
+        assert_eq!(order.status(), expected_status);
+    }
+
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::equal_amount("10.00000000")]
+#[case::different_amount("11.00000000")]
+#[tokio::test]
+async fn test_connect_restores_quote_qty_normalization(#[case] quote_qty: &str) {
+    let addr = start_exec_test_server().await;
+    let cid = ClientOrderId::from("retained-quote");
+    let account_id = AccountId::from("BINANCE-001");
+    let venue_order_id = VenueOrderId::from("12345678");
+    let quantity = Quantity::from("10.00000000");
+    let mut state = WsSetupState::new(WsSetupBehavior::CompleteSetup);
+    let mut report: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../test_data/spot/user_data_json/execution_report_trade.json"
+    ))
+    .unwrap();
+    report["s"] = json!("BTCUSDT");
+    report["c"] = json!(encode_broker_id(&cid, BINANCE_NAUTILUS_SPOT_BROKER_ID));
+    report["o"] = json!("MARKET");
+    report["q"] = json!("10.00000000");
+    report["p"] = json!("0.00000000");
+    report["l"] = json!("10.00000000");
+    report["z"] = json!("10.00000000");
+    report["L"] = json!("1.00000000");
+    report["n"] = json!("0.01000000");
+    report["N"] = json!("USDT");
+    report["m"] = json!(false);
+    state.execution_reports.push(report);
+    let ws_addr = start_ws_setup_server(state).await;
+    let (mut client, mut rx, cache) = create_test_execution_client_with_ws_trading(
+        format!("http://{addr}"),
+        format!("ws://{ws_addr}/ws-api/v3"),
+    );
+    add_test_account_to_cache(&cache, account_id);
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .client_order_id(cid)
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .quantity(Quantity::from(quote_qty))
+        .quote_quantity(true)
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+        .unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let event = recv_until(&mut rx, |event| {
+        !matches!(event, ExecutionEvent::Account(_))
+    })
+    .await;
+
+    let ExecutionEvent::Order(OrderEventAny::Updated(event)) = event else {
+        panic!("Expected quote-to-base update, received {event:?}")
+    };
+
+    let expected = OrderUpdated::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        cid,
+        quantity,
+        event.event_id,
+        UnixNanos::from_millis(1709654401000),
+        event.ts_init,
+        false,
+        Some(venue_order_id),
+        Some(account_id),
+        None,
+        None,
+        None,
+        false,
+    );
+    assert_eq!(event, expected);
+    let normalized = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Updated(event))
+        .unwrap();
+    assert_eq!(normalized.quantity(), quantity);
+    assert!(!normalized.is_quote_quantity());
+
+    let event = recv_until(&mut rx, |event| {
+        !matches!(event, ExecutionEvent::Account(_))
+    })
+    .await;
+
+    let ExecutionEvent::Order(OrderEventAny::Filled(event)) = event else {
+        panic!("Expected retained fill, received {event:?}")
+    };
+
+    let expected = OrderFilled::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        cid,
+        venue_order_id,
+        account_id,
+        TradeId::from("98765432"),
+        OrderSide::Buy,
+        OrderType::Market,
+        quantity,
+        Price::from("1.00"),
+        Currency::USDT(),
+        LiquiditySide::Taker,
+        event.event_id,
+        UnixNanos::from_millis(1709654401000),
+        event.ts_init,
+        false,
+        None,
+        Some(Money::from("0.01 USDT")),
+        None,
+    );
+    assert_eq!(event, expected);
+    let filled = cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::Filled(event))
+        .unwrap();
+    assert_eq!(filled.status(), OrderStatus::Filled);
+    assert_eq!(filled.filled_qty(), quantity);
+    assert!(!filled.is_quote_quantity());
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -2784,6 +3697,67 @@ async fn test_submit_independent_order_list_is_denied_without_http_request() {
     )
     .await;
 
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[case::single(false, false)]
+#[case::list(true, false)]
+#[case::oco_builder(true, true)]
+#[tokio::test]
+async fn test_submit_quote_quantity_denied_before_request(
+    #[case] as_list: bool,
+    #[case] market_leg: bool,
+) {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    while rx.try_recv().is_ok() {}
+    let mut orders = add_spot_oco_orders_to_cache(&cache);
+    if market_leg {
+        orders[1] = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(test_trader_id())
+            .strategy_id(test_strategy_id())
+            .instrument_id(test_instrument_id())
+            .client_order_id(orders[1].client_order_id())
+            .side(orders[1].order_side())
+            .quantity(orders[1].quantity())
+            .contingency_type(ContingencyType::Oco)
+            .order_list_id(orders[1].order_list_id().unwrap())
+            .linked_order_ids(vec![orders[0].client_order_id()])
+            .build();
+    }
+
+    orders[1].set_is_quote_quantity(true);
+    cache
+        .borrow_mut()
+        .add_order(orders[1].clone(), None, None, true)
+        .unwrap();
+
+    if as_list {
+        client
+            .submit_order_list(submit_order_list_command(&orders))
+            .unwrap();
+    } else {
+        client
+            .submit_order(submit_order_command(&orders[1]))
+            .unwrap();
+    }
+
+    let expected_orders = if as_list { &orders[..] } else { &orders[1..] };
+    for order in expected_orders {
+        let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = rx.try_recv().unwrap() else {
+            panic!("Expected order denial");
+        };
+
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.reason.as_str(), "UNSUPPORTED_QUOTE_QUANTITY");
+    }
+
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
     assert_eq!(request_count.load(Ordering::Relaxed), 0);
 }
 

@@ -76,6 +76,7 @@ dashmap = { workspace = true }
 derive_builder = { workspace = true }
 ed25519-dalek = { workspace = true }
 futures-util = { workspace = true }
+indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
@@ -114,6 +115,11 @@ toml = { workspace = true }
 # Run with `cargo bench -p nautilus-binance --bench encoder`
 [[bench]]
 name = "encoder"
+harness = false
+
+# Run with `CARGO_BUILD_JOBS=8 cargo bench -p nautilus-binance --bench sbe_decoding`
+[[bench]]
+name = "sbe_decoding"
 harness = false
 
 [[bin]]

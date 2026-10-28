@@ -339,6 +339,20 @@ def test_trade_selection_and_idle_config() -> None:
     assert selected.subscription_idle_timeout_secs == 17
 
 
+def test_max_reconnect_attempts_config() -> None:
+    """
+    Test max reconnect attempts config.
+    """
+    data_default = InteractiveBrokersDataClientConfig()
+    data_selected = InteractiveBrokersDataClientConfig(max_reconnect_attempts=0)
+    exec_default = InteractiveBrokersExecutionClientConfig()
+    exec_selected = InteractiveBrokersExecutionClientConfig(max_reconnect_attempts=50)
+    assert data_default.max_reconnect_attempts is None
+    assert data_selected.max_reconnect_attempts == 0
+    assert exec_default.max_reconnect_attempts is None
+    assert exec_selected.max_reconnect_attempts == 50
+
+
 @pytest.mark.parametrize("timeout", [0, 2**64 - 1])
 def test_invalid_subscription_idle_timeout(timeout: int) -> None:
     """

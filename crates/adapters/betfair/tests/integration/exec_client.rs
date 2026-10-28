@@ -44,6 +44,7 @@ use nautilus_betfair::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    config::ConfigError,
     live::runner::{replace_system_event_sender, set_data_event_sender, set_exec_event_sender},
     messages::{
         DataEvent, ExecutionEvent,
@@ -99,7 +100,7 @@ async fn generate_test_order_reports(
     nautilus_common::live::get_runtime()
         .spawn(task.collection)
         .await?;
-    task.result.await
+    (task.finish)()
 }
 
 async fn generate_test_fill_reports(
@@ -116,7 +117,7 @@ async fn generate_test_fill_reports(
     nautilus_common::live::get_runtime()
         .spawn(task.collection)
         .await?;
-    task.result.await
+    (task.finish)()
 }
 
 #[rstest]
@@ -211,7 +212,8 @@ fn create_test_execution_client_with_configs(
         stream_config,
         config,
         currency,
-    );
+    )
+    .unwrap();
     client.start().unwrap();
 
     (client, rx, data_rx, cache)
@@ -4812,13 +4814,13 @@ async fn test_report_collection_with_borrowed_cache_and_dropped_result(#[case] f
 
     let collection = if fills {
         let task = client.generate_fill_reports_task(&fill_command).unwrap();
-        drop(task.result);
+        drop(task.finish);
         task.collection
     } else {
         let task = client
             .generate_order_status_reports_task(&order_command)
             .unwrap();
-        drop(task.result);
+        drop(task.finish);
         task.collection
     };
 
@@ -4924,7 +4926,7 @@ async fn test_fill_report_task_finishes_after_stream_fill_without_replay() {
         panic!("expected stream fill before finalization, was {event:?}");
     };
 
-    let reports = task.result.await.unwrap();
+    let reports = (task.finish)().unwrap();
     let replayed = generate_test_fill_reports(&client, command, true)
         .await
         .unwrap();
@@ -11722,6 +11724,8 @@ async fn test_post_reconnect_paginates_coherent_fill_snapshot() {
     .await
     .expect("paginated recovery did not publish mass status");
 
+    wait_for_reconciliation_state(&client, false).await;
+
     let fill_count = mass_status
         .fill_reports()
         .values()
@@ -11820,6 +11824,8 @@ async fn test_post_reconnect_retries_transient_mass_status_failure() {
             break;
         }
     }
+
+    wait_for_reconciliation_state(&client, false).await;
 
     assert_eq!(mass_status_counts, Some((3, 2)));
     assert!(!client.is_reconciling());
@@ -12777,4 +12783,54 @@ async fn test_cancel_allowed_during_reconciliation() {
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
     server.await.unwrap();
+}
+
+#[rstest]
+#[case::client(false)]
+#[case::stream(true)]
+fn test_constructor_rejects_invalid_config(#[case] stream: bool) {
+    let mut config = BetfairExecutionClientConfig {
+        reconcile_market_ids: Some(vec!["1.1".to_string(), "1.1".to_string()]),
+        ..Default::default()
+    };
+
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *BETFAIR_CLIENT_ID,
+        *BETFAIR_VENUE,
+        OmsType::Netting,
+        AccountId::from("BETFAIR-001"),
+        AccountType::Betting,
+        None,
+        Rc::new(RefCell::new(Cache::default())),
+    );
+    let mut stream_config = plain_stream_config(1);
+
+    if stream {
+        config.reconcile_market_ids = None;
+        stream_config.heartbeat_secs = Some(0);
+    }
+
+    let http_client = create_test_http_client("127.0.0.1:1".parse().unwrap());
+    let error = BetfairExecutionClient::new(
+        core,
+        http_client,
+        test_credential(),
+        stream_config,
+        config,
+        Currency::GBP(),
+    )
+    .expect_err("invalid config must fail before client setup");
+
+    if stream {
+        assert_eq!(
+            error.to_string(),
+            "heartbeat_secs must be positive when set"
+        );
+    } else {
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("reconcile_market_ids", None)),
+        );
+    }
 }

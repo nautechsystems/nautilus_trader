@@ -20,6 +20,7 @@ use std::{
     str::FromStr,
 };
 
+use indexmap::IndexMap;
 use nautilus_core::{Params, UnixNanos};
 use serde::{
     Deserialize, Serialize,
@@ -106,9 +107,9 @@ fn topic_string_to_value(s: &str) -> anyhow::Result<JsonValue> {
 }
 
 fn parse_topic_metadata(metadata_topic: &str) -> anyhow::Result<Params> {
-    let mut metadata = Params::new();
+    let mut metadata = IndexMap::new();
     if metadata_topic.is_empty() {
-        return Ok(metadata);
+        return Ok(Params::new(metadata));
     }
 
     // Values may contain dots: a segment with '=' starts a new pair, otherwise it
@@ -146,7 +147,7 @@ fn parse_topic_metadata(metadata_topic: &str) -> anyhow::Result<Params> {
     };
     metadata.insert(key, topic_string_to_value(&value)?);
 
-    Ok(metadata)
+    Ok(Params::new(metadata))
 }
 
 /// Builds the topic suffix from Params (string-only view: key=value joined by ".").
@@ -623,7 +624,7 @@ impl FromStr for DataType {
             }
         };
 
-        Ok(Self::new(type_name, metadata, identifier))
+        Self::try_new(type_name, metadata, identifier)
     }
 }
 
@@ -672,6 +673,19 @@ mod tests {
     }
 
     #[rstest]
+    #[case("Example.identifier=A.identifier=B")]
+    #[case("Example.value=1.identifier=A.identifier=B")]
+    #[case("Example.identifier=.identifier=B")]
+    fn test_from_str_rejects_repeated_identifier(#[case] topic: &str) {
+        let error = DataType::from_str(topic).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "`identifier` is reserved for DataType catalog identity"
+        );
+    }
+
+    #[rstest]
     fn test_data_type_creation_with_metadata() {
         let metadata = Some(params_from_json(
             json!({"key1": "value1", "key2": "value2"}),
@@ -696,12 +710,10 @@ mod tests {
 
     #[rstest]
     fn test_data_type_topic_identity_uses_canonical_metadata_order() {
-        let mut metadata1 = Params::new();
-        metadata1.insert("b".to_string(), json!(2));
-        metadata1.insert("a".to_string(), json!(1));
-        let mut metadata2 = Params::new();
-        metadata2.insert("a".to_string(), json!(1));
-        metadata2.insert("b".to_string(), json!(2));
+        let metadata1 =
+            Params::new([("b".to_string(), json!(2)), ("a".to_string(), json!(1))].into());
+        let metadata2 =
+            Params::new([("a".to_string(), json!(1)), ("b".to_string(), json!(2))].into());
 
         let data_type1 = DataType::new("ExampleType", Some(metadata1), None);
         let data_type2 = DataType::new("ExampleType", Some(metadata2), None);

@@ -2,6 +2,7 @@
   "id": "market-123",
   "conditionId": "0xcondition",
   "question": "Will the outcome occur?",
+  "version": "v1",
   "clobTokenIds": "[\"yes-token\",\"no-token\"]",
   "outcomes": "[\"Yes\",\"No\"]",
   "orderPriceMinTickSize": 0.01,

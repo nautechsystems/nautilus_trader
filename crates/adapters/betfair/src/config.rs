@@ -17,7 +17,7 @@
 
 use std::{any::Any, fmt::Debug};
 
-use nautilus_common::factories::ClientConfig;
+use nautilus_common::{config::check_unique_values, factories::ClientConfig};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
@@ -294,6 +294,30 @@ impl BetfairDataClientConfig {
     ///
     /// Returns an error if any configured value is invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(values) = &self.event_type_ids {
+            check_unique_values("event_type_ids", values)?;
+        }
+
+        if let Some(values) = &self.event_type_names {
+            check_unique_values("event_type_names", values)?;
+        }
+
+        if let Some(values) = &self.event_ids {
+            check_unique_values("event_ids", values)?;
+        }
+
+        if let Some(values) = &self.country_codes {
+            check_unique_values("country_codes", values)?;
+        }
+
+        if let Some(values) = &self.market_types {
+            check_unique_values("market_types", values)?;
+        }
+
+        if let Some(values) = &self.market_ids {
+            check_unique_values("market_ids", values)?;
+        }
+
         let _ = self.currency()?;
         validate_market_start_time("min_market_start_time", &self.min_market_start_time)?;
         validate_market_start_time("max_market_start_time", &self.max_market_start_time)?;
@@ -462,6 +486,14 @@ impl BetfairExecutionClientConfig {
     ///
     /// Returns an error if any configured value is invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(values) = &self.stream_market_ids_filter {
+            check_unique_values("stream_market_ids_filter", values)?;
+        }
+
+        if let Some(values) = &self.reconcile_market_ids {
+            check_unique_values("reconcile_market_ids", values)?;
+        }
+
         let _ = self.currency()?;
 
         if self.request_rate_per_second == 0 {
@@ -480,9 +512,48 @@ impl BetfairExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("stream_market_ids_filter")]
+    #[case("reconcile_market_ids")]
+    fn test_execution_config_rejects_duplicate_selections(#[case] field: &str) {
+        let mut input = serde_json::to_value(BetfairExecutionClientConfig::default()).unwrap();
+        input[field] = serde_json::json!(["first", "second", "first"]);
+        let config: BetfairExecutionClientConfig = serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+        let result = config.validate();
+
+        assert_eq!(
+            result.unwrap_err().downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate(field, None))
+        );
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
+
+    #[rstest]
+    #[case("event_type_ids")]
+    #[case("event_type_names")]
+    #[case("event_ids")]
+    #[case("country_codes")]
+    #[case("market_types")]
+    #[case("market_ids")]
+    fn test_data_config_rejects_duplicate_selections(#[case] field: &str) {
+        let mut input = serde_json::to_value(BetfairDataClientConfig::default()).unwrap();
+        input[field] = serde_json::json!(["first", "second", "first"]);
+        let config: BetfairDataClientConfig = serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+        let result = config.validate();
+
+        assert_eq!(
+            result.unwrap_err().downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate(field, None))
+        );
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
 
     #[rstest]
     fn test_config_debug_redacts_credentials() {

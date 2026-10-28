@@ -24,7 +24,7 @@ use nautilus_model::{
     events::AccountState,
     identifiers::{AccountId, InstrumentId, TradeId, VenueOrderId},
     reports::{FillReport, OrderStatusReport},
-    types::{AccountBalance, Currency, Money, Price},
+    types::{Currency, Money, Price},
 };
 use rust_decimal::Decimal;
 
@@ -34,8 +34,8 @@ use crate::common::{
     encoder::decode_client_order_id,
     enums::{BinanceOrderStatus, BinanceSide},
     parse::{
-        parse_millis_or_init, parse_required_decimal, parse_required_price_at_precision,
-        parse_required_quantity_at_precision,
+        account_balance_from_free_locked, parse_millis_or_init, parse_required_decimal,
+        parse_required_price_at_precision, parse_required_quantity_at_precision,
     },
 };
 
@@ -195,25 +195,32 @@ pub fn parse_spot_exec_report_to_fill(
 }
 
 /// Converts a Binance Spot account position update to a Nautilus account state.
+///
+/// # Errors
+///
+/// Returns an error if a balance's free and locked amounts overflow when added, or if an amount
+/// cannot be represented as money. No account state is returned when any balance fails.
 pub fn parse_spot_account_position(
     msg: &BinanceSpotAccountPositionMsg,
     account_id: AccountId,
     ts_init: UnixNanos,
-) -> AccountState {
+) -> anyhow::Result<AccountState> {
     let ts_event =
         parse_millis_or_init(msg.event_time, "Spot account position event time", ts_init);
 
-    let balances: Vec<AccountBalance> = msg
-        .balances
-        .iter()
-        .filter_map(|b| {
-            let total = b.free + b.locked;
-            let currency = Currency::get_or_create_crypto(b.asset.as_str());
-            AccountBalance::from_total_and_locked(total, b.locked, currency).ok()
-        })
-        .collect();
+    let mut balances = Vec::with_capacity(msg.balances.len());
+    for balance in &msg.balances {
+        let currency = Currency::get_or_create_crypto(balance.asset.as_str());
+        let account_balance = account_balance_from_free_locked(
+            balance.asset.as_str(),
+            balance.free,
+            balance.locked,
+            currency,
+        )?;
+        balances.push(account_balance);
+    }
 
-    AccountState::new(
+    Ok(AccountState::new(
         account_id,
         AccountType::Cash,
         balances,
@@ -223,7 +230,7 @@ pub fn parse_spot_account_position(
         ts_event,
         ts_init,
         None, // base_currency
-    )
+    ))
 }
 
 fn parse_order_status(
@@ -666,12 +673,64 @@ mod tests {
         let account_id = AccountId::from("BINANCE-001");
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let state = parse_spot_account_position(&msg, account_id, ts_init);
+        let state = parse_spot_account_position(&msg, account_id, ts_init).unwrap();
 
         assert_eq!(state.account_id, account_id);
         assert_eq!(state.account_type, AccountType::Cash);
         assert!(state.is_reported);
         assert_eq!(state.balances.len(), 2);
+        assert_eq!(state.balances[0].total.as_decimal(), Decimal::from(12_500));
+        assert_eq!(state.balances[0].locked.as_decimal(), Decimal::from(2_500));
+        assert_eq!(state.balances[1].total.as_decimal(), Decimal::from(5));
+        assert_eq!(state.balances[1].locked.as_decimal(), Decimal::ZERO);
+    }
+
+    #[rstest]
+    fn test_parse_account_position_rejects_unrepresentable_sibling() {
+        let json = r#"{
+            "e": "outboundAccountPosition",
+            "E": 1700000000000,
+            "u": 1700000000000,
+            "B": [
+                {"a": "BTC", "f": "1.00000000", "l": "0.00000000"},
+                {"a": "ETH", "f": "9223372036854775807", "l": "0"}
+            ]
+        }"#;
+        let msg: BinanceSpotAccountPositionMsg = serde_json::from_str(json).unwrap();
+
+        let err = parse_spot_account_position(
+            &msg,
+            AccountId::from("BINANCE-001"),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("ETH"));
+    }
+
+    #[rstest]
+    fn test_parse_account_position_rejects_addition_overflow() {
+        let json = r#"{
+            "e": "outboundAccountPosition",
+            "E": 1700000000000,
+            "u": 1700000000000,
+            "B": [{
+                "a": "BTC",
+                "f": "79228162514264337593543950335",
+                "l": "1"
+            }]
+        }"#;
+        let msg: BinanceSpotAccountPositionMsg = serde_json::from_str(json).unwrap();
+
+        let err = parse_spot_account_position(
+            &msg,
+            AccountId::from("BINANCE-001"),
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap_err();
+
+        assert!(err.to_string().contains("BTC"));
+        assert!(err.to_string().contains("overflow"));
     }
 
     // Regression for the #3867 bug class: WS `free` and `locked` with more decimal places
@@ -693,7 +752,7 @@ mod tests {
         let account_id = AccountId::from("BINANCE-001");
         let ts_init = UnixNanos::from(1_000_000_000u64);
 
-        let state = parse_spot_account_position(&msg, account_id, ts_init);
+        let state = parse_spot_account_position(&msg, account_id, ts_init).unwrap();
 
         assert_eq!(state.balances.len(), 1);
         let balance = &state.balances[0];

@@ -267,15 +267,12 @@ impl VerificationRpcClient {
         identity: BlockchainProviderIdentity,
         http_rpc_url: String,
         rpc_requests_per_second: Option<u32>,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        let rpc = BlockchainHttpRpcClient::new(http_rpc_url, rpc_requests_per_second, None)?;
+        Ok(Self {
             identity,
-            rpc: Arc::new(BlockchainHttpRpcClient::new(
-                http_rpc_url,
-                rpc_requests_per_second,
-                None,
-            )),
-        }
+            rpc: Arc::new(rpc),
+        })
     }
 
     pub(crate) fn from_authoritative(
@@ -412,8 +409,9 @@ impl VerificationCoordinator {
                 )
             },
         );
-        let verifier_a = verifiers.next().expect("validated verifier count");
-        let verifier_b = verifiers.next().expect("validated verifier count");
+
+        let verifier_a = verifiers.next().expect("validated verifier count")?;
+        let verifier_b = verifiers.next().expect("validated verifier count")?;
 
         Ok(Self {
             sources: [authoritative, verifier_a, verifier_b],
@@ -1040,7 +1038,7 @@ impl VerificationCoordinator {
             self.sources[1].receipt(tx_hash),
             self.sources[2].receipt(tx_hash),
         );
-        classify_receipt_absence([a, b, c], &self.sources)
+        classify_receipt_absence(&[a, b, c], &self.sources)
     }
 
     pub(crate) async fn verify_transaction(
@@ -1052,7 +1050,7 @@ impl VerificationCoordinator {
             self.sources[1].transaction(tx_hash),
             self.sources[2].transaction(tx_hash),
         );
-        classify_propagating(VerificationRead::Transaction, [a, b, c], &self.sources)
+        classify_propagating(VerificationRead::Transaction, &[a, b, c], &self.sources)
     }
 
     pub(crate) async fn verify_replacement_block(
@@ -1547,7 +1545,7 @@ fn classify_all<T, U: NormalizedValue>(
 
 fn classify_propagating<T: Clone + Eq + NormalizedValue>(
     read: VerificationRead,
-    results: [anyhow::Result<Option<T>>; VERIFICATION_SOURCE_COUNT],
+    results: &[anyhow::Result<Option<T>>; VERIFICATION_SOURCE_COUNT],
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
 ) -> VerificationOutcome<T> {
     let provider_ids = source_provider_ids(sources);
@@ -1625,7 +1623,7 @@ fn classify_receipts(
 }
 
 fn classify_receipt_absence(
-    results: [anyhow::Result<Option<RpcTransactionReceipt>>; VERIFICATION_SOURCE_COUNT],
+    results: &[anyhow::Result<Option<RpcTransactionReceipt>>; VERIFICATION_SOURCE_COUNT],
     sources: &[VerificationRpcClient; VERIFICATION_SOURCE_COUNT],
 ) -> VerificationOutcome<bool> {
     let read = VerificationRead::Receipt;
@@ -1634,7 +1632,8 @@ fn classify_receipt_absence(
         read,
         provider_ids: provider_ids.clone(),
     };
-    let normalized = normalize_receipts(&results);
+
+    let normalized = normalize_receipts(results);
     let present = normalized
         .iter()
         .filter_map(|result| result.as_ref().ok().and_then(Option::as_ref))
@@ -2124,11 +2123,8 @@ mod tests {
         let mut config = config();
         config.verifiers[0].http_rpc_url = format!("http://{verifier_a_addr}").into();
         config.verifiers[1].http_rpc_url = format!("http://{verifier_b_addr}").into();
-        let authoritative_rpc = Arc::new(BlockchainHttpRpcClient::new(
-            authoritative_url.clone(),
-            None,
-            None,
-        ));
+        let authoritative_rpc =
+            Arc::new(BlockchainHttpRpcClient::new(authoritative_url.clone(), None, None).unwrap());
         VerificationCoordinator::new(authoritative_rpc, &authoritative_url, &config, None).unwrap()
     }
 

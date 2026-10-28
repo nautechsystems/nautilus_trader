@@ -46,19 +46,21 @@ use nautilus_bybit::{
     },
 };
 use nautilus_common::{cache::InstrumentLookupError, testing::wait_until_async};
-use nautilus_core::time::get_atomic_clock_realtime;
+use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
     enums::{
-        AvgPxReconciliation, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TriggerType,
+        AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
     },
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{CurrencyPair, InstrumentAny},
-    types::{Currency, Price, Quantity},
+    reports::FillReport,
+    types::{Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 
 type SettleCoinQueries = Arc<tokio::sync::Mutex<Vec<(String, Option<String>)>>>;
@@ -98,6 +100,7 @@ struct CapturedOrder {
 #[derive(Clone)]
 struct TestServerState {
     request_count: Arc<tokio::sync::Mutex<usize>>,
+    execution_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     wallet_balance_requests: Arc<tokio::sync::Mutex<usize>>,
     // (endpoint, settle_coin)
     settle_coin_queries: SettleCoinQueries,
@@ -112,6 +115,7 @@ impl Default for TestServerState {
     fn default() -> Self {
         Self {
             request_count: Arc::new(tokio::sync::Mutex::new(0)),
+            execution_response: Arc::default(),
             wallet_balance_requests: Arc::new(tokio::sync::Mutex::new(0)),
             settle_coin_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             realtime_requests: Arc::new(tokio::sync::Mutex::new(0)),
@@ -230,7 +234,14 @@ async fn handle_get_trades(query: Query<HashMap<String, String>>) -> impl IntoRe
 }
 
 #[allow(dead_code)]
-async fn handle_get_executions(Query(query): Query<HashMap<String, String>>) -> impl IntoResponse {
+async fn handle_get_executions(
+    State(state): State<TestServerState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> impl IntoResponse {
+    if let Some(response) = state.execution_response.lock().await.as_ref() {
+        return Json(response.clone());
+    }
+
     let mut executions = load_test_data("http_get_executions_funding.json");
     let (index, next_cursor) = if query.contains_key("cursor") {
         (0, "")
@@ -1279,6 +1290,155 @@ async fn test_request_fill_reports_excludes_funding_executions() {
         .collect();
 
     assert_eq!(trade_ids, vec!["bf13bd10-fe15-4ad4-a6bf-c388e3104f75"]);
+}
+
+#[rstest]
+#[case::first(0)]
+#[case::last(1)]
+#[tokio::test]
+async fn test_request_fill_reports_commission_failure_and_recovery(#[case] invalid_index: usize) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let mut response = load_test_data("http_get_executions.json");
+    response["result"]["nextPageCursor"] = json!("");
+    response["result"]["list"][invalid_index]["execFee"] = json!("9999999999999999999999999999");
+    *state.execution_response.lock().await = Some(response.clone());
+    let account_id = AccountId::from("BYBIT-UNIFIED");
+
+    let e = client
+        .request_fill_reports(account_id, BybitProductType::Linear, None, None, None, None)
+        .await
+        .unwrap_err();
+    assert!(
+        e.to_string()
+            .contains("Failed to create commission from execFee=")
+    );
+
+    response["result"]["list"][invalid_index]["execFee"] = json!("0.01234567");
+    *state.execution_response.lock().await = Some(response);
+    let reports = client
+        .request_fill_reports(account_id, BybitProductType::Linear, None, None, None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 2);
+    let mut fees = [dec!(0.0150), dec!(0.9000)];
+    fees[invalid_index] = dec!(0.01234567);
+    let expected = vec![
+        FillReport::new(
+            account_id,
+            InstrumentId::from("BTCUSDT-LINEAR.BYBIT"),
+            VenueOrderId::from("8c065341-7b52-4ca9-ac2c-37e31ac55c94"),
+            TradeId::from("e0cbe81d-0f18-5866-9415-cf319b5dab3b"),
+            OrderSide::Buy,
+            Quantity::from("0.100"),
+            Price::from("50000.0"),
+            Money::from_decimal(fees[0], Currency::USDT()).unwrap(),
+            LiquiditySide::Maker,
+            Some(ClientOrderId::from("test-order-001")),
+            None,
+            UnixNanos::from(1_672_282_722_429_000_000),
+            reports[0].ts_init,
+            Some(reports[0].report_id),
+        ),
+        FillReport::new(
+            account_id,
+            InstrumentId::from("ETHUSDT-LINEAR.BYBIT"),
+            VenueOrderId::from("7b954230-6a41-3ba8-bc20-26d20ab44b83"),
+            TradeId::from("f1dce92e-1g29-6977-a526-dg420c6ecb4c"),
+            OrderSide::Sell,
+            Quantity::from("0.50"),
+            Price::from("3000.00"),
+            Money::from_decimal(fees[1], Currency::USDT()).unwrap(),
+            LiquiditySide::Taker,
+            Some(ClientOrderId::from("test-order-002")),
+            None,
+            UnixNanos::from(1_672_282_822_529_000_000),
+            reports[1].ts_init,
+            Some(reports[1].report_id),
+        ),
+    ];
+
+    assert_eq!(reports, expected);
+}
+
+#[rstest]
+#[case::empty("empty")]
+#[case::funding("funding")]
+#[case::uncached("uncached")]
+#[tokio::test]
+async fn test_request_fill_reports_excluded_commission_failure(#[case] scenario: &str) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+    let instruments = client
+        .request_instruments(BybitProductType::Linear, None, None)
+        .await
+        .unwrap();
+
+    for instrument in instruments {
+        client.cache_instrument(instrument);
+    }
+
+    let mut response = load_test_data("http_get_executions.json");
+    response["result"]["nextPageCursor"] = json!("");
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    response["result"]["list"][0]["execFee"] = json!("9999999999999999999999999999");
+    match scenario {
+        "empty" => response["result"]["list"] = json!([]),
+        "funding" => response["result"]["list"][0]["execType"] = json!("Funding"),
+        "uncached" => response["result"]["list"][0]["symbol"] = json!("UNLOADEDUSDT"),
+        _ => unreachable!(),
+    }
+
+    *state.execution_response.lock().await = Some(response);
+
+    let reports = client
+        .request_fill_reports(
+            AccountId::from("BYBIT-UNIFIED"),
+            BybitProductType::Linear,
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports, vec![]);
 }
 
 #[rstest]
@@ -3261,8 +3421,12 @@ async fn test_submit_order_stop_market_with_trigger_price() {
 }
 
 #[rstest]
+#[case(TimeInForce::Gtc)]
+#[case(TimeInForce::Gtd)]
 #[tokio::test]
-async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
+async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price(
+    #[case] time_in_force: TimeInForce,
+) {
     let (addr, state) = start_order_capture_test_server().await.unwrap();
     let base_url = format!("http://{addr}");
 
@@ -3304,7 +3468,7 @@ async fn test_submit_order_stop_limit_with_trigger_price_and_limit_price() {
             OrderSide::Sell,
             OrderType::StopLimit,
             quantity,
-            Some(TimeInForce::Gtc),
+            Some(time_in_force),
             Some(limit_price),
             Some(trigger_price),
             None,  // post_only

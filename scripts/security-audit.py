@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import shutil
 import subprocess
@@ -45,6 +46,7 @@ VULNERABILITY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]*$")
 CARGO_AUDIT_DENIES = frozenset({"unmaintained", "unsound", "warnings", "yanked"})
 CARGO_DENY_CHECKS = frozenset({"advisories", "bans", "licenses", "sources"})
 NODE_FULL_MODES = frozenset({"gate", "off", "report"})
+CONNECTION_RETRIES = 3
 
 
 class AuditError(Exception):
@@ -120,6 +122,7 @@ class StepOptions:
     cwd: Path | None = None
     report: bool = False
     gate: bool = True
+    retry_on: str | None = None
 
 
 DEFAULT_STEP_OPTIONS = StepOptions()
@@ -466,18 +469,30 @@ def _run_process(
     *,
     root: Path,
     cwd: Path | None = None,
+    retry_on: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
-    try:
-        return subprocess.run(  # noqa: S603
-            args,
-            cwd=cwd or root,
-            check=False,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-        )
-    except OSError as error:
-        raise AuditError(f"could not execute {args[0]}: {error}") from error
+    retry = 0
+    while True:
+        try:
+            result = subprocess.run(  # noqa: S603
+                args,
+                cwd=cwd or root,
+                check=False,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+            )
+        except OSError as error:
+            raise AuditError(f"could not execute {args[0]}: {error}") from error
+        if (
+            result.returncode == 0
+            or retry_on is None
+            or retry_on not in result.stderr
+            or retry == CONNECTION_RETRIES
+        ):
+            return result
+        retry += 1
+        _write(f"retry {retry}/{CONNECTION_RETRIES}: {retry_on}")
 
 
 def _output(result: subprocess.CompletedProcess[str]) -> str:
@@ -575,7 +590,7 @@ def _run_step(
     options: StepOptions = DEFAULT_STEP_OPTIONS,
 ) -> None:
     _write(f"run  {label}")
-    result = _run_process(args, root=context.root, cwd=options.cwd)
+    result = _run_process(args, root=context.root, cwd=options.cwd, retry_on=options.retry_on)
     output = _output(result)
     if output and (options.report or result.returncode != 0):
         _write(output, error=result.returncode != 0)
@@ -618,16 +633,69 @@ def _run_cargo(context: Context, policy: AuditPolicy) -> list[str]:  # noqa: C90
         except AuditError as error:
             failures.append(str(error))
     for audit in policy.cargo_vets:
-        label = f"cargo vet {audit.manifest.as_posix()}"
-        args = [cargo, "vet", "--manifest-path", audit.manifest.as_posix()]
-        if audit.store is not None:
-            args.extend(("--store-path", audit.store.as_posix()))
-        args.append("--locked")
         try:
-            _run_step(context, label, args)
+            _run_cargo_vet(context, audit)
         except AuditError as error:
             failures.append(str(error))
     return failures
+
+
+def _run_cargo_vet(context: Context, audit: CargoVet) -> None:
+    cargo = context.executables["cargo"]
+    label = f"cargo vet {audit.manifest.as_posix()}"
+    args = [cargo, "vet", "--manifest-path", audit.manifest.as_posix()]
+    if audit.store is None or audit.store.is_relative_to(audit.manifest.parent):
+        if audit.store is not None:
+            args.extend(("--store-path", audit.store.as_posix()))
+        _run_step(context, label, [*args, "--locked"])
+        return
+
+    metadata = _run_process(
+        [
+            cargo,
+            "metadata",
+            "--manifest-path",
+            audit.manifest.as_posix(),
+            "--all-features",
+            "--locked",
+            "--format-version",
+            "1",
+        ],
+        root=context.root,
+    )
+    if metadata.returncode != 0:
+        raise AuditError(f"cargo metadata {audit.manifest.as_posix()} failed: {_output(metadata)}")
+    names = {package["name"] for package in json.loads(metadata.stdout)["packages"]}
+    config_path = context.root / audit.store / "config.toml"
+    config = _read_toml(config_path)
+    policies = cast("dict[str, object]", config.get("policy", {}))
+    unused = {name for name in policies if name.partition(":")[0] not in names}
+    if not unused:
+        _run_step(context, label, [*args, "--store-path", audit.store.as_posix(), "--locked"])
+        return
+
+    sections = re.split(r"(?m)(?=^\[)", config_path.read_text(encoding="utf-8"))
+    retained = []
+    for section in sections:
+        header = section.partition("\n")[0]
+        if header.startswith("[policy."):
+            policy = cast("dict[str, object]", tomllib.loads(header)["policy"])
+            if unused.intersection(policy):
+                continue
+        retained.append(section)
+    scoped_text = "".join(retained)
+    expected = dict(config)
+    expected["policy"] = {name: value for name, value in policies.items() if name not in unused}
+    if not expected["policy"]:
+        del expected["policy"]
+    if tomllib.loads(scoped_text) != expected:
+        raise AuditError(f"could not preserve applicable policies from {config_path}")
+
+    with tempfile.TemporaryDirectory(prefix="nautilus-cargo-vet-") as temp:
+        store = Path(temp) / "supply-chain"
+        shutil.copytree(context.root / audit.store, store)
+        (store / "config.toml").write_text(scoped_text, encoding="utf-8")
+        _run_step(context, label, [*args, "--store-path", str(store), "--locked"])
 
 
 def _run_python_audit(context: Context, audit: PythonAudit) -> None:
@@ -673,6 +741,8 @@ def _run_python_audit(context: Context, audit: PythonAudit) -> None:
             f"pip-audit=={context.versions['pip-audit']}",
             "--",
             "pip-audit",
+            "--timeout",
+            "30",
             "--cache-dir",
             str(cache),
             "--progress-spinner",
@@ -684,7 +754,12 @@ def _run_python_audit(context: Context, audit: PythonAudit) -> None:
         ]
         for vulnerability in audit.ignores:
             args.extend(("--ignore-vuln", vulnerability))
-        _run_step(context, f"pip-audit {audit.project.as_posix()}", args)
+        _run_step(
+            context,
+            f"pip-audit {audit.project.as_posix()}",
+            args,
+            options=StepOptions(retry_on="Could not connect to PyPI's vulnerability feed"),
+        )
 
 
 def _run_python(context: Context, policy: AuditPolicy) -> list[str]:

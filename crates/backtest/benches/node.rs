@@ -49,7 +49,9 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     types::{Price, Quantity},
 };
-use nautilus_persistence::backend::parquet::catalog::ParquetDataCatalog;
+use nautilus_persistence::{
+    backend::parquet::catalog::ParquetDataCatalog, config::DataCatalogConfig,
+};
 use tempfile::TempDir;
 use ustr::Ustr;
 
@@ -251,7 +253,7 @@ fn run_config(
         .expect("venue config should be valid");
     let data = BacktestDataConfig::builder()
         .data_type(NautilusDataType::OrderBookDelta)
-        .catalog_path(catalog_path.to_string())
+        .catalog(DataCatalogConfig::new(catalog_path.to_string(), None, None))
         .instrument_id(instrument_id)
         .batch_deltas(batch_deltas)
         .build()

@@ -36,6 +36,9 @@ use crate::types::{Currency, Money, fixed::raw_scale, money::MoneyRaw};
 impl Money {
     /// Represents an amount of money in a specified currency denomination.
     ///
+    /// The currency precision supplies default rounding and minimum display precision.
+    /// Exact constructors and raw construction retain finer native fixed-point amounts.
+    ///
     /// - `MONEY_MAX` - Maximum representable money amount
     /// - `MONEY_MIN` - Minimum representable money amount
     #[new]
@@ -466,6 +469,43 @@ impl Money {
         Self::from_str(value).map_err(to_pyvalue_err)
     }
 
+    /// Creates money without rounding to the currency precision.
+    ///
+    /// The native fixed-point scale limits the amount precision. The currency
+    /// identity and its default precision remain unchanged.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the currency precision is invalid, the amount loses precision at the
+    /// native scale, or the amount exceeds money bounds.
+    #[staticmethod]
+    #[pyo3(name = "from_decimal_exact")]
+    fn py_from_decimal_exact(
+        #[gen_stub(override_type(type_repr = "decimal.Decimal", imports = ("decimal",)))]
+        value: &Bound<'_, PyAny>,
+        currency: Currency,
+    ) -> PyResult<Self> {
+        let decimal_type = value.py().import("decimal")?.getattr("Decimal")?;
+        if !value.is_instance(&decimal_type)? {
+            return Err(to_pytype_err("value must be a Decimal"));
+        }
+
+        let amount = value.str()?;
+        Self::from_decimal_str_exact(&amount.to_cow()?, currency).map_err(to_pyvalue_err)
+    }
+
+    /// Parses an amount and currency without rounding to the currency precision.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the input is invalid, its currency is unknown, or its amount
+    /// is not exactly representable at the native scale within money bounds.
+    #[staticmethod]
+    #[pyo3(name = "from_str_exact")]
+    fn py_from_str_exact(value: &str) -> PyResult<Self> {
+        Self::from_str_exact(value).map_err(to_pyvalue_err)
+    }
+
     /// Returns `true` if the value of this instance is zero.
     #[pyo3(name = "is_zero")]
     fn py_is_zero(&self) -> bool {
@@ -479,6 +519,9 @@ impl Money {
     }
 
     /// Returns the value of this instance as a `Decimal`.
+    ///
+    /// Preserves stored fractional digits beyond the currency precision. Values whose
+    /// significant digits exceed the 96-bit mantissa of Rust `Decimal` can lose scale during conversion.
     #[pyo3(name = "as_decimal")]
     fn py_as_decimal(&self) -> Decimal {
         self.as_decimal()

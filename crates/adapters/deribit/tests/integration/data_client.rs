@@ -48,7 +48,8 @@ use nautilus_common::{
             InstrumentResponse, RequestCustomData, RequestInstrument,
             RequestOptionChainReferencePrice, SubscribeBars, SubscribeBookDeltas,
             SubscribeBookDepth, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeTrades,
+            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, SubscriptionError,
+            UnsubscribeTrades,
         },
         system::SocketState,
     },
@@ -149,6 +150,17 @@ fn instrument_response(events: &[DataEvent]) -> Option<&InstrumentResponse> {
         DataEvent::Response(DataResponse::Instrument(response)) => Some(response.as_ref()),
         _ => None,
     })
+}
+
+fn book_payload_for_channel(raw_snapshot: &Value, channel: &str) -> Value {
+    let mut payload = if channel.split('.').count() == 5 {
+        load_json("ws_book_grouped_snapshot.json")
+    } else {
+        raw_snapshot.clone()
+    };
+
+    payload["params"]["channel"] = json!(channel);
+    payload
 }
 
 fn trade_payload_for_channel(base_payload: &Value, channel: &str, has_combo_parent: bool) -> Value {
@@ -535,7 +547,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                                         has_combo_parent,
                                     ))
                                 } else if channel.starts_with("book.") {
-                                    Some(book_snapshot_payload.clone())
+                                    Some(book_payload_for_channel(&book_snapshot_payload, channel))
                                 } else if let Some(symbol) = channel.strip_prefix("quote.") {
                                     let mut p = quote_payload.clone();
                                     p["params"]["channel"] = json!(channel);
@@ -776,8 +788,8 @@ async fn test_option_chain_reference_price_response(
         UnixNanos::from(1_743_120_000_000_000_000),
     );
     let instrument_id = InstrumentId::from("BTC-28MAR25-90000-C.DERIBIT");
-    let mut params = Params::new();
-    params.insert("venue-error".to_string(), json!(venue_error));
+    let params = Params::new([("venue-error".to_string(), json!(venue_error))].into());
+
     let request = RequestOptionChainReferencePrice::new(
         series_id,
         instrument_id,
@@ -932,7 +944,7 @@ async fn test_data_client_connect_disconnect() {
 
 #[rstest]
 #[tokio::test]
-async fn test_data_client_subscribe_trades() {
+async fn test_data_client_subscribe_trades(#[values(false, true)] batch: bool) {
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -950,8 +962,13 @@ async fn test_data_client_subscribe_trades() {
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
     let cmd = SubscribeTrades::new(
-        instrument_id,
+        if batch {
+            vec![InstrumentId::from("UNCACHED.DERIBIT"), instrument_id]
+        } else {
+            vec![instrument_id]
+        },
         Some(*DERIBIT_CLIENT_ID),
         None,
         UUID4::new(),
@@ -959,7 +976,17 @@ async fn test_data_client_subscribe_trades() {
         None,
         None,
     );
-    client.subscribe_trades(cmd).unwrap();
+
+    let result = client.subscribe_trades(cmd);
+    if batch {
+        let error = result.unwrap_err();
+        let partial = error.downcast_ref::<SubscriptionError>().unwrap();
+        assert_eq!(partial.instrument_ids_accepted, vec![instrument_id]);
+        assert_eq!(partial.bar_types_accepted, Vec::<BarType>::new());
+        assert!(partial.source.to_string().contains("UNCACHED.DERIBIT"));
+    } else {
+        result.unwrap();
+    }
 
     wait_until_async(
         || async { !state.subscription_events.lock().await.is_empty() },
@@ -1001,8 +1028,7 @@ async fn test_data_client_subscribe_combo_legs_expands_trade_channels() {
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let mut params = Params::new();
-    params.insert("subscribe_combo_legs".to_string(), json!(true));
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
 
     let subscribe = SubscribeTrades::new(
         instrument_id,
@@ -1069,8 +1095,7 @@ async fn test_data_client_subscribe_combo_legs_delivers_parent_and_leg_trades() 
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let mut params = Params::new();
-    params.insert("subscribe_combo_legs".to_string(), json!(true));
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
 
     let subscribe = SubscribeTrades::new(
         instrument_id,
@@ -1162,8 +1187,7 @@ async fn test_data_client_subscribe_combo_legs_repeated_unsubscribes_last_refere
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let mut params = Params::new();
-    params.insert("subscribe_combo_legs".to_string(), json!(true));
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
 
     let first_command_id = UUID4::new();
     let first_subscribe = SubscribeTrades::new(
@@ -1288,11 +1312,9 @@ async fn test_data_client_subscribe_combo_legs_requires_opt_in(#[case] opt_in: O
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let params = opt_in.map(|value| {
-        let mut params = Params::new();
-        params.insert("subscribe_combo_legs".to_string(), json!(value));
-        params
-    });
+
+    let params = opt_in
+        .map(|value| Params::new([("subscribe_combo_legs".to_string(), json!(value))].into()));
 
     let command_id = UUID4::new();
     let subscribe = SubscribeTrades::new(
@@ -1360,8 +1382,7 @@ async fn test_data_client_subscribe_combo_legs_after_lazy_loading_combo() {
     state.subscription_events.lock().await.clear();
 
     let instrument_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
-    let mut params = Params::new();
-    params.insert("subscribe_combo_legs".to_string(), json!(true));
+    let params = Params::new([("subscribe_combo_legs".to_string(), json!(true))].into());
 
     let subscribe = SubscribeTrades::new(
         instrument_id,
@@ -1447,8 +1468,10 @@ async fn test_data_client_subscribe_quotes() {
 }
 
 #[rstest]
+#[case::deltas(SubscribeKind::BookDeltas)]
+#[case::depth(SubscribeKind::BookDepth)]
 #[tokio::test]
-async fn test_data_client_subscribe_book_deltas() {
+async fn test_data_client_subscribe_book(#[case] kind: SubscribeKind) {
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(tx);
@@ -1466,19 +1489,7 @@ async fn test_data_client_subscribe_book_deltas() {
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
-    let cmd = SubscribeBookDeltas::new(
-        instrument_id,
-        BookType::L2_MBP,
-        Some(*DERIBIT_CLIENT_ID),
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        false,
-        None,
-        None,
-    );
-    client.subscribe_book_deltas(cmd).unwrap();
+    dispatch_subscribe(&mut client, kind, instrument_id).unwrap();
 
     wait_until_async(
         || async {
@@ -1498,10 +1509,57 @@ async fn test_data_client_subscribe_book_deltas() {
         .expect("timeout waiting for event")
         .expect("channel closed");
 
-    assert!(
-        matches!(event, DataEvent::Data(Data::BookDeltas(_))),
-        "Expected Deltas event, was: {event:?}"
-    );
+    match (kind, event) {
+        (SubscribeKind::BookDeltas, DataEvent::Data(Data::BookDeltas(deltas))) => {
+            assert_eq!(deltas.sequence, 136_725_664_747);
+            assert_eq!(deltas.deltas.len(), 21);
+        }
+        (SubscribeKind::BookDepth, DataEvent::Data(Data::BookDepth(depth))) => {
+            assert_eq!(depth.instrument_id, instrument_id);
+            assert_eq!(depth.sequence, 136_725_664_747);
+            assert_eq!(depth.bids.len(), 10);
+            assert_eq!(depth.asks.len(), 10);
+            assert_eq!(depth.bids[0].price.as_decimal(), dec!(89532.5));
+            assert_eq!(depth.bids[0].size.as_decimal(), dec!(254900));
+            assert_eq!(depth.asks[0].price.as_decimal(), dec!(89533));
+            assert_eq!(depth.asks[0].size.as_decimal(), dec!(91570));
+        }
+        (_, event) => panic!("unexpected book event: {event:?}"),
+    }
+
+    assert!(rx.try_recv().is_err());
+
+    client.disconnect().await.unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let kind_reconnected = if matches!(kind, SubscribeKind::BookDepth) {
+        SubscribeKind::BookDeltas
+    } else {
+        SubscribeKind::BookDepth
+    };
+
+    dispatch_subscribe(&mut client, kind_reconnected, instrument_id).unwrap();
+    let event = tokio::time::timeout(TEST_TIMEOUT, rx.recv())
+        .await
+        .expect("timeout waiting for book after reconnect")
+        .expect("channel closed");
+
+    match (kind_reconnected, event) {
+        (SubscribeKind::BookDeltas, DataEvent::Data(Data::BookDeltas(deltas))) => {
+            assert_eq!(deltas.instrument_id, instrument_id);
+            assert_eq!(deltas.sequence, 136_725_664_747);
+            assert_eq!(deltas.deltas.len(), 21);
+        }
+        (SubscribeKind::BookDepth, DataEvent::Data(Data::BookDepth(depth))) => {
+            assert_eq!(depth.instrument_id, instrument_id);
+            assert_eq!(depth.sequence, 136_725_664_747);
+            assert_eq!(depth.bids.len(), 10);
+            assert_eq!(depth.asks.len(), 10);
+        }
+        (_, event) => panic!("unexpected book event after reconnect: {event:?}"),
+    }
 
     client.disconnect().await.unwrap();
 }
@@ -1920,7 +1978,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     wait_until_async(
         || {
             while let Ok(event) = rx.try_recv() {
-                if matches!(event, DataEvent::Instrument(_)) {
+                if matches!(event, DataEvent::Data(Data::Instrument(_))) {
                     counter.fetch_add(1, Ordering::Relaxed);
                 }
             }
@@ -1940,14 +1998,18 @@ async fn test_data_client_emits_instruments_on_connect() {
 }
 
 fn book_summary_data_type(currency: &str, kind: &str) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "currency".to_string(),
-        serde_json::Value::String(currency.to_string()),
-    );
-    metadata.insert(
-        "kind".to_string(),
-        serde_json::Value::String(kind.to_string()),
+    let metadata = Params::new(
+        [
+            (
+                "currency".to_string(),
+                serde_json::Value::String(currency.to_string()),
+            ),
+            (
+                "kind".to_string(),
+                serde_json::Value::String(kind.to_string()),
+            ),
+        ]
+        .into(),
     );
     DataType::new(
         "DeribitBookSummary",
@@ -2105,10 +2167,12 @@ async fn test_data_client_request_book_summaries_defaults_kind_and_uppercases_cu
     while rx.try_recv().is_ok() {}
 
     // Selector-only: lowercase currency, omit kind, no catalog identifier.
-    let mut metadata = Params::new();
-    metadata.insert(
-        "currency".to_string(),
-        serde_json::Value::String("eth".to_string()),
+    let metadata = Params::new(
+        [(
+            "currency".to_string(),
+            serde_json::Value::String("eth".to_string()),
+        )]
+        .into(),
     );
     let request_data_type = DataType::new("DeribitBookSummary", Some(metadata), None);
 

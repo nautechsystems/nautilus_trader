@@ -183,7 +183,8 @@ async fn test_submit_order_via_ws_sends_add_order_message() {
         ..Default::default()
     };
 
-    let mut ws_client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut ws_client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     let cmd_tx_handle = ws_client.handler_command_handle();
     let (order_state, _pending_tasks) = build_order_request_state(cmd_tx_handle);
@@ -256,7 +257,9 @@ async fn test_closed_timeout_scope_does_not_reclassify_sent_order_as_unsent() {
         ws_private_url: Some(ws_url),
         ..Default::default()
     };
-    let mut ws_client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+
+    let mut ws_client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
     let cmd_tx_handle = ws_client.handler_command_handle();
     let (order_state, pending_tasks) = build_order_request_state(cmd_tx_handle);
 
@@ -307,7 +310,7 @@ async fn test_submit_order_falls_back_to_rest_when_ws_inactive() {
         ..Default::default()
     };
 
-    let ws_client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let ws_client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     assert!(
         !ws_client.is_active(),

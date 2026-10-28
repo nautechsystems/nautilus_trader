@@ -18,22 +18,26 @@
 //! Each bench measures one message kind end-to-end (decode + parse + cache
 //! lookup + Nautilus type construction). No I/O, no async runtime, no channel.
 
-mod common;
+include!("adapter/mod.rs");
+
+#[path = "common/mod.rs"]
+mod inputs;
 
 use std::hint::black_box;
 
-use common::{btc_perp, fixtures, instrument_cache};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use inputs::{btc_perp, fixtures, instrument_cache};
 use nautilus_core::UnixNanos;
-use nautilus_hyperliquid::websocket::{
-    messages::{HyperliquidWsMessage, WsActiveAssetCtxData, WsUserEventData},
+use nautilus_model::data::BarType;
+
+use crate::websocket::{
+    messages::{HyperliquidWsMessage, WsActiveAssetCtxData, WsUserEventData, decode_ws_message},
     parse::{
         parse_ws_asset_context, parse_ws_candle, parse_ws_fill_report, parse_ws_order_book_deltas,
         parse_ws_order_book_depth, parse_ws_order_status_report, parse_ws_quote_tick,
         parse_ws_trade_tick,
     },
 };
-use nautilus_model::data::BarType;
 
 fn bench_trades(c: &mut Criterion) {
     let instruments = instrument_cache();
@@ -43,8 +47,8 @@ fn bench_trades(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("trades", |b| {
         b.iter(|| {
-            let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::TRADE)).unwrap();
+            let msg: HyperliquidWsMessage = decode_ws_message(black_box(fixtures::TRADE)).unwrap();
+
             let HyperliquidWsMessage::Trades { data } = msg else {
                 unreachable!()
             };
@@ -66,7 +70,8 @@ fn bench_book_deltas(c: &mut Criterion) {
     group.bench_function("book_deltas", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::BOOK_L2)).unwrap();
+                decode_ws_message(black_box(fixtures::BOOK_L2)).unwrap();
+
             let HyperliquidWsMessage::L2Book { data } = msg else {
                 unreachable!()
             };
@@ -87,7 +92,8 @@ fn bench_book_depth(c: &mut Criterion) {
     group.bench_function("book_depth", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::BOOK_L2)).unwrap();
+                decode_ws_message(black_box(fixtures::BOOK_L2)).unwrap();
+
             let HyperliquidWsMessage::L2Book { data } = msg else {
                 unreachable!()
             };
@@ -107,7 +113,8 @@ fn bench_quotes(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("quotes", |b| {
         b.iter(|| {
-            let msg: HyperliquidWsMessage = serde_json::from_str(black_box(fixtures::BBO)).unwrap();
+            let msg: HyperliquidWsMessage = decode_ws_message(black_box(fixtures::BBO)).unwrap();
+
             let HyperliquidWsMessage::Bbo { data } = msg else {
                 unreachable!()
             };
@@ -128,8 +135,8 @@ fn bench_bars(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("bars", |b| {
         b.iter(|| {
-            let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::CANDLE)).unwrap();
+            let msg: HyperliquidWsMessage = decode_ws_message(black_box(fixtures::CANDLE)).unwrap();
+
             let HyperliquidWsMessage::Candle { data } = msg else {
                 unreachable!()
             };
@@ -149,7 +156,8 @@ fn bench_mark_price(c: &mut Criterion) {
     group.bench_function("mark_price", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::ACTIVE_ASSET_CTX_PERP)).unwrap();
+                decode_ws_message(black_box(fixtures::ACTIVE_ASSET_CTX_PERP)).unwrap();
+
             let HyperliquidWsMessage::ActiveAssetCtx { data } = msg else {
                 unreachable!()
             };
@@ -175,7 +183,8 @@ fn bench_index_price(c: &mut Criterion) {
     group.bench_function("index_price", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::ACTIVE_ASSET_CTX_PERP)).unwrap();
+                decode_ws_message(black_box(fixtures::ACTIVE_ASSET_CTX_PERP)).unwrap();
+
             let HyperliquidWsMessage::ActiveAssetCtx { data } = msg else {
                 unreachable!()
             };
@@ -201,7 +210,8 @@ fn bench_funding_rate(c: &mut Criterion) {
     group.bench_function("funding_rate", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::ACTIVE_ASSET_CTX_PERP)).unwrap();
+                decode_ws_message(black_box(fixtures::ACTIVE_ASSET_CTX_PERP)).unwrap();
+
             let HyperliquidWsMessage::ActiveAssetCtx { data } = msg else {
                 unreachable!()
             };
@@ -220,7 +230,7 @@ fn bench_funding_rate(c: &mut Criterion) {
 
 fn bench_order_fill(c: &mut Criterion) {
     let instruments = instrument_cache();
-    let account_id = common::account_id();
+    let account_id = inputs::account_id();
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
@@ -228,7 +238,8 @@ fn bench_order_fill(c: &mut Criterion) {
     group.bench_function("order_fill", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::USER_FILL)).unwrap();
+                decode_ws_message(black_box(fixtures::USER_FILL)).unwrap();
+
             let fills = match msg {
                 HyperliquidWsMessage::User { data } | HyperliquidWsMessage::UserEvents { data } => {
                     match data {
@@ -249,7 +260,7 @@ fn bench_order_fill(c: &mut Criterion) {
 
 fn bench_order_event(c: &mut Criterion) {
     let instruments = instrument_cache();
-    let account_id = common::account_id();
+    let account_id = inputs::account_id();
     let ts_init = UnixNanos::default();
 
     let mut group = c.benchmark_group("inbound_pipeline");
@@ -257,7 +268,8 @@ fn bench_order_event(c: &mut Criterion) {
     group.bench_function("order_event", |b| {
         b.iter(|| {
             let msg: HyperliquidWsMessage =
-                serde_json::from_str(black_box(fixtures::ORDER_UPDATE)).unwrap();
+                decode_ws_message(black_box(fixtures::ORDER_UPDATE)).unwrap();
+
             let HyperliquidWsMessage::OrderUpdates { data } = msg else {
                 unreachable!()
             };

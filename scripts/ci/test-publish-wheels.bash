@@ -414,16 +414,78 @@ if [[ "${1:-}" == "--version" ]]; then
   echo "aws-cli/mock"
   exit 0
 fi
-if [[ "${1:-}" != "s3" ]]; then
-  echo "Unexpected aws command: $*" >&2
-  exit 91
-fi
-
 operation=$2
 source_path=${3:-}
 destination_path=${4:-}
 root="${MOCK_R2_ROOT:?}"
 expected_base="s3://${CLOUDFLARE_R2_BUCKET_NAME:?}/${CLOUDFLARE_R2_PREFIX:?}/"
+competing_boundary="${MOCK_R2_COMPETING_BOUNDARY:-index-write}"
+
+if [[ ("$1" == "s3api" &&
+  (("$operation" == "get-object" && "$competing_boundary" == "index-read") ||
+  ("$operation" == "put-object" && "$competing_boundary" == "index-write"))) ||
+  ("$1" == "s3" && "$operation" == "cp" &&
+  "$destination_path" == "${expected_base}index.html" && "$competing_boundary" == "index-write") ]]; then
+  if [[ -n "${MOCK_R2_COMPETING_CASE:-}" && ! -f "${MOCK_R2_COMPETING_CASE}/completed" ]]; then
+    MOCK_R2_COMPETING_CASE= run_transaction "$MOCK_R2_COMPETING_CASE" 2.0.0 '' '' stable \
+      > "${MOCK_R2_COMPETING_CASE}/output" 2>&1
+    touch "${MOCK_R2_COMPETING_CASE}/completed"
+  fi
+fi
+
+if [[ "$1" == "s3api" ]]; then
+  shift 2
+  bucket=''
+  key=''
+  body=''
+  condition=''
+  etag=''
+  output=''
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --bucket) bucket=$2; shift 2 ;;
+      --key) key=$2; shift 2 ;;
+      --body) body=$2; shift 2 ;;
+      --if-match|--if-none-match) condition=$1; etag=$2; shift 2 ;;
+      --endpoint-url=*) shift ;;
+      --query|--output|--content-type|--cache-control|--cli-connect-timeout|--cli-read-timeout)
+        shift 2 ;;
+      *) output=$1; shift ;;
+    esac
+  done
+  [[ "$bucket" == "$CLOUDFLARE_R2_BUCKET_NAME" && "$key" == "${CLOUDFLARE_R2_PREFIX}/index.html" ]] || exit 92
+  if [[ "$operation" == "get-object" ]]; then
+    if [[ -n "${MOCK_R2_INDEX_READ_ERROR:-}" ]]; then
+      echo 'An error occurred (AccessDenied) when calling the GetObject operation' >&2
+      exit 254
+    fi
+    if [[ ! -f "${root}/index.html" ]]; then
+      echo 'An error occurred (NoSuchKey) when calling the GetObject operation' >&2
+      exit 254
+    fi
+    /bin/cp "${root}/index.html" "$output"
+    printf '%s\n' "${MOCK_R2_INDEX_ETAG-\"$(cksum < "$output")\"}"
+    exit 0
+  fi
+  [[ "$operation" == "put-object" ]] || exit 95
+
+  printf '%s\n' "$condition" >> "${MOCK_UV_LOG}.index-writes"
+  if [[ "${MOCK_R2_INDEX_CONFLICT:-}" == "always" ]] ||
+    { [[ "$condition" == "--if-none-match" ]] && [[ -f "${root}/index.html" ]]; } ||
+    { [[ "$condition" == "--if-match" ]] &&
+      { [[ ! -f "${root}/index.html" ]] ||
+        [[ "$etag" != "\"$(cksum < "${root}/index.html")\"" ]]; }; }; then
+    echo 'An error occurred (PreconditionFailed) when calling the PutObject operation' >&2
+    exit 254
+  fi
+  [[ "$condition" == "--if-match" || ("$condition" == "--if-none-match" && "$etag" == '*') ]] || exit 98
+  /bin/cp "$body" "${root}/index.html"
+  exit 0
+fi
+if [[ "$1" != "s3" ]]; then
+  echo "Unexpected aws command: $*" >&2
+  exit 91
+fi
 
 local_path() {
   local uri=$1
@@ -484,11 +546,19 @@ MOCK
   cat > "${mock_bin}/curl" << 'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "${1:-}" != "-fsSLo" || "${3:-}" != "${PUBLISH_WHEELS_INDEX_URL%/}/nautilus-trader/" ]]; then
+if [[ "${1:-}" != "--connect-timeout" || "${2:-}" != "10" ||
+  "${3:-}" != "--max-time" || "${4:-}" != "60" ||
+  "${5:-}" != "-fsSLo" || "${7:-}" != "${PUBLISH_WHEELS_INDEX_URL%/}/nautilus-trader/" ]]; then
   echo "Unexpected curl invocation: $*" >&2
   exit 96
 fi
-/bin/cp "${MOCK_R2_ROOT:?}/index.html" "$2"
+printf '%s\n' "$*" >> "${MOCK_UV_LOG:?}.curl"
+if [[ "${MOCK_CURL_TIMEOUT:-}" == "always" ]] ||
+  { [[ "${MOCK_CURL_TIMEOUT:-}" == "once" ]] && [[ ! -f "${MOCK_UV_LOG}.curl-timed-out" ]]; }; then
+  touch "${MOCK_UV_LOG}.curl-timed-out"
+  exit 28
+fi
+/bin/cp "${MOCK_R2_ROOT:?}/index.html" "$6"
 MOCK
 
   cat > "${mock_bin}/uv" << 'MOCK'
@@ -496,14 +566,21 @@ MOCK
 set -euo pipefail
 printf '%s\n' "$*" >> "${MOCK_UV_LOG:?}"
 if [[ "${1:-}" == "venv" ]]; then
+  [[ -z "${UV_HTTP_TIMEOUT:-}" && -z "${UV_HTTP_RETRIES:-}" ]] || exit 98
   destination="${@: -1}"
   mkdir -p "${destination}/bin"
+elif [[ "${1:-} ${2:-}" == "pip install" ]]; then
+  [[ "${UV_NO_CACHE:-}" == "1" && "${UV_HTTP_TIMEOUT:-}" == "120" && "${UV_HTTP_RETRIES:-}" == "5" ]] || exit 99
+  if [[ "${MOCK_UV_INSTALL_FAIL:-}" == "true" ]]; then
+    exit 100
+  fi
 fi
 MOCK
 
   cat > "${mock_bin}/sleep" << 'MOCK'
 #!/usr/bin/env bash
 set -euo pipefail
+printf '%s\n' "$*" >> "${MOCK_UV_LOG:?}.sleep"
 exit 0
 MOCK
 
@@ -548,13 +625,14 @@ run_transaction() {
   local version=$2
   local fail_delete=${3:-}
   local fail_upload=${4:-}
+  local matrix=${5:-development}
   local mock_bin="${work_dir}/r2-bin"
   local prefix="simple/test-nautilus-trader"
 
-  create_r2_mocks "$mock_bin"
   : > "${case_dir}/uv.log"
   (
     cd "$case_dir"
+    unset UV_HTTP_TIMEOUT UV_HTTP_RETRIES
     export AWS_ACCESS_KEY_ID=''
     export AWS_SECRET_ACCESS_KEY=''
     export AWS_SESSION_TOKEN=''
@@ -568,7 +646,7 @@ run_transaction() {
     export CLOUDFLARE_R2_PREFIX="$prefix"
     export CLOUDFLARE_R2_URL=https://r2.invalid
     export PUBLISH_WHEELS_INDEX_URL=https://packages.invalid/simple
-    export PUBLISH_WHEEL_MATRIX=development
+    export PUBLISH_WHEEL_MATRIX="$matrix"
     export PUBLISH_WHEEL_VERSION="$version"
     export PUBLISH_WHEELS_MANIFEST="${case_dir}/manifest"
     export PUBLISH_WHEELS_DELETE_MANIFEST="${case_dir}/delete"
@@ -579,13 +657,161 @@ run_transaction() {
   )
 }
 
+test_overlapping_publication() {
+  local matrix
+  local initial_index
+  local boundary
+  local case_dir
+  local stable_dir
+  local version
+  local output
+  local expected_writes
+
+  for matrix in development nightly; do
+    for initial_index in existing missing; do
+      for boundary in index-read index-write; do
+        case_dir="${work_dir}/overlap-${matrix}-${initial_index}-${boundary}"
+        stable_dir="${case_dir}/stable"
+        output="${case_dir}/output"
+        version=2.0.0rc3.dev20260803
+        if [[ "$matrix" == "development" ]]; then
+          version+='+451'
+        fi
+        prepare_transaction "$case_dir" "$version"
+        if [[ "$matrix" == "nightly" ]]; then
+          create_full_wheels "${case_dir}/dist" "$version"
+        fi
+        if [[ "$initial_index" == "missing" ]]; then
+          rm "${case_dir}/r2/index.html"
+        fi
+        mkdir -p "$stable_dir"
+        ln -s "${case_dir}/r2" "${stable_dir}/r2"
+        create_full_wheels "${stable_dir}/dist" 2.0.0
+
+        (
+          export repo_root work_dir
+          export -f run_transaction
+          MOCK_R2_COMPETING_CASE="$stable_dir" MOCK_R2_COMPETING_BOUNDARY="$boundary" \
+            run_transaction "$case_dir" "$version" '' '' "$matrix"
+        ) > "$output" 2>&1 || {
+          cat "$output" >&2
+          fail "Overlapping publication failed"
+        }
+
+        assert_file "${stable_dir}/completed"
+        assert_line "${stable_dir}/output" "Wheel publication transaction completed"
+        assert_line "$output" "Wheel publication transaction completed"
+        cp "${case_dir}/r2/index.html" "${case_dir}/published-index.html"
+        write_index "${case_dir}/r2"
+        cmp -s "${case_dir}/published-index.html" "${case_dir}/r2/index.html" ||
+          fail "Final index must contain exactly the retained wheel links and hashes"
+        while IFS=$'\t' read -r hash _ filename; do
+          assert_file "${case_dir}/r2/${filename}"
+          assert_line "${case_dir}/published-index.html" \
+            "<a href=\"${filename}#sha256=${hash}\">${filename}</a><br>"
+        done < "${stable_dir}/manifest"
+        [[ "$(wc -l < "${stable_dir}/manifest" | tr -d ' ')" == "8" ]] ||
+          fail "Competing stable publication must publish the complete matrix"
+        expected_writes=1
+        if [[ "$boundary" == "index-write" ]]; then
+          expected_writes=2
+          assert_line "$output" "Index upload failed, rebuilding from R2 before retrying (1/5)"
+        fi
+        [[ "$(wc -l < "${case_dir}/uv.log.index-writes" | tr -d ' ')" == "$expected_writes" ]] ||
+          fail "Unexpected number of conditional index writes at ${boundary}"
+        if [[ "$initial_index" == "missing" && "$boundary" == "index-write" ]]; then
+          [[ "$(head -n 1 "${case_dir}/uv.log.index-writes")" == "--if-none-match" ]] ||
+            fail "Missing index must use conditional creation"
+        fi
+      done
+    done
+  done
+}
+
+test_index_write_failures() {
+  local version="2.0.0rc3.dev20260803+451"
+  local case_dir
+  local mode
+  local output
+
+  for mode in conflict read-error; do
+    case_dir="${work_dir}/index-${mode}"
+    output="${case_dir}/output"
+    prepare_transaction "$case_dir" "$version"
+    cp "${case_dir}/r2/index.html" "${case_dir}/original-index.html"
+    if [[ "$mode" == "conflict" ]]; then
+      MOCK_R2_INDEX_CONFLICT=always \
+        run_expect_failure "$output" run_transaction "$case_dir" "$version"
+      assert_line "$output" "Error: Failed to upload index after 5 attempts"
+      [[ "$(wc -l < "${case_dir}/uv.log.index-writes" | tr -d ' ')" == "5" ]] ||
+        fail "Index conflicts must stop after five conditional writes"
+    else
+      printf 'stale-precondition\n' > "${case_dir}/generated-index.html.etag"
+      MOCK_R2_INDEX_READ_ERROR=true \
+        run_expect_failure "$output" run_transaction "$case_dir" "$version"
+      assert_absent "${case_dir}/uv.log.index-writes"
+      assert_absent "${case_dir}/generated-index.html.etag"
+    fi
+    cmp -s "${case_dir}/original-index.html" "${case_dir}/r2/index.html" ||
+      fail "Failed index publication changed the existing index"
+    assert_file "${case_dir}/r2/nautilus_trader-2.0.0rc3.dev20260802+400-cp313-cp313-manylinux_2_34_x86_64.whl"
+    [[ ! -s "${case_dir}/uv.log" ]] || fail "Failed index publication reached installation validation"
+  done
+}
+
+test_index_preconditions() {
+  local case_dir="${work_dir}/index-preconditions"
+  local variable
+  local etag
+  local output="${case_dir}/output"
+  local index_file="${case_dir}/generated-index.html"
+  local command_env=(
+    env
+    "PATH=${work_dir}/r2-bin:$PATH"
+    "MOCK_R2_ROOT=${case_dir}/r2"
+    "MOCK_UV_LOG=${case_dir}/uv.log"
+    CLOUDFLARE_R2_BUCKET_NAME=test-bucket
+    CLOUDFLARE_R2_PREFIX=simple/test-nautilus-trader
+    CLOUDFLARE_R2_URL=https://r2.invalid
+    "PUBLISH_WHEELS_MANIFEST=${case_dir}/manifest"
+    "PUBLISH_WHEELS_DELETE_MANIFEST=${case_dir}/delete"
+    "PUBLISH_WHEELS_INDEX_FILE=${index_file}"
+  )
+
+  prepare_transaction "$case_dir" 2.0.0rc3.dev20260803+451
+  : > "${case_dir}/manifest"
+  : > "${case_dir}/delete"
+  cp "${case_dir}/r2/index.html" "$index_file"
+  printf '"initial-etag"\n' > "${index_file}.etag"
+
+  for variable in PUBLISH_WHEELS_MANIFEST PUBLISH_WHEELS_DELETE_MANIFEST; do
+    run_expect_failure "$output" "${command_env[@]}" env -u "$variable" \
+      bash "${repo_root}/scripts/ci/publish-wheels-r2-upload-index.sh"
+    grep -Fq "${variable} is required" "$output" || fail "Missing ${variable} was not rejected"
+  done
+  for etag in '' None; do
+    printf '%s\n' "$etag" > "${index_file}.etag"
+    run_expect_failure "$output" "${command_env[@]}" \
+      bash "${repo_root}/scripts/ci/publish-wheels-r2-upload-index.sh"
+    assert_line "$output" "Error: Generated index is missing its write precondition"
+  done
+  for etag in '' None '*'; do
+    run_expect_failure "$output" "${command_env[@]}" "MOCK_R2_INDEX_ETAG=$etag" \
+      bash "${repo_root}/scripts/ci/publish-wheels-generate-index.sh"
+    assert_line "$output" "Error: R2 index response is missing an ETag"
+    assert_absent "${index_file}.etag"
+  done
+  assert_absent "${case_dir}/uv.log.index-writes"
+  cmp -s "$index_file" "${case_dir}/r2/index.html" ||
+    fail "Invalid index preconditions changed the existing index"
+}
+
 test_stable_retention_plan() {
   local case_dir="${work_dir}/stable-retention"
   local mock_bin="${work_dir}/r2-bin"
   local prefix="simple/test-nautilus-trader"
 
   mkdir -p "${case_dir}/r2"
-  create_r2_mocks "$mock_bin"
   printf 'older-release\n' > \
     "${case_dir}/r2/nautilus_trader-1.231.0-cp313-cp313-manylinux_2_34_x86_64.whl"
   printf 'development\n' > \
@@ -615,7 +841,6 @@ test_orphan_purge_index_order() {
   local status
 
   mkdir -p "${case_dir}/r2"
-  create_r2_mocks "$mock_bin"
   printf 'orphan\n' > "${case_dir}/r2/${orphan}"
   printf 'release\n' > "${case_dir}/r2/nautilus_trader-2.0.0-cp313-cp313-manylinux_2_34_x86_64.whl"
   write_index "${case_dir}/r2"
@@ -626,6 +851,7 @@ test_orphan_purge_index_order() {
     AWS_ACCESS_KEY_ID=mock \
     AWS_SECRET_ACCESS_KEY=mock \
     MOCK_R2_ROOT="${case_dir}/r2" \
+    MOCK_UV_LOG="${case_dir}/uv.log" \
     MOCK_R2_FAIL_DELETE="$orphan" \
     CLOUDFLARE_R2_BUCKET_NAME=test-bucket \
     CLOUDFLARE_R2_PREFIX="$prefix" \
@@ -732,12 +958,62 @@ test_publication_transaction() {
   assert_absent "${extra}/r2/nautilus_trader-${version}-cp313-cp313-manylinux_2_34_x86_64.whl"
 }
 
+test_public_verification_failures() {
+  local version="2.0.0rc3.dev20260803+451"
+  local case_dir
+  local mode
+  local output
+  local status
+  local old="nautilus_trader-2.0.0rc3.dev20260802+400-cp313-cp313-manylinux_2_34_x86_64.whl"
+
+  for mode in once always install; do
+    case_dir="${work_dir}/public-verification-${mode}"
+    output="${case_dir}/output"
+    prepare_transaction "$case_dir" "$version"
+    if [[ "$mode" == "once" ]]; then
+      MOCK_CURL_TIMEOUT=once \
+        run_expect_success "$output" run_transaction "$case_dir" "$version"
+      [[ "$(wc -l < "${case_dir}/uv.log.curl" | tr -d ' ')" == "2" ]] ||
+        fail "Public index timeout must recover on the second request"
+      assert_line "${case_dir}/uv.log.sleep" "2"
+      assert_absent "${case_dir}/r2/${old}"
+    elif [[ "$mode" == "always" ]]; then
+      MOCK_CURL_TIMEOUT=always \
+        run_expect_failure "$output" run_transaction "$case_dir" "$version"
+      [[ "$(wc -l < "${case_dir}/uv.log.curl" | tr -d ' ')" == "5" ]] ||
+        fail "Public index timeout must stop after five requests"
+      [[ "$(cat "${case_dir}/uv.log.sleep")" == $'2\n4\n8\n16' ]] ||
+        fail "Public index retries must use exponential backoff"
+      [[ ! -s "${case_dir}/uv.log" ]] || fail "Public index failure reached installation validation"
+      assert_file "${case_dir}/r2/${old}"
+    else
+      if MOCK_UV_INSTALL_FAIL=true run_transaction "$case_dir" "$version" > "$output" 2>&1; then
+        status=0
+      else
+        status=$?
+      fi
+      [[ "$status" == "100" ]] || fail "Installation failure returned ${status}, expected 100"
+      [[ "$(wc -l < "${case_dir}/uv.log.curl" | tr -d ' ')" == "1" ]] ||
+        fail "Installation failure must follow one successful index request"
+      [[ "$(wc -l < "${case_dir}/uv.log" | tr -d ' ')" == "2" ]] ||
+        fail "Installation must run once after creating its environment"
+      assert_file "${case_dir}/r2/${old}"
+    fi
+  done
+}
+
+create_r2_mocks "${work_dir}/r2-bin"
+
 test_policy_and_version
 test_security_gate
 test_sha256_portability
 test_artifact_matrix
 test_stable_retention_plan
 test_publication_transaction
+test_public_verification_failures
+test_overlapping_publication
+test_index_write_failures
+test_index_preconditions
 test_orphan_purge_index_order
 
 echo "Wheel publishing tests passed"

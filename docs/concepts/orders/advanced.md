@@ -20,6 +20,13 @@ instruments at that venue, such as pairs, calendar spreads, or multi-leg strateg
 The list takes its representative `instrument_id` from the first order. Consumers that need the
 actual instrument must resolve each order individually.
 
+**Validation failure**: if a member fails per-order risk validation, the risk engine stops submission
+of the list and sends `OrderDenied` events for its [eligible members](../execution/policies.md#command-outcomes).
+The failing member receives its validation-specific reason; other eligible members receive `ORDER_LIST_DENIED`.
+Orders already dispatched by an earlier submission keep their lifecycle.
+
+`DENIED` is terminal. To retry denied orders, create new orders with new client order IDs.
+
 **Mixed-instrument caveats**:
 
 - **Pre-trade checks**: Price precision, quantity precision, and GTD expiry use each order's own
@@ -61,6 +68,26 @@ strategy and emulator manage the same order.
 
 The option manages non-active-local orders that are already open. It does not add native venue
 support or submit a non-active-local OTO child.
+
+```mermaid
+sequenceDiagram
+    participant A as Order A
+    participant M as Strategy order manager
+    participant B as Order B
+    Note over A,B: Each example starts with quantity 10 on both orders. B receives no fills
+    alt OCO
+        A->>M: Fill 4, 6 remaining
+        M->>B: Request cancellation
+    else OUO
+        A->>M: Fill 4, 6 remaining
+        M->>B: Request quantity 6
+        A->>M: Fill remaining 6, 0 remaining
+        M->>B: Request cancellation
+    end
+```
+
+For strategy-managed open orders, OCO requests cancellation on a partial fill; OUO first requests a
+quantity update and requests cancellation when no quantity remains.
 
 ### One-Triggers-Other (OTO)
 
@@ -297,6 +324,27 @@ the exits with an `OUO` contingency. The default `LIMIT` take-profit is also `po
 The factory creates the orders and their relationship metadata. The execution context determines
 whether children wait locally, use a native venue instruction, enter the venue with the parent, or
 require manual strategy handling.
+
+```mermaid
+flowchart TD
+    entry["Entry: MARKET"]
+    subgraph exits["Exit orders"]
+        direction LR
+        stop["Stop-loss: STOP_MARKET<br/>reduce_only"]
+        take["Take-profit: LIMIT<br/>reduce_only, post_only"]
+        stop <-->|"OUO siblings"| take
+    end
+
+    entry -->|"OTO children"| exits
+```
+
+Default bracket metadata connects the entry to both exits with OTO and links the exits to each other
+with OUO.
+
+In backtest and sandbox matching engines, a rejected OTO exit does not cause another exit with
+the same parent to be rejected. Each exit must still pass its own validation. With
+`StrategyConfig.manage_contingent_orders` enabled, a rejected, canceled, or expired OCO/OUO exit
+can cause cancellation of its open siblings.
 
 Create brackets with
 [`OrderFactory`](/docs/python-api-latest/common.html#nautilus_trader.common.OrderFactory), which

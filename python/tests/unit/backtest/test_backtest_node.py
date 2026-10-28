@@ -85,7 +85,7 @@ def test_node_construction() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     config = BacktestRunConfig(venues=[venue], data=[data])
@@ -106,11 +106,11 @@ def test_node_installs_configured_margin_model() -> None:
         starting_balances=["1_000_000 USD"],
         base_currency=Currency.from_str("USD"),
         default_leverage=Decimal(10),
-        margin_model=StandardMarginModel(),
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        margin_model=StandardMarginModel(),
     )
     config = BacktestRunConfig(
         venues=[venue],
@@ -184,15 +184,15 @@ def test_node_applies_configured_latency_model(tmp_path: Path) -> None:
         account_type=AccountType.MARGIN,
         book_type=BookType.L1_MBP,
         starting_balances=["1_000_000 USDT"],
-        latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
         fee_model=MakerTakerFeeModel(
             maker_rate=Decimal(0),
             taker_rate=Decimal(0),
         ),
+        latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path=str(catalog_path),
+        catalog=DataCatalogConfig(path=str(catalog_path)),
         instrument_id=instrument.id,
     )
     config = BacktestRunConfig(
@@ -257,7 +257,7 @@ def test_node_loads_every_instrument_class_from_one_instrument_config(tmp_path: 
     ]
     data = BacktestDataConfig(
         data_type=NautilusDataType.Instrument,
-        catalog_path=str(catalog_path),
+        catalog=DataCatalogConfig(path=str(catalog_path)),
         instrument_ids=[currency_pair.id, equity.id],
     )
     config = BacktestRunConfig(
@@ -681,7 +681,7 @@ def test_node_run_fails_when_fill_cost_exceeds_cash_balance(
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path=str(tmp_path),
+        catalog=DataCatalogConfig(path=str(tmp_path)),
         instrument_id=instrument.id,
     )
     config = BacktestRunConfig(
@@ -741,7 +741,7 @@ def test_node_venue_mismatch_raises() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("BTC/USDT.BINANCE"),
     )
     config = BacktestRunConfig(venues=[venue], data=[data])
@@ -766,7 +766,7 @@ def test_node_repr() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     config = BacktestRunConfig(venues=[venue], data=[data])
@@ -791,7 +791,7 @@ def test_node_dispose() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     config = BacktestRunConfig(venues=[venue], data=[data])
@@ -864,7 +864,7 @@ def test_node_missing_engine_explains_build_requirement(
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path=str(tmp_path),
+        catalog=DataCatalogConfig(path=str(tmp_path)),
         instrument_id=InstrumentId.from_str("AAA.SIM"),
     )
     config = BacktestRunConfig(
@@ -1064,7 +1064,7 @@ def _build_component_node(
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path=str(catalog_path),
+        catalog=DataCatalogConfig(path=str(catalog_path)),
         instrument_id=instrument.id,
     )
     config = BacktestRunConfig(
@@ -1098,7 +1098,7 @@ def _build_ema_cross_node(
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path=catalog_path,
+        catalog=DataCatalogConfig(path=catalog_path),
         instrument_id=instrument.id,
     )
     config = BacktestRunConfig(

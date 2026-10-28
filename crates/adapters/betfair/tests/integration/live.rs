@@ -2020,7 +2020,7 @@ async fn audit_mass_status_uses_coherent_fill_snapshot(
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].side, PositionSide::Short);
         assert_eq!(positions[0].quantity, Quantity::from("8"));
-        assert_eq!(positions[0].avg_px_open, 3.0);
+        assert_eq!(positions[0].avg_px_open, Decimal::from(3));
     }
 
     let mut corrected = snapshot.clone();
@@ -2067,7 +2067,7 @@ async fn audit_mass_status_uses_coherent_fill_snapshot(
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].side, PositionSide::Short);
         assert_eq!(positions[0].quantity, Quantity::from("6"));
-        assert_eq!(positions[0].avg_px_open, 3.0);
+        assert_eq!(positions[0].avg_px_open, Decimal::from(3));
     }
 }
 
@@ -2169,7 +2169,10 @@ async fn audit_replaced_bet_preserves_prior_fills(
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].side, PositionSide::Short);
         assert_eq!(positions[0].quantity, Quantity::from("6"));
-        assert!((positions[0].avg_px_open - 22.0 / 6.0).abs() < 1e-9);
+        assert_eq!(
+            positions[0].avg_px_open,
+            Decimal::from(22) / Decimal::from(6)
+        );
     }
 
     // A repeated identical snapshot stays idempotent.
@@ -2229,17 +2232,20 @@ async fn audit_replaced_bet_preserves_prior_fills(
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].side, PositionSide::Short);
         assert_eq!(positions[0].quantity, Quantity::from("5"));
-        assert!((positions[0].avg_px_open - 17.0 / 5.0).abs() < 1e-9);
+        assert_eq!(
+            positions[0].avg_px_open,
+            Decimal::from(17) / Decimal::from(5)
+        );
     }
 }
 
 #[rstest]
-#[case::query_complete(false, false, false, "6", "4", 22.0 / 6.0, false)]
-#[case::query_promotes(false, false, false, "6", "4", 22.0 / 6.0, true)]
-#[case::query_promotes_missing_predecessor(true, false, false, "4", "6", 3.0, true)]
-#[case::query_missing_predecessor(true, false, false, "4", "6", 3.0, false)]
-#[case::open_only(false, true, false, "6", "4", 22.0 / 6.0, false)]
-#[case::time_filtered(false, true, true, "6", "4", 22.0 / 6.0, false)]
+#[case::query_complete(false, false, false, "6", "4", Decimal::from(22) / Decimal::from(6), false)]
+#[case::query_promotes(false, false, false, "6", "4", Decimal::from(22) / Decimal::from(6), true)]
+#[case::query_promotes_missing_predecessor(true, false, false, "4", "6", Decimal::from(3), true)]
+#[case::query_missing_predecessor(true, false, false, "4", "6", Decimal::from(3), false)]
+#[case::open_only(false, true, false, "6", "4", Decimal::from(22) / Decimal::from(6), false)]
+#[case::time_filtered(false, true, true, "6", "4", Decimal::from(22) / Decimal::from(6), false)]
 #[tokio::test]
 async fn reports_reflect_replacement_history(
     #[case] omit_predecessor: bool,
@@ -2247,7 +2253,7 @@ async fn reports_reflect_replacement_history(
     #[case] time_filtered: bool,
     #[case] expected_filled: &str,
     #[case] expected_leaves: &str,
-    #[case] expected_avg: f64,
+    #[case] expected_avg: Decimal,
     #[case] pending_replace: bool,
 ) {
     let mut h = harness::Harness::build().await;
@@ -2417,7 +2423,7 @@ async fn reports_reflect_replacement_history(
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].side, PositionSide::Short);
     assert_eq!(positions[0].quantity, Quantity::from(expected_filled));
-    assert!((positions[0].avg_px_open - expected_avg).abs() < 1e-9);
+    assert_eq!(positions[0].avg_px_open, expected_avg);
     assert_eq!(
         event_count(&actual, |event| matches!(
             event,
@@ -2626,7 +2632,7 @@ fn assert_non_reopened_void_state(
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].side, PositionSide::Short);
     assert_eq!(positions[0].quantity, Quantity::from("4"));
-    assert_eq!(positions[0].avg_px_open, 3.0);
+    assert_eq!(positions[0].avg_px_open, Decimal::from(3));
     harness::invariants::assert_own_book_consistent(&cache, &h.instrument_id());
 }
 

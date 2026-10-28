@@ -17,8 +17,10 @@
 
 use std::collections::HashMap;
 
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_core::{
+    Params,
     datetime::datetime_to_unix_nanos,
     python::{
         IntoPyObjectNautilusExt, params::value_to_pyobject, to_pyruntime_err, to_pyvalue_err,
@@ -40,6 +42,7 @@ use serde_json::{Value, json};
 
 use super::extract_string_map;
 use crate::{
+    common::parse::validate_market_version,
     http::{
         clob::PolymarketClobPublicClient,
         data_api::PolymarketDataApiHttpClient,
@@ -52,7 +55,7 @@ use crate::{
     providers::{build_gamma_event_params_from_hashmap, build_gamma_params_from_hashmap},
 };
 
-#[pyclass(name = "PolymarketDataLoader", skip_from_py_object)]
+#[pyclass(name = "PolymarketDataLoader")]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")]
 #[derive(Clone, Debug)]
 pub struct PyPolymarketDataLoader {
@@ -455,6 +458,7 @@ async fn build_loader(
     clob: &PolymarketClobPublicClient,
     data_api_client: PolymarketDataApiHttpClient,
 ) -> PyResult<PyPolymarketDataLoader> {
+    validate_market_version(market.version.as_deref()).map_err(to_pyvalue_err)?;
     if market.condition_id.trim().is_empty() {
         return Err(to_pyvalue_err("Gamma market has an empty condition ID"));
     }
@@ -480,27 +484,6 @@ async fn build_loader(
         .await
         .map_err(to_pyruntime_err)?;
 
-    if let Some(schedule) = market.fee_schedule.as_mut()
-        && schedule.rate.is_zero()
-        && !schedule.rebate_rate.is_zero()
-        && let Some(token) = details.tokens.get(token_index)
-    {
-        match clob.get_fee_rate(&token.token_id).await {
-            Ok(response) => {
-                let rate = response.to_rate();
-                if rate >= rust_decimal::Decimal::ZERO {
-                    schedule.rate = rate;
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "CLOB fee-rate fallback failed for market {}: {e}",
-                    market.id
-                );
-            }
-        }
-    }
-
     build_loader_from_details(market, &details, token_index, data_api_client)
 }
 
@@ -510,6 +493,8 @@ fn build_loader_from_details(
     token_index: usize,
     data_api_client: PolymarketDataApiHttpClient,
 ) -> PyResult<PyPolymarketDataLoader> {
+    validate_market_version(market.version.as_deref()).map_err(to_pyvalue_err)?;
+    validate_market_version(details.version.as_deref()).map_err(to_pyvalue_err)?;
     validate_market_details(details, &market.condition_id, token_index)?;
 
     market.clob_token_ids = serde_json::to_string(
@@ -544,9 +529,11 @@ fn build_loader_from_details(
         };
 
     // Fetched snapshots can reveal outcomes that were unknown during the historical period
-    if let Some(info) = instrument.info.as_mut() {
+    if let Some(info) = instrument.info.as_ref() {
+        let mut info = IndexMap::clone(info);
         info.shift_remove("gamma_market");
         info.shift_remove("gamma_event");
+        instrument.info = Some(Params::new(info));
     }
 
     let resolution_metadata = resolution_metadata(&market, details);
@@ -808,6 +795,7 @@ mod tests {
             "id": "100001",
             "conditionId": "0xcondition",
             "questionID": "0xquestion",
+            "version": "v1",
             "clobTokenIds": "[]",
             "outcomes": "[]",
             "question": "Will the test pass?",
@@ -850,6 +838,7 @@ mod tests {
 
     fn clob_market() -> ClobMarketResponse {
         serde_json::from_value(json!({
+            "version": "v1",
             "condition_id": "0xcondition",
             "closed": true,
             "tokens": [
@@ -1048,6 +1037,30 @@ mod tests {
     }
 
     #[rstest]
+    #[case(Some("v2"))]
+    #[case(None)]
+    #[case(Some("unknown"))]
+    fn build_loader_rejects_unsupported_protocol(
+        #[case] version: Option<&str>,
+        #[values(false, true)] clob_unsupported: bool,
+    ) {
+        Python::initialize();
+        let mut market = gamma_market();
+        let mut details = clob_market();
+        if clob_unsupported {
+            details.version = version.map(str::to_string);
+        } else {
+            market.version = version.map(str::to_string);
+        }
+
+        let error = build_loader_from_details(market, &details, 0, data_api()).unwrap_err();
+        assert!(error.to_string().contains(&format!(
+            "Unsupported Polymarket market protocol {}; only v1 CTF markets are supported",
+            version.unwrap_or("missing"),
+        )));
+    }
+
+    #[rstest]
     fn build_loader_rejects_out_of_range_index() {
         Python::initialize();
 
@@ -1113,15 +1126,45 @@ mod tests {
         );
     }
 
+    #[rstest]
+    #[case(false, rust_decimal::Decimal::ZERO)]
+    #[case(true, rust_decimal::Decimal::ZERO)]
+    #[case(true, rust_decimal::Decimal::new(4, 2))]
     #[tokio::test]
-    async fn build_loader_recovers_zero_taker_rate_from_clob_fee_rate() {
+    async fn build_loader_uses_gamma_taker_rate_without_clob_fee_rate(
+        #[case] missing_schedule: bool,
+        #[case] expected_rate: rust_decimal::Decimal,
+    ) {
         Python::initialize();
 
         let calls = Arc::new(AtomicUsize::new(0));
         let asserted = Arc::clone(&calls);
         let details = serde_json::to_string(&clob_market()).unwrap();
 
+        let mut market = gamma_market();
+        market.fees_enabled = Some(true);
+        market.fee_type = Some("crypto_fees".to_string());
+        market.fee_schedule = Some(crate::http::models::FeeSchedule {
+            exponent: rust_decimal::Decimal::ONE,
+            rate: expected_rate,
+            taker_only: true,
+            rebate_rate: rust_decimal::Decimal::ZERO,
+        });
+
+        let recovery = serde_json::to_string(&json!({"markets": [market.clone()]})).unwrap();
+
+        if missing_schedule {
+            market.fee_schedule = None;
+        }
+
         let router = axum::Router::new()
+            .route(
+                "/markets/keyset",
+                axum::routing::get(move || {
+                    let recovery = recovery.clone();
+                    async move { recovery }
+                }),
+            )
             .route(
                 "/markets/0xcondition",
                 axum::routing::get(move || {
@@ -1137,7 +1180,8 @@ mod tests {
 
                     async move {
                         calls.fetch_add(1, Ordering::SeqCst);
-                        r#"{"base_fee":700}"#.to_string()
+                        include_str!("../../test_data/clob_fee_rate_response_nonzero.json")
+                            .to_string()
                     }
                 }),
             );
@@ -1146,19 +1190,9 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
 
-        let mut market = gamma_market();
-        market.fees_enabled = Some(true);
-        market.fee_type = Some("crypto_fees".to_string());
-        market.fee_schedule = Some(crate::http::models::FeeSchedule {
-            exponent: rust_decimal::Decimal::ONE,
-            rate: rust_decimal::Decimal::ZERO,
-            taker_only: true,
-            rebate_rate: rust_decimal::Decimal::ZERO,
-        });
-
         let gamma = PolymarketGammaHttpClient::new(
-            Some("http://127.0.0.1:1".to_string()),
-            1,
+            Some(format!("http://{address}")),
+            5,
             RetryConfig::default(),
         )
         .expect("valid test client");
@@ -1169,13 +1203,15 @@ mod tests {
             .expect("loader should build");
         server.abort();
 
-        assert_eq!(asserted.load(Ordering::SeqCst), 1);
+        assert_eq!(asserted.load(Ordering::SeqCst), 0);
         assert_eq!(loader.token_id, "yes-token");
 
         let info = loader.instrument.info.as_ref().unwrap();
         let schedule: crate::http::models::FeeSchedule =
             serde_json::from_value(info.get("fee_schedule").unwrap().clone()).unwrap();
-        assert_eq!(schedule.rate, rust_decimal::Decimal::new(7, 2));
+        assert_eq!(schedule.rate, expected_rate);
+        assert_eq!(schedule.exponent, rust_decimal::Decimal::ONE);
+        assert!(schedule.taker_only);
         assert_eq!(schedule.rebate_rate, rust_decimal::Decimal::new(2, 1));
     }
 }

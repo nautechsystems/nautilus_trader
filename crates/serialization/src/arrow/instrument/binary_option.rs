@@ -33,6 +33,7 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
+use super::validate_required_instrument_columns;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, KEY_SIZE_PRECISION, extract_column, extract_column_by_name,
@@ -256,9 +257,10 @@ impl EncodeToRecordBatch for BinaryOption {
 ///
 /// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_binary_option_batch(
-    #[allow(unused)] metadata: &HashMap<String, String>,
+    metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<BinaryOption>, EncodingError> {
+    validate_required_instrument_columns::<BinaryOption>(metadata, record_batch)?;
     let record_batch = record_batch_with_u64_timestamps(record_batch)?;
     let record_batch = &record_batch;
     let event_id_values = extract_optional_string_column_by_name(record_batch, "event_id")?;
@@ -423,7 +425,7 @@ pub fn decode_binary_option_batch(
 
         let max_notional = match max_notional_values {
             Some(column) if !column.is_null(i) => {
-                Some(Money::from_str(column.value(i)).map_err(|e| {
+                Some(Money::from_str_exact(column.value(i)).map_err(|e| {
                     EncodingError::ParseError("max_notional", format!("row {i}: {e}"))
                 })?)
             }
@@ -432,7 +434,7 @@ pub fn decode_binary_option_batch(
 
         let min_notional = match min_notional_values {
             Some(column) if !column.is_null(i) => {
-                Some(Money::from_str(column.value(i)).map_err(|e| {
+                Some(Money::from_str_exact(column.value(i)).map_err(|e| {
                     EncodingError::ParseError("min_notional", format!("row {i}: {e}"))
                 })?)
             }

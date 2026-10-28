@@ -91,22 +91,31 @@ server can send up to 16 MiB of a response before the client acknowledges any of
 value `false` or an unset variable keeps the fixed windows, and any other value makes the client build fail.
 [Flow-control windows](#flow-control-windows) explains how these sizes were chosen.
 
-Buffered responses contain the status, only the header names selected when the client was built, and the raw
-body bytes. The client rejects a declared body larger than 100 MiB before reading it. For chunked
-or unbounded responses, it stops as soon as accumulated bytes would cross the same limit.
-
 The client adds only the request origin (scheme, host, and port) to transport errors and response-stream
 diagnostics. It excludes userinfo, paths, queries, and fragments from this URL context. Set
 `HttpClient::builder().redact_url(true)` to omit the added origin. Requests and diagnostic messages
 from lower layers are unchanged; TLS certificate errors and dependency logs can still include the hostname.
 
-`HttpClient::get_stream` returns status and body chunks without accumulating the complete response
-or applying the buffered size limit. One absolute deadline covers headers and the whole body,
-including time spent processing chunks. No rate-limit keys are supplied, so no quota is consumed.
-Dropping an unfinished response releases the exchange, including its owned connection task
-[under simulation](dst.md#simulated-http-and-websocket-transport). Dataset downloads use this path
-to stream to a temporary file before renaming it. Downloads configure a separate timeout for
-response headers and for each body read, allowing a progressing transfer to exceed that duration.
+#### Buffered responses
+
+Buffered requests advertise gzip unless default or per-request headers set `Accept-Encoding`. The client
+decodes gzip and removes `Content-Encoding` and `Content-Length` from selected headers. Unsupported or corrupt
+encodings fail regardless of status; responses whose method or status forbids content are not decoded.
+
+Received and decoded bodies have separate 100 MiB default limits. Oversized declared lengths fail before
+reading; chunked or unbounded bodies stop at the limit on received bytes. The request deadline includes
+decompression. Configure the decoded limit with `HttpClient::builder().max_decompressed_bytes(...)`; Tardis sets 1 GiB.
+
+#### Streaming responses
+
+`HttpClient::get_stream` returns status and raw chunks without buffering or decoding the body. Default headers
+apply; it adds no `Accept-Encoding` or total body size limit. One absolute deadline covers headers and the body,
+including chunk processing. No rate-limit keys are supplied, so no quota is consumed.
+
+Dropping an unfinished response releases the exchange, including its
+[simulated connection task](dst.md#simulated-http-and-websocket-transport). Dataset downloads stream to a
+temporary file before renaming it. Separate header and per-read timeouts let a progressing download exceed
+the configured timeout in total.
 
 ### HTTP transport benchmarks
 
@@ -273,13 +282,11 @@ The frame cap bounds memory for one inbound frame. Both backends apply the messa
 payload is read, so a lower message cap does not shrink the buffer. A zero value is rejected on the builder
 and on both handler and stream connect paths.
 
-A message that exceeds the message cap and fits in the frame cap fails the read with `MessageTooLarge`.
-Frame-limit and single-frame behavior differ by backend:
+Both backends apply the message cap to single-frame and fragmented messages. A message that exceeds the cap
+and fits in the frame cap fails the read with `MessageTooLarge`. Frame-limit errors differ by backend:
 
-- **Sockudo**: a frame that exceeds the frame cap fails first with `FrameTooLarge`. Sockudo applies its
-  message cap to fragmented messages, and to a finished single-frame message only when
-  `max_message_size_bytes` is set. Its small-frame parser skips the frame cap when the whole frame of 125
-  bytes or less is already buffered. Thus, that case is not a reliable rejection.
+- **Sockudo**: a frame that exceeds the frame cap fails first with `FrameTooLarge`, including a fully buffered
+  small frame.
 - **Tungstenite**: each frame breach is reported as `MessageTooLarge`.
 
 ### Liveness and recovery

@@ -18,7 +18,7 @@
 use std::sync::Arc;
 
 use ahash::AHashSet;
-use nautilus_core::{AtomicMap, UnixNanos};
+use nautilus_core::UnixNanos;
 use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
@@ -29,9 +29,12 @@ use ustr::Ustr;
 
 use super::{
     instruments::TokenMeta,
-    subscriptions::{DataSubscriptions, resolve_token_id_from},
+    subscriptions::{DataSubscriptions, SubscriptionKind, resolve_token_id_from},
 };
-use crate::{providers::extract_condition_id, resolve::ResolveWatchEntry};
+use crate::{
+    providers::extract_condition_id,
+    resolve::{ResolveWatchlist, remove_data_resolve_watch_entry},
+};
 
 impl DataSubscriptions {
     pub(crate) async fn mark_closed(
@@ -113,6 +116,33 @@ impl DataSubscriptions {
             || (self.ws_open_tokens.contains(&token_id) && !resolution_owned)
     }
 
+    pub(super) fn discard_filtered_instrument(
+        &self,
+        instrument_id: InstrumentId,
+        pending_loads: &AHashSet<InstrumentId>,
+    ) {
+        {
+            let _guard = self.owner_lock.lock();
+            self.active_instrument_status_subs.remove(&instrument_id);
+            self.active_instrument_close_subs.remove(&instrument_id);
+            self.deferred_resolutions.remove(&instrument_id);
+            remove_data_resolve_watch_entry(&self.watchlist, instrument_id, false);
+        }
+
+        if !pending_loads.contains(&instrument_id) || self.instruments.contains_key(&instrument_id)
+        {
+            return;
+        }
+
+        for kind in [
+            SubscriptionKind::Quotes,
+            SubscriptionKind::Deltas,
+            SubscriptionKind::Trades,
+        ] {
+            self.unsubscribe(instrument_id, kind);
+        }
+    }
+
     pub(super) async fn retire_instrument(&self, instrument_id: InstrumentId) {
         let token_id = resolve_token_id_from(&self.instruments, instrument_id)
             .or_else(|_| crate::providers::extract_token_id(&instrument_id))
@@ -126,6 +156,7 @@ impl DataSubscriptions {
         }
 
         self.book_sync.remove(instrument_id);
+        self.book_integrity.lock().remove(&instrument_id);
         if is_watchlisted_instrument(&self.watchlist, instrument_id)
             || (!self.active_instrument_status_subs.contains(&instrument_id)
                 && !self.active_instrument_close_subs.contains(&instrument_id))
@@ -189,10 +220,9 @@ impl DataSubscriptions {
             ] {
                 ids.extend(
                     subscriptions
-                        .load()
                         .iter()
-                        .filter(|id| matches_condition(id))
-                        .copied(),
+                        .map(|id| *id)
+                        .filter(|id| matches_condition(id)),
                 );
             }
 
@@ -305,10 +335,6 @@ pub(crate) fn is_condition_closed(
     closed_condition_ids.lock().contains(condition_id)
 }
 
-pub(crate) fn is_instrument_expired(instrument: &InstrumentAny, now_ns: UnixNanos) -> bool {
-    crate::filters::is_expired(instrument, now_ns)
-}
-
 pub(crate) fn is_instrument_expired_and_not_reported_open(
     instrument: &InstrumentAny,
     now_ns: UnixNanos,
@@ -317,10 +343,10 @@ pub(crate) fn is_instrument_expired_and_not_reported_open(
 }
 
 fn is_watchlisted_instrument(
-    watchlist: &Arc<AtomicMap<String, ResolveWatchEntry>>,
+    watchlist: &Arc<ResolveWatchlist>,
     instrument_id: InstrumentId,
 ) -> bool {
-    let snapshot = watchlist.load();
+    let snapshot = watchlist.read();
     snapshot.values().any(|entry| {
         entry
             .tracked
@@ -334,10 +360,10 @@ mod tests {
     use std::sync::Arc;
 
     use ahash::AHashSet;
-    use dashmap::DashMap;
-    use log::{Level, LevelFilter, Log, Metadata, Record};
+    use dashmap::{DashMap, DashSet};
+    use log::Level;
     use nautilus_common::live::dst::time::Instant;
-    use nautilus_core::{AtomicMap, AtomicSet, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_core::{AtomicMap, UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_model::{
         data::QuoteTick,
         enums::BookType,
@@ -359,41 +385,21 @@ mod tests {
         websocket::{handler::HandlerCommand, pool::PolymarketMarketPoolHandle},
     };
 
-    struct ClosureLogCapture {
-        messages: Mutex<Vec<String>>,
-    }
-
-    static CLOSURE_LOG_CAPTURE: ClosureLogCapture = ClosureLogCapture {
-        messages: Mutex::new(Vec::new()),
-    };
-
-    impl Log for ClosureLogCapture {
-        fn enabled(&self, metadata: &Metadata<'_>) -> bool {
-            metadata.level() == Level::Info
-                && metadata.target() == "nautilus_polymarket::data::runtime"
-        }
-
-        fn log(&self, record: &Record<'_>) {
-            if self.enabled(record.metadata()) {
-                self.messages.lock().push(record.args().to_string());
-            }
-        }
-
-        fn flush(&self) {}
-    }
-
     #[rstest]
     #[tokio::test]
     async fn register_closed_condition_logs_once_per_condition() {
-        log::set_logger(&CLOSURE_LOG_CAPTURE).expect("test logger already installed");
-        log::set_max_level(LevelFilter::Info);
+        if super::super::test_logging::run_in_isolated_process() {
+            return;
+        }
+
+        let _capture = super::super::test_logging::capture_logs().await;
 
         let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let ws_client = PolymarketMarketPoolHandle::test_single_shard(tx, &[]);
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -405,7 +411,10 @@ mod tests {
         }
 
         assert_eq!(
-            *CLOSURE_LOG_CAPTURE.messages.lock(),
+            super::super::test_logging::messages()
+                .into_iter()
+                .filter_map(|(level, message)| (level == Level::Info).then_some(message))
+                .collect::<Vec<_>>(),
             vec![
                 "Market closed for condition 0xCOND-A, retiring live data state".to_string(),
                 "Market closed for condition 0xCOND-B, retiring live data state".to_string(),
@@ -427,14 +436,18 @@ mod tests {
         binary.expiration_ns =
             UnixNanos::from(clock.get_time_ns().as_u64().saturating_sub(1_000_000_000));
 
-        let mut info = nautilus_core::Params::new();
-        info.insert(
-            "token_id".to_string(),
-            serde_json::Value::String(raw_symbol.to_string()),
-        );
-        info.insert(
-            "condition_id".to_string(),
-            serde_json::Value::String(condition_id.to_string()),
+        let info = nautilus_core::Params::new(
+            [
+                (
+                    "token_id".to_string(),
+                    serde_json::Value::String(raw_symbol.to_string()),
+                ),
+                (
+                    "condition_id".to_string(),
+                    serde_json::Value::String(condition_id.to_string()),
+                ),
+            ]
+            .into(),
         );
         binary.info = Some(info);
 
@@ -458,12 +471,12 @@ mod tests {
         instrument: &InstrumentAny,
         order_books: &Arc<DashMap<InstrumentId, OrderBook>>,
         last_quotes: &Arc<DashMap<InstrumentId, QuoteTick>>,
-        active_quote_subs: &Arc<AtomicSet<InstrumentId>>,
-        active_delta_subs: &Arc<AtomicSet<InstrumentId>>,
-        active_trade_subs: &Arc<AtomicSet<InstrumentId>>,
+        active_quote_subs: &Arc<DashSet<InstrumentId>>,
+        active_delta_subs: &Arc<DashSet<InstrumentId>>,
+        active_trade_subs: &Arc<DashSet<InstrumentId>>,
         book_sync: &BookSyncTracker,
         pending_auto_loads: &Arc<Mutex<AHashSet<InstrumentId>>>,
-        ws_open_tokens: &Arc<AtomicSet<Ustr>>,
+        ws_open_tokens: &Arc<DashSet<Ustr>>,
     ) {
         let instrument_id = instrument.id();
 
@@ -499,7 +512,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -523,7 +536,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -559,7 +572,7 @@ mod tests {
 
         let subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,
@@ -586,6 +599,19 @@ mod tests {
             &subscriptions.pending_auto_loads,
             &subscriptions.ws_open_tokens,
         );
+
+        subscriptions
+            .book_integrity
+            .lock()
+            .entry(instrument_id)
+            .or_default();
+        let retained_id = InstrumentId::from("0xACTIVE-0xTOKEN_ACTIVE.POLYMARKET");
+        subscriptions.active_delta_subs.insert(retained_id);
+        subscriptions
+            .book_integrity
+            .lock()
+            .entry(retained_id)
+            .or_default();
 
         let now_ns = get_atomic_clock_realtime().get_time_ns();
         subscriptions.retire_expired(now_ns).await;
@@ -627,6 +653,15 @@ mod tests {
         assert!(!subscriptions.active_delta_subs.contains(&instrument_id));
         assert!(!subscriptions.active_trade_subs.contains(&instrument_id));
         assert!(!subscriptions.book_sync.book_gated(instrument_id));
+        assert_eq!(
+            subscriptions
+                .book_integrity
+                .lock()
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            vec![retained_id],
+        );
         assert!(subscriptions.pending_auto_loads.lock().is_empty());
         assert!(!subscriptions.ws_open_tokens.contains(&token_id));
     }
@@ -639,7 +674,7 @@ mod tests {
 
         let mut subscriptions = DataSubscriptions::new(
             Arc::new(AtomicMap::new()),
-            Arc::new(AtomicMap::new()),
+            Arc::default(),
             Arc::new(AtomicMap::new()),
             Arc::new(Mutex::new(())),
             ws_client,

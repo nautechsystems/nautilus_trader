@@ -88,9 +88,15 @@ impl Handler<OrderEventAny> for OrderEmulatorOnEventHandler {
                     // The emulator published this event while handling another
                     // call; defer it so contingency handling is not dropped.
                     if let Some(pending) = self.pending_messages.upgrade() {
-                        pending
-                            .borrow_mut()
-                            .push_back(PendingMessage::Event(Box::new(event.clone())));
+                        let message = PendingMessage::Event(Box::new(event.clone()));
+                        let mut pending = pending.borrow_mut();
+
+                        // Denial must cancel linked orders before queued callbacks can release them
+                        if matches!(event, OrderEventAny::Denied(_)) {
+                            pending.push_front(message);
+                        } else {
+                            pending.push_back(message);
+                        }
                     }
                 }
             }

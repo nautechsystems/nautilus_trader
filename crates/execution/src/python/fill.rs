@@ -15,7 +15,7 @@
 
 //! Python bindings for fill model types.
 
-use nautilus_core::python::{to_pyruntime_err, to_pytype_err};
+use nautilus_core::python::{clone_py_object, to_pyruntime_err, to_pytype_err};
 use nautilus_model::{
     instruments::InstrumentAny,
     orderbook::OrderBook,
@@ -89,6 +89,12 @@ impl PythonFillModel {
     }
 }
 
+impl Clone for PythonFillModel {
+    fn clone(&self) -> Self {
+        Self::new(clone_py_object(&self.obj))
+    }
+}
+
 impl FillModel for PythonFillModel {
     fn is_limit_filled(&mut self) -> anyhow::Result<bool> {
         call_bool_method(&self.obj, "is_limit_filled")
@@ -154,7 +160,8 @@ fn call_bool_method(obj: &Py<PyAny>, method_name: &str) -> anyhow::Result<bool> 
 ///
 /// # Errors
 ///
-/// Returns an error if `obj` is not a supported built-in fill model binding.
+/// Returns an error if `obj` is neither a supported built-in model nor a Python object with
+/// `is_limit_filled` and `is_slipped` methods.
 pub fn pyobject_to_fill_model_any(obj: &Bound<'_, PyAny>) -> PyResult<FillModelAny> {
     if let Ok(m) = obj.extract::<DefaultFillModel>() {
         return Ok(FillModelAny::Default(m));
@@ -200,9 +207,16 @@ pub fn pyobject_to_fill_model_any(obj: &Bound<'_, PyAny>) -> PyResult<FillModelA
         return Ok(FillModelAny::MarketHours(m));
     }
 
-    let type_name = obj.get_type().name()?;
-    Err(to_pytype_err(format!(
-        "Cannot convert {type_name} to FillModel"
+    let has_required_methods = obj.hasattr("is_limit_filled")? && obj.hasattr("is_slipped")?;
+    if !has_required_methods {
+        let type_name = obj.get_type().name()?;
+        return Err(to_pytype_err(format!(
+            "Cannot convert {type_name} to FillModel"
+        )));
+    }
+
+    Ok(FillModelAny::Python(PythonFillModel::new(
+        obj.clone().unbind(),
     )))
 }
 
@@ -213,21 +227,7 @@ pub fn pyobject_to_fill_model_any(obj: &Bound<'_, PyAny>) -> PyResult<FillModelA
 /// Returns an error if `obj` is neither a supported built-in model nor a Python object with
 /// `is_limit_filled` and `is_slipped` methods.
 pub fn pyobject_to_fill_model_handle(obj: &Bound<'_, PyAny>) -> PyResult<FillModelHandle> {
-    if let Ok(model) = pyobject_to_fill_model_any(obj) {
-        return Ok(model.into());
-    }
-
-    let has_required_methods = obj.hasattr("is_limit_filled")? && obj.hasattr("is_slipped")?;
-    if !has_required_methods {
-        let type_name = obj.get_type().name()?;
-        return Err(to_pytype_err(format!(
-            "Cannot convert {type_name} to FillModel"
-        )));
-    }
-
-    Ok(FillModelHandle::new(PythonFillModel::new(
-        obj.clone().unbind(),
-    )))
+    pyobject_to_fill_model_any(obj).map(Into::into)
 }
 
 /// Converts a Rust [`FillModelAny`] into its Python binding object.
@@ -248,6 +248,7 @@ pub fn fill_model_any_to_pyobject(py: Python<'_>, model: &FillModelAny) -> PyRes
         FillModelAny::CompetitionAware(model) => Ok(Py::new(py, model.clone())?.into_any()),
         FillModelAny::VolumeSensitive(model) => Ok(Py::new(py, model.clone())?.into_any()),
         FillModelAny::MarketHours(model) => Ok(Py::new(py, model.clone())?.into_any()),
+        FillModelAny::Python(model) => Ok(model.obj.clone_ref(py)),
     }
 }
 
@@ -317,8 +318,10 @@ impl CompetitionAwareFillModel {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
-        enums::{OrderSide, OrderType},
+        data::order::BookOrder,
+        enums::{BookType, OrderSide, OrderType},
         instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
         orders::builder::OrderTestBuilder,
         types::Quantity,
@@ -327,6 +330,46 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_python_fill_model_any_clones_preserve_instance_and_state() {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let model = py
+                .eval(
+                    c_str!(
+                        "type('CustomFillModel', (), {\
+                            'calls': [], \
+                            'is_limit_filled': lambda self: self.calls.append('limit') or False, \
+                            'is_slipped': lambda self: self.calls.append('slip') or True, \
+                            'fill_limit_inside_spread': lambda self: True\
+                        })()"
+                    ),
+                    None,
+                    None,
+                )
+                .unwrap();
+            let first = pyobject_to_fill_model_any(&model).unwrap();
+            let second = first.clone();
+            let returned = fill_model_any_to_pyobject(py, &second).unwrap();
+            let mut first: FillModelHandle = first.into();
+            let mut second: FillModelHandle = second.into();
+
+            assert!(!first.is_limit_filled().unwrap());
+            assert!(second.is_slipped().unwrap());
+            assert!(second.fill_limit_inside_spread().unwrap());
+            assert!(returned.bind(py).is(&model));
+            assert_eq!(
+                model
+                    .getattr("calls")
+                    .unwrap()
+                    .extract::<Vec<String>>()
+                    .unwrap(),
+                vec!["limit", "slip"],
+            );
+        });
+    }
 
     #[rstest]
     fn test_python_fill_model_handle_calls_python_methods() {
@@ -358,6 +401,7 @@ mod tests {
     fn test_python_fill_model_handle_calls_python_liquidity_method(
         #[values(None, Some(Price::from("0.80000")))] best_bid: Option<Price>,
         #[values(None, Some(Price::from("0.80010")))] best_ask: Option<Price>,
+        #[values(false, true)] returns_book: bool,
     ) {
         Python::initialize();
 
@@ -377,20 +421,55 @@ mod tests {
                             'quotes': [], \
                             'get_orderbook_for_fill_simulation': \
                                 lambda self, instrument, order, best_bid, best_ask: \
-                                    self.quotes.append((best_bid, best_ask))\
+                                    self.quotes.append((best_bid, best_ask)) or self.book\
                         })()"
                     ),
                     None,
                     None,
                 )
                 .unwrap();
+            let mut expected = OrderBook::new(instrument.id(), BookType::L2_MBP);
+            expected.add(
+                BookOrder::new(
+                    OrderSide::Buy,
+                    Price::from("0.71234"),
+                    Quantity::from(12),
+                    17,
+                ),
+                0,
+                23,
+                UnixNanos::from(29),
+            );
+            model
+                .setattr(
+                    "book",
+                    if returns_book {
+                        Some(Py::new(py, expected.clone()).unwrap())
+                    } else {
+                        None
+                    },
+                )
+                .unwrap();
+
             let mut handle = pyobject_to_fill_model_handle(&model).unwrap();
 
             let book = handle
                 .get_orderbook_for_fill_simulation(&instrument, &order, best_bid, best_ask)
                 .unwrap();
 
-            assert!(book.is_none());
+            if returns_book {
+                let book = book.unwrap();
+                assert_eq!(book.instrument_id, expected.instrument_id);
+                assert_eq!(book.book_type, expected.book_type);
+                assert_eq!(book.sequence, 23);
+                assert_eq!(book.ts_last, UnixNanos::from(29));
+                assert_eq!(book.update_count, 1);
+                assert_eq!(book.bids_as_map(None), expected.bids_as_map(None));
+                assert_eq!(book.asks_as_map(None), expected.asks_as_map(None));
+            } else {
+                assert!(book.is_none());
+            }
+
             let quotes: Vec<(Option<Price>, Option<Price>)> =
                 model.getattr("quotes").unwrap().extract().unwrap();
             assert_eq!(quotes, vec![(best_bid, best_ask)]);
@@ -433,6 +512,61 @@ mod tests {
 
             assert!(!handle.fill_limit_inside_spread().unwrap());
             assert!(book.is_none());
+        });
+    }
+
+    #[rstest]
+    #[case("is_limit_filled")]
+    #[case("is_slipped")]
+    #[case("fill_limit_inside_spread")]
+    #[case("get_orderbook_for_fill_simulation")]
+    fn test_python_fill_model_any_propagates_callback_errors(#[case] method: &str) {
+        Python::initialize();
+
+        Python::attach(|py| {
+            let model = py
+                .eval(
+                    c_str!(
+                        "type('CustomFillModel', (), {\
+                            'is_limit_filled': lambda self: True, \
+                            'is_slipped': lambda self: False\
+                        })()"
+                    ),
+                    None,
+                    None,
+                )
+                .unwrap();
+            let callback = py
+                .eval(
+                    c_str!("lambda *args: (_ for _ in ()).throw(ValueError('boom'))"),
+                    None,
+                    None,
+                )
+                .unwrap();
+            model.setattr(method, callback).unwrap();
+            let mut model = pyobject_to_fill_model_any(&model).unwrap();
+            let error = match method {
+                "is_limit_filled" => model.is_limit_filled().unwrap_err(),
+                "is_slipped" => model.is_slipped().unwrap_err(),
+                "fill_limit_inside_spread" => model.fill_limit_inside_spread().unwrap_err(),
+                "get_orderbook_for_fill_simulation" => {
+                    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+                    let order = OrderTestBuilder::new(OrderType::Market)
+                        .instrument_id(instrument.id())
+                        .side(OrderSide::Buy)
+                        .quantity(Quantity::from(100_000))
+                        .build();
+                    model
+                        .get_orderbook_for_fill_simulation(&instrument, &order, None, None)
+                        .unwrap_err()
+                }
+                _ => unreachable!(),
+            };
+
+            assert_eq!(
+                error.to_string(),
+                format!("Python FillModel.{method} failed: ValueError: boom")
+            );
         });
     }
 

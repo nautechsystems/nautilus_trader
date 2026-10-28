@@ -20,16 +20,21 @@ use nautilus_model::{
     enums::{OrderSide, PositionSide},
     events::PositionSnapshot,
     identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
-    types::{Currency, Money, Quantity},
+    types::{Currency, Quantity},
 };
+use rust_decimal::Decimal;
 use sqlx::{FromRow, Row, postgres::PgRow};
 
-use crate::sql::models::decode_error;
+use crate::sql::models::{decode_error, decode_money};
 
 #[derive(Debug)]
 pub struct PositionSnapshotRow(pub PositionSnapshot);
 
 impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full position snapshot constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<&str, _>("id").map(PositionId::from)?;
         let trader_id = row.try_get::<&str, _>("trader_id").map(TraderId::from)?;
@@ -55,7 +60,7 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
             .try_get::<&str, _>("side")
             .map(PositionSide::from_str)?
             .expect("Invalid `PositionSide`");
-        let signed_qty = row.try_get::<f64, _>("signed_qty")?;
+        let signed_qty = row.try_get::<Decimal, _>("signed_qty")?;
         let quantity = row.try_get::<&str, _>("quantity").map(Quantity::from)?;
         let peak_qty = row.try_get::<&str, _>("peak_qty").map(Quantity::from)?;
         let quote_currency = row
@@ -68,21 +73,26 @@ impl<'r> FromRow<'r, PgRow> for PositionSnapshotRow {
         let settlement_currency = row
             .try_get::<&str, _>("settlement_currency")
             .map(Currency::from)?;
-        let avg_px_open = row.try_get::<f64, _>("avg_px_open")?;
-        let avg_px_close = row.try_get::<Option<f64>, _>("avg_px_close")?;
+        let avg_px_open = row.try_get::<Decimal, _>("avg_px_open")?;
+        let avg_px_close = row.try_get::<Option<Decimal>, _>("avg_px_close")?;
         let realized_return = row.try_get::<Option<f64>, _>("realized_return")?;
         let realized_pnl = row
             .try_get::<Option<&str>, _>("realized_pnl")?
-            .map(Money::from);
+            .map(|value| decode_money(value, "realized_pnl"))
+            .transpose()?;
         let unrealized_pnl = row
             .try_get::<Option<&str>, _>("unrealized_pnl")
             .ok()
-            .and_then(|x| x.map(Money::from));
+            .flatten()
+            .map(|value| decode_money(value, "unrealized_pnl"))
+            .transpose()?;
         let commissions = row
             .try_get::<Option<Vec<String>>, _>("commissions")?
-            .map_or_else(Vec::new, |c| {
-                c.into_iter().map(|s| Money::from(&s)).collect()
-            });
+            .unwrap_or_default()
+            .into_iter()
+            .map(|value| decode_money(&value, "commissions"))
+            .collect::<Result<Vec<_>, _>>()?;
+
         let duration_ns = row
             .try_get::<Option<&str>, _>("duration_ns")?
             .map(|value| {

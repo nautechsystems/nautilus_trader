@@ -111,7 +111,7 @@ impl DataClientFactory for BetfairDataClientFactory {
             nav_filter,
             currency,
             min_notional,
-        );
+        )?;
 
         Ok(Box::new(client))
     }
@@ -207,7 +207,7 @@ impl ExecutionClientFactory for BetfairExecutionClientFactory {
             stream_config,
             betfair_config,
             currency,
-        );
+        )?;
 
         Ok(Box::new(client))
     }

@@ -25,7 +25,7 @@ use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     cache::quote::QuoteCache,
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{
         dst::time::{self, Duration, Instant},
         runner::get_data_event_sender,
@@ -82,9 +82,9 @@ use crate::{
         },
         models::OKXInstrument,
         parse::{
-            extract_inst_family, is_okx_spread_symbol, okx_instrument_type_from_symbol,
-            okx_status_to_market_action, parse_base_quote_from_symbol, parse_instrument_any,
-            parse_instrument_id, parse_millisecond_timestamp, parse_price, parse_quantity,
+            extract_inst_family, okx_instrument_type_from_symbol, okx_status_to_market_action,
+            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
+            parse_millisecond_timestamp, parse_price, parse_quantity,
         },
         task::{spawn_task, terminate_tasks},
     },
@@ -146,6 +146,8 @@ impl OKXDataClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(client_id: ClientId, config: OKXDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let api_key = config
@@ -340,7 +342,7 @@ impl OKXDataClient {
         depth: Option<std::num::NonZeroUsize>,
         params: Option<&Params>,
     ) -> OKXBookChannel {
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             // Spreads have no incremental book channel; sprd-books5 pushes a full
             // 5-level snapshot, emitted as F_SNAPSHOT deltas to feed the book.
             return OKXBookChannel::SprdBooks5;
@@ -372,7 +374,7 @@ impl OKXDataClient {
     }
 
     fn unsubscribe_book_channel(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
+        if self.http_client.is_spread(instrument_id) {
             let ws = self.business_ws()?.clone();
             self.book_channels.remove(&instrument_id);
             self.book_sync.remove(instrument_id);
@@ -794,8 +796,8 @@ impl OKXDataClient {
                                         ts_init,
                                     ) {
                                         Ok(greeks) => {
-                                            if let Err(e) =
-                                                data_sender.send(DataEvent::OptionGreeks(greeks))
+                                            if let Err(e) = data_sender
+                                                .send(DataEvent::Data(Data::OptionGreeks(greeks)))
                                             {
                                                 log::error!(
                                                     "Failed to emit option greeks event: {e}"
@@ -1604,13 +1606,13 @@ fn dispatch_parsed_data(
             instruments_by_symbol.insert(instrument.symbol().inner(), *instrument);
 
             if let Some(status) = status
-                && let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status))
+                && let Err(e) = data_sender.send(DataEvent::Data(Data::InstrumentStatus(status)))
             {
                 log::error!("Failed to emit instrument status event: {e}");
             }
         }
         NautilusWsMessage::InstrumentStatus(status) => {
-            if let Err(e) = data_sender.send(DataEvent::InstrumentStatus(status)) {
+            if let Err(e) = data_sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
                 log::error!("Failed to emit instrument status event: {e}");
             }
         }
@@ -1620,7 +1622,7 @@ fn dispatch_parsed_data(
 
 fn emit_funding_rates(sender: &EventSender<DataEvent>, updates: Vec<FundingRateUpdate>) {
     for update in updates {
-        if let Err(e) = sender.send(DataEvent::FundingRate(update)) {
+        if let Err(e) = sender.send(DataEvent::Data(Data::FundingRate(update))) {
             log::error!("Failed to emit funding rate event: {e}");
         }
     }
@@ -1645,7 +1647,7 @@ fn emit_instrument_status(
         None,
     );
 
-    if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+    if let Err(e) = sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
         log::error!("Failed to emit instrument status event: {e}");
     }
 }
@@ -1700,7 +1702,7 @@ fn cache_instrument_updates(
         .fetch_add(1, Ordering::SeqCst);
 }
 
-/// Publishes new or changed definitions as [`DataEvent::Instrument`] after
+/// Publishes new or changed definitions as [`DataEvent::Data`] after
 /// updating every cache, so consumers never observe a definition the caches
 /// do not yet hold. Callers serialize diff-update-publish sequences through
 /// the instrument update lock.
@@ -1723,7 +1725,7 @@ fn publish_instrument_updates(
     );
 
     for instrument in changed {
-        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument.clone())) {
+        if let Err(e) = data_sender.send(DataEvent::Data(instrument.clone().into())) {
             log::error!("Failed to emit instrument event: {e}");
         }
     }
@@ -1796,14 +1798,7 @@ fn configured_instrument_types(config: &OKXDataClientConfig) -> Vec<OKXInstrumen
     if config.instrument_types.is_empty() {
         vec![OKXInstrumentType::Spot]
     } else {
-        // A type configured twice must not fetch or publish its instruments twice
-        let mut seen = AHashSet::new();
-        config
-            .instrument_types
-            .iter()
-            .filter(|inst_type| seen.insert(**inst_type))
-            .copied()
-            .collect()
+        config.instrument_types.clone()
     }
 }
 
@@ -1820,15 +1815,10 @@ async fn fetch_configured_instruments(
     let mut all_instruments = Vec::new();
 
     for inst_type in &instrument_types {
-        let Some(mut families) =
-            resolve_instrument_families(&config.instrument_families, *inst_type)
+        let Some(families) = resolve_instrument_families(&config.instrument_families, *inst_type)
         else {
             continue;
         };
-
-        // A family configured twice must not fetch or publish its instruments twice
-        let mut seen = AHashSet::new();
-        families.retain(|family| seen.insert(family.clone()));
 
         if families.is_empty() {
             let (mut fetched, _inst_id_codes) = http_client
@@ -1920,7 +1910,7 @@ struct InstrumentReconciliation {
 /// Fetches every configured instrument type and family, plus spread instruments
 /// when `load_spreads` is set, then updates the data client, HTTP client, and
 /// WebSocket caches with new or materially changed definitions before
-/// publishing them as [`DataEvent::Instrument`]. Unchanged definitions are
+/// publishing them as [`DataEvent::Data`]. Unchanged definitions are
 /// not republished. Cached instruments missing from the response are retained
 /// because they may still back open subscriptions; the instruments WebSocket
 /// channel communicates state changes such as suspension or delisting.
@@ -2123,522 +2113,561 @@ impl DataClient for OKXDataClient {
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        // OKX instruments channel doesn't support subscribing to individual instruments via instId
-        // Instead, subscribe to the instrument type if not already subscribed
-        let instrument_id = cmd.instrument_id;
-        let ws = self.public_ws()?.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            // OKX instruments channel doesn't support subscribing to individual instruments via instId
+            // Instead, subscribe to the instrument type if not already subscribed
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_instrument(instrument_id)
+                        .await
+                        .context("instrument type subscription")?;
+                    Ok(())
+                },
+                "subscribe_instrument",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_instrument(instrument_id)
-                    .await
-                    .context("instrument type subscription")?;
-                Ok(())
-            },
-            "subscribe_instrument",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            cmd.book_type == BookType::L2_MBP,
-            "OKX only supports L2_MBP order books"
-        );
-        let channel = self.book_channel(cmd.instrument_id, cmd.depth, cmd.params.as_ref());
-        let was_subscribed = self.book_deltas.contains(&cmd.instrument_id);
-        self.book_deltas.insert(cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            anyhow::ensure!(
+                cmd.book_type == BookType::L2_MBP,
+                "OKX only supports L2_MBP order books"
+            );
+            let channel = self.book_channel(instrument_id, cmd.depth, cmd.params.as_ref());
+            let was_subscribed = self.book_deltas.contains(&instrument_id);
+            self.book_deltas.insert(instrument_id);
 
-        if let Err(e) = self.subscribe_book_channel(cmd.instrument_id, channel) {
-            if !was_subscribed {
-                self.book_deltas.remove(&cmd.instrument_id);
+            if let Err(e) = self.subscribe_book_channel(instrument_id, channel) {
+                if !was_subscribed {
+                    self.book_deltas.remove(&instrument_id);
+                }
+
+                return Err(e);
             }
 
-            return Err(e);
-        }
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            cmd.book_type == BookType::L2_MBP,
-            "OKX only supports L2_MBP order books"
-        );
-        let depth = cmd
-            .depth
-            .map_or(BOOK_SNAPSHOT_DEPTH, std::num::NonZero::get);
-        anyhow::ensure!(
-            depth <= BOOK_SNAPSHOT_DEPTH,
-            "OKX depth snapshots support at most {BOOK_SNAPSHOT_DEPTH} levels"
-        );
-        anyhow::ensure!(
-            !cmd.params
-                .as_ref()
-                .and_then(|params| params.get_bool("rpi"))
-                .unwrap_or(false),
-            "OKX native depth snapshots do not support RPI"
-        );
-
-        if let Some(active) = self.book_depths.get_cloned(&cmd.instrument_id) {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
             anyhow::ensure!(
-                active == depth,
-                "Conflicting OKX snapshot depth for {}",
-                cmd.instrument_id
+                cmd.book_type == BookType::L2_MBP,
+                "OKX only supports L2_MBP order books"
             );
-            return Ok(());
-        }
+            let depth = cmd
+                .depth
+                .map_or(BOOK_SNAPSHOT_DEPTH, std::num::NonZero::get);
+            anyhow::ensure!(
+                depth <= BOOK_SNAPSHOT_DEPTH,
+                "OKX depth snapshots support at most {BOOK_SNAPSHOT_DEPTH} levels"
+            );
+            anyhow::ensure!(
+                !cmd.params
+                    .as_ref()
+                    .and_then(|params| params.get_bool("rpi"))
+                    .unwrap_or(false),
+                "OKX native depth snapshots do not support RPI"
+            );
 
-        let instrument_id = cmd.instrument_id;
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
-            self.book_depths.insert(instrument_id, depth);
-            if let Err(e) = self.subscribe_book_channel(instrument_id, OKXBookChannel::SprdBooks5) {
-                self.book_depths.remove(&instrument_id);
-                return Err(e);
+            if let Some(active) = self.book_depths.get_cloned(&instrument_id) {
+                anyhow::ensure!(
+                    active == depth,
+                    "Conflicting OKX snapshot depth for {instrument_id}"
+                );
+                return Ok(());
             }
-        } else {
-            let ws = self.public_ws()?.clone();
-            self.book_depths.insert(instrument_id, depth);
-            self.spawn_ws(
-                async move {
-                    ws.subscribe_book_depth5(instrument_id)
-                        .await
-                        .context("book depth subscription")
-                },
-                "book depth subscription",
-            );
-        }
 
-        Ok(())
+            if self.http_client.is_spread(instrument_id) {
+                self.book_depths.insert(instrument_id, depth);
+                if let Err(e) =
+                    self.subscribe_book_channel(instrument_id, OKXBookChannel::SprdBooks5)
+                {
+                    self.book_depths.remove(&instrument_id);
+                    return Err(e);
+                }
+            } else {
+                let ws = self.public_ws()?.clone();
+                self.book_depths.insert(instrument_id, depth);
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_book_depth5(instrument_id)
+                            .await
+                            .context("book depth subscription")
+                    },
+                    "book depth subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.http_client.is_spread(instrument_id) {
+                let ws = self.business_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_spread_quotes(instrument_id)
+                            .await
+                            .context("spread quotes subscription")
+                    },
+                    "spread quote subscription",
+                );
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
-            let ws = self.business_ws()?.clone();
+                return Ok(());
+            }
+
+            let ws = self.public_ws()?.clone();
             self.spawn_ws(
                 async move {
-                    ws.subscribe_spread_quotes(instrument_id)
+                    ws.subscribe_quotes(instrument_id)
                         .await
-                        .context("spread quotes subscription")
+                        .context("quotes subscription")
                 },
-                "spread quote subscription",
+                "quote subscription",
             );
-            return Ok(());
-        }
 
-        let ws = self.public_ws()?.clone();
-        self.spawn_ws(
-            async move {
-                ws.subscribe_quotes(instrument_id)
-                    .await
-                    .context("quotes subscription")
-            },
-            "quote subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.http_client.is_spread(instrument_id) {
+                let ws = self.business_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe_spread_trades(instrument_id)
+                            .await
+                            .context("spread trades subscription")
+                    },
+                    "spread trade subscription",
+                );
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
-            let ws = self.business_ws()?.clone();
+                return Ok(());
+            }
+
+            let ws = self.public_ws()?.clone();
             self.spawn_ws(
                 async move {
-                    ws.subscribe_spread_trades(instrument_id)
+                    ws.subscribe_trades(instrument_id, false)
                         .await
-                        .context("spread trades subscription")
+                        .context("trades subscription")
                 },
-                "spread trade subscription",
+                "trade subscription",
             );
-            return Ok(());
-        }
 
-        let ws = self.public_ws()?.clone();
-        self.spawn_ws(
-            async move {
-                ws.subscribe_trades(instrument_id, false)
-                    .await
-                    .context("trades subscription")
-            },
-            "trade subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_mark_prices(instrument_id)
+                        .await
+                        .context("mark price subscription")
+                },
+                "mark price subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_mark_prices(instrument_id)
-                    .await
-                    .context("mark price subscription")
-            },
-            "mark price subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
-        let symbol = instrument_id.symbol.inner();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            let symbol = instrument_id.symbol.inner();
 
-        let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())?;
-        let base_pair = Ustr::from(&format!("{base}-{quote}"));
-        self.index_ticker_map.rcu(|m| {
-            m.entry(base_pair).or_default().insert(symbol);
-        });
+            let (base, quote) = parse_base_quote_from_symbol(symbol.as_str())?;
+            let base_pair = Ustr::from(&format!("{base}-{quote}"));
+            self.index_ticker_map.rcu(|m| {
+                m.entry(base_pair).or_default().insert(symbol);
+            });
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_index_prices(instrument_id)
-                    .await
-                    .context("index price subscription")
-            },
-            "index price subscription",
-        );
-        Ok(())
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_index_prices(instrument_id)
+                        .await
+                        .context("index price subscription")
+                },
+                "index price subscription",
+            );
+
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let ws = self.business_ws()?.clone();
-        let bar_type = cmd.bar_type;
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_bars(bar_type)
+                        .await
+                        .context("bars subscription")
+                },
+                "bar subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_bars(bar_type)
-                    .await
-                    .context("bars subscription")
-            },
-            "bar subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_funding_rates(instrument_id)
+                        .await
+                        .context("funding rate subscription")
+                },
+                "funding rate subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_funding_rates(instrument_id)
-                    .await
-                    .context("funding rate subscription")
-            },
-            "funding rate subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let conventions = parse_greeks_conventions_from_params(cmd.params.as_ref());
-        self.option_greeks_subs.insert(instrument_id, conventions);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            let conventions = parse_greeks_conventions_from_params(cmd.params.as_ref());
+            self.option_greeks_subs.insert(instrument_id, conventions);
 
-        let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
-        let is_first = {
-            let mut family_subs = self.option_summary_family_subs.lock();
-            let count = family_subs.entry(family).or_default();
-            *count += 1;
-            *count == 1
-        };
+            let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
 
-        if is_first {
-            let ws = self.public_ws()?.clone();
-            let family_subs = self.option_summary_family_subs.clone();
-            self.spawn_ws(
-                async move {
-                    let result = ws
-                        .subscribe_option_summary(family)
-                        .await
-                        .context("opt-summary subscription");
+            let is_first = {
+                let mut family_subs = self.option_summary_family_subs.lock();
+                let count = family_subs.entry(family).or_default();
+                *count += 1;
+                *count == 1
+            };
 
-                    if result.is_err() {
-                        // Roll back the refcount so a retry can re-arm the subscribe;
-                        // otherwise the family wedges and Greeks stay dark.
-                        let mut subs = family_subs.lock();
+            if is_first {
+                let ws = self.public_ws()?.clone();
+                let family_subs = self.option_summary_family_subs.clone();
+                self.spawn_ws(
+                    async move {
+                        let result = ws
+                            .subscribe_option_summary(family)
+                            .await
+                            .context("opt-summary subscription");
 
-                        if let Some(count) = subs.get_mut(&family) {
-                            *count = count.saturating_sub(1);
-                            if *count == 0 {
-                                subs.remove(&family);
+                        if result.is_err() {
+                            // Roll back the refcount so a retry can re-arm the subscribe;
+                            // otherwise the family wedges and Greeks stay dark.
+                            let mut subs = family_subs.lock();
+
+                            if let Some(count) = subs.get_mut(&family) {
+                                *count = count.saturating_sub(1);
+                                if *count == 0 {
+                                    subs.remove(&family);
+                                }
                             }
                         }
-                    }
-                    result
-                },
-                "option greeks subscription",
-            );
-        }
-        Ok(())
+
+                        result
+                    },
+                    "option greeks subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_instrument(instrument_id)
+                        .await
+                        .context("instrument status subscription")
+                },
+                "instrument status subscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_instrument(instrument_id)
-                    .await
-                    .context("instrument status subscription")
-            },
-            "instrument status subscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.public_ws()?.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_instrument(instrument_id)
+                        .await
+                        .context("instrument unsubscribe")?;
+                    Ok(())
+                },
+                "unsubscribe_instrument",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_instrument(instrument_id)
-                    .await
-                    .context("instrument unsubscribe")?;
-                Ok(())
-            },
-            "unsubscribe_instrument",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        if !self.book_deltas.contains(&cmd.instrument_id) {
-            return Ok(());
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if !self.book_deltas.contains(&instrument_id) {
+                return Ok(());
+            }
 
-        if !is_okx_spread_symbol(cmd.instrument_id.symbol.as_str())
-            || !self.book_depths.contains_key(&cmd.instrument_id)
-        {
-            self.unsubscribe_book_channel(cmd.instrument_id)?;
-        }
+            if !self.http_client.is_spread(instrument_id)
+                || !self.book_depths.contains_key(&instrument_id)
+            {
+                self.unsubscribe_book_channel(instrument_id)?;
+            }
 
-        self.book_deltas.remove(&cmd.instrument_id);
-        Ok(())
+            self.book_deltas.remove(&instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
-        if !self.book_depths.contains_key(&cmd.instrument_id) {
-            return Ok(());
-        }
-
-        let instrument_id = cmd.instrument_id;
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
-            if !self.book_deltas.contains(&instrument_id) {
-                self.unsubscribe_book_channel(instrument_id)?;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if !self.book_depths.contains_key(&instrument_id) {
+                return Ok(());
             }
-        } else {
-            let ws = self.public_ws()?.clone();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_book_depth5(instrument_id)
-                        .await
-                        .context("book depth unsubscribe")
-                },
-                "book depth unsubscribe",
-            );
-        }
 
-        self.book_depths.remove(&cmd.instrument_id);
-        Ok(())
+            if self.http_client.is_spread(instrument_id) {
+                if !self.book_deltas.contains(&instrument_id) {
+                    self.unsubscribe_book_channel(instrument_id)?;
+                }
+            } else {
+                let ws = self.public_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_book_depth5(instrument_id)
+                            .await
+                            .context("book depth unsubscribe")
+                    },
+                    "book depth unsubscribe",
+                );
+            }
+
+            self.book_depths.remove(&instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.http_client.is_spread(instrument_id) {
+                let ws = self.business_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_spread_quotes(instrument_id)
+                            .await
+                            .context("spread quotes unsubscribe")
+                    },
+                    "spread quote unsubscribe",
+                );
 
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
-            let ws = self.business_ws()?.clone();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_spread_quotes(instrument_id)
-                        .await
-                        .context("spread quotes unsubscribe")
-                },
-                "spread quote unsubscribe",
-            );
-            return Ok(());
-        }
-
-        let ws = self.public_ws()?.clone();
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_quotes(instrument_id)
-                    .await
-                    .context("quotes unsubscribe")
-            },
-            "quote unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-
-        if is_okx_spread_symbol(instrument_id.symbol.as_str()) {
-            let ws = self.business_ws()?.clone();
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe_spread_trades(instrument_id)
-                        .await
-                        .context("spread trades unsubscribe")
-                },
-                "spread trade unsubscribe",
-            );
-            return Ok(());
-        }
-
-        let ws = self.public_ws()?.clone();
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_trades(instrument_id, false) // TODO: Aggregated trades?
-                    .await
-                    .context("trades unsubscribe")
-            },
-            "trade unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_mark_prices(instrument_id)
-                    .await
-                    .context("mark price unsubscribe")
-            },
-            "mark price unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
-        let symbol = instrument_id.symbol.inner();
-
-        // The OKX index-tickers channel is keyed by base pair, so multiple
-        // instruments on the same pair share one subscription. Per-base-pair
-        // refcounting lives on the WS client, so we always forward the
-        // unsubscribe and let the WS layer fire the venue request only when
-        // it knows the last subscriber dropped. Local routing in
-        // `index_ticker_map` is still maintained for downstream emit fan-out.
-        if let Ok((base, quote)) = parse_base_quote_from_symbol(symbol.as_str()) {
-            let base_pair = Ustr::from(&format!("{base}-{quote}"));
-            self.index_ticker_map.rcu(|m| {
-                if let Some(set) = m.get_mut(&base_pair) {
-                    set.remove(&symbol);
-                    if set.is_empty() {
-                        m.remove(&base_pair);
-                    }
-                }
-            });
-        }
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_index_prices(instrument_id)
-                    .await
-                    .context("index price unsubscribe")
-            },
-            "index price unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let ws = self.business_ws()?.clone();
-        let bar_type = cmd.bar_type;
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_bars(bar_type)
-                    .await
-                    .context("bars unsubscribe")
-            },
-            "bar unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
-
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_funding_rates(instrument_id)
-                    .await
-                    .context("funding rate unsubscribe")
-            },
-            "funding rate unsubscribe",
-        );
-        Ok(())
-    }
-
-    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.option_greeks_subs.remove(&instrument_id);
-
-        let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
-        let should_unsubscribe = {
-            let mut family_subs = self.option_summary_family_subs.lock();
-
-            if let Some(count) = family_subs.get_mut(&family) {
-                *count = count.saturating_sub(1);
-                if *count == 0 {
-                    family_subs.remove(&family);
-                    true
-                } else {
-                    false
-                }
-            } else {
-                false
+                return Ok(());
             }
-        };
 
-        if should_unsubscribe {
             let ws = self.public_ws()?.clone();
             self.spawn_ws(
                 async move {
-                    ws.unsubscribe_option_summary(family)
+                    ws.unsubscribe_quotes(instrument_id)
                         .await
-                        .context("opt-summary unsubscription")
+                        .context("quotes unsubscribe")
                 },
-                "option greeks unsubscription",
+                "quote unsubscribe",
             );
-        }
-        Ok(())
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.http_client.is_spread(instrument_id) {
+                let ws = self.business_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_spread_trades(instrument_id)
+                            .await
+                            .context("spread trades unsubscribe")
+                    },
+                    "spread trade unsubscribe",
+                );
+
+                return Ok(());
+            }
+
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_trades(instrument_id, false) // TODO: Aggregated trades?
+                        .await
+                        .context("trades unsubscribe")
+                },
+                "trade unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_mark_prices(instrument_id)
+                        .await
+                        .context("mark price unsubscribe")
+                },
+                "mark price unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            let symbol = instrument_id.symbol.inner();
+
+            // The OKX index-tickers channel is keyed by base pair, so multiple
+            // instruments on the same pair share one subscription. Per-base-pair
+            // refcounting lives on the WS client, so we always forward the
+            // unsubscribe and let the WS layer fire the venue request only when
+            // it knows the last subscriber dropped. Local routing in
+            // `index_ticker_map` is still maintained for downstream emit fan-out.
+            if let Ok((base, quote)) = parse_base_quote_from_symbol(symbol.as_str()) {
+                let base_pair = Ustr::from(&format!("{base}-{quote}"));
+                self.index_ticker_map.rcu(|m| {
+                    if let Some(set) = m.get_mut(&base_pair) {
+                        set.remove(&symbol);
+                        if set.is_empty() {
+                            m.remove(&base_pair);
+                        }
+                    }
+                });
+            }
+
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_index_prices(instrument_id)
+                        .await
+                        .context("index price unsubscribe")
+                },
+                "index price unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.business_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_bars(bar_type)
+                        .await
+                        .context("bars unsubscribe")
+                },
+                "bar unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_funding_rates(instrument_id)
+                        .await
+                        .context("funding rate unsubscribe")
+                },
+                "funding rate unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.option_greeks_subs.remove(&instrument_id);
+
+            let family = extract_inst_family(instrument_id.symbol.inner().as_str())?;
+
+            let should_unsubscribe = {
+                let mut family_subs = self.option_summary_family_subs.lock();
+
+                if let Some(count) = family_subs.get_mut(&family) {
+                    *count = count.saturating_sub(1);
+                    if *count == 0 {
+                        family_subs.remove(&family);
+                        true
+                    } else {
+                        false
+                    }
+                } else {
+                    false
+                }
+            };
+
+            if should_unsubscribe {
+                let ws = self.public_ws()?.clone();
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe_option_summary(family)
+                            .await
+                            .context("opt-summary unsubscription")
+                    },
+                    "option greeks unsubscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let ws = self.public_ws()?.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.public_ws()?.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_instrument(instrument_id)
+                        .await
+                        .context("instrument status unsubscription")
+                },
+                "instrument status unsubscription",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_instrument(instrument_id)
-                    .await
-                    .context("instrument status unsubscription")
-            },
-            "instrument status unsubscription",
-        );
-        Ok(())
+            Ok(())
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
@@ -2785,13 +2814,14 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments_by_symbol.clone();
         let update_lock = self.instrument_update_lock.clone();
         let ws_public = self.ws_public.clone();
         let ws_business = self.ws_business.clone();
-        let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start = request.start;
@@ -2815,7 +2845,8 @@ impl DataClient for OKXDataClient {
                 Ok(instrument) => {
                     let inst_id = instrument.id();
                     let symbol = inst_id.symbol.as_str();
-                    if is_okx_spread_symbol(symbol) {
+
+                    if instrument.is_spread() {
                         if !load_spreads {
                             log::error!(
                                 "Instrument {instrument_id} is a spread but load_spreads is false"
@@ -2886,9 +2917,10 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
         let depth = request.depth.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -2931,9 +2963,10 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -2974,9 +3007,10 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+        let bar_type = request.single_bar_type()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let bar_type = request.bar_type;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -3017,9 +3051,10 @@ impl DataClient for OKXDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -3157,12 +3192,25 @@ fn push_convention_str(out: &mut AHashSet<OKXGreeksType>, raw: &str) {
 mod tests {
     use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
-    use axum::{Router, extract::Query, response::Json, routing::get};
-    use nautilus_common::{live::runner::replace_data_event_sender, testing::wait_until_async};
+    use axum::{
+        Router,
+        extract::{
+            Query,
+            ws::{Message, WebSocketUpgrade},
+        },
+        response::Json,
+        routing::get,
+    };
+    use nautilus_common::{
+        config::ConfigError, live::runner::replace_data_event_sender, testing::wait_until_async,
+    };
     use nautilus_core::UUID4;
     use nautilus_model::{
         identifiers::Symbol,
-        instruments::{CurrencyPair, stubs::currency_pair_btcusdt},
+        instruments::{
+            CryptoFuture, CurrencyPair,
+            stubs::{crypto_future_btcusdt, currency_pair_btcusdt},
+        },
         types::{Price, Quantity},
     };
     use nautilus_network::websocket::TransportBackend;
@@ -3177,6 +3225,200 @@ mod tests {
         },
         websocket::{enums::OKXWsChannel, messages::OKXWsFrame},
     };
+
+    #[rstest]
+    #[case("BTC-USD_UM_XPERP-310404.OKX")]
+    #[case("BTC-USD_UM-261030.OKX")]
+    fn usd_margined_futures_use_regular_book_channel(
+        mut crypto_future_btcusdt: CryptoFuture,
+        #[case] instrument_id: &str,
+        #[values(false, true)] cached: bool,
+    ) {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let client = OKXDataClient::new(*OKX_CLIENT_ID, OKXDataClientConfig::default()).unwrap();
+        let instrument_id = InstrumentId::from(instrument_id);
+        crypto_future_btcusdt.id = instrument_id;
+        crypto_future_btcusdt.raw_symbol = instrument_id.symbol;
+
+        if cached {
+            client
+                .http_client
+                .cache_instrument(InstrumentAny::CryptoFuture(crypto_future_btcusdt));
+        }
+
+        assert_eq!(
+            client.book_channel(instrument_id, None, None),
+            OKXBookChannel::Book
+        );
+    }
+
+    #[rstest]
+    #[case("BTC-USD_UM_XPERP-310404.OKX")]
+    #[case("BTC-USD_UM-261030.OKX")]
+    #[tokio::test]
+    async fn usd_margined_futures_use_regular_subscriptions(#[case] instrument_id: &str) {
+        let (captured, mut received) = tokio::sync::mpsc::unbounded_channel();
+        let router = Router::new().route(
+            "/public",
+            get(move |upgrade: WebSocketUpgrade| {
+                let captured = captured.clone();
+                async move {
+                    upgrade.on_upgrade(move |mut socket| async move {
+                        while let Some(Ok(Message::Text(text))) = socket.next().await {
+                            let request: Value = serde_json::from_str(&text).unwrap();
+                            if request["op"] == "subscribe" || request["op"] == "unsubscribe" {
+                                captured.send(request.clone()).unwrap();
+                                for arg in request["args"].as_array().unwrap() {
+                                    socket
+                                        .send(Message::Text(
+                                            json!({"event": request["op"], "arg": arg})
+                                                .to_string()
+                                                .into(),
+                                        ))
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+                        }
+                    })
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let config = OKXDataClientConfig::builder()
+            .instrument_types(vec![OKXInstrumentType::Futures])
+            .base_url_ws_public(format!("ws://{addr}/public"))
+            .build();
+        let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+        client.ws_public.as_mut().unwrap().connect().await.unwrap();
+        let instrument_id = InstrumentId::from(instrument_id);
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .subscribe_trades(SubscribeTrades::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .subscribe_book_depth(SubscribeBookDepth::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                false,
+                None,
+                None,
+            ))
+            .unwrap();
+        let mut frames = Vec::new();
+        for _ in 0..3 {
+            frames.push(
+                tokio::time::timeout(Duration::from_secs(5), received.recv())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+
+        client
+            .unsubscribe_quotes(&UnsubscribeQuotes::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .unsubscribe_trades(&UnsubscribeTrades::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .unsubscribe_book_depth(&UnsubscribeBookDepth::new(
+                instrument_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        for _ in 0..3 {
+            frames.push(
+                tokio::time::timeout(Duration::from_secs(5), received.recv())
+                    .await
+                    .unwrap()
+                    .unwrap(),
+            );
+        }
+
+        client.ws_public.as_mut().unwrap().close().await.unwrap();
+        server.abort();
+
+        let mut actual = frames
+            .iter()
+            .map(|frame| {
+                (
+                    frame["op"].as_str().unwrap().to_string(),
+                    frame["args"].clone(),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let mut expected = ["subscribe", "unsubscribe"]
+            .into_iter()
+            .flat_map(|op| {
+                ["bbo-tbt", "trades", "books5"]
+                    .into_iter()
+                    .map(move |channel| {
+                        (
+                            op.to_string(),
+                            json!([{"channel": channel, "instId": instrument_id.symbol.as_str()}]),
+                        )
+                    })
+            })
+            .collect::<Vec<_>>();
+
+        actual.sort_by_cached_key(|item| format!("{}{}", item.0, item.1));
+        expected.sort_by_cached_key(|item| format!("{}{}", item.0, item.1));
+
+        assert_eq!(actual, expected);
+    }
 
     #[rstest]
     #[case(1, false)]
@@ -3329,8 +3571,8 @@ mod tests {
         );
 
         match receiver.try_recv().expect("instrument status event") {
-            DataEvent::InstrumentStatus(received) => assert_eq!(received, status),
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            DataEvent::Data(Data::InstrumentStatus(received)) => assert_eq!(received, status),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(instruments_by_symbol.load().is_empty());
     }
@@ -3791,8 +4033,7 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_returns_both_when_key_absent() {
-        let mut params = Params::new();
-        params.insert("other_key".to_string(), json!("value"));
+        let params = Params::new([("other_key".to_string(), json!("value"))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
@@ -3803,18 +4044,19 @@ mod tests {
     #[case("black_scholes", OKXGreeksType::Bs)]
     #[case("price_adjusted", OKXGreeksType::Pa)]
     fn parse_conventions_accepts_single_string(#[case] raw: &str, #[case] expected: OKXGreeksType) {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), json!(raw));
+        let params = Params::new([("greeks_convention".to_string(), json!(raw))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(expected));
     }
 
     #[rstest]
     fn parse_conventions_accepts_list_of_strings() {
-        let mut params = Params::new();
-        params.insert(
-            "greeks_convention".to_string(),
-            json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"]),
+        let params = Params::new(
+            [(
+                "greeks_convention".to_string(),
+                json!(["BLACK_SCHOLES", "PRICE_ADJUSTED"]),
+            )]
+            .into(),
         );
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
@@ -3822,18 +4064,20 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_accepts_single_entry_list() {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), json!(["PRICE_ADJUSTED"]));
+        let params =
+            Params::new([("greeks_convention".to_string(), json!(["PRICE_ADJUSTED"]))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Pa));
     }
 
     #[rstest]
     fn parse_conventions_deduplicates_list_entries() {
-        let mut params = Params::new();
-        params.insert(
-            "greeks_convention".to_string(),
-            json!(["BLACK_SCHOLES", "black_scholes"]),
+        let params = Params::new(
+            [(
+                "greeks_convention".to_string(),
+                json!(["BLACK_SCHOLES", "black_scholes"]),
+            )]
+            .into(),
         );
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Bs));
@@ -3841,10 +4085,12 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_skips_unknown_list_entries() {
-        let mut params = Params::new();
-        params.insert(
-            "greeks_convention".to_string(),
-            json!(["BOGUS", "PRICE_ADJUSTED"]),
+        let params = Params::new(
+            [(
+                "greeks_convention".to_string(),
+                json!(["BOGUS", "PRICE_ADJUSTED"]),
+            )]
+            .into(),
         );
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, only(OKXGreeksType::Pa));
@@ -3852,8 +4098,7 @@ mod tests {
 
     #[rstest]
     fn parse_conventions_falls_back_to_both_on_all_unknown() {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), json!(["BOGUS"]));
+        let params = Params::new([("greeks_convention".to_string(), json!(["BOGUS"]))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
@@ -3864,16 +4109,14 @@ mod tests {
     #[case(json!(true))]
     #[case(json!({"nested": "object"}))]
     fn parse_conventions_falls_back_on_non_string_value(#[case] value: serde_json::Value) {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), value);
+        let params = Params::new([("greeks_convention".to_string(), value)].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
 
     #[rstest]
     fn parse_conventions_falls_back_on_unknown_single_string() {
-        let mut params = Params::new();
-        params.insert("greeks_convention".to_string(), json!("BOGUS"));
+        let params = Params::new([("greeks_convention".to_string(), json!("BOGUS"))].into());
         let result = parse_greeks_conventions_from_params(Some(&params));
         assert_eq!(result, both());
     }
@@ -4018,22 +4261,22 @@ mod tests {
         );
 
         match receiver.try_recv().expect("instrument event") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.id(), InstrumentId::from("BTC-USDT-SWAP.OKX"));
                 assert_eq!(instrument.price_increment(), Price::from("0.1"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
 
         match receiver.try_recv().expect("instrument status event") {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
                 assert_eq!(status.action, MarketStatusAction::Trading);
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(receiver.try_recv().is_err());
 
@@ -4075,23 +4318,26 @@ mod tests {
             );
         }
 
-        assert!(matches!(receiver.try_recv(), Ok(DataEvent::Instrument(_))));
         assert!(matches!(
             receiver.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(Data::Instrument(_)))
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(DataEvent::Data(Data::InstrumentStatus(_)))
         ));
 
         match receiver
             .try_recv()
             .expect("status event for repeat definition")
         {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4124,31 +4370,34 @@ mod tests {
             ws_instruments_message(swap_definition("0.5")),
         );
 
-        assert!(matches!(receiver.try_recv(), Ok(DataEvent::Instrument(_))));
         assert!(matches!(
             receiver.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(Data::Instrument(_)))
+        ));
+        assert!(matches!(
+            receiver.try_recv(),
+            Ok(DataEvent::Data(Data::InstrumentStatus(_)))
         ));
 
         match receiver.try_recv().expect("republished instrument") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.id(), InstrumentId::from("BTC-USDT-SWAP.OKX"));
                 assert_eq!(instrument.price_increment(), Price::from("0.5"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
 
         match receiver
             .try_recv()
             .expect("status for republished instrument")
         {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(receiver.try_recv().is_err());
 
@@ -4180,13 +4429,13 @@ mod tests {
             .try_recv()
             .expect("status event for invalid definition")
         {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4224,8 +4473,10 @@ mod tests {
 
         while let Ok(event) = receiver.try_recv() {
             match event {
-                DataEvent::Instrument(instrument) => published.push(instrument.id()),
-                DataEvent::InstrumentStatus(status) => statuses.push(status.instrument_id),
+                DataEvent::Data(Data::Instrument(instrument)) => published.push(instrument.id()),
+                DataEvent::Data(Data::InstrumentStatus(status)) => {
+                    statuses.push(status.instrument_id);
+                }
                 other => panic!("Unexpected event {other:?}"),
             }
         }
@@ -4269,13 +4520,13 @@ mod tests {
         );
 
         match receiver.try_recv().expect("status event") {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4300,14 +4551,14 @@ mod tests {
         );
 
         match receiver.try_recv().expect("instrument event") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.id(), InstrumentId::from("BTC-USD-SWAP.OKX"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
         assert!(matches!(
             receiver.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(Data::InstrumentStatus(_)))
         ));
         assert_eq!(instruments_by_symbol.load().len(), 1);
     }
@@ -4337,13 +4588,13 @@ mod tests {
         );
 
         match receiver.try_recv().expect("status event") {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("ETH-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4362,106 +4613,43 @@ mod tests {
         );
 
         match receiver.try_recv().expect("instrument event") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.id(), InstrumentId::from("BTC-USDT-SWAP.OKX"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
         assert!(matches!(
             receiver.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(Data::InstrumentStatus(_)))
         ));
         assert_eq!(instruments_by_symbol.load().len(), 1);
     }
 
-    #[tokio::test]
-    async fn reconcile_fetches_duplicate_configured_families_once() {
-        let state = RefreshServerState {
-            instruments_payload: Arc::new(tokio::sync::Mutex::new(test_payload(
-                "http_get_instruments_swap.json",
-            ))),
-            ..RefreshServerState::default()
-        };
-        let addr = start_refresh_server(state.clone()).await;
-        let http = refresh_http_client(addr);
+    #[rstest]
+    fn data_client_rejects_duplicate_configured_families() {
         let config = OKXDataClientConfig::builder()
-            .instrument_types(vec![OKXInstrumentType::Swap])
-            .instrument_families(vec!["BTC-USD".to_string(), "BTC-USD".to_string()])
+            .instrument_families(vec!["BTC-USDT".to_string(), "BTC-USDT".to_string()])
             .build();
-        let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let error = OKXDataClient::new(ClientId::from("OKX"), config)
+            .expect_err("duplicate config must fail before client setup");
 
-        let summary = reconcile_instruments(
-            &http,
-            &config,
-            &instruments_by_symbol,
-            &update_lock,
-            None,
-            None,
-            &sender.clone().into(),
-        )
-        .await
-        .expect("reconcile");
-
-        let queries = state.instrument_queries.lock().await;
         assert_eq!(
-            queries.len(),
-            1,
-            "a duplicated family must be fetched only once"
-        );
-        drop(queries);
-        assert_eq!(summary.fetched, 1);
-        assert_eq!(summary.changed, 1);
-        assert_eq!(
-            instrument_events(&mut receiver).len(),
-            1,
-            "a duplicated family must not publish its instruments twice"
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("instrument_families", None))
         );
     }
 
-    #[tokio::test]
-    async fn reconcile_fetches_duplicate_configured_types_once() {
-        let state = RefreshServerState {
-            instruments_payload: Arc::new(tokio::sync::Mutex::new(test_payload(
-                "http_get_instruments_swap.json",
-            ))),
-            ..RefreshServerState::default()
-        };
-        let addr = start_refresh_server(state.clone()).await;
-        let http = refresh_http_client(addr);
+    #[rstest]
+    fn data_client_rejects_duplicate_configured_types() {
         let config = OKXDataClientConfig::builder()
             .instrument_types(vec![OKXInstrumentType::Swap, OKXInstrumentType::Swap])
             .build();
-        let instruments_by_symbol = Arc::new(AtomicMap::new());
-        let update_lock = InstrumentUpdateLock::default();
-        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let error = OKXDataClient::new(ClientId::from("OKX"), config)
+            .expect_err("duplicate config must fail before client setup");
 
-        let summary = reconcile_instruments(
-            &http,
-            &config,
-            &instruments_by_symbol,
-            &update_lock,
-            None,
-            None,
-            &sender.clone().into(),
-        )
-        .await
-        .expect("reconcile");
-
-        let queries = state.instrument_queries.lock().await;
         assert_eq!(
-            queries.len(),
-            1,
-            "a duplicated type must be fetched only once"
-        );
-        drop(queries);
-        assert_eq!(summary.fetched, 3);
-        assert_eq!(summary.changed, 3);
-        assert_eq!(
-            instrument_events(&mut receiver).len(),
-            3,
-            "a duplicated type must not publish its instruments twice"
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("instrument_types", None))
         );
     }
 
@@ -4574,13 +4762,13 @@ mod tests {
         );
 
         match receiver.try_recv().expect("status event") {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(
                     status.instrument_id,
                     InstrumentId::from("BTC-USDT-SWAP.OKX")
                 );
             }
-            other => panic!("Expected DataEvent::InstrumentStatus, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::InstrumentStatus(...)), was {other:?}"),
         }
         assert!(
             receiver.try_recv().is_err(),
@@ -4620,8 +4808,7 @@ mod tests {
     fn definitions_match_detects_info_changes() {
         let pair = currency_pair_btcusdt();
         let mut changed = pair.clone();
-        let mut info = Params::new();
-        info.insert("okx_rpi_min_level".to_string(), json!(5));
+        let info = Params::new([("okx_rpi_min_level".to_string(), json!(5))].into());
         changed.info = Some(info);
 
         assert!(!instrument_definitions_match(
@@ -4764,8 +4951,8 @@ mod tests {
         receiver: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
     ) -> Vec<InstrumentAny> {
         let mut events = Vec::new();
-        while let Ok(DataEvent::Instrument(instrument)) = receiver.try_recv() {
-            events.push(instrument);
+        while let Ok(DataEvent::Data(Data::Instrument(instrument))) = receiver.try_recv() {
+            events.push(*instrument);
         }
         events
     }
@@ -5103,8 +5290,9 @@ mod tests {
         });
 
         let event = receiver.recv().await.expect("instrument event");
-        let DataEvent::Instrument(instrument) = event else {
-            panic!("Expected DataEvent::Instrument, was {event:?}");
+
+        let DataEvent::Data(Data::Instrument(instrument)) = event else {
+            panic!("Expected DataEvent::Data(Data::Instrument(...)), was {event:?}");
         };
 
         assert!(
@@ -5207,10 +5395,10 @@ mod tests {
         }
 
         match receiver.try_recv().expect("concurrent update event") {
-            DataEvent::Instrument(instrument) => {
+            DataEvent::Data(Data::Instrument(instrument)) => {
                 assert_eq!(instrument.price_increment(), Price::from("0.5"));
             }
-            other => panic!("Expected DataEvent::Instrument, was {other:?}"),
+            other => panic!("Expected DataEvent::Data(Data::Instrument(...)), was {other:?}"),
         }
 
         gate.add_permits(1);

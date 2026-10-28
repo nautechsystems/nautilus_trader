@@ -478,10 +478,10 @@ def test_venue_config_optional_params() -> None:
     """
     instrument_id = InstrumentId.from_str("BTCUSDT.BINANCE")
     fill_model = BestPriceFillModel(prob_fill_on_limit=0.9, prob_slippage=0.1)
-    latency_model = StaticLatencyModel(base_latency_nanos=1_000)
     margin_model = StandardMarginModel()
+    latency_model = StaticLatencyModel(base_latency_nanos=1_000)
     module = FXRolloverInterestModule(
-        records=[InterestRateRecord(location="USD", time="17:00", value=0.01)],
+        records=[InterestRateRecord(location="USD", time="17:00", value=Decimal("0.01"))],
     )
     config = BacktestVenueConfig(
         name="BINANCE",
@@ -508,10 +508,10 @@ def test_venue_config_optional_params() -> None:
         base_currency=Currency.from_str("USDT"),
         default_leverage=Decimal(5),
         leverages={instrument_id: Decimal(3)},
-        margin_model=margin_model,
-        modules=[module],
         fill_model=fill_model,
+        margin_model=margin_model,
         latency_model=latency_model,
+        modules=[module],
         price_protection_points=7,
     )
     assert config.name == "BINANCE"
@@ -694,12 +694,48 @@ def test_data_config_minimal() -> None:
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     config = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=instrument_id,
     )
     assert config.data_type == NautilusDataType.QuoteTick
-    assert config.catalog_path == "/data/catalog"
+    assert config.catalog.path == "/data/catalog"
     assert config.instrument_id == instrument_id
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "catalog_path",
+        "catalog_backend",
+        "catalog_fs_protocol",
+        "catalog_fs_storage_options",
+        "catalog_fs_rust_storage_options",
+    ],
+)
+def test_data_config_rejects_removed_catalog_arguments(field: str) -> None:
+    """
+    Test flat catalog arguments fail explicitly.
+    """
+    with pytest.raises(TypeError, match=field):
+        BacktestDataConfig(
+            data_type=NautilusDataType.QuoteTick,
+            catalog=DataCatalogConfig(path="/data/catalog"),
+            instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+            **{field: "removed"},
+        )
+
+
+@pytest.mark.parametrize("path", ["", "   "])
+def test_data_config_rejects_empty_catalog_path(path: str) -> None:
+    """
+    Test nested catalog paths retain nonempty validation.
+    """
+    with pytest.raises(ValueError, match=r"catalog\.path"):
+        BacktestDataConfig(
+            data_type=NautilusDataType.QuoteTick,
+            catalog=DataCatalogConfig(path=path),
+            instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
+        )
 
 
 def test_data_config_requires_identifier() -> None:
@@ -709,7 +745,7 @@ def test_data_config_requires_identifier() -> None:
     with pytest.raises(ValueError, match="instrument_id"):
         BacktestDataConfig(
             data_type=NautilusDataType.QuoteTick,
-            catalog_path="/data/catalog",
+            catalog=DataCatalogConfig(path="/data/catalog"),
         )
 
 
@@ -720,7 +756,7 @@ def test_data_config_with_instrument_id() -> None:
     instrument_id = InstrumentId.from_str("EUR/USD.SIM")
     config = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=instrument_id,
     )
     assert config.instrument_id == instrument_id
@@ -735,10 +771,18 @@ def test_data_config_readback_redacts_storage_option_values() -> None:
     bar_spec = BarSpecification(1, BarAggregation.MINUTE, PriceType.LAST)
     config = BacktestDataConfig(
         data_type=NautilusDataType.Bar,
-        catalog_path="/data/catalog",
-        catalog_fs_protocol="s3",
-        catalog_fs_storage_options={"access_key": "secret"},
-        catalog_fs_rust_storage_options={"region": "ap-southeast-2"},
+        catalog=DataCatalogConfig(
+            path="/data/catalog",
+            fs_protocol="s3",
+            catalog_backend=CatalogBackend.External("Research"),
+            name="history",
+            read_only=True,
+            batch_size=512,
+            compression="snappy",
+            max_row_group_size=2048,
+            params={"snapshot_id": 7},
+            fs_rust_storage_options={"access_key": "secret", "region": "ap-southeast-2"},
+        ),
         instrument_ids=[instrument_id],
         start_time=1,
         end_time=2,
@@ -750,11 +794,17 @@ def test_data_config_readback_redacts_storage_option_values() -> None:
         optimize_file_loading=True,
     )
 
-    assert config.catalog_fs_protocol == "s3"
-    assert config.catalog_fs_storage_option_keys == ["access_key"]
-    assert config.catalog_fs_rust_storage_option_keys == ["region"]
-    assert not hasattr(config, "catalog_fs_storage_options")
-    assert not hasattr(config, "catalog_fs_rust_storage_options")
+    assert config.catalog.path == "/data/catalog"
+    assert config.catalog.fs_protocol == "s3"
+    assert config.catalog.catalog_backend == CatalogBackend.External("Research")
+    assert config.catalog.name == "history"
+    assert config.catalog.read_only is True
+    assert config.catalog.batch_size == 512
+    assert config.catalog.compression == "snappy"
+    assert config.catalog.max_row_group_size == 2048
+    assert config.catalog.params == {"snapshot_id": 7}
+    assert config.catalog.fs_rust_storage_option_keys == ["access_key", "region"]
+    assert not hasattr(config.catalog, "fs_rust_storage_options")
     assert config.instrument_ids == [instrument_id]
     assert config.start_time == 1
     assert config.end_time == 2
@@ -780,7 +830,7 @@ def test_data_config_batch_deltas(kwargs: dict[str, bool], expected: bool) -> No
     """
     config = BacktestDataConfig(
         data_type=NautilusDataType.OrderBookDelta,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
         **kwargs,
     )
@@ -803,7 +853,7 @@ def test_data_config_accepts_compatible_timestamp_inputs(value: object) -> None:
     """
     config = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
         start_time=value,
         end_time=value,
@@ -821,7 +871,7 @@ def test_data_config_rejects_non_enum_data_type(data_type: object) -> None:
     with pytest.raises(TypeError):
         BacktestDataConfig(
             data_type=data_type,
-            catalog_path="/data/catalog",
+            catalog=DataCatalogConfig(path="/data/catalog"),
         )
 
 
@@ -831,7 +881,7 @@ def test_data_config_exposes_the_data_type_enum() -> None:
     """
     config = BacktestDataConfig(
         data_type=NautilusDataType.OrderBookDepth,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
 
@@ -845,7 +895,7 @@ def test_data_config_accepts_the_instrument_family() -> None:
     """
     config = BacktestDataConfig(
         data_type=NautilusDataType.Instrument,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("ETHUSDT-PERP.BINANCE"),
     )
 
@@ -867,7 +917,7 @@ def test_data_config_rejects_unsupported_family(data_type: NautilusDataType) -> 
     with pytest.raises(ValueError, match="data_type has unsupported value") as exc_info:
         BacktestDataConfig(
             data_type=data_type,
-            catalog_path="/data/catalog",
+            catalog=DataCatalogConfig(path="/data/catalog"),
             instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
         )
 
@@ -882,7 +932,7 @@ def test_data_config_repr() -> None:
     """
     config = BacktestDataConfig(
         data_type=NautilusDataType.TradeTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     assert "BacktestDataConfig" in repr(config)
@@ -894,18 +944,17 @@ def test_data_config_repr_redacts_storage_option_values() -> None:
     """
     config = BacktestDataConfig(
         data_type=NautilusDataType.TradeTick,
-        catalog_path="/data/catalog",
-        catalog_fs_storage_options={"key": "fs-key-sentinel"},
-        catalog_fs_rust_storage_options={"aws_secret_access_key": "rust-secret-sentinel"},
+        catalog=DataCatalogConfig(
+            path="/data/catalog",
+            fs_rust_storage_options={"aws_secret_access_key": "rust-secret-sentinel"},
+        ),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
 
     result = repr(config)
 
-    assert "fs-key-sentinel" not in result
     assert "rust-secret-sentinel" not in result
-    assert 'catalog_fs_storage_options: Some({"key": <redacted>})' in result
-    assert 'catalog_fs_rust_storage_options: Some({"aws_secret_access_key": <redacted>})' in result
+    assert 'fs_rust_storage_options: Some({"aws_secret_access_key": <redacted>})' in result
 
 
 def test_run_config_auto_id() -> None:
@@ -921,7 +970,7 @@ def test_run_config_auto_id() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     config = BacktestRunConfig(venues=[venue], data=[data])
@@ -941,7 +990,7 @@ def test_run_config_explicit_id() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     config = BacktestRunConfig(venues=[venue], data=[data], id="my-run-001")
@@ -961,7 +1010,7 @@ def test_run_config_with_engine() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     engine = BacktestEngineConfig(bypass_logging=True)
@@ -985,7 +1034,7 @@ def test_run_config_options_are_readable() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     config = BacktestRunConfig(
@@ -1039,7 +1088,7 @@ def test_run_config_repr() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     config = BacktestRunConfig(venues=[venue], data=[data])
@@ -1059,7 +1108,7 @@ def test_run_config_chunk_size_zero_rejected() -> None:
     )
     data = BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/data/catalog",
+        catalog=DataCatalogConfig(path="/data/catalog"),
         instrument_id=InstrumentId.from_str("EUR/USD.SIM"),
     )
     with pytest.raises(ValueError, match="chunk_size"):

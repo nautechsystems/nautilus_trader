@@ -1656,7 +1656,7 @@ fn test_unsubscribe_book_snapshots_removes_only_requested_interval(
     assert_eq!(recorded.len(), 2);
     assert!(matches!(
         &recorded[1],
-        DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd)) if cmd.instrument_id == audusd_sim.id
+        DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(cmd)) if cmd.single_instrument_id().unwrap() == audusd_sim.id
     ));
     drop(recorded);
 

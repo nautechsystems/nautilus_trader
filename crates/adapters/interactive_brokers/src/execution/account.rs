@@ -30,6 +30,7 @@ use ibapi::{
     prelude::{StreamExt, SubscriptionItemStreamExt},
     subscriptions::{FilterDataStream, Subscription},
 };
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::fifo::FifoCache,
     live::runner::get_exec_event_sender,
@@ -46,6 +47,8 @@ use nautilus_model::{
 };
 use rust_decimal::{Decimal, prelude::ToPrimitive};
 use ustr::Ustr;
+
+use super::reports::IbReportContext;
 
 /// Derives the raw IB account code sent to TWS from the configured `account_id`.
 ///
@@ -76,7 +79,7 @@ type AccountSummaryStream = FilterDataStream<Subscription<AccountSummaryResult>>
 struct AccountSummaryAccumulator {
     balances: Vec<AccountSummaryBalance>,
     margins: Vec<MarginBalance>,
-    info: Params,
+    info: IndexMap<String, serde_json::Value>,
 }
 
 /// Subscribe to account summary and parse to balances and margins.
@@ -267,7 +270,11 @@ async fn account_snapshot(
     Ok((
         balances,
         margins,
-        if info.is_empty() { None } else { Some(info) },
+        if info.is_empty() {
+            None
+        } else {
+            Some(Params::new(info))
+        },
     ))
 }
 
@@ -276,7 +283,7 @@ async fn account_snapshot(
 async fn merge_account_updates_snapshot(
     client: &Arc<Client>,
     raw_account_id: &str,
-    info: &mut Params,
+    info: &mut IndexMap<String, serde_json::Value>,
 ) -> anyhow::Result<()> {
     let account = IbAccountId(raw_account_id.to_string());
     let subscription = client
@@ -301,7 +308,11 @@ async fn merge_account_updates_snapshot(
     Ok(())
 }
 
-fn merge_account_value(info: &mut Params, raw_account_id: &str, value: &AccountValue) {
+fn merge_account_value(
+    info: &mut IndexMap<String, serde_json::Value>,
+    raw_account_id: &str,
+    value: &AccountValue,
+) {
     if value
         .account
         .as_deref()
@@ -733,22 +744,10 @@ pub async fn subscribe_positions(
                                     instrument.size_precision(),
                                 );
 
-                                let avg_px_open = if position.average_cost > 0.0 {
-                                    let price_magnifier = instrument_provider
-                                        .get_price_magnifier(&instrument_id)
-                                        as f64;
-                                    let multiplier = instrument.multiplier().as_f64();
-                                    let converted_avg_cost =
-                                        position.average_cost / (multiplier * price_magnifier);
-                                    let price_precision = instrument.price_precision();
-                                    Some(
-                                        Decimal::from_f64_retain(converted_avg_cost)
-                                            .map(|d| d.round_dp(price_precision as u32))
-                                            .unwrap_or_default(),
-                                    )
-                                } else {
-                                    None
-                                };
+                                let avg_px_open = IbReportContext::position_avg_px_open(
+                                    &instrument,
+                                    position.average_cost,
+                                );
 
                                 let ts_init = clock.get_time_ns();
 
@@ -838,6 +837,7 @@ mod tests {
         accounts::{AccountSummary, AccountSummaryResult, AccountValue},
         orders::ExecutionSide,
     };
+    use indexmap::IndexMap;
     use nautilus_core::Params;
     use nautilus_model::{
         identifiers::AccountId,
@@ -894,23 +894,6 @@ mod tests {
         let code = ib_account_code(configured, AccountId::from(account_id));
 
         assert_eq!(code.as_str(), expected);
-    }
-
-    /// Verifies the IB avg cost to Nautilus price conversion formula used in position parsing.
-    /// Python: converted_avg_cost = avg_cost / (multiplier * price_magnifier)
-    #[rstest]
-    fn test_ib_avg_cost_to_price_conversion() {
-        let avg_cost = 100.0;
-        let multiplier = 10.0;
-        let price_magnifier = 2.0;
-        let converted = avg_cost / (multiplier * price_magnifier);
-        assert_eq!(converted, 5.0);
-
-        let avg_cost2 = 1_500_000.0;
-        let multiplier2 = 50.0;
-        let price_magnifier2 = 10;
-        let converted2 = avg_cost2 / (multiplier2 * (price_magnifier2 as f64));
-        assert_eq!(converted2, 3000.0);
     }
 
     #[rstest]
@@ -1222,7 +1205,7 @@ mod tests {
         #[case] account: Option<&str>,
         #[case] expected_inserted: bool,
     ) {
-        let mut info = Params::new();
+        let mut info = IndexMap::new();
 
         merge_account_value(
             &mut info,
@@ -1230,6 +1213,7 @@ mod tests {
             &account_value(account, "PostExpirationExcess", "-326492.00"),
         );
 
+        let info = Params::new(info);
         assert_eq!(
             info.get_str("PostExpirationExcess"),
             expected_inserted.then_some("-326492.00"),
@@ -1238,11 +1222,10 @@ mod tests {
 
     #[rstest]
     fn test_merge_account_value_keeps_summary_tags_and_overwrites_same_key() {
-        let mut info = Params::new();
-        info.insert(
+        let mut info = IndexMap::from([(
             AccountSummaryTags::TOTAL_CASH_VALUE.to_string(),
             serde_json::Value::from("1000.00"),
-        );
+        )]);
 
         merge_account_value(
             &mut info,
@@ -1259,6 +1242,7 @@ mod tests {
             ),
         );
 
+        let info = Params::new(info);
         assert_eq!(info.len(), 2);
         assert_eq!(info.get_str("TotalCashValue"), Some("1250.50"));
         assert_eq!(info.get_str("PostExpirationMargin"), Some("391668.36"));

@@ -173,10 +173,8 @@ fn test_external_option_chain_releases_after_final_owner(
     let mut data_engine = DataEngine::new(clock, cache, Some(config));
     let topic = format!("commands.data.{client_id}");
     let series_id = make_series_id();
-    let mut first_params = Params::new();
-    first_params.insert("owner".to_string(), serde_json::json!(1));
-    let mut second_params = Params::new();
-    second_params.insert("owner".to_string(), serde_json::json!(2));
+    let first_params = Params::new([("owner".to_string(), serde_json::json!(1))].into());
+    let second_params = Params::new([("owner".to_string(), serde_json::json!(2))].into());
 
     let subscribe = |command_id, strike, params| {
         SubscribeCommand::OptionChain(SubscribeOptionChain::new(
@@ -262,10 +260,8 @@ fn test_external_option_chain_edit_moves_owner_to_new_client(
     let edited_topic = format!("commands.data.{edited_client_id}");
     let series_id = make_series_id();
     let owner_id = UUID4::new();
-    let mut initial_params = Params::new();
-    initial_params.insert("route".to_string(), serde_json::json!(1));
-    let mut edited_params = Params::new();
-    edited_params.insert("route".to_string(), serde_json::json!(2));
+    let initial_params = Params::new([("route".to_string(), serde_json::json!(1))].into());
+    let edited_params = Params::new([("route".to_string(), serde_json::json!(2))].into());
     let (initial_unsubscribe_handler, initial_unsubscribe_saver) =
         get_any_saving_handler::<UnsubscribeCommand>(None);
     let (edited_subscribe_handler, edited_subscribe_saver) =
@@ -677,17 +673,17 @@ fn test_option_chain_new_instrument_uses_subscription_client(
     assert_eq!(recorded.len(), 3);
     assert!(recorded.iter().any(|cmd| matches!(
         cmd,
-        DataCommand::Subscribe(SubscribeCommand::Quotes(cmd)) if cmd.instrument_id == put_id
+        DataCommand::Subscribe(SubscribeCommand::Quotes(cmd)) if cmd.instrument_ids == [put_id]
     )));
     assert!(recorded.iter().any(|cmd| matches!(
         cmd,
         DataCommand::Subscribe(SubscribeCommand::OptionGreeks(cmd))
-            if cmd.instrument_id == put_id
+            if cmd.single_instrument_id().unwrap() == put_id
     )));
     assert!(recorded.iter().any(|cmd| matches!(
         cmd,
         DataCommand::Subscribe(SubscribeCommand::InstrumentStatus(cmd))
-            if cmd.instrument_id == put_id
+            if cmd.single_instrument_id().unwrap() == put_id
     )));
     drop(recorded);
     assert!(routed_recorder.borrow().is_empty());
@@ -712,17 +708,17 @@ fn test_option_chain_new_instrument_uses_subscription_client(
     assert!(recorded.iter().any(|cmd| matches!(
         cmd,
         DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(cmd))
-            if cmd.instrument_id == put_id
+            if cmd.instrument_ids == [put_id]
     )));
     assert!(recorded.iter().any(|cmd| matches!(
         cmd,
         DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(cmd))
-            if cmd.instrument_id == put_id
+            if cmd.single_instrument_id().unwrap() == put_id
     )));
     assert!(recorded.iter().any(|cmd| matches!(
         cmd,
         DataCommand::Unsubscribe(UnsubscribeCommand::InstrumentStatus(cmd))
-            if cmd.instrument_id == put_id
+            if cmd.single_instrument_id().unwrap() == put_id
     )));
     assert!(routed_recorder.borrow().is_empty());
 }
@@ -1047,7 +1043,7 @@ fn test_option_chain_settles_rebalance_before_retirement(
         commands_at_retirement.as_slice()
     );
     assert!(!commands_at_retirement.iter().any(|command| matches!(command,
-        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) if command.instrument_id == next_id
+        DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) if command.instrument_ids == [next_id]
     )));
     assert!(!engine.borrow().has_option_chain_manager(&series_id));
     assert_eq!(engine.borrow().subscribed_quotes(), vec![next_id]);
@@ -2065,7 +2061,7 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
         matches!(
             cmd,
             DataCommand::Subscribe(SubscribeCommand::OptionGreeks(cmd))
-                if cmd.instrument_id == sample_id && cmd.client_id == Some(client_id)
+                if cmd.single_instrument_id().unwrap() == sample_id && cmd.client_id == Some(client_id)
         )
     }));
     recorder.borrow_mut().clear();
@@ -2096,7 +2092,7 @@ fn test_option_chain_greeks_bootstrap_releases_inactive_sample(
         .iter()
         .filter_map(|cmd| match cmd {
             DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(cmd)) => {
-                Some(cmd.instrument_id)
+                Some(cmd.single_instrument_id().unwrap())
             }
             _ => None,
         })
@@ -2367,7 +2363,7 @@ fn test_option_chain_deferred_bootstrap_from_greeks_keeps_bootstrap_event(
 
     assert_eq!(bootstrap_subscriptions.len(), 1);
     assert_eq!(
-        bootstrap_subscriptions[0].instrument_id,
+        bootstrap_subscriptions[0].single_instrument_id().unwrap(),
         bootstrap_instrument_id
     );
     assert_eq!(bootstrap_subscriptions[0].client_id, Some(client_id));
@@ -2537,7 +2533,7 @@ fn test_option_chain_unsubscribe_releases_active_bootstrap_sample(
             .iter()
             .filter_map(|cmd| match cmd {
                 DataCommand::Unsubscribe(UnsubscribeCommand::OptionGreeks(cmd)) => {
-                    Some(cmd.instrument_id)
+                    Some(cmd.single_instrument_id().unwrap())
                 }
                 _ => None,
             })

@@ -123,10 +123,16 @@ pub struct KrakenSpotExecutionClient {
 
 impl KrakenSpotExecutionClient {
     /// Creates a new [`KrakenSpotExecutionClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configuration validation or client initialization fails.
     pub fn new(
         core: ExecutionClientCore,
         config: KrakenExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,
@@ -184,12 +190,14 @@ impl KrakenSpotExecutionClient {
             max_requests_per_second: config.max_requests_per_second,
             transport_backend: config.transport_backend,
         };
-        let ws = KrakenSpotWebSocketClient::new(data_config, cancellation_token.clone(), proxy_url)
-            .with_socket_control(SocketControl::new(
-                core.client_id,
-                Some(*KRAKEN_VENUE),
-                "kraken-spot-user-streams",
-            ));
+
+        let ws =
+            KrakenSpotWebSocketClient::new(data_config, cancellation_token.clone(), proxy_url)?
+                .with_socket_control(SocketControl::new(
+                    core.client_id,
+                    Some(*KRAKEN_VENUE),
+                    "kraken-spot-user-streams",
+                ));
 
         let ws_dispatch_state = Arc::new(WsDispatchState::new());
         // Connect() swaps in a live cmd_tx; capture the shared handle so the
@@ -1976,7 +1984,7 @@ mod tests {
     fn params_with(key: &str, val: serde_json::Value) -> Params {
         let mut map = indexmap::IndexMap::new();
         map.insert(key.to_owned(), val);
-        Params::from_index_map(map)
+        Params::new(map)
     }
 
     #[tokio::test]

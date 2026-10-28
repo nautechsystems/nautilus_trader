@@ -15,24 +15,33 @@
 
 //! SBE decoders for Binance Spot user data stream events.
 //!
-//! Decodes templates 601 (BalanceUpdateEvent), 603 (ExecutionReportEvent), and
-//! 607 (OutboundAccountPositionEvent) from schema 3:5 binary payloads into the
-//! venue-level structs defined in [`super::user_data`].
-//! The existing JSON parse functions in [`super::parse`] then convert these to Nautilus types.
+//! Decodes schema 3:5 templates 601 (BalanceUpdateEvent), 603 (ExecutionReportEvent),
+//! 606 (ListStatusEvent), and 607 (OutboundAccountPositionEvent) into venue structs.
+//! Execution reports and account positions convert to Nautilus types in [`super::parse`].
+//! The Spot execution client dispatches list lifecycle updates directly.
 
-use rust_decimal::Decimal;
+use ahash::AHashSet;
+use anyhow::Context;
+use nautilus_serialization::sbe::{GroupSize16Encoding, GroupSizeEncoding, SbeCursor};
 use ustr::Ustr;
 
 use super::user_data::{
     BinanceSpotAccountPositionMsg, BinanceSpotBalanceEntry, BinanceSpotBalanceUpdateMsg,
-    BinanceSpotExecutionReport, BinanceSpotExecutionType,
+    BinanceSpotExecutionReport, BinanceSpotExecutionType, BinanceSpotListOrder,
+    BinanceSpotListStatus,
 };
 use crate::{
-    common::enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
+    common::{
+        consts::BINANCE_NAUTILUS_SPOT_BROKER_ID,
+        encoder::decode_client_order_id,
+        enums::{BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
+        parse::{parse_micros, sbe_mantissa_to_decimal},
+    },
     spot::sbe::spot::{
-        ReadBuf, balance_update_event_codec, bool_enum, execution_report_event_codec,
-        execution_type, expiry_reason, group_size_encoding_codec, message_header_codec, order_side,
-        order_status, order_type, outbound_account_position_event_codec, time_in_force,
+        ReadBuf, balance_update_event_codec, bool_enum, contingency_type,
+        execution_report_event_codec, execution_type, expiry_reason, group_size_encoding_codec,
+        list_order_status, list_status_event_codec, list_status_type, message_header_codec,
+        order_side, order_status, order_type, outbound_account_position_event_codec, time_in_force,
     },
 };
 
@@ -60,8 +69,13 @@ const EXECUTION_REPORT_VAR_DATA_FIELDS: [&str; 6] = [
 ///
 /// # Errors
 ///
-/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
-/// match, or variable-length data is malformed.
+/// Returns an error if:
+/// - The buffer is too short.
+/// - The template ID or schema ID does not match.
+/// - The declared block length is shorter than the minimum for the message version.
+/// - The price, quantity, or commission exponent is the SBE null value (-128).
+/// - The execution type or order side is unsupported.
+/// - Variable-length data is malformed.
 pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecutionReport> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -203,17 +217,17 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
         side,
         order_type: order_type_str.to_string(),
         time_in_force,
-        original_qty: mantissa_to_decimal_string(orig_qty_mantissa, qty_exp),
-        price: mantissa_to_decimal_string(price_mantissa, price_exp),
-        stop_price: mantissa_to_decimal_string(stop_price_mantissa, price_exp),
+        original_qty: mantissa_to_decimal_string(orig_qty_mantissa, qty_exp)?,
+        price: mantissa_to_decimal_string(price_mantissa, price_exp)?,
+        stop_price: mantissa_to_decimal_string(stop_price_mantissa, price_exp)?,
         execution_type,
         order_status,
         reject_reason,
         order_id,
-        last_filled_qty: mantissa_to_decimal_string(last_qty_mantissa, qty_exp),
-        cumulative_filled_qty: mantissa_to_decimal_string(executed_qty_mantissa, qty_exp),
-        last_filled_price: mantissa_to_decimal_string(last_price_mantissa, price_exp),
-        commission: mantissa_to_decimal_string(commission_mantissa, commission_exp),
+        last_filled_qty: mantissa_to_decimal_string(last_qty_mantissa, qty_exp)?,
+        cumulative_filled_qty: mantissa_to_decimal_string(executed_qty_mantissa, qty_exp)?,
+        last_filled_price: mantissa_to_decimal_string(last_price_mantissa, price_exp)?,
+        commission: mantissa_to_decimal_string(commission_mantissa, commission_exp)?,
         commission_asset,
         transaction_time: us_to_ms(transact_time_us),
         trade_id,
@@ -222,11 +236,198 @@ pub fn decode_execution_report(data: &[u8]) -> anyhow::Result<BinanceSpotExecuti
         order_creation_time: order_creation_time_us.map_or(0, us_to_ms),
         cumulative_quote_qty: mantissa_to_decimal_string(
             cummulative_quote_qty_mantissa,
-            price_exp + qty_exp,
-        ),
+            price_exp,
+        )?,
         original_client_order_id: orig_client_order_id,
         expiry_reason,
     })
+}
+
+/// Decodes Spot SBE template 606, including its complete child group.
+///
+/// The input includes the SBE header. Timestamps retain microsecond precision.
+///
+/// # Errors
+///
+/// Returns an error if framing, schema, timestamps, identifiers, enums, or reject
+/// reasons are invalid; children are empty, duplicate, or mismatched; or a rejected
+/// list lacks a `RESPONSE` status and venue reason.
+pub fn decode_list_status(data: &[u8]) -> anyhow::Result<BinanceSpotListStatus> {
+    let mut cursor = SbeCursor::new(data);
+    let block_length = cursor.read_u16_le()?;
+    let template_id = cursor.read_u16_le()?;
+    let schema_id = cursor.read_u16_le()?;
+    let version = cursor.read_u16_le()?;
+    anyhow::ensure!(
+        template_id == list_status_event_codec::SBE_TEMPLATE_ID,
+        "Wrong list status template ID: {template_id}"
+    );
+    anyhow::ensure!(
+        schema_id == crate::spot::sbe::spot::SBE_SCHEMA_ID,
+        "Wrong list status schema ID: {schema_id}"
+    );
+    anyhow::ensure!(
+        version <= crate::spot::sbe::spot::SBE_SCHEMA_VERSION,
+        "Unsupported list status schema version: {version}"
+    );
+
+    let minimum = if version == 0 {
+        27
+    } else {
+        usize::from(list_status_event_codec::SBE_BLOCK_LENGTH)
+    };
+
+    anyhow::ensure!(
+        usize::from(block_length) >= minimum,
+        "List status fixed block is too short: {block_length}"
+    );
+    cursor.advance(usize::from(block_length))?;
+    let group =
+        GroupSize16Encoding::decode(cursor.read_bytes(GroupSize16Encoding::ENCODED_LENGTH)?)?;
+    anyhow::ensure!(group.block_length >= 8, "List child block is too short");
+    anyhow::ensure!(group.num_in_group > 0, "List has no children");
+
+    for _ in 0..group.num_in_group {
+        cursor.advance(usize::from(group.block_length))?;
+        cursor.read_var_string8_ref()?;
+        cursor.read_var_string8_ref()?;
+    }
+
+    for _ in 0..3 {
+        cursor.read_var_string8_ref()?;
+    }
+
+    anyhow::ensure!(cursor.remaining() == 0, "Trailing data after list status");
+
+    let decoder = list_status_event_codec::ListStatusEventDecoder::default().wrap(
+        ReadBuf::new(data),
+        HEADER_LEN,
+        block_length,
+        version,
+    );
+    let event_time_us = decoder.event_time();
+    let transaction_time_us = decoder.transact_time();
+    parse_micros(event_time_us, "list event time")?;
+    parse_micros(transaction_time_us, "list transaction time")?;
+    let order_list_id = decoder.order_list_id();
+    anyhow::ensure!(order_list_id >= 0, "Invalid order list ID: {order_list_id}");
+    let contingency_type = decoder.contingency_type();
+    let list_status_type = decoder.list_status_type();
+    let list_order_status = decoder.list_order_status();
+    anyhow::ensure!(
+        matches!(
+            contingency_type,
+            contingency_type::ContingencyType::Oco | contingency_type::ContingencyType::Oto
+        ),
+        "Unsupported list contingency type"
+    );
+    anyhow::ensure!(
+        matches!(
+            list_status_type,
+            list_status_type::ListStatusType::Response
+                | list_status_type::ListStatusType::ExecStarted
+                | list_status_type::ListStatusType::AllDone
+                | list_status_type::ListStatusType::Updated
+        ),
+        "Unsupported list status type"
+    );
+    anyhow::ensure!(
+        matches!(
+            list_order_status,
+            list_order_status::ListOrderStatus::Canceling
+                | list_order_status::ListOrderStatus::Executing
+                | list_order_status::ListOrderStatus::AllDone
+                | list_order_status::ListOrderStatus::Reject
+        ),
+        "Unsupported list order status"
+    );
+    let subscription_id = decoder.subscription_id();
+    let mut children = decoder.orders_decoder();
+    let mut orders = Vec::with_capacity(usize::from(group.num_in_group));
+    let mut venue_ids = AHashSet::new();
+    let mut client_ids = AHashSet::new();
+
+    while children
+        .advance()
+        .map_err(|e| anyhow::anyhow!("Invalid list child group: {e:?}"))?
+        .is_some()
+    {
+        let order_id = children.order_id();
+        anyhow::ensure!(
+            order_id >= 0 && venue_ids.insert(order_id),
+            "Invalid or duplicate list child order ID: {order_id}"
+        );
+        let coords = children.symbol_decoder();
+        let symbol = std::str::from_utf8(children.symbol_slice(coords))?;
+        validate_list_identifier(symbol)?;
+        let symbol = Ustr::from(symbol);
+        let coords = children.client_order_id_decoder();
+        let client_order_id = std::str::from_utf8(children.client_order_id_slice(coords))?;
+        validate_list_identifier(client_order_id)?;
+        let decoded_id = decode_client_order_id(client_order_id, BINANCE_NAUTILUS_SPOT_BROKER_ID)?;
+        anyhow::ensure!(
+            client_ids.insert(decoded_id),
+            "Duplicate list child client order ID"
+        );
+        orders.push(BinanceSpotListOrder {
+            order_id,
+            symbol,
+            client_order_id: client_order_id.to_owned(),
+        });
+    }
+
+    let mut decoder = children
+        .parent()
+        .map_err(|e| anyhow::anyhow!("Invalid list parent: {e:?}"))?;
+    let coords = decoder.symbol_decoder();
+    let symbol = std::str::from_utf8(decoder.symbol_slice(coords))?;
+    validate_list_identifier(symbol)?;
+    let symbol = Ustr::from(symbol);
+    anyhow::ensure!(
+        orders.iter().all(|order| order.symbol == symbol),
+        "List child symbol does not match list symbol"
+    );
+    let coords = decoder.list_client_order_id_decoder();
+    let list_client_order_id =
+        std::str::from_utf8(decoder.list_client_order_id_slice(coords))?.to_owned();
+    validate_list_identifier(&list_client_order_id)?;
+    let coords = decoder.reject_reason_decoder();
+    let reject_reason = std::str::from_utf8(decoder.reject_reason_slice(coords))?.to_owned();
+    anyhow::ensure!(
+        !reject_reason.chars().any(char::is_control),
+        "Invalid list reject reason"
+    );
+
+    if list_order_status == list_order_status::ListOrderStatus::Reject {
+        anyhow::ensure!(
+            list_status_type == list_status_type::ListStatusType::Response
+                && !reject_reason.trim().is_empty()
+                && reject_reason != "NONE",
+            "List rejection has no definitive reason"
+        );
+    }
+
+    Ok(BinanceSpotListStatus {
+        event_time_us,
+        transaction_time_us,
+        order_list_id,
+        contingency_type,
+        list_status_type,
+        list_order_status,
+        subscription_id,
+        orders,
+        symbol,
+        list_client_order_id,
+        reject_reason,
+    })
+}
+
+fn validate_list_identifier(value: &str) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        !value.trim().is_empty() && !value.chars().any(|c| c.is_whitespace() || c.is_control()),
+        "Invalid list identifier"
+    );
+    Ok(())
 }
 
 fn execution_report_min_block_length(version: u16) -> usize {
@@ -245,8 +446,14 @@ fn execution_report_min_block_length(version: u16) -> usize {
 ///
 /// # Errors
 ///
-/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
-/// match, or balances framing is malformed.
+/// Returns an error if:
+/// - The buffer is too short.
+/// - The template ID or schema ID does not match.
+/// - The balance count exceeds [`crate::spot::sbe::MAX_GROUP_SIZE`].
+/// - Message or balance framing is malformed.
+/// - A balance mantissa and exponent cannot be converted to a decimal.
+///
+/// A balance conversion error rejects the whole message; no partial balances are returned.
 pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccountPositionMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -310,7 +517,7 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
         );
     }
 
-    let count = buf.get_u32_at(min_len + 2);
+    let count = GroupSizeEncoding::decode(&data[min_len..group_header_end])?.num_in_group;
     let mut entry_offset = group_header_end;
 
     for index in 0..count {
@@ -332,8 +539,7 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
     let update_time_us = dec.update_time();
 
     let mut balances_dec = dec.balances_decoder();
-    let count = balances_dec.count() as usize;
-    let mut balances = Vec::with_capacity(count);
+    let mut balances = Vec::with_capacity(count as usize);
 
     while let Some(_idx) = balances_dec
         .advance()
@@ -346,11 +552,15 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
         let asset_coords = balances_dec.asset_decoder();
         let asset_bytes = balances_dec.asset_slice(asset_coords);
         let asset = Ustr::from(&String::from_utf8_lossy(asset_bytes));
+        let free = sbe_mantissa_to_decimal(free_mantissa, exponent)
+            .with_context(|| format!("failed to convert free balance for {asset}"))?;
+        let locked = sbe_mantissa_to_decimal(locked_mantissa, exponent)
+            .with_context(|| format!("failed to convert locked balance for {asset}"))?;
 
         balances.push(BinanceSpotBalanceEntry {
             asset,
-            free: mantissa_to_decimal(free_mantissa, exponent),
-            locked: mantissa_to_decimal(locked_mantissa, exponent),
+            free,
+            locked,
         });
     }
 
@@ -368,8 +578,12 @@ pub fn decode_account_position(data: &[u8]) -> anyhow::Result<BinanceSpotAccount
 ///
 /// # Errors
 ///
-/// Returns an error if the buffer is too short, the template ID is wrong, the schema ID does not
-/// match, or asset framing is malformed.
+/// Returns an error if:
+/// - The buffer is too short.
+/// - The template ID or schema ID does not match.
+/// - The declared block length is shorter than the minimum for the message version.
+/// - The quantity exponent is the SBE null value (-128).
+/// - Asset framing is malformed.
 pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUpdateMsg> {
     if data.len() < HEADER_LEN {
         anyhow::bail!(
@@ -441,7 +655,7 @@ pub fn decode_balance_update(data: &[u8]) -> anyhow::Result<BinanceSpotBalanceUp
         event_type: "balanceUpdate".to_string(),
         event_time: us_to_ms(event_time_us),
         asset: Ustr::from(&asset),
-        delta: mantissa_to_decimal_string(free_qty_delta, qty_exponent),
+        delta: mantissa_to_decimal_string(free_qty_delta, qty_exponent)?,
         clear_time: us_to_ms(clear_time_us),
     })
 }
@@ -558,29 +772,27 @@ fn us_to_ms(us: i64) -> i64 {
     if us < 0 { us } else { us / 1_000 }
 }
 
-/// Converts an SBE `mantissa * 10^exponent` pair to a [`Decimal`] without floating-point.
-fn mantissa_to_decimal(mantissa: i64, exponent: i8) -> Decimal {
-    if exponent >= 0 {
-        Decimal::from(mantissa) * Decimal::from(10_i64.pow(exponent as u32))
-    } else {
-        Decimal::new(mantissa, (-exponent) as u32)
-    }
-}
-
 /// Converts a mantissa + exponent pair to a decimal string without floating-point.
 ///
 /// SBE encodes numeric values as `mantissa * 10^exponent`. For exponent = -2
 /// and mantissa = 250000, the result is "2500.00".
-fn mantissa_to_decimal_string(mantissa: i64, exponent: i8) -> String {
+fn mantissa_to_decimal_string(mantissa: i64, exponent: i8) -> anyhow::Result<String> {
+    if exponent == i8::MIN {
+        anyhow::bail!("Invalid SBE decimal exponent: {exponent} is null");
+    }
+
+    let decimal_places = usize::from(exponent.unsigned_abs());
+
     if mantissa == 0 {
         if exponent >= 0 {
-            return "0".to_string();
+            return Ok("0".to_string());
         }
         let mut s = "0.".to_string();
-        for _ in 0..(-exponent) {
+        for _ in 0..decimal_places {
             s.push('0');
         }
-        return s;
+
+        return Ok(s);
     }
 
     let negative = mantissa < 0;
@@ -593,42 +805,46 @@ fn mantissa_to_decimal_string(mantissa: i64, exponent: i8) -> String {
             s.push('0');
         }
         s
-    } else {
-        let decimal_places = (-exponent) as usize;
-        if digits.len() <= decimal_places {
-            let padding = decimal_places - digits.len();
-            let mut s = "0.".to_string();
-            for _ in 0..padding {
-                s.push('0');
-            }
-            s.push_str(&digits);
-            s
-        } else {
-            let split_pos = digits.len() - decimal_places;
-            let mut s = digits[..split_pos].to_string();
-            s.push('.');
-            s.push_str(&digits[split_pos..]);
-            s
+    } else if digits.len() <= decimal_places {
+        let padding = decimal_places - digits.len();
+        let mut s = "0.".to_string();
+        for _ in 0..padding {
+            s.push('0');
         }
+        s.push_str(&digits);
+        s
+    } else {
+        let split_pos = digits.len() - decimal_places;
+        let mut s = digits[..split_pos].to_string();
+        s.push('.');
+        s.push_str(&digits[split_pos..]);
+        s
     };
 
     if negative {
-        format!("-{result}")
+        Ok(format!("-{result}"))
     } else {
-        result
+        Ok(result)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use nautilus_core::UnixNanos;
+    use nautilus_model::identifiers::{AccountId, InstrumentId};
     use rstest::rstest;
+    use rust_decimal::Decimal;
 
     use super::*;
-    use crate::spot::sbe::spot::{
-        WriteBuf, bool_enum::BoolEnum, execution_type::ExecutionType, floor, match_type,
-        order_capacity, order_side::OrderSide, order_status::OrderStatus,
-        order_type::OrderType as SbeOrderType, peg_offset_type, peg_price_type,
-        self_trade_prevention_mode::SelfTradePreventionMode, time_in_force::TimeInForce as SbeTif,
+    use crate::spot::{
+        sbe::spot::{
+            WriteBuf, bool_enum::BoolEnum, execution_type::ExecutionType, floor, match_type,
+            order_capacity, order_side::OrderSide, order_status::OrderStatus,
+            order_type::OrderType as SbeOrderType, peg_offset_type, peg_price_type,
+            self_trade_prevention_mode::SelfTradePreventionMode,
+            time_in_force::TimeInForce as SbeTif,
+        },
+        websocket::trading::parse::parse_spot_exec_report_to_order_status,
     };
 
     #[expect(clippy::too_many_arguments)]
@@ -813,15 +1029,238 @@ mod tests {
     }
 
     #[rstest]
+    #[case::executing(false)]
+    #[case::rejected(true)]
+    fn test_decode_list_status_exact_fixture(#[case] rejected: bool) {
+        let name = if rejected { "rejected" } else { "executing" };
+        let data = crate::common::testing::load_fixture_bytes(&format!(
+            "spot/user_data_sbe/list_status_{name}.sbe"
+        ));
+        let msg = decode_list_status(&data).unwrap();
+        assert_eq!(
+            msg,
+            BinanceSpotListStatus {
+                event_time_us: 1_734_300_000_123_456,
+                transaction_time_us: 1_734_300_000_111_222,
+                order_list_id: 4401,
+                contingency_type: contingency_type::ContingencyType::Oco,
+                list_status_type: if rejected {
+                    list_status_type::ListStatusType::Response
+                } else {
+                    list_status_type::ListStatusType::ExecStarted
+                },
+                list_order_status: if rejected {
+                    list_order_status::ListOrderStatus::Reject
+                } else {
+                    list_order_status::ListOrderStatus::Executing
+                },
+                subscription_id: Some(7),
+                orders: vec![
+                    BinanceSpotListOrder {
+                        order_id: 71001,
+                        symbol: Ustr::from("BTCUSDT"),
+                        client_order_id: "list-child-a".to_owned()
+                    },
+                    BinanceSpotListOrder {
+                        order_id: 72002,
+                        symbol: Ustr::from("BTCUSDT"),
+                        client_order_id: "list-child-b".to_owned()
+                    },
+                ],
+                symbol: Ustr::from("BTCUSDT"),
+                list_client_order_id: "list-4401".to_owned(),
+                reject_reason: if rejected {
+                    "INSUFFICIENT_BALANCES"
+                } else {
+                    "NONE"
+                }
+                .to_owned(),
+            }
+        );
+    }
+
+    #[rstest]
+    fn test_decode_list_status_rejects_every_truncation() {
+        for name in ["executing", "rejected"] {
+            let data = crate::common::testing::load_fixture_bytes(&format!(
+                "spot/user_data_sbe/list_status_{name}.sbe"
+            ));
+
+            for length in 0..data.len() {
+                assert!(
+                    decode_list_status(&data[..length]).is_err(),
+                    "Accepted {name} truncation at {length}"
+                );
+            }
+        }
+    }
+
+    #[rstest]
+    #[case::template(2, 607u16)]
+    #[case::schema(4, 2)]
+    #[case::version(6, 6)]
+    #[case::block(0, 28)]
+    #[case::child_block(37, 7)]
+    #[case::empty_group(39, 0)]
+    #[case::excessive_count(39, u16::MAX)]
+    fn test_decode_list_status_rejects_header(#[case] offset: usize, #[case] value: u16) {
+        let mut data = crate::common::testing::load_fixture_bytes(
+            "spot/user_data_sbe/list_status_executing.sbe",
+        );
+        data[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+        assert!(decode_list_status(&data).is_err());
+    }
+
+    #[rstest]
+    #[case::event_negative(8, -1i64)]
+    #[case::event_null(8, i64::MIN)]
+    #[case::event_overflow(8, i64::MAX)]
+    #[case::transaction_negative(16, -1)]
+    #[case::transaction_overflow(16, i64::MAX)]
+    #[case::list_id(24, -1)]
+    #[case::child_id(41, -1)]
+    fn test_decode_list_status_rejects_numeric_fields(#[case] offset: usize, #[case] value: i64) {
+        let mut data = crate::common::testing::load_fixture_bytes(
+            "spot/user_data_sbe/list_status_executing.sbe",
+        );
+        data[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        assert!(decode_list_status(&data).is_err());
+    }
+
+    #[rstest]
+    #[case::contingency(32)]
+    #[case::status_type(33)]
+    #[case::order_status(34)]
+    #[case::symbol_utf8(50)]
+    #[case::client_utf8(58)]
+    fn test_decode_list_status_rejects_unknown_enum_or_invalid_utf8(#[case] offset: usize) {
+        let mut data = crate::common::testing::load_fixture_bytes(
+            "spot/user_data_sbe/list_status_executing.sbe",
+        );
+        data[offset] = 255;
+        assert!(decode_list_status(&data).is_err());
+    }
+
+    #[rstest]
+    #[case::duplicate_venue("venue")]
+    #[case::duplicate_client("client")]
+    #[case::mismatched_symbol("symbol")]
+    #[case::empty_client("empty")]
+    #[case::broker_id("broker")]
+    #[case::trailing("trailing")]
+    fn test_decode_list_status_rejects_malformed_children(#[case] field: &str) {
+        let mut data = crate::common::testing::load_fixture_bytes(
+            "spot/user_data_sbe/list_status_executing.sbe",
+        );
+
+        match field {
+            "venue" => {
+                let id = data[41..49].to_vec();
+                data[70..78].copy_from_slice(&id);
+            }
+            "client" => {
+                let id = data[58..70].to_vec();
+                data[87..99].copy_from_slice(&id);
+            }
+            "symbol" => data[79] = b'E',
+            "empty" => data[58] = b' ',
+            "broker" => {
+                data[58..70].copy_from_slice(b"x-TD67BGP9-?");
+            }
+            "trailing" => data.push(0),
+            _ => unreachable!(),
+        }
+
+        assert!(decode_list_status(&data).is_err());
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::none("NONE")]
+    #[case::whitespace(" ")]
+    #[case::control("bad\nreason")]
+    fn test_decode_list_status_rejects_invalid_rejection_reason(#[case] reason: &str) {
+        let mut data = crate::common::testing::load_fixture_bytes(
+            "spot/user_data_sbe/list_status_rejected.sbe",
+        );
+        let suffix = "INSUFFICIENT_BALANCES";
+        data.truncate(data.len() - suffix.len() - 1);
+        data.push(reason.len() as u8);
+        data.extend_from_slice(reason.as_bytes());
+        let error = decode_list_status(&data).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            if reason.contains('\n') {
+                "Invalid list reject reason"
+            } else {
+                "List rejection has no definitive reason"
+            }
+        );
+    }
+
+    #[rstest]
+    #[case::v0(0, None)]
+    #[case::v1(1, Some(7))]
+    #[case::null_subscription(5, None)]
+    fn test_decode_list_status_versions(#[case] version: u16, #[case] subscription: Option<u16>) {
+        let mut data = crate::common::testing::load_fixture_bytes(
+            "spot/user_data_sbe/list_status_executing.sbe",
+        );
+        data[6..8].copy_from_slice(&version.to_le_bytes());
+        if version == 0 {
+            data[0..2].copy_from_slice(&27u16.to_le_bytes());
+            data.drain(35..37);
+        } else if subscription.is_none() {
+            data[35..37].copy_from_slice(&u16::MAX.to_le_bytes());
+        }
+
+        assert_eq!(
+            decode_list_status(&data).unwrap().subscription_id,
+            subscription
+        );
+    }
+
+    #[rstest]
     fn test_mantissa_to_decimal_string_basic() {
-        assert_eq!(mantissa_to_decimal_string(250000, -2), "2500.00");
-        assert_eq!(mantissa_to_decimal_string(100000000, -8), "1.00000000");
-        assert_eq!(mantissa_to_decimal_string(0, -8), "0.00000000");
-        assert_eq!(mantissa_to_decimal_string(0, 0), "0");
-        assert_eq!(mantissa_to_decimal_string(42, 0), "42");
-        assert_eq!(mantissa_to_decimal_string(42, 2), "4200");
-        assert_eq!(mantissa_to_decimal_string(5, -3), "0.005");
-        assert_eq!(mantissa_to_decimal_string(-250000, -2), "-2500.00");
+        assert_eq!(mantissa_to_decimal_string(250000, -2).unwrap(), "2500.00");
+        assert_eq!(
+            mantissa_to_decimal_string(100000000, -8).unwrap(),
+            "1.00000000"
+        );
+        assert_eq!(mantissa_to_decimal_string(0, -8).unwrap(), "0.00000000");
+        assert_eq!(mantissa_to_decimal_string(0, 0).unwrap(), "0");
+        assert_eq!(mantissa_to_decimal_string(42, 0).unwrap(), "42");
+        assert_eq!(mantissa_to_decimal_string(42, 2).unwrap(), "4200");
+        assert_eq!(mantissa_to_decimal_string(5, -3).unwrap(), "0.005");
+        assert_eq!(mantissa_to_decimal_string(-250000, -2).unwrap(), "-2500.00");
+        assert_eq!(
+            mantissa_to_decimal_string(i64::MIN, -2).unwrap(),
+            "-92233720368547758.08"
+        );
+    }
+
+    #[rstest]
+    fn test_mantissa_to_decimal_string_wire_domain(
+        #[values(i64::MIN, -250000, -1, 0, 1, 250000, i64::MAX)] mantissa: i64,
+    ) {
+        for exponent in i8::MIN..=i8::MAX {
+            let result = mantissa_to_decimal_string(mantissa, exponent);
+
+            if exponent == i8::MIN {
+                assert_eq!(
+                    result.unwrap_err().to_string(),
+                    "Invalid SBE decimal exponent: -128 is null"
+                );
+            } else {
+                assert!(result.unwrap().len() <= 147);
+            }
+        }
+
+        let largest = mantissa_to_decimal_string(i64::MIN, i8::MAX).unwrap();
+        let smallest = mantissa_to_decimal_string(-1, -127).unwrap();
+
+        assert_eq!(largest, format!("-9223372036854775808{}", "0".repeat(127)));
+        assert_eq!(smallest, format!("-0.{}1", "0".repeat(126)));
     }
 
     #[rstest]
@@ -834,13 +1273,90 @@ mod tests {
     #[case::small_fractional(5_i64, -3_i8, "0.005")]
     #[case::negative_mantissa(-250000_i64, -2_i8, "-2500.00")]
     #[case::large_positive_exponent(1_i64, 9_i8, "1000000000")]
+    #[case::exponent_beyond_i64_power(1_i64, 19_i8, "10000000000000000000")]
+    #[case::max_decimal_scale(1_i64, -28_i8, "0.0000000000000000000000000001")]
+    #[case::zero_with_large_exponent(0_i64, i8::MAX, "0")]
     fn test_mantissa_to_decimal_parametrized(
         #[case] mantissa: i64,
         #[case] exponent: i8,
         #[case] expected: &str,
     ) {
-        let result = mantissa_to_decimal(mantissa, exponent);
+        let result = sbe_mantissa_to_decimal(mantissa, exponent).unwrap();
         assert_eq!(result, Decimal::from_str_exact(expected).unwrap());
+    }
+
+    #[rstest]
+    #[case::scale_above_max(1_i64, -29_i8)]
+    #[case::min_exponent(1_i64, i8::MIN)]
+    #[case::value_overflow(1_i64, 29_i8)]
+    #[case::product_overflow(i64::MAX, 18_i8)]
+    fn test_mantissa_to_decimal_out_of_range_returns_error(
+        #[case] mantissa: i64,
+        #[case] exponent: i8,
+    ) {
+        let err = sbe_mantissa_to_decimal(mantissa, exponent).unwrap_err();
+
+        assert!(err.to_string().contains(&exponent.to_string()));
+    }
+
+    #[rstest]
+    #[case::scale_above_max(-29_i8, 1_i64)]
+    #[case::min_exponent(i8::MIN, 1_i64)]
+    #[case::positive_overflow(29_i8, 1_i64)]
+    #[case::product_overflow(18_i8, i64::MAX)]
+    fn test_decode_account_position_rejects_unrepresentable_balance(
+        #[case] exponent: i8,
+        #[case] mantissa: i64,
+    ) {
+        let data = encode_account_position(
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            &[
+                ("BTC", -8, 100_000_000, 0),
+                ("ETH", exponent, mantissa, mantissa),
+            ],
+        );
+
+        let err = decode_account_position(&data).unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("ETH"), "{message}");
+        assert!(message.contains(&exponent.to_string()), "{message}");
+    }
+
+    #[rstest]
+    #[case::free_overflow(i64::MAX, 1_i64)]
+    #[case::locked_overflow(1_i64, i64::MAX)]
+    fn test_decode_account_position_rejects_one_sided_overflow(
+        #[case] free: i64,
+        #[case] locked: i64,
+    ) {
+        let data = encode_account_position(
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            &[("ETH", 10, free, locked)],
+        );
+
+        let err = decode_account_position(&data).unwrap_err();
+        let message = format!("{err:#}");
+
+        assert!(message.contains("ETH"), "{message}");
+        assert!(message.contains("10"), "{message}");
+    }
+
+    #[rstest]
+    fn test_decode_account_position_positive_exponent_is_exact() {
+        let data = encode_account_position(
+            1_709_654_400_000_000,
+            1_709_654_400_000_000,
+            &[("BTC", 2, 42, 7)],
+        );
+
+        let msg = decode_account_position(&data).unwrap();
+
+        assert_eq!(msg.balances.len(), 1);
+        assert_eq!(msg.balances[0].free, Decimal::from(4_200));
+        assert_eq!(msg.balances[0].locked, Decimal::from(700));
     }
 
     #[rstest]
@@ -990,17 +1506,17 @@ mod tests {
             SbeTif::Gtc,
             ExecutionType::Trade,
             OrderStatus::Filled,
-            -2,           // price_exp
-            -8,           // qty_exp
-            -8,           // commission_exp
-            250000,       // price = 2500.00
-            100000000,    // orig_qty = 1.00000000
-            0,            // stop_price
-            100000000,    // last_qty = 1.00000000
-            250000,       // last_price = 2500.00 (uses price_exp)
-            100000000,    // executed_qty = 1.00000000
-            250000000000, // cumm_quote_qty = 2500.00000000 (uses price_exp... actually this is wrong)
-            250000,       // commission = 0.00250000
+            -2,        // price_exp
+            -8,        // qty_exp
+            -8,        // commission_exp
+            250000,    // price = 2500.00
+            100000000, // orig_qty = 1.00000000
+            0,         // stop_price
+            100000000, // last_qty = 1.00000000
+            250000,    // last_price = 2500.00 (uses price_exp)
+            100000000, // executed_qty = 1.00000000
+            250000,    // cumm_quote_qty = 2500.00
+            250000,    // commission = 0.00250000
             "USDT",
             true, // is_maker
             false,
@@ -1012,11 +1528,24 @@ mod tests {
 
         let report = decode_execution_report(&data).unwrap();
 
+        let status = parse_spot_exec_report_to_order_status(
+            &report,
+            InstrumentId::from("ETHUSDT.BINANCE"),
+            2,
+            8,
+            AccountId::from("BINANCE-001"),
+            false,
+            UnixNanos::default(),
+        )
+        .unwrap();
+
         assert_eq!(report.execution_type, BinanceSpotExecutionType::Trade);
         assert_eq!(report.order_status, BinanceOrderStatus::Filled);
         assert_eq!(report.trade_id, 98765432);
         assert_eq!(report.last_filled_qty, "1.00000000");
         assert_eq!(report.last_filled_price, "2500.00");
+        assert_eq!(report.cumulative_quote_qty, "2500.00");
+        assert_eq!(status.avg_px.unwrap().to_string(), "2500.00");
         assert_eq!(report.commission_asset, Some(Ustr::from("USDT")));
         assert!(report.is_maker);
     }
@@ -1156,6 +1685,54 @@ mod tests {
     }
 
     #[rstest]
+    #[case::price(16)]
+    #[case::qty(17)]
+    #[case::commission(18)]
+    fn test_decode_execution_report_rejects_null_exponent(
+        #[case] offset: usize,
+        #[values(0, 1)] mantissa: i64,
+    ) {
+        let mut data = encode_bounds_execution_report();
+        let buf = WriteBuf::new(&mut data);
+        let mut enc = execution_report_event_codec::ExecutionReportEventEncoder::default()
+            .wrap(buf, HEADER_LEN);
+        enc.price(mantissa);
+        enc.stop_price(mantissa);
+        enc.last_price(mantissa);
+        enc.orig_qty(mantissa);
+        enc.last_qty(mantissa);
+        enc.executed_qty(mantissa);
+        enc.cummulative_quote_qty(mantissa);
+        enc.commission(mantissa);
+        data[HEADER_LEN + offset] = i8::MIN.to_le_bytes()[0];
+
+        let err = decode_execution_report(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Invalid SBE decimal exponent: -128 is null"
+        );
+    }
+
+    #[rstest]
+    fn test_decode_execution_report_quote_uses_price_exponent() {
+        let mut data = encode_bounds_execution_report();
+        let buf = WriteBuf::new(&mut data);
+        let mut enc = execution_report_event_codec::ExecutionReportEventEncoder::default()
+            .wrap(buf, HEADER_LEN);
+        enc.price_exponent(-64);
+        enc.qty_exponent(-64);
+        enc.cummulative_quote_qty(1);
+
+        let report = decode_execution_report(&data).unwrap();
+
+        assert_eq!(
+            report.cumulative_quote_qty,
+            format!("0.{}1", "0".repeat(63))
+        );
+    }
+
+    #[rstest]
     fn test_decode_execution_report_rejects_short_version_2_block() {
         let mut data = crate::common::testing::load_fixture_bytes(
             "spot/user_data_sbe/mainnet/execution_report_event_1.sbe",
@@ -1267,6 +1844,77 @@ mod tests {
 
         let msg = decode_account_position(&data).unwrap();
         assert!(msg.balances.is_empty());
+    }
+
+    #[rstest]
+    #[case::above_limit_empty(crate::spot::sbe::MAX_GROUP_SIZE + 1, false)]
+    #[case::above_limit_complete(crate::spot::sbe::MAX_GROUP_SIZE + 1, true)]
+    #[case::max_count(u32::MAX, false)]
+    fn test_decode_account_position_rejects_excessive_count(
+        #[case] count: u32,
+        #[case] complete: bool,
+    ) {
+        let entries = if complete {
+            vec![("BTC", -2, 12345, 6789); count as usize]
+        } else {
+            Vec::new()
+        };
+
+        let mut data = encode_account_position(123000, 456000, &entries);
+        let group_offset =
+            HEADER_LEN + usize::from(outbound_account_position_event_codec::SBE_BLOCK_LENGTH);
+        data[group_offset + 2..group_offset + group_size_encoding_codec::ENCODED_LENGTH]
+            .copy_from_slice(&count.to_le_bytes());
+
+        let err = decode_account_position(&data).unwrap_err();
+
+        assert_eq!(
+            err.downcast_ref::<crate::spot::sbe::SbeDecodeError>(),
+            Some(&crate::spot::sbe::SbeDecodeError::GroupSizeTooLarge {
+                count,
+                max: crate::spot::sbe::MAX_GROUP_SIZE,
+            })
+        );
+    }
+
+    #[rstest]
+    fn test_decode_account_position_accepts_maximum_count() {
+        let entries = vec![("ASSET", -3, 12345, 6789); crate::spot::sbe::MAX_GROUP_SIZE as usize];
+        let data = encode_account_position(123000, 456000, &entries);
+
+        let msg = decode_account_position(&data).unwrap();
+
+        assert_eq!(msg.event_type, "outboundAccountPosition");
+        assert_eq!(msg.event_time, 123);
+        assert_eq!(msg.last_update_time, 456);
+        assert_eq!(msg.balances.len(), entries.len());
+
+        for balance in msg.balances {
+            assert_eq!(balance.asset, "ASSET");
+            assert_eq!(balance.free, Decimal::new(12345, 3));
+            assert_eq!(balance.locked, Decimal::new(6789, 3));
+        }
+    }
+
+    #[rstest]
+    fn test_decode_account_position_validates_all_assets_before_decoding() {
+        let mut data = encode_account_position(
+            123000,
+            456000,
+            &[("BTC", i8::MIN, 12345, 6789), ("USDT", -3, 4321, 8765)],
+        );
+        data.pop();
+
+        let err = decode_account_position(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            format!(
+                "Buffer too short for asset: expected {}, was {}",
+                data.len() + 1,
+                data.len()
+            )
+        );
     }
 
     #[rstest]
@@ -1501,6 +2149,18 @@ mod tests {
         assert_eq!(msg.asset, "BTC");
         assert_eq!(msg.delta, "100.00000000");
         assert_eq!(msg.clear_time, 1709654400000);
+    }
+
+    #[rstest]
+    fn test_decode_balance_update_rejects_null_exponent(#[values(0, 1, -1)] mantissa: i64) {
+        let data = encode_balance_update(123000, 456000, i8::MIN, mantissa, "ASSET");
+
+        let err = decode_balance_update(&data).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Invalid SBE decimal exponent: -128 is null"
+        );
     }
 
     #[rstest]

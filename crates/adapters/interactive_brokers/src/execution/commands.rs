@@ -10,8 +10,28 @@
 //! Interactive Brokers execution command handling.
 
 use nautilus_common::live::sender::EventSender;
+use nautilus_model::events::OrderDeniedReason;
 
-use super::core::*;
+use super::{
+    core::*,
+    transform::{convert_f64, convert_price},
+};
+
+/// An order prepared for IB and tracked, with the submit lock held until it is sent.
+pub(super) struct PreparedOrder<'a> {
+    pub(super) ib_order_id: i32,
+    pub(super) contract: ibapi::contracts::Contract,
+    pub(super) ib_order: ibapi::orders::Order,
+    pub(super) _submit_guard: tokio::sync::MutexGuard<'a, ()>,
+}
+
+/// An order list prepared for IB and tracked, in list order, with the submit lock held until
+/// it is sent.
+pub(super) struct PreparedOrderList<'a> {
+    pub(super) ib_order_ids: AHashMap<ClientOrderId, i32>,
+    pub(super) orders: Vec<(ibapi::contracts::Contract, ibapi::orders::Order)>,
+    pub(super) _submit_guard: tokio::sync::MutexGuard<'a, ()>,
+}
 
 impl InteractiveBrokersExecutionClient {
     #[allow(clippy::too_many_arguments)] // Command execution uses explicit client state.
@@ -26,99 +46,29 @@ impl InteractiveBrokersExecutionClient {
         account_id: AccountId,
         ib_account: Ustr,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
+        request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
-        if cmd.order_init.post_only {
-            let ts_event = clock.get_time_ns();
-            let detail = "`post_only` not supported by Interactive Brokers";
-            let reason = coded_denial_reason(DENIAL_POST_ONLY_UNSUPPORTED, detail);
-            Self::send_order_denied_to(
-                cmd.order_init.trader_id,
-                cmd.strategy_id,
-                cmd.instrument_id,
-                cmd.order_init.client_order_id,
-                &reason,
-                exec_sender,
-                ts_event,
-            )?;
-            anyhow::bail!(reason);
-        }
-
-        let is_inverse = instrument_provider
-            .find(&cmd.instrument_id)
-            .is_some_and(|instrument| instrument.is_inverse());
-
-        if cmd.order_init.quote_quantity && !is_inverse {
-            let ts_event = clock.get_time_ns();
-            let detail = "Quote quantity requires an inverse instrument";
-            let reason = coded_denial_reason(DENIAL_QUOTE_QUANTITY_UNSUPPORTED, detail);
-            Self::send_order_denied_to(
-                cmd.order_init.trader_id,
-                cmd.strategy_id,
-                cmd.instrument_id,
-                cmd.order_init.client_order_id,
-                &reason,
-                exec_sender,
-                ts_event,
-            )?;
-            anyhow::bail!(reason);
-        }
-
-        if let Some(reason) = Self::unsupported_trailing_offset_reason(
-            cmd.order_init.order_type,
-            cmd.order_init.trailing_offset_type,
-        ) {
-            let ts_event = clock.get_time_ns();
-            Self::send_order_denied_to(
-                cmd.order_init.trader_id,
-                cmd.strategy_id,
-                cmd.instrument_id,
-                cmd.order_init.client_order_id,
-                &reason,
-                exec_sender,
-                ts_event,
-            )?;
-            anyhow::bail!("{reason}");
-        }
-
-        // An order that cannot be prepared for IB never leaves the client, so it is denied
-        // like an unpreparable order list rather than left INITIALIZED with only a log line
-        let contract =
-            match Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)
-                .and_then(|contract| {
-                    Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())
-                }) {
-                Ok(contract) => contract,
-                Err(e) => return Self::deny_unpreparable_order(cmd, &e, exec_sender, clock),
-            };
-
-        let order_any = OrderAny::try_from(cmd.order_init.clone())
-            .context("Failed to construct order from `OrderInitialized`")?;
-        let order_ref = cmd.order_init.client_order_id.to_string();
-        let _submit_guard = order_submit_lock.lock().await;
-        let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
-        let mut ib_order = match nautilus_order_to_ib_order(
-            &order_any,
-            instrument_provider,
-            ib_order_id,
-            &order_ref,
-        )
-        .context("Failed to transform order")
-        {
-            Ok(ib_order) => ib_order,
-            Err(e) => return Self::deny_unpreparable_order(cmd, &e, exec_sender, clock),
-        };
-        Self::assign_ib_account(&mut ib_order, ib_account);
-
-        Self::cache_order_tracking(
-            ib_order_id,
-            cmd.order_init.client_order_id,
+        let price_magnifier = instrument_provider.ensure_price_magnifier_async(
+            client,
             cmd.instrument_id,
-            cmd.order_init.trader_id,
-            cmd.strategy_id,
-            cmd.order_init.order_side,
-            cmd.order_init.order_type,
+            Duration::from_secs(request_timeout_secs),
+        );
+        let Some(prepared) = Self::prepare_submit_order(
+            cmd,
+            price_magnifier,
             orders,
-        )?;
+            next_order_id,
+            instrument_provider,
+            exec_sender,
+            clock,
+            ib_account,
+            order_submit_lock,
+        )
+        .await?
+        else {
+            return Ok(());
+        };
+        let ib_order_id = prepared.ib_order_id;
 
         let ts_event = clock.get_time_ns();
 
@@ -137,7 +87,10 @@ impl InteractiveBrokersExecutionClient {
             .send(ExecutionEvent::Order(OrderEventAny::Submitted(event)))
             .map_err(|e| anyhow::anyhow!("Failed to send order submitted event: {e}"))?;
 
-        if let Err(e) = client.submit_order(ib_order_id, &contract, &ib_order).await {
+        if let Err(e) = client
+            .submit_order(ib_order_id, &prepared.contract, &prepared.ib_order)
+            .await
+        {
             return Self::handle_order_submit_failure(
                 &e,
                 "Failed to submit order",
@@ -157,6 +110,114 @@ impl InteractiveBrokersExecutionClient {
         );
 
         Ok(())
+    }
+
+    /// Prepares an order for IB once `price_magnifier` resolves and tracks it, holding the
+    /// submit lock for the caller to send it.
+    ///
+    /// Returns `None` when a cancel took the order while it awaited submission, so nothing
+    /// reaches IB, and denies an order it cannot prepare unless a cancel took it.
+    #[allow(clippy::too_many_arguments)] // Preparation uses explicit client state.
+    pub(super) async fn prepare_submit_order<'a>(
+        cmd: &SubmitOrder,
+        price_magnifier: impl Future<Output = anyhow::Result<i32>>,
+        orders: &OrderTracker,
+        next_order_id: &Arc<Mutex<i32>>,
+        instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+        ib_account: Ustr,
+        order_submit_lock: &'a Arc<tokio::sync::Mutex<()>>,
+    ) -> anyhow::Result<Option<PreparedOrder<'a>>> {
+        if cmd.order_init.post_only {
+            let reason = OrderDeniedReason::unsupported_post_only_with_detail(
+                "`post_only` not supported by Interactive Brokers",
+            )
+            .to_string();
+
+            return Self::deny_awaiting_order(cmd, &reason, orders, exec_sender, clock);
+        }
+
+        let is_inverse = instrument_provider
+            .find(&cmd.instrument_id)
+            .is_some_and(|instrument| instrument.is_inverse());
+
+        if cmd.order_init.quote_quantity && !is_inverse {
+            let reason = OrderDeniedReason::unsupported_quote_quantity_with_detail(
+                "Quote quantity requires an inverse instrument",
+            )
+            .to_string();
+
+            return Self::deny_awaiting_order(cmd, &reason, orders, exec_sender, clock);
+        }
+
+        if let Some(reason) = Self::unsupported_trailing_offset_reason(
+            cmd.order_init.order_type,
+            cmd.order_init.trailing_offset_type,
+        ) {
+            return Self::deny_awaiting_order(cmd, &reason, orders, exec_sender, clock);
+        }
+
+        // Every price sent and reported for the order is converted by the price magnifier, so an
+        // order whose magnifier is unknown is denied rather than priced at the wrong scale
+        if let Err(e) = price_magnifier.await {
+            return Self::deny_unpreparable_order(cmd, &e, orders, exec_sender, clock);
+        }
+
+        // An order that cannot be prepared for IB never leaves the client, so it is denied
+        // like an unpreparable order list rather than left INITIALIZED with only a log line
+        let contract =
+            match Self::resolve_contract_for_instrument(cmd.instrument_id, instrument_provider)
+                .and_then(|contract| {
+                    Self::contract_with_order_exchange_param(contract, cmd.params.as_ref())
+                }) {
+                Ok(contract) => contract,
+                Err(e) => {
+                    return Self::deny_unpreparable_order(cmd, &e, orders, exec_sender, clock);
+                }
+            };
+
+        let order_any = OrderAny::try_from(cmd.order_init.clone())
+            .context("Failed to construct order from `OrderInitialized`")?;
+        let order_ref = cmd.order_init.client_order_id.to_string();
+        let submit_guard = order_submit_lock.lock().await;
+        let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
+        let mut ib_order = match nautilus_order_to_ib_order(
+            &order_any,
+            instrument_provider,
+            ib_order_id,
+            &order_ref,
+        )
+        .context("Failed to transform order")
+        {
+            Ok(ib_order) => ib_order,
+            Err(e) => return Self::deny_unpreparable_order(cmd, &e, orders, exec_sender, clock),
+        };
+        Self::assign_ib_account(&mut ib_order, ib_account);
+
+        let tracked = TrackedOrder::new(
+            cmd.order_init.client_order_id,
+            cmd.order_init.trader_id,
+            cmd.strategy_id,
+            cmd.instrument_id,
+            cmd.order_init.order_side,
+            cmd.order_init.order_type,
+        );
+
+        if !Self::track_awaiting_submission(ib_order_id, tracked, orders)? {
+            tracing::debug!(
+                "Order {} was canceled before submission; not sending it to IB",
+                cmd.order_init.client_order_id
+            );
+            return Ok(None);
+        }
+
+        Ok(Some(PreparedOrder {
+            ib_order_id,
+            contract,
+            ib_order,
+            _submit_guard: submit_guard,
+        }))
     }
 
     // IB trails by a price amount (`auxPrice`) or a percentage (`trailingPercent`)
@@ -200,6 +261,14 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
+        instrument_provider
+            .ensure_price_magnifier_async(
+                client,
+                cmd.instrument_id,
+                Duration::from_secs(request_timeout_secs),
+            )
+            .await?;
+
         let target_ib_order_id = Self::target_ib_order_id_for_modify(
             cmd,
             client,
@@ -260,13 +329,13 @@ impl InteractiveBrokersExecutionClient {
             ib_order.total_quantity = quantity.as_f64();
         }
 
-        let price_magnifier = instrument_provider.get_price_magnifier(&cmd.instrument_id) as f64;
+        let price_magnifier = instrument_provider.get_price_magnifier(&cmd.instrument_id);
         if let Some(price) = cmd.price {
-            ib_order.limit_price = Some(price.as_f64() / price_magnifier);
+            ib_order.limit_price = Some(convert_price(price, price_magnifier));
         }
 
         if let Some(trigger_price) = cmd.trigger_price {
-            let converted_trigger_price = trigger_price.as_f64() / price_magnifier;
+            let converted_trigger_price = convert_price(trigger_price, price_magnifier);
 
             if matches!(ib_order.order_type.as_str(), "TRAIL" | "TRAIL LIMIT") {
                 // IB rejects a trailing stop price change that keeps the trailing amount (10067)
@@ -285,11 +354,12 @@ impl InteractiveBrokersExecutionClient {
                         )
                     })?;
 
-                // The order keeps its offset type: basis points convert to IB's percent
+                // The order keeps its offset type: basis points convert to IB's percent, a price
+                // amount to IB's price unit
                 if ib_order.trailing_percent.is_some() {
                     ib_order.trailing_percent = Some(trailing_offset / 100.0);
                 } else {
-                    ib_order.aux_price = Some(trailing_offset);
+                    ib_order.aux_price = Some(convert_f64(trailing_offset, price_magnifier));
                 }
 
                 ib_order.trail_stop_price = Some(converted_trigger_price);
@@ -455,56 +525,48 @@ impl InteractiveBrokersExecutionClient {
         ib_account: Ustr,
         strategy_id: StrategyId,
         order_submit_lock: &Arc<tokio::sync::Mutex<()>>,
+        request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
-        let num_orders = orders.len();
-        anyhow::ensure!(!orders.is_empty(), "Cannot submit an empty order list");
+        let mut instrument_ids: Vec<_> = orders.iter().map(OrderAny::instrument_id).collect();
+        instrument_ids.sort_unstable();
+        instrument_ids.dedup();
 
-        let _submit_guard = order_submit_lock.lock().await;
-        let mut ib_order_ids = AHashMap::with_capacity(num_orders);
+        let price_magnifiers = async {
+            for instrument_id in instrument_ids {
+                instrument_provider
+                    .ensure_price_magnifier_async(
+                        client,
+                        instrument_id,
+                        Duration::from_secs(request_timeout_secs),
+                    )
+                    .await?;
+            }
 
-        for order in orders {
-            let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
-            ib_order_ids.insert(order.client_order_id(), ib_order_id);
-        }
-
-        // Every order is prepared before the first reaches IB, so a list that cannot be
-        // prepared leaves nothing parked at the venue and is denied as a whole
-        let prepared = match Self::prepare_order_list(
+            Ok(())
+        };
+        let Some(prepared) = Self::prepare_submit_order_list(
             cmd,
             orders,
-            &ib_order_ids,
+            price_magnifiers,
             order_tracker,
+            next_order_id,
             instrument_provider,
+            exec_sender,
+            clock,
             ib_account,
-        ) {
-            Ok(prepared) => prepared,
-            Err(e) => {
-                let reason = coded_denial_reason(DENIAL_ORDER_LIST_INVALID, &format!("{e:#}"));
-                Self::deny_unsubmitted_order_list(
-                    orders,
-                    &reason,
-                    strategy_id,
-                    exec_sender,
-                    clock,
-                )?;
-                return Err(e);
-            }
+            strategy_id,
+            order_submit_lock,
+        )
+        .await?
+        else {
+            return Ok(());
         };
+        let ib_order_ids = &prepared.ib_order_ids;
 
-        for (index, (order, (order_contract, ib_order))) in orders.iter().zip(prepared).enumerate()
+        for (index, (order, (order_contract, ib_order))) in
+            orders.iter().zip(&prepared.orders).enumerate()
         {
             let ib_order_id = ib_order_ids[&order.client_order_id()];
-
-            Self::cache_order_tracking(
-                ib_order_id,
-                order.client_order_id(),
-                order.instrument_id(),
-                order.trader_id(),
-                strategy_id,
-                order.order_side(),
-                order.order_type(),
-                order_tracker,
-            )?;
 
             let ts_event = clock.get_time_ns();
 
@@ -524,11 +586,27 @@ impl InteractiveBrokersExecutionClient {
                 .map_err(|e| anyhow::anyhow!("Failed to send order submitted event: {e}"))?;
 
             if let Err(e) = client
-                .submit_order(ib_order_id, &order_contract, &ib_order)
+                .submit_order(ib_order_id, order_contract, ib_order)
                 .await
             {
+                // Every order was tracked before the first was sent, so the unsent siblings
+                // leave tracking as they are denied
+                let unsent = &orders[index + 1..];
+                for sibling in unsent {
+                    let sibling_id = sibling.client_order_id();
+                    if let Err(tracking_error) = Self::remove_order_tracking(
+                        ib_order_ids[&sibling_id],
+                        sibling_id,
+                        order_tracker,
+                    ) {
+                        tracing::error!(
+                            "Failed to remove tracking for unsent order-list sibling {sibling_id}: {tracking_error}"
+                        );
+                    }
+                }
+
                 if let Err(denial_error) = Self::deny_unsubmitted_order_list(
-                    &orders[index + 1..],
+                    unsent,
                     DENIAL_ORDER_LIST_SIBLING_SUBMIT_FAILED,
                     strategy_id,
                     exec_sender,
@@ -542,7 +620,7 @@ impl InteractiveBrokersExecutionClient {
 
                 Self::cancel_untransmitted_order_list_predecessors(
                     &orders[..index],
-                    &ib_order_ids,
+                    ib_order_ids,
                     client,
                     order_tracker,
                     strategy_id,
@@ -571,6 +649,127 @@ impl InteractiveBrokersExecutionClient {
         }
 
         Ok(())
+    }
+
+    /// Prepares every order of a list for IB once `price_magnifiers` resolves and tracks them
+    /// all, holding the submit lock for the caller to send them.
+    ///
+    /// Returns `None` when a cancel took any order of the list while it awaited submission, so
+    /// nothing reaches IB and the other orders are denied, and denies a list it cannot prepare.
+    #[allow(clippy::too_many_arguments)] // Preparation shares the order-list submit context.
+    pub(super) async fn prepare_submit_order_list<'a>(
+        cmd: &SubmitOrderList,
+        orders: &[OrderAny],
+        price_magnifiers: impl Future<Output = anyhow::Result<()>>,
+        order_tracker: &OrderTracker,
+        next_order_id: &Arc<Mutex<i32>>,
+        instrument_provider: &Arc<InteractiveBrokersInstrumentProvider>,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+        ib_account: Ustr,
+        strategy_id: StrategyId,
+        order_submit_lock: &'a Arc<tokio::sync::Mutex<()>>,
+    ) -> anyhow::Result<Option<PreparedOrderList<'a>>> {
+        let num_orders = orders.len();
+        anyhow::ensure!(!orders.is_empty(), "Cannot submit an empty order list");
+
+        if let Err(e) = price_magnifiers.await {
+            let reason = coded_denial_reason(DENIAL_ORDER_LIST_INVALID, &format!("{e:#}"));
+            Self::deny_awaiting_order_list(
+                orders,
+                &reason,
+                order_tracker,
+                strategy_id,
+                exec_sender,
+                clock,
+            )?;
+            return Err(e);
+        }
+
+        let submit_guard = order_submit_lock.lock().await;
+        let mut ib_order_ids = AHashMap::with_capacity(num_orders);
+
+        for order in orders {
+            let ib_order_id = Self::reserve_next_local_order_id(next_order_id)?;
+            ib_order_ids.insert(order.client_order_id(), ib_order_id);
+        }
+
+        // Every order is prepared before the first reaches IB, so a list that cannot be
+        // prepared leaves nothing parked at the venue and is denied as a whole
+        let prepared = match Self::prepare_order_list(
+            cmd,
+            orders,
+            &ib_order_ids,
+            order_tracker,
+            instrument_provider,
+            ib_account,
+        ) {
+            Ok(prepared) => prepared,
+            Err(e) => {
+                let reason = preparation_denial_reason(DENIAL_ORDER_LIST_INVALID, &e);
+                Self::deny_awaiting_order_list(
+                    orders,
+                    &reason,
+                    order_tracker,
+                    strategy_id,
+                    exec_sender,
+                    clock,
+                )?;
+                return Err(e);
+            }
+        };
+
+        // A list is sent whole or not at all, so a cancel of any of its orders before the list
+        // is tracked stops all of it
+        let tracked = orders
+            .iter()
+            .map(|order| {
+                (
+                    ib_order_ids[&order.client_order_id()],
+                    TrackedOrder::new(
+                        order.client_order_id(),
+                        order.trader_id(),
+                        strategy_id,
+                        order.instrument_id(),
+                        order.order_side(),
+                        order.order_type(),
+                    ),
+                )
+            })
+            .collect();
+        let canceled = Self::track_awaiting_order_list(tracked, order_tracker)?;
+
+        if !canceled.is_empty() {
+            let canceled_ids = canceled
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
+            let reason = coded_denial_reason(
+                DENIAL_ORDER_LIST_INVALID,
+                &format!("order list not submitted: {canceled_ids} canceled before submission"),
+            );
+            let remaining: Vec<_> = orders
+                .iter()
+                .filter(|order| !canceled.contains(&order.client_order_id()))
+                .cloned()
+                .collect();
+            Self::deny_unsubmitted_order_list(
+                &remaining,
+                &reason,
+                strategy_id,
+                exec_sender,
+                clock,
+            )?;
+            tracing::debug!("{reason}; not sending it to IB");
+            return Ok(None);
+        }
+
+        Ok(Some(PreparedOrderList {
+            ib_order_ids,
+            orders: prepared,
+            _submit_guard: submit_guard,
+        }))
     }
 
     pub(super) fn prepare_order_list(
@@ -740,26 +939,78 @@ impl InteractiveBrokersExecutionClient {
         Ok(())
     }
 
-    /// Denies a single order the client cannot resolve or transform for IB.
+    /// Denies an order awaiting submission, unless a cancel already took it.
     ///
-    /// Always returns the denial as an error so the submit path stops.
-    pub(super) fn deny_unpreparable_order(
+    /// Returns the denial as an error so the submit path stops, or `None` when a cancel took
+    /// the order.
+    pub(super) fn deny_awaiting_order<T>(
         cmd: &SubmitOrder,
-        error: &anyhow::Error,
+        reason: &str,
+        orders: &OrderTracker,
         exec_sender: &EventSender<ExecutionEvent>,
         clock: &'static AtomicTime,
-    ) -> anyhow::Result<()> {
-        let reason = coded_denial_reason(DENIAL_ORDER_INVALID, &format!("{error:#}"));
+    ) -> anyhow::Result<Option<T>> {
+        let client_order_id = cmd.order_init.client_order_id;
+
+        if orders
+            .lock()?
+            .take_awaiting_submission(client_order_id)
+            .is_none()
+        {
+            tracing::debug!(
+                "Order {client_order_id} was canceled before submission; not denying it: {reason}"
+            );
+            return Ok(None);
+        }
+
         Self::send_order_denied_to(
             cmd.order_init.trader_id,
             cmd.strategy_id,
             cmd.instrument_id,
-            cmd.order_init.client_order_id,
-            &reason,
+            client_order_id,
+            reason,
             exec_sender,
             clock.get_time_ns(),
         )?;
-        anyhow::bail!(reason)
+        anyhow::bail!("{reason}")
+    }
+
+    /// Denies a single order the client cannot resolve or transform for IB, unless a cancel
+    /// already took it.
+    pub(super) fn deny_unpreparable_order<T>(
+        cmd: &SubmitOrder,
+        error: &anyhow::Error,
+        orders: &OrderTracker,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+    ) -> anyhow::Result<Option<T>> {
+        let reason = preparation_denial_reason(DENIAL_ORDER_INVALID, error);
+        Self::deny_awaiting_order(cmd, &reason, orders, exec_sender, clock)
+    }
+
+    /// Denies the orders of a list still awaiting submission, skipping any a cancel took.
+    pub(super) fn deny_awaiting_order_list(
+        orders: &[OrderAny],
+        reason: &str,
+        order_tracker: &OrderTracker,
+        strategy_id: StrategyId,
+        exec_sender: &EventSender<ExecutionEvent>,
+        clock: &'static AtomicTime,
+    ) -> anyhow::Result<()> {
+        let awaiting: Vec<_> = {
+            let mut state = order_tracker.lock()?;
+            orders
+                .iter()
+                .filter(|order| {
+                    state
+                        .take_awaiting_submission(order.client_order_id())
+                        .is_some()
+                })
+                .cloned()
+                .collect()
+        };
+
+        Self::deny_unsubmitted_order_list(&awaiting, reason, strategy_id, exec_sender, clock)
     }
 
     pub(super) fn deny_unsubmitted_order_list(
@@ -834,10 +1085,17 @@ impl InteractiveBrokersExecutionClient {
     }
 }
 
+fn preparation_denial_reason(code: &str, error: &anyhow::Error) -> String {
+    match error.downcast_ref::<OrderDeniedReason>() {
+        Some(reason) => reason.to_string(),
+        None => coded_denial_reason(code, &format!("{error:#}")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_core::Params;
-    use nautilus_model::identifiers::Symbol;
+    use nautilus_model::{identifiers::Symbol, instruments::stubs::equity_aapl};
     use serde_json::json;
 
     use super::*;
@@ -862,9 +1120,12 @@ mod tests {
     }
 
     fn instrument_provider() -> Arc<InteractiveBrokersInstrumentProvider> {
-        Arc::new(InteractiveBrokersInstrumentProvider::new(
-            InteractiveBrokersInstrumentProviderConfig::default(),
-        ))
+        Arc::new(
+            InteractiveBrokersInstrumentProvider::new(
+                InteractiveBrokersInstrumentProviderConfig::default(),
+            )
+            .unwrap(),
+        )
     }
 
     #[rstest::rstest]
@@ -884,11 +1145,8 @@ mod tests {
         };
 
         let mut cmd = modify_trigger_cmd();
-        cmd.params = trailing_offset.map(|offset| {
-            let mut params = Params::new();
-            params.insert(MODIFY_TRAILING_OFFSET_PARAM.to_string(), offset);
-            params
-        });
+        cmd.params = trailing_offset
+            .map(|offset| Params::new([(MODIFY_TRAILING_OFFSET_PARAM.to_string(), offset)].into()));
 
         InteractiveBrokersExecutionClient::apply_modify_fields_to_ib_order(
             &cmd,
@@ -964,5 +1222,67 @@ mod tests {
 
         assert_eq!(ib_order.aux_price, Some(149.5));
         assert_eq!(ib_order.trail_stop_price, None);
+    }
+
+    fn magnified_provider() -> Arc<InteractiveBrokersInstrumentProvider> {
+        let provider = instrument_provider();
+        provider.insert_test_instrument(InstrumentAny::Equity(equity_aapl()), 4242, 100);
+        provider
+    }
+
+    #[rstest::rstest]
+    #[case::price_offset(None, json!(0.0525), Some(5.25), None)]
+    #[case::basis_point_offset(Some(0.25), json!(50), Some(0.5), Some(0.5))]
+    fn modify_magnified_trailing_stop_scales_price_amounts_only(
+        #[case] trailing_percent: Option<f64>,
+        #[case] trailing_offset: serde_json::Value,
+        #[case] expected_aux: Option<f64>,
+        #[case] expected_percent: Option<f64>,
+    ) {
+        let mut ib_order = ibapi::orders::Order {
+            order_type: "TRAIL".to_string(),
+            aux_price: Some(0.5),
+            trailing_percent,
+            ..Default::default()
+        };
+        let mut cmd = modify_trigger_cmd();
+        cmd.instrument_id = InstrumentId::from("AAPL.XNAS");
+        cmd.trigger_price = Some(Price::from("4.8125"));
+        let params =
+            Params::new([(MODIFY_TRAILING_OFFSET_PARAM.to_string(), trailing_offset)].into());
+        cmd.params = Some(params);
+
+        InteractiveBrokersExecutionClient::apply_modify_fields_to_ib_order(
+            &cmd,
+            &mut ib_order,
+            &magnified_provider(),
+        )
+        .unwrap();
+
+        assert_eq!(ib_order.trail_stop_price, Some(481.25));
+        assert_eq!(ib_order.aux_price, expected_aux);
+        assert_eq!(ib_order.trailing_percent, expected_percent);
+    }
+
+    #[rstest::rstest]
+    fn modify_magnified_limit_and_stop_send_ib_unit_prices() {
+        let mut ib_order = ibapi::orders::Order {
+            order_type: "STP LMT".to_string(),
+            ..Default::default()
+        };
+        let mut cmd = modify_trigger_cmd();
+        cmd.instrument_id = InstrumentId::from("AAPL.XNAS");
+        cmd.price = Some(Price::from("4.2525"));
+        cmd.trigger_price = Some(Price::from("4.3025"));
+
+        InteractiveBrokersExecutionClient::apply_modify_fields_to_ib_order(
+            &cmd,
+            &mut ib_order,
+            &magnified_provider(),
+        )
+        .unwrap();
+
+        assert_eq!(ib_order.limit_price, Some(425.25));
+        assert_eq!(ib_order.aux_price, Some(430.25));
     }
 }

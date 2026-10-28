@@ -9,9 +9,9 @@ Use an editor with current Rust and Python language support, such as PyCharm or 
 Source builds and the Rust crates require [Rust](https://www.rust-lang.org)
 ([installation guide](https://www.rust-lang.org/tools/install)).
 
-[Cap'n Proto](https://capnproto.org) is required for serialization schema compilation. The required
-version is specified in `.nautilus-engineering/tools.toml`. Ubuntu's default package is typically
-too old, so you may need to install from source (see below).
+[Cap'n Proto](https://capnproto.org) tooling is retained for HyperSync development. Its pinned version
+is specified in `.nautilus-engineering/tools.toml`. Ubuntu's default package is typically too old,
+so you may need to install from source (see below).
 
 :::info
 NautilusTrader *must* compile and run on **Linux, macOS, and Windows**. Please keep portability in
@@ -176,6 +176,8 @@ prek install
 
 Rerun `prek install` after pulling a change to the configured hook types.
 
+The Dockerfile hook installs native Hadolint in its isolated environment; it does not require Docker.
+
 Before opening a pull-request run the formatting and lint suite locally so that CI passes on the
 first attempt:
 
@@ -258,12 +260,12 @@ echo "PYTHONHOME: $PYTHONHOME"
 ## Dependency management
 
 Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.uv]` section in
-`python/pyproject.toml` enforces three supply chain safety settings:
+`python/pyproject.toml` enforces these supply chain safety settings:
 
 - **`required-version`**: local uv commands accept any patch release in the supported minor series. If your
   local uv is outside that range, `uv lock` and `uv sync` fail with a version mismatch.
   `.nautilus-engineering/tools.toml` separately pins the exact version used by CI, Docker, pre-commit, and
-  `make update-uv`. The stub targets run through `make sync`, so they enforce the same supported range. See
+  `make install-uv`. The stub targets run through `make sync`, so they enforce the same supported range. See
   [Generated Python artifacts](rust.md#generated-python-artifacts).
 - **`exclude-newer = "7 days"`**: `uv lock` ignores package versions published within the last 7 days. This
   gives the community time to detect and quarantine compromised releases before they enter the lockfile. The
@@ -276,6 +278,7 @@ Python dependencies are managed by [uv](https://docs.astral.sh/uv). The `[tool.u
   uv 0.11.8+ stores the friendly/ISO form as `exclude-newer-span` inside `python/uv.lock`. It emits a sentinel
   `exclude-newer` timestamp alongside that field for backwards compatibility. `python/uv.lock` uses that
   format.
+- **`exclude-newer-package = { ruff = "3 days" }`**: Ruff uses the shared three-day native-tool cooldown.
 - **`no-build-package`**: explicit list of all third-party packages locked in `python/uv.lock`. `uv` refuses
   to build any of them from source. In normal operation, uv prefers wheels, so the setting is a no-op. It
   triggers only if a listed package stops publishing wheels for the target platform. In that case, `uv lock`
@@ -320,7 +323,7 @@ project version within that range:
 1. Sync the shared catalog.
 1. Update the `rev` in `.pre-commit-config.yaml`.
 1. Update each digest-pinned uv Docker image.
-1. Run `make update-uv` to install the project version locally.
+1. Run `make install-uv` to install the project version locally.
 
 ### Rust dependency cooldown
 
@@ -441,7 +444,9 @@ In Fish, use `source python/.venv/bin/activate.fish` for activation. Activation 
 
 ## Cap'n Proto
 
-[Cap'n Proto](https://capnproto.org) is required for serialization schema compilation.
+[Cap'n Proto](https://capnproto.org) tooling remains available for HyperSync development. The pinned
+HyperSync dependencies ship generated Rust bindings, so normal builds do not regenerate their schemas.
+NautilusTrader does not provide Cap'n Proto codecs.
 The required version is defined in `.nautilus-engineering/tools.toml`.
 
 Install the correct version for your platform:
@@ -542,6 +547,15 @@ Set the same toolchain in your [rust-analyzer settings](#rust-analyzer-settings)
 local patch.
 
 ## Services
+
+The Compose file pins PostgreSQL 18, Redis, and pgAdmin images. Before starting PostgreSQL 18
+with an existing volume from an earlier major version, back up the database and migrate it using
+[dump/restore or `pg_upgrade`](https://www.postgresql.org/docs/18/upgrading.html). Changing the
+image does not upgrade the stored data.
+
+For Debian-to-Alpine migration, back up and dump/restore the database even when the PostgreSQL major
+version is unchanged. The images use different libc collation rules, so reusing the old data directory
+can invalidate indexes.
 
 Initialize PostgreSQL, Redis, and pgAdmin from the repository root:
 

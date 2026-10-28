@@ -442,18 +442,18 @@ ExecTesterConfig::builder()
 
 Test limit order submission, acceptance, and behavior across time-in-force options.
 
-| TC     | Name                      | Description                                      | Skip when |
-| ------ | ------------------------- | ------------------------------------------------ | --------- |
-| TC-E10 | Limit BUY GTC             | Place GTC limit buy below TOB, verify accepted.  | Never.    |
-| TC-E11 | Limit SELL GTC            | Place GTC limit sell above TOB, verify accepted. | Never.    |
-| TC-E12 | Limit BUY and SELL pair   | Both sides simultaneously, verify both accepted. | Never.    |
-| TC-E13 | Limit IOC aggressive fill | Limit IOC at aggressive price, expect fill.      | No IOC.   |
-| TC-E14 | Limit IOC passive no fill | Limit IOC away from market, expect cancel.       | No IOC.   |
-| TC-E15 | Limit FOK fill            | Limit FOK at aggressive price, expect fill.      | No FOK.   |
-| TC-E16 | Limit FOK no fill         | Limit FOK away from market, expect cancel.       | No FOK.   |
-| TC-E17 | Limit GTD                 | Limit with expiry time, verify accepted.         | No GTD.   |
-| TC-E18 | Limit GTD expiry          | Verify documented terminal event at expiry.      | No GTD.   |
-| TC-E19 | Limit DAY                 | Limit with DAY TIF, verify accepted.             | No DAY.   |
+| TC     | Name                      | Description                                         | Skip when |
+| ------ | ------------------------- | --------------------------------------------------- | --------- |
+| TC-E10 | Limit BUY GTC             | Place GTC limit buy below TOB, verify accepted.     | Never.    |
+| TC-E11 | Limit SELL GTC            | Place GTC limit sell above TOB, verify accepted.    | Never.    |
+| TC-E12 | Limit BUY and SELL pair   | Both sides simultaneously, verify both accepted.    | Never.    |
+| TC-E13 | Limit IOC aggressive fill | Limit IOC at aggressive price, expect fill.         | No IOC.   |
+| TC-E14 | Limit IOC passive no fill | Verify cancel or documented no-liquidity rejection. | No IOC.   |
+| TC-E15 | Limit FOK fill            | Limit FOK at aggressive price, expect fill.         | No FOK.   |
+| TC-E16 | Limit FOK no fill         | Verify cancel or documented no-liquidity rejection. | No FOK.   |
+| TC-E17 | Limit GTD                 | Limit with expiry time, verify accepted.            | No GTD.   |
+| TC-E18 | Limit GTD expiry          | Verify documented terminal event at expiry.         | No GTD.   |
+| TC-E19 | Limit DAY                 | Limit with DAY TIF, verify accepted.                | No DAY.   |
 
 ### TC-E10: Limit BUY GTC - submit and accept
 
@@ -590,18 +590,21 @@ ExecTesterConfig::builder()
 
 ### TC-E14: Limit IOC passive - no fill
 
-| Field              | Value                                                                         |
-| ------------------ | ----------------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                         |
-| **Action**         | Submit a limit buy IOC well below the market (passive price).                 |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderCanceled`. |
-| **Pass criteria**  | Order is immediately canceled by venue with no fill.                          |
-| **Skip when**      | Adapter does not support IOC TIF.                                             |
+| Field              | Value                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                   |
+| **Action**         | Submit a limit buy IOC well below the market (passive price).                           |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted`; then acceptance/cancel or documented rejection. |
+| **Pass criteria**  | No fill; `Canceled`, or `Rejected` with the adapter-documented no-liquidity reason.     |
+| **Skip when**      | Adapter does not support IOC TIF.                                                       |
 
 **Considerations**:
 
-- The venue should cancel the unfilled IOC order. Verify `OrderCanceled` (not `OrderExpired` or
-  `OrderRejected`).
+- The default outcome is `OrderAccepted` -> `OrderCanceled`. If the venue explicitly rejects the
+  order for no liquidity, verify the adapter-documented `OrderSubmitted` -> `OrderRejected` sequence,
+  exact rejection reason, and zero filled quantity in both Rust and Python. Other rejection reasons
+  and `OrderExpired` do not pass this case.
+  Preserve an explicit venue rejection rather than synthesizing acceptance or cancellation.
 
 ### TC-E15: Limit FOK fill
 
@@ -619,13 +622,17 @@ ExecTesterConfig::builder()
 
 ### TC-E16: Limit FOK no fill
 
-| Field              | Value                                                                         |
-| ------------------ | ----------------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                         |
-| **Action**         | Submit a limit buy FOK at passive price (well below market).                  |
-| **Event sequence** | `OrderInitialized` -> `OrderSubmitted` -> `OrderAccepted` -> `OrderCanceled`. |
-| **Pass criteria**  | Order is immediately canceled by venue with no fill.                          |
-| **Skip when**      | Adapter does not support FOK TIF.                                             |
+| Field              | Value                                                                                   |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| **Prerequisite**   | Adapter connected, instrument loaded, quotes flowing.                                   |
+| **Action**         | Submit a limit buy FOK at passive price (well below market).                            |
+| **Event sequence** | `OrderInitialized` -> `OrderSubmitted`; then acceptance/cancel or documented rejection. |
+| **Pass criteria**  | No fill; `Canceled`, or `Rejected` with the adapter-documented no-liquidity reason.     |
+| **Skip when**      | Adapter does not support FOK TIF.                                                       |
+
+**Considerations**:
+
+- Apply the same adapter-specific no-liquidity checks as [TC-E14](#tc-e14-limit-ioc-passive---no-fill).
 
 ### TC-E17: Limit GTD - submit and accept
 
@@ -1217,6 +1224,9 @@ ExecTesterConfig::builder()
 - This is the required path for venues that do not support native trigger-order replace.
 - After the new stop is accepted, restart or force reconciliation and verify exactly one
   current trigger order remains.
+- ExecTester keeps replacements pending after reconciliation-generated cancellations and logs an error.
+  Mark the case inconclusive, then check and cancel any remaining test orders at the venue;
+  the original stop may still be working.
 
 **Python config**:
 
@@ -2088,13 +2098,13 @@ ExecTesterConfig::builder()
 
 ### TC-E89: WebSocket commission failure
 
-| Field              | Value                                                                                                                |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| **Prerequisite**   | A private fill fixture produces an out-of-range commission and has a stable venue trade ID.                          |
-| **Action**         | Deliver the invalid trade, replace its commission with a valid value, then redeliver the same trade ID.              |
-| **Event sequence** | The first delivery emits no fill and changes no fill, terminal, or deduplication state. The replay emits one fill.   |
-| **Pass criteria**  | No panic or fallback occurs. The valid replay applies exactly once. REST reconciliation can recover a missed replay. |
-| **Skip when**      | The adapter has no private fill stream or does not calculate commission for private fills.                           |
+| Field              | Value                                                                                                                     |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| **Prerequisite**   | A private fill fixture produces an out-of-range commission and has a stable venue trade ID.                               |
+| **Action**         | Deliver the invalid trade, repair its commission, then replay the same trade ID. For Polymarket, use the exception below. |
+| **Event sequence** | The first delivery emits no fill and changes no fill, terminal, or deduplication state. The replay emits one fill.        |
+| **Pass criteria**  | No panic or fallback occurs. The valid replay applies exactly once. REST reconciliation can recover a missed replay.      |
+| **Skip when**      | The adapter has no private fill stream or does not calculate commission for private fills.                                |
 
 **Considerations**:
 
@@ -2103,6 +2113,26 @@ ExecTesterConfig::builder()
 - Assert that the adapter consumes the deduplication key only after all reports construct and route
   successfully.
 - Assert that a failed trade does not confirm or terminalize its order.
+
+**Polymarket exception**:
+
+Invalid commission evidence quarantines the whole trade for targeted REST resolution. The failed
+delivery emits no fill, applies no owned leg, and does not confirm or terminalize the order. Quarantine
+state persists across repaired WebSocket replays with the same trade ID, including `CONFIRMED` updates.
+The default WebSocket replay recovery, unchanged deduplication state, and REST reconciliation fallback
+requirements above do not apply to Polymarket, including the deduplication-key consideration.
+Targeted terminal REST evidence supplies recovery.
+
+After repairing the commission inputs, verify that:
+
+1. A same-ID WebSocket replay emits no fill and leaves the trade quarantined.
+1. A targeted non-terminal REST result emits no fill and leaves the trade quarantined.
+1. A valid targeted REST `CONFIRMED` result emits the exact fill quantity, price, and commission once.
+1. Repeated REST evidence emits no duplicate, both before and after the engine applies the fill.
+
+Use distinct REST fill values to prove that recovery uses REST evidence. For terminal `FAILED`
+evidence, verify that no previously unemitted fill appears. See
+[Polymarket settlement resolution](../integrations/polymarket.md#failed-trades-and-rest-resolution).
 
 ---
 

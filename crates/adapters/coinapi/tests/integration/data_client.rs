@@ -37,8 +37,8 @@ use nautilus_common::{
         data::{
             RequestBars, RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestQuotes,
             RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeQuotes,
-            UnsubscribeTrades,
+            SubscribeTrades, SubscriptionError, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -109,6 +109,61 @@ fn config(http: &str, ws: &str, instrument_ids: &[&str]) -> CoinApiDataClientCon
         .max_retries(0)
         .transport_backend(TransportBackend::Tungstenite)
         .build()
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_trade_list_continues_after_unloaded_member_and_reports_partial_release() {
+    bounded(async {
+        let mut data_rx = data_channel();
+        let (http, http_address) = http_peer(vec![SYMBOLS.into()]).await;
+        let (ws_listener, ws_address) = listener().await;
+        let mut client = connected(&http_address, &ws_address, &mut data_rx).await;
+        let invalid = InstrumentId::from("ETH-USD.COINBASE");
+        let ids = [invalid, instrument_id()];
+
+        let subscribe = SubscribeTrades::new(
+            ids,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(17),
+            Some(UUID4::new()),
+            None,
+        );
+        let error = client.subscribe_trades(subscribe).unwrap_err();
+        let partial = error.downcast_ref::<SubscriptionError>().unwrap();
+        assert_eq!(partial.instrument_ids_accepted, vec![instrument_id()]);
+        assert_eq!(partial.bar_types_accepted, Vec::<BarType>::new());
+        assert_eq!(
+            partial.source.to_string(),
+            "ETH-USD.COINBASE is not a loaded CoinAPI instrument"
+        );
+        let mut socket = accept(&ws_listener).await;
+        assert_eq!(next_text(&mut socket).await, HELLO_TRADE);
+
+        let unsubscribe = UnsubscribeTrades::new(
+            ids,
+            Some(client_id()),
+            None,
+            UUID4::new(),
+            UnixNanos::from(23),
+            Some(UUID4::new()),
+            None,
+        );
+        let error = client.unsubscribe_trades(&unsubscribe).unwrap_err();
+        let partial = error.downcast_ref::<SubscriptionError>().unwrap();
+        assert_eq!(partial.instrument_ids_accepted, vec![instrument_id()]);
+        assert_eq!(partial.bar_types_accepted, Vec::<BarType>::new());
+        assert_eq!(
+            partial.source.to_string(),
+            "ETH-USD.COINBASE is not a loaded CoinAPI instrument"
+        );
+        assert_eq!(http.await.unwrap(), vec![SYMBOLS_TARGET]);
+        client.disconnect().await.unwrap();
+        assert!(client.is_disconnected());
+    })
+    .await;
 }
 
 async fn listener() -> (TcpListener, String) {
@@ -295,7 +350,7 @@ async fn connected(
     let mut client = CoinApiDataClient::new(client_id(), config(http, ws, &[BTC_USD])).unwrap();
     client.connect().await.unwrap();
 
-    let DataEvent::Instrument(instrument) = next_event(rx).await else {
+    let DataEvent::Data(Data::Instrument(instrument)) = next_event(rx).await else {
         panic!("expected instrument");
     };
 
@@ -317,7 +372,7 @@ async fn connect_loads_selection_and_streams_domain_events() {
         client.connect().await.unwrap();
 
         // The response also lists COINBASE_SPOT_BTC_USDT, which is not selected
-        let DataEvent::Instrument(instrument) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(instrument)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -401,7 +456,7 @@ async fn price_precision_override_loads_finer_instrument_and_admits_its_prices()
         let mut client = CoinApiDataClient::new(client_id(), config).unwrap();
         client.connect().await.unwrap();
 
-        let DataEvent::Instrument(instrument) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(instrument)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -1308,7 +1363,7 @@ async fn missing_initial_snapshot_restarts_pair_after_deadline() {
         let mut client = CoinApiDataClient::new(client_id(), config).unwrap();
         client.connect().await.unwrap();
 
-        let DataEvent::Instrument(_) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(_)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -1405,7 +1460,7 @@ async fn missing_replayed_snapshot_restarts_pair_after_reconnect() {
         client.connect().await.unwrap();
         assert!(matches!(
             next_event(&mut rx).await,
-            DataEvent::Instrument(_)
+            DataEvent::Data(Data::Instrument(_))
         ));
         let mut checker = BookStreamChecker::new(BookType::L2_MBP, true);
         checker.open(instrument_id());
@@ -1496,7 +1551,7 @@ async fn shutdown_closes_socket_and_reconnects_with_fresh_book_scope(
 
         drop(socket);
         client.connect().await.unwrap();
-        assert!(matches!(next_event(&mut rx).await, DataEvent::Instrument(_)));
+        assert!(matches!(next_event(&mut rx).await, DataEvent::Data(Data::Instrument(_))));
         subscribe_book_deltas(&mut client, BookType::L2_MBP).unwrap();
         let mut socket = accept(&ws_listener).await;
         let replay = next_text(&mut socket).await;
@@ -1787,7 +1842,7 @@ async fn instrument_refresh_preserves_stream_symbol(#[case] plural: bool) {
         client.disconnect().await.unwrap();
         client.connect().await.unwrap();
 
-        let DataEvent::Instrument(instrument) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(instrument)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -1822,7 +1877,7 @@ async fn connect_after_disconnect_restores_streaming() {
         assert!(client.is_disconnected());
         client.connect().await.unwrap();
 
-        let DataEvent::Instrument(instrument) = next_event(&mut rx).await else {
+        let DataEvent::Data(Data::Instrument(instrument)) = next_event(&mut rx).await else {
             panic!("expected instrument");
         };
 
@@ -2006,9 +2061,7 @@ fn nanos(timestamp: &str) -> UnixNanos {
 }
 
 fn params() -> Params {
-    let mut params = Params::new();
-    params.insert("tag".into(), serde_json::json!("history"));
-    params
+    Params::new([("tag".into(), serde_json::json!("history"))].into())
 }
 
 fn minute_bar_type() -> BarType {
@@ -2114,10 +2167,10 @@ async fn request_quotes_returns_correlated_ticks() {
 
         assert_eq!(response.correlation_id, request_id);
         assert_eq!(response.client_id, client_id());
-        assert_eq!(response.instrument_id, instrument_id());
+        assert_eq!(response.instrument_ids, vec![instrument_id()]);
         assert_eq!(
-            response.data,
-            vec![QuoteTick::new(
+            response.data.as_ref(),
+            &vec![QuoteTick::new(
                 instrument_id(),
                 Price::from("85988.48"),
                 Price::from("85988.49"),
@@ -2179,10 +2232,10 @@ async fn request_trades_returns_correlated_ticks() {
 
         assert_eq!(response.correlation_id, request_id);
         assert_eq!(response.client_id, client_id());
-        assert_eq!(response.instrument_id, instrument_id());
+        assert_eq!(response.instrument_ids, vec![instrument_id()]);
         assert_eq!(
-            response.data,
-            vec![TradeTick::new(
+            response.data.as_ref(),
+            &vec![TradeTick::new(
                 instrument_id(),
                 Price::from("85988.49"),
                 Quantity::from("0.01000000"),
@@ -2329,7 +2382,7 @@ async fn request_bars_returns_only_closed_periods_at_instrument_precision() {
             assert_eq!(response.start, Some(nanos(HISTORY_START)));
             assert_eq!(response.end, end.map(|end| nanos(&end.to_string())));
             assert_eq!(response.params, Some(params()));
-            responses.push(response.data);
+            responses.push(response.data.to_vec());
         }
 
         let closed_bar = Bar::new(

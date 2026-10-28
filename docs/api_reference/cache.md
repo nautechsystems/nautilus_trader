@@ -1,5 +1,8 @@
 # Cache
 
+For market-data history ordering, indexing, and retention, see
+[Accessing market data](../concepts/cache.md#accessing-market-data).
+
 ```{eval-rst}
 .. automodule:: nautilus_trader.common
    :no-index:

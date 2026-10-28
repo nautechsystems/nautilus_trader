@@ -39,6 +39,15 @@ Bar execution applies only when:
 Internally aggregated bars and bars sent to L2 or L3 venues still reach subscribed strategies. These bars do
 not update the matching engine's book or trigger matching.
 
+:::warning[Time bars required for bar execution]
+For L1 venues with `bar_execution=True`, `BacktestEngine.run()` raises `RuntimeError` if a non-`MARK`
+external bar uses a non-time aggregation, such as `TICK`, `VOLUME`, or `VALUE`.
+Set `bar_execution=False` to use these bars without bar-based fills.
+
+For `BacktestNode`, set `BacktestRunConfig.raise_exception=True` to propagate the error.
+Otherwise, the node logs the error and omits the failed run's result.
+:::
+
 For each applicable bar, the engine:
 
 1. Selects the most granular configured bar type for the instrument.
@@ -128,11 +137,11 @@ engine.add_venue(
     oms_type=OmsType.NETTING,
     account_type=AccountType.CASH,
     starting_balances=[Money.from_str("10_000 USDT")],
-    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
     fee_model=MakerTakerFeeModel(
         maker_rate=Decimal("0"),
         taker_rate=Decimal("0"),
     ),
+    latency_model=StaticLatencyModel(base_latency_nanos=1_000_000_000),
 )
 ```
 

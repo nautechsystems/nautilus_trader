@@ -17,6 +17,7 @@
 
 use std::sync::Arc;
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{
     python::to_pyvalue_err,
     string::secret::{REDACTED, SecretString},
@@ -148,9 +149,9 @@ impl BlockchainVerificationConfig {
         chain_anchor: BlockchainChainAnchorConfig,
         manifest_version: String,
         manifest_digest: String,
-        deployment_manifest_json: String,
+        deployment_manifest_json: &str,
     ) -> PyResult<Self> {
-        let deployment_manifest = serde_json::from_str(&deployment_manifest_json)
+        let deployment_manifest = serde_json::from_str(deployment_manifest_json)
             .map_err(|_| to_pyvalue_err("Invalid deployment manifest JSON"))?;
         Ok(Self::builder()
             .authoritative(authoritative)
@@ -206,8 +207,8 @@ impl BlockchainDataClientConfig {
         postgres_cache_database_config: Option<PostgresConnectOptions>,
         proxy_url: Option<String>,
         transport_backend: Option<TransportBackend>,
-    ) -> Self {
-        Self::builder()
+    ) -> PyResult<Self> {
+        let config = Self::builder()
             .chain(Arc::new(chain.clone()))
             .dex_ids(dex_ids)
             .http_rpc_url(SecretString::from(http_rpc_url))
@@ -220,7 +221,9 @@ impl BlockchainDataClientConfig {
             .maybe_postgres_cache_database_config(postgres_cache_database_config)
             .maybe_proxy_url(proxy_url.map(SecretString::from))
             .transport_backend(transport_backend.unwrap_or_default())
-            .build()
+            .build();
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     /// Returns the chain configuration.
@@ -324,8 +327,8 @@ impl BlockchainExecutionClientConfig {
         payload_key_retired_env: Option<Vec<String>>,
         payload_deployment_id: Option<String>,
         verification: Option<BlockchainVerificationConfig>,
-    ) -> Self {
-        Self::builder()
+    ) -> PyResult<Self> {
+        let config = Self::builder()
             .client_id(client_id)
             .chain(chain.clone())
             .wallet_address(wallet_address)
@@ -354,7 +357,9 @@ impl BlockchainExecutionClientConfig {
             .unlimited_approval(unlimited_approval)
             .maybe_postgres_cache_database_config(postgres_cache_database_config)
             .transport_backend(transport_backend.unwrap_or_default())
-            .build()
+            .build();
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     /// Returns the allowed (input token, output token) address pairs.

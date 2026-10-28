@@ -93,8 +93,8 @@ are never republished.
 | REST reconciliation | `update_instruments_interval_mins` (default 60) | New or changed definitions only                        |
 
 Each update first writes the data client, HTTP, and WebSocket caches. Then it publishes new or changed
-definitions as `DataEvent::Instrument`. Thus, consumers never observe a definition absent from the caches. A
-material change is any serialized field other than `ts_event` and `ts_init`.
+definitions as `DataEvent::Data(Data::Instrument(_))`. Thus, consumers never observe a definition absent from
+the caches. A material change is any serialized field other than `ts_event` and `ts_init`.
 
 - The instruments channel is incremental rather than a snapshot feed. A subscription or reconnect can begin
   without an initial payload. Thus, reconnect replay alone does not reconcile the instrument cache.
@@ -791,13 +791,72 @@ modes. In net mode, it derives the position side from the signed quantity. In lo
 `posSide` reported by OKX.
 :::
 
+When configured for `SWAP` or `FUTURES`, the execution client reads the account position mode on each
+connection. For long/short accounts, set `oms_type=OmsType.HEDGING` on `OKXExecutionClientConfig` and use
+a hedging OMS in your strategies. The adapter logs a warning when the client OMS differs from the account
+position mode. Without an override, the client uses netting if any derivative instrument type is
+configured, otherwise hedging.
+The override applies to every product handled by the client. Use separate clients when options need
+netting alongside futures or swaps in long/short mode.
+
+For futures and swaps in long/short mode, the order side and `reduce_only` flag select the leg:
+
+| Order side | `reduce_only` | OKX `posSide` | Effect                  |
+| ---------- | ------------- | ------------- | ----------------------- |
+| `BUY`      | `False`       | `long`        | Open or increase long.  |
+| `SELL`     | `False`       | `short`       | Open or increase short. |
+| `SELL`     | `True`        | `long`        | Close or reduce long.   |
+| `BUY`      | `True`        | `short`       | Close or reduce short.  |
+
+This mapping applies to single and batch WebSocket submissions and conditional (algo) submissions.
+`close_fraction` also selects the closing leg.
+
+Futures and swap orders, fills, and position reports in long/short mode use `{instrument_id}-LONG` or
+`{instrument_id}-SHORT` as the venue position ID. Omit `position_id` on submission or use the selected
+leg's ID; a conflicting ID causes a denial. Other products and net-mode reports have no venue position
+ID. Use separate nodes when multiple OKX accounts trade the same instrument, because these IDs do not
+include the account.
+
+:::warning
+In long/short mode, derivative orders and positions must use the client's configured `margin_mode`.
+The adapter rejects conflicting `td_mode` overrides and incompatible position snapshots.
+Do not mix cross and isolated positions for the same instrument and side: the venue position IDs do
+not distinguish margin modes.
+
+Before changing position or margin mode, close positions, cancel pending orders, and stop the node.
+Trim cached orders and positions from the old mode, including persisted records. Set
+`LiveExecutionEngineConfig.reconciliation_lookback_mins` shorter than the time since the change so
+reconciliation does not replay the old mode's history. If runtime position checks are enabled through
+`position_check_interval_secs`, apply the same bound to `position_check_lookback_mins`.
+A shorter lookback does not clear cached state or exclude current positions and pending orders.
+Use the same cleanup when upgrading cached hedge positions from numeric venue position IDs to
+instrument-based IDs. See [Cache purging](../concepts/cache.md#bulk-purges) and
+[Reconciliation](#reconciliation).
+:::
+
 ### Trade modes and margin configuration
 
-OKX's unified account system supports different trade modes for spot and derivatives. Configure the account
-mode first through the OKX web or app interface. The API cannot set it for the first time.
+Spot orders funded by cash use these trade modes (`tdMode`):
 
-For account mode details, see the
-[OKX Account Mode documentation](https://www.okx.com/docs-v5/en/#overview-account-mode).
+| Account mode          | `acctLv` | Spot `tdMode` |
+| --------------------- | -------- | ------------- |
+| Spot                  | `1`      | `cash`        |
+| Futures               | `2`      | `cash`        |
+| Multi-currency margin | `3`      | `cross`       |
+| Portfolio margin      | `4`      | `cross`       |
+
+Keep auto-borrow off in modes 3 and 4 to prevent borrowing beyond the cash balance.
+
+Activate each account mode first on the OKX website or app. Later switches can use the
+[OKX account-mode API](https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-account-mode).
+Nautilus HTTP clients do not expose account-mode switching, auto-borrow changes, or repayment.
+
+[Auto-borrow (`autoLoan`)](https://www.okx.com/docs-v5/en/#trading-account-rest-api-set-auto-loan)
+applies only to Multi-currency and Portfolio margin modes. Outstanding liabilities can block mode changes.
+[One-click repayment](https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-trade-one-click-repay-new)
+requires auto-borrow (`51625`); see OKX's
+[repayment methods](https://www.okx.com/help/borrowing-and-repaying-in-multi-currency-and-portfolio-margin-account-modes)
+for alternatives.
 
 #### Trade modes overview
 
@@ -823,16 +882,22 @@ exec_config = OKXExecutionClientConfig(
 )
 ```
 
-The public Python config does not expose spot margin selection, so spot orders use cash
-mode. In a mixed spot and derivatives client, `margin_mode` applies to derivatives only.
+The Python config selects `cash` for spot, which requires Spot or Futures account mode.
+For Multi-currency or Portfolio margin, submit spot orders with `params={"td_mode": "cross"}`.
+In a mixed client, `margin_mode` applies to derivatives only. The factory derives the Nautilus account type
+for accounting; it does not change OKX's `acctLv`.
+
+In Rust, `use_spot_margin=true` applies `margin_mode` to spot too. Set `OKXMarginMode::Cross`
+for Multi-currency or Portfolio margin; `None` defaults to `Isolated`, which these modes do not support.
 
 :::warning
 **Manual trade mode override**: You can override the trade mode per order with
 `params={"td_mode": "..."}`. This bypasses adapter selection and can lead to order
-rejection when the value does not match the instrument type, such as `isolated` for
-spot instruments.
+rejection when the value does not match the account or instrument, such as `isolated` in
+Multi-currency or Portfolio margin mode.
 
 Only use manual override for requirements that cannot be met through configuration.
+For long/short derivative orders, the override must match the configured margin mode.
 :::
 
 ### Order querying
@@ -883,10 +948,55 @@ missed-update recovery.
 | `LIMIT_IF_TOUCHED`     | Last, Mark, Index | Limit order placement when price touched.            |
 | `TRAILING_STOP_MARKET` | -                 | Callback ratio or spread; optional activation price. |
 
+See [trigger price types](#trigger-price-types) for account and order-type restrictions.
+
 :::warning
 OKX's `close_fraction` conditional-order parameter is not normalized to the generic `close_position` risk
 contract. Do not add `OKX` to `full_position_exit_venues` based on `close_fraction`. Leave the venue unlisted
 so ordinary quantity and notional checks apply.
+:::
+
+#### Algo sizing
+
+Spot `STOP_MARKET` and `MARKET_IF_TOUCHED` buys use OKX `conditional` orders with explicit
+`tgtCcy` for `cash`, `cross`, and `isolated`. Stop buys use the stop-loss leg; touched buys use the
+take-profit leg.
+
+| Spot algo order                          | Base quantity                  | Quote quantity                  |
+| ---------------------------------------- | ------------------------------ | ------------------------------- |
+| Stop-market or market-if-touched buy     | Requests `tgtCcy=base_ccy`.    | Requests `tgtCcy=quote_ccy`.    |
+| Trailing-stop-market buy                 | Denied locally.                | Uses OKX's native quote sizing. |
+| Stop, touched, or trailing market sell   | Uses OKX's native base sizing. | Denied locally.                 |
+| Stop-limit or limit-if-touched, any side | Uses OKX's native base sizing. | Denied locally.                 |
+
+Derivative algo orders require contract quantity; quote quantity is denied locally.
+These algo rules do not restrict ordinary market orders.
+Spot market orders in `tdMode=cash` also support quote-sized sells.
+Neither size unit guarantees a full fill. OKX documents balance-based size reduction for `trigger` orders.
+For Futures-mode spot-margin `STOP_MARKET` and `MARKET_IF_TOUCHED` buys, use quote quantity:
+OKX rejects `base_ccy` with `59110`. Use `tdMode=cash` in Futures mode for base-sized buys.
+
+Execution-client orders use `quote_quantity` and emit `OrderDenied` when local validation fails.
+Rust `OKXHttpClient::place_algo_order_with_domain_types` requires the flag. Python
+`OKXHttpClient.place_algo_order` defaults it to `False` and raises `ValueError` for unsupported parameters.
+Pass `True` for quote budgets, including spot trailing buys.
+HTTP algo requests include the quote currency as margin `ccy` for spot orders in `cross` or `isolated`.
+Use HTTP for algo placement: Rust `OKXWebSocketClient::submit_algo_order` returns a local error.
+See OKX's [algo order parameters](https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order).
+
+For last-price triggers, OKX requires a stop-buy trigger at or above the last price and a touched-buy
+trigger at or below it. It rejects triggers on the wrong side.
+
+:::warning
+Older versions send spot stop, touched, and trailing market buys in quote units, even when base quantity
+is requested. Cancel and resubmit pending stop/touched buys to select the intended unit. For trailing buys,
+resubmit with an explicit quote budget.
+
+Cancel pending quote-sized algo orders before any process restart. A persisted cache keeps the order but
+not its session context, so later updates arrive as untracked reports. Without persisted cache, and for
+standalone HTTP algo orders at any time, [reconciliation](#reconciliation) can import the quote amount as
+base quantity.
+The [limits on amendments after restart](#modifying-conditional-orders) also apply.
 :::
 
 #### Modifying conditional orders
@@ -907,14 +1017,20 @@ that context emit `OrderModifyRejected` locally. Trailing-stop algo amendments a
 
 #### Trigger price types
 
-Stop and touched orders support different trigger price sources:
+The adapter denies feeds other than default, last, mark, and index before submission. It also denies
+mark/index on cash-spot and trailing orders. For other spot orders in `cross` or `isolated`, it forwards
+mark/index to OKX. Futures-mode spot-margin `STOP_MARKET`/`MARKET_IF_TOUCHED` buys and derivative
+stop/touched orders support them. OKX rejects them for Multi-currency spot buys and documents Last only
+for `SPOT` `trigger` orders.
+
+Stop and touched orders use these sources where the account, instrument, and order type support them:
 
 - **Last price** (`TriggerType.LAST_PRICE`): Uses the last traded price (default).
 - **Mark price** (`TriggerType.MARK_PRICE`): Uses the mark price.
 - **Index price** (`TriggerType.INDEX_PRICE`): Uses the underlying index price.
 
 ```python
-# Example: Stop loss using mark price trigger
+# Mark-price stop loss on a derivative
 stop_order = order_factory.stop_market(
     instrument_id=instrument_id,
     order_side=OrderSide.SELL,
@@ -1301,6 +1417,8 @@ available.
 | `/api/v5/account/set-position-mode`     | 2               | OKX 5 requests / 2 seconds, rounded down. |
 | `/api/v5/account/activate-feature`      | 2               | OKX 5 requests / 2 seconds, rounded down. |
 | `/api/v5/account/balance`               | 5               | OKX 10 requests / 2 seconds.              |
+| `/api/v5/account/bills`                 | 5               | OKX 5 requests / second.                  |
+| `/api/v5/account/bills-archive`         | 2.5             | OKX 5 requests / 2 seconds.               |
 | `/api/v5/account/trade-fee`             | 2               | OKX 5 requests / 2 seconds, rounded down. |
 | `/api/v5/account/instruments`           | 10              | OKX 20 requests / 2 seconds.              |
 | `/api/v5/account/positions`             | 5               | OKX 10 requests / 2 seconds.              |
@@ -1371,7 +1489,6 @@ Order operation buckets mirror OKX's published limits where available.
 | `batch-cancel` | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
 | `batch-amend`  | 7               | OKX 300 orders / 2 seconds, rounded down for full batches. |
 | `mass-cancel`  | 2               | OKX 5 requests / 2 seconds, rounded down.                  |
-| `algo-order`   | 10              | OKX 20 requests / 2 seconds.                               |
 | `algo-cancel`  | 1               | OKX 20 orders / 2 seconds, rounded down for full batches.  |
 
 :::info
@@ -1401,6 +1518,30 @@ the whole position when it triggers. REST order status reports use the size of t
 OKX links to the order through `closeOrderAlgo`. Without a linked position, the report keeps a zero
 quantity and the adapter logs a warning. Reconciliation does not load an external order with zero
 quantity.
+
+### History request limits
+
+Set `OKXExecutionClientConfig.max_reconciliation_history_pages` to bound startup history requests:
+
+- `None` (default) uses the 50-page safety cap.
+- A positive value limits each history query to that many pages, up to 50.
+- `0` skips all history requests during mass status.
+
+The limit applies separately to:
+
+- Regular order and fill history per queried instrument type.
+- Algo history per combination of instrument type, algo order type, and terminal state.
+- Spread order history and spread trade history.
+
+Each page holds up to 100 records. Pending regular and spread orders, live algo orders, and current
+positions keep their existing coverage regardless of age. Targeted queries and standalone report
+generation ignore this limit.
+
+:::warning
+Skipped or truncated history sets `reports_complete = false`. The execution manager warns and
+continues reconciliation. Fills and terminal order events from omitted pages can remain unrecovered;
+marking reports incomplete does not restore that recovery coverage.
+:::
 
 ### Unacknowledged submissions
 
@@ -1479,28 +1620,30 @@ Spread instruments use `load_spreads` instead of `instrument_types` because OKX 
 
 The OKX execution client provides the following Python configuration options.
 
-| Option                   | Default                    | Description                                                                              |
-| ------------------------ | -------------------------- | ---------------------------------------------------------------------------------------- |
-| `instrument_types`       | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.                                                           |
-| `load_spreads`           | `False`                    | Loads live spread instruments.                                                           |
-| `account_id`             | Required                   | Nautilus account ID for the client.                                                      |
-| `base_url_http`          | `None`                     | Override for the OKX trading REST endpoint.                                              |
-| `base_url_ws_private`    | `None`                     | Override for the private WebSocket URL.                                                  |
-| `base_url_ws_business`   | `None`                     | Override for the business WebSocket URL.                                                 |
-| `api_key`                | `None`                     | Falls back to `OKX_API_KEY` when unset.                                                  |
-| `api_secret`             | `None`                     | Falls back to `OKX_API_SECRET` when unset.                                               |
-| `api_passphrase`         | `None`                     | Falls back to `OKX_API_PASSPHRASE`.                                                      |
-| `environment`            | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                     |
-| `region`                 | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                  |
-| `margin_mode`            | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                     |
-| `spot_trade_quote_ccy`   | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`. |
-| `http_timeout_secs`      | `60`                       | REST trading request timeout.                                                            |
-| `max_retries`            | `3`                        | Recoverable REST retries; order submissions and algo amendments send once.               |
-| `retry_delay_initial_ms` | `1,000`                    | Initial delay before retrying.                                                           |
-| `retry_delay_max_ms`     | `10,000`                   | Maximum exponential backoff delay.                                                       |
-| `auth_timeout_secs`      | `None`                     | Override WebSocket authentication timeout.                                               |
-| `proxy_url`              | `None`                     | Optional HTTP and WebSocket proxy URL.                                                   |
-| `transport_backend`      | `Sockudo`                  | WebSocket transport backend.                                                             |
+| Option                             | Default                    | Description                                                                              |
+| ---------------------------------- | -------------------------- | ---------------------------------------------------------------------------------------- |
+| `instrument_types`                 | `[OKXInstrumentType.SPOT]` | Tradable OKX instrument types.                                                           |
+| `load_spreads`                     | `False`                    | Loads live spread instruments.                                                           |
+| `account_id`                       | Required                   | Nautilus account ID for the client.                                                      |
+| `oms_type`                         | `None`                     | Optional OMS override for the client.                                                    |
+| `base_url_http`                    | `None`                     | Override for the OKX trading REST endpoint.                                              |
+| `base_url_ws_private`              | `None`                     | Override for the private WebSocket URL.                                                  |
+| `base_url_ws_business`             | `None`                     | Override for the business WebSocket URL.                                                 |
+| `api_key`                          | `None`                     | Falls back to `OKX_API_KEY` when unset.                                                  |
+| `api_secret`                       | `None`                     | Falls back to `OKX_API_SECRET` when unset.                                               |
+| `api_passphrase`                   | `None`                     | Falls back to `OKX_API_PASSPHRASE`.                                                      |
+| `environment`                      | `LIVE`                     | Environment enum (`LIVE` or `DEMO`).                                                     |
+| `region`                           | `GLOBAL`                   | Region enum (`GLOBAL`, `EEA`, or `US`).                                                  |
+| `margin_mode`                      | `None`                     | Margin mode (`ISOLATED` or `CROSS`).                                                     |
+| `spot_trade_quote_ccy`             | `None`                     | SPOT `tradeQuoteCcy` override. Set `"USD"` to keep USD after migrating to `Crypto-USDC`. |
+| `http_timeout_secs`                | `60`                       | REST trading request timeout.                                                            |
+| `max_retries`                      | `3`                        | Recoverable REST retries; order submissions and algo amendments send once.               |
+| `retry_delay_initial_ms`           | `1,000`                    | Initial delay before retrying.                                                           |
+| `retry_delay_max_ms`               | `10,000`                   | Maximum exponential backoff delay.                                                       |
+| `auth_timeout_secs`                | `None`                     | Override WebSocket authentication timeout.                                               |
+| `proxy_url`                        | `None`                     | Optional HTTP and WebSocket proxy URL.                                                   |
+| `transport_backend`                | `Sockudo`                  | WebSocket transport backend.                                                             |
+| `max_reconciliation_history_pages` | `None`                     | Pages per startup history query, capped at 50; `0` skips history.                        |
 
 Supported execution client `instrument_types` values are `SPOT`, `MARGIN`, `SWAP`,
 `FUTURES`, `OPTION`, and `EVENTS`. See [Options trading](#options-trading) before selecting
@@ -1594,8 +1737,8 @@ Focused Madsim tests in `crates/adapters/okx/tests/integration/dst.rs` prove thi
 - **Reconnect order**: multi-instrument quote reconnect in topic order. Reconnect also clears quote
   and funding caches in `data.rs` so a new generation cannot reuse prior values.
 - **Login frame**: key, passphrase, and signature derived from the simulated wall clock.
-- **Wire fields**: single order-submit, amend, and cancel. Algo order-submit and cancel. Batch order-submit in
-  input order.
+- **Wire fields**: single order-submit, amend, and cancel. Algo cancel. Batch order-submit in input order.
+- **Algo placement**: WebSocket submit returns the HTTP-required local error without connecting.
 
 Complete request-to-wire-to-domain fresh-process comparison stays in the downstream DST harness.
 These share the DST facades and convention gate but remain unproven:

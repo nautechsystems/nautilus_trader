@@ -1,0 +1,45 @@
+{
+  "source": "https://my.okx.com/docs-v5/en/#trading-account-rest-api-get-bills-details-last-7-days",
+  "response": {
+    "code": "0",
+    "msg": "",
+    "data": [
+      {
+        "billId": "623950854533513219",
+        "ccy": "USDT",
+        "ts": "1695033476167",
+        "bal": "8694.2179403378290202",
+        "balChg": "0.0219338232210000",
+        "type": "2",
+        "subType": "1",
+        "instType": "SPOT",
+        "instId": "BTC-USDT",
+        "mgnMode": "isolated",
+        "posBal": "0",
+        "posBalChg": "0",
+        "sz": "0.021955779",
+        "px": "27105.9",
+        "pnl": "0",
+        "fee": "-0.000021955779",
+        "earnAmt": "",
+        "earnApr": "",
+        "ordId": "623950854525124608",
+        "clOrdId": "",
+        "tradeId": "586760148",
+        "execType": "T",
+        "from": "",
+        "to": "",
+        "notes": "",
+        "interest": "0",
+        "tag": "",
+        "fillTime": "1695033476166",
+        "fillIdxPx": "27104.1",
+        "fillMarkPx": "",
+        "fillPxVol": "",
+        "fillPxUsd": "",
+        "fillMarkVol": "",
+        "fillFwdPx": ""
+      }
+    ]
+  }
+}

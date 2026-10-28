@@ -280,7 +280,7 @@ mod tests {
     use crate::{
         accounts::{Account, CashAccount, stubs::*},
         enums::{AccountType, CurrencyType, LiquiditySide, OrderSide, OrderType},
-        events::{AccountState, account::stubs::*},
+        events::{AccountState, account::stubs::*, order::spec::OrderFilledSpec},
         fees::MakerTakerFeeRates,
         identifiers::{AccountId, InstrumentId, position_id::PositionId, stubs::uuid4},
         instruments::{
@@ -553,6 +553,109 @@ mod tests {
     }
 
     #[rstest]
+    #[case(OrderSide::Buy, "0.01", "0.001234 USD")]
+    #[case(OrderSide::Sell, "0.0001", "0.0001 AUD")]
+    fn test_balance_locked_preserves_native_precision(
+        mut cash_account_million_usd: CashAccount,
+        audusd_sim: CurrencyPair,
+        #[case] side: OrderSide,
+        #[case] qty: &str,
+        #[case] expected: &str,
+    ) {
+        let instrument = audusd_sim.into_any();
+        let locked = cash_account_million_usd
+            .calculate_balance_locked(
+                &instrument,
+                side,
+                Quantity::from(qty),
+                Price::from("0.1234"),
+                None,
+            )
+            .unwrap();
+        cash_account_million_usd
+            .update_balance_locked(instrument.id(), locked)
+            .unwrap();
+        let expected = Money::from_str_exact(expected).unwrap();
+
+        assert_eq!(locked, expected);
+        assert_eq!(
+            cash_account_million_usd.balances_locked[&(instrument.id(), expected.currency)],
+            expected,
+        );
+
+        if side == OrderSide::Buy {
+            assert_eq!(
+                cash_account_million_usd
+                    .balance(Some(Currency::USD()))
+                    .copied(),
+                Some(AccountBalance::new(
+                    Money::from("1000000 USD"),
+                    expected,
+                    Money::from_str_exact("999999.998766 USD").unwrap(),
+                )),
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::profit("0 USD", "1000000.000001 USD")]
+    #[case::fee("0.000001 USD", "1000000 USD")]
+    fn test_fill_cash_flows_preserve_micro_profit_and_fee(
+        mut cash_account_million_usd: CashAccount,
+        audusd_sim: CurrencyPair,
+        #[case] fee: &str,
+        #[case] expected: &str,
+    ) {
+        let instrument = audusd_sim.into_any();
+        let fee = Money::from_str_exact(fee).unwrap();
+        let mut cash_flows = Vec::new();
+
+        for (side, price, commission) in [
+            (OrderSide::Buy, "0.1234", fee),
+            (OrderSide::Sell, "0.1235", Money::zero(Currency::USD())),
+        ] {
+            let fill = OrderFilledSpec::builder()
+                .instrument_id(instrument.id())
+                .order_side(side)
+                .last_qty(Quantity::from("0.01"))
+                .last_px(Price::from(price))
+                .commission(commission)
+                .build();
+            let pnls = cash_account_million_usd
+                .calculate_pnls(&instrument, &fill, None)
+                .unwrap();
+            let current = cash_account_million_usd.balance_total(None).unwrap();
+            let total = current
+                .checked_add(pnls[0])
+                .unwrap()
+                .checked_sub(commission)
+                .unwrap();
+            let balance = AccountBalance::new(total, Money::zero(Currency::USD()), total);
+            cash_account_million_usd
+                .update_balances(&[balance])
+                .unwrap();
+            cash_flows.extend(pnls);
+        }
+
+        let expected = Money::from_str_exact(expected).unwrap();
+        assert_eq!(
+            cash_flows,
+            vec![
+                Money::from_str_exact("-0.001234 USD").unwrap(),
+                Money::from_str_exact("0.001235 USD").unwrap(),
+            ],
+        );
+        assert_eq!(
+            cash_account_million_usd.balance(None).copied(),
+            Some(AccountBalance::new(
+                expected,
+                Money::zero(Currency::USD()),
+                expected
+            )),
+        );
+    }
+
+    #[rstest]
     fn test_calculate_balance_locked_buy_returns_error_for_unrepresentable_notional(
         cash_account_million_usd: CashAccount,
         audusd_sim: CurrencyPair,
@@ -705,6 +808,60 @@ mod tests {
             .calculate_pnls(&audusd_sim, &fill_owned, Some(position))
             .unwrap();
         assert_eq!(pnls, vec![Money::from("-800000 USD")]);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_fill_cash_flows_reject_unrepresentable_foreign_commission(
+        cash_account: CashAccount,
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = audusd_sim.into_any();
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .last_qty(Quantity::from("0.01"))
+            .last_px(Price::from("0.1234"))
+            .commission(Money::from_raw(
+                100_000_000_000_000_000_000_000_000_001,
+                Currency::EUR(),
+            ))
+            .build();
+
+        let error = cash_account
+            .calculate_pnls(&instrument, &fill, None)
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "position input exceeds exact Decimal representation"
+        );
+    }
+
+    #[rstest]
+    fn test_fill_cash_flows_preserve_sub_cent_base_and_quote(
+        cash_account_multi: CashAccount,
+        audusd_sim: CurrencyPair,
+    ) {
+        let instrument = audusd_sim.into_any();
+        let fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from("0.0001"))
+            .last_px(Price::from("0.1234"))
+            .commission(Money::zero(Currency::USD()))
+            .build();
+
+        let pnls = cash_account_multi
+            .calculate_pnls(&instrument, &fill, None)
+            .unwrap();
+
+        assert_eq!(
+            pnls,
+            vec![
+                Money::from_str_exact("0.0001 AUD").unwrap(),
+                Money::from_str_exact("-0.00001234 USD").unwrap(),
+            ],
+        );
     }
 
     #[rstest]

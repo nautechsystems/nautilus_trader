@@ -73,7 +73,7 @@ use nautilus_model::{
     },
     instruments::{
         CryptoPerpetual, Equity, IndexInstrument, Instrument, InstrumentAny, OptionContract,
-        stubs::{betting, crypto_perpetual_ethusdt, default_fx_ccy},
+        stubs::{audusd_sim, betting, crypto_perpetual_ethusdt, default_fx_ccy},
     },
     orders::{Order, OrderAny},
     position::Position,
@@ -146,7 +146,7 @@ impl Debug for FailingStartStrategy {
 
 impl DataActor for FailingStartStrategy {
     fn on_start(&mut self) -> anyhow::Result<()> {
-        self.subscribe_quotes("ETHUSDT-PERP.BINANCE".into(), None, None);
+        self.subscribe_quotes(InstrumentId::from("ETHUSDT-PERP.BINANCE"), None, None);
         anyhow::ensure!(
             !nautilus_common::runner::data_cmd_queue_is_empty(),
             "Expected startup subscription to remain queued",
@@ -2612,6 +2612,62 @@ fn test_run_books_cash_fill_allowed_by_balance_or_borrowing(
 }
 
 #[rstest]
+fn test_run_preserves_cash_balance_micro_profit() {
+    let mut instrument = audusd_sim();
+    instrument.size_precision = 2;
+    instrument.size_increment = Quantity::from("0.01");
+    instrument.min_quantity = Some(Quantity::from("0.01"));
+    instrument.lot_size = Some(Quantity::from("0.01"));
+    let instrument_id = instrument.id();
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    let venue = SimulatedVenueConfig::builder()
+        .venue(Venue::from("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Cash)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![Money::from("1 USD"), Money::zero(Currency::AUD())])
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    engine.add_venue(venue).unwrap();
+    engine.add_instrument(&instrument.into_any()).unwrap();
+    engine
+        .add_strategy(SnapshotNettingFlip::new(
+            instrument_id,
+            Quantity::from("0.01"),
+        ))
+        .unwrap();
+
+    let data = ["0.12340", "0.12340", "0.12350", "0.12350"]
+        .into_iter()
+        .enumerate()
+        .map(|(index, price)| {
+            quote_with_size(
+                instrument_id,
+                price,
+                price,
+                "1.00",
+                (index as u64 + 1) * 1_000_000_000,
+            )
+        })
+        .collect();
+
+    engine.add_data(data, None, true, true).unwrap();
+
+    engine.run(None, None, None, false).unwrap();
+
+    let cache = engine.kernel().cache.borrow();
+    let positions = cache.positions_closed(None, Some(&instrument_id), None, None, None);
+    let expected = Money::from_str_exact("0.000001 USD").unwrap();
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].realized_pnl, Some(expected));
+    assert_eq!(
+        account_total(&engine, "SIM", Currency::USD()),
+        Some(Money::from_str_exact("1.000001 USD").unwrap()),
+    );
+}
+
+#[rstest]
 fn test_instrument_close_precedes_expiration_timer_at_same_timestamp(
     #[values(false, true)] quote_at_expiration: bool,
 ) {
@@ -3616,6 +3672,7 @@ fn test_twap_exec_algorithm_routes_and_slices_order(crypto_perpetual_ethusdt: Cr
     assert_eq!(
         positions[0]
             .unrealized_pnl(Price::from("1000.00"))
+            .unwrap()
             .as_decimal(),
         Decimal::ZERO
     );
@@ -5756,7 +5813,7 @@ fn test_itm_option_expiry_timer_exercises_without_data_at_expiration() {
     let underlying_open = cache.positions_open(None, Some(&underlying_id), None, None, None);
     assert_eq!(underlying_open.len(), 1);
     assert_eq!(underlying_open[0].quantity, Quantity::from(100));
-    assert_eq!(underlying_open[0].avg_px_open, 150.0);
+    assert_eq!(underlying_open[0].avg_px_open, dec!(150.0));
 }
 
 #[rstest]
@@ -5831,7 +5888,7 @@ fn test_instruments_with_same_expiration_share_expiry_timer() {
 }
 
 #[rstest]
-fn test_instrument_update_cancels_previous_expiry_timer() {
+fn test_add_instrument_with_changed_expiration_is_rejected() {
     let venue = Venue::from("OPRA");
     let original_expiration_ns = UnixNanos::from(2_000_000_000u64);
     let updated_expiration_ns = UnixNanos::from(3_000_000_000u64);
@@ -5854,8 +5911,16 @@ fn test_instrument_update_cancels_previous_expiry_timer() {
     let updated_option = option_contract(venue, updated_expiration_ns);
 
     engine.add_instrument(&option).unwrap();
-    engine.add_instrument(&updated_option).unwrap();
+    let result = engine.add_instrument(&updated_option);
+    engine.add_instrument(&option).unwrap();
 
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!(
+            "Instrument {} is already registered with a different definition",
+            option.id()
+        )
+    );
     let expiry_timer_names: Vec<String> = engine
         .kernel()
         .clock
@@ -5865,13 +5930,20 @@ fn test_instrument_update_cancels_previous_expiry_timer() {
         .filter(|name| name.starts_with("INSTRUMENT-EXPIRATION:"))
         .map(ToString::to_string)
         .collect();
-
     assert_eq!(
         expiry_timer_names,
         vec![format!(
-            "INSTRUMENT-EXPIRATION:{venue}:{updated_expiration_ns}"
+            "INSTRUMENT-EXPIRATION:{venue}:{original_expiration_ns}"
         )],
     );
+    let cached_expiration_ns = engine
+        .kernel()
+        .cache
+        .borrow()
+        .instrument(&option.id())
+        .unwrap()
+        .expiration_ns();
+    assert_eq!(cached_expiration_ns, Some(original_expiration_ns));
 }
 
 fn run_call_option_expiry_timer(
@@ -8162,4 +8234,254 @@ impl DataActor for TradeFillChain {
         }
         Ok(())
     }
+}
+
+#[derive(Debug)]
+struct NativeMarkStop {
+    core: StrategyCore,
+    instrument_id: InstrumentId,
+    side: OrderSide,
+    trigger_type: TriggerType,
+    submitted: bool,
+}
+
+nautilus_strategy!(NativeMarkStop);
+
+impl DataActor for NativeMarkStop {
+    fn on_start(&mut self) -> anyhow::Result<()> {
+        self.subscribe_quotes(self.instrument_id, None, None);
+        Ok(())
+    }
+
+    fn on_quote(&mut self, _quote: &QuoteTick) -> anyhow::Result<()> {
+        if self.submitted {
+            return Ok(());
+        }
+
+        self.submitted = true;
+
+        let trigger = Price::from(if self.side == OrderSide::Buy {
+            "1010.00"
+        } else {
+            "990.00"
+        });
+
+        let order = self.order().stop_market(
+            self.instrument_id,
+            self.side,
+            Quantity::from("1.000"),
+            trigger,
+            Some(self.trigger_type),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        self.submit_order(order, None, None, None)
+    }
+}
+
+#[rstest]
+#[case::mark_only(true, false, false, true)]
+#[case::quote_only(false, true, false, true)]
+#[case::last_only(false, false, true, true)]
+#[case::neither(false, false, false, true)]
+#[case::missing_mark(false, true, false, false)]
+fn test_native_mark_price_stop_election(
+    #[case] mark_crosses: bool,
+    #[case] quote_crosses: bool,
+    #[case] last_crosses: bool,
+    #[case] has_mark: bool,
+    #[values(
+        (OrderSide::Buy, "1020.00", "1001.00"),
+        (OrderSide::Sell, "980.00", "999.00")
+    )]
+    direction: (OrderSide, &str, &str),
+    #[values(false, true)] trade_execution: bool,
+    #[values(TriggerType::MarkPrice, TriggerType::LastPrice)] trigger_type: TriggerType,
+) {
+    let (side, crossed, fill_price) = direction;
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let instrument_id = instrument.id();
+    let mut engine = native_mark_stop_engine(&instrument, side, trigger_type, trade_execution, 0);
+
+    let (bid, ask) = if quote_crosses {
+        (crossed, crossed)
+    } else {
+        ("999.00", "1001.00")
+    };
+
+    let mut data = vec![quote(instrument_id, "999.00", "1001.00", 1_000_000_000)];
+    if has_mark {
+        data.push(Data::MarkPrice(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1000.00"),
+            2_000_000_000.into(),
+            2_000_000_000.into(),
+        )));
+    }
+
+    data.push(quote(instrument_id, bid, ask, 3_000_000_000));
+    data.push(Data::Trade(TradeTick::new(
+        instrument_id,
+        Price::from(if last_crosses { crossed } else { "1000.00" }),
+        Quantity::from("10.000"),
+        AggressorSide::NoAggressor,
+        TradeId::from("LAST-CONTROL"),
+        4_000_000_000.into(),
+        4_000_000_000.into(),
+    )));
+    data.push(quote(instrument_id, bid, ask, 5_000_000_000));
+    if mark_crosses {
+        data.push(Data::MarkPrice(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from(crossed),
+            6_000_000_000.into(),
+            6_000_000_000.into(),
+        )));
+    }
+
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+    let cache = engine.kernel().cache.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+
+    let [order] = orders.as_slice() else {
+        panic!("expected one native stop");
+    };
+
+    let should_fill = match trigger_type {
+        TriggerType::MarkPrice => mark_crosses,
+        _ => last_crosses,
+    };
+
+    assert_eq!(order.trigger_type(), Some(trigger_type));
+    assert_eq!(order.order_side(), side);
+    assert_eq!(order.quantity(), Quantity::from("1.000"));
+
+    let (status, filled_qty) = if should_fill {
+        (OrderStatus::Filled, Quantity::from("1.000"))
+    } else {
+        (OrderStatus::Accepted, Quantity::from("0.000"))
+    };
+
+    assert_eq!(order.status(), status);
+    assert_eq!(order.filled_qty(), filled_qty);
+
+    if should_fill && trigger_type == TriggerType::MarkPrice {
+        assert_eq!(order.avg_px(), Some(Price::from(fill_price).as_decimal()));
+
+        let fill = order
+            .events()
+            .iter()
+            .find_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill),
+                _ => None,
+            })
+            .unwrap();
+
+        assert_eq!(fill.ts_event, UnixNanos::from(6_000_000_000));
+    }
+}
+
+#[rstest]
+fn test_native_mark_price_tick_settles_delayed_submission(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    let mut engine = native_mark_stop_engine(
+        &instrument,
+        OrderSide::Buy,
+        TriggerType::MarkPrice,
+        false,
+        500_000_000,
+    );
+    let data = vec![
+        quote(instrument_id, "999.00", "1001.00", 1_000_000_000),
+        Data::MarkPrice(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1000.00"),
+            2_000_000_000.into(),
+            2_000_000_000.into(),
+        )),
+        Data::MarkPrice(MarkPriceUpdate::new(
+            instrument_id,
+            Price::from("1020.00"),
+            3_000_000_000.into(),
+            3_000_000_000.into(),
+        )),
+    ];
+    engine.add_data(data, None, true, true).unwrap();
+    engine.run(None, None, None, false).unwrap();
+    let cache = engine.kernel().cache.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+
+    let [order] = orders.as_slice() else {
+        panic!("expected one mark stop");
+    };
+
+    let accepted = order
+        .events()
+        .iter()
+        .find_map(|event| match event {
+            OrderEventAny::Accepted(event) => Some(event),
+            _ => None,
+        })
+        .unwrap();
+
+    assert_eq!(accepted.ts_event, UnixNanos::from(2_000_000_000));
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.filled_qty(), Quantity::from("1.000"));
+    assert_eq!(order.avg_px(), Some(dec!(1001)));
+}
+
+fn native_mark_stop_engine(
+    instrument: &InstrumentAny,
+    side: OrderSide,
+    trigger_type: TriggerType,
+    trade_execution: bool,
+    insert_latency: u64,
+) -> BacktestEngine {
+    let instrument_id = instrument.id();
+    let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+    engine
+        .add_venue(
+            SimulatedVenueConfig::builder()
+                .venue(instrument_id.venue)
+                .oms_type(OmsType::Netting)
+                .account_type(AccountType::Margin)
+                .book_type(BookType::L1_MBP)
+                .starting_balances(vec![Money::from("100_000 USDT")])
+                .trade_execution(trade_execution)
+                .latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                    DurationNanos::default(),
+                    DurationNanos::new(insert_latency),
+                    DurationNanos::default(),
+                    DurationNanos::default(),
+                )))
+                .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+                .build()
+                .unwrap(),
+        )
+        .unwrap();
+    engine.add_instrument(instrument).unwrap();
+    engine
+        .add_strategy(NativeMarkStop {
+            core: StrategyCore::new(StrategyConfig::default()),
+            instrument_id,
+            side,
+            trigger_type,
+            submitted: false,
+        })
+        .unwrap();
+
+    engine
 }

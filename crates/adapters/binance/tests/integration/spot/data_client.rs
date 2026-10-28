@@ -47,6 +47,7 @@ use nautilus_binance::{
     spot::{
         BinanceSpotDataClient,
         sbe::{
+            generated::symbol_status::SymbolStatus,
             spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
             stream::{STREAM_SCHEMA_ID, template_id},
         },
@@ -73,10 +74,12 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{
-        BarType, BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick,
+        BarType, BookOrder, CustomData, Data, DataType, InstrumentStatus, OrderBookDelta,
+        OrderBookDeltas, QuoteTick,
     },
-    enums::{BookAction, BookType, OrderSide, RecordFlag},
+    enums::{BookAction, BookType, MarketStatusAction, OrderSide, RecordFlag},
     identifiers::InstrumentId,
+    instruments::Instrument,
 };
 use nautilus_network::{RECONNECTED, http::HttpClient};
 use parking_lot::Mutex;
@@ -84,6 +87,8 @@ use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::json;
 
+const TEST_API_KEY: &str = "test-api-key";
+const TEST_API_SECRET: &str = "MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g";
 const PING_TEMPLATE_ID: u16 = 101;
 const EXCHANGE_INFO_TEMPLATE_ID: u16 = 103;
 const DEPTH_TEMPLATE_ID: u16 = 200;
@@ -95,6 +100,8 @@ const LOT_SIZE_FILTER_TEMPLATE_ID: u16 = 4;
 
 #[derive(Clone)]
 struct DataTestServerConfig {
+    exchange_info_requests:
+        Option<tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<Response>>>,
     depth_diff_first_update_id: i64,
     depth_diff_last_update_id: i64,
     depth_diff_repetitions: usize,
@@ -114,6 +121,7 @@ struct DataTestServerConfig {
 impl Default for DataTestServerConfig {
     fn default() -> Self {
         Self {
+            exchange_info_requests: None,
             depth_diff_first_update_id: 101,
             depth_diff_last_update_id: 101,
             depth_diff_repetitions: 1,
@@ -254,7 +262,7 @@ fn build_sbe_lot_size_filter(exponent: i8, min_qty: i64, max_qty: i64, step_size
     buf
 }
 
-fn build_exchange_info_response(symbols: &[(&str, &str, &str)]) -> Vec<u8> {
+fn build_exchange_info_response(symbols: &[(&str, &str, &str, SymbolStatus)]) -> Vec<u8> {
     let header = create_sbe_header(0, EXCHANGE_INFO_TEMPLATE_ID);
     let mut buf = Vec::new();
     buf.extend_from_slice(&header);
@@ -271,8 +279,8 @@ fn build_exchange_info_response(symbols: &[(&str, &str, &str)]) -> Vec<u8> {
         symbols.len() as u32,
     ));
 
-    for (symbol, base, quote) in symbols {
-        buf.push(0); // status (Trading)
+    for (symbol, base, quote, status) in symbols {
+        buf.push((*status).into());
         buf.push(8); // base_asset_precision
         buf.push(8); // quote_asset_precision
         buf.push(8); // base_commission_precision
@@ -606,127 +614,124 @@ async fn handle_ws(
 
 async fn handle_ws_connection(mut socket: WebSocket, config: DataTestServerConfig) {
     while let Some(Ok(msg)) = socket.recv().await {
-        if let Message::Text(text) = msg
-            && let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text)
-        {
-            let method = parsed.get("method").and_then(|m| m.as_str());
-            let id = parsed.get("id").and_then(|v| v.as_u64()).unwrap_or(1);
+        let Message::Text(text) = msg else {
+            continue;
+        };
 
-            if method == Some("SUBSCRIBE") {
-                let resp = json!({"result": null, "id": id});
-                let _result = socket.send(Message::Text(resp.to_string().into())).await;
+        let Ok(parsed) = serde_json::from_str::<serde_json::Value>(&text) else {
+            continue;
+        };
 
-                if let Some(params) = parsed.get("params").and_then(|p| p.as_array()) {
-                    let streams = params
-                        .iter()
-                        .filter_map(|param| param.as_str().map(str::to_string))
-                        .collect::<Vec<_>>();
+        let method = parsed.get("method").and_then(|m| m.as_str());
 
-                    if !streams.is_empty() {
-                        config.subscriptions.lock().push(streams.clone());
-                    }
-
-                    for stream in streams {
-                        if stream.contains("@trade") {
-                            let symbol =
-                                stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
-                            let data = build_sbe_trades_stream_event(&symbol);
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                            let _result = socket.send(Message::Binary(data.into())).await;
-                        } else if stream.contains("@bestBidAsk") {
-                            let symbol =
-                                stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
-                            let data = build_sbe_best_bid_ask_stream_event(&symbol);
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                            let _result = socket.send(Message::Binary(data.into())).await;
-                        } else if stream.contains("@bookTicker") {
-                            let symbol =
-                                stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
-                            let data = build_json_book_ticker_stream_event(&symbol);
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                            let _result = socket.send(Message::Text(data.into())).await;
-                        } else if stream.contains("@kline_") {
-                            let symbol =
-                                stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
-                            let data = build_json_kline_stream_event(&symbol);
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                            let _result = socket.send(Message::Text(data.into())).await;
-                        } else if stream.contains("@ticker") {
-                            let symbol =
-                                stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
-                            let data = build_json_ticker_stream_event(&symbol);
-                            tokio::time::sleep(Duration::from_millis(50)).await;
-                            let _result = socket.send(Message::Text(data.into())).await;
-                        } else if stream.contains("@depth") {
-                            let symbol =
-                                stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
-                            if stream.ends_with("@depth") {
-                                for index in 0..config.depth_diff_repetitions {
-                                    let update_offset =
-                                        index as i64 * config.depth_diff_update_stride;
-                                    tokio::time::sleep(config.depth_diff_delay).await;
-                                    if config.json_ws_streams {
-                                        let data = build_json_depth_diff_stream_event(
-                                            &symbol,
-                                            config.depth_diff_first_update_id + update_offset,
-                                            config.depth_diff_last_update_id + update_offset,
-                                        );
-                                        let _result = socket.send(Message::Text(data.into())).await;
-                                    } else {
-                                        let data = build_sbe_depth_diff_stream_event(
-                                            &symbol,
-                                            config.depth_diff_first_update_id + update_offset,
-                                            config.depth_diff_last_update_id + update_offset,
-                                        );
-                                        let _result =
-                                            socket.send(Message::Binary(data.into())).await;
-                                    }
-                                }
-
-                                if config
-                                    .reconnect_signals_remaining
-                                    .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
-                                        remaining.checked_sub(1)
-                                    })
-                                    .is_ok()
-                                {
-                                    tokio::time::sleep(Duration::from_millis(500)).await;
-                                    let _result =
-                                        socket.send(Message::Text(RECONNECTED.into())).await;
-                                }
-                            } else {
-                                tokio::time::sleep(Duration::from_millis(50)).await;
-
-                                if config.json_ws_streams {
-                                    let data = build_json_partial_depth_stream_event(&stream);
-                                    let _result = socket.send(Message::Text(data.into())).await;
-                                } else {
-                                    let data = build_sbe_depth_snapshot_stream_event(&symbol);
-                                    let _result = socket.send(Message::Binary(data.into())).await;
-                                }
-                            }
-                        }
-                    }
-                }
-            } else if method == Some("UNSUBSCRIBE") {
-                let resp = json!({"result": null, "id": id});
-                let _result = socket.send(Message::Text(resp.to_string().into())).await;
-                let streams = parsed
-                    .get("params")
-                    .and_then(|p| p.as_array())
-                    .map(|params| {
-                        params
-                            .iter()
-                            .filter_map(|param| param.as_str().map(str::to_string))
-                            .collect::<Vec<_>>()
-                    })
-                    .unwrap_or_default();
-
-                if !streams.is_empty() {
-                    config.unsubscriptions.lock().push(streams);
-                }
-            }
+        if !matches!(method, Some("SUBSCRIBE" | "UNSUBSCRIBE")) {
+            continue;
         }
+
+        let id = parsed.get("id").and_then(|v| v.as_u64()).unwrap_or(1);
+        let resp = json!({"result": null, "id": id});
+        let _result = socket.send(Message::Text(resp.to_string().into())).await;
+
+        let streams = parsed
+            .get("params")
+            .and_then(|p| p.as_array())
+            .map(|params| {
+                params
+                    .iter()
+                    .filter_map(|param| param.as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        if streams.is_empty() {
+            continue;
+        }
+
+        if method == Some("UNSUBSCRIBE") {
+            config.unsubscriptions.lock().push(streams);
+            continue;
+        }
+
+        config.subscriptions.lock().push(streams.clone());
+        for stream in streams {
+            send_stream_event(&mut socket, &config, &stream).await;
+        }
+    }
+}
+
+async fn send_stream_event(socket: &mut WebSocket, config: &DataTestServerConfig, stream: &str) {
+    let symbol = stream.split('@').next().unwrap_or("BTCUSDT").to_uppercase();
+    let message = if stream.contains("@trade") {
+        Message::Binary(build_sbe_trades_stream_event(&symbol).into())
+    } else if stream.contains("@bestBidAsk") {
+        Message::Binary(build_sbe_best_bid_ask_stream_event(&symbol).into())
+    } else if stream.contains("@bookTicker") {
+        Message::Text(build_json_book_ticker_stream_event(&symbol).into())
+    } else if stream.contains("@kline_") {
+        Message::Text(build_json_kline_stream_event(&symbol).into())
+    } else if stream.contains("@ticker") {
+        Message::Text(build_json_ticker_stream_event(&symbol).into())
+    } else if stream.contains("@depth") {
+        if stream.split('@').nth(1) == Some("depth") {
+            send_depth_diffs(socket, config, &symbol).await;
+            return;
+        }
+
+        tokio::time::sleep(Duration::from_millis(50)).await;
+
+        let message = if config.json_ws_streams {
+            Message::Text(build_json_partial_depth_stream_event(stream).into())
+        } else {
+            Message::Binary(build_sbe_depth_snapshot_stream_event(&symbol).into())
+        };
+
+        let _result = socket.send(message).await;
+        return;
+    } else {
+        return;
+    };
+
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    let _result = socket.send(message).await;
+}
+
+async fn send_depth_diffs(socket: &mut WebSocket, config: &DataTestServerConfig, symbol: &str) {
+    for index in 0..config.depth_diff_repetitions {
+        let update_offset = index as i64 * config.depth_diff_update_stride;
+        tokio::time::sleep(config.depth_diff_delay).await;
+
+        let message = if config.json_ws_streams {
+            Message::Text(
+                build_json_depth_diff_stream_event(
+                    symbol,
+                    config.depth_diff_first_update_id + update_offset,
+                    config.depth_diff_last_update_id + update_offset,
+                )
+                .into(),
+            )
+        } else {
+            Message::Binary(
+                build_sbe_depth_diff_stream_event(
+                    symbol,
+                    config.depth_diff_first_update_id + update_offset,
+                    config.depth_diff_last_update_id + update_offset,
+                )
+                .into(),
+            )
+        };
+
+        let _result = socket.send(message).await;
+    }
+
+    if config
+        .reconnect_signals_remaining
+        .try_update(Ordering::Relaxed, Ordering::Relaxed, |remaining| {
+            remaining.checked_sub(1)
+        })
+        .is_ok()
+    {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let _result = socket.send(Message::Text(RECONNECTED.into())).await;
     }
 }
 
@@ -796,8 +801,14 @@ fn create_data_test_router(config: DataTestServerConfig) -> Router {
         )
         .route(
             "/api/v3/exchangeInfo",
-            get(|| async {
-                let symbols = vec![("BTCUSDT", "BTC", "USDT")];
+            get(|State(config): State<DataTestServerConfig>| async move {
+                if let Some(requests) = config.exchange_info_requests {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    requests.send(tx).unwrap();
+                    return rx.await.unwrap();
+                }
+
+                let symbols = vec![("BTCUSDT", "BTC", "USDT", SymbolStatus::Trading)];
                 sbe_response(build_exchange_info_response(&symbols)).into_response()
             }),
         )
@@ -857,17 +868,26 @@ fn create_test_data_client_with_mode(
     BinanceSpotDataClient,
     tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 ) {
-    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
-    set_data_event_sender(tx);
-
     let config = BinanceDataClientConfig {
         base_url_http: Some(base_url_http),
         base_url_ws: Some(base_url_ws),
-        api_key: Some("test-api-key".into()),
-        api_secret: Some("MC4CAQAwBQYDK2VwBCIEIJ1hsZ3v/VpguoRK9JLsLMREScVpezJpGXA7rAMcrn9g".into()),
+        api_key: Some(TEST_API_KEY.into()),
+        api_secret: Some(TEST_API_SECRET.into()),
         spot_market_data_mode,
         ..Default::default()
     };
+
+    create_test_data_client_with_config(config)
+}
+
+fn create_test_data_client_with_config(
+    config: BinanceDataClientConfig,
+) -> (
+    BinanceSpotDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
 
     let client = BinanceSpotDataClient::new(*BINANCE_CLIENT_ID, config).unwrap();
 
@@ -883,6 +903,7 @@ async fn recv_data(
     loop {
         let remaining = deadline.checked_duration_since(tokio::time::Instant::now())?;
         match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {}
             Ok(Some(DataEvent::Data(data))) => return Some(data),
             Ok(Some(_)) => {}
             Ok(None) | Err(_) => return None,
@@ -898,10 +919,12 @@ fn recorded_streams_include(records: &Arc<Mutex<Vec<Vec<String>>>>, stream: &str
 }
 
 fn spot_ticker_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceSpotTicker",
@@ -911,23 +934,29 @@ fn spot_ticker_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn binance_bar_data_type(bar_type: BarType) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "bar_type".to_string(),
-        serde_json::Value::String(bar_type.to_string()),
+    let metadata = Params::new(
+        [(
+            "bar_type".to_string(),
+            serde_json::Value::String(bar_type.to_string()),
+        )]
+        .into(),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }
 
 fn binance_bar_item_data_type(bar_type: BarType) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "bar_type".to_string(),
-        serde_json::Value::String(bar_type.to_string()),
-    );
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(bar_type.instrument_id().to_string()),
+    let metadata = Params::new(
+        [
+            (
+                "bar_type".to_string(),
+                serde_json::Value::String(bar_type.to_string()),
+            ),
+            (
+                "instrument_id".to_string(),
+                serde_json::Value::String(bar_type.instrument_id().to_string()),
+            ),
+        ]
+        .into(),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }
@@ -962,7 +991,7 @@ async fn test_connect_emits_instruments() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -1002,7 +1031,7 @@ async fn test_subscribe_trades() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -1050,7 +1079,7 @@ async fn test_subscribe_quotes() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -1313,7 +1342,7 @@ async fn test_request_bounded_aggregate_trades_routes_spot_bounds() {
         Some("1700000000999")
     );
     assert_eq!(query.get("limit").map(String::as_str), Some("456"));
-    assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(response.instrument_ids, vec![instrument_id]);
     assert_eq!(response.data.len(), 1);
     assert_eq!(response.data[0].price.as_decimal(), dec!(42001.23));
     assert_eq!(response.data[0].size.as_decimal(), dec!(0.12345));
@@ -1794,18 +1823,25 @@ async fn test_subscribe_book_deltas_rejects_unsupported_json_depth(#[case] depth
 #[case(10)]
 #[case(20)]
 #[tokio::test]
-async fn test_subscribe_book_deltas_json_partial_depth_stream(#[case] depth: usize) {
+async fn test_subscribe_book_deltas_json_partial_depth_stream(
+    #[case] depth: usize,
+    #[values(None, Some(100), Some(1000))] interval_ms: Option<u64>,
+) {
     let config = DataTestServerConfig {
         json_ws_streams: true,
         ..Default::default()
     };
     let subscriptions = config.subscriptions.clone();
+    let unsubscriptions = config.unsubscriptions.clone();
     let addr = start_data_test_server_with_config(config).await;
-    let (mut client, mut rx) = create_test_data_client_with_mode(
-        format!("http://{addr}"),
-        format!("ws://{addr}/ws"),
-        BinanceSpotMarketDataMode::Json,
-    );
+
+    let (mut client, mut rx) = create_test_data_client_with_config(BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        spot_market_data_mode: BinanceSpotMarketDataMode::Json,
+        ..Default::default()
+    });
+
     client.connect().await.unwrap();
 
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
@@ -1820,7 +1856,7 @@ async fn test_subscribe_book_deltas_json_partial_depth_stream(#[case] depth: usi
             NonZeroUsize::new(depth),
             false,
             None,
-            None,
+            interval_ms.map(|speed| Params::new([("update_speed".into(), json!(speed))].into())),
         ))
         .unwrap();
 
@@ -1856,21 +1892,53 @@ async fn test_subscribe_book_deltas_json_partial_depth_stream(#[case] depth: usi
         ],
     );
 
-    assert_eq!(
-        *subscriptions.lock(),
-        vec![vec![format!("btcusdt@depth{depth}")]]
-    );
+    let suffix = if interval_ms == Some(1000) {
+        ""
+    } else {
+        "@100ms"
+    };
+
+    let expected_stream = format!("btcusdt@depth{depth}{suffix}");
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || async { !unsubscriptions.lock().is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(*unsubscriptions.lock(), vec![vec![expected_stream.clone()]]);
+    assert_eq!(*subscriptions.lock(), vec![vec![expected_stream.clone()]]);
     assert_eq!(*deltas, expected);
 }
 
 #[rstest]
+#[case(100)]
+#[case(1000)]
 #[tokio::test]
-async fn test_subscribe_book_deltas_with_partial_depth_stream() {
-    let addr = start_data_test_server().await;
+async fn test_subscribe_book_deltas_with_partial_depth_stream(#[case] interval_ms: u64) {
+    let config = DataTestServerConfig::default();
+    let subscriptions = config.subscriptions.clone();
+    let addr = start_data_test_server_with_config(config).await;
     let base_url_http = format!("http://{addr}");
     let base_url_ws = format!("ws://{addr}/ws");
 
-    let (mut client, mut rx) = create_test_data_client(base_url_http, base_url_ws);
+    let (mut client, mut rx) = create_test_data_client_with_config(BinanceDataClientConfig {
+        base_url_http: Some(base_url_http),
+        base_url_ws: Some(base_url_ws),
+        api_key: Some(TEST_API_KEY.into()),
+        api_secret: Some(TEST_API_SECRET.into()),
+        ..Default::default()
+    });
 
     client.connect().await.unwrap();
 
@@ -1878,7 +1946,7 @@ async fn test_subscribe_book_deltas_with_partial_depth_stream() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -1898,7 +1966,9 @@ async fn test_subscribe_book_deltas_with_partial_depth_stream() {
         Some(NonZeroUsize::new(20).unwrap()),
         false,
         None,
-        None,
+        Some(Params::new(
+            [("update_speed".into(), json!(interval_ms))].into(),
+        )),
     );
 
     client.subscribe_book_deltas(cmd).unwrap();
@@ -1910,6 +1980,10 @@ async fn test_subscribe_book_deltas_with_partial_depth_stream() {
         panic!("expected order book deltas");
     };
 
+    assert_eq!(
+        *subscriptions.lock(),
+        vec![vec!["btcusdt@depth20".to_string()]]
+    );
     assert_eq!(deltas.sequence, 99_999);
     assert_eq!(deltas.deltas[0].action, BookAction::Clear);
     assert_eq!(deltas.deltas[1].action, BookAction::Add);
@@ -2026,7 +2100,7 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2086,21 +2160,28 @@ async fn test_subscribe_book_deltas_full_depth_replays_buffered_diff_after_snaps
 }
 
 #[rstest]
+#[case(None)]
+#[case(Some(100))]
+#[case(Some(1000))]
 #[tokio::test]
-async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_snapshot() {
+async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_snapshot(
+    #[case] interval_ms: Option<u64>,
+) {
     let config = DataTestServerConfig {
         json_ws_streams: true,
         ..Default::default()
     };
-    let addr = start_data_test_server_with_config(config).await;
-    let base_url_http = format!("http://{addr}");
-    let base_url_ws = format!("ws://{addr}/ws");
 
-    let (mut client, mut rx) = create_test_data_client_with_mode(
-        base_url_http,
-        base_url_ws,
-        BinanceSpotMarketDataMode::Json,
-    );
+    let subscriptions = config.subscriptions.clone();
+    let unsubscriptions = config.unsubscriptions.clone();
+    let addr = start_data_test_server_with_config(config).await;
+
+    let (mut client, mut rx) = create_test_data_client_with_config(BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        spot_market_data_mode: BinanceSpotMarketDataMode::Json,
+        ..Default::default()
+    });
 
     client.connect().await.unwrap();
 
@@ -2108,7 +2189,7 @@ async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2118,6 +2199,7 @@ async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
@@ -2128,7 +2210,7 @@ async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_
         None,
         false,
         None,
-        None,
+        interval_ms.map(|speed| Params::new([("update_speed".into(), json!(speed))].into())),
     );
 
     client.subscribe_book_deltas(cmd).unwrap();
@@ -2147,6 +2229,32 @@ async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_
         panic!("expected order book deltas");
     };
 
+    let suffix = if interval_ms == Some(1000) {
+        ""
+    } else {
+        "@100ms"
+    };
+
+    let expected_stream = format!("btcusdt@depth{suffix}");
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || async { !unsubscriptions.lock().is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(*unsubscriptions.lock(), vec![vec![expected_stream.clone()]]);
+    assert_eq!(*subscriptions.lock(), vec![vec![expected_stream]]);
     assert_eq!(snapshot.sequence, 100);
     assert_eq!(snapshot.ts_event, replayed.ts_event);
     assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
@@ -2161,8 +2269,13 @@ async fn test_subscribe_book_deltas_json_full_depth_replays_buffered_diff_after_
 }
 
 #[rstest]
+#[case(None)]
+#[case(Some(100))]
+#[case(Some(1000))]
 #[tokio::test]
-async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect() {
+async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect(
+    #[case] interval_ms: Option<u64>,
+) {
     let config = DataTestServerConfig {
         depth_snapshot_last_update_ids: vec![100, 100],
         json_ws_streams: true,
@@ -2170,15 +2283,16 @@ async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect() {
         ..Default::default()
     };
     let depth_requests = config.depth_requests.clone();
+    let subscriptions = config.subscriptions.clone();
+    let unsubscriptions = config.unsubscriptions.clone();
     let addr = start_data_test_server_with_config(config).await;
-    let base_url_http = format!("http://{addr}");
-    let base_url_ws = format!("ws://{addr}/ws");
 
-    let (mut client, mut rx) = create_test_data_client_with_mode(
-        base_url_http,
-        base_url_ws,
-        BinanceSpotMarketDataMode::Json,
-    );
+    let (mut client, mut rx) = create_test_data_client_with_config(BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        spot_market_data_mode: BinanceSpotMarketDataMode::Json,
+        ..Default::default()
+    });
 
     client.connect().await.unwrap();
 
@@ -2186,7 +2300,7 @@ async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2196,6 +2310,7 @@ async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect() {
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+
     let cmd = SubscribeBookDeltas::new(
         instrument_id,
         BookType::L2_MBP,
@@ -2206,7 +2321,7 @@ async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect() {
         None,
         false,
         None,
-        None,
+        interval_ms.map(|speed| Params::new([("update_speed".into(), json!(speed))].into())),
     );
 
     client.subscribe_book_deltas(cmd).unwrap();
@@ -2239,6 +2354,32 @@ async fn test_subscribe_book_deltas_json_full_depth_rebuilds_after_reconnect() {
         panic!("expected order book deltas");
     };
 
+    let suffix = if interval_ms == Some(1000) {
+        ""
+    } else {
+        "@100ms"
+    };
+
+    let expected_stream = format!("btcusdt@depth{suffix}");
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    wait_until_async(
+        || async { !unsubscriptions.lock().is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(*unsubscriptions.lock(), vec![vec![expected_stream.clone()]]);
+    assert_eq!(*subscriptions.lock(), vec![vec![expected_stream]; 2]);
     assert_eq!(first_snapshot.sequence, 100);
     assert_eq!(first_replayed.sequence, 101);
     assert_eq!(second_snapshot.sequence, 100);
@@ -2266,7 +2407,7 @@ async fn test_subscribe_book_deltas_full_depth_waits_for_first_diff_before_snaps
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2347,7 +2488,7 @@ async fn test_subscribe_book_deltas_full_depth_keeps_buffered_diffs_across_overl
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2422,7 +2563,7 @@ async fn test_subscribe_book_deltas_full_depth_recovers_live_sequence_gap() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2488,7 +2629,7 @@ async fn test_subscribe_book_deltas_full_depth_resyncs_after_resubscribe() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2582,7 +2723,7 @@ async fn test_subscribe_book_deltas_full_depth_rejects_non_overlapping_first_dif
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2626,7 +2767,7 @@ async fn test_unsubscribe_trades() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2691,7 +2832,7 @@ async fn test_unsubscribe_quotes() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2807,7 +2948,7 @@ async fn test_connect_disconnect_reconnect() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2826,7 +2967,7 @@ async fn test_connect_disconnect_reconnect() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2850,7 +2991,7 @@ async fn test_subscribe_trades_and_quotes_simultaneously() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -2919,4 +3060,265 @@ fn expected_l1_deltas(quote: QuoteTick, sequence: u64) -> OrderBookDeltas {
     );
 
     OrderBookDeltas::new(quote.instrument_id, vec![bid, ask])
+}
+
+#[rstest]
+#[case::poll_first(true)]
+#[case::refresh_first(false)]
+#[tokio::test]
+async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool) {
+    let (request_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let addr = start_data_test_server_with_config(DataTestServerConfig {
+        exchange_info_requests: Some(request_tx),
+        ..Default::default()
+    })
+    .await;
+
+    let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+
+    let config = BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        spot_market_data_mode: BinanceSpotMarketDataMode::Json,
+        instrument_status_poll_secs: if poll_first { 1 } else { 2 },
+        instrument_refresh_interval_secs: if poll_first { 2 } else { 1 },
+        ..Default::default()
+    };
+
+    let mut client = BinanceSpotDataClient::new(*BINANCE_CLIENT_ID, config).unwrap();
+
+    let response = |symbol: &str, base: &str, halt: bool| {
+        let status = if halt {
+            SymbolStatus::Halt
+        } else {
+            SymbolStatus::Trading
+        };
+
+        sbe_response(build_exchange_info_response(&[(
+            symbol, base, "USDT", status,
+        )]))
+        .into_response()
+    };
+
+    let serve_initial = async {
+        for _ in 0..2 {
+            let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            request.send(response("BTCUSDT", "BTC", false)).unwrap();
+        }
+    };
+
+    let (connected, ()) = tokio::join!(client.connect(), serve_initial);
+    connected.unwrap();
+
+    if !poll_first {
+        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
+    }
+
+    let blocked = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Hold the older response through the other task's next scheduled update
+    let overlapping = tokio::time::timeout(Duration::from_millis(1500), requests.recv()).await;
+    assert!(overlapping.is_err(), "overlapping exchange info request");
+
+    let (symbol, base) = if poll_first {
+        ("BTCUSDT", "BTC")
+    } else {
+        ("ETHUSDT", "ETH")
+    };
+
+    blocked.send(response(symbol, base, true)).unwrap();
+
+    if poll_first {
+        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
+    }
+
+    let status = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    status.send(response("ETHUSDT", "ETH", false)).unwrap();
+
+    // The next request proves that the preceding update has published its snapshot
+    let next = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    next.send(response("ETHUSDT", "ETH", false)).unwrap();
+    tokio::select! {
+        result = client.disconnect() => result.unwrap(),
+        () = async {
+            while let Some(request) = requests.recv().await {
+                let _ = request.send(response("ETHUSDT", "ETH", false));
+            }
+        } => panic!("exchange info request channel closed before disconnect"),
+    }
+
+    let btc = InstrumentId::from("BTCUSDT.BINANCE");
+    let eth = InstrumentId::from("ETHUSDT.BINANCE");
+    let mut statuses = Vec::new();
+    let mut instruments = Vec::new();
+
+    while let Ok(event) = events.try_recv() {
+        match event {
+            DataEvent::Data(Data::InstrumentStatus(status)) => statuses.push(status),
+            DataEvent::Data(Data::Instrument(instrument)) => instruments.push(instrument.id()),
+            _ => {}
+        }
+    }
+
+    let changes = if poll_first {
+        vec![
+            (btc, MarketStatusAction::Halt),
+            (eth, MarketStatusAction::Trading),
+            (btc, MarketStatusAction::NotAvailableForTrading),
+        ]
+    } else {
+        vec![
+            (eth, MarketStatusAction::Halt),
+            (btc, MarketStatusAction::NotAvailableForTrading),
+            (eth, MarketStatusAction::Trading),
+        ]
+    };
+
+    let expected = changes
+        .into_iter()
+        .zip(&statuses)
+        .map(|((id, action), status)| {
+            InstrumentStatus::new(
+                id,
+                action,
+                status.ts_event,
+                status.ts_event,
+                None,
+                None,
+                Some(action == MarketStatusAction::Trading),
+                None,
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(statuses.len(), 3);
+    assert_eq!(statuses, expected);
+    assert!(instruments.len() >= 2);
+    assert_eq!(instruments[0], btc);
+    assert!(instruments[1..].iter().all(|id| *id == eth));
+}
+
+#[rstest]
+#[case(json!(0))]
+#[case(json!(99))]
+#[case(json!(101))]
+#[case(json!(1001))]
+#[case(json!(-100))]
+#[case(json!(100.0))]
+#[case(json!("100"))]
+#[case(json!(true))]
+#[case(json!(null))]
+#[tokio::test]
+async fn test_json_depth_rejects_invalid_update_speed(#[case] speed: serde_json::Value) {
+    let (mut client, _rx) = create_test_data_client_with_config(BinanceDataClientConfig {
+        spot_market_data_mode: BinanceSpotMarketDataMode::Json,
+        ..Default::default()
+    });
+
+    let cmd = SubscribeBookDeltas::new(
+        InstrumentId::from("BTCUSDT.BINANCE"),
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(20),
+        false,
+        None,
+        Some(Params::new([("update_speed".into(), speed.clone())].into())),
+    );
+    let error = client.subscribe_book_deltas(cmd).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        format!("Binance Spot JSON update_speed must be 100 or 1000, was {speed}")
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_json_depth_update_speed_changes_after_unsubscribe() {
+    let config = DataTestServerConfig {
+        json_ws_streams: true,
+        ..Default::default()
+    };
+
+    let subscriptions = config.subscriptions.clone();
+    let unsubscriptions = config.unsubscriptions.clone();
+    let addr = start_data_test_server_with_config(config).await;
+
+    let (mut client, _rx) = create_test_data_client_with_config(BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        spot_market_data_mode: BinanceSpotMarketDataMode::Json,
+        ..Default::default()
+    });
+
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
+
+    let mut cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(20),
+        false,
+        None,
+        Some(Params::new([("update_speed".into(), json!(100))].into())),
+    );
+    client.subscribe_book_deltas(cmd.clone()).unwrap();
+    client.subscribe_book_deltas(cmd.clone()).unwrap();
+    cmd.params = Some(Params::new([("update_speed".into(), json!(1000))].into()));
+    let error = client.subscribe_book_deltas(cmd.clone()).unwrap_err();
+    client
+        .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+            instrument_id,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client.subscribe_book_deltas(cmd).unwrap();
+    wait_until_async(
+        || async { subscriptions.lock().len() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(
+        error.to_string(),
+        "unsubscribe before changing Binance Spot book depth or update_speed"
+    );
+    assert_eq!(
+        *subscriptions.lock(),
+        vec![vec!["btcusdt@depth20@100ms"], vec!["btcusdt@depth20"]]
+    );
+    assert_eq!(*unsubscriptions.lock(), vec![vec!["btcusdt@depth20@100ms"]]);
 }

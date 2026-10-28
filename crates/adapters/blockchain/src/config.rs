@@ -15,7 +15,10 @@
 
 use std::{any::Any, fmt::Debug};
 
-use nautilus_common::factories::ClientConfig;
+use nautilus_common::{
+    config::{ConfigResult, check_unique_values},
+    factories::ClientConfig,
+};
 use nautilus_core::string::secret::{REDACTED, SecretString};
 use nautilus_infrastructure::sql::pg::PostgresConnectOptions;
 use nautilus_model::{
@@ -499,11 +502,47 @@ nautilus_core::impl_pyo3_config_getters!(BlockchainExecutionClientConfig {
     weth_address: String,
 });
 
+impl BlockchainDataClientConfig {
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("dex_ids", &self.dex_ids)
+    }
+}
+
+impl BlockchainExecutionClientConfig {
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        if let Some(values) = &self.tokens {
+            check_unique_values("tokens", values)?;
+        }
+
+        check_unique_values("payload_key_retired_env", &self.payload_key_retired_env)?;
+        check_unique_values("router_addresses", &self.router_addresses)?;
+
+        if let Some(values) = &self.allowed_token_pairs {
+            check_unique_values("allowed_token_pairs", values)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
+    use nautilus_common::config::ConfigError;
     use nautilus_model::defi::chain::chains;
+    #[cfg(feature = "hypersync")]
+    use nautilus_model::identifiers::ClientId;
     use rstest::rstest;
 
     use super::*;
@@ -781,5 +820,85 @@ native_currency_decimals = 18
         assert!(!debug.contains(PATH_SECRET));
         assert!(!debug.contains(QUERY_SECRET));
         assert!(!debug.contains(&http_rpc_url));
+    }
+
+    #[rstest]
+    fn test_data_config_rejects_duplicate_dex_ids() {
+        let config = BlockchainDataClientConfig::builder()
+            .chain(Arc::new(chains::ETHEREUM.clone()))
+            .http_rpc_url("https://rpc.example.com".into())
+            .dex_ids(vec![
+                DexType::UniswapV2,
+                DexType::UniswapV3,
+                DexType::UniswapV2,
+            ])
+            .build();
+
+        assert_eq!(
+            config.validate(),
+            Err(ConfigError::duplicate("dex_ids", None))
+        );
+    }
+
+    #[rstest]
+    #[case("tokens")]
+    #[case("payload_key_retired_env")]
+    #[case("router_addresses")]
+    #[case("allowed_token_pairs")]
+    fn test_execution_config_rejects_duplicate_selections(#[case] field: &str) {
+        let config = BlockchainExecutionClientConfig::builder()
+            .client_id(AccountId::from("BLOCKCHAIN-001"))
+            .chain(chains::ETHEREUM.clone())
+            .wallet_address("0x0000000000000000000000000000000000000000".to_string())
+            .http_rpc_url("https://rpc.example.com".into())
+            .signer_private_key_env("BLOCKCHAIN_PRIVATE_KEY".to_string())
+            .router_addresses(vec!["router-one".to_string()])
+            .weth_address("wrapped-native".to_string())
+            .max_fee_per_gas_wei(1)
+            .base_fee_buffer_bps(1)
+            .gas_limit(1)
+            .gas_buffer_bps(1)
+            .build();
+        let mut input = serde_json::to_value(config).unwrap();
+
+        input[field] = if field == "allowed_token_pairs" {
+            serde_json::json!([["token-one", "token-two"], ["token-one", "token-two"]])
+        } else {
+            serde_json::json!(["first", "second", "first"])
+        };
+
+        let config: BlockchainExecutionClientConfig = serde_json::from_value(input).unwrap();
+
+        assert_eq!(config.validate(), Err(ConfigError::duplicate(field, None)));
+    }
+
+    #[cfg(feature = "hypersync")]
+    #[rstest]
+    #[case::client(false)]
+    #[case::core(true)]
+    fn test_constructor_rejects_duplicate_dexes(#[case] core: bool) {
+        let config = BlockchainDataClientConfig::builder()
+            .chain(Arc::new(chains::ETHEREUM.clone()))
+            .http_rpc_url("https://rpc.example.com".into())
+            .dex_ids(vec![DexType::UniswapV2, DexType::UniswapV2])
+            .build();
+
+        let error = if core {
+            crate::data::core::BlockchainDataClientCore::new(
+                config,
+                None,
+                None,
+                tokio_util::sync::CancellationToken::new(),
+            )
+            .unwrap_err()
+        } else {
+            crate::data::client::BlockchainDataClient::new(ClientId::from("BLOCKCHAIN"), config)
+                .unwrap_err()
+        };
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("dex_ids", None)),
+        );
     }
 }

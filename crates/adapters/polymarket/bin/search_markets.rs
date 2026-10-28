@@ -48,7 +48,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let filter = SearchFilter::from_query(&query);
     let mut provider =
-        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter));
+        PolymarketInstrumentProvider::with_filter(http_client, None, Arc::new(filter))?;
     provider.load_all(None).await?;
 
     let instruments = provider.store().list_all();

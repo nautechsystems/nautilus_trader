@@ -5,3 +5,7 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 6f82930447ea657c68d8923fc00e74012522e3c5dbe2cb283b16114fb845fc31 # shrinks to fills = [(Buy, 1, 1, 0), (Buy, 40, 2, 1)]
+cc fb409689a806fe5cd77f2a94bd24141a6279f191cacf0e90912fa274d45a96ce # shrinks to fills = [(Sell, 271, 42, 0), (Buy, 1, 1, 1)]
+cc cfd3494207726bf1fa4f6466685c38fadd2b4e2f3fa15e7a9b03d4bef21ea4bb # shrinks to fills = [(Sell, 829, 56, 0), (Sell, 891, 38, 1), (Buy, 23, 1, 2), (Sell, 1, 20, 3)]
+cc fed95d2364a99c9726da48aaa034a3d804f43f69ea9bca116b548b46a402e40d # shrinks to fills = [(Sell, 179, 1, 0), (Buy, 1, 15, 545205), (Sell, 1, 2, 1)]
+cc 6f183a6473a0ae1212eae6e334f1e4ea5ad27e7eee7b51cf3f922c79092f0a85 # shrinks to fills = [(Sell, 92, 95, 490742), (Buy, 47, 13, 0), (Buy, 74, 1, 1)]

@@ -15,11 +15,20 @@
 
 use std::{hint::black_box, time::Duration};
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use nautilus_common::cache::Cache;
 use nautilus_model::{
-    identifiers::{InstrumentId, Venue},
-    orders::{Order, OrderAny, stubs::create_order_list_sample},
+    enums::{OmsType, OrderSide, OrderType},
+    events::OrderEventAny,
+    identifiers::{ClientOrderId, InstrumentId, PositionId, TradeId, Venue},
+    instruments::{InstrumentAny, stubs::audusd_sim},
+    orders::{
+        Order, OrderAny,
+        builder::OrderTestBuilder,
+        stubs::{TestOrderEventStubs, create_order_list_sample},
+    },
+    position::Position,
+    types::Quantity,
 };
 
 fn cache_order_querying_venue_instrument(
@@ -144,10 +153,86 @@ fn bench_order_query_small(c: &mut Criterion) {
     group.finish();
 }
 
+fn position_for_purge(fill_count: u64) -> Position {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(fill_count))
+        .build();
+    let OrderEventAny::Filled(mut fill) = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-0")),
+        Some(PositionId::from("P-PURGE")),
+        None,
+        Some(Quantity::from(1)),
+        None,
+        None,
+        None,
+        None,
+    ) else {
+        unreachable!();
+    };
+    let mut position = Position::new(&instrument, fill.clone());
+
+    for index in 1..fill_count {
+        fill.trade_id = TradeId::from(format!("T-{index}").as_str());
+        fill.ts_event = index.into();
+        position.apply(&fill);
+    }
+
+    fill.trade_id = TradeId::from("T-CLOSE");
+    fill.client_order_id = ClientOrderId::from("O-CLOSE");
+    fill.order_side = OrderSide::Sell;
+    fill.last_qty = position.quantity;
+    fill.ts_event = fill_count.into();
+    position.apply(&fill);
+    assert!(position.is_closed());
+
+    position
+}
+
+fn bench_position_purge(c: &mut Criterion) {
+    let mut group = c.benchmark_group("cache_position_purge");
+
+    for fill_count in [1_u64, 128, 10_000] {
+        let position = position_for_purge(fill_count);
+        let position_id = position.id;
+
+        group.throughput(Throughput::Elements(position.events.len() as u64));
+        group.bench_function(BenchmarkId::from_parameter(fill_count), |b| {
+            b.iter_batched_ref(
+                || {
+                    let mut cache = Cache::default();
+                    cache
+                        .add_position_without_order(&position, OmsType::Netting)
+                        .unwrap();
+                    cache.update_position(&position).unwrap();
+                    assert_eq!(
+                        cache.positions_closed_count(None, None, None, None, None),
+                        1
+                    );
+                    cache
+                },
+                |cache| {
+                    // Timing includes final destruction of the cached position and its history
+                    cache.purge_position(black_box(position_id));
+                    assert!(!cache.position_exists(&position_id));
+                },
+                BatchSize::PerIteration,
+            );
+        });
+    }
+
+    group.finish();
+}
+
 criterion_group!(
     benches,
     bench_order_indexing,
     bench_order_processing,
     bench_order_query_small,
+    bench_position_purge,
 );
 criterion_main!(benches);

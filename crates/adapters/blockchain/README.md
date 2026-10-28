@@ -29,57 +29,47 @@ This crate provides feature flags to control source code inclusion during compil
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `turmoil`: Enables deterministic network simulation testing with [turmoil](https://crates.io/crates/turmoil).
 
-## Scripts
+## Examples
 
-You can run some example scripts and provide target RPC environment variables. These examples demonstrate how to connect to blockchain nodes and subscribe to various events.
+Run the commands below from the repository root.
 
-You can configure the required environment variables in two ways:
+### Watch live blocks and pool events
 
-1. **Using a `.env` file in the project root:**
-   Create a file named `.env` in the project root directory with the following content:
+The [data tester](examples/node_data_tester.rs) subscribes to blocks, swaps, and liquidity updates
+for a Uniswap V3 pool on Arbitrum. Edit `CHAIN`, `DEX_TYPE`, and `POOL_INSTRUMENT_ID` in the example
+to select another chain and pool.
 
-   ```
-   CHAIN=Ethereum
-   RPC_WSS_URL=wss://mainnet.infura.io/ws/v3/YOUR_INFURA_API_KEY
-   RPC_HTTP_URL=https://mainnet.infura.io/v3/YOUR_INFURA_API_KEY
-   ```
+Set the required environment variables, or add them to a Git-ignored `.env` file in the repository root:
 
-2. **Providing variables directly in the command line:**
-
-   ```
-   CHAIN=Ethereum RPC_WSS_URL=wss://your-node-endpoint cargo run --bin live_blocks_rpc
-   ```
-
-### Watch live blocks
-
-The scripts will connect to the specified blockchain and log information about each new block received for both the RPC version and only Hypersync.
-
-```
-cargo run --bin live_blocks_rpc --features hypersync
+```dotenv
+ENVIO_API_TOKEN=YOUR_ENVIO_API_TOKEN
+RPC_HTTP_URL=https://your-arbitrum-rpc.example
+RPC_WSS_URL=wss://your-arbitrum-rpc.example
 ```
 
-```
-cargo run --bin live_blocks_hypersync --features hypersync
-```
+The example reads all three variables at startup. It uses HyperSync for live data by default.
+To use WSS RPC live streams, set `use_hypersync_for_live_data(false)` in the example. Both RPC
+endpoints must match the selected chain.
 
-For RPC example, the output should be:
+Prepare the Postgres cache and target pool for the selected chain and DEX using the
+[pool sync runbook](../../../docs/integrations/blockchain.md#runbook-validate-a-live-pool-sync).
+The example uses the default local Postgres connection; edit `postgres_cache_database_config`
+if your database settings differ.
 
-```
-Running `target/debug/live_blocks_rpc`
-2025-04-25T14:54:41.394620000Z [INFO] TRADER-001.nautilus_blockchain::rpc::core: Subscribing to new blocks on chain Ethereum
-2025-04-25T14:54:48.951608000Z [INFO] TRADER-001.nautilus_blockchain::data: Block(chain=Ethereum, number=22346765, timestamp=2025-04-25T14:54:47+00:00, hash=0x18a3c9f1e3eec06b45edc1f632565e5c23089dc4ad0892b00fda9e4ffcc9bf91)
-2025-04-25T14:55:00.646992000Z [INFO] TRADER-001.nautilus_blockchain::data: Block(chain=Ethereum, number=22346766, timestamp=2025-04-25T14:54:59+00:00, hash=0x110436e41463daeacd1501fe53d38c310573abc136672a12054e1f33797ffeb9)
-2025-04-25T14:55:14.369337000Z [INFO] TRADER-001.nautilus_blockchain::data: Block(chain=Ethereum, number=22346767, timestamp=2025-04-25T14:55:11+00:00, hash=0x54e7dbcfc14c058e22c70cbacabe4872e84bd6d3b976258f0d364ae99226b314)
-2025-04-25T14:55:38.314022000Z [INFO] TRADER-001.live_blocks: Shutdown signal received, shutting down...
-
+```bash
+cargo run -p nautilus-blockchain --example blockchain-data-tester --features hypersync
 ```
 
-### Sync dex, tokens, and pool for Uniswap V3 on Ethereum
+### Discover Uniswap V3 pools and tokens on Ethereum
 
-This script demonstrates how to use the blockchain data client to discover and cache Uniswap V3 pools and their associated tokens. It queries the Ethereum blockchain for pool creation events emitted by the Uniswap V3 factory contract, retrieves token metadata (name, symbol, decimals) for each token in the pools via smart contract calls, and stores everything in a local Postgres database.
+The CLI reads pool-creation events from HyperSync, fetches ERC-20 metadata through HTTP RPC,
+and stores pools and tokens in Postgres. Set `ENVIO_API_TOKEN` and an Ethereum `RPC_HTTP_URL`,
+and initialize the database as described in the
+[integration guide](../../../docs/integrations/blockchain.md#local-services).
 
-```
-cargo run --bin sync_tokens_pools --features hypersync
+```bash
+cargo run -p nautilus-cli --features defi --bin nautilus -- \
+    blockchain sync-dex --chain ethereum --dex UniswapV3
 ```
 
 ## Testing

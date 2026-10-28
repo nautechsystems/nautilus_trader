@@ -169,12 +169,11 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
             AccountType::Cash
         };
 
-        // OKX uses netting for derivatives, hedging for spot
-        let oms_type = if has_derivatives {
+        let oms_type = okx_config.oms_type.unwrap_or(if has_derivatives {
             OmsType::Netting
         } else {
             OmsType::Hedging
-        };
+        });
 
         let core = ExecutionClientCore::new(
             trader_id,
@@ -317,5 +316,36 @@ mod tests {
                 .to_string()
                 .contains("Invalid config type")
         );
+    }
+
+    #[rstest]
+    #[case(OKXInstrumentType::Swap, None, OmsType::Netting)]
+    #[case(OKXInstrumentType::Futures, Some(OmsType::Hedging), OmsType::Hedging)]
+    #[case(OKXInstrumentType::Spot, None, OmsType::Hedging)]
+    fn test_execution_oms_type(
+        #[case] instrument_type: OKXInstrumentType,
+        #[case] oms_type: Option<OmsType>,
+        #[case] expected: OmsType,
+    ) {
+        let config = OKXExecutionClientConfig {
+            instrument_types: vec![instrument_type],
+            oms_type,
+            api_key: Some("key".into()),
+            api_secret: Some("secret".into()),
+            api_passphrase: Some("pass".into()),
+            ..Default::default()
+        };
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let client = OKXExecutionClientFactory::new()
+            .create(
+                TraderId::from("TRADER-001"),
+                "OKX-TEST",
+                &config,
+                cache.into(),
+                Rc::new(RefCell::new(VirtualClock::new())),
+            )
+            .unwrap();
+        assert_eq!(client.oms_type(), expected);
     }
 }

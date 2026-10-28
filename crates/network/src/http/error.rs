@@ -53,6 +53,7 @@ pub(super) fn transport_error(e: &(dyn Error + 'static)) -> HttpClientError {
         if !message.is_empty() {
             message.push_str(": ");
         }
+
         message.push_str(&e.to_string());
 
         timed_out |= e

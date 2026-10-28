@@ -57,23 +57,23 @@ use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
 use super::{
-    error::AxHttpError,
+    error::{AxErrorResponse, AxHttpError},
     models::{
         AuthenticateApiKeyRequest, AxAuthenticateResponse, AxBalancesResponse, AxBookResponse,
         AxCancelAllOrdersResponse, AxCancelOrderResponse, AxCandle, AxCandleResponse,
         AxCandlesResponse, AxFillsResponse, AxFundingRatesResponse, AxFundingSlotsResponse,
         AxInitialMarginRequirementResponse, AxInstrument, AxInstrumentsResponse,
-        AxOpenOrdersResponse, AxOrderRejectReason, AxOrderStatusQueryResponse, AxOrdersResponse,
-        AxPlaceOrderResponse, AxPositionsResponse, AxPreviewAggressiveLimitOrderResponse,
-        AxReplaceOrderResponse, AxRiskSnapshotResponse, AxTicker, AxTickerResponse,
-        AxTickersResponse, AxTradesResponse, AxTransactionsResponse, AxWhoAmI,
-        CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
+        AxOpenOrdersResponse, AxOrderDetail, AxOrderRejectReason, AxOrderStatusQueryResponse,
+        AxOrdersResponse, AxPlaceOrderResponse, AxPositionsResponse,
+        AxPreviewAggressiveLimitOrderResponse, AxReplaceOrderResponse, AxRiskSnapshotResponse,
+        AxTicker, AxTickerResponse, AxTickersResponse, AxTradesResponse, AxTransactionsResponse,
+        AxWhoAmI, CancelAllOrdersRequest, CancelOrderRequest, PlaceOrderRequest,
         PreviewAggressiveLimitOrderRequest, ReplaceOrderRequest,
     },
     parse::{
         parse_account_state, parse_bar, parse_fill_report, parse_funding_rate, parse_instrument,
         parse_order_detail_status_report, parse_order_status, parse_order_status_report,
-        parse_position_status_report, parse_trade_tick,
+        parse_position_status_report, parse_trade_tick, update_order_report_timestamps,
     },
     query::{
         GetBookParams, GetCandleParams, GetCandlesParams, GetFillsParams, GetFundingRatesParams,
@@ -1980,6 +1980,69 @@ impl AxHttpClient {
         Ok(report)
     }
 
+    pub(crate) async fn request_order_report<F>(
+        &self,
+        account_id: AccountId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        cid_resolver: Option<F>,
+    ) -> anyhow::Result<Option<OrderStatusReport>>
+    where
+        F: Fn(u64) -> Option<ClientOrderId>,
+    {
+        let response = if let Some(order_id) = venue_order_id {
+            self.inner.get_order_status_by_id(order_id.as_str()).await
+        } else if let Some(client_order_id) = client_order_id {
+            let cid = client_order_id_to_cid(&client_order_id);
+            self.inner.get_order_status_by_cid(cid).await
+        } else {
+            anyhow::bail!("Either venue_order_id or client_order_id must be provided")
+        };
+
+        let status = match response {
+            Ok(response) => response.status,
+            Err(AxHttpError::UnexpectedStatus { status: 404, body })
+                if serde_json::from_str::<AxErrorResponse>(&body).is_ok_and(|response| {
+                    response.error.as_deref() == Some("no matching orders")
+                }) =>
+            {
+                return Ok(None);
+            }
+            Err(e) => return Err(e.into()),
+        };
+
+        let params = GetOrdersParams {
+            order_id: Some(status.order_id.clone()),
+            ..Default::default()
+        };
+
+        let orders = self.request_order_details(params).await?;
+        let order = orders
+            .iter()
+            .find(|order| order.oid == status.order_id)
+            .context("AX order status exists but its complete history record is unavailable")?;
+        let instrument = self.resolve_report_instrument(order.s).await?;
+        let ts_init = self.generate_ts_init();
+        let mut report = parse_order_detail_status_report(
+            order,
+            account_id,
+            &instrument,
+            ts_init,
+            cid_resolver.as_ref(),
+        )?;
+
+        if let Some(client_order_id) = client_order_id {
+            report.client_order_id = Some(client_order_id);
+        }
+
+        if report.order_status.is_closed() && !report.filled_qty.is_zero() {
+            let fills = self.request_fill_reports(account_id, None, None).await?;
+            update_order_report_timestamps(std::slice::from_mut(&mut report), &fills);
+        }
+
+        Ok(Some(report))
+    }
+
     /// Requests open orders from Ax and parses them to Nautilus [`OrderStatusReport`].
     ///
     /// Missing instruments are requested from Ax and cached before parsing order details.
@@ -2119,7 +2182,11 @@ impl AxHttpClient {
     /// Requests historical orders from Ax and parses them to Nautilus
     /// [`OrderStatusReport`].
     ///
-    /// Missing instruments are requested from Ax and cached before parsing order details.
+    /// Closed orders with fills trigger a `/fills` request in the same window to set
+    /// a lower bound for `ts_last`. The fill window is capped at seven days; without
+    /// a matching fill, creation time remains because `/orders` has no terminal timestamp.
+    ///
+    /// Missing instruments are requested from Ax and cached before parsing orders or fills.
     ///
     /// The `cid_resolver` parameter is an optional function that resolves a `cid` (u64)
     /// to a `ClientOrderId`. This is needed for correlating orders submitted via WebSocket.
@@ -2128,8 +2195,8 @@ impl AxHttpClient {
     ///
     /// Returns an error if:
     /// - The HTTP request or pagination contract fails.
-    /// - An order's instrument cannot be fetched or parsed.
-    /// - An order cannot be mapped to a complete status report.
+    /// - An order or fill's instrument cannot be fetched or parsed.
+    /// - An order or fill cannot be mapped to a complete report.
     pub async fn request_historical_order_status_reports<F>(
         &self,
         account_id: AccountId,
@@ -2140,45 +2207,38 @@ impl AxHttpClient {
     where
         F: Fn(u64) -> Option<ClientOrderId>,
     {
-        const PAGE_SIZE: i32 = 100;
+        let mut reports = self
+            .request_order_history(account_id, start, end, cid_resolver)
+            .await?;
 
-        let mut params = GetOrdersParams {
+        if reports
+            .iter()
+            .any(|report| report.order_status.is_closed() && !report.filled_qty.is_zero())
+        {
+            let fills = self.request_fill_reports(account_id, start, end).await?;
+            update_order_report_timestamps(&mut reports, &fills);
+        }
+
+        Ok(reports)
+    }
+
+    pub(crate) async fn request_order_history<F>(
+        &self,
+        account_id: AccountId,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        cid_resolver: Option<F>,
+    ) -> anyhow::Result<Vec<OrderStatusReport>>
+    where
+        F: Fn(u64) -> Option<ClientOrderId>,
+    {
+        let params = GetOrdersParams {
             start_timestamp_ns: start.map(|timestamp| timestamp.as_i64()),
             end_timestamp_ns: end.map(|timestamp| timestamp.as_i64()),
-            limit: Some(PAGE_SIZE),
             ..Default::default()
         };
-        let mut orders = Vec::new();
-        let mut seen_cursors = HashSet::new();
-        let mut seen_order_ids = HashSet::new();
 
-        loop {
-            let response = self
-                .inner
-                .get_orders(&params)
-                .await
-                .map_err(|e| anyhow::anyhow!(e))?;
-
-            for order in response.orders {
-                anyhow::ensure!(
-                    seen_order_ids.insert(order.oid.clone()),
-                    "AX orders pagination returned duplicate order ID {}",
-                    order.oid
-                );
-                orders.push(order);
-            }
-
-            match response.next_cursor {
-                Some(next_cursor) => {
-                    anyhow::ensure!(
-                        seen_cursors.insert(next_cursor.clone()),
-                        "AX orders pagination repeated cursor {next_cursor:?}"
-                    );
-                    params.cursor = Some(next_cursor);
-                }
-                None => break,
-            }
-        }
+        let orders = self.request_order_details(params).await?;
 
         let ts_init = self.generate_ts_init();
         let mut reports = Vec::with_capacity(orders.len());
@@ -2198,6 +2258,105 @@ impl AxHttpClient {
         }
 
         Ok(reports)
+    }
+
+    async fn request_order_details(
+        &self,
+        mut params: GetOrdersParams,
+    ) -> anyhow::Result<Vec<AxOrderDetail>> {
+        const PAGE_SIZE: i32 = 100;
+        params.limit = Some(PAGE_SIZE);
+        let mut orders = Vec::new();
+        let mut seen_cursors = HashSet::new();
+        let mut seen_order_ids = HashSet::new();
+        let mut expected_total = None;
+
+        loop {
+            let response = self
+                .inner
+                .get_orders(&params)
+                .await
+                .map_err(|e| anyhow::anyhow!(e))?;
+
+            let page_len = response.orders.len();
+            anyhow::ensure!(
+                page_len <= PAGE_SIZE as usize,
+                "AX orders page length {page_len} exceeds requested limit {PAGE_SIZE}"
+            );
+
+            if let Some(limit) = response.limit {
+                anyhow::ensure!(
+                    (0..=PAGE_SIZE).contains(&limit),
+                    "AX orders applied limit must be between 0 and {PAGE_SIZE}, was {limit}"
+                );
+                anyhow::ensure!(
+                    page_len <= limit as usize,
+                    "AX orders page length {page_len} exceeds applied limit {limit}"
+                );
+            }
+
+            if let Some(total_count) = response.total_count {
+                anyhow::ensure!(
+                    total_count >= 0,
+                    "AX orders total_count must be non-negative, was {total_count}"
+                );
+
+                if let Some(expected) = expected_total {
+                    anyhow::ensure!(
+                        total_count == expected,
+                        "AX orders total_count changed during pagination: expected {expected}, was {total_count}"
+                    );
+                } else {
+                    expected_total = Some(total_count);
+                }
+            }
+
+            for order in response.orders {
+                anyhow::ensure!(
+                    seen_order_ids.insert(order.oid.clone()),
+                    "AX orders pagination returned duplicate order ID {}",
+                    order.oid
+                );
+                orders.push(order);
+            }
+
+            if let Some(total_count) = expected_total {
+                anyhow::ensure!(
+                    orders.len() as i64 <= total_count,
+                    "AX orders pagination returned more unique rows ({}) than total_count {total_count}",
+                    orders.len()
+                );
+            }
+
+            match response.next_cursor {
+                Some(next_cursor) => {
+                    anyhow::ensure!(
+                        !next_cursor.is_empty(),
+                        "AX orders returned an empty next_cursor"
+                    );
+                    anyhow::ensure!(
+                        page_len > 0,
+                        "AX orders returned an empty page with a next_cursor"
+                    );
+                    anyhow::ensure!(
+                        seen_cursors.insert(next_cursor.clone()),
+                        "AX orders pagination repeated cursor {next_cursor:?}"
+                    );
+                    params.cursor = Some(next_cursor);
+                }
+                None => break,
+            }
+        }
+
+        if let Some(total_count) = expected_total {
+            anyhow::ensure!(
+                orders.len() as i64 == total_count,
+                "AX orders pagination returned {} unique rows, expected {total_count}",
+                orders.len()
+            );
+        }
+
+        Ok(orders)
     }
 
     /// Requests fills from Ax and parses them to Nautilus [`FillReport`].
@@ -2341,10 +2500,7 @@ impl AxHttpClient {
     /// Returns an error if:
     /// - The HTTP request fails.
     /// - A position's instrument cannot be fetched or parsed.
-    ///
-    /// # Notes
-    ///
-    /// Position parsing failures are skipped with a warning.
+    /// - A position cannot be parsed.
     pub async fn request_position_reports(
         &self,
         account_id: AccountId,
@@ -2359,19 +2515,14 @@ impl AxHttpClient {
         let mut reports = Vec::with_capacity(response.positions.len());
 
         for position in &response.positions {
-            // Skip flat positions (zero quantity)
-            if position.signed_quantity == 0 {
-                continue;
-            }
-
             let instrument = self.resolve_report_instrument(position.symbol).await?;
 
-            match parse_position_status_report(position, account_id, &instrument, ts_init) {
-                Ok(report) => reports.push(report),
-                Err(e) => {
-                    log::warn!("Failed to parse position for {}: {e}", position.symbol);
-                }
-            }
+            let report = parse_position_status_report(position, account_id, &instrument, ts_init)
+                .with_context(|| {
+                format!("failed to parse AX position for {}", position.symbol)
+            })?;
+
+            reports.push(report);
         }
 
         Ok(reports)
@@ -2403,10 +2554,189 @@ impl AxHttpClient {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_model::enums::AvgPxReconciliation;
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "requires AX sandbox credentials and closed order history"]
+    async fn test_live_authoritative_reconciliation_sandbox() {
+        let environment = crate::common::enums::AxEnvironment::Sandbox;
+        let client = AxHttpClient::new(
+            Some(environment.http_url().to_string()),
+            Some(environment.orders_url().to_string()),
+            30,
+            0,
+            1,
+            1,
+            None,
+        )
+        .unwrap();
+        client.authenticate_auto(300).await.unwrap();
+        let account_id = AccountId::from("AX-001");
+
+        let response = client
+            .inner
+            .get_orders(&GetOrdersParams {
+                limit: Some(100),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let order = response
+            .orders
+            .iter()
+            .find(|order| {
+                matches!(
+                    order.o,
+                    crate::common::enums::AxOrderStatus::Filled
+                        | crate::common::enums::AxOrderStatus::Canceled
+                        | crate::common::enums::AxOrderStatus::Expired
+                )
+            })
+            .expect("sandbox closed history");
+
+        let report = client
+            .request_order_report(
+                account_id,
+                None,
+                Some(VenueOrderId::new(&order.oid)),
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(report.venue_order_id.as_str(), order.oid);
+        assert!(report.order_status.is_closed());
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
+
+        if let Some(cid) = order.cid {
+            let status = client.inner.get_order_status_by_cid(cid).await.unwrap();
+            assert_eq!(status.status.order_id, order.oid);
+        }
+
+        let missing_client = client
+            .request_order_report(
+                account_id,
+                Some(ClientOrderId::new("O-RECON-NONEXISTENT-PROBE")),
+                None,
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap();
+        assert!(missing_client.is_none());
+        let missing = client
+            .request_order_report(
+                account_id,
+                None,
+                Some(VenueOrderId::new("O-00000000000000000000000000")),
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap();
+        assert!(missing.is_none());
+        let positions = client.request_position_reports(account_id).await.unwrap();
+        for position in positions {
+            assert_eq!(
+                position.avg_px_open_reconciliation,
+                AvgPxReconciliation::OpeningOnly
+            );
+            assert_eq!(position.avg_px_open_precision, None);
+        }
+    }
+
+    #[tokio::test]
+    #[ignore = "requires AX sandbox credentials and a partially filled expired IOC in history"]
+    async fn test_live_closed_order_timestamps_sandbox() {
+        let environment = crate::common::enums::AxEnvironment::Sandbox;
+        let client = AxHttpClient::new(
+            Some(environment.http_url().to_string()),
+            Some(environment.orders_url().to_string()),
+            30,
+            0,
+            1,
+            1,
+            None,
+        )
+        .unwrap();
+        client.authenticate_auto(300).await.unwrap();
+
+        let response = client
+            .inner
+            .get_orders(&GetOrdersParams {
+                order_state: Some(crate::common::enums::AxOrderStatus::Expired),
+                limit: Some(100),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+
+        let order = response
+            .orders
+            .iter()
+            .find(|order| {
+                order.xq > 0
+                    && order.xq < order.q
+                    && order.tif == crate::common::enums::AxTimeInForce::Ioc
+            })
+            .expect("sandbox history contains a partially filled expired IOC");
+
+        let mut params = vec![("order_id", order.oid.as_str())];
+        if let Some(aid) = &order.aid {
+            params.push(("aid", aid.as_str()));
+        }
+
+        let fills: AxFillsResponse = client
+            .inner
+            .send_request_to_url(
+                environment.orders_url(),
+                Method::GET,
+                "/order-fills",
+                Some(&params),
+                None,
+                true,
+            )
+            .await
+            .unwrap();
+        let ts_last_fill = fills
+            .fills
+            .iter()
+            .map(|fill| u64::try_from(fill.timestamp.as_nanosecond()).unwrap())
+            .max()
+            .map(UnixNanos::from)
+            .expect("sandbox order has fills");
+        let created = ax_timestamp_stn_to_unix_nanos(order.ts, order.tn).unwrap();
+        let start = UnixNanos::from(created.as_u64() - 1_000_000_000);
+        let end = UnixNanos::from(created.as_u64() + 60_000_000_000);
+        assert!(ts_last_fill > created);
+        assert!(ts_last_fill < end);
+        let reports = client
+            .request_historical_order_status_reports(
+                AccountId::from("AX-001"),
+                Some(start),
+                Some(end),
+                None::<fn(u64) -> Option<ClientOrderId>>,
+            )
+            .await
+            .unwrap();
+        let report = reports
+            .iter()
+            .find(|report| report.venue_order_id.as_str() == order.oid)
+            .expect("sandbox order report");
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert_eq!(report.ts_accepted, created);
+        assert_eq!(report.ts_last, ts_last_fill);
+        assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
+        assert_eq!(report.filled_qty.as_decimal(), Decimal::from(order.xq));
+        println!(
+            "AX sandbox partial IOC timestamps passed, fill delay ns={}",
+            ts_last_fill.as_u64() - created.as_u64()
+        );
+    }
 
     #[rstest]
     #[tokio::test]

@@ -19,7 +19,7 @@ use std::{iter::Peekable, mem};
 
 use ahash::{AHashMap, AHashSet};
 use nautilus_core::{Params, UnixNanos};
-use nautilus_data::replay::{DataIterator, ReplayBatch};
+use nautilus_data::replay::{DataIterator, ReplayBatch, ReplayPoll, ReplaySource};
 use nautilus_model::{
     data::{Data, DataBatch, HasTsInit, NautilusDataType, OrderBookDelta, OrderBookDeltas},
     enums::{BookType, OtoTriggerMode, RecordFlag},
@@ -32,7 +32,6 @@ use nautilus_persistence::{
         factory as catalog_factory,
         traits::{CatalogInstrumentQuery, CatalogQuery, DataCatalog},
     },
-    config::DataCatalogConfig,
 };
 
 use crate::{
@@ -259,13 +258,6 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
 
         let default_leverage = venue_config.default_leverage();
         let leverages = venue_config.leverages().cloned().unwrap_or_default();
-        let margin_model = venue_config.margin_model().cloned().map(Into::into);
-        let modules = venue_config
-            .modules()
-            .iter()
-            .cloned()
-            .map(Into::into)
-            .collect();
         let fill_model = venue_config
             .fill_model()
             .cloned()
@@ -283,7 +275,17 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             })?
             .into();
 
+        let margin_model = venue_config.margin_model().cloned().map(Into::into);
+
         let latency_model = venue_config.latency_model().cloned().map(Into::into);
+
+        let modules = venue_config
+            .modules()
+            .iter()
+            .cloned()
+            .map(Into::into)
+            .collect();
+
         let sim_config = SimulatedVenueConfig::builder()
             .venue(Venue::from(venue_config.name().as_str()))
             .oms_type(venue_config.oms_type())
@@ -293,11 +295,11 @@ fn build_engine(config: &BacktestRunConfig) -> anyhow::Result<BacktestEngine> {
             .maybe_base_currency(venue_config.base_currency())
             .maybe_default_leverage(default_leverage)
             .leverages(leverages)
-            .maybe_margin_model(margin_model)
-            .modules(modules)
             .fill_model(fill_model)
             .fee_model(fee_model)
+            .maybe_margin_model(margin_model)
             .maybe_latency_model(latency_model)
+            .modules(modules)
             .routing(venue_config.routing())
             .reject_stop_orders(venue_config.reject_stop_orders())
             .support_gtd_orders(venue_config.support_gtd_orders())
@@ -498,47 +500,46 @@ fn run_streaming(
     )
 }
 
-// Sources are synchronous and fixed before consumption; refills happen on the next call so a
-// producer failure cannot swallow the row just selected.
-fn merge_streams<I: Iterator<Item = anyhow::Result<ReplayBatch>>>(
+fn merge_streams<I: Iterator<Item = anyhow::Result<ReplayBatch>> + 'static>(
     streams: Vec<(String, I)>,
 ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Data>>> {
     let mut iterator = DataIterator::new();
-    let (names, mut streams): (Vec<_>, Vec<_>) = streams.into_iter().unzip();
-    for (stream, name) in streams.iter_mut().zip(&names) {
-        if let Some(batch) = stream.next() {
-            iterator.add_batch(name, batch?, true);
-        }
+    for (name, stream) in streams {
+        iterator.add_source(&name, Box::new(BatchSource(stream)), true)?;
     }
 
-    let mut refill: Option<usize> = None;
     let mut failed = false;
     Ok(std::iter::from_fn(move || {
         if failed {
             return None;
         }
 
-        let load = (|| -> anyhow::Result<()> {
-            if let Some(index) = refill.take() {
-                let name = &names[index];
-                match streams[index].next() {
-                    Some(batch) => iterator.refill_batch(name, batch?)?,
-                    None => iterator.remove_data(name, true),
-                }
+        match iterator.next_stream_item() {
+            Ok(ReplayPoll::Ready((data, _))) => Some(Ok(data)),
+            Ok(ReplayPoll::Complete) => None,
+            Err(e) => {
+                failed = true;
+                Some(Err(e))
             }
-
-            Ok(())
-        })();
-
-        if let Err(e) = load {
-            failed = true;
-            return Some(Err(e));
+            Ok(ReplayPoll::Pending { .. }) => {
+                failed = true;
+                Some(Err(anyhow::anyhow!(
+                    "Synchronous replay source returned Pending"
+                )))
+            }
         }
-
-        let (data, exhausted) = iterator.next_stream_item()?;
-        refill = exhausted.and_then(|name| names.iter().position(|candidate| candidate == name));
-        Some(Ok(data))
     }))
+}
+
+struct BatchSource<I>(I);
+
+impl<I: Iterator<Item = anyhow::Result<ReplayBatch>>> ReplaySource for BatchSource<I> {
+    fn poll_batch(&mut self) -> anyhow::Result<ReplayPoll<ReplayBatch>> {
+        self.0.next().transpose().map(|batch| match batch {
+            Some(batch) => ReplayPoll::Ready(batch),
+            None => ReplayPoll::Complete,
+        })
+    }
 }
 
 // Feeds data from an iterator to the engine in timestamp-aligned chunks.
@@ -634,17 +635,7 @@ fn take_aligned_chunk<I: Iterator<Item = anyhow::Result<Data>>>(
 }
 
 fn create_catalog(config: &BacktestDataConfig) -> anyhow::Result<DataCatalog> {
-    let catalog_config = DataCatalogConfig::new(
-        config.catalog_path().to_string(),
-        config.catalog_fs_protocol().map(str::to_string),
-        Some(config.catalog_backend()),
-    )
-    .with_storage_options(
-        config
-            .catalog_fs_rust_storage_options()
-            .cloned()
-            .or_else(|| config.catalog_fs_storage_options().cloned()),
-    );
+    let catalog_config = config.catalog();
     catalog_factory::create_catalog(
         catalog_config.catalog_backend(),
         &catalog_config.connect_config(),
@@ -698,10 +689,13 @@ fn dispatch_batch_query(
             min_opt(config.end_time(), end),
         )
         .with_where_clause(config.filter_expr().map(str::to_string));
-    let mut params = Params::new();
-    params.insert(
-        "optimize_file_loading".to_string(),
-        config.optimize_file_loading().into(),
+
+    let params = Params::new(
+        [(
+            "optimize_file_loading".to_string(),
+            config.optimize_file_loading().into(),
+        )]
+        .into(),
     );
     query.params = Some(params);
     let mut session = catalog.query_batch_session(&query, None)?;
@@ -903,7 +897,7 @@ mod tests {
         ReplayBatch::Typed(batch)
     }
 
-    fn merge_rows<I: Iterator<Item = anyhow::Result<Data>>>(
+    fn merge_rows<I: Iterator<Item = anyhow::Result<Data>> + 'static>(
         streams: Vec<Peekable<I>>,
     ) -> impl Iterator<Item = anyhow::Result<Data>> {
         let batches = streams
@@ -913,7 +907,7 @@ mod tests {
         merge_batches(batches).expect("initial batches must load")
     }
 
-    fn merge_batches<I: Iterator<Item = anyhow::Result<ReplayBatch>>>(
+    fn merge_batches<I: Iterator<Item = anyhow::Result<ReplayBatch>> + 'static>(
         streams: Vec<I>,
     ) -> anyhow::Result<impl Iterator<Item = anyhow::Result<Data>>> {
         merge_streams(

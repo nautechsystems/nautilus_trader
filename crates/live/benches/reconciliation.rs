@@ -15,6 +15,7 @@
 
 //! Measures periodic mass-status reconciliation, including cache cloning and engine dispatch.
 //! In-sync snapshots expose the cost shared by every venue; fill snapshots exercise queued projection.
+//! Position history cases measure scalar fill containment and HEDGING route lookup.
 //! Setup, snapshot construction, and fixture destruction stay outside the timed region.
 
 use std::{cell::RefCell, hint::black_box, rc::Rc};
@@ -31,9 +32,10 @@ use nautilus_model::{
         OrderEventAny,
         order::spec::{OrderPendingUpdateSpec, OrderUpdatedSpec},
     },
-    identifiers::{ClientId, ClientOrderId, TradeId, VenueOrderId},
+    identifiers::{ClientId, ClientOrderId, PositionId, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny, stubs::audusd_sim},
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
     types::{Money, Price, Quantity},
 };
@@ -93,6 +95,155 @@ fn bench_mass_status(c: &mut Criterion) {
     }
 
     group.finish();
+}
+
+fn bench_position_history(c: &mut Criterion) {
+    let mut group = c.benchmark_group("live/reconciliation/position_history");
+
+    for count in [1, 64, 1024] {
+        let (manager, cache, report) = position_history_fixture(count);
+        assert!(manager.position_contains_fill_report(&report));
+        let client_order_id = report.client_order_id.unwrap();
+        let cache_ref = cache.borrow();
+        assert_eq!(
+            cache_ref
+                .hedging_flip_position_ids(client_order_id)
+                .unwrap(),
+            None
+        );
+        let position = cache_ref
+            .position_ref(&report.venue_position_id.unwrap())
+            .unwrap();
+        assert_eq!(position.quantity, Quantity::from(count as u64));
+        assert_eq!(
+            position.commissions[&report.commission.currency],
+            Money::from_decimal(
+                report.commission.as_decimal() * rust_decimal::Decimal::from(count),
+                report.commission.currency
+            )
+            .unwrap()
+        );
+        assert_eq!(position.replay_events.len(), count);
+        drop(position);
+        group.bench_with_input(
+            BenchmarkId::new("containment", count),
+            &report,
+            |b, report| {
+                b.iter(|| black_box(manager.position_contains_fill_report(black_box(report))));
+            },
+        );
+
+        group.bench_with_input(
+            BenchmarkId::new("hedging_route", count),
+            &client_order_id,
+            |b, client_order_id| {
+                b.iter(|| {
+                    black_box(
+                        cache_ref
+                            .hedging_flip_position_ids(black_box(*client_order_id))
+                            .unwrap(),
+                    )
+                });
+            },
+        );
+    }
+
+    group.finish();
+}
+
+fn position_history_fixture(count: usize) -> (ExecutionManager, Rc<RefCell<Cache>>, FillReport) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let account = AccountAny::default();
+    let account_id = account.id();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache.borrow_mut().add_account(account).unwrap();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let manager = ExecutionManager::new(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache.clone(),
+        ExecutionManagerConfig::default(),
+    )
+    .unwrap();
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-HISTORY-BENCH"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(count as u64 + 1))
+        .build();
+    order
+        .apply(TestOrderEventStubs::submitted(&order, account_id))
+        .unwrap();
+    let venue_order_id = VenueOrderId::from("V-HISTORY-BENCH");
+    order
+        .apply(TestOrderEventStubs::accepted(
+            &order,
+            account_id,
+            venue_order_id,
+        ))
+        .unwrap();
+    let position_id = PositionId::from("P-HISTORY-BENCH");
+    let mut position: Option<Position> = None;
+    let mut last_fill = None;
+
+    for index in 0..count {
+        let event = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::from(format!("T-HISTORY-{index}"))),
+            Some(position_id),
+            Some(Price::from("1.00000")),
+            Some(Quantity::from(1)),
+            Some(LiquiditySide::Maker),
+            Some(Money::from("0.01 USD")),
+            Some(UnixNanos::from(index as u64 + 1)),
+            Some(account_id),
+        );
+
+        let OrderEventAny::Filled(fill) = event.clone() else {
+            unreachable!()
+        };
+
+        order.apply(event).unwrap();
+
+        if let Some(position) = &mut position {
+            position.apply(&fill);
+        } else {
+            position = Some(Position::new(&instrument, fill.clone()));
+        }
+
+        last_fill = Some(fill);
+    }
+
+    let fill = last_fill.unwrap();
+
+    let report = FillReport::new(
+        fill.account_id,
+        fill.instrument_id,
+        fill.venue_order_id,
+        fill.trade_id,
+        fill.order_side,
+        fill.last_qty,
+        fill.last_px,
+        fill.commission.unwrap(),
+        fill.liquidity_side,
+        Some(fill.client_order_id),
+        Some(position_id),
+        fill.ts_event,
+        fill.ts_init,
+        None,
+    );
+    cache
+        .borrow_mut()
+        .add_order(order, Some(position_id), None, false)
+        .unwrap();
+    cache
+        .borrow_mut()
+        .add_position(&position.unwrap(), OmsType::Hedging)
+        .unwrap();
+    (manager, cache, report)
 }
 
 fn mass_fixture(count: usize, amends: usize, fill: bool) -> MassFixture {
@@ -239,5 +390,5 @@ fn append_amends(order: &mut OrderAny, count: usize) {
     }
 }
 
-criterion_group!(benches, bench_mass_status);
+criterion_group!(benches, bench_mass_status, bench_position_history);
 criterion_main!(benches);

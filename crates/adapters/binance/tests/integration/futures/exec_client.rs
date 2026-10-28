@@ -81,11 +81,11 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TrailingOffsetType, TriggerType,
+        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSide, TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
-        AccountState, OrderAccepted, OrderEventAny, OrderUpdated,
+        AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderFilled, OrderUpdated,
         order::spec::{OrderFilledSpec, OrderPendingUpdateSpec},
     },
     identifiers::{
@@ -94,8 +94,8 @@ use nautilus_model::{
     },
     instruments::{InstrumentAny, stubs::currency_pair_btcusdt},
     orders::{
-        LimitOrder, MarketIfTouchedOrder, Order, OrderAny, OrderList, StopLimitOrder,
-        StopMarketOrder, TrailingStopMarketOrder, stubs::TestOrderEventStubs,
+        LimitOrder, MarketIfTouchedOrder, Order, OrderAny, OrderList, OrderTestBuilder,
+        StopLimitOrder, StopMarketOrder, TrailingStopMarketOrder, stubs::TestOrderEventStubs,
     },
     position::Position,
     reports::{ExecutionMassStatus, PositionStatusReport},
@@ -104,6 +104,7 @@ use nautilus_model::{
 use nautilus_network::http::HttpClient;
 use parking_lot::Mutex;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::json;
 
 fn has_auth_headers(headers: &HeaderMap) -> bool {
@@ -1774,6 +1775,44 @@ async fn test_disconnect_sets_state() {
 
 #[rstest]
 #[tokio::test]
+async fn test_disconnect_succeeds_when_listen_key_is_already_absent() {
+    let closes = Arc::new(AtomicUsize::new(0));
+    let close_count = closes.clone();
+    let router = create_exec_test_router().layer(middleware::from_fn(
+        move |request: Request, next: Next| {
+            let count = close_count.clone();
+            async move {
+                if request.method() == Method::DELETE
+                    && request.uri().path() == "/fapi/v1/listenKey"
+                {
+                    count.fetch_add(1, Ordering::SeqCst);
+                    return (
+                        StatusCode::BAD_REQUEST,
+                        axum::Json(json!({"code": -1125, "msg": "This listenKey does not exist."})),
+                    )
+                        .into_response();
+                }
+                next.run(request).await
+            }
+        },
+    ));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{address}"), format!("ws://{address}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+    assert!(!client.is_connected());
+    assert_eq!(closes.load(Ordering::SeqCst), 1);
+    server.abort();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_connect_succeeds_when_set_leverage_rejected() {
     let addr = start_exec_test_server_with_leverage_reject().await;
     let base_url_http = format!("http://{addr}");
@@ -2042,6 +2081,61 @@ async fn test_submit_order_list_posts_batch_orders_for_independent_limits() {
         batch[0]["newClientOrderId"]
             .as_str()
             .is_some_and(|value| value.contains("list-limit-001"))
+    );
+}
+
+#[rstest]
+#[case::single(false)]
+#[case::list(true)]
+#[tokio::test]
+async fn test_submit_price_match_post_only_denied_before_request(#[case] as_list: bool) {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture().await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let orders = vec![add_limit_order_with_post_only_to_cache(
+        &cache,
+        ClientOrderId::new("post-price-match-001"),
+        true,
+    )];
+
+    let params = Params::new(
+        [(
+            "price_match".to_string(),
+            serde_json::Value::String("OPPONENT_5".to_string()),
+        )]
+        .into(),
+    );
+
+    if as_list {
+        let mut command = submit_order_list_command(&orders);
+        command.params = Some(params);
+        client.submit_order_list(command).unwrap();
+    } else {
+        client
+            .submit_order(submit_order_command_with_params(&orders[0], Some(params)))
+            .unwrap();
+    }
+
+    let ExecutionEvent::Order(OrderEventAny::Denied(denied)) = rx.try_recv().unwrap() else {
+        panic!("Expected order denial");
+    };
+
+    assert_eq!(denied.client_order_id, orders[0].client_order_id());
+    assert_eq!(denied.reason.as_str(), "UNSUPPORTED_POST_ONLY");
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    assert!(
+        captured_queries
+            .lock()
+            .iter()
+            .all(|query| query.path != "order" && query.path != "batchOrders")
     );
 }
 
@@ -6250,6 +6344,7 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     #[case] expected_short_quantity: &str,
     #[case] expected_fill_count: usize,
     #[case] expected_event_count: usize,
+    #[values(false, true)] generate_missing_orders: bool,
 ) {
     let (addr, _captured_queries) = start_exec_test_server_with_query_capture_and_responses(
         CommandResponses::default(),
@@ -6290,12 +6385,13 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
     assert_eq!(mass_status.position_reports()[&instrument_id].len(), 2);
 
     let clock = Rc::new(RefCell::new(VirtualClock::new()));
-    let mut manager = ExecutionManager::new(
-        clock.clone(),
-        cache.clone(),
-        ExecutionManagerConfig::default(),
-    )
-    .unwrap();
+
+    let config = ExecutionManagerConfig {
+        generate_missing_orders,
+        ..Default::default()
+    };
+
+    let mut manager = ExecutionManager::new(clock.clone(), cache.clone(), config).unwrap();
     let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
     engine.register_client(Box::new(client)).unwrap();
     engine.register_oms_type(StrategyId::from("EXTERNAL"), OmsType::Hedging);
@@ -6305,6 +6401,34 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
 
     let long_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-LONG");
     let short_position_id = PositionId::from("BTCUSDT-PERP.BINANCE-SHORT");
+    let long_qty = Quantity::from("0.005");
+    let short_qty = Quantity::from(expected_short_quantity);
+
+    if !generate_missing_orders {
+        let cache_ref = cache.borrow();
+
+        let expected_unresolved = [
+            (long_position_id, long_qty.as_decimal()),
+            (short_position_id, -short_qty.as_decimal()),
+        ]
+        .map(|(position_id, qty)| {
+            format!(
+                "account={account_id}, instrument={instrument_id}, venue_position_id={:?}, venue_quantity={qty}: generate_missing_orders is disabled",
+                Some(position_id),
+            )
+        });
+
+        assert!(result.events.is_empty());
+        assert!(result.external_orders.is_empty());
+        assert_eq!(
+            cache_ref.orders_total_count(None, None, None, None, None),
+            0
+        );
+        assert!(cache_ref.positions(None, None, None, None, None).is_empty());
+        assert_eq!(result.unresolved_positions, expected_unresolved);
+        return;
+    }
+
     assert_eq!(result.events.len(), expected_event_count);
     assert!(result.unresolved_positions.is_empty());
 
@@ -6318,27 +6442,16 @@ async fn test_startup_reconciliation_preserves_both_hedge_legs(
         assert_eq!(long_position.account_id, account_id);
         assert_eq!(long_position.instrument_id, instrument_id);
         assert_eq!(long_position.side, PositionSide::Long);
-        assert_eq!(long_position.quantity, Quantity::from("0.005"));
-        assert_eq!(
-            long_position.signed_decimal_qty(),
-            rust_decimal_macros::dec!(0.005)
-        );
-        assert_eq!(long_position.avg_px_open, 50000.0);
+        assert_eq!(long_position.quantity, long_qty);
+        assert_eq!(long_position.signed_decimal_qty(), long_qty.as_decimal());
+        assert_eq!(long_position.avg_px_open, dec!(50000));
         assert_eq!(short_position.id, short_position_id);
         assert_eq!(short_position.account_id, account_id);
         assert_eq!(short_position.instrument_id, instrument_id);
         assert_eq!(short_position.side, PositionSide::Short);
-        assert_eq!(
-            short_position.quantity,
-            Quantity::from(expected_short_quantity),
-        );
-        assert_eq!(
-            short_position.signed_decimal_qty(),
-            -expected_short_quantity
-                .parse::<rust_decimal::Decimal>()
-                .unwrap(),
-        );
-        assert_eq!(short_position.avg_px_open, 52000.0);
+        assert_eq!(short_position.quantity, short_qty);
+        assert_eq!(short_position.signed_decimal_qty(), -short_qty.as_decimal());
+        assert_eq!(short_position.avg_px_open, dec!(52000));
 
         if expected_fill_count > 0 {
             assert_eq!(long_position.events[0].trade_id, TradeId::from("12345678"));
@@ -6957,24 +7070,21 @@ fn add_stop_market_order_to_cache(
 }
 
 fn close_position_params() -> Params {
-    let mut params = Params::new();
-    params.insert("close_position".to_string(), json!(true));
-    params
+    Params::new([("close_position".to_string(), json!(true))].into())
 }
 
 fn rpi_params() -> Params {
-    let mut params = Params::new();
-    params.insert("rpi".to_string(), json!(true));
-    params
+    Params::new([("rpi".to_string(), json!(true))].into())
 }
 
 fn algo_order_query_params() -> Params {
-    let mut params = Params::new();
-    params.insert(
-        BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM.to_string(),
-        json!(true),
-    );
-    params
+    Params::new(
+        [(
+            BINANCE_VENUE_ORDER_ID_IS_ALGO_ID_PARAM.to_string(),
+            json!(true),
+        )]
+        .into(),
+    )
 }
 
 fn add_reduce_only_limit_order_to_cache(
@@ -7921,10 +8031,12 @@ async fn test_submit_order_with_price_match_sends_price_match_and_omits_price() 
         .add_order(order_any.clone(), None, None, false)
         .unwrap();
 
-    let mut params = Params::new();
-    params.insert(
-        "price_match".to_string(),
-        serde_json::Value::String("OPPONENT_5".to_string()),
+    let params = Params::new(
+        [(
+            "price_match".to_string(),
+            serde_json::Value::String("OPPONENT_5".to_string()),
+        )]
+        .into(),
     );
 
     let submit_cmd = SubmitOrder::new(
@@ -8047,6 +8159,277 @@ where
 
 type WsInjector = Arc<tokio::sync::broadcast::Sender<String>>;
 
+#[rstest]
+#[case::usdm(
+    BinanceProductType::UsdM,
+    "BTCUSDT",
+    "BTCUSDT-PERP.BINANCE",
+    "BTCUSD_260925.BINANCE",
+    Currency::USDT()
+)]
+#[case::coinm(
+    BinanceProductType::CoinM,
+    "BTCUSD_260925",
+    "BTCUSD_260925.BINANCE",
+    "BTCUSDT-PERP.BINANCE",
+    Currency::USD()
+)]
+#[tokio::test]
+async fn test_connect_restores_active_order_ownership(
+    #[case] product_type: BinanceProductType,
+    #[case] symbol: &str,
+    #[case] instrument: &str,
+    #[case] other_product: &str,
+    #[case] quote_currency: Currency,
+    #[values(OrderType::Limit, OrderType::StopLimit)] order_type: OrderType,
+    #[values(false, true)] partially_filled: bool,
+) {
+    let (addr, injector) = start_injectable_test_server().await;
+    let (mut client, mut rx, cache) = create_test_execution_client_for_product(
+        format!("http://{addr}"),
+        format!("ws://{addr}/ws-inject"),
+        product_type,
+    );
+    let account_id = AccountId::from("BINANCE-001");
+    let cid = ClientOrderId::from("retained-owner");
+    let instrument_id = InstrumentId::from(instrument);
+    add_test_account_to_cache(&cache, account_id);
+
+    for (index, (id, order_instrument, owner_account, strategy, reconciled)) in [
+        (cid, instrument_id, account_id, test_strategy_id(), false),
+        (
+            ClientOrderId::from("retained-other-product"),
+            InstrumentId::from(other_product),
+            account_id,
+            test_strategy_id(),
+            false,
+        ),
+        (
+            ClientOrderId::from("retained-other-account"),
+            instrument_id,
+            AccountId::from("BINANCE-002"),
+            test_strategy_id(),
+            false,
+        ),
+        (
+            ClientOrderId::from("retained-external"),
+            instrument_id,
+            account_id,
+            StrategyId::external(),
+            false,
+        ),
+        (
+            ClientOrderId::from("retained-claimed"),
+            instrument_id,
+            account_id,
+            test_strategy_id(),
+            true,
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let order = OrderTestBuilder::new(order_type)
+            .client_order_id(id)
+            .strategy_id(strategy)
+            .instrument_id(order_instrument)
+            .quantity(Quantity::from("3"))
+            .price(Price::from("50000.00"))
+            .trigger_price(Price::from("49000.00"))
+            .build();
+
+        let OrderEventAny::Accepted(mut accepted) = TestOrderEventStubs::accepted(
+            &order,
+            owner_account,
+            VenueOrderId::from((8886774 + index).to_string()),
+        ) else {
+            panic!("Expected acceptance stub")
+        };
+
+        accepted.reconciliation = reconciled;
+        let accepted = OrderEventAny::Accepted(accepted);
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+            .unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+
+        if id == cid && partially_filled {
+            let fill = OrderFilledSpec::builder()
+                .strategy_id(test_strategy_id())
+                .instrument_id(instrument_id)
+                .client_order_id(id)
+                .account_id(account_id)
+                .venue_order_id(VenueOrderId::from("8886774"))
+                .order_type(order_type)
+                .trade_id(TradeId::from("4242"))
+                .last_qty(Quantity::from("1"))
+                .last_px(Price::from("50000.00"))
+                .build();
+            cache
+                .borrow_mut()
+                .update_order(&OrderEventAny::Filled(fill))
+                .unwrap();
+        }
+    }
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    let mut update: serde_json::Value = serde_json::from_str(include_str!(
+        "../../../test_data/futures/user_data_json/order_update_new.json"
+    ))
+    .unwrap();
+    update["o"]["s"] = json!(symbol);
+    update["o"]["c"] = json!(encode_broker_id(&cid, BINANCE_NAUTILUS_FUTURES_BROKER_ID));
+    update["o"]["o"] = json!("LIMIT");
+    update["o"]["ot"] = json!("LIMIT");
+    update["o"]["sp"] = json!("0");
+    update["o"]["q"] = json!("3");
+    update["o"]["p"] = json!("50000");
+    if partially_filled {
+        let mut replay = update.clone();
+        replay["o"]["x"] = json!("TRADE");
+        replay["o"]["X"] = json!("PARTIALLY_FILLED");
+        replay["o"]["l"] = json!("1");
+        replay["o"]["z"] = json!("1");
+        replay["o"]["L"] = json!("50000");
+        replay["o"]["t"] = json!(4242);
+        injector.send(replay.to_string()).unwrap();
+    }
+
+    injector.send(update.to_string()).unwrap();
+    update["o"]["x"] = json!("AMENDMENT");
+    update["o"]["q"] = json!("4");
+    update["o"]["p"] = json!("51000");
+    injector.send(update.to_string()).unwrap();
+    update["o"]["x"] = json!("TRADE");
+    update["o"]["X"] = json!("PARTIALLY_FILLED");
+    update["o"]["l"] = json!("1");
+    update["o"]["z"] = json!("1");
+    update["o"]["L"] = json!("51000");
+    update["o"]["t"] = json!(98765432);
+    injector.send(update.to_string()).unwrap();
+    update["o"]["x"] = json!("CANCELED");
+    update["o"]["X"] = json!("CANCELED");
+    injector.send(update.to_string()).unwrap();
+    for external in [
+        "external-order",
+        "retained-other-product",
+        "retained-other-account",
+        "retained-external",
+        "retained-claimed",
+    ] {
+        update["o"]["c"] = json!(external);
+        injector.send(update.to_string()).unwrap();
+    }
+
+    for expected in ["updated", "filled", "canceled"] {
+        let event = recv_until(&mut rx, |event| {
+            !matches!(event, ExecutionEvent::Account(_))
+        })
+        .await;
+
+        let ExecutionEvent::Order(event) = event else {
+            panic!("Expected typed {expected}, received {event:?}")
+        };
+
+        assert_eq!(event.strategy_id(), test_strategy_id());
+        assert_eq!(event.client_order_id(), cid);
+        assert_eq!(event.instrument_id(), instrument_id);
+        assert_eq!(event.account_id(), Some(account_id));
+        assert_eq!(event.venue_order_id(), Some(VenueOrderId::from("8886774")));
+
+        match (expected, event) {
+            ("updated", OrderEventAny::Updated(event)) => {
+                let expected = OrderUpdated::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    instrument_id,
+                    cid,
+                    Quantity::from("4"),
+                    event.event_id,
+                    UnixNanos::from_millis(1568879465651),
+                    event.ts_init,
+                    false,
+                    Some(VenueOrderId::from("8886774")),
+                    Some(account_id),
+                    Some(Price::from("51000.00")),
+                    None,
+                    None,
+                    false,
+                );
+                assert_eq!(event, expected);
+            }
+            ("filled", OrderEventAny::Filled(event)) => {
+                let expected = OrderFilled::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    instrument_id,
+                    cid,
+                    VenueOrderId::from("8886774"),
+                    account_id,
+                    TradeId::from("98765432"),
+                    OrderSide::Buy,
+                    order_type,
+                    Quantity::from("1"),
+                    Price::from("51000.00"),
+                    quote_currency,
+                    LiquiditySide::Taker,
+                    event.event_id,
+                    UnixNanos::from_millis(1568879465651),
+                    event.ts_init,
+                    false,
+                    Some(PositionId::from(format!("{instrument}-LONG"))),
+                    Some(Money::from("0 USDT")),
+                    None,
+                );
+
+                assert_eq!(event, expected);
+            }
+            ("canceled", OrderEventAny::Canceled(event)) => {
+                let expected = OrderCanceled::new(
+                    test_trader_id(),
+                    test_strategy_id(),
+                    instrument_id,
+                    cid,
+                    event.event_id,
+                    UnixNanos::from_millis(1568879465651),
+                    event.ts_init,
+                    false,
+                    Some(VenueOrderId::from("8886774")),
+                    Some(account_id),
+                    None,
+                );
+                assert_eq!(event, expected);
+            }
+            (_, event) => panic!("Expected {expected}, received {event:?}"),
+        }
+    }
+
+    for external in [
+        "external-order",
+        "retained-other-product",
+        "retained-other-account",
+        "retained-external",
+        "retained-claimed",
+    ] {
+        let event = recv_until(&mut rx, |event| {
+            !matches!(event, ExecutionEvent::Account(_))
+        })
+        .await;
+
+        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
+            panic!("Expected external report, received {event:?}")
+        };
+
+        assert_eq!(report.client_order_id, Some(ClientOrderId::from(external)));
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument_id);
+    }
+
+    client.disconnect().await.unwrap();
+}
+
 async fn handle_ws_injectable_connection(mut socket: WebSocket, injector: WsInjector) {
     let mut rx = injector.subscribe();
 
@@ -8083,7 +8466,10 @@ async fn start_injectable_test_server() -> (SocketAddr, WsInjector) {
         let inj = inj.clone();
         async move { ws.on_upgrade(move |socket| handle_ws_injectable_connection(socket, inj)) }
     });
-    let router = create_exec_test_router().route("/ws-inject", injectable_ws);
+
+    let router = create_exec_test_router()
+        .route("/ws-inject", injectable_ws.clone())
+        .route("/ws-inject/{listen_key}", injectable_ws);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();

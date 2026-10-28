@@ -29,7 +29,7 @@ use nautilus_model::{
     orders::Order,
     types::{Price, Quantity},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 use serde_json::json;
 use ustr::Ustr;
 
@@ -245,10 +245,12 @@ impl DeltaNeutralVol {
                  + SELL {contracts} x {put_id} @ iv={put_entry_iv:.4} (offset={offset})",
             );
 
-            let mut call_params = Params::new();
-            call_params.insert(
-                self.config.iv_param_key.clone(),
-                json!(call_entry_iv.to_string()),
+            let call_params = Params::new(
+                [(
+                    self.config.iv_param_key.clone(),
+                    json!(call_entry_iv.to_string()),
+                )]
+                .into(),
             );
 
             self.submit_entry_order(
@@ -260,10 +262,12 @@ impl DeltaNeutralVol {
                 Some(call_params),
             )?;
 
-            let mut put_params = Params::new();
-            put_params.insert(
-                self.config.iv_param_key.clone(),
-                json!(put_entry_iv.to_string()),
+            let put_params = Params::new(
+                [(
+                    self.config.iv_param_key.clone(),
+                    json!(put_entry_iv.to_string()),
+                )]
+                .into(),
             );
 
             self.submit_entry_order(
@@ -681,19 +685,31 @@ impl DataActor for DeltaNeutralVol {
             let call_pos: f64 = cache
                 .positions_open(None, Some(&call_id), None, None, None)
                 .iter()
-                .map(|p| p.signed_qty)
+                .map(|p| {
+                    p.signed_qty
+                        .to_f64()
+                        .expect("Decimal quantity fits strategy analytics")
+                })
                 .sum();
 
             let put_pos: f64 = cache
                 .positions_open(None, Some(&put_id), None, None, None)
                 .iter()
-                .map(|p| p.signed_qty)
+                .map(|p| {
+                    p.signed_qty
+                        .to_f64()
+                        .expect("Decimal quantity fits strategy analytics")
+                })
                 .sum();
 
             let hedge_pos: f64 = cache
                 .positions_open(None, Some(&hedge_id), None, None, None)
                 .iter()
-                .map(|p| p.signed_qty)
+                .map(|p| {
+                    p.signed_qty
+                        .to_f64()
+                        .expect("Decimal quantity fits strategy analytics")
+                })
                 .sum();
 
             (call_pos, put_pos, hedge_pos)

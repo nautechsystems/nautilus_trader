@@ -28,6 +28,7 @@ use ahash::AHashSet;
 use anyhow::Context;
 use async_trait::async_trait;
 use dashmap::DashMap;
+use indexmap::IndexMap;
 use nautilus_common::{
     cache::fifo::FifoCache,
     clients::ExecutionClient,
@@ -316,6 +317,37 @@ impl BinanceFuturesExecutionClient {
         })
     }
 
+    fn restore_active_orders(&self) -> anyhow::Result<()> {
+        for order in crate::common::execution::active_orders(&self.core) {
+            let Some(instrument) = self
+                .http_client
+                .instrument_reconciliation(&order.instrument_id())
+            else {
+                continue;
+            };
+
+            let (_, venue_position_id) = resolve_order_position_identity(
+                self.is_hedge_mode(),
+                self.config.use_position_ids,
+                &order,
+            )
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to restore Binance Futures order {}: {e}",
+                    order.client_order_id()
+                )
+            })?;
+
+            self.dispatch_state.restore_order(
+                &order,
+                venue_position_id,
+                instrument.price_precision(),
+            );
+        }
+
+        Ok(())
+    }
+
     /// Returns whether the account is in hedge mode (dual side position).
     #[must_use]
     pub fn is_hedge_mode(&self) -> bool {
@@ -406,7 +438,8 @@ impl BinanceFuturesExecutionClient {
             margins.push(MarginBalance::new(initial, maintenance, None));
         }
 
-        let mut info = Params::new();
+        let mut info = IndexMap::new();
+
         let mut push_decimal = |key: &str, val: Option<Decimal>| {
             if let Some(decimal) = val {
                 info.insert(
@@ -430,7 +463,12 @@ impl BinanceFuturesExecutionClient {
         push_decimal("total_cross_unpnl", account_info.total_cross_un_pnl);
         push_decimal("available_balance", account_info.available_balance);
         push_decimal("max_withdraw_amount", account_info.max_withdraw_amount);
-        let info = if info.is_empty() { None } else { Some(info) };
+
+        let info = if info.is_empty() {
+            None
+        } else {
+            Some(Params::new(info))
+        };
 
         AccountState::new(
             account_id,
@@ -1542,7 +1580,7 @@ fn build_futures_order_list_batch(
     let mut batch_items = Vec::with_capacity(orders.len());
     for order in orders {
         if price_match.is_some() && order.is_post_only() {
-            return Err("price_match cannot be combined with post-only orders".to_string());
+            return Err(OrderDeniedReason::unsupported_post_only().to_string());
         }
 
         if price_match.is_some() && order.order_type() != OrderType::Limit {
@@ -1648,9 +1686,7 @@ fn determine_futures_order_lifetime(
     }
 
     if post_only {
-        return Err(OrderDeniedReason::ValidationFailed {
-            detail: "Binance Futures GTD cannot be post-only".to_string(),
-        });
+        return Err(OrderDeniedReason::unsupported_post_only());
     }
 
     if product_type != BinanceProductType::UsdM {
@@ -1884,6 +1920,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             log::debug!("Loaded {} Futures instruments", instruments.len());
         }
         self.core.set_instruments_initialized();
+
+        self.restore_active_orders()?;
 
         // Apply configured leverage and margin types
         self.apply_futures_config()
@@ -3645,7 +3683,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
 
             match result {
                 Ok(report) => {
-                    if !dispatch_state.record_order_update(command.client_order_id, report.venue_order_id, quantity, price, None) {
+                    if dispatch_state.record_order_update(command.client_order_id, report.venue_order_id, quantity, price, None) != Some(true) {
                         return Ok(());
                     }
                     let ts_now = clock.get_time_ns();
@@ -3992,9 +4030,7 @@ fn validate_order(
         let order_type = order.order_type();
 
         if order.is_post_only() {
-            return Err(OrderDeniedReason::ValidationFailed {
-                detail: "price_match cannot be combined with post-only orders".to_string(),
-            });
+            return Err(OrderDeniedReason::unsupported_post_only());
         }
 
         if order_type != OrderType::Limit {
@@ -4516,7 +4552,7 @@ mod tests {
         OrderType::Limit,
         UnixNanos::from_seconds(1_700_000_601),
         true,
-        "cannot be post-only"
+        "UNSUPPORTED_POST_ONLY"
     )]
     fn test_futures_order_lifetime_rejects_invalid_gtd(
         #[case] product_type: BinanceProductType,

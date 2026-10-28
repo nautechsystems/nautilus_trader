@@ -306,11 +306,50 @@ mod tests {
     use log::{Level, LevelFilter, Log, Metadata, Record};
     use nautilus_common::messages::data::RequestInstruments;
     use nautilus_core::{UUID4, UnixNanos};
-    use nautilus_model::identifiers::{InstrumentId, OptionSeriesId};
+    use nautilus_model::{
+        data::BarType,
+        identifiers::{InstrumentId, OptionSeriesId},
+    };
     use rstest::rstest;
     use ustr::Ustr;
 
     use super::*;
+
+    #[rstest::rstest]
+    fn test_bar_list_hooks_accept_every_full_type() {
+        let venue = Venue::from("SIM");
+
+        let mut client = BacktestDataClient::new(
+            ClientId::from("SIM"),
+            venue,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+
+        let command = SubscribeBars::new(
+            [
+                BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL"),
+                BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL"),
+            ],
+            Some(client.client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(17),
+            Some(UUID4::new()),
+            None,
+        );
+
+        let unsubscribe = UnsubscribeBars::new(
+            command.bar_types.clone(),
+            command.client_id,
+            command.venue,
+            UUID4::new(),
+            UnixNanos::from(23),
+            command.correlation_id,
+            command.params.clone(),
+        );
+        assert!(client.subscribe_bars(command).is_ok());
+        assert!(client.unsubscribe_bars(&unsubscribe).is_ok());
+    }
 
     struct RequestWarnCapture {
         messages: Mutex<Vec<String>>,
@@ -357,7 +396,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_request_instruments_logs_not_implemented_warning() {
+    fn test_request_instruments_returns_unsupported_error() {
         let _guard = start_request_warn_capture();
 
         let client_id = ClientId::new("BACKTEST");
@@ -376,18 +415,11 @@ mod tests {
         );
 
         let result = client.request_instruments(request);
-        let expected = format!(
-            "Handler not implemented: client BACKTEST, command {}",
-            std::any::type_name::<RequestInstruments>()
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Data client BACKTEST does not support RequestInstruments"
         );
-
-        assert!(result.is_ok());
-        assert!(
-            REQUEST_WARN_CAPTURE
-                .messages()
-                .iter()
-                .any(|message| message == &expected),
-        );
+        assert!(REQUEST_WARN_CAPTURE.messages().is_empty());
     }
     #[rstest]
     fn test_option_chain_reference_price_is_unsupported() {

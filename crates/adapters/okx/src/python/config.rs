@@ -15,8 +15,9 @@
 
 //! Python bindings for OKX configuration.
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::string::secret::SecretString;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::{enums::OmsType, identifiers::AccountId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
@@ -78,9 +79,10 @@ impl OKXDataClientConfig {
         load_spreads: bool,
         transport_backend: Option<TransportBackend>,
         instrument_families: Option<Vec<String>>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+
+        let config = Self {
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             api_passphrase: api_passphrase.map(SecretString::from),
@@ -109,7 +111,10 @@ impl OKXDataClientConfig {
                 .unwrap_or(defaults.book_snapshot_timeout_secs),
             vip_level,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -148,6 +153,8 @@ impl OKXExecutionClientConfig {
         auth_timeout_secs = None,
         transport_backend = None,
         spot_trade_quote_ccy = None,
+        oms_type = None,
+        max_reconciliation_history_pages = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -171,10 +178,14 @@ impl OKXExecutionClientConfig {
         auth_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
         spot_trade_quote_ccy: Option<String>,
-    ) -> Self {
+        oms_type: Option<OmsType>,
+        max_reconciliation_history_pages: Option<u32>,
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+
+        let config = Self {
             account_id,
+            oms_type,
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             api_passphrase: api_passphrase.map(SecretString::from),
@@ -199,7 +210,11 @@ impl OKXExecutionClientConfig {
             auth_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             spot_trade_quote_ccy,
-        }
+            max_reconciliation_history_pages,
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -214,9 +229,75 @@ impl OKXExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use pyo3::{
+        Python,
+        exceptions::PyValueError,
+        types::{PyDict, PyList},
+    };
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::data(false)]
+    #[case::execution(true)]
+    fn test_python_config_duplicate_types(
+        #[case] execution: bool,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let values = if duplicate {
+                vec![
+                    OKXInstrumentType::Swap,
+                    OKXInstrumentType::Spot,
+                    OKXInstrumentType::Swap,
+                ]
+            } else {
+                vec![OKXInstrumentType::Swap, OKXInstrumentType::Spot]
+            };
+
+            let objects: Vec<_> = values
+                .iter()
+                .map(|value| Py::new(py, *value).unwrap())
+                .collect();
+            let list = PyList::new(py, objects).unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("instrument_types", list).unwrap();
+            if execution {
+                kwargs
+                    .set_item(
+                        "account_id",
+                        Py::new(py, AccountId::from("OKX-001")).unwrap(),
+                    )
+                    .unwrap();
+            }
+
+            let config_type = if execution {
+                py.get_type::<OKXExecutionClientConfig>()
+            } else {
+                py.get_type::<OKXDataClientConfig>()
+            };
+
+            let result = config_type.call((), Some(&kwargs));
+            if duplicate {
+                let error = result.unwrap_err();
+                assert!(error.is_instance_of::<PyValueError>(py));
+                assert_eq!(
+                    error.value(py).str().unwrap().to_str().unwrap(),
+                    "duplicate instrument_types"
+                );
+            } else {
+                let config = result.unwrap();
+                let actual: Vec<OKXInstrumentType> = config
+                    .getattr("instrument_types")
+                    .unwrap()
+                    .extract()
+                    .unwrap();
+                assert_eq!(actual, values);
+            }
+        });
+    }
 
     #[rstest]
     fn test_data_config_py_new() {
@@ -243,7 +324,8 @@ mod tests {
             true,
             None,
             Some(vec!["BTC-USD".to_string()]),
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             config.instrument_families,
@@ -253,6 +335,43 @@ mod tests {
         assert_eq!(config.book_stale_check_interval_secs, 5);
         assert_eq!(config.book_stale_threshold_secs, 30);
         assert_eq!(config.book_snapshot_timeout_secs, 10);
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(0))]
+    #[case(Some(2))]
+    #[case(Some(51))]
+    #[case(Some(u32::MAX))]
+    fn test_exec_config_python_history_pages(#[case] pages: Option<u32>) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item(
+                    "account_id",
+                    Py::new(py, AccountId::from("OKX-001")).unwrap(),
+                )
+                .unwrap();
+
+            if let Some(pages) = pages {
+                kwargs
+                    .set_item("max_reconciliation_history_pages", pages)
+                    .unwrap();
+            }
+
+            let config = py
+                .get_type::<OKXExecutionClientConfig>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            let actual: Option<u32> = config
+                .getattr("max_reconciliation_history_pages")
+                .unwrap()
+                .extract()
+                .unwrap();
+
+            assert_eq!(actual, pages);
+        });
     }
 
     #[rstest]
@@ -278,10 +397,15 @@ mod tests {
             None,
             None,
             Some("USD".to_string()),
-        );
+            Some(OmsType::Hedging),
+            Some(7),
+        )
+        .unwrap();
 
         assert!(config.load_spreads);
         assert_eq!(config.auth_timeout_secs, None);
         assert_eq!(config.spot_trade_quote_ccy.as_deref(), Some("USD"));
+        assert_eq!(config.oms_type, Some(OmsType::Hedging));
+        assert_eq!(config.max_reconciliation_history_pages, Some(7));
     }
 }

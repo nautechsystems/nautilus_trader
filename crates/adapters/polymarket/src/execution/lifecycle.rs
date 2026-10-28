@@ -751,9 +751,11 @@ impl PolymarketExecutionClient {
             .cloned()
             .collect();
 
-        for inst in &instruments {
-            self.upsert_execution_lookup(inst);
-        }
+        upsert_execution_lookups(
+            &self.shared_token_instruments,
+            &self.neg_risk_index,
+            &instruments,
+        );
 
         log::debug!("Loaded {} instruments from cache", instruments.len());
     }
@@ -952,12 +954,12 @@ impl PolymarketExecutionClient {
             .http_client
             .get_version()
             .await
-            .context("failed to query Polymarket CLOB protocol version")?
+            .context("failed to query Polymarket CLOB service version")?
             .version;
 
         if version != SUPPORTED_CLOB_VERSION {
             anyhow::bail!(
-                "Polymarket CLOB protocol version {version} is unsupported; adapter supports V2 only"
+                "Polymarket CLOB service version {version} is unsupported; expected service version {SUPPORTED_CLOB_VERSION}"
             );
         }
 
@@ -1726,17 +1728,40 @@ fn upsert_execution_lookup(
     neg_risk_index: &AtomicMap<InstrumentId, bool>,
     instrument: &InstrumentAny,
 ) {
-    let token_id = Ustr::from(instrument.raw_symbol().as_str());
-    shared_token_instruments.insert(token_id, instrument.clone());
+    upsert_execution_lookups(
+        shared_token_instruments,
+        neg_risk_index,
+        std::slice::from_ref(instrument),
+    );
+}
 
-    if let InstrumentAny::BinaryOption(bo) = instrument {
-        let neg_risk = bo
-            .info
-            .as_ref()
-            .and_then(|i| i.get_bool("neg_risk"))
-            .unwrap_or(false);
-        neg_risk_index.insert(bo.id, neg_risk);
+fn upsert_execution_lookups(
+    shared_token_instruments: &AtomicMap<Ustr, InstrumentAny>,
+    neg_risk_index: &AtomicMap<InstrumentId, bool>,
+    instruments: &[InstrumentAny],
+) {
+    if instruments.is_empty() {
+        return;
     }
+
+    shared_token_instruments.rcu(|cache| {
+        for instrument in instruments {
+            cache.insert(instrument.raw_symbol().inner(), instrument.clone());
+        }
+    });
+
+    neg_risk_index.rcu(|cache| {
+        for instrument in instruments {
+            if let InstrumentAny::BinaryOption(binary) = instrument {
+                let neg_risk = binary
+                    .info
+                    .as_ref()
+                    .and_then(|info| info.get_bool("neg_risk"))
+                    .unwrap_or(false);
+                cache.insert(binary.id, neg_risk);
+            }
+        }
+    });
 }
 
 fn remove_execution_lookup(
@@ -1760,8 +1785,9 @@ fn sync_execution_lookup_for_instrument(
     let cache = core.cache();
 
     let instrument = cache.instrument(&instrument_id).cloned();
+
     let retain = instrument.as_ref().is_some_and(|instrument| {
-        if !crate::filters::is_expired(instrument, now_ns) {
+        if !crate::filters::is_expired_and_not_reported_open(instrument, now_ns) {
             return true;
         }
 
@@ -1817,7 +1843,10 @@ mod tests {
         live::runner::set_exec_event_sender,
         messages::{
             ExecutionEvent,
-            execution::{CancelAllOrders, GenerateFillReportsBuilder},
+            execution::{
+                CancelAllOrders, GenerateFillReportsBuilder, ModifyOrder, SubmitOrder,
+                SubmitOrderList,
+            },
         },
         msgbus::{publish_order_event, publish_position_event, switchboard},
     };
@@ -1829,18 +1858,20 @@ mod tests {
             TimeInForce,
         },
         events::{
-            OrderEventAny, PositionClosed, PositionEvent,
+            OrderEventAny, OrderInitialized, PositionClosed, PositionEvent,
             order::spec::{
                 OrderFillVoidedSpec, OrderFilledSpec, OrderPendingCancelSpec,
                 OrderPendingUpdateSpec, OrderUpdatedSpec,
             },
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId,
-            TraderId, VenueOrderId,
+            AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol,
+            TradeId, TraderId, VenueOrderId,
         },
         instruments::stubs::binary_option,
-        orders::{LimitOrder, Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
+        orders::{
+            LimitOrder, Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs,
+        },
         position::Position,
         types::{Currency, Money, Price, Price as ModelPrice, Quantity, Quantity as ModelQuantity},
     };
@@ -1853,7 +1884,9 @@ mod tests {
         execution::settlement::{
             AdmittedLeg,
             admission::AdmittedTrade,
-            registry::tests::{force_client_fault, leg_application, trade_hard_fault},
+            registry::tests::{
+                force_client_fault, force_trade_fault, leg_application, trade_hard_fault,
+            },
             state::LegApplication,
         },
         factories::spawn_rejecting_proxy,
@@ -2002,8 +2035,8 @@ mod tests {
             )
         };
 
-        let mut info = nautilus_core::Params::new();
-        info.insert("neg_risk".to_string(), Value::Bool(neg_risk));
+        let info =
+            nautilus_core::Params::new([("neg_risk".to_string(), Value::Bool(neg_risk))].into());
         binary.info = Some(info);
 
         InstrumentAny::BinaryOption(binary)
@@ -2081,7 +2114,7 @@ mod tests {
     fn closed_position(position: &Position) -> Position {
         let mut closed = position.clone();
         closed.side = PositionSide::Flat;
-        closed.signed_qty = 0.0;
+        closed.signed_qty = 0.into();
         closed.quantity = Quantity::zero(position.size_precision);
         closed.ts_closed = Some(position.ts_last);
         closed.duration_ns = DurationNanos::new(1);
@@ -2099,7 +2132,7 @@ mod tests {
             closing_order_id: position.closing_order_id,
             entry: position.entry,
             side: PositionSide::Flat,
-            signed_qty: 0.0,
+            signed_qty: 0.into(),
             quantity: Quantity::zero(position.size_precision),
             peak_quantity: position.peak_qty,
             last_qty: Quantity::zero(position.size_precision),
@@ -2122,7 +2155,7 @@ mod tests {
     #[rstest]
     fn load_instruments_from_cache_preloads_expired_execution_lookup_state() {
         let (client, cache) = test_client();
-        let active = test_binary_option("0xACTIVE", false, true);
+        let active = test_binary_option("0xACTIVE", false, false);
         let expired = test_binary_option("0xEXPIRED", true, true);
 
         {
@@ -2133,18 +2166,25 @@ mod tests {
 
         client.load_instruments_from_cache();
 
-        assert!(
-            client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(active.raw_symbol().as_str()))
-        );
-        assert!(client.neg_risk_index.contains_key(&active.id()));
-        assert!(
-            client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
-        );
-        assert!(client.neg_risk_index.contains_key(&expired.id()));
+        assert_eq!(client.shared_token_instruments.len(), 2);
+        assert_eq!(client.neg_risk_index.len(), 2);
+
+        for (instrument, neg_risk) in [(&active, false), (&expired, true)] {
+            assert_eq!(
+                serde_json::to_value(
+                    client
+                        .shared_token_instruments
+                        .get_cloned(&instrument.raw_symbol().inner())
+                        .unwrap()
+                )
+                .unwrap(),
+                serde_json::to_value(instrument).unwrap()
+            );
+            assert_eq!(
+                client.neg_risk_index.get_cloned(&instrument.id()),
+                Some(neg_risk)
+            );
+        }
     }
 
     #[rstest]
@@ -2709,9 +2749,26 @@ mod tests {
     }
 
     #[rstest]
-    fn position_event_subscription_prunes_expired_lookup_after_position_closes() {
+    #[case::unknown(None, false)]
+    #[case::open(Some(false), true)]
+    #[case::closed(Some(true), false)]
+    fn position_event_subscription_honors_gamma_closure_after_past_end_position_closes(
+        #[case] market_closed: Option<bool>,
+        #[case] retain: bool,
+    ) {
         let (client, cache) = test_client();
-        let expired = test_binary_option("0xEXPIRED_CLOSED", true, true);
+
+        let InstrumentAny::BinaryOption(mut binary) =
+            test_binary_option("0xEXPIRED_CLOSED", true, true)
+        else {
+            unreachable!();
+        };
+
+        if let Some(closed) = market_closed {
+            crate::filters::set_market_closed(&mut binary, closed);
+        }
+
+        let expired = InstrumentAny::BinaryOption(binary);
         let position = open_position(&expired);
         let closed = closed_position(&position);
 
@@ -2746,18 +2803,38 @@ mod tests {
         assert!(matches!(event, PositionEvent::PositionClosed(_)));
         publish_position_event("events.position.TEST".into(), &event);
 
-        assert!(
-            !client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        let token = Ustr::from(expired.raw_symbol().as_str());
+        assert_eq!(
+            client.shared_token_instruments.get_cloned(&token),
+            retain.then_some(expired.clone())
         );
-        assert!(!client.neg_risk_index.contains_key(&expired.id()));
+        assert_eq!(
+            client.neg_risk_index.get_cloned(&expired.id()),
+            retain.then_some(true)
+        );
     }
 
     #[rstest]
-    fn order_event_subscription_prunes_expired_lookup_after_terminal_order() {
+    #[case::unknown(None, false)]
+    #[case::open(Some(false), true)]
+    #[case::closed(Some(true), false)]
+    fn order_event_subscription_honors_gamma_closure_after_past_end_terminal_order(
+        #[case] market_closed: Option<bool>,
+        #[case] retain: bool,
+    ) {
         let (client, cache) = test_client();
-        let expired = test_binary_option("0xEXPIRED_ORDER_CLOSED", true, true);
+
+        let InstrumentAny::BinaryOption(mut binary) =
+            test_binary_option("0xEXPIRED_ORDER_CLOSED", true, true)
+        else {
+            unreachable!();
+        };
+
+        if let Some(closed) = market_closed {
+            crate::filters::set_market_closed(&mut binary, closed);
+        }
+
+        let expired = InstrumentAny::BinaryOption(binary);
         let mut order;
 
         {
@@ -2790,12 +2867,15 @@ mod tests {
         client.ensure_order_event_subscription();
         publish_order_event("events.order.TEST".into(), &canceled);
 
-        assert!(
-            !client
-                .shared_token_instruments
-                .contains_key(&Ustr::from(expired.raw_symbol().as_str()))
+        let token = Ustr::from(expired.raw_symbol().as_str());
+        assert_eq!(
+            client.shared_token_instruments.get_cloned(&token),
+            retain.then_some(expired.clone())
         );
-        assert!(!client.neg_risk_index.contains_key(&expired.id()));
+        assert_eq!(
+            client.neg_risk_index.get_cloned(&expired.id()),
+            retain.then_some(true)
+        );
     }
 
     #[rstest]
@@ -3758,6 +3838,112 @@ mod tests {
             leg_application(&client.settlement, &fill.trade_id),
             Some(LegApplication::VoidObserved)
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn trade_fault_blocks_submissions_and_modifies_but_keeps_cancellation_available() {
+        let (mut client, cache) = test_client();
+        let instrument = test_binary_option("FAULT", false, false);
+        let instrument_id = instrument.id();
+
+        let order = {
+            let mut cache = cache.borrow_mut();
+            cache.add_instrument(instrument).unwrap();
+            cache_accepted_open_order(&mut cache, instrument_id)
+        };
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.core.set_connected();
+        force_trade_fault(&client.settlement, "fault-trade", "correction declined");
+        let expected = "Polymarket submissions for account POLYMARKET-001 are blocked until restart: settlement trade fault-trade is hard-faulted: correction declined";
+        let submit = SubmitOrder::from_order(
+            &order,
+            order.trader_id(),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+        let submit_error = client.submit_order(submit).unwrap_err().to_string();
+
+        let list = OrderList::new(
+            OrderListId::from("LIST-001"),
+            instrument_id,
+            order.strategy_id(),
+            vec![order.client_order_id()],
+            UnixNanos::default(),
+        );
+
+        let submit_list = SubmitOrderList::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            list,
+            vec![OrderInitialized::from(&order)],
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        );
+        let batch_error = client
+            .submit_order_list(submit_list)
+            .unwrap_err()
+            .to_string();
+
+        let modify = ModifyOrder::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            instrument_id,
+            order.client_order_id(),
+            order.venue_order_id(),
+            None,
+            Some(Price::from("0.60")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        client.modify_order(modify).unwrap();
+        let rejected = rx.try_recv().unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = rejected else {
+            panic!("Expected ModifyRejected, was {rejected:?}");
+        };
+
+        let cancel = CancelAllOrders::new(
+            order.trader_id(),
+            None,
+            order.strategy_id(),
+            InstrumentId::from("MISSING.POLYMARKET"),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        let cancel_error = client.cancel_all_orders(cancel).unwrap_err().to_string();
+
+        assert_eq!(submit_error, expected);
+        assert_eq!(batch_error, expected);
+        assert_eq!(rejected.trader_id, order.trader_id());
+        assert_eq!(rejected.strategy_id, order.strategy_id());
+        assert_eq!(rejected.instrument_id, instrument_id);
+        assert_eq!(rejected.client_order_id, order.client_order_id());
+        assert_eq!(rejected.venue_order_id, order.venue_order_id());
+        assert_eq!(rejected.account_id, Some(client.core.account_id));
+        assert_eq!(rejected.reason, expected);
+        assert_eq!(
+            cancel_error,
+            "Cannot cancel all orders: instrument not found in cache for MISSING.POLYMARKET"
+        );
+        assert!(client.is_connected());
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

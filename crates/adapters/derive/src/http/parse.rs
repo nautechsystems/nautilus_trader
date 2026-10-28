@@ -439,63 +439,67 @@ pub fn parse_derive_subaccount_to_balances(
 
     let margins = vec![MarginBalance::new(initial, maintenance, None)];
 
-    let mut info = Params::new();
-    info.insert(
-        "collaterals".to_string(),
-        serde_json::to_value(&subaccount.collaterals)?,
-    );
-    info.insert(
-        "currency".to_string(),
-        serde_json::to_value(&subaccount.currency)?,
-    );
-    info.insert(
-        "margin_type".to_string(),
-        Value::String(subaccount.margin_type.clone()),
-    );
-    info.insert("manager_id".to_string(), Value::from(subaccount.manager_id));
-    info.insert(
-        "risk_universe_id".to_string(),
-        Value::from(subaccount.risk_universe_id),
-    );
-    info.insert(
-        "mm_credits".to_string(),
-        Value::String(subaccount.mm_credits.to_string()),
-    );
-    info.insert(
-        "projected_margin_change".to_string(),
-        Value::String(subaccount.projected_margin_change.to_string()),
-    );
-    info.insert(
-        "vault_deposit_holds".to_string(),
-        serde_json::to_value(&subaccount.vault_deposit_holds)?,
-    );
-    info.insert(
-        "net_initial_margin".to_string(),
-        Value::String(subaccount.initial_margin.to_string()),
-    );
-    info.insert(
-        "net_maintenance_margin".to_string(),
-        Value::String(subaccount.maintenance_margin.to_string()),
-    );
-    info.insert(
-        "positions_value".to_string(),
-        Value::String(subaccount.positions_value.to_string()),
-    );
-    info.insert(
-        "positions_initial_margin".to_string(),
-        Value::String(subaccount.positions_initial_margin.to_string()),
-    );
-    info.insert(
-        "positions_maintenance_margin".to_string(),
-        Value::String(subaccount.positions_maintenance_margin.to_string()),
-    );
-    info.insert(
-        "open_orders_margin".to_string(),
-        Value::String(subaccount.open_orders_margin.to_string()),
-    );
-    info.insert(
-        "is_under_liquidation".to_string(),
-        Value::Bool(subaccount.is_under_liquidation),
+    let info = Params::new(
+        [
+            (
+                "collaterals".to_string(),
+                serde_json::to_value(&subaccount.collaterals)?,
+            ),
+            (
+                "currency".to_string(),
+                serde_json::to_value(&subaccount.currency)?,
+            ),
+            (
+                "margin_type".to_string(),
+                Value::String(subaccount.margin_type.clone()),
+            ),
+            ("manager_id".to_string(), Value::from(subaccount.manager_id)),
+            (
+                "risk_universe_id".to_string(),
+                Value::from(subaccount.risk_universe_id),
+            ),
+            (
+                "mm_credits".to_string(),
+                Value::String(subaccount.mm_credits.to_string()),
+            ),
+            (
+                "projected_margin_change".to_string(),
+                Value::String(subaccount.projected_margin_change.to_string()),
+            ),
+            (
+                "vault_deposit_holds".to_string(),
+                serde_json::to_value(&subaccount.vault_deposit_holds)?,
+            ),
+            (
+                "net_initial_margin".to_string(),
+                Value::String(subaccount.initial_margin.to_string()),
+            ),
+            (
+                "net_maintenance_margin".to_string(),
+                Value::String(subaccount.maintenance_margin.to_string()),
+            ),
+            (
+                "positions_value".to_string(),
+                Value::String(subaccount.positions_value.to_string()),
+            ),
+            (
+                "positions_initial_margin".to_string(),
+                Value::String(subaccount.positions_initial_margin.to_string()),
+            ),
+            (
+                "positions_maintenance_margin".to_string(),
+                Value::String(subaccount.positions_maintenance_margin.to_string()),
+            ),
+            (
+                "open_orders_margin".to_string(),
+                Value::String(subaccount.open_orders_margin.to_string()),
+            ),
+            (
+                "is_under_liquidation".to_string(),
+                Value::Bool(subaccount.is_under_liquidation),
+            ),
+        ]
+        .into(),
     );
 
     Ok((balances, margins, info))
@@ -561,6 +565,7 @@ pub(crate) fn ms_to_nanos(value: i64) -> UnixNanos {
 
 #[cfg(test)]
 mod tests {
+    use indexmap::IndexMap;
     use nautilus_model::enums::{OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType};
     use rstest::rstest;
     use rust_decimal_macros::dec;
@@ -1836,7 +1841,7 @@ mod tests {
             dec!(46.00000318)
         };
 
-        let mut expected = Params::new();
+        let mut expected = IndexMap::new();
         for name in [
             "collaterals",
             "currency",
@@ -1879,7 +1884,7 @@ mod tests {
                 None
             )]
         );
-        assert_eq!(info, expected);
+        assert_eq!(info, Params::new(expected));
         assert_eq!(info["positions_value"], value);
         assert_eq!(info["positions_initial_margin"], contribution_initial);
         assert_eq!(

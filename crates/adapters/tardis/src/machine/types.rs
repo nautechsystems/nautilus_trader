@@ -96,7 +96,7 @@ impl TardisInstrumentKey {
 }
 
 /// The options that can be specified for calling Tardis Machine Server's replay-normalized.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",
@@ -131,7 +131,7 @@ pub struct ReplayNormalizedRequestOptions {
 }
 
 /// The options that can be specified for calling Tardis Machine Server's stream-normalized.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 #[cfg_attr(
     feature = "python",

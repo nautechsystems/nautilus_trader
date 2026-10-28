@@ -7,6 +7,8 @@ for each benchmark process.
 
 Refresh on substantive perf change or before release; bump the date.
 Absolute numbers vary by machine; only same-machine deltas are meaningful.
+Rows marked `*` use 2026-10-26 AEST measurements: Linux 7.0.0-38-generic, rustc 1.99.1, CPU 48,
+three interleaved runs per state, and concurrent workloads. Unmarked rows retain the earlier measurements.
 
 ## How to reproduce
 
@@ -59,8 +61,9 @@ the dispatch loop; both paths share the string-decimal + status logic.
 ## Effective delta processing (`effective_deltas.rs`)
 
 Parsed `OrderBookDeltas` plus a populated L2 MBP book -> updated book and effective domain batch.
-Criterion clones the seeded book outside the timed region. Snapshot depth is per side, so depth 100
-contains 200 price levels.
+Synthetic cases exclude fixture-reset clones; depth is per side, so depth 100 contains 200 price levels.
+The captured case times an unchanged snapshot, including decode, decimal conversion, and a transactional clone.
+It excludes hash verification, subscription locks, channels, and network I/O.
 
 | Bench                                                | Estimate |
 | ---------------------------------------------------- | -------: |
@@ -70,6 +73,7 @@ contains 200 price levels.
 | `effective_deltas/snapshot/unchanged/100`            | 32.6 µs  |
 | `effective_deltas/snapshot/ten_percent_resized/100`  | 32.5 µs  |
 | `effective_deltas/snapshot/ten_percent_replaced/100` | 33.0 µs  |
+| `effective_deltas/inbound_snapshot_captured`         | 19.9 µs* |
 
 ## Execution pipeline (`exec.rs`)
 
@@ -111,29 +115,30 @@ covers the L2 HMAC path used by every authenticated REST call.
 Diagnostic benches that decompose the pipeline numbers above. Use these
 to localize where time goes when a pipeline bench regresses.
 
-| Bench                             | Median  |
-| --------------------------------- | ------- |
-| `decode_only/trade`               | 274 ns  |
-| `decode_only/book`                | 902 ns  |
-| `decode_only/price_change`        | 415 ns  |
-| `decode_only/user_order`          | 978 ns  |
-| `decode_only/user_order_captured` | 952 ns  |
-| `decode_only/user_order_dispatch` | 1.05 µs |
-| `decode_only/user_trade`          | 639 ns  |
-| `decode_only/user_batch`          | 2.15 µs |
-| `parse_only/trade`                | 160 ns  |
-| `parse_only/book_snapshot`        | 385 ns  |
-| `parse_only/book_deltas`          | 40.4 ns |
-| `atom/decimal_from_str`           | 7.70 ns |
-| `atom/price_from_decimal_dp`      | 11.7 ns |
-| `atom/quantity_from_decimal_dp`   | 8.22 ns |
-| `atom/price_combined`             | 18.7 ns |
-| `atom/compute_commission`         | 119 ns  |
-| `atom/adjust_market_buy_amount`   | 209 ns  |
-| `atom/trade_id_determine`         | 108 ns  |
-| `atom/uuid4_new`                  | 14.5 ns |
-| `atom/event_filled_construct`     | 19.0 ns |
-| `atom/event_accepted_construct`   | 15.5 ns |
+| Bench                              | Median   |
+| ---------------------------------- | -------- |
+| `decode_only/trade`                | 274 ns   |
+| `decode_only/book`                 | 902 ns   |
+| `decode_only/price_change`         | 415 ns   |
+| `decode_only/user_order`           | 978 ns   |
+| `decode_only/user_order_captured`  | 952 ns   |
+| `decode_only/user_order_dispatch`  | 1.05 µs  |
+| `decode_only/user_trade`           | 639 ns   |
+| `decode_only/user_batch`           | 2.15 µs  |
+| `decode_only/user_batch_tag_first` | 3.36 µs* |
+| `parse_only/trade`                 | 160 ns   |
+| `parse_only/book_snapshot`         | 385 ns   |
+| `parse_only/book_deltas`           | 40.4 ns  |
+| `atom/decimal_from_str`            | 7.70 ns  |
+| `atom/price_from_decimal_dp`       | 11.7 ns  |
+| `atom/quantity_from_decimal_dp`    | 8.22 ns  |
+| `atom/price_combined`              | 18.7 ns  |
+| `atom/compute_commission`          | 119 ns   |
+| `atom/adjust_market_buy_amount`    | 209 ns   |
+| `atom/trade_id_determine`          | 108 ns   |
+| `atom/uuid4_new`                   | 14.5 ns  |
+| `atom/event_filled_construct`      | 19.0 ns  |
+| `atom/event_accepted_construct`    | 15.5 ns  |
 
 ## Notes
 

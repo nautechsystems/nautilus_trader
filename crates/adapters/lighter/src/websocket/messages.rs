@@ -459,6 +459,8 @@ impl LighterMarketSelection {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum LighterWsFrame {
+    #[serde(rename = "shutdown")]
+    Shutdown { close_in_ms: u64 },
     #[serde(rename = "subscribed/order_book")]
     OrderBookSnapshot {
         channel: Ustr,
@@ -1869,5 +1871,31 @@ mod tests {
             }
             _ => panic!("expected candle update frame"),
         }
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(7350)]
+    #[case(u64::MAX)]
+    fn shutdown_notification_parses_deadline(#[case] close_in_ms: u64) {
+        let frame: LighterWsFrame = serde_json::from_value(
+            serde_json::json!({"type":"shutdown", "close_in_ms":close_in_ms}),
+        )
+        .unwrap();
+
+        match frame {
+            LighterWsFrame::Shutdown {
+                close_in_ms: actual,
+            } => assert_eq!(actual, close_in_ms),
+            other => panic!("expected shutdown, was {other:?}"),
+        }
+    }
+
+    #[rstest]
+    #[case(serde_json::json!({"type":"shutdown"}))]
+    #[case(serde_json::json!({"type":"shutdown", "close_in_ms":-1}))]
+    #[case(serde_json::json!({"type":"shutdown", "close_in_ms":"7350"}))]
+    fn shutdown_notification_rejects_invalid_deadline(#[case] frame: serde_json::Value) {
+        assert!(serde_json::from_value::<LighterWsFrame>(frame).is_err());
     }
 }

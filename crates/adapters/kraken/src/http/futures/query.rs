@@ -250,8 +250,8 @@ pub struct KrakenFuturesBatchEditItem {
     #[serde(rename = "order_tag")]
     pub order_tag: String,
 
-    /// The venue order ID to edit.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// The venue order ID to edit, which a batch instruction names `order_id`.
+    #[serde(rename = "order_id", skip_serializing_if = "Option::is_none")]
     pub order_id: Option<String>,
 
     /// The client order ID to edit.
@@ -569,6 +569,30 @@ mod tests {
                 "orderType": "mkt",
                 "size": "500",
                 "reduceOnly": true,
+            }),
+        );
+    }
+
+    /// A batch edit instruction names the venue order ID `order_id`, as the batch-order API
+    /// documents it, unlike the camel-case fields beside it.
+    #[rstest]
+    fn test_batch_edit_item_names_the_venue_order_id_order_id() {
+        let params = KrakenFuturesEditOrderParamsBuilder::default()
+            .order_id("order-123")
+            .size("2000")
+            .build()
+            .unwrap();
+
+        let item = KrakenFuturesBatchEditItem::from_params(params, "1");
+        let value = serde_json::to_value(&item).unwrap();
+
+        assert_eq!(
+            value,
+            serde_json::json!({
+                "order": "edit",
+                "order_tag": "1",
+                "order_id": "order-123",
+                "size": "2000",
             }),
         );
     }

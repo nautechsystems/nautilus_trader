@@ -4,6 +4,7 @@
   "active": true,
   "archived": false,
   "closed": true,
+  "version": "v1",
   "condition_id": "0x8ccc3f4951ff02c1d34b87988752b4444ad17228732780a6cf22afefe8478bb6",
   "description": "This market will resolve to \"Yes\" if the Fully Diluted Valuation of Katana's governance token is greater than the value specified in the title 1 day after launch. Otherwise, the market will resolve to \"No.\"\n\nThe token must be actively, publicly transferable and tradable to be considered a launch.\n\nThe FDV will be determined using the total token supply multiplied by the token price.\n\n\"1 day after launch\" is defined as 4:00 PM ET on the calendar day following launch. The resolution source for this market is the most liquid price source available. If Katana (https://x.com/katana) doesn't launch a token by December 31, 2027, 11:59 PM ET, this market will resolve to \"No\".",
   "enable_order_book": false,

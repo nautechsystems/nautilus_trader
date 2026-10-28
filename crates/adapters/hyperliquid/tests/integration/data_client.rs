@@ -48,8 +48,9 @@ use nautilus_common::{
         data::{
             RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBookDeltas,
-            SubscribeBookDepth, SubscribeCustomData, SubscribeMarkPrices, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeCustomData, UnsubscribeMarkPrices,
+            SubscribeBookDepth, SubscribeCustomData, SubscribeInstrumentStatus,
+            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, UnsubscribeCustomData,
+            UnsubscribeInstrumentStatus, UnsubscribeMarkPrices,
         },
         system::SocketState,
     },
@@ -74,8 +75,8 @@ use nautilus_hyperliquid::{
 };
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::{BarType, CustomData, Data, DataType, OrderBookDeltas},
-    enums::{BookAction, BookType, RecordFlag},
+    data::{BarType, CustomData, Data, DataType, InstrumentStatus, OrderBookDeltas},
+    enums::{BookAction, BookType, MarketStatusAction, RecordFlag},
     identifiers::InstrumentId,
     instruments::Instrument,
 };
@@ -88,6 +89,7 @@ use ustr::Ustr;
 #[derive(Clone, Default)]
 struct TestServerState {
     info_request_count: Arc<tokio::sync::Mutex<usize>>,
+    all_perp_metas_request_count: Arc<tokio::sync::Mutex<usize>>,
     last_request_type: Arc<tokio::sync::Mutex<Option<String>>>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscriptions: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -111,6 +113,8 @@ struct TestServerState {
     // When set, the standard perp dex lists BTC with a coarser size precision to
     // emulate the venue changing a definition between two fetches.
     btc_size_decimals_changed: Arc<tokio::sync::Mutex<bool>>,
+    // When set, the standard perp dex flags BTC with `isDelisted`.
+    btc_delisted: Arc<tokio::sync::Mutex<bool>>,
     // When set, the next `allPerpMetas` response is built, then held after
     // notifying `all_perp_metas_held` until `all_perp_metas_release` fires.
     hold_next_all_perp_metas: Arc<tokio::sync::Mutex<bool>>,
@@ -205,6 +209,10 @@ async fn standard_perp_meta(state: &TestServerState) -> Value {
         meta["universe"][0]["szDecimals"] = json!(4);
     }
 
+    if *state.btc_delisted.lock().await {
+        meta["universe"][0]["isDelisted"] = json!(true);
+    }
+
     meta
 }
 
@@ -246,6 +254,7 @@ async fn handle_info(State(state): State<TestServerState>, body: axum::body::Byt
     match request_type.as_str() {
         "meta" => Json(standard_perp_meta(&state).await).into_response(),
         "allPerpMetas" => {
+            *state.all_perp_metas_request_count.lock().await += 1;
             if *state.all_perp_metas_unavailable.lock().await {
                 return (
                     axum::http::StatusCode::INTERNAL_SERVER_ERROR,
@@ -750,10 +759,12 @@ fn create_data_client_config(addr: SocketAddr) -> HyperliquidDataClientConfig {
 }
 
 fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidOpenInterest",
@@ -763,10 +774,12 @@ fn open_interest_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn public_trade_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidPublicTrade",
@@ -776,10 +789,12 @@ fn public_trade_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn twap_history_data_type(user: &str) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "user".to_string(),
-        serde_json::Value::String(user.to_string()),
+    let metadata = Params::new(
+        [(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidTwapHistory",
@@ -789,10 +804,12 @@ fn twap_history_data_type(user: &str) -> DataType {
 }
 
 fn twap_slice_fill_data_type(user: &str) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "user".to_string(),
-        serde_json::Value::String(user.to_string()),
+    let metadata = Params::new(
+        [(
+            "user".to_string(),
+            serde_json::Value::String(user.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "HyperliquidTwapSliceFill",
@@ -813,7 +830,7 @@ async fn drain_initial_events(rx: &mut tokio::sync::mpsc::UnboundedReceiver<Data
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|event| matches!(event, DataEvent::Instrument(_)));
+                .is_ok_and(|event| matches!(event, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -862,6 +879,18 @@ fn btc_instrument_request() -> RequestInstrument {
     )
 }
 
+fn instruments_request() -> RequestInstruments {
+    RequestInstruments::new(
+        None,
+        None,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        Some(*HYPERLIQUID_VENUE),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    )
+}
+
 // A market listed after connect must be published before the response, so the
 // execution client holds its asset index by the time a strategy can act on it.
 fn assert_new_listing_published_before_response(events: &[DataEvent]) {
@@ -874,7 +903,7 @@ fn assert_new_listing_published_before_response(events: &[DataEvent]) {
     let new_listing = published
         .iter()
         .find_map(|event| match event {
-            DataEvent::Instrument(instrument)
+            DataEvent::Data(Data::Instrument(instrument))
                 if instrument.id() == InstrumentId::from("NEWCOIN-USD-PERP.HYPERLIQUID") =>
             {
                 Some(instrument)
@@ -1163,7 +1192,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     let mut instrument_count = 0;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             instrument_count += 1;
         }
     }
@@ -1194,7 +1223,7 @@ async fn test_data_client_emits_hip3_instruments() {
     let mut spot_symbols = Vec::new();
 
     while let Ok(event) = rx.try_recv() {
-        if let DataEvent::Instrument(instrument) = event {
+        if let DataEvent::Data(Data::Instrument(instrument)) = event {
             let symbol = instrument.id().symbol.to_string();
             if symbol.contains(':') {
                 hip3_settlements.push((
@@ -2029,7 +2058,9 @@ async fn test_data_client_concurrent_requests_publish_latest_definition_last() {
         .iter()
         .rev()
         .find_map(|event| match event {
-            DataEvent::Instrument(instrument) if instrument.id() == btc => Some(instrument),
+            DataEvent::Data(Data::Instrument(instrument)) if instrument.id() == btc => {
+                Some(instrument)
+            }
             _ => None,
         })
         .expect("changed BTC definition was never published");
@@ -2858,6 +2889,252 @@ async fn test_data_client_request_instrument() {
     client.disconnect().await.unwrap();
 }
 
+fn instrument_statuses(events: &[DataEvent]) -> Vec<InstrumentStatus> {
+    events
+        .iter()
+        .filter_map(|event| match event {
+            DataEvent::Data(Data::InstrumentStatus(status)) => Some(*status),
+            _ => None,
+        })
+        .collect()
+}
+
+fn instrument_status_subscription(instrument_id: InstrumentId) -> SubscribeInstrumentStatus {
+    SubscribeInstrumentStatus::new(
+        instrument_id,
+        Some(*HYPERLIQUID_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    )
+}
+
+#[rstest]
+#[case::listed(false, MarketStatusAction::Trading)]
+#[case::delisted(true, MarketStatusAction::Close)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_subscribe_instrument_status_emits_current_status(
+    #[case] delisted: bool,
+    #[case] expected: MarketStatusAction,
+) {
+    let state = TestServerState::default();
+    *state.btc_delisted.lock().await = delisted;
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(instrument_id))
+        .unwrap();
+
+    let events: Vec<DataEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    let statuses = instrument_statuses(&events);
+    assert_eq!(statuses.len(), 1, "events: {events:?}");
+    assert_eq!(statuses[0].instrument_id, instrument_id);
+    assert_eq!(statuses[0].action, expected);
+    assert_eq!(
+        statuses[0].is_trading,
+        Some(expected == MarketStatusAction::Trading)
+    );
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_instrument_refresh_emits_status_change_for_subscribed() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(btc_id))
+        .unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    // an unchanged universe emits no status
+    client.request_instruments(instruments_request()).unwrap();
+    let events = recv_until_response(&mut rx).await;
+    assert!(
+        instrument_statuses(&events).is_empty(),
+        "events: {events:?}"
+    );
+
+    *state.btc_delisted.lock().await = true;
+    client.request_instruments(instruments_request()).unwrap();
+    let events = recv_until_response(&mut rx).await;
+    let statuses = instrument_statuses(&events);
+    assert_eq!(statuses.len(), 1, "events: {events:?}");
+    assert_eq!(statuses[0].instrument_id, btc_id);
+    assert_eq!(statuses[0].action, MarketStatusAction::Close);
+    assert_eq!(statuses[0].is_trading, Some(false));
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::disconnect(false)]
+#[case::reset(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_data_client_periodic_instrument_refresh_survives_reconnect(#[case] reset: bool) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_data_client_config(addr);
+    config.update_instruments_interval_mins = 1;
+    config.stream_health_check_interval_secs = 0;
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+
+    for (size_precision, request_refresh) in [(4, true), (5, false)] {
+        client.connect().await.unwrap();
+
+        while rx.try_recv().is_ok() {}
+        let before = *state.all_perp_metas_request_count.lock().await;
+        client.connect().await.unwrap();
+        assert_eq!(*state.all_perp_metas_request_count.lock().await, before);
+        *state.btc_size_decimals_changed.lock().await = size_precision == 4;
+
+        // Only the post-reconnect refresh needs to wait for the periodic timer
+        if request_refresh {
+            client.request_instruments(instruments_request()).unwrap();
+        }
+
+        let refreshed = tokio::time::timeout(Duration::from_secs(70), async {
+            loop {
+                if let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await
+                    && instrument.id() == btc_id
+                {
+                    break instrument;
+                }
+            }
+        })
+        .await
+        .expect("periodic refresh must publish the changed BTC definition");
+
+        wait_until_async(
+            || async { *state.all_perp_metas_request_count.lock().await == before + 2 },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert_eq!(refreshed.size_precision(), size_precision);
+        assert_eq!(
+            refreshed
+                .info()
+                .and_then(|info| info.get_u64(ASSET_INDEX_INFO_KEY)),
+            Some(0),
+        );
+
+        if reset {
+            client.reset().unwrap();
+        }
+
+        client.disconnect().await.unwrap();
+        let stopped = *state.all_perp_metas_request_count.lock().await;
+        assert_eq!(stopped, before + 2);
+        assert!(client.is_disconnected());
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_instrument_refresh_keeps_status_on_partial_perp_load() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let tsla_id = InstrumentId::from("xyz:TSLA-USD-PERP.HYPERLIQUID");
+    for instrument_id in [btc_id, tsla_id] {
+        client
+            .subscribe_instrument_status(instrument_status_subscription(instrument_id))
+            .unwrap();
+    }
+
+    let events: Vec<DataEvent> = std::iter::from_fn(|| rx.try_recv().ok()).collect();
+    assert!(
+        instrument_statuses(&events)
+            .iter()
+            .any(|s| s.instrument_id == tsla_id && s.action == MarketStatusAction::Trading),
+        "events: {events:?}"
+    );
+
+    // the `meta` fallback only returns the standard dex, so perps are not fully loaded
+    *state.all_perp_metas_unavailable.lock().await = true;
+    *state.btc_delisted.lock().await = true;
+    client.request_instruments(instruments_request()).unwrap();
+    let events = recv_until_response(&mut rx).await;
+    let statuses = instrument_statuses(&events);
+    assert_eq!(statuses.len(), 1, "events: {events:?}");
+    assert_eq!(statuses[0].instrument_id, btc_id);
+    assert_eq!(statuses[0].action, MarketStatusAction::Close);
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_data_client_unsubscribe_instrument_status_stops_emitting() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+
+    let config = create_data_client_config(addr);
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(btc_id))
+        .unwrap();
+    client
+        .unsubscribe_instrument_status(&UnsubscribeInstrumentStatus::new(
+            btc_id,
+            Some(*HYPERLIQUID_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    *state.btc_delisted.lock().await = true;
+    client.request_instruments(instruments_request()).unwrap();
+    let events = recv_until_response(&mut rx).await;
+    assert!(
+        instrument_statuses(&events).is_empty(),
+        "events: {events:?}"
+    );
+
+    client.disconnect().await.unwrap();
+}
+
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_data_client_request_book_snapshot() {
@@ -2991,7 +3268,7 @@ async fn test_data_client_request_trades() {
 
     match event {
         DataEvent::Response(DataResponse::Trades(trades_response)) => {
-            assert_eq!(trades_response.instrument_id, instrument_id);
+            assert_eq!(trades_response.instrument_ids, vec![instrument_id]);
             // Fixture carries three trades; the response is sorted ascending.
             assert_eq!(trades_response.data.len(), 3);
             assert_eq!(trades_response.data[0].trade_id.to_string(), "300001");
@@ -3071,10 +3348,13 @@ async fn test_data_client_request_public_trades() {
     while rx.try_recv().is_ok() {}
 
     let instrument_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     let data_type = DataType::new("HyperliquidPublicTrade", Some(metadata), None);
     client
@@ -3226,7 +3506,7 @@ async fn test_data_client_request_trades_endpoint_unavailable() {
 
     match event {
         DataEvent::Response(DataResponse::Trades(trades_response)) => {
-            assert_eq!(trades_response.instrument_id, instrument_id);
+            assert_eq!(trades_response.instrument_ids, vec![instrument_id]);
             assert!(
                 trades_response.data.is_empty(),
                 "422 should yield an empty response, was: {:?}",
@@ -3295,10 +3575,12 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
     while rx.try_recv().is_ok() {}
 
     let perp_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
+    let start = jiff::Timestamp::from_millisecond(1_769_908_800_000).unwrap();
+    let end = jiff::Timestamp::from_millisecond(1_769_920_000_000).unwrap();
     let cmd = RequestFundingRates::new(
         perp_id,
-        None,
-        None,
+        Some(start),
+        Some(end),
         None,
         Some(*HYPERLIQUID_CLIENT_ID),
         UUID4::new(),
@@ -3322,7 +3604,7 @@ async fn test_request_funding_rates_emits_data_response_from_mock() {
             assert!(rates.contains(&"-0.0000081".to_string()));
             assert!(rates.contains(&"0.0000033".to_string()));
 
-            for update in &response.data {
+            for update in response.data.iter() {
                 assert_eq!(update.interval, Some(60), "Hyperliquid funds hourly");
                 assert!(update.next_funding_ns.is_none());
             }

@@ -686,20 +686,19 @@ fn dispatch_execution_fill(
         .and_then(|cid| state.order_identities.get(cid).map(|r| r.clone()));
 
     if let (Some(client_order_id), Some(identity)) = (client_order_id, identity) {
-        let venue_order_id = VenueOrderId::new(exec.order_id);
-
-        ensure_accepted_emitted(
-            client_order_id,
-            account_id,
-            venue_order_id,
-            &identity,
-            emitter,
-            state,
-            ts_init,
-        );
-
         match parse_order_filled(exec, instrument, &identity, emitter, account_id, ts_init) {
             Ok(filled) => {
+                let venue_order_id = filled.venue_order_id;
+                ensure_accepted_emitted(
+                    client_order_id,
+                    account_id,
+                    venue_order_id,
+                    &identity,
+                    emitter,
+                    state,
+                    ts_init,
+                );
+
                 let is_spot_buy =
                     exec.category == BybitProductType::Spot && exec.side == BybitOrderSide::Buy;
 
@@ -808,6 +807,7 @@ fn parse_order_filled(
         .exec_fee
         .parse()
         .with_context(|| format!("failed to parse execFee='{}'", exec.exec_fee))?;
+    let price_currency = instrument.quote_currency();
     let commission_currency = get_currency(&exec.fee_currency);
     let commission = Money::from_decimal(fee_decimal, commission_currency).with_context(|| {
         format!(
@@ -830,7 +830,7 @@ fn parse_order_filled(
         identity.order_type,
         last_qty,
         last_px,
-        commission_currency,
+        price_currency,
         liquidity_side,
         UUID4::new(),
         ts_event,
@@ -1278,14 +1278,18 @@ mod tests {
         UnixNanos,
         time::{AtomicTime, get_atomic_clock_realtime},
     };
-    use nautilus_live::emitter::ExecutionEventEmitter;
+    use nautilus_live::{emitter::ExecutionEventEmitter, testing::ExecutionHarness};
     use nautilus_model::{
-        enums::{AccountType, OrderSide, OrderType},
+        accounts::MarginAccount,
+        enums::{AccountType, OrderSide, OrderStatus, OrderType},
         events::OrderEventAny,
         identifiers::{
             AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId, VenueOrderId,
         },
         instruments::{Instrument, InstrumentAny},
+        orders::{Order, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+        reports::FillReport,
+        types::Currency,
     };
     use rstest::rstest;
     use ustr::Ustr;
@@ -1294,10 +1298,13 @@ mod tests {
     use crate::{
         common::{
             enums::{BybitExecType, BybitOrderSide, BybitProductType},
-            parse::{parse_linear_instrument, parse_spot_instrument},
+            parse::{parse_inverse_instrument, parse_linear_instrument, parse_spot_instrument},
             testing::load_test_json,
         },
-        http::models::{BybitInstrumentLinearResponse, BybitInstrumentSpotResponse},
+        http::models::{
+            BybitInstrumentInverseResponse, BybitInstrumentLinearResponse,
+            BybitInstrumentSpotResponse,
+        },
         websocket::messages::{
             BybitWsAccountExecutionFastMsg, BybitWsMessage, BybitWsOrderResponse,
         },
@@ -1317,6 +1324,14 @@ mod tests {
         let instrument = &response.result.list[0];
         let ts = UnixNanos::new(1_700_000_000_000_000_000);
         parse_spot_instrument(instrument, ts, ts).unwrap()
+    }
+
+    fn inverse_instrument() -> InstrumentAny {
+        let json = load_test_json("http_get_instruments_inverse.json");
+        let response: BybitInstrumentInverseResponse = serde_json::from_str(&json).unwrap();
+        let instrument = &response.result.list[0];
+        let ts = UnixNanos::new(1_700_000_000_000_000_000);
+        parse_inverse_instrument(instrument, ts, ts).unwrap()
     }
 
     fn build_instruments(instruments: &[InstrumentAny]) -> AHashMap<Ustr, InstrumentAny> {
@@ -1601,6 +1616,327 @@ mod tests {
     }
 
     #[rstest]
+    #[case::commission_overflow("execFee", "9999999999999999999999999999")]
+    #[case::commission_parse("execFee", "invalid")]
+    #[case::qty("execQty", "invalid")]
+    #[case::price("execPrice", "invalid")]
+    #[case::timestamp("execTime", "invalid")]
+    #[case::trade_id("execId", "")]
+    fn test_dispatch_invalid_execution_preserves_state(
+        #[case] field: &str,
+        #[case] value: &str,
+        #[values(false, true)] spot: bool,
+    ) {
+        let instrument = if spot {
+            spot_instrument()
+        } else {
+            linear_instrument()
+        };
+
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let state = WsDispatchState::default();
+        let (repay_tx, mut repay_rx) = tokio::sync::mpsc::unbounded_channel();
+        state.set_repay_sender(repay_tx);
+        let mut payload: serde_json::Value =
+            serde_json::from_str(&load_test_json("ws_account_execution.json")).unwrap();
+        payload["data"][0][field] = serde_json::Value::String(value.to_string());
+        payload["data"][0]["side"] = serde_json::Value::String("Buy".to_string());
+        if spot {
+            payload["data"][0]["category"] = serde_json::Value::String("spot".to_string());
+        }
+
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_value(payload).unwrap();
+        let cid = ClientOrderId::new(msg.data[0].order_link_id);
+
+        let identity = OrderIdentity {
+            instrument_id: instrument.id(),
+            venue_position_id: Some(PositionId::from("P-001")),
+            ..default_identity()
+        };
+
+        state.order_identities.insert(cid, identity.clone());
+        state.order_snapshots.insert(
+            cid,
+            OrderStateSnapshot {
+                quantity: Quantity::from("0.500"),
+                price: Some(Price::from("95900.1")),
+                trigger_price: Some(Price::from("95800.2")),
+            },
+        );
+
+        state.insert_triggered(cid);
+
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecution(msg),
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            get_atomic_clock_realtime(),
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert!(repay_rx.try_recv().is_err());
+        assert!(state.emitted_accepted.is_empty());
+        assert!(state.filled_orders.is_empty());
+        assert!(state.spot_repay_fills.is_empty());
+        assert!(state.pending_requests.is_empty());
+        assert_eq!(state.triggered_orders.len(), 1);
+        assert!(state.triggered_orders.contains(&cid));
+        assert_eq!(state.order_identities.len(), 1);
+        let retained = state.order_identities.get(&cid).unwrap();
+        assert_eq!(retained.instrument_id, identity.instrument_id);
+        assert_eq!(retained.strategy_id, identity.strategy_id);
+        assert_eq!(retained.order_side, identity.order_side);
+        assert_eq!(retained.order_type, identity.order_type);
+        assert_eq!(retained.venue_position_id, identity.venue_position_id);
+        assert_eq!(state.order_snapshots.len(), 1);
+        let snapshot = state.order_snapshots.get(&cid).unwrap();
+        assert_eq!(snapshot.quantity, Quantity::from("0.500"));
+        assert_eq!(snapshot.price, Some(Price::from("95900.1")));
+        assert_eq!(snapshot.trigger_price, Some(Price::from("95800.2")));
+    }
+
+    #[rstest]
+    #[case::partial("0.5", "1.000", OrderStatus::PartiallyFilled)]
+    #[case::terminal("0", "0.500", OrderStatus::Filled)]
+    fn test_dispatch_execution_commission_failure_recovery_and_replay(
+        #[case] leaves_qty: &str,
+        #[case] order_qty: &str,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let instrument = linear_instrument();
+        let instruments = build_instruments(std::slice::from_ref(&instrument));
+        let (emitter, mut rx) = create_emitter();
+        let state = WsDispatchState::default();
+        let clock = AtomicTime::new(false, UnixNanos::new(1_746_270_400_400_000_000));
+        let mut msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&load_test_json("ws_account_execution.json")).unwrap();
+        msg.data[0].leaves_qty = leaves_qty.to_string();
+        msg.data[0].side = BybitOrderSide::Buy;
+        msg.data[0].exec_fee = "9999999999999999999999999999".to_string();
+        let cid = ClientOrderId::new(msg.data[0].order_link_id);
+        let identity = default_identity();
+        state.order_identities.insert(cid, identity.clone());
+
+        let harness = ExecutionHarness::new(
+            emitter.trader_id(),
+            *crate::common::consts::BYBIT_CLIENT_ID,
+            test_account_id(),
+            instrument.clone(),
+        );
+        let wallet: crate::websocket::messages::BybitWsAccountWalletMsg =
+            serde_json::from_str(&load_test_json("ws_account_wallet.json")).unwrap();
+        let account_state = parse_ws_account_state(
+            &wallet.data[0],
+            test_account_id(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+        let account = MarginAccount::new(account_state, false);
+        harness
+            .cache()
+            .borrow_mut()
+            .add_account(account.into())
+            .unwrap();
+        let mut order = OrderTestBuilder::new(identity.order_type)
+            .trader_id(emitter.trader_id())
+            .strategy_id(identity.strategy_id)
+            .instrument_id(instrument.id())
+            .client_order_id(cid)
+            .side(identity.order_side)
+            .quantity(Quantity::from(order_qty))
+            .price(Price::from("94942.5"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, test_account_id());
+        order.apply(submitted).unwrap();
+        harness
+            .cache()
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+
+        dispatch_ws_message(
+            &BybitWsMessage::AccountExecution(msg.clone()),
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            &clock,
+        );
+
+        assert!(rx.try_recv().is_err());
+        assert!(state.emitted_accepted.is_empty());
+        assert!(state.filled_orders.is_empty());
+        assert_eq!(state.order_identities.len(), 1);
+
+        msg.data[0].exec_fee = "0.01234567".to_string();
+        let message = BybitWsMessage::AccountExecution(msg);
+        dispatch_ws_message(
+            &message,
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            &clock,
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = rx.try_recv().unwrap()
+        else {
+            panic!("expected Accepted before Filled");
+        };
+
+        let expected_accepted = OrderAccepted::new(
+            emitter.trader_id(),
+            identity.strategy_id,
+            instrument.id(),
+            cid,
+            VenueOrderId::from("9aac161b-8ed6-450d-9cab-c5cc67c21784"),
+            test_account_id(),
+            accepted.event_id,
+            clock.get_time_ns(),
+            clock.get_time_ns(),
+            false,
+        );
+        assert_eq!(accepted, expected_accepted);
+        harness
+            .exec_engine()
+            .borrow_mut()
+            .process(&OrderEventAny::Accepted(accepted));
+
+        let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = rx.try_recv().unwrap() else {
+            panic!("expected Filled after Accepted");
+        };
+
+        let commission = Money::from("0.01234567 USDT");
+
+        let expected_filled = OrderFilled::new(
+            emitter.trader_id(),
+            identity.strategy_id,
+            instrument.id(),
+            cid,
+            VenueOrderId::from("9aac161b-8ed6-450d-9cab-c5cc67c21784"),
+            test_account_id(),
+            TradeId::from("0ab1bdf7-4219-438b-b30a-32ec863018f7"),
+            OrderSide::Buy,
+            OrderType::Limit,
+            Quantity::from("0.500"),
+            Price::from("95900.1"),
+            Currency::USDT(),
+            LiquiditySide::Taker,
+            filled.event_id,
+            UnixNanos::new(1_746_270_400_353_000_000),
+            clock.get_time_ns(),
+            false,
+            None,
+            Some(commission),
+            None,
+        );
+        assert_eq!(filled, expected_filled);
+        assert!(rx.try_recv().is_err());
+        harness
+            .exec_engine()
+            .borrow_mut()
+            .process(&OrderEventAny::Filled(filled.clone()));
+        let applied = harness.cache().borrow().order(&cid).unwrap().clone();
+        assert_eq!(applied.status(), expected_status);
+        assert_eq!(applied.filled_qty(), Quantity::from("0.500"));
+        assert_eq!(
+            applied.commissions().get(&Currency::USDT()),
+            Some(&commission)
+        );
+        assert_eq!(applied.trade_ids(), vec![&filled.trade_id]);
+        let position_id = *harness.cache().borrow().position_id(&cid).unwrap();
+        let position = harness
+            .cache()
+            .borrow()
+            .position(&position_id)
+            .unwrap()
+            .clone();
+        assert_eq!(position.quantity, Quantity::from("0.500"));
+        assert_eq!(position.commissions(), vec![commission]);
+        let mut expected_position_fill = filled.clone();
+        expected_position_fill.position_id = Some(position_id);
+        assert_eq!(position.events, vec![expected_position_fill]);
+
+        dispatch_ws_message(
+            &message,
+            &emitter,
+            &state,
+            test_account_id(),
+            &instruments,
+            &clock,
+        );
+        let replay = rx.try_recv().unwrap();
+        match replay {
+            ExecutionEvent::Order(OrderEventAny::Filled(replayed)) => {
+                let expected_replay = OrderFilled {
+                    event_id: replayed.event_id,
+                    ..filled.clone()
+                };
+
+                assert_eq!(replayed, expected_replay);
+                assert_eq!(leaves_qty, "0.5");
+                harness
+                    .exec_engine()
+                    .borrow_mut()
+                    .process(&OrderEventAny::Filled(replayed));
+            }
+            ExecutionEvent::Report(ExecutionReport::Fill(report)) => {
+                let expected_report = FillReport::new(
+                    filled.account_id,
+                    filled.instrument_id,
+                    filled.venue_order_id,
+                    filled.trade_id,
+                    filled.order_side,
+                    filled.last_qty,
+                    filled.last_px,
+                    commission,
+                    filled.liquidity_side,
+                    Some(cid),
+                    None,
+                    filled.ts_event,
+                    filled.ts_init,
+                    Some(report.report_id),
+                );
+                assert_eq!(*report, expected_report);
+                assert_eq!(leaves_qty, "0");
+                harness
+                    .exec_engine()
+                    .borrow_mut()
+                    .reconcile_fill_report(&report);
+            }
+            other => panic!("unexpected replay: {other:?}"),
+        }
+
+        harness
+            .exec_engine()
+            .borrow_mut()
+            .process(&OrderEventAny::Filled(filled));
+
+        assert!(rx.try_recv().is_err());
+        assert_eq!(
+            serde_json::to_value(harness.cache().borrow().order(&cid).unwrap().clone()).unwrap(),
+            serde_json::to_value(&applied).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_value(
+                harness
+                    .cache()
+                    .borrow()
+                    .position(&position_id)
+                    .unwrap()
+                    .clone()
+            )
+            .unwrap(),
+            serde_json::to_value(&position).unwrap()
+        );
+    }
+
+    #[rstest]
     fn parse_order_filled_uses_payload_fee_currency() {
         let instrument = linear_instrument();
         let (emitter, _rx) = create_emitter();
@@ -1624,6 +1960,58 @@ mod tests {
 
         let commission = filled.commission.expect("commission present");
         assert_eq!(commission.currency.code, "BTC");
+    }
+
+    #[rstest]
+    #[case::spot_base_fee(BybitProductType::Spot, "BTC", "0.000001", "USDT")]
+    #[case::spot_quote_fee(BybitProductType::Spot, "USDT", "0.1", "USDT")]
+    #[case::linear_fee(BybitProductType::Linear, "USDT", "0.1", "USDT")]
+    #[case::inverse_fee(BybitProductType::Inverse, "BTC", "0.000001", "USD")]
+    #[case::spot_zero_fee(BybitProductType::Spot, "BTC", "0", "USDT")]
+    #[case::inverse_rebate(BybitProductType::Inverse, "BTC", "-0.000001", "USD")]
+    fn parse_order_filled_separates_price_and_commission_currencies(
+        #[case] category: BybitProductType,
+        #[case] fee_currency: &str,
+        #[case] fee: &str,
+        #[case] expected_price_currency: &str,
+    ) {
+        let instrument = match category {
+            BybitProductType::Spot => spot_instrument(),
+            BybitProductType::Linear => linear_instrument(),
+            BybitProductType::Inverse => inverse_instrument(),
+            _ => unreachable!("unsupported test product"),
+        };
+        let (emitter, _rx) = create_emitter();
+        let json = load_test_json("ws_account_execution.json");
+        let msg: crate::websocket::messages::BybitWsAccountExecutionMsg =
+            serde_json::from_str(&json).unwrap();
+        let mut exec = msg.data[0].clone();
+        exec.category = category;
+        exec.symbol = instrument.raw_symbol().inner();
+        exec.exec_qty = "1".to_string();
+        exec.exec_fee = fee.to_string();
+        exec.fee_currency = Ustr::from(fee_currency);
+        let identity = OrderIdentity {
+            instrument_id: instrument.id(),
+            order_side: OrderSide::Sell,
+            order_type: OrderType::Market,
+            ..default_identity()
+        };
+
+        let filled = parse_order_filled(
+            &exec,
+            &instrument,
+            &identity,
+            &emitter,
+            test_account_id(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        let commission = filled.commission.expect("commission present");
+        assert_eq!(commission.currency.code, fee_currency);
+        assert_eq!(commission.as_decimal(), fee.parse::<Decimal>().unwrap());
+        assert_eq!(filled.currency.code, expected_price_currency);
     }
 
     #[rstest]

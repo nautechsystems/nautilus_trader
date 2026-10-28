@@ -878,6 +878,45 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::http::query::ExchangeAction;
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    fn test_leverage_margin_wire_contract(#[case] case_index: usize) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/leverage_margin_actions.json"))
+                .unwrap();
+        let case = &fixture["cases"][case_index];
+        let expected_json = case["json"].as_str().unwrap();
+        let expected_bytes = hex::decode(case["msgpack"].as_str().unwrap()).unwrap();
+        let action: HyperliquidExchangeAction = serde_json::from_str(expected_json).unwrap();
+
+        let legacy = match action {
+            HyperliquidExchangeAction::UpdateLeverage {
+                asset,
+                is_cross,
+                leverage,
+            } => ExchangeAction::update_leverage(asset, is_cross, leverage),
+            HyperliquidExchangeAction::UpdateIsolatedMargin {
+                asset,
+                is_buy,
+                ntli,
+            } => ExchangeAction::update_isolated_margin(asset, is_buy, ntli),
+            _ => panic!("unexpected fixture action"),
+        };
+
+        let bytes = rmp_serde::to_vec_named(&action).unwrap();
+        let roundtrip: HyperliquidExchangeAction = rmp_serde::from_slice(&bytes).unwrap();
+
+        assert_eq!(serde_json::to_string(&action).unwrap(), expected_json);
+        assert_eq!(serde_json::to_string(&legacy).unwrap(), expected_json);
+        assert_eq!(bytes, expected_bytes);
+        assert_eq!(rmp_serde::to_vec_named(&legacy).unwrap(), expected_bytes);
+        assert_eq!(roundtrip, action);
+    }
 
     #[rstest]
     fn test_signature_serialization_and_debug_redaction() {
@@ -1955,7 +1994,6 @@ pub enum HyperliquidExchangeAction {
     #[serde(rename = "updateLeverage")]
     UpdateLeverage {
         /// Asset ID.
-        #[serde(rename = "a")]
         asset: AssetId,
         /// Whether to use cross margin.
         #[serde(rename = "isCross")]
@@ -1969,18 +2007,17 @@ pub enum HyperliquidExchangeAction {
     #[serde(rename = "updateIsolatedMargin")]
     UpdateIsolatedMargin {
         /// Asset ID.
-        #[serde(rename = "a")]
         asset: AssetId,
-        /// Margin delta as a string.
-        #[serde(
-            rename = "delta",
-            serialize_with = "serialize_decimal_as_str",
-            deserialize_with = "deserialize_decimal_from_str"
-        )]
-        delta: Decimal,
+        /// Whether to target the buy side; has no effect until hedge mode is introduced.
+        #[serde(rename = "isBuy")]
+        is_buy: bool,
+        /// Margin change in millionths of USDC, negative to remove margin.
+        ntli: i64,
     },
 
     /// Transfer USD between spot and perp accounts.
+    ///
+    /// Unsupported by the typed signing and posting methods.
     #[serde(rename = "usdClassTransfer")]
     UsdClassTransfer {
         /// Source account type.

@@ -412,16 +412,23 @@ fn test_backtest_client_overrides_when_registered_as_default(
 
 #[rstest]
 fn test_external_client_forwards_subscribe_and_unsubscribe_commands(
+    #[values(0, 1, 2)] client_index: usize,
     audusd_sim: CurrencyPair,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
-    client_id: ClientId,
     venue: Venue,
 ) {
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache: Rc<RefCell<Cache>> = Rc::new(RefCell::new(Cache::default()));
+    let client_ids = [
+        ClientId::from("EXTERNAL-ALPHA"),
+        ClientId::from("EXTERNAL-BRAVO"),
+        ClientId::from("EXTERNAL-PREVIOUS"),
+    ];
+    let client_id = client_ids[client_index];
+    cache.borrow_mut().add_external_data_client(client_ids[2]);
 
     let config = DataEngineConfig {
-        external_clients: Some(vec![client_id]),
+        external_clients: Some(client_ids[..2].to_vec()),
         ..DataEngineConfig::default()
     };
 
@@ -591,6 +598,95 @@ async fn test_data_engine_connect_omits_provider_errors(
     assert!(!data_engine.check_connected());
 }
 
+#[rstest]
+#[case::instruments(false)]
+#[case::bars(true)]
+fn test_partial_subscription_logs_only_failed_members(
+    #[case] bars: bool,
+    #[values(false, true)] release: bool,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let first = InstrumentId::from("AUD/USD.SIM");
+    let second = InstrumentId::from("GBP/USD.SIM");
+    let foreign = InstrumentId::from("FOREIGN.SIM");
+    let first_bar = BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let second_bar = BarType::from("AUD/USD.SIM-5-MINUTE-LAST-EXTERNAL");
+    let foreign_bar = BarType::from("AUD/USD.SIM-1-HOUR-LAST-EXTERNAL");
+    let outcome = if bars {
+        MockSubscribeFailure::BarsPartial([first_bar, first_bar, foreign_bar])
+    } else {
+        MockSubscribeFailure::MarkPricesPartial([first, first, foreign])
+    };
+
+    let mut client =
+        MockDataClient::new(clock, cache, client_id, Some(venue)).with_unsubscribe_failure(outcome);
+    if !release {
+        client = client.with_subscribe_failure(outcome);
+    }
+
+    let mut adapter =
+        DataClientAdapter::new(client_id, Some(venue), false, false, Box::new(client));
+    let command_id = UUID4::new();
+    let params = Some(params_from_json(json!({"private": "must-not-log"})));
+
+    let command = if bars {
+        SubscribeCommand::Bars(SubscribeBars::new(
+            [first_bar, second_bar],
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(31),
+            None,
+            params,
+        ))
+    } else {
+        SubscribeCommand::MarkPrices(SubscribeMarkPrices::new(
+            [first, second],
+            Some(client_id),
+            Some(venue),
+            command_id,
+            UnixNanos::from(31),
+            None,
+            params,
+        ))
+    };
+
+    capture_connection_logs();
+    adapter.execute_subscribe(command.clone());
+
+    let (direction, outcome, operation_id) = if release {
+        take_connection_logs();
+        let release = command.into_unsubscribe(UUID4::new(), UnixNanos::from(37), None);
+        adapter.execute_unsubscribe(&release);
+        ("Unsubscribe", "unreleased", release.command_id())
+    } else {
+        ("Subscribe", "unaccepted", command_id)
+    };
+
+    let failed = if bars {
+        format!("Bars({second_bar:?})")
+    } else {
+        format!("MarkPrices({second:?})")
+    };
+
+    let errors: Vec<_> = take_connection_logs()
+        .into_iter()
+        .filter(|(level, _)| *level == Level::Error)
+        .collect();
+    assert_eq!(
+        errors,
+        vec![(
+            Level::Error,
+            format!(
+                "Client command failed: {direction} {client_id} {outcome} [{failed}] command {operation_id}"
+            )
+        )]
+    );
+}
+
 fn capture_connection_logs() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {
@@ -710,7 +806,10 @@ impl DataClient for ConnectionDataClient {
         self.record("unsubscribe")
     }
 
-    fn request_quotes(&self, _: RequestQuotes) -> anyhow::Result<()> {
+    fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        request
+            .single_instrument_id()
+            .map_err(|e| e.context("provider context token=SYN-private"))?;
         self.record("request")
     }
 
@@ -838,8 +937,8 @@ fn test_data_subscription_logging(
 
     let mut adapter = DataClientAdapter::new(client_id, None, true, true, Box::new(client));
     let instrument_id = InstrumentId::from("SYN.SYN");
-    let mut params = Params::default();
-    params.insert("token".to_string(), serde_json::json!("SYN-command-secret"));
+    let params =
+        Params::new([("token".to_string(), serde_json::json!("SYN-command-secret"))].into());
     let subscribe_id = UUID4::new();
     let unsubscribe_id = UUID4::new();
     adapter.execute_subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
@@ -862,16 +961,16 @@ fn test_data_subscription_logging(
     )));
 
     let expected = if error_message.is_some() {
-        let (name, command_id) = if operation == "subscribe" {
-            ("Subscribe", subscribe_id)
+        let (name, outcome, command_id) = if operation == "subscribe" {
+            ("Subscribe", "unaccepted", subscribe_id)
         } else {
-            ("Unsubscribe", unsubscribe_id)
+            ("Unsubscribe", "unreleased", unsubscribe_id)
         };
 
         vec![(
             Level::Error,
             format!(
-                "Client command failed: {name} SUBSCRIPTIONS Quotes(\"SYN.SYN\") command {command_id}"
+                "Client command failed: {name} SUBSCRIPTIONS {outcome} [Quotes(\"SYN.SYN\")] command {command_id}"
             ),
         )]
     } else {
@@ -919,8 +1018,8 @@ fn test_defi_subscription_logging(
     };
 
     let mut adapter = DataClientAdapter::new(client_id, None, true, true, Box::new(client));
-    let mut params = Params::default();
-    params.insert("token".to_string(), serde_json::json!("SYN-command-secret"));
+    let params =
+        Params::new([("token".to_string(), serde_json::json!("SYN-command-secret"))].into());
     let subscribe_id = UUID4::new();
     let unsubscribe_id = UUID4::new();
     adapter.execute_defi_subscribe(DefiSubscribeCommand::Blocks(SubscribeBlocks::new(
@@ -998,7 +1097,7 @@ fn test_data_request_logging(
     take_connection_logs();
 
     let request = RequestQuotes {
-        instrument_id: InstrumentId::from("SYN.SYN"),
+        instrument_ids: vec![InstrumentId::from("SYN.SYN")],
         start: None,
         end: None,
         limit: None,
@@ -1008,6 +1107,8 @@ fn test_data_request_logging(
         params: None,
     };
 
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&request_id, handler);
     engine.execute(DataCommand::Request(RequestCommand::Quotes(request)));
 
     let expected = if error_message.is_some() {
@@ -1023,6 +1124,112 @@ fn test_data_request_logging(
 
     assert_eq!(take_connection_logs(), expected);
     assert_eq!(*calls.borrow(), vec![(client_id, "request")]);
+    let responses = saver.get_messages();
+    assert_eq!(responses.len(), usize::from(error_message.is_some()));
+
+    if error_message.is_some() {
+        assert_eq!(responses[0].correlation_id(), &request_id);
+        assert!(responses[0].completed());
+        assert!(responses[0].response().is_none());
+        assert_eq!(
+            responses[0].failure_reason(),
+            Some("Data client REQUESTS request failed")
+        );
+    }
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+#[case::unsupported(true)]
+#[case::operational(false)]
+fn test_data_request_failure_preserves_only_safe_reason(
+    #[case] unsupported: bool,
+    #[values(false, true)] planned: bool,
+    cache: Rc<RefCell<Cache>>,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+) {
+    let client_id = ClientId::from("REQUESTS");
+    let request_id = UUID4::new();
+    let calls = Rc::new(RefCell::new(Vec::new()));
+
+    let client = ConnectionDataClient {
+        client_id,
+        error_message: Some("provider password=SYN-private"),
+        error_operation: None,
+        barrier: Rc::new(tokio::sync::Barrier::new(1)),
+        connected: false,
+        calls: Rc::clone(&calls),
+    };
+
+    let mut engine = DataEngine::new(data_engine_clock_at(3000), cache, None);
+    engine.register_client(
+        DataClientAdapter::new(client_id, None, true, true, Box::new(client)),
+        None,
+    );
+    let directory = planned.then(|| CatalogTempDir::new("request-rejection"));
+    if let Some(directory) = &directory {
+        engine.register_catalog(
+            Box::new(ParquetDataCatalog::new(
+                directory.path(),
+                None,
+                None,
+                None,
+                None,
+            )),
+            Some("history"),
+        );
+    }
+
+    let mut ids = vec![InstrumentId::from("AUD/USD.SIM")];
+    if unsupported {
+        ids.push(InstrumentId::from("GBP/USD.SIM"));
+    }
+
+    let request = RequestQuotes::new(
+        ids,
+        Some(UnixNanos::from(1000).to_datetime_utc()),
+        Some(UnixNanos::from(2000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::from(3000),
+        None,
+    );
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&request_id, handler);
+    let result = engine.execute_request(RequestCommand::Quotes(request));
+    let replies = saver.get_messages();
+
+    let expected_reason = if unsupported {
+        "Data client REQUESTS request failed: request requires one instrument ID on this adapter path, received 2"
+    } else {
+        "Data client REQUESTS request failed"
+    };
+
+    let expected_calls = if unsupported {
+        Vec::new()
+    } else {
+        vec![(client_id, "request")]
+    };
+
+    assert_eq!(
+        result.err().map(|e| e.to_string()),
+        (!planned).then(|| expected_reason.to_owned())
+    );
+    assert_eq!(*calls.borrow(), expected_calls);
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].correlation_id(), &request_id);
+    assert_eq!(replies[0].sub_correlation_id(), None);
+    assert!(replies[0].completed());
+    assert!(replies[0].response().is_none());
+    assert_eq!(replies[0].failure_reason(), Some(expected_reason));
+    assert_eq!(engine.request_pipeline_count(), 0);
+    assert!(
+        stub_msgbus
+            .borrow()
+            .get_response_handler(&request_id)
+            .is_none()
+    );
 }
 
 #[rstest]
@@ -1034,7 +1241,7 @@ fn test_data_request_logging_preserves_venue_without_client(
     let request_id = UUID4::new();
 
     let request = RequestQuotes {
-        instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+        instrument_ids: vec![InstrumentId::from("BTCUSDT.BINANCE")],
         start: None,
         end: None,
         limit: None,
@@ -1099,11 +1306,13 @@ impl DataClient for UnsupportedDataClient {
 #[rstest]
 fn test_unimplemented_command_logging_omits_parameters() {
     capture_connection_logs();
-    let mut params = nautilus_core::Params::default();
-    params.insert("api_key".to_string(), serde_json::json!("SYN-secret"));
+
+    let params = nautilus_core::Params::new(
+        [("api_key".to_string(), serde_json::json!("SYN-secret"))].into(),
+    );
 
     let request = RequestQuotes {
-        instrument_id: InstrumentId::from("SYN.SYN"),
+        instrument_ids: vec![InstrumentId::from("SYN.SYN")],
         start: None,
         end: None,
         limit: None,
@@ -1126,31 +1335,74 @@ fn test_unimplemented_command_logging_omits_parameters() {
     let result = client.request_quotes(request);
     let unsubscribe_result = client.unsubscribe_quotes(&unsubscribe);
 
-    assert!(result.is_ok());
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Data client UNSUPPORTED does not support RequestQuotes"
+    );
     assert!(unsubscribe_result.is_ok());
     assert_eq!(
         take_connection_logs(),
-        vec![
-            (
-                Level::Warn,
-                format!(
-                    "Handler not implemented: client UNSUPPORTED, command {}",
-                    std::any::type_name::<RequestQuotes>()
-                )
-            ),
-            (
-                Level::Warn,
-                format!(
-                    "Handler not implemented: client UNSUPPORTED, command {}",
-                    std::any::type_name::<UnsubscribeQuotes>()
-                )
+        vec![(
+            Level::Warn,
+            format!(
+                "Handler not implemented: client UNSUPPORTED, command {}",
+                std::any::type_name::<UnsubscribeQuotes>()
             )
-        ]
+        )]
     );
 }
 
 #[rstest]
+fn test_engine_preparation_logs_each_failure_reason(
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    capture_connection_logs();
+    let command_id = UUID4::new();
+    let bar_types = [
+        BarType::from("FIRST.SIM-1-MINUTE-LAST-INTERNAL"),
+        BarType::from("SECOND.SIM-5-MINUTE-LAST-INTERNAL"),
+    ];
+
+    let command = SubscribeBars::new(
+        bar_types,
+        Some(ClientId::from("PUBLIC")),
+        Some(Venue::from("SIM")),
+        command_id,
+        UnixNanos::from(17),
+        None,
+        Some(params_from_json(json!({"private": "must-not-log"}))),
+    );
+    let mut engine = DataEngine::new(clock, cache, None);
+    take_connection_logs();
+
+    let error = engine
+        .execute_subscribe(SubscribeCommand::Bars(command))
+        .unwrap_err();
+
+    let expected: Vec<_> = bar_types
+        .into_iter()
+        .map(|bar_type| {
+            (
+                Level::Error,
+                format!(
+                    "Subscribe preparation failed: command={command_id}, client=Some(\"PUBLIC\"), instrument_ids=None, bar_types=Some([{bar_type:?}]): Cannot start bar aggregation: no instrument found for {}",
+                    bar_type.instrument_id(),
+                ),
+            )
+        })
+        .collect();
+
+    assert_eq!(
+        error.to_string(),
+        "Cannot start bar aggregation: no instrument found for FIRST.SIM"
+    );
+    assert_eq!(take_connection_logs(), expected);
+}
+
+#[rstest]
 fn test_engine_validation_logging_preserves_reason(
+    #[values(false, true)] subscribe: bool,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
 ) {
@@ -1158,7 +1410,7 @@ fn test_engine_validation_logging_preserves_reason(
     let command_id = UUID4::new();
 
     let command = SubscribeInstrument {
-        instrument_id: InstrumentId::from("SYNTH.SYNTH"),
+        instrument_ids: vec![InstrumentId::from("SYNTH.SYNTH")],
         client_id: Some(ClientId::from("PUBLIC")),
         venue: Some(Venue::from("SYNTH")),
         command_id,
@@ -1169,16 +1421,42 @@ fn test_engine_validation_logging_preserves_reason(
 
     let mut engine = DataEngine::new(clock, cache, None);
     take_connection_logs();
-    engine.execute(DataCommand::Subscribe(SubscribeCommand::Instrument(
-        command,
-    )));
+    let command = SubscribeCommand::Instrument(command);
+
+    let (action, reason, command) = if subscribe {
+        (
+            "Subscribe",
+            "Cannot subscribe for synthetic instrument `Instrument` data",
+            DataCommand::Subscribe(command),
+        )
+    } else {
+        (
+            "Unsubscribe",
+            "Cannot unsubscribe from synthetic instrument `Instrument` data",
+            DataCommand::Unsubscribe(command.into_unsubscribe(
+                command_id,
+                UnixNanos::from(1),
+                None,
+            )),
+        )
+    };
+
+    engine.execute(command);
     assert_eq!(
         take_connection_logs(),
-        vec![(
-            Level::Error,
-            format!(
-                "Data command failed: (\"Subscribe\", Some(\"PUBLIC\"), Some(\"SYNTH\"), Some({command_id:?})): Cannot subscribe for synthetic instrument `Instrument` data"
+        vec![
+            (
+                Level::Error,
+                format!(
+                    "{action} preparation failed: command={command_id}, client=Some(\"PUBLIC\"), instrument_ids=Some([\"SYNTH.SYNTH\"]), bar_types=None: {reason}"
+                )
+            ),
+            (
+                Level::Error,
+                format!(
+                    "Data command failed: (\"{action}\", Some(\"PUBLIC\"), Some(\"SYNTH\"), Some({command_id:?})): {reason}"
+                )
             )
-        )]
+        ]
     );
 }

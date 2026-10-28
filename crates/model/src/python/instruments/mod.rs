@@ -50,8 +50,7 @@ use crate::{
 #[pyo3::pyclass(
     frozen,
     name = "NautilusInstrumentType",
-    module = "nautilus_trader.model",
-    skip_from_py_object
+    module = "nautilus_trader.model"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 pub struct PyNautilusInstrumentType {

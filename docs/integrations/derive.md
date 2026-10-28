@@ -300,7 +300,7 @@ and prioritize ongoing maintenance.
 | ------------------------------ | --------- | ----------------------------------------------------------------------- |
 | Request instrument (REST)      | ✓         | `public/get_instrument`; loads one instrument into the local cache.     |
 | Request all instruments (REST) | ✓         | Paginated `public/get_all_instruments` for each currency.               |
-| Instrument subscription        | -         | *Not supported.* Use the configured REST refresh interval.              |
+| Instrument subscription        | -         | *Not supported.* Configure `currencies` for periodic REST refresh.      |
 | Order book deltas (L2_MBP)     | ✓         | Channel: `orderbook.{instrument}.{group}.{depth}`.                      |
 | Order book depth (L2_MBP)      | ✓         | Same order book channel with `depth=10`.                                |
 | Order book at interval         | -         | *Not supported.* Maintain interval books from deltas locally.           |
@@ -330,7 +330,7 @@ zero price or size, the adapter clears that instrument's internal quote state an
 prices and sizes.
 
 The last published quote remains in the Nautilus cache with its original timestamps. Suppressing
-quote output does not withdraw that cached quote. Other subscribed ticker fields, including mark
+quote output does not withdraw that cached quote. For decoded tickers, other subscribed fields, including mark
 and index prices, funding rates, and option greeks, continue to emit independently.
 
 #### Instrument loading
@@ -365,14 +365,20 @@ fields fail that currency's fetch. A fetch error during initial loading also fai
 | Bars          | `public/get_tradingview_chart_data` |
 | Funding rates | `public/get_funding_rate_history`   |
 
+Null or empty required candle values or historical funding rates fail the request with a logged
+error and no data response. A malformed candle page also discards previously fetched pages in that
+request. Subsequent valid requests continue normally.
+
 ##### Trade direction and deduplication
 
 Public REST history and WebSocket trades can return maker and taker rows under the same
 `trade_id`. Each row's `direction` is that participant's side. The adapter uses the taker's
-side as the aggressor direction and inverts a maker row's direction, independent of row order.
+side as the aggressor direction and inverts a maker row's direction. For maker/taker pairs,
+the result is independent of row order.
 Live v3 maker WebSocket row mapping remains unverified.
-For rows with an absent or unrecognized `liquidity_role`, the adapter treats `direction` as
-the taker's side.
+For rows with an absent `liquidity_role`, the adapter treats `direction` as the taker's side.
+It maps an unrecognized role to `AggressorSide::NoAggressor` and logs a warning
+with the trade and instrument identifiers.
 
 Historical trade requests emit one `TradeTick` per trade ID within the request. The live feed suppresses
 paired rows and reconnect replays while their IDs remain in a cache of the latest 4,096 trades. Automatic
@@ -560,8 +566,10 @@ Single-order and bulk queries return native reports for uncached replacement cha
 restores the chain.
 
 Unbounded reconnect snapshots fail if a source fails, records are lost, or a fill has no matching
-order report. Retained historical rows with inferred precision do not fail these snapshots. Bounded
-snapshots retain valid reports and mark metadata gaps or lost records as incomplete coverage. If the
+order report. Unbounded snapshots stop at the first fill companion unavailable after fallback and
+retain the venue error as the cause, without looking up remaining companions. Retained historical
+rows with inferred precision do not fail these snapshots. Bounded snapshots retain valid reports and
+mark metadata gaps or lost records as incomplete coverage. If the
 venue changes a private history's record or page count during pagination, the adapter discards the scan and restarts it
 at most twice. Further count changes fail the request.
 
@@ -679,9 +687,10 @@ unverified. A successful reconnect or restart does not establish those cases.
 ##### Signature expiry
 
 API v3 accepts order signatures with lifetimes in [10 seconds, 120 days]. MMP orders have a 15-minute maximum.
-The adapter leaves MMP disabled and signs trigger orders with a fixed 31-day expiry. `signature_expiry_secs`
-controls ordinary orders and replacements, and must exceed 10 seconds to allow signing latency, with a maximum
-of 120 days. See [action signing](https://docs.derive.xyz/authentication/action-signing).
+The adapter signs trigger orders with a fixed 31-day expiry and leaves their MMP flag disabled.
+`signature_expiry_secs` controls ordinary orders and replacements. It must exceed 10 seconds to allow signing
+latency, with a maximum of 120 days, or 900 seconds when `cancel_on_disconnect=True`.
+See [action signing](https://docs.derive.xyz/authentication/action-signing).
 
 ##### Supported types
 
@@ -717,6 +726,58 @@ Size the trigger offset to comfortably exceed expected price movement during sub
 (for `ETH-PERP`, tens of dollars rather than a few cents). A too-tight offset produces
 spurious `11051` rejections.
 :::
+
+#### Cancel on disconnect
+
+Set `cancel_on_disconnect=True` to enable
+[cancel-on-disconnect (COD)](https://docs.derive.xyz/trading/cancel-on-disconnect) for resting GTC and
+post-only limit orders, including replacements.
+The session key needs `trade:all` (`Trade(All)`) across all subaccounts. Onboarding keys restricted to
+`trade:orderbook:all` do not qualify.
+
+```python
+from decimal import Decimal
+
+from nautilus_trader.adapters.derive import DeriveEnvironment
+from nautilus_trader.adapters.derive import DeriveExecutionClientConfig
+
+exec_config = DeriveExecutionClientConfig(
+    environment=DeriveEnvironment.TESTNET,
+    max_fee_per_contract=Decimal("1000"),
+    cancel_on_disconnect=True,
+)
+```
+
+With this option enabled:
+
+- **Startup**: the client enables wallet-wide COD, waits up to 30 seconds for account confirmation, and
+  authenticates a fresh execution connection before becoming ready. Setup or login failure closes the
+  connections and fails startup without disabling the wallet setting. Allow the node's connection timeout
+  for confirmation and normal startup; its default is 60 seconds.
+- **Orders**: eligible submissions and replacements carry `mmp: true`. Signature expiry must be at most
+  900 seconds; the default is 600. IOC, FOK, market, and trigger orders keep their existing MMP flags.
+  MMP tags also apply any existing MMP thresholds and freeze rules; the adapter does not configure or reset MMP.
+- **Lifecycle**: the wallet setting persists and applies at login. Automatic reconnect uses that setting
+  without toggling it, and shutdown never disables it. Coordinate clients sharing the wallet; existing
+  connections and orders do not gain protection retroactively.
+
+The default, `False`, leaves the stored wallet setting and order MMP flags unchanged.
+
+:::warning
+COD cancels only the dropped connection's `mmp: true` orders and RFQ quotes, including on graceful server shutdown. Non-MMP, trigger, and algo orders
+remain outside its protection. Retain explicit cancellation and shutdown procedures.
+:::
+
+For manual control, use the low-level Rust `DeriveWebSocketClient::set_cancel_on_disconnect(enabled)`.
+Only `"ok"` confirms success; venue errors and malformed responses propagate. A timeout, lost reply, or
+malformed reply leaves the stored setting uncertain. Coordinate other clients and reassert the intended value:
+
+1. Wait until `private/get_account` reports the acknowledged `cancel_on_disconnect` value within your deadline.
+   Account reads can lag the acknowledgement.
+1. Call `disconnect()` then `connect()` on each affected client. A change does not affect existing connections.
+
+Low-level order conversion leaves MMP disabled. Set `mmp: Some(true)` on eligible payloads sent through
+`execution_handle().submit_order` and sign with a [lifetime of at most 15 minutes](#signature-expiry).
 
 #### Bulk cancellation
 
@@ -768,6 +829,12 @@ responsible for observed order state.
 | ------------- | --------- | ------------- | ----------------------------------------------------------- |
 | `post_only`   | ✓         | `post_only`   | Requires `GTC`; rejects if the order would take liquidity.  |
 | `reduce_only` | ✓         | `reduce_only` | Perps and options, market or `IOC`/`FOK` only; spot denied. |
+| `display_qty` | -         | -             | *Not supported by Derive*.                                  |
+
+The adapter does not support iceberg instructions. Orders with `display_qty` set receive
+`OrderDenied` before submission, including conditional orders. If any leg sets `display_qty`,
+the adapter denies every leg before submitting any leg. Existing orders with `display_qty`
+can still be canceled; modifying them is rejected.
 
 #### Time in force
 
@@ -784,6 +851,14 @@ exposes post-only as a `time_in_force` value, so `post_only` cannot combine with
 | `DAY`          | -         | -            | *Not supported by Derive*. |
 | `AT_THE_OPEN`  | -         | -            | *Not supported by Derive*. |
 | `AT_THE_CLOSE` | -         | -            | *Not supported by Derive*. |
+
+For passive IOC and FOK limits with no liquidity within the limit price, Derive returns
+[`11009: Zero liquidity for market or IOC/FOK order`](https://docs.derive.xyz/error-codes).
+In execution test cases [TC-E14](../developer_guide/spec_exec_testing.md#tc-e14-limit-ioc-passive---no-fill)
+and [TC-E16](../developer_guide/spec_exec_testing.md#tc-e16-limit-fok-no-fill), both Rust and Python must observe
+`OrderInitialized` -> `OrderSubmitted` -> `OrderRejected`, terminal status `Rejected`, zero filled
+quantity, and that exact rejection reason. An unrelated rejection does not pass. The adapter preserves
+the venue rejection without emitting `OrderAccepted` or `OrderCanceled`.
 
 #### Spot reduce-only orders
 
@@ -804,9 +879,14 @@ resting `GTC` or post-only limit with `reduce_only` is denied locally before sub
 Direct venue submissions fail with `11024 Reduce only not supported with this time in force`.
 
 :::warning
-A Nautilus bracket whose take-profit leg is a reduce-only `GTC` limit cannot rest on Derive:
-the entry and stop-loss legs submit, but the adapter denies the take-profit locally. Use a reduce-only
-`IOC`/`FOK` close or a non-reduce-only take-profit when targeting Derive.
+If any leg fails local list prevalidation, the adapter denies every leg before submitting any leg.
+Lists containing an order with a contingency type (`OTO`, `OCO`, or `OUO`), a parent order ID, or
+nonempty linked order IDs are denied in full, even when each leg's order terms are valid.
+
+Removing `reduce_only` from a `GTC` take-profit does not avoid this denial. Use
+[local order emulation](../concepts/orders/emulated.md), or submit orders individually and manage
+their activation, sibling cancellation, and quantity updates in the strategy. Independent unlinked
+lists remain supported.
 :::
 
 #### Order rejection semantics
@@ -1110,6 +1190,12 @@ feeds work on either:
 | `option_pricing`            | Optional; options only    | Supplies option greeks.                                                    |
 | Bid/ask                     | Present in both shapes    | Quote feed works with either shape.                                        |
 
+Null or empty required mark/index prices reject the whole WebSocket ticker frame, including its
+quote, funding rate, and greeks. The adapter logs a warning. On REST, one malformed ticker rejects
+the entire `public/get_tickers` response: quote requests emit no response, option-chain reference
+prices are unavailable, and market-order quote refreshes fail. Subsequent valid updates and requests
+continue normally. Zero (`0` or `"0"`) remains valid; null optional fields produce no corresponding event.
+
 #### Instrument class restrictions
 
 Funding rates are only meaningful for perpetuals, and option greeks only for options. The adapter accepts a
@@ -1134,11 +1220,15 @@ Class/struct: `DeriveDataClientConfig`.
 | `ws_timeout_secs`                  | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
 | `book_snapshot_timeout_secs`       | `10`      | Snapshot wait in seconds; `0` disables deadlines.                                           |
 | `book_stale_threshold_secs`        | `120`     | Seconds without an advancing snapshot before recovery; `0` disables this timer.             |
-| `update_instruments_interval_mins` | `60`      | Interval in minutes between instrument refreshes.                                           |
+| `update_instruments_interval_mins` | `60`      | Instrument refresh interval in minutes; `0` disables periodic refresh.                      |
 | `currencies`                       | `[]`      | Currencies to bulk-load on connect. Empty means lazy-load on demand.                        |
 | `include_expired`                  | `false`   | Merge live and expired option listings from `public/get_all_instruments`.                   |
 | `auto_load_missing_instruments`    | `true`    | Lazy-load an unknown instrument before sending a subscribe request.                         |
-| `transport_backend`                | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
+| `transport_backend`                | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                   |
+
+The data client refreshes instrument definitions for configured currencies after each refresh interval
+and publishes them, including new listings. A failed refresh leaves cached definitions available and
+retries at the next interval. Empty `currencies` disables periodic refresh.
 
 :::important
 **`auto_load_missing_instruments` covers subscribe commands only.** Before requesting quotes,
@@ -1173,13 +1263,13 @@ Class/struct: `DeriveExecutionClientConfig`.
 | `environment`            | `Mainnet` | Network selector (`MAINNET` or `TESTNET` in Python).                                        |
 | `http_timeout_secs`      | `10`      | REST request timeout in seconds.                                                            |
 | `ws_timeout_secs`        | `None`    | Per-operation WebSocket timeout (login, subscribe, read, write) in seconds. Unset uses 10s. |
-| `transport_backend`      | `Sockudo` | WebSocket transport when `transport-sockudo` is enabled.                                    |
+| `transport_backend`      | `Sockudo` | WebSocket transport backend (`Sockudo` or `Tungstenite`).                                   |
 | `max_retries`            | `3`       | Retry attempts for idempotent REST reads. Order writes are sent once and never replayed.    |
 | `retry_delay_initial_ms` | `100`     | Initial retry delay in milliseconds.                                                        |
 | `retry_delay_max_ms`     | `5,000`   | Maximum backoff delay in milliseconds.                                                      |
 
-The default transport falls back to `Tungstenite` when the build disables the
-`transport-sockudo` feature.
+The adapter always enables `nautilus-network/transport-sockudo`. Set `transport_backend`
+to `Tungstenite` to select the alternative backend.
 
 For HTTP reads, `Retry-After` sets a minimum delay that can exceed `retry_delay_max_ms`.
 If that delay does not fit within the remaining 180-second retry budget, the client returns the
@@ -1192,14 +1282,15 @@ original error without retrying.
 fails before creating venue clients when the field is missing or non-positive.
 :::
 
-| Option                      | Default  | Description                                                                 |
-| --------------------------- | -------- | --------------------------------------------------------------------------- |
-| `max_fee_per_contract`      | Required | Positive per-contract USDC fee cap signed into each order.                  |
-| `domain_separator`          | `None`   | Optional EIP-712 domain separator override.                                 |
-| `action_typehash`           | `None`   | Optional EIP-712 action typehash override.                                  |
-| `trade_module_address`      | `None`   | Optional Trade module contract address override.                            |
-| `signature_expiry_secs`     | `600`    | Order/replace TTL; must be >10s and at most 120 days. Triggers use 31 days. |
-| `market_order_slippage_bps` | `50`     | Slippage bound for market-order limit prices.                               |
+| Option                      | Default  | Description                                                                         |
+| --------------------------- | -------- | ----------------------------------------------------------------------------------- |
+| `max_fee_per_contract`      | Required | Positive per-contract USDC fee cap signed into each order.                          |
+| `domain_separator`          | `None`   | Optional EIP-712 domain separator override.                                         |
+| `action_typehash`           | `None`   | Optional EIP-712 action typehash override.                                          |
+| `trade_module_address`      | `None`   | Optional Trade module contract address override.                                    |
+| `signature_expiry_secs`     | `600`    | Order/replace TTL; see [signature expiry](#signature-expiry). Triggers use 31 days. |
+| `market_order_slippage_bps` | `50`     | Slippage bound for market-order limit prices.                                       |
+| `cancel_on_disconnect`      | `False`  | Protect resting limit orders; see [cancel on disconnect](#cancel-on-disconnect).    |
 
 #### Matching request limits
 

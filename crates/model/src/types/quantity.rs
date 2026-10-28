@@ -75,12 +75,13 @@ use super::fixed::{
     FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, checked_mul_div_fixed,
     checked_mul_div_raw, format_scaled_u128, mantissa_exponent_to_fixed_i128,
     mantissa_exponent_to_raw_checked, parse_decimal_mantissa, raw_scale, raw_scales_match,
-    scaled_raw_to_decimal,
+    remove_underscores, scaled_raw_to_decimal,
 };
 #[cfg(not(feature = "high-precision"))]
 use super::fixed::{f64_to_fixed_u64, fixed_u64_to_f64};
 #[cfg(feature = "high-precision")]
 use super::fixed::{f64_to_fixed_u128, fixed_u128_to_f64};
+use crate::deserialization::StringInput;
 #[cfg(feature = "defi")]
 use crate::types::fixed::MAX_FLOAT_PRECISION;
 
@@ -256,6 +257,48 @@ impl Quantity {
         check_fixed_precision(precision)?;
 
         Ok(Self { raw, precision })
+    }
+
+    /// Aligns the stored raw scale to an equal or higher precision without rounding.
+    ///
+    /// Returns `None` for an undefined quantity, unsupported or lower precision, or overflow.
+    #[must_use]
+    pub fn checked_rescale(self, precision: u8) -> Option<Self> {
+        if self.raw > QUANTITY_RAW_MAX
+            || precision < self.precision
+            || check_fixed_precision(self.precision).is_err()
+            || check_fixed_precision(precision).is_err()
+        {
+            return None;
+        }
+
+        let source_scale = FIXED_PRECISION.max(self.precision);
+        let target_scale = FIXED_PRECISION.max(precision);
+        let factor = QuantityRaw::pow(10, u32::from(target_scale - source_scale));
+        let raw = self.raw.checked_mul(factor)?;
+        Self::from_raw_checked(raw, precision).ok()
+    }
+
+    /// Rounds down to a multiple of `increment`, using its precision for the result.
+    ///
+    /// Returns zero for quantities below one increment. Returns `None` for a zero increment,
+    /// invalid operands, or overflow while aligning raw scales.
+    #[must_use]
+    pub fn checked_floor_to_increment(self, increment: Self) -> Option<Self> {
+        if increment.is_zero() {
+            return None;
+        }
+
+        let precision = self.precision.max(increment.precision);
+        let value = self.checked_rescale(precision)?;
+        let step = increment.checked_rescale(precision)?;
+        let raw = value.raw - value.raw % step.raw;
+        let scale = QuantityRaw::pow(
+            10,
+            u32::from(precision.max(FIXED_PRECISION) - increment.precision.max(FIXED_PRECISION)),
+        );
+
+        Self::from_raw_checked(raw / scale, increment.precision).ok()
     }
 
     /// Performs a checked addition, returning `None` on raw integer overflow, when the
@@ -894,8 +937,7 @@ impl FromStr for Quantity {
     type Err = String;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
-        let clean_value = value.replace('_', "");
-
+        let clean_value = remove_underscores(value);
         if clean_value.contains('e') || clean_value.contains('E') {
             let decimal = Decimal::from_scientific(&clean_value)
                 .map_err(|e| format!("Error parsing `input` string '{value}' as Decimal: {e}"))?;
@@ -977,7 +1019,7 @@ impl<'de> Deserialize<'de> for Quantity {
     where
         D: Deserializer<'de>,
     {
-        let qty_str: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let StringInput(qty_str) = Deserialize::deserialize(deserializer)?;
         Self::from_str(qty_str.as_ref()).map_err(serde::de::Error::custom)
     }
 }
@@ -1630,6 +1672,104 @@ mod tests {
         let a = Quantity::new(10.0, 2);
         let b = Quantity::new(5.0, 2);
         assert_eq!(a.checked_add(b), Some(Quantity::new(15.0, 2)));
+    }
+
+    #[rstest]
+    fn test_quantity_checked_rescale_native_precision() {
+        let quantity = Quantity::from("1.25");
+        let rescaled = quantity.checked_rescale(4).unwrap();
+
+        assert_eq!(rescaled.raw, quantity.raw);
+        assert_eq!(rescaled.precision, 4);
+        assert_eq!(rescaled.as_decimal(), dec!(1.25));
+        assert_eq!(quantity.checked_rescale(0), None);
+        assert_eq!(
+            Quantity::from_raw(QUANTITY_UNDEF, 0).checked_rescale(0),
+            None
+        );
+        assert_eq!(quantity.checked_rescale(u8::MAX), None);
+        let mut invalid = quantity;
+        invalid.precision = u8::MAX;
+        assert_eq!(invalid.checked_rescale(0), None);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case("1.25", 18, Some("1.250000000000000000"))]
+    #[case("1.250000000000000000", 2, None)]
+    #[case("1.250000000000000001", 2, None)]
+    #[case("1.25000000000000001", 18, Some("1.250000000000000010"))]
+    #[case("1.250000000000000001", 17, None)]
+    fn test_quantity_checked_rescale_mixed_scales(
+        #[case] value: &str,
+        #[case] precision: u8,
+        #[case] expected: Option<&str>,
+    ) {
+        let actual = Quantity::from(value).checked_rescale(precision);
+
+        assert_eq!(actual, expected.map(Quantity::from));
+        assert_eq!(actual.map(|qty| qty.precision), expected.map(|_| precision));
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    fn test_quantity_checked_rescale_rejects_overflow() {
+        let quantity = Quantity::from_raw(QUANTITY_RAW_MAX, 0);
+
+        assert_eq!(quantity.checked_rescale(18), None);
+        assert_eq!(
+            quantity.checked_floor_to_increment(Quantity::from("0.000000000000000001")),
+            None
+        );
+    }
+
+    #[rstest]
+    #[case("0.749", "0.50", "0.50")]
+    #[case("0.49", "0.50", "0.00")]
+    #[case("1.23456789", "0.000001", "1.234567")]
+    #[case("0", "0.5", "0.0")]
+    fn test_quantity_checked_floor_to_increment(
+        #[case] value: &str,
+        #[case] increment: &str,
+        #[case] expected: &str,
+    ) {
+        let increment = Quantity::from(increment);
+        let actual = Quantity::from(value)
+            .checked_floor_to_increment(increment)
+            .unwrap();
+
+        assert_eq!(actual, Quantity::from(expected));
+        assert_eq!(actual.precision, increment.precision);
+    }
+
+    #[cfg(feature = "defi")]
+    #[rstest]
+    #[case("0.59999999999999999", "0.005000", "0.595000")]
+    #[case("0.599999999999999999", "0.005000", "0.595000")]
+    #[case("0.600000", "0.00000000000000001", "0.60000000000000000")]
+    #[case("0.59999999999999999", "0.000000000000000001", "0.599999999999999990")]
+    fn test_quantity_checked_floor_aligns_raw_scales(
+        #[case] value: &str,
+        #[case] increment: &str,
+        #[case] expected: &str,
+    ) {
+        let increment = Quantity::from(increment);
+        let actual = Quantity::from(value)
+            .checked_floor_to_increment(increment)
+            .unwrap();
+
+        assert_eq!(actual, Quantity::from(expected));
+        assert_eq!(actual.precision, increment.precision);
+    }
+
+    #[rstest]
+    fn test_quantity_checked_floor_rejects_invalid_operands() {
+        let quantity = Quantity::from(1);
+        let invalid = Quantity::from_raw(QUANTITY_UNDEF, 0);
+
+        assert_eq!(quantity.checked_floor_to_increment(Quantity::from(0)), None);
+        assert_eq!(quantity.checked_floor_to_increment(invalid), None);
+        assert_eq!(invalid.checked_floor_to_increment(quantity), None);
     }
 
     #[rstest]

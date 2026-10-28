@@ -56,12 +56,7 @@ use crate::{
 const ERROR_MONOTONICITY: &str = "`data` was not monotonically increasing by the `ts_init` field";
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-#[pyclass(
-    frozen,
-    name = "NautilusDataType",
-    module = "nautilus_trader.model",
-    skip_from_py_object
-)]
+#[pyclass(frozen, name = "NautilusDataType", module = "nautilus_trader.model")]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 pub struct PyNautilusDataType {
     inner: NautilusDataType,
@@ -177,12 +172,7 @@ impl PyNautilusDataType {
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
-#[pyclass(
-    frozen,
-    name = "NautilusRecordType",
-    module = "nautilus_trader.model",
-    skip_from_py_object
-)]
+#[pyclass(frozen, name = "NautilusRecordType", module = "nautilus_trader.model")]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 pub struct PyNautilusRecordType {
     inner: NautilusRecordType,

@@ -538,7 +538,7 @@ async fn bounded_data_client_smoke() {
     let mut client = CoinApiDataClient::new(client_id, config).unwrap();
     client.connect().await.unwrap();
 
-    let Some(DataEvent::Instrument(instrument)) = rx.recv().await else {
+    let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await else {
         panic!("expected instrument");
     };
 
@@ -820,7 +820,7 @@ async fn bounded_book_smoke() {
     let mut client = CoinApiDataClient::new(client_id, config).unwrap();
     client.connect().await.unwrap();
 
-    let Some(DataEvent::Instrument(instrument)) = rx.recv().await else {
+    let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await else {
         panic!("expected instrument");
     };
 
@@ -1110,7 +1110,7 @@ async fn bounded_history_smoke() {
     let mut client = CoinApiDataClient::new(client_id, config).unwrap();
     client.connect().await.unwrap();
 
-    let Some(DataEvent::Instrument(instrument)) = rx.recv().await else {
+    let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await else {
         panic!("expected instrument");
     };
 
@@ -1199,10 +1199,10 @@ async fn bounded_history_smoke() {
                 DataResponse::Quotes(response) => {
                     assert_eq!(response.correlation_id, request_ids[1]);
                     assert_eq!(response.client_id, client_id);
-                    assert_eq!(response.instrument_id, instrument_id);
+                    assert_eq!(response.instrument_ids, vec![instrument_id]);
                     assert_eq!(response.data.len(), 3);
 
-                    for quote in &response.data {
+                    for quote in response.data.iter() {
                         assert_eq!(quote.instrument_id, instrument_id);
                         assert!(quote.bid_price < quote.ask_price);
                         assert_eq!(
@@ -1217,10 +1217,10 @@ async fn bounded_history_smoke() {
                 DataResponse::Trades(response) => {
                     assert_eq!(response.correlation_id, request_ids[2]);
                     assert_eq!(response.client_id, client_id);
-                    assert_eq!(response.instrument_id, instrument_id);
+                    assert_eq!(response.instrument_ids, vec![instrument_id]);
                     assert_eq!(response.data.len(), 3);
 
-                    for trade in &response.data {
+                    for trade in response.data.iter() {
                         assert_eq!(trade.instrument_id, instrument_id);
                         assert_eq!(trade.price.precision, PRICE_PRECISION);
                         assert_eq!(trade.ts_init, trade.ts_event);
@@ -1238,7 +1238,7 @@ async fn bounded_history_smoke() {
                     );
                     assert!(response.data.len() <= 3);
 
-                    for bar in &response.data {
+                    for bar in response.data.iter() {
                         assert_eq!(bar.bar_type, bar_type);
                         assert!(bar.high >= bar.open && bar.high >= bar.close);
                         assert!(bar.low <= bar.open && bar.low <= bar.close);

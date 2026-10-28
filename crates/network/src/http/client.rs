@@ -31,7 +31,7 @@ use ustr::Ustr;
 
 use super::{
     HttpClientError, HttpResponse, HttpResponseStream, HttpStatus,
-    stream::{read_chunk, response_error},
+    stream::{check_deadline, read_chunk, response_error},
 };
 use crate::ratelimiter::{RateLimiter, clock::MonotonicClock, quota::Quota};
 
@@ -65,6 +65,9 @@ const NAUTILUS_HTTP2_ADAPTIVE_WINDOW: &str = "NAUTILUS_HTTP2_ADAPTIVE_WINDOW";
 /// cannot exhaust memory by streaming an arbitrarily large body. Mirrors the
 /// caps already enforced on the WebSocket and raw-socket paths.
 const DEFAULT_MAX_RESPONSE_BYTES: usize = 100 * 1024 * 1024;
+
+const GZIP: &str = "gzip";
+const GZIP_DECODE_CHUNK_BYTES: usize = 64 * 1024;
 
 #[cfg(all(feature = "simulation", madsim))]
 pub(super) const REQUEST_TIMEOUT_MESSAGE: &str = "simulated request deadline elapsed";
@@ -140,6 +143,12 @@ impl HttpClient {
         /// dependency logs can still include the hostname.
         #[builder(default)]
         redact_url: bool,
+        /// Maximum size in bytes of a buffered response body after `Content-Encoding` decoding.
+        /// Defaults to the response body limit (100 MiB). Raise it for endpoints whose compressed
+        /// payloads legitimately decode beyond that limit; the wire body stays bounded by the
+        /// response body limit either way.
+        #[builder(default = DEFAULT_MAX_RESPONSE_BYTES)]
+        max_decompressed_bytes: usize,
     ) -> Result<Self, HttpClientError> {
         let rate_limiters = if let Some(rate_limiters) = rate_limiters {
             if default_quota.is_some() || !keyed_quotas.is_empty() {
@@ -147,6 +156,7 @@ impl HttpClient {
                     "Cannot combine shared rate limiters with quota configuration".to_string(),
                 ));
             }
+
             rate_limiters
         } else {
             let keyed_quotas = keyed_quotas
@@ -168,6 +178,7 @@ impl HttpClient {
             redirect_policy,
             use_system_proxy,
             redact_url,
+            max_decompressed_bytes,
         )
     }
 
@@ -184,6 +195,7 @@ impl HttpClient {
         redirect_policy: HttpRedirectPolicy,
         use_system_proxy: bool,
         redact_url: bool,
+        max_decompressed_bytes: usize,
     ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
@@ -192,9 +204,11 @@ impl HttpClient {
         for (key, value) in headers {
             let header_name = HeaderName::from_str(&key)
                 .map_err(|e| HttpClientError::Error(format!("Invalid header name '{key}': {e}")))?;
+
             let header_value = HeaderValue::from_str(&value).map_err(|e| {
                 HttpClientError::Error(format!("Invalid header value for '{key}': {e}"))
             })?;
+
             header_map.insert(header_name, header_value);
         }
 
@@ -215,6 +229,7 @@ impl HttpClient {
                 adaptive_window: http2_adaptive_window()?,
             },
         )?;
+
         #[cfg(all(feature = "simulation", madsim))]
         let _ = use_system_proxy;
 
@@ -242,6 +257,7 @@ impl HttpClient {
             simulation,
             response_headers: Arc::from(response_headers),
             max_response_bytes: DEFAULT_MAX_RESPONSE_BYTES,
+            max_decompressed_bytes,
         };
 
         Ok(Self {
@@ -333,6 +349,7 @@ impl HttpClient {
 
     /// Sends a GET request and returns its response body as a stream.
     ///
+    /// Returns raw body chunks without content decoding or adding `Accept-Encoding`.
     /// Applies default headers and the client timeout. No rate-limit keys are supplied, so no
     /// quota is consumed. One absolute deadline covers response headers and the whole body,
     /// including time spent processing chunks. Streaming has no total body size limit; callers
@@ -474,6 +491,7 @@ impl HttpClient {
 ///
 /// The underlying Hyper client reuses pooled connections and is cheap to clone. Responses
 /// retain only configured header fields, and bodies larger than `max_response_bytes` are rejected.
+/// Decoded (decompressed) bodies are bounded separately by `max_decompressed_bytes`.
 #[derive(Clone, Debug)]
 pub struct InnerHttpClient {
     #[cfg(all(feature = "simulation", madsim))]
@@ -487,6 +505,7 @@ pub struct InnerHttpClient {
     redirect_policy: HttpRedirectPolicy,
     pub(crate) response_headers: Arc<[(String, HeaderName)]>,
     pub(crate) max_response_bytes: usize,
+    pub(crate) max_decompressed_bytes: usize,
 }
 
 impl InnerHttpClient {
@@ -598,11 +617,22 @@ impl InnerHttpClient {
         body: Option<RequestBody>,
         timeout_secs: Option<u64>,
     ) -> Result<HttpResponse, HttpClientError> {
+        let mut headers = headers.unwrap_or_default();
+        let has_accept_encoding = headers
+            .keys()
+            .any(|key| key.eq_ignore_ascii_case(http::header::ACCEPT_ENCODING.as_str()))
+            || self.headers.contains_key(http::header::ACCEPT_ENCODING);
+
+        if !has_accept_encoding {
+            headers.insert(http::header::ACCEPT_ENCODING.to_string(), GZIP.to_string());
+        }
+
+        let is_head = method == Method::HEAD;
         let stream = self
-            .send_stream_internal(method, url, query, headers, body, timeout_secs)
+            .send_stream_internal(method, url, query, Some(headers), body, timeout_secs)
             .await?;
         let result = self
-            .consume_response(stream.response, stream.deadline)
+            .consume_response(stream.response, stream.deadline, is_head)
             .await;
         result.map_err(|e| response_error(e, stream.origin.as_deref()))
     }
@@ -657,6 +687,7 @@ impl InnerHttpClient {
                     .map_err(|e| HttpClientError::from(format!("Invalid header name: {e}")))?;
                 let value = HeaderValue::from_str(&value)
                     .map_err(|e| HttpClientError::from(format!("Invalid header value: {e}")))?;
+
                 if header_map.insert(key.clone(), value).is_some() {
                     log::trace!("Replaced duplicate request header '{key}'");
                 }
@@ -700,6 +731,7 @@ impl InnerHttpClient {
 
         let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
         let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
+
         let operation = async {
             #[cfg(all(feature = "simulation", madsim))]
             let (response, connection) = self.simulation.send(request, &url).await?;
@@ -730,6 +762,7 @@ impl InnerHttpClient {
         &self,
         response: http::Response<B>,
         deadline: Option<crate::dst::time::Instant>,
+        is_head: bool,
     ) -> Result<HttpResponse, HttpClientError>
     where
         B: http_body::Body<Data = Bytes> + Unpin,
@@ -749,6 +782,7 @@ impl InnerHttpClient {
         }
 
         let max = self.max_response_bytes;
+
         if let Some(len) = body.size_hint().exact()
             && len > max as u64
         {
@@ -764,6 +798,7 @@ impl InnerHttpClient {
                     "HTTP response body exceeds maximum of {max} bytes",
                 )));
             }
+
             buf.extend_from_slice(&chunk);
         }
 
@@ -773,10 +808,34 @@ impl InnerHttpClient {
             parts.headers.len(),
             buf.len()
         );
+
+        let bodyless = is_head
+            || parts.status.is_informational()
+            || matches!(
+                parts.status,
+                http::StatusCode::NO_CONTENT
+                    | http::StatusCode::RESET_CONTENT
+                    | http::StatusCode::NOT_MODIFIED
+            );
+
+        let (body, decoded) = if bodyless {
+            (buf.freeze(), false)
+        } else {
+            decode_content_encoding(&parts.headers, buf, self.max_decompressed_bytes, deadline)
+                .await?
+        };
+
+        if decoded {
+            headers.retain(|key, _| {
+                !key.eq_ignore_ascii_case("content-encoding")
+                    && !key.eq_ignore_ascii_case("content-length")
+            });
+        }
+
         Ok(HttpResponse {
             status: HttpStatus::new(parts.status),
             headers,
-            body: buf.freeze(),
+            body,
         })
     }
 }
@@ -784,6 +843,120 @@ impl InnerHttpClient {
 enum RequestBody {
     Plain(Vec<u8>),
     Secret(SecretString),
+}
+
+async fn decode_content_encoding(
+    headers: &HeaderMap,
+    body: bytes::BytesMut,
+    max: usize,
+    deadline: Option<crate::dst::time::Instant>,
+) -> Result<(Bytes, bool), HttpClientError> {
+    let mut encodings = headers.get_all(http::header::CONTENT_ENCODING).iter();
+
+    let Some(encoding) = encodings.next() else {
+        return Ok((body.freeze(), false));
+    };
+
+    if encodings.next().is_some() {
+        return Err(HttpClientError::Error(
+            "unsupported multiple HTTP content-encoding fields".into(),
+        ));
+    }
+
+    let encoding = encoding
+        .to_str()
+        .map_err(|_| HttpClientError::Error("invalid HTTP content-encoding value".into()))?;
+    let encoding = encoding.trim();
+    if encoding.is_empty() || encoding.eq_ignore_ascii_case("identity") {
+        return Ok((body.freeze(), false));
+    }
+
+    if !encoding.eq_ignore_ascii_case(GZIP) {
+        return Err(HttpClientError::Error(format!(
+            "unsupported HTTP content-encoding '{encoding}'"
+        )));
+    }
+
+    check_deadline(deadline)?;
+    let body = body.freeze();
+    let mut out = Vec::new();
+
+    let mut reader = std::io::Read::take(
+        flate2::bufread::MultiGzDecoder::new(GzipInput {
+            bytes: body.as_ref(),
+            remaining: GZIP_DECODE_CHUNK_BYTES,
+        }),
+        (max as u64).saturating_add(1),
+    );
+
+    loop {
+        check_deadline(deadline)?;
+        let mut chunk = std::io::Read::take(&mut reader, GZIP_DECODE_CHUNK_BYTES as u64);
+        let result = std::io::Read::read_to_end(&mut chunk, &mut out);
+        check_deadline(deadline)?;
+
+        let complete = match result {
+            Ok(count) => count < GZIP_DECODE_CHUNK_BYTES,
+            Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => false,
+            Err(e) => {
+                return Err(HttpClientError::Error(format!(
+                    "failed to decode gzip response body: {e}"
+                )));
+            }
+        };
+
+        if out.len() > max {
+            return Err(HttpClientError::Error(format!(
+                "decompressed HTTP response body exceeds maximum of {max} bytes"
+            )));
+        }
+
+        if complete {
+            break;
+        }
+
+        crate::dst::task::yield_now().await;
+        reader.get_mut().get_mut().remaining = GZIP_DECODE_CHUNK_BYTES;
+    }
+
+    Ok((Bytes::from(out), true))
+}
+
+struct GzipInput<'a> {
+    bytes: &'a [u8],
+    remaining: usize,
+}
+
+impl std::io::Read for GzipInput<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+
+        let mut available = std::io::BufRead::fill_buf(self)?;
+        let count = std::io::Read::read(&mut available, buf)?;
+        std::io::BufRead::consume(self, count);
+        Ok(count)
+    }
+}
+
+impl std::io::BufRead for GzipInput<'_> {
+    fn fill_buf(&mut self) -> std::io::Result<&[u8]> {
+        if self.bytes.is_empty() {
+            return Ok(self.bytes);
+        }
+
+        if self.remaining == 0 {
+            return Err(std::io::ErrorKind::WouldBlock.into());
+        }
+
+        Ok(&self.bytes[..self.bytes.len().min(self.remaining)])
+    }
+
+    fn consume(&mut self, count: usize) {
+        self.bytes = &self.bytes[count..];
+        self.remaining -= count;
+    }
 }
 
 impl RequestBody {
@@ -853,6 +1026,7 @@ fn encode_url_params<'a>(
         Some((base, fragment)) => (base, Some(fragment)),
         None => (url, None),
     };
+
     let separator = if base.contains('?') { '&' } else { '?' };
 
     Ok(Cow::Owned(match fragment {
@@ -871,7 +1045,6 @@ mod encode_url_params_tests {
 
     fn params(pairs: &[(&str, &str)]) -> HashMap<String, Vec<String>> {
         let mut map: HashMap<String, Vec<String>> = HashMap::new();
-
         for (key, value) in pairs {
             map.entry((*key).to_string())
                 .or_default()
@@ -1093,7 +1266,6 @@ mod tests {
     async fn start_test_server() -> Result<SocketAddr, Box<dyn std::error::Error + Send + Sync>> {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
-
         tokio::spawn(async move {
             serve(listener, create_router()).await.unwrap();
         });
@@ -1122,12 +1294,12 @@ mod tests {
             let (mut stream, _) = listener.accept().await.unwrap();
             let mut request = Vec::new();
             let mut chunk = [0u8; 1024];
-
             loop {
                 let read = stream.read(&mut chunk).await.unwrap();
                 if read == 0 {
                     break;
                 }
+
                 request.extend_from_slice(&chunk[..read]);
                 if request.windows(4).any(|window| window == b"\r\n\r\n") {
                     break;
@@ -1160,11 +1332,13 @@ mod tests {
                 if read == 0 {
                     break;
                 }
+
                 request.extend_from_slice(&chunk[..read]);
                 if request.windows(4).any(|window| window == b"\r\n\r\n") {
                     break;
                 }
             }
+
             request_tx
                 .send(String::from_utf8(request).unwrap())
                 .unwrap();
@@ -1192,7 +1366,7 @@ mod tests {
         let client = inner_client();
         let response = http::Response::new(Full::new(Bytes::from_static(b"ready")));
         let result = client
-            .consume_response(response, Some(crate::dst::time::Instant::now()))
+            .consume_response(response, Some(crate::dst::time::Instant::now()), false)
             .await;
         assert!(
             matches!(result, Err(HttpClientError::TimeoutError(message)) if message == REQUEST_TIMEOUT_MESSAGE)
@@ -1320,6 +1494,7 @@ mod tests {
             .unwrap();
         let mut request_headers = HashMap::new();
         request_headers.insert("x-request".to_string(), "request-e".to_string());
+
         let params = Query {
             symbol: "BTC/USDT",
             limit: 37,
@@ -1370,6 +1545,7 @@ mod tests {
             .build()
             .unwrap();
         let headers = HashMap::from([("x-request".to_string(), "request-g".to_string())]);
+
         let params = Query {
             auth: "token/42",
             market_id: 7,
@@ -1408,9 +1584,13 @@ mod tests {
             max_response_bytes,
             ..inner_client()
         };
+
         let response = http::Response::new(Full::new(Bytes::from_static(bytes)));
 
-        let response = client.consume_response(response, None).await.unwrap();
+        let response = client
+            .consume_response(response, None, false)
+            .await
+            .unwrap();
 
         assert_eq!(response.status.as_u16(), 200);
         assert_eq!(response.headers, HashMap::new());
@@ -1454,9 +1634,11 @@ mod tests {
             .await;
 
         let err = result.expect_err("oversized response body should be rejected");
+
         let HttpClientError::Error(message) = err else {
             panic!("expected HTTP error, was {err:?}");
         };
+
         assert_eq!(
             message,
             "HTTP response body of 1048576 bytes exceeds maximum of 16384 bytes"
@@ -1471,6 +1653,7 @@ mod tests {
         #[case] max_response_bytes: usize,
     ) {
         let (addr, server_task) = spawn_chunked_response_server().await;
+
         let client = InnerHttpClient {
             max_response_bytes,
             ..inner_client()
@@ -1498,6 +1681,7 @@ mod tests {
     async fn test_chunked_response_body_exceeding_cap_is_rejected() {
         let (addr, server_task) = spawn_chunked_response_server().await;
         let max_response_bytes = 8;
+
         let client = InnerHttpClient {
             max_response_bytes,
             ..inner_client()
@@ -1519,6 +1703,7 @@ mod tests {
         let HttpClientError::Error(message) = error else {
             panic!("expected HTTP error, was {error:?}");
         };
+
         assert_eq!(
             message,
             format!("HTTP response body exceeds maximum of {max_response_bytes} bytes")
@@ -2144,7 +2329,6 @@ mod tests {
         const PROXY_AUTH: &str = "Basic cHJveHl0ZXN0OmZpeHR1cmU0Mg==";
 
         let expected_initial_auth = initial_auth.unwrap_or(PROXY_AUTH);
-
         let expected_redirect_auth = if same_origin {
             expected_initial_auth
         } else {
@@ -2154,7 +2338,6 @@ mod tests {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let (request_tx, mut request_rx) = tokio::sync::mpsc::channel(2);
-
         let router = Router::new().fallback(any(move |request: Request| {
             let request_tx = request_tx.clone();
 
@@ -2197,7 +2380,6 @@ mod tests {
             ),
         ]);
         let mut headers = origin_headers.clone();
-
         if let Some(initial_auth) = initial_auth {
             headers.insert("proxy-authorization".to_string(), initial_auth.to_string());
         }
@@ -2437,6 +2619,7 @@ mod rate_limit_tests {
         let quota = Quota::per_minute(NonZeroU32::MIN);
         let request_key = Ustr::from("scope:request");
         let order_key = Ustr::from("scope:order");
+
         let request_limiter = Arc::new(RateLimiter::new_with_quota(
             None,
             vec![(request_key, quota)],
@@ -2466,6 +2649,7 @@ mod rate_limit_tests {
     async fn test_http_client_reserves_multiple_rate_limits_together() {
         let global_key = Ustr::from("scope:global");
         let order_key = Ustr::from("scope:order");
+
         let global_limiter = Arc::new(RateLimiter::new_with_quota(
             None,
             vec![(
@@ -2473,6 +2657,7 @@ mod rate_limit_tests {
                 Quota::with_period(Duration::from_secs(1)).unwrap(),
             )],
         ));
+
         let order_limiter = Arc::new(RateLimiter::new_with_quota(
             None,
             vec![(
@@ -2495,6 +2680,7 @@ mod rate_limit_tests {
                 .await_rate_limits(Some(&[global_key, order_key]))
                 .await;
         });
+
         test_task::yield_now().await;
 
         global_limiter.check_key(&global_key).unwrap();
@@ -2526,5 +2712,123 @@ mod rate_limit_tests {
     #[cfg(not(all(feature = "simulation", madsim)))]
     async fn advance_test_clock(duration: Duration) {
         tokio::time::advance(duration).await;
+    }
+}
+
+#[cfg(test)]
+pub(super) mod content_encoding_tests {
+    use std::{collections::HashMap, io::Write, time::Duration};
+
+    use bytes::Bytes;
+    use flate2::{Compression, write::GzEncoder};
+    use http_body_util::Full;
+    use rstest::rstest;
+
+    use super::{HttpClient, HttpClientError, REQUEST_TIMEOUT_MESSAGE};
+    use crate::dst::time;
+
+    #[rstest]
+    #[case::large_body(false, false)]
+    #[case::large_body_deadline(true, false)]
+    #[case::empty_members(false, true)]
+    #[case::empty_members_deadline(true, true)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn gzip_decoding_yields_and_obeys_deadline(
+        #[case] expires: bool,
+        #[case] empty_members: bool,
+    ) {
+        let (payload, compressed) = if empty_members {
+            (Vec::new(), gzip(&[]).repeat(4_000))
+        } else {
+            let payload = vec![b'x'; 2 * 1024 * 1024];
+            let compressed = gzip(&payload);
+            (payload, compressed)
+        };
+
+        let body = Bytes::from(compressed);
+        let body = Full::new(body);
+        let response = http::Response::builder()
+            .header("Content-Encoding", "gzip")
+            .body(body)
+            .unwrap();
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap()
+            .client;
+        let deadline = expires.then(|| time::Instant::now() + Duration::from_secs(1));
+        let mut request = Box::pin(client.consume_response(response, deadline, false));
+
+        assert!(futures_util::poll!(request.as_mut()).is_pending());
+
+        if expires {
+            #[cfg(not(all(feature = "simulation", madsim)))]
+            tokio::time::advance(Duration::from_secs(2)).await;
+            #[cfg(all(feature = "simulation", madsim))]
+            madsim::time::advance(Duration::from_secs(2));
+        }
+
+        let result = request.await;
+        if expires {
+            let HttpClientError::TimeoutError(message) = result.unwrap_err() else {
+                panic!("expected decoding timeout");
+            };
+
+            assert_eq!(message, REQUEST_TIMEOUT_MESSAGE);
+        } else {
+            let response = result.unwrap();
+            assert_eq!(response.status.as_u16(), 200);
+            assert_eq!(response.headers, HashMap::new());
+            assert_eq!(response.body.as_ref(), payload);
+        }
+    }
+
+    #[rstest]
+    #[case::stored_blocks(false)]
+    #[case::header_fields(true)]
+    #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn gzip_decoding_resumes_at_input_boundaries(#[case] metadata: bool) {
+        let payload = vec![b'x'; 128 * 1024];
+
+        let mut encoder = if metadata {
+            flate2::GzBuilder::new()
+                .filename(vec![b'f'; 32 * 1024])
+                .comment(vec![b'c'; 32 * 1024])
+                .write(Vec::new(), Compression::default())
+        } else {
+            GzEncoder::new(Vec::new(), Compression::none())
+        };
+
+        encoder.write_all(&payload).unwrap();
+        let compressed = encoder.finish().unwrap();
+        let response = http::Response::builder()
+            .header("Content-Encoding", "gzip")
+            .body(Full::new(Bytes::from(compressed)))
+            .unwrap();
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .build()
+            .unwrap()
+            .client;
+
+        let response = client
+            .consume_response(response, None, false)
+            .await
+            .unwrap();
+
+        assert_eq!(response.status.as_u16(), 200);
+        assert_eq!(response.headers, HashMap::new());
+        assert_eq!(response.body.as_ref(), payload);
+    }
+
+    pub(in crate::http) fn gzip(data: &[u8]) -> Vec<u8> {
+        let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+        encoder.write_all(data).unwrap();
+        encoder.finish().unwrap()
     }
 }

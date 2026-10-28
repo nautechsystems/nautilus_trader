@@ -33,7 +33,7 @@ use super::{
     decode_decimal_quantity, decode_required_timestamp, decode_required_u8, decode_required_u64,
     enum_dictionary_array, enum_dictionary_data_type, extract_column, extract_column_string,
     fixed_decimal_data_type, identifier_array_from_display, metadata_with_type_name,
-    parse_metadata, price_decimal_array, quantity_decimal_array,
+    parse_metadata, price_decimal_array, quantity_decimal_array, validate_required_column,
 };
 #[cfg(test)]
 use super::{KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION};
@@ -175,6 +175,8 @@ impl DecodeFromRecordBatch for OrderBookDelta {
 
         let action_values = extract_column_string(cols, "action", 0)?;
         let side_values = extract_column_string(cols, "side", 1)?;
+        validate_required_column(cols[0].as_ref(), "action")?;
+        validate_required_column(cols[1].as_ref(), "side")?;
         let price_values =
             extract_column::<Decimal128Array>(cols, "price", 2, fixed_decimal_data_type())?;
         let size_values =
@@ -468,6 +470,44 @@ mod tests {
 
         let decoded_data = OrderBookDelta::decode_batch(&metadata, record_batch).unwrap();
         assert_eq!(decoded_data.len(), 2);
+    }
+
+    #[rstest]
+    fn test_decode_batch_rejects_null_action_with_field_and_row() {
+        use arrow::{array::StringDictionaryBuilder, datatypes::Int8Type};
+
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let metadata = OrderBookDelta::get_metadata(&instrument_id, 2, 0);
+        let delta = OrderBookDelta::clear(instrument_id, 0, 1.into(), 2.into());
+        let encoded = OrderBookDelta::encode_batch(&metadata, &[delta]).unwrap();
+        let mut action = StringDictionaryBuilder::<Int8Type>::new();
+        action.append_null();
+        let mut columns = encoded.columns().to_vec();
+        columns[0] = Arc::new(action.finish());
+
+        let fields = encoded
+            .schema()
+            .fields()
+            .iter()
+            .map(|field| {
+                if field.name() == "action" {
+                    Arc::new(field.as_ref().clone().with_nullable(true))
+                } else {
+                    Arc::clone(field)
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let schema = Arc::new(Schema::new_with_metadata(fields, metadata.clone()));
+        let record_batch = RecordBatch::try_new(schema, columns).unwrap();
+
+        let result = OrderBookDelta::decode_batch(&metadata, record_batch);
+
+        assert!(matches!(
+            result,
+            Err(EncodingError::ParseError("action", ref message))
+                if message == "row 0: required value is null"
+        ));
     }
 
     #[rstest]

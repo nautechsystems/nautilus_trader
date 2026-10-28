@@ -137,7 +137,6 @@ env/
 !scripts/install-osv-scanner.sh
 !scripts/package-version.sh
 !scripts/purge-orphan-dev-wheels.sh
-!scripts/regen-capnp.sh
 !scripts/rust-toolchain.sh
 !scripts/soak-network-turmoil.sh
 !scripts/tool-version.sh

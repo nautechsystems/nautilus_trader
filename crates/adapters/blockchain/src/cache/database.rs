@@ -2442,9 +2442,7 @@ impl BlockchainCacheDatabase {
                 .try_get::<Option<String>, _>("block_timestamp")?
                 .ok_or_else(|| {
                     anyhow::anyhow!(
-                        "Missing block timestamp for pool snapshot {} at block {}",
-                        pool_identifier,
-                        block
+                        "Missing block timestamp for pool snapshot {pool_identifier} at block {block}"
                     )
                 })?;
             let timestamp = parse_cached_block_timestamp(&block_timestamp)
@@ -2530,7 +2528,7 @@ impl BlockchainCacheDatabase {
             let dex_name = row
                 .try_get::<Option<String>, _>("dex_name")?
                 .ok_or_else(|| {
-                    anyhow::anyhow!("Missing dex_name for pool snapshot {}", pool_identifier)
+                    anyhow::anyhow!("Missing dex_name for pool snapshot {pool_identifier}")
                 })?;
             let chain = Chain::from_chain_id(chain_id)
                 .ok_or_else(|| anyhow::anyhow!("Unknown chain_id: {chain_id}"))?;
@@ -3601,8 +3599,7 @@ impl BlockchainCacheDatabase {
             && installed_version > EXECUTION_SCHEMA_VERSION
         {
             anyhow::bail!(
-                "Execution schema version {} is newer than supported version {EXECUTION_SCHEMA_VERSION}",
-                installed_version
+                "Execution schema version {installed_version} is newer than supported version {EXECUTION_SCHEMA_VERSION}"
             );
         }
 

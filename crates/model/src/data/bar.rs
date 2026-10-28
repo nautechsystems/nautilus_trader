@@ -39,6 +39,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::{ARROW_TIMESTAMP_NANOSECOND, HasTsInit};
 use crate::{
+    deserialization::StringInput,
     enums::{AggregationSource, BarAggregation, PriceType},
     identifiers::InstrumentId,
     types::{Price, Quantity, fixed::FIXED_DECIMAL},
@@ -543,7 +544,7 @@ impl BarSpecification {
         price_type: PriceType,
     ) -> anyhow::Result<Self> {
         let step = NonZeroUsize::new(step)
-            .ok_or(anyhow::anyhow!("Invalid step: {step} (must be non-zero)"))?;
+            .ok_or_else(|| anyhow::anyhow!("Invalid step: {step} (must be non-zero)"))?;
         Self::validate_step(step.get(), aggregation)?;
 
         Ok(Self {
@@ -931,27 +932,26 @@ pub struct BarTypeParseError {
 impl FromStr for BarType {
     type Err = BarTypeParseError;
 
-    #[expect(clippy::needless_collect)] // Collect needed for .rev() and indexing
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let parts: Vec<&str> = s.split('@').collect();
-        if parts.len() > 2 {
+        let mut parts = s.split('@');
+        let standard = parts.next().expect("split always yields a first field");
+        let composite_str = parts.next();
+        if let Some(extra) = parts.next() {
             return Err(BarTypeParseError {
                 input: s.to_string(),
-                token: parts[2].to_string(),
+                token: extra.to_string(),
                 position: 5,
             });
         }
-        let standard = parts[0];
-        let composite_str = parts.get(1);
 
-        let pieces: Vec<&str> = standard.rsplitn(5, '-').collect();
-        let rev_pieces: Vec<&str> = pieces.into_iter().rev().collect();
-        if rev_pieces.len() != 5 {
-            return Err(BarTypeParseError {
+        let mut pieces = standard.rsplitn(5, '-');
+        let mut rev_pieces = [""; 5];
+        for piece in rev_pieces.iter_mut().rev() {
+            *piece = pieces.next().ok_or_else(|| BarTypeParseError {
                 input: s.to_string(),
                 token: String::new(),
                 position: 0,
-            });
+            })?;
         }
 
         let instrument_id =
@@ -992,14 +992,14 @@ impl FromStr for BarType {
         })?;
 
         if let Some(composite_str) = composite_str {
-            let composite_pieces: Vec<&str> = composite_str.rsplitn(3, '-').collect();
-            let rev_composite_pieces: Vec<&str> = composite_pieces.into_iter().rev().collect();
-            if rev_composite_pieces.len() != 3 {
-                return Err(BarTypeParseError {
+            let mut composite_pieces = composite_str.rsplitn(3, '-');
+            let mut rev_composite_pieces = [""; 3];
+            for piece in rev_composite_pieces.iter_mut().rev() {
+                *piece = composite_pieces.next().ok_or_else(|| BarTypeParseError {
                     input: s.to_string(),
                     token: String::new(),
                     position: 5,
-                });
+                })?;
             }
 
             let composite_step =
@@ -1103,7 +1103,7 @@ impl<'de> Deserialize<'de> for BarType {
     where
         D: Deserializer<'de>,
     {
-        let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let StringInput(s) = Deserialize::deserialize(deserializer)?;
         Self::from_str(s.as_ref()).map_err(serde::de::Error::custom)
     }
 }

@@ -35,28 +35,24 @@ use nautilus_execution::{
     },
 };
 use nautilus_model::{
-    accounts::margin_model::MarginModelAny,
     data::BarSpecification,
     enums::{AccountType, BookType, OmsType, OtoTriggerMode},
     identifiers::{ClientId, InstrumentId, TraderId},
-    python::data::PyNautilusDataType,
+    python::{
+        account::margin_model::{margin_model_any_to_pyobject, pyobject_to_margin_model_any},
+        data::PyNautilusDataType,
+    },
     types::Currency,
 };
-use nautilus_persistence::{
-    config::{DataCatalogConfig, StreamingConfig},
-    python::config::PyCatalogBackend,
-};
+use nautilus_persistence::config::{DataCatalogConfig, StreamingConfig};
 use nautilus_portfolio::config::PortfolioConfig;
 use nautilus_risk::engine::config::RiskEngineConfig;
 use nautilus_trading::ImportableControllerConfig;
-use pyo3::{Bound, IntoPyObjectExt, Py, PyAny, PyResult, Python, types::PyAnyMethods};
+use pyo3::{Bound, Py, PyAny, PyResult, Python, types::PyAnyMethods};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
-use super::{
-    engine::pyobject_to_margin_model_any,
-    modules::{pyobject_to_simulation_module_any, simulation_module_any_to_pyobject},
-};
+use super::modules::{pyobject_to_simulation_module_any, simulation_module_any_to_pyobject};
 use crate::config::{
     BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig,
 };
@@ -319,11 +315,11 @@ impl BacktestVenueConfig {
         base_currency = None,
         default_leverage = None,
         leverages = None,
-        margin_model = None,
-        modules = None,
         fill_model = None,
-        latency_model = None,
         fee_model = None,
+        margin_model = None,
+        latency_model = None,
+        modules = None,
         price_protection_points = None,
         liquidation_enabled = None,
         liquidation_trigger_ratio = None,
@@ -361,11 +357,11 @@ impl BacktestVenueConfig {
         base_currency: Option<Currency>,
         default_leverage: Option<Decimal>,
         leverages: Option<HashMap<InstrumentId, Decimal>>,
-        margin_model: Option<Py<PyAny>>,
-        modules: Option<Vec<Py<PyAny>>>,
         fill_model: Option<Py<PyAny>>,
-        latency_model: Option<Py<PyAny>>,
         fee_model: Option<Py<PyAny>>,
+        margin_model: Option<Py<PyAny>>,
+        latency_model: Option<Py<PyAny>>,
+        modules: Option<Vec<Py<PyAny>>>,
         price_protection_points: Option<u32>,
         liquidation_enabled: Option<bool>,
         liquidation_trigger_ratio: Option<f64>,
@@ -378,9 +374,22 @@ impl BacktestVenueConfig {
             .transpose()?
             .unwrap_or(BookType::L1_MBP);
         let oto_trigger_mode = oto_trigger_mode.map(enum_from_python).transpose()?;
-        let margin_model = margin_model
-            .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(py, obj.bind(py))))
+        let fill_model = fill_model
+            .map(|obj| Python::attach(|py| pyobject_to_fill_model_any(obj.bind(py))))
             .transpose()?;
+
+        let fee_model = fee_model
+            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
+            .transpose()?;
+
+        let margin_model = margin_model
+            .map(|obj| Python::attach(|py| pyobject_to_margin_model_any(obj.bind(py))))
+            .transpose()?;
+
+        let latency_model = latency_model
+            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
+            .transpose()?;
+
         let modules = modules
             .map(|objs| {
                 objs.into_iter()
@@ -389,15 +398,6 @@ impl BacktestVenueConfig {
             })
             .transpose()?
             .unwrap_or_default();
-        let fill_model = fill_model
-            .map(|obj| Python::attach(|py| pyobject_to_fill_model_any(obj.bind(py))))
-            .transpose()?;
-        let latency_model = latency_model
-            .map(|obj| Python::attach(|py| pyobject_to_latency_model_any(obj.bind(py))))
-            .transpose()?;
-        let fee_model = fee_model
-            .map(|obj| Python::attach(|py| pyobject_to_fee_model_any(obj.bind(py))))
-            .transpose()?;
 
         Self::builder()
             .name(Ustr::from(name))
@@ -424,11 +424,11 @@ impl BacktestVenueConfig {
             .maybe_base_currency(base_currency)
             .maybe_default_leverage(default_leverage)
             .maybe_leverages(leverages.map(|m| m.into_iter().collect()))
-            .maybe_margin_model(margin_model)
-            .modules(modules)
             .maybe_fill_model(fill_model)
-            .maybe_latency_model(latency_model)
             .maybe_fee_model(fee_model)
+            .maybe_margin_model(margin_model)
+            .maybe_latency_model(latency_model)
+            .modules(modules)
             .maybe_price_protection_points(price_protection_points)
             .maybe_liquidation_enabled(liquidation_enabled)
             .maybe_liquidation_trigger_ratio(liquidation_trigger_ratio)
@@ -587,27 +587,26 @@ impl BacktestVenueConfig {
     }
 
     #[getter]
-    #[pyo3(name = "margin_model")]
-    fn py_margin_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
-        self.margin_model()
-            .map(|model| margin_model_any_to_pyobject(py, model))
-            .transpose()
-    }
-
-    #[getter]
-    #[pyo3(name = "modules")]
-    fn py_modules(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
-        self.modules()
-            .iter()
-            .map(|module| simulation_module_any_to_pyobject(py, module))
-            .collect()
-    }
-
-    #[getter]
     #[pyo3(name = "fill_model")]
     fn py_fill_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
         self.fill_model()
             .map(|model| fill_model_any_to_pyobject(py, model))
+            .transpose()
+    }
+
+    #[getter]
+    #[pyo3(name = "fee_model")]
+    fn py_fee_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        self.fee_model()
+            .map(|model| fee_model_any_to_pyobject(py, model))
+            .transpose()
+    }
+
+    #[getter]
+    #[pyo3(name = "margin_model")]
+    fn py_margin_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
+        self.margin_model()
+            .map(|model| margin_model_any_to_pyobject(py, model))
             .transpose()
     }
 
@@ -620,11 +619,12 @@ impl BacktestVenueConfig {
     }
 
     #[getter]
-    #[pyo3(name = "fee_model")]
-    fn py_fee_model(&self, py: Python<'_>) -> PyResult<Option<Py<PyAny>>> {
-        self.fee_model()
-            .map(|model| fee_model_any_to_pyobject(py, model))
-            .transpose()
+    #[pyo3(name = "modules")]
+    fn py_modules(&self, py: Python<'_>) -> PyResult<Vec<Py<PyAny>>> {
+        self.modules()
+            .iter()
+            .map(|module| simulation_module_any_to_pyobject(py, module))
+            .collect()
     }
 
     #[getter]
@@ -663,10 +663,7 @@ impl BacktestDataConfig {
     #[new]
     #[pyo3(signature = (
         data_type,
-        catalog_path,
-        catalog_fs_protocol = None,
-        catalog_fs_storage_options = None,
-        catalog_fs_rust_storage_options = None,
+        catalog,
         instrument_id = None,
         instrument_ids = None,
         start_time = None,
@@ -677,7 +674,6 @@ impl BacktestDataConfig {
         bar_spec = None,
         bar_types = None,
         optimize_file_loading = None,
-        catalog_backend = None,
         batch_deltas = None,
     ))]
     #[expect(clippy::too_many_arguments)]
@@ -686,10 +682,7 @@ impl BacktestDataConfig {
             '_,
             PyAny,
         >,
-        catalog_path: String,
-        catalog_fs_protocol: Option<String>,
-        catalog_fs_storage_options: Option<HashMap<String, String>>,
-        catalog_fs_rust_storage_options: Option<HashMap<String, String>>,
+        catalog: DataCatalogConfig,
         instrument_id: Option<InstrumentId>,
         instrument_ids: Option<Vec<InstrumentId>>,
         #[gen_stub(override_type(
@@ -708,7 +701,6 @@ impl BacktestDataConfig {
         bar_spec: Option<BarSpecification>,
         bar_types: Option<Vec<String>>,
         optimize_file_loading: Option<bool>,
-        catalog_backend: Option<pyo3::PyRef<'_, PyCatalogBackend>>,
         batch_deltas: Option<bool>,
     ) -> pyo3::PyResult<Self> {
         let data_type = data_type
@@ -719,23 +711,7 @@ impl BacktestDataConfig {
         let end_time = timestamp_from_python(end_time)?;
         Self::builder()
             .data_type(data_type)
-            .catalog_path(catalog_path)
-            .catalog_backend(
-                catalog_backend
-                    .map(|backend| backend.inner())
-                    .unwrap_or_default(),
-            )
-            .maybe_catalog_fs_protocol(catalog_fs_protocol)
-            .maybe_catalog_fs_storage_options(catalog_fs_storage_options.map(|m| {
-                m.into_iter()
-                    .map(|(key, value)| (key, value.into()))
-                    .collect()
-            }))
-            .maybe_catalog_fs_rust_storage_options(catalog_fs_rust_storage_options.map(|m| {
-                m.into_iter()
-                    .map(|(key, value)| (key, value.into()))
-                    .collect()
-            }))
+            .catalog(catalog)
             .maybe_instrument_id(instrument_id)
             .maybe_instrument_ids(instrument_ids)
             .maybe_start_time(start_time)
@@ -751,11 +727,11 @@ impl BacktestDataConfig {
             .map_err(config_error_to_pyvalue_err)
     }
 
-    /// Returns the configured catalog backend.
+    /// Returns the catalog queried for instruments and replay data.
     #[getter]
-    #[pyo3(name = "catalog_backend")]
-    fn py_catalog_backend(&self) -> PyCatalogBackend {
-        PyCatalogBackend::new(self.catalog_backend())
+    #[pyo3(name = "catalog")]
+    fn py_catalog(&self) -> DataCatalogConfig {
+        self.catalog().clone()
     }
 
     #[getter]
@@ -765,41 +741,9 @@ impl BacktestDataConfig {
     }
 
     #[getter]
-    #[pyo3(name = "catalog_path")]
-    fn py_catalog_path(&self) -> &str {
-        self.catalog_path()
-    }
-
-    #[getter]
     #[pyo3(name = "instrument_id")]
     fn py_instrument_id(&self) -> Option<InstrumentId> {
         self.instrument_id()
-    }
-
-    #[getter]
-    #[pyo3(name = "catalog_fs_protocol")]
-    fn py_catalog_fs_protocol(&self) -> Option<&str> {
-        self.catalog_fs_protocol()
-    }
-
-    #[getter]
-    #[pyo3(name = "catalog_fs_storage_option_keys")]
-    fn py_catalog_fs_storage_option_keys(&self) -> Option<Vec<String>> {
-        self.catalog_fs_storage_options().map(|options| {
-            let mut keys = options.keys().cloned().collect::<Vec<_>>();
-            keys.sort_unstable();
-            keys
-        })
-    }
-
-    #[getter]
-    #[pyo3(name = "catalog_fs_rust_storage_option_keys")]
-    fn py_catalog_fs_rust_storage_option_keys(&self) -> Option<Vec<String>> {
-        self.catalog_fs_rust_storage_options().map(|options| {
-            let mut keys = options.keys().cloned().collect::<Vec<_>>();
-            keys.sort_unstable();
-            keys
-        })
     }
 
     #[getter]
@@ -1012,13 +956,6 @@ where
         .map_err(to_pyvalue_err)
 }
 
-fn margin_model_any_to_pyobject(py: Python<'_>, model: &MarginModelAny) -> PyResult<Py<PyAny>> {
-    match model {
-        MarginModelAny::Standard(model) => (*model).into_py_any(py),
-        MarginModelAny::Leveraged(model) => (*model).into_py_any(py),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use ahash::AHashMap;
@@ -1029,7 +966,7 @@ mod tests {
     use super::*;
 
     #[rstest]
-    fn test_data_config_py_new_keeps_storage_option_values() {
+    fn test_data_config_py_new_keeps_catalog_storage_option_values() {
         Python::initialize();
 
         let config = Python::attach(|py| {
@@ -1037,15 +974,12 @@ mod tests {
                 Bound::new(py, PyNautilusDataType::new(NautilusDataType::QuoteTick)).unwrap();
             BacktestDataConfig::py_new(
                 data_type.as_any(),
-                "bucket/catalog".to_string(),
-                Some("s3".to_string()),
-                Some(HashMap::from([("key".to_string(), "fs-key".to_string())])),
-                Some(HashMap::from([(
-                    "aws_secret_access_key".to_string(),
-                    "rust-secret".to_string(),
-                )])),
+                DataCatalogConfig::new("bucket/catalog".to_string(), Some("s3".to_string()), None)
+                    .with_storage_options(Some(AHashMap::from([(
+                        "aws_secret_access_key".to_string(),
+                        SecretString::from("rust-secret"),
+                    )]))),
                 Some(InstrumentId::from("EUR/USD.SIM")),
-                None,
                 None,
                 None,
                 None,
@@ -1061,14 +995,7 @@ mod tests {
         });
 
         assert_eq!(
-            config.catalog_fs_storage_options(),
-            Some(&AHashMap::from([(
-                "key".to_string(),
-                SecretString::from("fs-key"),
-            )]))
-        );
-        assert_eq!(
-            config.catalog_fs_rust_storage_options(),
+            config.catalog().fs_rust_storage_options(),
             Some(&AHashMap::from([(
                 "aws_secret_access_key".to_string(),
                 SecretString::from("rust-secret"),
@@ -1094,12 +1021,8 @@ mod tests {
             .unwrap();
             BacktestDataConfig::py_new(
                 data_type.as_any(),
-                "catalog".to_string(),
-                None,
-                None,
-                None,
+                DataCatalogConfig::new("catalog".to_string(), None, None),
                 Some(InstrumentId::from("EUR/USD.SIM")),
-                None,
                 None,
                 None,
                 None,

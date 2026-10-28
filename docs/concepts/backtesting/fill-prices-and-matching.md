@@ -20,17 +20,17 @@ match.
 With depth data, market-style orders walk crossed book levels. A limit-style order receives crossed
 book prices while acting as a taker and uses its limit price when acting as a maker.
 
-| Order type             | Fill behavior                                                     |
-| ---------------------- | ----------------------------------------------------------------- |
-| `MARKET`               | Walks crossed book levels as a taker.                             |
-| `MARKET_TO_LIMIT`      | Walks the book, then rests the remainder at its first fill price. |
-| `LIMIT`                | Uses crossed levels as a taker or the limit price as a maker.     |
-| `STOP_MARKET`          | Walks crossed levels after triggering.                            |
-| `STOP_LIMIT`           | Uses the limit-style rule after triggering.                       |
-| `MARKET_IF_TOUCHED`    | Walks crossed levels after triggering.                            |
-| `LIMIT_IF_TOUCHED`     | Uses the limit-style rule after triggering.                       |
-| `TRAILING_STOP_MARKET` | Walks crossed levels after activation and triggering.             |
-| `TRAILING_STOP_LIMIT`  | Uses the limit-style rule after activation and triggering.        |
+| Order type             | Fill behavior                                                 |
+| ---------------------- | ------------------------------------------------------------- |
+| `MARKET`               | Walks crossed book levels as a taker.                         |
+| `MARKET_TO_LIMIT`      | Fills the first executable level, then rests at that price.   |
+| `LIMIT`                | Uses crossed levels as a taker or the limit price as a maker. |
+| `STOP_MARKET`          | Walks crossed levels after triggering.                        |
+| `STOP_LIMIT`           | Uses the limit-style rule after triggering.                   |
+| `MARKET_IF_TOUCHED`    | Walks crossed levels after triggering.                        |
+| `LIMIT_IF_TOUCHED`     | Uses the limit-style rule after triggering.                   |
+| `TRAILING_STOP_MARKET` | Walks crossed levels after activation and triggering.         |
+| `TRAILING_STOP_LIMIT`  | Uses the limit-style rule after activation and triggering.    |
 
 A depth order can fill partially when the available crossed size is smaller than its remaining
 quantity.
@@ -80,6 +80,18 @@ uses the trigger price. For example:
 
 This rule assumes a continuous move through the trigger. Use quote, trade, or order book data when
 the strategy requires more precise gap and path behavior.
+
+### Mark-price triggers
+
+Orders with `trigger_type=MARK_PRICE` use `MarkPriceUpdate` data for triggering and trailing-stop
+activation and repricing. Quote and trade prices do not substitute for a missing mark. The latest mark
+remains valid until another mark replaces it or the engine resets; there is no age-based expiry.
+Mark prices can use any precision supported by the build, including precision finer than the
+instrument's tick size.
+
+Marks supply no executable prices or liquidity. Triggered orders use the normal fill rules against
+the executable market. Mark-triggered market orders use market prices even during bar execution;
+they do not use the bar trigger-price rule above. Mark-price bars do not drive execution.
 
 ## Price protection
 

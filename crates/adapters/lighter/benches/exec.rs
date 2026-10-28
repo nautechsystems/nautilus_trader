@@ -118,7 +118,8 @@ fn bench_submit_market(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("submit_market", |b| {
         b.iter(|| {
-            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k);
+            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k)
+                .expect("benchmark transaction attributes are valid");
             let json = TxInfoJson::create_order(&tx, &signed);
             black_box(json);
         });
@@ -135,7 +136,8 @@ fn bench_submit_limit(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("submit_limit", |b| {
         b.iter(|| {
-            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k);
+            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k)
+                .expect("benchmark transaction attributes are valid");
             let json = TxInfoJson::create_order(&tx, &signed);
             black_box(json);
         });
@@ -152,7 +154,8 @@ fn bench_submit_stop_market(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("submit_stop_market", |b| {
         b.iter(|| {
-            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k);
+            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k)
+                .expect("benchmark transaction attributes are valid");
             let json = TxInfoJson::create_order(&tx, &signed);
             black_box(json);
         });
@@ -169,7 +172,8 @@ fn bench_cancel(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("cancel", |b| {
         b.iter(|| {
-            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k);
+            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k)
+                .expect("benchmark transaction attributes are valid");
             let json = TxInfoJson::cancel_order(&tx, &signed);
             black_box(json);
         });
@@ -186,7 +190,8 @@ fn bench_modify(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("modify", |b| {
         b.iter(|| {
-            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k);
+            let signed = sign_tx(black_box(&tx), CHAIN_ID, &sk, k)
+                .expect("benchmark transaction attributes are valid");
             let json = TxInfoJson::modify_order(&tx, &signed);
             black_box(json);
         });
@@ -200,6 +205,7 @@ fn integrator_attrs() -> L2TxAttributes {
         integrator_taker_fee: 0,
         integrator_maker_fee: 0,
         skip_nonce: 0,
+        ..Default::default()
     }
 }
 

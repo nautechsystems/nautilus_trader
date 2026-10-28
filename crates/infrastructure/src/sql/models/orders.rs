@@ -31,13 +31,13 @@ use nautilus_model::{
         AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, OrderListId, PositionId,
         StrategyId, TradeId, TraderId, VenueOrderId,
     },
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use sqlx::{FromRow, Row, postgres::PgRow};
 use ustr::Ustr;
 
-use crate::sql::models::enums::TrailingOffsetTypePg;
+use crate::sql::models::{decode_money, enums::TrailingOffsetTypePg};
 
 #[derive(Debug)]
 pub struct OrderEventAnyRow(pub OrderEventAny);
@@ -572,8 +572,9 @@ impl<'r> FromRow<'r, PgRow> for OrderFilledRow {
             .try_get::<Option<&str>, _>("position_id")
             .map(|x| x.map(PositionId::from))?;
         let commission = row
-            .try_get::<Option<&str>, _>("commission")
-            .map(|x| x.map(|x| Money::from_str(x).unwrap()))?;
+            .try_get::<Option<&str>, _>("commission")?
+            .map(|value| decode_money(value, "commission"))
+            .transpose()?;
         let reconciliation = row.try_get::<bool, _>("reconciliation")?;
         let info = decode_info(row)?;
         let causation_id = causation_id_from_row(row)?;
@@ -635,7 +636,7 @@ impl<'r> FromRow<'r, PgRow> for OrderFillVoidedRow {
         let voided_qty = row.try_get::<&str, _>("quantity").map(Quantity::from)?;
         let commission_voided = row
             .try_get::<Option<&str>, _>("commission")?
-            .map(|x| Money::from_str(x).map_err(|e| sqlx::Error::Decode(e.into())))
+            .map(|value| decode_money(value, "commission"))
             .transpose()?;
         let order_side = OrderSide::from_str(row.try_get::<&str, _>("order_side")?)
             .map_err(|e| sqlx::Error::Decode(Box::new(e)))?;
@@ -1105,9 +1106,10 @@ impl<'r> FromRow<'r, PgRow> for OrderSnapshotRow {
         let slippage = row.try_get::<Option<Decimal>, _>("slippage").ok().flatten();
         let commissions = row
             .try_get::<Option<Vec<String>>, _>("commissions")?
-            .map_or_else(Vec::new, |c| {
-                c.into_iter().map(|s| Money::from(&s)).collect()
-            });
+            .unwrap_or_default()
+            .into_iter()
+            .map(|value| decode_money(&value, "commissions"))
+            .collect::<Result<Vec<_>, _>>()?;
         let status = row
             .try_get::<&str, _>("status")
             .map(|x| OrderStatus::from_str(x).expect("Invalid `OrderStatus`"))?;

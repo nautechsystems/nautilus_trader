@@ -341,6 +341,7 @@ pub fn model(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::accounts::CashAccount>()?;
     m.add_class::<crate::accounts::MarginAccount>()?;
     m.add_class::<crate::accounts::WalletAccount>()?;
+    m.add_class::<account::margin_model::PyMarginModel>()?;
     m.add_class::<crate::accounts::margin_model::StandardMarginModel>()?;
     m.add_class::<crate::accounts::margin_model::LeveragedMarginModel>()?;
     m.add_function(wrap_pyfunction!(

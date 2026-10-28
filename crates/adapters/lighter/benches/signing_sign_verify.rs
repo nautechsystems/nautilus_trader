@@ -76,7 +76,12 @@ fn bench_compute_tx_hash_create_order(c: &mut Criterion) {
     let mut group = c.benchmark_group("signing");
     group.throughput(Throughput::Elements(1));
     group.bench_function("compute_tx_hash (CreateOrder)", |b| {
-        b.iter(|| black_box(compute_tx_hash(black_box(&tx), black_box(CHAIN_ID))));
+        b.iter(|| {
+            black_box(
+                compute_tx_hash(black_box(&tx), black_box(CHAIN_ID))
+                    .expect("benchmark transaction attributes are valid"),
+            )
+        });
     });
     group.finish();
 }
@@ -86,7 +91,12 @@ fn bench_compute_tx_hash_cancel_order(c: &mut Criterion) {
     let mut group = c.benchmark_group("signing");
     group.throughput(Throughput::Elements(1));
     group.bench_function("compute_tx_hash (CancelOrder)", |b| {
-        b.iter(|| black_box(compute_tx_hash(black_box(&tx), black_box(CHAIN_ID))));
+        b.iter(|| {
+            black_box(
+                compute_tx_hash(black_box(&tx), black_box(CHAIN_ID))
+                    .expect("benchmark transaction attributes are valid"),
+            )
+        });
     });
     group.finish();
 }
@@ -99,12 +109,15 @@ fn bench_sign_tx_create_order(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("sign_tx (CreateOrder)", |b| {
         b.iter(|| {
-            black_box(sign_tx(
-                black_box(&tx),
-                black_box(CHAIN_ID),
-                black_box(&sk),
-                black_box(k),
-            ))
+            black_box(
+                sign_tx(
+                    black_box(&tx),
+                    black_box(CHAIN_ID),
+                    black_box(&sk),
+                    black_box(k),
+                )
+                .expect("benchmark transaction attributes are valid"),
+            )
         });
     });
     group.finish();
@@ -118,12 +131,15 @@ fn bench_sign_tx_cancel_order(c: &mut Criterion) {
     group.throughput(Throughput::Elements(1));
     group.bench_function("sign_tx (CancelOrder)", |b| {
         b.iter(|| {
-            black_box(sign_tx(
-                black_box(&tx),
-                black_box(CHAIN_ID),
-                black_box(&sk),
-                black_box(k),
-            ))
+            black_box(
+                sign_tx(
+                    black_box(&tx),
+                    black_box(CHAIN_ID),
+                    black_box(&sk),
+                    black_box(k),
+                )
+                .expect("benchmark transaction attributes are valid"),
+            )
         });
     });
     group.finish();

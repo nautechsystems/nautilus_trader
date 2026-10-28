@@ -449,7 +449,7 @@ while IFS=: read -r file line_num content; do
 
   # Check the three lines after the select! opening for `biased;`.
   next_window=$(sed -n "$((line_num + 1)),$((line_num + 3))p" "$file" 2> /dev/null)
-  if echo "$next_window" | grep -q 'biased;'; then
+  if [[ "$next_window" == *'biased;'* ]]; then
     continue
   fi
 

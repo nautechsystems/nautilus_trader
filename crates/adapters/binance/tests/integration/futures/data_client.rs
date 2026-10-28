@@ -37,6 +37,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use jiff::{SignedDuration, Timestamp};
 use nautilus_binance::{
     common::{
         bar::BinanceBar,
@@ -74,11 +75,12 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{
-        BarType, BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick,
+        BarType, BookOrder, CustomData, Data, DataType, InstrumentStatus, OrderBookDelta,
+        OrderBookDeltas, QuoteTick,
     },
-    enums::{BookAction, BookType, OrderSide, RecordFlag},
+    enums::{BookAction, BookType, MarketStatusAction, OrderSide, RecordFlag},
     identifiers::InstrumentId,
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
 use nautilus_network::http::HttpClient;
@@ -93,6 +95,8 @@ type MarketQueries = Arc<Mutex<Vec<MarketQuery>>>;
 
 #[derive(Clone)]
 struct DataTestServerState {
+    exchange_info_requests:
+        Option<tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<Response>>>,
     depth_failures_before_success: usize,
     depth_requests: Arc<AtomicUsize>,
     depth_response_delay: Duration,
@@ -118,6 +122,7 @@ struct DataTestServerState {
 impl Default for DataTestServerState {
     fn default() -> Self {
         Self {
+            exchange_info_requests: None,
             depth_failures_before_success: 0,
             depth_requests: Arc::new(AtomicUsize::new(0)),
             depth_response_delay: Duration::ZERO,
@@ -190,10 +195,12 @@ fn stale_depth_update(state: &DataTestServerState, stream: &str) -> serde_json::
 }
 
 fn liquidation_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesLiquidation",
@@ -203,10 +210,12 @@ fn liquidation_data_type_for_instrument(instrument_id: InstrumentId) -> DataType
 }
 
 fn open_interest_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesOpenInterest",
@@ -219,14 +228,18 @@ fn open_interest_hist_data_type_for_instrument(
     instrument_id: InstrumentId,
     period: &str,
 ) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
-    );
-    metadata.insert(
-        "period".to_string(),
-        serde_json::Value::String(period.to_string()),
+    let metadata = Params::new(
+        [
+            (
+                "instrument_id".to_string(),
+                serde_json::Value::String(instrument_id.to_string()),
+            ),
+            (
+                "period".to_string(),
+                serde_json::Value::String(period.to_string()),
+            ),
+        ]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesOpenInterestHist",
@@ -236,23 +249,29 @@ fn open_interest_hist_data_type_for_instrument(
 }
 
 fn binance_bar_data_type(bar_type: BarType) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "bar_type".to_string(),
-        serde_json::Value::String(bar_type.to_string()),
+    let metadata = Params::new(
+        [(
+            "bar_type".to_string(),
+            serde_json::Value::String(bar_type.to_string()),
+        )]
+        .into(),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }
 
 fn binance_bar_item_data_type(bar_type: BarType) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "bar_type".to_string(),
-        serde_json::Value::String(bar_type.to_string()),
-    );
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(bar_type.instrument_id().to_string()),
+    let metadata = Params::new(
+        [
+            (
+                "bar_type".to_string(),
+                serde_json::Value::String(bar_type.to_string()),
+            ),
+            (
+                "instrument_id".to_string(),
+                serde_json::Value::String(bar_type.instrument_id().to_string()),
+            ),
+        ]
+        .into(),
     );
     DataType::new("BinanceBar", Some(metadata), Some(bar_type.to_string()))
 }
@@ -723,7 +742,7 @@ fn futures_agg_trades_response(
         .get("startTime")
         .or_else(|| query.get("endTime"))
         .and_then(|value| value.parse().ok())
-        .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond());
+        .unwrap_or_else(|| Timestamp::now().as_millisecond());
     state.market_queries.lock().push((path.to_string(), query));
     let quantity = if path.starts_with("/dapi") {
         "2"
@@ -767,7 +786,7 @@ fn futures_klines_response(
     let close_time = query
         .get("endTime")
         .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or_else(|| jiff::Timestamp::now().as_millisecond() - 1_000);
+        .unwrap_or_else(|| Timestamp::now().as_millisecond() - 1_000);
     state.market_queries.lock().push((path.to_string(), query));
 
     if state.empty_klines {
@@ -810,7 +829,15 @@ fn create_data_test_router(state: DataTestServerState) -> Router {
         .route("/dapi/v1/ping", get(|| async { json_response(&json!({})) }))
         .route(
             "/fapi/v1/exchangeInfo",
-            get(|| async { json_response(&load_fixture("exchange_info_usdm.json")) }),
+            get(|State(state): State<DataTestServerState>| async move {
+                if let Some(requests) = state.exchange_info_requests {
+                    let (tx, rx) = tokio::sync::oneshot::channel();
+                    requests.send(tx).unwrap();
+                    return rx.await.unwrap();
+                }
+
+                json_response(&load_fixture("exchange_info_usdm.json"))
+            }),
         )
         .route(
             "/dapi/v1/exchangeInfo",
@@ -871,6 +898,7 @@ async fn recv_data(
     loop {
         let remaining = deadline.checked_duration_since(tokio::time::Instant::now())?;
         match tokio::time::timeout(remaining, rx.recv()).await {
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {}
             Ok(Some(DataEvent::Data(data))) => return Some(data),
             Ok(Some(_)) => {}
             Ok(None) | Err(_) => return None,
@@ -978,8 +1006,9 @@ async fn test_delivery_instrument_connects_and_subscribes_with_raw_symbol(
             let found = rx.try_recv().is_ok_and(|event| {
                 matches!(
                     event,
-                    DataEvent::Instrument(InstrumentAny::CryptoFuture(future))
-                        if future.id == instrument_id
+                    DataEvent::Data(Data::Instrument(instrument))
+                        if matches!(instrument.as_ref(), InstrumentAny::CryptoFuture(future)
+                            if future.id == instrument_id)
                 )
             });
             async move { found }
@@ -1037,7 +1066,7 @@ async fn test_connect_emits_instruments() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -1534,7 +1563,6 @@ async fn test_request_funding_rates_emits_response() {
     "BTCUSDT_260925.BINANCE",
     "/fapi/v1/aggTrades",
     "BTCUSDT_260925",
-    dec!(50001.2),
     dec!(0.123),
     AggregateTradeBounds::Both
 )]
@@ -1543,7 +1571,6 @@ async fn test_request_funding_rates_emits_response() {
     "BTCUSD_260925.BINANCE",
     "/dapi/v1/aggTrades",
     "BTCUSD_260925",
-    dec!(50001.2),
     dec!(2),
     AggregateTradeBounds::Both
 )]
@@ -1552,7 +1579,6 @@ async fn test_request_funding_rates_emits_response() {
     "BTCUSDT_260925.BINANCE",
     "/fapi/v1/aggTrades",
     "BTCUSDT_260925",
-    dec!(50001.2),
     dec!(0.123),
     AggregateTradeBounds::Start
 )]
@@ -1561,7 +1587,6 @@ async fn test_request_funding_rates_emits_response() {
     "BTCUSD_260925.BINANCE",
     "/dapi/v1/aggTrades",
     "BTCUSD_260925",
-    dec!(50001.2),
     dec!(2),
     AggregateTradeBounds::End
 )]
@@ -1571,9 +1596,9 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
     #[case] instrument: &str,
     #[case] expected_path: &str,
     #[case] expected_symbol: &str,
-    #[case] expected_price: Decimal,
     #[case] expected_size: Decimal,
     #[case] bounds: AggregateTradeBounds,
+    #[values(10, 2_160)] lookback_mins: i64,
 ) {
     let state = DataTestServerState::default();
     let addr = start_data_test_server_with_state(state.clone()).await;
@@ -1586,8 +1611,8 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
 
     while rx.try_recv().is_ok() {}
     let instrument_id = InstrumentId::from(instrument);
-    let start = jiff::Timestamp::now() - jiff::SignedDuration::from_mins(10);
-    let end = start + jiff::SignedDuration::from_mins(5);
+    let start = Timestamp::now() - SignedDuration::from_mins(lookback_mins);
+    let end = start + SignedDuration::from_mins(5);
     let (request_start, request_end) = match bounds {
         AggregateTradeBounds::Start => (Some(start), None),
         AggregateTradeBounds::End => (None, Some(end)),
@@ -1637,9 +1662,9 @@ async fn test_request_bounded_aggregate_trades_routes_futures_product(
         expected_end.as_deref()
     );
     assert_eq!(query.get("limit").map(String::as_str), Some("456"));
-    assert_eq!(response.instrument_id, instrument_id);
+    assert_eq!(response.instrument_ids, vec![instrument_id]);
     assert_eq!(response.data.len(), 1);
-    assert_eq!(response.data[0].price.as_decimal(), expected_price);
+    assert_eq!(response.data[0].price.as_decimal(), dec!(50001.2));
     assert_eq!(response.data[0].size.as_decimal(), expected_size);
     assert_eq!(response.data[0].trade_id.to_string(), "101");
     assert_eq!(
@@ -1681,8 +1706,8 @@ async fn test_request_historical_binance_bars_routes_futures_product(
     while rx.try_recv().is_ok() {}
     let bar_type = BarType::from(bar_type_raw);
     let data_type = binance_bar_data_type(bar_type);
-    let start = jiff::Timestamp::from_millisecond(1_700_000_000_000).unwrap();
-    let end = jiff::Timestamp::from_millisecond(1_700_000_059_999).unwrap();
+    let start = Timestamp::from_millisecond(1_700_000_000_000).unwrap();
+    let end = Timestamp::from_millisecond(1_700_000_059_999).unwrap();
     let request_id = UUID4::new();
 
     client
@@ -1891,7 +1916,7 @@ async fn test_subscribe_trades() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -1939,7 +1964,7 @@ async fn test_subscribe_quotes() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -3380,7 +3405,7 @@ async fn test_subscribe_book_deltas() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -3530,7 +3555,7 @@ async fn test_subscribe_book_deltas_accepts_first_overlapping_diff_with_older_pu
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -3600,7 +3625,7 @@ async fn test_subscribe_book_deltas_rejects_gap_after_snapshot_seam_update() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -3657,7 +3682,7 @@ async fn test_subscribe_book_deltas_waits_for_first_depth_update_before_snapshot
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -3739,7 +3764,7 @@ async fn test_subscribe_book_deltas_keeps_buffered_diffs_across_overlap_retry() 
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -3814,7 +3839,7 @@ async fn test_subscribe_book_deltas_recovers_live_sequence_gap() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -3886,7 +3911,7 @@ async fn test_subscribe_book_deltas_empty_diff_advances_sequence() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -3952,7 +3977,7 @@ async fn test_subscribe_book_deltas_retries_transient_depth_snapshot_failure() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4023,7 +4048,7 @@ async fn test_subscribe_mark_prices() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4091,7 +4116,7 @@ async fn test_subscribe_custom_ticker_for_instrument_emits_custom_data() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4166,7 +4191,7 @@ async fn test_unsubscribed_custom_ticker_frame_is_ignored() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4212,7 +4237,7 @@ async fn test_subscribe_custom_liquidations_for_instrument() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4273,7 +4298,7 @@ async fn test_subscribe_custom_liquidations_all_market() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4331,7 +4356,7 @@ async fn test_subscribe_custom_liquidations_overlap_routes_single_event() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4428,7 +4453,7 @@ async fn test_unsubscribe_all_market_restores_specific_liquidation_streams() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4538,7 +4563,7 @@ async fn test_rapid_all_market_unsubscribe_does_not_route_all_market_as_specific
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4670,7 +4695,7 @@ async fn test_unsubscribe_trades() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4732,7 +4757,7 @@ async fn test_unsubscribe_quotes() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4793,7 +4818,7 @@ async fn test_unsubscribe_custom_ticker_for_instrument_sends_stream_unsubscribe(
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4850,10 +4875,12 @@ async fn test_unsubscribe_custom_ticker_for_instrument_sends_stream_unsubscribe(
 }
 
 fn ticker_data_type_for_instrument(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesTicker",
@@ -4906,7 +4933,7 @@ async fn test_unsubscribe_custom_liquidations_for_instrument() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -4967,7 +4994,7 @@ async fn test_unsubscribe_custom_liquidations_all_market() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -5030,7 +5057,7 @@ async fn test_connect_disconnect_reconnect() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -5049,7 +5076,7 @@ async fn test_connect_disconnect_reconnect() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -5073,7 +5100,7 @@ async fn test_subscribe_trades_and_quotes_simultaneously() {
         || {
             let found = rx
                 .try_recv()
-                .is_ok_and(|e| matches!(e, DataEvent::Instrument(_)));
+                .is_ok_and(|e| matches!(e, DataEvent::Data(Data::Instrument(_))));
             async move { found }
         },
         Duration::from_secs(5),
@@ -5140,4 +5167,163 @@ fn expected_l1_deltas(quote: QuoteTick, sequence: u64) -> OrderBookDeltas {
     );
 
     OrderBookDeltas::new(quote.instrument_id, vec![bid, ask])
+}
+
+#[rstest]
+#[case::poll_first(true)]
+#[case::refresh_first(false)]
+#[tokio::test]
+async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool) {
+    let (request_tx, mut requests) = tokio::sync::mpsc::unbounded_channel();
+
+    let addr = start_data_test_server_with_state(DataTestServerState {
+        exchange_info_requests: Some(request_tx),
+        ..Default::default()
+    })
+    .await;
+
+    let (tx, mut events) = tokio::sync::mpsc::unbounded_channel();
+    set_data_event_sender(tx);
+
+    let config = BinanceDataClientConfig {
+        base_url_http: Some(format!("http://{addr}")),
+        base_url_ws: Some(format!("ws://{addr}/ws")),
+        product_type: BinanceProductType::UsdM,
+        instrument_status_poll_secs: if poll_first { 1 } else { 2 },
+        instrument_refresh_interval_secs: if poll_first { 2 } else { 1 },
+        ..Default::default()
+    };
+
+    let mut client =
+        BinanceFuturesDataClient::new(*BINANCE_CLIENT_ID, config, BinanceProductType::UsdM)
+            .unwrap();
+
+    let response = |symbol: &str, base: &str, halt: bool| {
+        let mut info = load_fixture("exchange_info_usdm.json");
+        let mut instrument = info["symbols"][0].clone();
+        instrument["symbol"] = json!(symbol);
+        instrument["pair"] = json!(symbol);
+        instrument["baseAsset"] = json!(base);
+        instrument["status"] = json!(if halt { "HALT" } else { "TRADING" });
+        info["symbols"] = json!([instrument]);
+        json_response(&info)
+    };
+
+    let serve_initial = async {
+        for _ in 0..2 {
+            let request = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            request.send(response("BTCUSDT", "BTC", false)).unwrap();
+        }
+    };
+
+    let (connected, ()) = tokio::join!(client.connect(), serve_initial);
+    connected.unwrap();
+
+    if !poll_first {
+        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
+    }
+
+    let blocked = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Hold the older response through the other task's next scheduled update
+    let overlapping = tokio::time::timeout(Duration::from_millis(1500), requests.recv()).await;
+    assert!(overlapping.is_err(), "overlapping exchange info request");
+
+    let (symbol, base) = if poll_first {
+        ("BTCUSDT", "BTC")
+    } else {
+        ("ETHUSDT", "ETH")
+    };
+
+    blocked.send(response(symbol, base, true)).unwrap();
+
+    if poll_first {
+        let catalog = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        catalog.send(response("ETHUSDT", "ETH", false)).unwrap();
+    }
+
+    let status = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    status.send(response("ETHUSDT", "ETH", false)).unwrap();
+
+    // The next request proves that the preceding update has published its snapshot
+    let next = tokio::time::timeout(Duration::from_secs(5), requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    next.send(response("ETHUSDT", "ETH", false)).unwrap();
+    tokio::select! {
+        result = client.disconnect() => result.unwrap(),
+        () = async {
+            while let Some(request) = requests.recv().await {
+                let _ = request.send(response("ETHUSDT", "ETH", false));
+            }
+        } => panic!("exchange info request channel closed before disconnect"),
+    }
+
+    let btc = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+    let eth = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+    let mut statuses = Vec::new();
+    let mut instruments = Vec::new();
+
+    while let Ok(event) = events.try_recv() {
+        match event {
+            DataEvent::Data(Data::InstrumentStatus(status)) => statuses.push(status),
+            DataEvent::Data(Data::Instrument(instrument)) => instruments.push(instrument.id()),
+            _ => {}
+        }
+    }
+
+    let changes = if poll_first {
+        vec![
+            (btc, MarketStatusAction::Halt),
+            (eth, MarketStatusAction::Trading),
+            (btc, MarketStatusAction::NotAvailableForTrading),
+        ]
+    } else {
+        vec![
+            (eth, MarketStatusAction::Halt),
+            (btc, MarketStatusAction::NotAvailableForTrading),
+            (eth, MarketStatusAction::Trading),
+        ]
+    };
+
+    let expected = changes
+        .into_iter()
+        .zip(&statuses)
+        .map(|((id, action), status)| {
+            InstrumentStatus::new(
+                id,
+                action,
+                status.ts_event,
+                status.ts_event,
+                None,
+                None,
+                Some(action == MarketStatusAction::Trading),
+                None,
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    assert_eq!(statuses.len(), 3);
+    assert_eq!(statuses, expected);
+    assert!(instruments.len() >= 2);
+    assert_eq!(instruments[0], btc);
+    assert!(instruments[1..].iter().all(|id| *id == eth));
 }

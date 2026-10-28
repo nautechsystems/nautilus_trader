@@ -479,9 +479,9 @@ impl DeriveGetPositionsParams {
 ///
 /// # Errors
 ///
-/// Returns an error if the order is not a Limit or Market order, when the instrument's
-/// `base_asset_address` cannot be parsed, when decimal scaling fails, when a Market order is
-/// submitted without an `explicit_price`, or when EIP-712 signing fails.
+/// Returns an error if the order quantity is quote-denominated, the order type or flags are
+/// unsupported, the instrument's `base_asset_address` cannot be parsed, decimal scaling fails,
+/// a Market order has no `explicit_price`, or EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn order_to_derive_payload(
     order: &OrderAny,
@@ -529,9 +529,9 @@ pub fn order_to_derive_payload(
 ///
 /// # Errors
 ///
-/// Returns an error if the order is not one of StopMarket, StopLimit, MarketIfTouched, or
-/// LimitIfTouched, when the trigger source is not MarkPrice, when required prices are absent, or
-/// when EIP-712 signing fails.
+/// Returns an error if the order quantity is quote-denominated, the order type, flags, or trigger
+/// source are unsupported, required prices are absent, the instrument's `base_asset_address` cannot
+/// be parsed, decimal scaling fails, or EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn trigger_order_to_derive_payload(
     order: &OrderAny,
@@ -602,9 +602,9 @@ pub fn trigger_order_to_derive_payload(
 ///
 /// # Errors
 ///
-/// Returns an error if the order is not a Limit or Market order, when the instrument's
-/// `base_asset_address` cannot be parsed, when decimal scaling fails, when a Market order has no
-/// `explicit_price`, or when EIP-712 signing fails.
+/// Returns an error if the order quantity is quote-denominated, even with `explicit_quantity`,
+/// the order type or flags are unsupported, the instrument's `base_asset_address` cannot be parsed,
+/// decimal scaling fails, a Market order has no `explicit_price`, or EIP-712 signing fails.
 #[expect(clippy::too_many_arguments)]
 pub fn order_replace_to_derive_payload(
     order: &OrderAny,
@@ -653,7 +653,7 @@ pub fn order_replace_to_derive_payload(
     })
 }
 
-pub(crate) fn validate_order_support(order: &OrderAny) -> Result<(), OrderDeniedReason> {
+pub(crate) fn validate_order_support(order: &OrderAny) -> anyhow::Result<()> {
     let order_type = order_type_to_derive(order.order_type()).map_err(|_| {
         OrderDeniedReason::UnsupportedOrderType {
             order_type: order.order_type(),
@@ -663,7 +663,7 @@ pub(crate) fn validate_order_support(order: &OrderAny) -> Result<(), OrderDenied
     validate_order_flags(order, order_type)
 }
 
-pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> Result<(), OrderDeniedReason> {
+pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> anyhow::Result<()> {
     let order_type = trigger_order_type_to_derive(order.order_type()).map_err(|_| {
         OrderDeniedReason::UnsupportedOrderType {
             order_type: order.order_type(),
@@ -683,16 +683,21 @@ pub(crate) fn validate_trigger_order_support(order: &OrderAny) -> Result<(), Ord
     Ok(())
 }
 
-fn validate_order_flags(
-    order: &OrderAny,
-    order_type: DeriveOrderType,
-) -> Result<(), OrderDeniedReason> {
+fn validate_order_flags(order: &OrderAny, order_type: DeriveOrderType) -> anyhow::Result<()> {
+    if order.is_quote_quantity() {
+        anyhow::bail!(OrderDeniedReason::unsupported_quote_quantity());
+    }
+
+    if order.display_qty().is_some() {
+        anyhow::bail!(OrderDeniedReason::ValidationFailed {
+            detail: "Derive does not support display_qty iceberg instructions".to_string(),
+        });
+    }
+
     let time_in_force = time_in_force_to_derive(order.time_in_force(), order.is_post_only())
         .map_err(|_| OrderDeniedReason::UnsupportedTimeInForce(order.time_in_force()))?;
     if order_type == DeriveOrderType::Market && order.is_post_only() {
-        return Err(OrderDeniedReason::ValidationFailed {
-            detail: "post-only is not supported for Derive market orders".to_string(),
-        });
+        anyhow::bail!(OrderDeniedReason::unsupported_post_only());
     }
 
     if order.is_reduce_only()
@@ -702,7 +707,7 @@ fn validate_order_flags(
             DeriveTimeInForce::Ioc | DeriveTimeInForce::Fok
         )
     {
-        return Err(OrderDeniedReason::ValidationFailed {
+        anyhow::bail!(OrderDeniedReason::ValidationFailed {
             detail: "reduce-only Derive limit orders require IOC or FOK time-in-force".to_string(),
         });
     }
@@ -1544,6 +1549,111 @@ mod tests {
     }
 
     #[rstest]
+    #[case(OrderType::Limit)]
+    #[case(OrderType::Market)]
+    #[case(OrderType::StopMarket)]
+    #[case(OrderType::StopLimit)]
+    #[case(OrderType::MarketIfTouched)]
+    #[case(OrderType::LimitIfTouched)]
+    fn test_payload_quote_qty_rejection_and_exact_base_amount(
+        #[case] order_type: OrderType,
+        #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+        #[values(false, true)] quote_qty: bool,
+    ) {
+        let mut order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("ETH-PERP.DERIVE"))
+            .side(side)
+            .quantity(Quantity::from("1.237"))
+            .price(Price::from("3500.00"))
+            .trigger_price(Price::from("3500.00"))
+            .trigger_type(TriggerType::MarkPrice)
+            .time_in_force(TimeInForce::Ioc)
+            .build();
+        order.set_is_quote_quantity(quote_qty);
+        let instrument = sample_perp_instrument();
+        let signer = sample_signer();
+
+        let result = if matches!(order_type, OrderType::Limit | OrderType::Market) {
+            order_to_derive_payload(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                17_000_000_000_001,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                dec!(1),
+                Some(dec!(3500)),
+            )
+        } else {
+            trigger_order_to_derive_payload(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                17_000_000_000_001,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                dec!(1),
+                Some(dec!(3500)),
+                "conn-1",
+                "trigger-1",
+            )
+            .map(|payload| payload.order)
+        };
+
+        if quote_qty {
+            let error = result.unwrap_err();
+            assert_eq!(error.to_string(), "UNSUPPORTED_QUOTE_QUANTITY");
+            assert_eq!(
+                error.downcast_ref::<OrderDeniedReason>(),
+                Some(&OrderDeniedReason::unsupported_quote_quantity())
+            );
+        } else {
+            assert_eq!(result.unwrap().amount, dec!(1.237));
+        }
+
+        if matches!(order_type, OrderType::Limit | OrderType::Market) {
+            for explicit_qty in [None, Some(dec!(0.419))] {
+                let result = order_replace_to_derive_payload(
+                    &order,
+                    &instrument,
+                    30769,
+                    sample_wallet(),
+                    &signer,
+                    17_000_000_000_002,
+                    fresh_expiry_secs(),
+                    sample_module(),
+                    sample_domain(),
+                    sample_typehash(),
+                    dec!(1),
+                    explicit_qty,
+                    Some(dec!(3500)),
+                    "old-order",
+                );
+
+                if quote_qty {
+                    assert_eq!(
+                        result.unwrap_err().to_string(),
+                        "UNSUPPORTED_QUOTE_QUANTITY"
+                    );
+                } else {
+                    assert_eq!(
+                        result.unwrap().order.amount,
+                        explicit_qty.unwrap_or(dec!(1.237))
+                    );
+                }
+            }
+        }
+    }
+
+    #[rstest]
     fn test_order_to_derive_payload_limit_carries_all_required_fields() {
         let order = build_test_limit_order(OrderSide::Buy, dec!(3500), dec!(1), false, false);
         let instrument = sample_perp_instrument();
@@ -1699,6 +1809,111 @@ mod tests {
             serde_json::to_value(expected_reduce_only).unwrap()
         );
         assert_eq!(payload["mmp"], serde_json::to_value(expected_mmp).unwrap());
+    }
+
+    #[rstest]
+    #[case::limit(OrderType::Limit, false)]
+    #[case::stop_market(OrderType::StopMarket, false)]
+    #[case::stop_limit(OrderType::StopLimit, false)]
+    #[case::limit_if_touched(OrderType::LimitIfTouched, false)]
+    #[case::replace(OrderType::Limit, true)]
+    fn test_payload_display_qty_rejection_and_ordinary_orders(
+        #[case] order_type: OrderType,
+        #[case] replace: bool,
+        #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+        #[values(None, Some("0.137"), Some("0.000"), Some("1.237"))] display_qty: Option<&str>,
+    ) {
+        let mut builder = OrderTestBuilder::new(order_type);
+        builder
+            .instrument_id(InstrumentId::from("ETH-PERP.DERIVE"))
+            .side(side)
+            .quantity(Quantity::from("1.237"))
+            .price(Price::from("3500.00"))
+            .trigger_price(Price::from("3500.00"))
+            .trigger_type(TriggerType::MarkPrice)
+            .time_in_force(TimeInForce::Gtc);
+
+        if let Some(qty) = display_qty {
+            builder.display_qty(Quantity::from(qty));
+        }
+
+        let order = builder.build();
+        let mut instrument = sample_perp_instrument();
+        if display_qty.is_some() {
+            instrument.base_asset_address = "invalid-address".into();
+        }
+
+        let explicit_price = (order_type == OrderType::StopMarket).then_some(dec!(3500));
+        let signer = sample_signer();
+
+        let result = if replace {
+            order_replace_to_derive_payload(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                17_000_000_000_001,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                dec!(1),
+                Some(dec!(0.419)),
+                Some(dec!(3500)),
+                "old-order",
+            )
+            .map(|payload| payload.order)
+        } else if order_type == OrderType::Limit {
+            order_to_derive_payload(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                17_000_000_000_001,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                dec!(1),
+                None,
+            )
+        } else {
+            trigger_order_to_derive_payload(
+                &order,
+                &instrument,
+                30769,
+                sample_wallet(),
+                &signer,
+                17_000_000_000_001,
+                fresh_expiry_secs(),
+                sample_module(),
+                sample_domain(),
+                sample_typehash(),
+                dec!(1),
+                explicit_price,
+                "conn-1",
+                "trigger-1",
+            )
+            .map(|payload| payload.order)
+        };
+
+        assert_eq!(order.display_qty(), display_qty.map(Quantity::from));
+
+        if display_qty.is_some() {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "VALIDATION_FAILED: Derive does not support display_qty iceberg instructions"
+            );
+        } else {
+            let payload = result.unwrap();
+            assert_eq!(
+                payload.amount,
+                if replace { dec!(0.419) } else { dec!(1.237) }
+            );
+            assert_eq!(payload.limit_price, dec!(3500));
+        }
     }
 
     #[rstest]

@@ -58,7 +58,7 @@
 //! [`Price`]: crate::types::Price
 //! [`Quantity`]: crate::types::Quantity
 
-use std::{cmp::Ordering, fmt::Display};
+use std::{borrow::Cow, cmp::Ordering, fmt::Display};
 
 use nautilus_core::correctness::{
     CorrectnessError, CorrectnessResult, CorrectnessResultExt, FAILED,
@@ -368,14 +368,17 @@ pub(crate) fn parse_decimal_mantissa(value: &str) -> Result<(i128, u8), String> 
     if fraction.contains('.') {
         return Err(format!("Invalid decimal value '{value}'"));
     }
-    let digits = format!("{whole}{fraction}");
-    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+
+    let digits = whole.bytes().chain(fraction.bytes());
+    if (whole.is_empty() && fraction.is_empty())
+        || !digits.clone().all(|byte| byte.is_ascii_digit())
+    {
         return Err(format!("Invalid decimal value '{value}'"));
     }
     let precision = u8::try_from(fraction.len())
         .map_err(|_| format!("Decimal value '{value}' has too many fractional digits"))?;
     let mut mantissa = 0_i128;
-    for digit in digits.bytes().map(|byte| i128::from(byte - b'0')) {
+    for digit in digits.map(|byte| i128::from(byte - b'0')) {
         mantissa = if negative {
             mantissa
                 .checked_mul(10)
@@ -388,6 +391,14 @@ pub(crate) fn parse_decimal_mantissa(value: &str) -> Result<(i128, u8), String> 
         .ok_or_else(|| format!("Decimal value '{value}' exceeds i128 range"))?;
     }
     Ok((mantissa, precision))
+}
+
+pub(super) fn remove_underscores(value: &str) -> Cow<'_, str> {
+    if value.contains('_') {
+        Cow::Owned(value.replace('_', ""))
+    } else {
+        Cow::Borrowed(value)
+    }
 }
 
 pub(crate) fn format_scaled_u128(raw: u128, precision: u8) -> String {
@@ -1144,6 +1155,26 @@ mod tests {
     #[rstest]
     fn test_compare_raw_zero_operands_are_equal_across_scales() {
         assert_eq!(compare_raw(0_u128, u8::MAX, 0_u128, 2), Ordering::Equal);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("0")]
+    #[case("-12.3400")]
+    #[case("+1e9")]
+    #[case("not decimal")]
+    fn test_remove_underscores_borrows_clean_values(#[case] input: &str) {
+        assert!(matches!(remove_underscores(input), Cow::Borrowed(value) if value == input));
+    }
+
+    #[rstest]
+    #[case("_", "")]
+    #[case("1_234.56", "1234.56")]
+    #[case("_1__2_3.4_5_", "123.45")]
+    #[case("1e_3", "1e3")]
+    #[case("_-_1_0_._0_", "-10.0")]
+    fn test_remove_underscores_removes_separators(#[case] input: &str, #[case] expected: &str) {
+        assert!(matches!(remove_underscores(input), Cow::Owned(value) if value == expected));
     }
 
     #[rstest]

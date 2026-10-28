@@ -35,7 +35,7 @@
 //!
 //! Both `AsyncRunner::run` and `LiveNode::run` use a `biased;` select with
 //! system and execution branches polled ahead of data branches. Within each
-//! channel pair, events are polled before commands.
+//! system or execution channel pair, events precede commands. Timer and data channels rotate.
 //!
 //! The runner can drive the event loop in two ways:
 //!
@@ -230,6 +230,8 @@ pub(crate) enum PendingRunnerEvent {
 
 pub struct AsyncRunner {
     channels: AsyncRunnerChannels,
+    skip_time: bool,
+    skip_data: bool,
     time_evt_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<TimeEventMessage>>,
     system_evt_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<SystemEvent>>,
     system_cmd_tx: tokio::sync::mpsc::UnboundedSender<DispatchMessage<SystemCommand>>,
@@ -298,6 +300,8 @@ impl AsyncRunner {
                 data_evt_rx,
                 data_cmd_rx,
             },
+            skip_time: false,
+            skip_data: false,
             time_evt_tx,
             system_evt_tx,
             system_cmd_tx,
@@ -381,7 +385,7 @@ impl AsyncRunner {
             // Events drain before commands here even though the runtime select
             // prefers the opposite for everything-else: `LiveNode::start()`
             // calls this after `connect_data_clients()` to push queued
-            // `DataEvent::Instrument` items into the cache. A pending
+            // instrument definitions into the cache. A pending
             // subscription command (e.g. `SubscribeBars`) processed before the
             // matching instrument lands would be rejected by the data engine.
             while let Ok(evt) = self.channels.data_evt_rx.try_recv() {
@@ -444,6 +448,10 @@ impl AsyncRunner {
 
         loop {
             let callbacks_pending = drain_callbacks().await?;
+            let commands_empty = self.channels.data_cmd_rx.is_empty();
+            let poll_time =
+                !self.skip_time || (self.channels.data_evt_rx.is_empty() && commands_empty);
+            let poll_data = !self.skip_data || commands_empty;
 
             tokio::select! {
                 biased;
@@ -453,25 +461,34 @@ impl AsyncRunner {
                     return Ok(());
                 },
                 () = std::future::ready(()), if callbacks_pending => {},
-                Some(handler) = self.channels.time_evt_rx.recv() => {
+                Some(handler) = self.channels.time_evt_rx.recv(), if poll_time => {
+                    self.skip_time = true;
                     let _ = Self::handle_time_event(handler);
                 },
                 Some(event) = self.channels.system_evt_rx.recv() => {
+                    self.skip_time = false;
                     log::error!("System event {event} requires the LiveNode runner");
                 },
                 Some(command) = self.channels.system_cmd_rx.recv() => {
+                    self.skip_time = false;
                     log::error!("System command {command} requires the LiveNode runner");
                 },
                 Some(evt) = self.channels.exec_evt_rx.recv() => {
+                    self.skip_time = false;
                     Self::dispatch_exec_event(evt);
                 },
                 Some(cmd) = self.channels.exec_cmd_rx.recv() => {
+                    self.skip_time = false;
                     Self::handle_trading_command(cmd);
                 },
-                Some(evt) = self.channels.data_evt_rx.recv() => {
+                Some(evt) = self.channels.data_evt_rx.recv(), if poll_data => {
+                    self.skip_time = false;
+                    self.skip_data = true;
                     Self::dispatch_data_event(evt);
                 },
                 Some(cmd) = self.channels.data_cmd_rx.recv() => {
+                    self.skip_time = false;
+                    self.skip_data = false;
                     Self::handle_data_command(cmd);
                 },
                 else => {
@@ -530,20 +547,14 @@ impl AsyncRunner {
             DataEvent::Data(data) => {
                 msgbus::send_data(MessagingSwitchboard::data_engine_process_data(), data);
             }
-            DataEvent::Instrument(data) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &data);
+            DataEvent::ResponseEnvelope(response) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &response);
+            }
+            DataEvent::RequestFailed(failure) => {
+                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &failure);
             }
             DataEvent::Response(resp) => {
                 msgbus::send_data_response(MessagingSwitchboard::data_engine_response(), resp);
-            }
-            DataEvent::FundingRate(funding_rate) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &funding_rate);
-            }
-            DataEvent::InstrumentStatus(status) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &status);
-            }
-            DataEvent::OptionGreeks(greeks) => {
-                msgbus::send_any(MessagingSwitchboard::data_engine_process(), &greeks);
             }
             #[cfg(feature = "defi")]
             DataEvent::DeFi(data) => {
@@ -692,28 +703,40 @@ impl AsyncRunner {
     }
 
     pub(crate) async fn recv(&mut self) -> Option<PendingRunnerEvent> {
+        let commands_empty = self.channels.data_cmd_rx.is_empty();
+        let poll_time = !self.skip_time || (self.channels.data_evt_rx.is_empty() && commands_empty);
+        let poll_data = !self.skip_data || commands_empty;
         tokio::select! {
             biased;
 
-            Some(message) = self.channels.time_evt_rx.recv() => {
+            Some(message) = self.channels.time_evt_rx.recv(), if poll_time => {
+                self.skip_time = true;
                 Some(PendingRunnerEvent::TimeEvent(message))
             }
             Some(event) = self.channels.system_evt_rx.recv() => {
+                self.skip_time = false;
                 Some(PendingRunnerEvent::SystemEvent(event))
             }
             Some(command) = self.channels.system_cmd_rx.recv() => {
+                self.skip_time = false;
                 Some(PendingRunnerEvent::SystemCommand(command))
             }
             Some(event) = self.channels.exec_evt_rx.recv() => {
+                self.skip_time = false;
                 Some(PendingRunnerEvent::ExecEvent(event))
             }
             Some(command) = self.channels.exec_cmd_rx.recv() => {
+                self.skip_time = false;
                 Some(PendingRunnerEvent::ExecCommand(command))
             }
-            Some(event) = self.channels.data_evt_rx.recv() => {
+            Some(event) = self.channels.data_evt_rx.recv(), if poll_data => {
+                self.skip_time = false;
+                self.skip_data = true;
                 Some(PendingRunnerEvent::DataEvent(event))
             }
             Some(command) = self.channels.data_cmd_rx.recv() => {
+                self.skip_time = false;
+                self.skip_data = false;
                 Some(PendingRunnerEvent::DataCommand(command))
             }
             else => None,
@@ -786,7 +809,10 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::ExecutionEngine;
     use nautilus_model::{
-        data::{Data, DataType, quote::QuoteTick},
+        data::{
+            Data, DataType, FundingRateUpdate, InstrumentStatus, OptionGreeks, quote::QuoteTick,
+            stubs::stub_instrument_status,
+        },
         enums::{
             AccountType, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
             TimeInForce,
@@ -800,6 +826,7 @@ mod tests {
             AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
             TraderId, Venue, VenueOrderId,
         },
+        instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt},
         reports::{FillReport, OrderStatusReport, PositionStatusReport},
         types::{Money, Price, Quantity},
     };
@@ -807,6 +834,58 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
+
+    #[rstest]
+    fn test_runner_dispatches_typed_data_once_in_order() {
+        let mut runner = AsyncRunner::new();
+        let expected = vec![
+            Data::from(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt())),
+            Data::FundingRate(FundingRateUpdate::new(
+                InstrumentId::from("ETHUSDT.BINANCE"),
+                "0.00012".parse().unwrap(),
+                Some(480),
+                Some(UnixNanos::from(300)),
+                UnixNanos::from(100),
+                UnixNanos::from(200),
+            )),
+            Data::InstrumentStatus(InstrumentStatus {
+                ts_event: UnixNanos::from(400),
+                ts_init: UnixNanos::from(500),
+                ..stub_instrument_status()
+            }),
+            Data::OptionGreeks(OptionGreeks {
+                instrument_id: InstrumentId::from("BTC-20270101-50000-C.DERIBIT"),
+                mark_iv: Some(0.55),
+                bid_iv: Some(0.54),
+                ask_iv: Some(0.56),
+                underlying_price: Some(50001.0),
+                open_interest: Some(123.0),
+                ts_event: UnixNanos::from(600),
+                ts_init: UnixNanos::from(700),
+                ..OptionGreeks::default()
+            }),
+        ];
+        let received = Rc::new(RefCell::new(Vec::<Data>::new()));
+        let observed = received.clone();
+        msgbus::register_data_endpoint(
+            MessagingSwitchboard::data_engine_process_data(),
+            TypedIntoHandler::from(move |data| observed.borrow_mut().push(data)),
+        );
+
+        for data in &expected {
+            runner
+                .data_evt_tx
+                .send(DataEvent::Data(data.clone()).into())
+                .unwrap();
+        }
+
+        runner.flush_pending_data();
+
+        assert_eq!(
+            serde_json::to_value(&*received.borrow()).unwrap(),
+            serde_json::to_value(&expected).unwrap(),
+        );
+    }
 
     #[rstest]
     #[case(false)]
@@ -1003,6 +1082,8 @@ mod tests {
                 data_evt_rx,
                 data_cmd_rx,
             },
+            skip_time: false,
+            skip_data: false,
             time_evt_tx,
             system_evt_tx,
             system_cmd_tx,
@@ -1199,6 +1280,119 @@ mod tests {
             runner.recv().await,
             Some(PendingRunnerEvent::SystemCommand(_))
         ));
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    #[case::timers_and_data(true, true, false)]
+    #[case::timers_only(true, false, false)]
+    #[case::data_only(false, true, false)]
+    #[case::execution_backlog(true, true, true)]
+    #[tokio::test]
+    async fn test_runner_dispatch_progress_under_load(
+        #[case] timers: bool,
+        #[case] data: bool,
+        #[case] execution: bool,
+        #[values(false, true)] receive: bool,
+    ) {
+        let mut runner = AsyncRunner::new();
+        let stop = runner.signal_tx.clone();
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
+            if event.ts_init == UnixNanos::from(8) {
+                stop.send(()).unwrap();
+            }
+        }));
+        let received = Rc::new(std::cell::Cell::new(0_u64));
+        let observed = received.clone();
+        let stop = runner.signal_tx.clone();
+        let exec_event = || {
+            ExecutionEvent::Order(OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder().build(),
+            ))
+        };
+        let exec_tx = runner.exec_evt_tx.clone();
+        msgbus::register_data_endpoint(
+            MessagingSwitchboard::data_engine_process_data(),
+            TypedIntoHandler::from(move |event| {
+                let Data::Quote(quote) = event else {
+                    panic!("Expected quote")
+                };
+                observed.set(observed.get() + 1);
+                assert_eq!(quote.ts_init.as_u64(), observed.get());
+                // Execution between data events must not restart the data rotation
+                exec_tx.send(exec_event().into()).unwrap();
+
+                if !timers && quote.ts_init == UnixNanos::from(8) {
+                    stop.send(()).unwrap();
+                }
+            }),
+        );
+        let command = DataCommand::Subscribe(SubscribeCommand::Data(SubscribeCustomData {
+            client_id: Some(ClientId::from("TEST")),
+            venue: None,
+            data_type: DataType::new("QuoteTick", None, None),
+            command_id: UUID4::new(),
+            ts_init: UnixNanos::default(),
+            correlation_id: None,
+            params: None,
+        }));
+
+        // Stop halfway through a ready backlog, before starvation can disappear by draining it
+        for ts in (1..=16_u64).map(UnixNanos::from) {
+            if timers {
+                let event = TimeEvent::new("fairness".into(), UUID4::new(), ts, ts);
+                runner
+                    .time_evt_tx
+                    .send(TimeEventMessage::new(event, callback.clone()).into())
+                    .unwrap();
+            }
+
+            if data {
+                let mut quote = test_quote();
+                quote.ts_init = ts;
+                runner
+                    .data_evt_tx
+                    .send(DataEvent::Data(Data::Quote(quote)).into())
+                    .unwrap();
+            }
+
+            if execution {
+                runner.exec_evt_tx.send(exec_event().into()).unwrap();
+            }
+            runner.data_cmd_tx.send(command.clone().into()).unwrap();
+        }
+
+        if receive {
+            while runner.signal_rx.try_recv().is_err() {
+                match runner.recv().await.unwrap() {
+                    PendingRunnerEvent::TimeEvent(event) => {
+                        let _ = AsyncRunner::handle_time_event(event);
+                    }
+                    PendingRunnerEvent::DataEvent(event) => AsyncRunner::dispatch_data_event(event),
+                    PendingRunnerEvent::DataCommand(cmd) => AsyncRunner::handle_data_command(cmd),
+                    PendingRunnerEvent::ExecEvent(event) => AsyncRunner::dispatch_exec_event(event),
+                    _ => panic!("Unexpected runner event"),
+                }
+            }
+        } else {
+            runner.run().await.unwrap();
+        }
+
+        if execution {
+            assert!((1..16).contains(&runner.channels.exec_evt_rx.len()));
+            assert_eq!(received.get(), 0);
+        } else {
+            assert!((1..16).contains(&runner.channels.data_cmd_rx.len()));
+
+            if data {
+                assert!(received.get() > 0);
+                assert!(!runner.channels.data_evt_rx.is_empty());
+            }
+        }
+
+        if timers {
+            assert_eq!(runner.channels.time_evt_rx.len(), 8);
+        }
     }
 
     #[rstest]
@@ -2355,6 +2549,206 @@ mod tests {
             }
             _ => panic!("Expected AccountState"),
         }
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    #[case::cash(AccountType::Cash)]
+    #[case::margin(AccountType::Margin)]
+    fn test_account_event_publishes_after_portfolio_application(#[case] account_type: AccountType) {
+        use nautilus_common::msgbus::{MessageBus, TypedHandler};
+        use nautilus_model::{
+            accounts::Account,
+            types::{AccountBalance, Currency},
+        };
+        use nautilus_portfolio::Portfolio;
+
+        // Native logging tests use nextest's per-test process isolation.
+        struct AccountLogCapture(std::sync::Mutex<Vec<String>>);
+
+        impl log::Log for AccountLogCapture {
+            fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+                metadata.level() == log::Level::Info
+                    && metadata.target() == "nautilus_portfolio::portfolio"
+            }
+
+            fn log(&self, record: &log::Record<'_>) {
+                if self.enabled(record.metadata()) {
+                    self.0.lock().unwrap().push(record.args().to_string());
+                }
+            }
+
+            fn flush(&self) {}
+        }
+
+        static LOGS: AccountLogCapture = AccountLogCapture(std::sync::Mutex::new(Vec::new()));
+        log::set_logger(&LOGS).unwrap();
+        log::set_max_level(log::LevelFilter::Info);
+
+        msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::new(
+            TraderId::from("TESTER-001"),
+            UUID4::new(),
+            None,
+            None,
+        ))));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let _portfolio = Portfolio::new(clock, cache.clone(), None);
+        let observed = Rc::new(RefCell::new(Vec::new()));
+        let received = observed.clone();
+        let source = cache.clone();
+        let handler = TypedHandler::from(move |event: &AccountState| {
+            let cache = source.borrow();
+            let account = cache.account(&event.account_id).unwrap();
+            assert_eq!(account.last_event().unwrap().event_id, event.event_id);
+            assert_eq!(account.account_type(), event.account_type);
+            assert_eq!(
+                account.balances().into_values().collect::<Vec<_>>(),
+                event.balances
+            );
+            received
+                .borrow_mut()
+                .push((event.event_id, account.events().len()));
+        });
+
+        // Subscribers must see applied state regardless of their topic priority
+        msgbus::subscribe_account_state("events.account.*".into(), handler.clone(), Some(20));
+        let scoped = Rc::new(RefCell::new(Vec::new()));
+        let scoped_received = scoped.clone();
+        let scoped_handler = TypedHandler::from(move |event: &AccountState| {
+            scoped_received.borrow_mut().push(event.event_id);
+        });
+        msgbus::subscribe_account_state(
+            "events.account.SIM-001".into(),
+            scoped_handler.clone(),
+            None,
+        );
+        let mut expected = Vec::new();
+        let mut expected_scoped = Vec::new();
+        for (index, (account_id, total, locked, free, history_len)) in [
+            ("SIM-001", "100 USD", "20 USD", "80 USD", 1),
+            ("SIM-002", "200 USD", "50 USD", "150 USD", 1),
+            ("SIM-001", "90 USD", "10 USD", "80 USD", 2),
+            ("SIM-001", "0 USD", "0 USD", "0 USD", 3),
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            let event = AccountState::new(
+                AccountId::from(account_id),
+                account_type,
+                vec![AccountBalance::new(
+                    Money::from(total),
+                    Money::from(locked),
+                    Money::from(free),
+                )],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(index as u64 + 1),
+                UnixNanos::from(index as u64 + 1),
+                Some(Currency::USD()),
+            );
+            expected.push((event.event_id, history_len));
+            if account_id == "SIM-001" {
+                expected_scoped.push(event.event_id);
+            }
+            let expected_log = format!("Updated {event}");
+            AsyncRunner::handle_exec_event(ExecutionEvent::Account(event));
+            assert_eq!(
+                LOGS.0
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .filter(|line| **line == expected_log)
+                    .count(),
+                1
+            );
+        }
+        assert_eq!(*observed.borrow(), expected);
+        assert_eq!(*scoped.borrow(), expected_scoped);
+        let cache = cache.borrow();
+        assert_eq!(
+            cache
+                .account(&AccountId::from("SIM-001"))
+                .unwrap()
+                .events()
+                .len(),
+            3
+        );
+        assert_eq!(
+            cache
+                .account(&AccountId::from("SIM-002"))
+                .unwrap()
+                .events()
+                .len(),
+            1
+        );
+        msgbus::unsubscribe_account_state("events.account.*".into(), &handler);
+        msgbus::unsubscribe_account_state("events.account.SIM-001".into(), &scoped_handler);
+    }
+
+    #[cfg(feature = "node")]
+    #[rstest]
+    #[case::cash_update(AccountType::Cash, true)]
+    #[case::wallet_initial(AccountType::Wallet, false)]
+    #[case::wallet_update(AccountType::Wallet, true)]
+    fn test_rejected_account_event_is_not_published(
+        #[case] account_type: AccountType,
+        #[case] existing_account: bool,
+    ) {
+        use nautilus_common::msgbus::{MessageBus, TypedHandler};
+        use nautilus_model::types::{AccountBalance, Currency};
+        use nautilus_portfolio::Portfolio;
+
+        msgbus::set_message_bus(Rc::new(RefCell::new(MessageBus::default())));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut portfolio = Portfolio::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            cache.clone(),
+            None,
+        );
+        let state = |amount: &str| {
+            AccountState::new(
+                AccountId::from("SIM-001"),
+                account_type,
+                vec![AccountBalance::new(
+                    Money::from(amount),
+                    Money::zero(Currency::USD()),
+                    Money::from(amount),
+                )],
+                vec![],
+                true,
+                UUID4::new(),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+                (account_type != AccountType::Wallet).then_some(Currency::USD()),
+            )
+        };
+        let initial = state("100.00 USD");
+
+        if existing_account {
+            portfolio.update_account(&initial);
+        }
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let handler = TypedHandler::from({
+            let received = received.clone();
+            move |event: &AccountState| received.borrow_mut().push(event.clone())
+        });
+        msgbus::subscribe_account_state("events.account.*".into(), handler.clone(), None);
+        AsyncRunner::handle_exec_event(ExecutionEvent::Account(state("-1.00 USD")));
+        assert!(received.borrow().is_empty());
+        let cache = cache.borrow();
+
+        if existing_account {
+            assert_eq!(
+                cache.account(&initial.account_id).unwrap().last_event(),
+                Some(initial)
+            );
+        } else {
+            assert!(cache.account(&initial.account_id).is_none());
+        }
+        msgbus::unsubscribe_account_state("events.account.*".into(), &handler);
     }
 
     #[tokio::test]

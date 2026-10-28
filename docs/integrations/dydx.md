@@ -589,6 +589,15 @@ The adapter supports the following data subscriptions:
 | Funding rates        | ✓            | ✓                  | Real-time via markets channel, history via HTTP. |
 | Instrument status    | ✓            | -                  | Via markets channel.                             |
 
+### Mark and index price precision
+
+Oracle-derived mark and index prices use a fixed precision of 16 decimal places in high-precision
+builds and 9 in standard-precision builds. This preserves oracle digits finer than trading ticks,
+up to the build's supported precision, and keeps streaming catalog precision metadata stable.
+
+Price text includes trailing zeros up to this precision. Read precision-16 recordings with a
+high-precision build; standard-precision readers reject their precision metadata.
+
 ### Supported bar resolutions
 
 | Resolution | dYdX candle |

@@ -38,6 +38,7 @@ use std::{env, str::FromStr, time::Duration};
 
 use ahash::AHashMap;
 use nautilus_hyperliquid::{
+    account::resolve_execution_account_address,
     common::{
         enums::{HyperliquidEnvironment, HyperliquidProductType},
         parse::{
@@ -93,9 +94,8 @@ async fn main() -> anyhow::Result<()> {
 
     let mut client = HyperliquidHttpClient::from_env(environment)?;
     client.set_account_id(AccountId::new(format!("{VENUE_SUFFIX}-001")));
-    if let Ok(addr) = env::var("HYPERLIQUID_ACCOUNT_ADDRESS") {
-        client.set_account_address(Some(addr));
-    }
+    let account_address = resolve_execution_account_address(None, None, None, environment)?;
+    client.set_account_address(account_address)?;
 
     let user = client.get_account_address()?;
     log::info!("Account address: {user}");

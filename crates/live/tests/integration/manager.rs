@@ -4658,7 +4658,7 @@ async fn test_bounded_reduce_only_history_reconciles_flat_or_remains_unresolved(
         assert!(position.is_open());
         assert_eq!(position.is_long(), closing_side == OrderSide::Buy);
         assert_eq!(position.quantity, Quantity::from("0.500"));
-        assert_eq!(position.avg_px_open, 3100.0);
+        assert_eq!(position.avg_px_open, dec!(3100.0));
         assert_eq!(position.trade_ids.len(), 1);
         assert!(position.trade_ids.contains(&closing_trade_id));
         assert_eq!(position.commissions(), vec![Money::from("0.10 USDT")]);
@@ -4986,7 +4986,7 @@ async fn test_bounded_nonflat_position_requires_coherent_historical_fill(
     assert!(position.is_open());
     assert!(position.is_long());
     assert_eq!(position.quantity, Quantity::from("1.000"));
-    assert_eq!(position.avg_px_open, 3000.0);
+    assert_eq!(position.avg_px_open, dec!(3000.0));
     assert!(position.trade_ids.contains(&trade_id));
     assert_eq!(
         position.trade_ids.len(),
@@ -5911,6 +5911,235 @@ async fn test_filled_report_with_reduced_quantity_closes_partially_filled_order(
     assert_eq!(order.status(), OrderStatus::Filled);
     assert_eq!(order.quantity(), Quantity::from("5.000"));
     assert_eq!(order.filled_qty(), Quantity::from("5.000"));
+}
+
+#[rstest]
+#[case::market(OrderType::Market, "0.00296487", "0.00296475", LiquiditySide::Taker)]
+#[case::limit(
+    OrderType::Limit,
+    "10.00000000",
+    "5.00000000",
+    LiquiditySide::NoLiquiditySide
+)]
+#[tokio::test]
+async fn test_filled_report_with_reduced_quantity_closes_accepted_order(
+    #[case] order_type: OrderType,
+    #[case] requested_qty: Quantity,
+    #[case] filled_qty: Quantity,
+    #[case] liquidity_side: LiquiditySide,
+) {
+    let mut ctx = TestContext::new();
+    let mut pair = currency_pair_btcusdt();
+    pair.size_precision = 8;
+    pair.size_increment = Quantity::from("0.00000001");
+    let instrument = InstrumentAny::CurrencyPair(pair);
+    let instrument_id = instrument.id();
+    let client_order_id = ClientOrderId::from("O-ACCEPTED-SHORT-FILL");
+    let venue_order_id = VenueOrderId::from("V-ACCEPTED-SHORT-FILL");
+    let commission = Money::from("0.37 USDT");
+
+    ctx.add_instrument(instrument);
+    ctx.exec_engine
+        .borrow_mut()
+        .deregister_client(test_client_id())
+        .unwrap();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_client(Box::new(
+            MockExecutionClient::new(Vec::new())
+                .with_commission(commission, Rc::new(Cell::new(false))),
+        ))
+        .unwrap();
+
+    let mut order = OrderTestBuilder::new(order_type)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(requested_qty)
+        .price(Price::from("65000.00"))
+        .build();
+    apply_submitted_and_accepted(&mut order, venue_order_id);
+    let mut report = create_order_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        filled_qty,
+        filled_qty,
+    )
+    .with_avg_px(dec!(65001.25));
+    report.order_type = order_type;
+    report.price = order.price();
+    ctx.add_order(order);
+    let mass_status = create_mass_status(vec![report.clone()], Vec::new());
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let order = ctx.get_order(&client_order_id).unwrap();
+    let replayed = OrderAny::from_events(order.events().into_iter().cloned().collect()).unwrap();
+    let repeated = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let mut late_fill = create_fill_report(
+        client_order_id,
+        venue_order_id,
+        instrument_id,
+        TradeId::from("T-LATE-SHORT-FILL"),
+        &filled_qty.to_string(),
+    );
+    late_fill.last_px = Price::from("65001.25");
+    late_fill.commission = commission;
+    let late = ctx.manager.reconcile_execution_mass_status(
+        &create_mass_status(vec![report.clone()], vec![late_fill]),
+        &ctx.exec_engine,
+    );
+    let after_repeated = ctx.get_order(&client_order_id).unwrap();
+
+    assert_eq!(result.events.len(), 2);
+
+    let OrderEventAny::Updated(updated) = &result.events[0] else {
+        panic!("Expected quantity update before fill");
+    };
+
+    let OrderEventAny::Filled(fill) = &result.events[1] else {
+        panic!("Expected inferred fill after quantity update");
+    };
+
+    assert_eq!(updated.quantity, filled_qty);
+    assert!(updated.reconciliation);
+    assert_eq!(fill.client_order_id, client_order_id);
+    assert_eq!(fill.venue_order_id, venue_order_id);
+    assert_eq!(fill.account_id, test_account_id());
+    assert_eq!(fill.instrument_id, instrument_id);
+    assert_eq!(fill.order_type, order_type);
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert_eq!(fill.last_qty, filled_qty);
+    assert_eq!(fill.last_px, Price::from("65001.25"));
+    assert_eq!(fill.currency, Currency::USDT());
+    assert_eq!(fill.commission, Some(commission));
+    assert_eq!(fill.liquidity_side, liquidity_side);
+    assert_eq!(fill.ts_event, report.ts_last);
+    assert!(fill.reconciliation);
+
+    for reconciled in [&order, &replayed, &after_repeated] {
+        assert_eq!(reconciled.status(), OrderStatus::Filled);
+        assert_eq!(reconciled.quantity(), filled_qty);
+        assert_eq!(reconciled.filled_qty(), filled_qty);
+        assert_eq!(reconciled.leaves_qty(), Quantity::zero(8));
+        assert_eq!(reconciled.avg_px(), Some(dec!(65001.25)));
+        assert_eq!(reconciled.ts_closed(), Some(report.ts_last));
+        assert_eq!(reconciled.trade_ids(), vec![&fill.trade_id]);
+        assert_eq!(
+            reconciled.commissions().get(&Currency::USDT()),
+            Some(&commission)
+        );
+    }
+
+    assert!(repeated.events.is_empty());
+    assert!(late.events.is_empty());
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, filled_qty);
+    assert_eq!(positions[0].signed_decimal_qty(), filled_qty.as_decimal());
+    assert_eq!(positions[0].commissions(), vec![commission]);
+    assert_eq!(positions[0].trade_ids, AHashSet::from([fill.trade_id]));
+}
+
+#[tokio::test]
+async fn test_short_fill_snapshot_retries_unavailable_commission() {
+    let mut ctx = TestContext::new();
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from("O-SHORT-FILL-COMMISSION");
+    let venue_order_id = VenueOrderId::from("V-SHORT-FILL-COMMISSION");
+    let commission = Money::from("0.29 USDT");
+    let commission_failure = Rc::new(Cell::new(true));
+
+    ctx.add_instrument(test_instrument());
+    ctx.exec_engine
+        .borrow_mut()
+        .deregister_client(test_client_id())
+        .unwrap();
+    ctx.exec_engine
+        .borrow_mut()
+        .register_client(Box::new(
+            MockExecutionClient::new(Vec::new())
+                .with_commission(commission, commission_failure.clone()),
+        ))
+        .unwrap();
+    let mut order = OrderTestBuilder::new(OrderType::Market)
+        .client_order_id(client_order_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("10.000"))
+        .build();
+    apply_submitted_and_accepted(&mut order, venue_order_id);
+    ctx.add_order(order);
+    let mut report = create_order_report(
+        Some(client_order_id),
+        venue_order_id,
+        instrument_id,
+        OrderStatus::Filled,
+        Quantity::from("5.000"),
+        Quantity::from("5.000"),
+    )
+    .with_avg_px(dec!(3001.50));
+    report.order_type = OrderType::Market;
+    report.price = None;
+    let mass_status = create_mass_status(vec![report], Vec::new());
+
+    let failed = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let unfilled = ctx.get_order(&client_order_id).unwrap();
+    assert_eq!(failed.events.len(), 1);
+    assert!(matches!(failed.events[0], OrderEventAny::Updated(_)));
+    assert_eq!(unfilled.status(), OrderStatus::Accepted);
+    assert_eq!(unfilled.quantity(), Quantity::from("5.000"));
+    assert_eq!(unfilled.filled_qty(), Quantity::zero(3));
+    assert_eq!(unfilled.leaves_qty(), Quantity::from("5.000"));
+    assert!(unfilled.commissions().is_empty());
+    assert!(
+        ctx.cache
+            .borrow()
+            .positions_open(None, None, None, None, None)
+            .is_empty()
+    );
+
+    commission_failure.set(false);
+    let retried = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let repeated = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    let order = ctx.get_order(&client_order_id).unwrap();
+
+    assert_eq!(retried.events.len(), 1);
+
+    let OrderEventAny::Filled(fill) = &retried.events[0] else {
+        panic!("Expected inferred fill after commission becomes available");
+    };
+
+    assert_eq!(fill.last_qty, Quantity::from("5.000"));
+    assert_eq!(fill.last_px, Price::from("3001.50"));
+    assert_eq!(fill.commission, Some(commission));
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.quantity(), Quantity::from("5.000"));
+    assert_eq!(order.filled_qty(), Quantity::from("5.000"));
+    assert_eq!(order.leaves_qty(), Quantity::zero(3));
+    assert_eq!(
+        order.commissions().get(&Currency::USDT()),
+        Some(&commission)
+    );
+    assert!(repeated.events.is_empty());
+    let cache = ctx.cache.borrow();
+    let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from("5.000"));
+    assert_eq!(positions[0].commissions(), vec![commission]);
+    assert_eq!(positions[0].trade_ids, AHashSet::from([fill.trade_id]));
 }
 
 #[tokio::test]
@@ -9315,7 +9544,7 @@ async fn test_mass_status_reduction_uses_reported_average_and_validates_remainin
     assert_eq!(fill.last_px, Price::from("3100.00"));
     let position = ctx.cache.borrow().position_owned(&position_id).unwrap();
     assert_eq!(position.quantity, Quantity::from("10.000"));
-    assert_eq!(position.avg_px_open, 3000.0);
+    assert_eq!(position.avg_px_open, dec!(3000.0));
     assert_eq!(
         result.unresolved_positions,
         vec![format!(
@@ -9391,7 +9620,7 @@ async fn test_mass_status_opening_only_average_skips_entry_price_check(
 
     assert!(result.events.is_empty());
     assert_eq!(result.unresolved_positions, expected_unresolved);
-    assert_eq!(position.avg_px_open, 55000.0);
+    assert_eq!(position.avg_px_open, dec!(55000.0));
     assert_eq!(
         ctx.cache.borrow().position_owned(&position.id),
         Some(position)
@@ -9444,7 +9673,7 @@ async fn test_mass_status_opening_only_average_recovers_empty_cache() {
     assert!(result.unresolved_positions.is_empty());
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
-    assert_eq!(positions[0].avg_px_open, 60000.0);
+    assert_eq!(positions[0].avg_px_open, dec!(60000.0));
 }
 
 #[rstest]
@@ -9605,7 +9834,7 @@ async fn test_mass_status_opening_only_average_applies_full_history(
     assert_eq!(result.unresolved_positions, expected_unresolved);
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
-    assert_eq!(positions[0].avg_px_open, 55000.0);
+    assert_eq!(positions[0].avg_px_open, dec!(55000.0));
     assert_eq!(
         positions[0].trade_ids,
         AHashSet::from([TradeId::from("1"), TradeId::from("2"), TradeId::from("3")])
@@ -10771,7 +11000,7 @@ async fn test_reconcile_mass_status_reconciles_partial_hedge_fill_to_position_re
         .position_owned(&venue_position_id)
         .unwrap();
     assert_eq!(position.quantity, Quantity::from("5.0"));
-    assert_eq!(position.avg_px_open, 3000.0);
+    assert_eq!(position.avg_px_open, dec!(3000.0));
 }
 
 #[tokio::test]
@@ -10853,7 +11082,7 @@ async fn test_reconcile_mass_status_leaves_hedge_reversal_identity_unresolved() 
     );
     assert_eq!(positions[0].side, PositionSide::Long);
     assert_eq!(positions[0].quantity, Quantity::from("5.0"));
-    assert_eq!(positions[0].avg_px_open, 3000.0);
+    assert_eq!(positions[0].avg_px_open, dec!(3000.0));
     assert_eq!(positions[0].realized_pnl, Some(Money::from("0 USDT")));
 }
 
@@ -10958,7 +11187,7 @@ async fn test_reconcile_mass_status_skips_only_position_with_fill_position_id_co
     assert_eq!(other_position.instrument_id, instrument_id);
     assert_eq!(other_position.side, PositionSide::Short);
     assert_eq!(other_position.quantity, Quantity::from("3.0"));
-    assert_eq!(other_position.avg_px_open, 3100.0);
+    assert_eq!(other_position.avg_px_open, dec!(3100.0));
 }
 
 #[tokio::test]
@@ -12006,6 +12235,24 @@ async fn test_position_reconciliation_order_has_reconciliation_tag() {
 
     assert!(!result.events.is_empty());
 
+    let fills: Vec<_> = result
+        .events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    let fill = fills[0];
+    assert_eq!(fill.last_qty, Quantity::from("5.0"));
+    assert_eq!(fill.last_px, Price::from("3000.50"));
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert_eq!(fill.commission, None);
+    assert!(fill.reconciliation);
+    assert!(fill.to_string().contains("commission=None,"));
+
     // Get the synthetic order created and verify it has the RECONCILIATION tag
     if let OrderEventAny::Accepted(accepted) = &result.events[0] {
         let order = ctx
@@ -12019,6 +12266,11 @@ async fn test_position_reconciliation_order_has_reconciliation_tag() {
     } else {
         panic!("Expected Accepted event, was {:?}", result.events[0]);
     }
+
+    let repeated = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+    assert!(repeated.events.is_empty());
 }
 
 #[rstest]
@@ -13532,7 +13784,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
     let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
-    assert_eq!(positions[0].avg_px_open, 3142.04);
+    assert_eq!(positions[0].avg_px_open, dec!(3142.04));
     drop(positions);
     drop(order);
     drop(cache);
@@ -13549,7 +13801,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
     let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(1));
-    assert_eq!(positions[0].avg_px_open, 3142.04);
+    assert_eq!(positions[0].avg_px_open, dec!(3142.04));
     drop(positions);
     drop(cache);
 
@@ -13578,7 +13830,7 @@ async fn test_replace_current_lifecycle_preserves_working_orders(
     let positions = cache.positions_open(None, Some(&instrument_id), None, None, None);
     assert_eq!(positions.len(), 1);
     assert_eq!(positions[0].signed_decimal_qty(), dec!(2));
-    assert_eq!(positions[0].avg_px_open, 3171.02);
+    assert_eq!(positions[0].avg_px_open, dec!(3171.02));
     assert_eq!(positions[0].trade_ids.len(), 2);
     assert!(positions[0].trade_ids.contains(&TradeId::from("T-005")));
     assert!(!positions[0].trade_ids.contains(&TradeId::from("T-004")));
@@ -14340,7 +14592,7 @@ async fn test_orphan_fills_without_order_reports_processed() {
     assert_eq!(position.instrument_id, instrument_id);
     assert_eq!(position.side, PositionSide::Long);
     assert_eq!(position.quantity, Quantity::from("2.0"));
-    assert_eq!(position.avg_px_open, 3062.5);
+    assert_eq!(position.avg_px_open, dec!(3062.5));
 
     let replay = ctx
         .manager
@@ -20948,4 +21200,149 @@ async fn test_fresh_cache_venue_id_history_requires_client_proof(#[case] venue_i
             .len(),
         1
     );
+}
+
+#[rstest]
+#[case::accepted(OrderStatus::Accepted, "0", true)]
+#[case::partially_filled(OrderStatus::PartiallyFilled, "2", true)]
+#[case::unchanged(OrderStatus::Accepted, "0", false)]
+#[tokio::test]
+async fn test_reconcile_pending_update_working_report(
+    #[case] status: OrderStatus,
+    #[case] filled_qty: &str,
+    #[case] changed: bool,
+) {
+    let mut ctx = TestContext::new();
+    ctx.add_instrument(test_instrument());
+    let cid = ClientOrderId::from("O-PENDING-AMEND");
+    let vid = VenueOrderId::from("V-PENDING-AMEND");
+    let order = create_pending_update_order(
+        "O-PENDING-AMEND",
+        test_instrument_id(),
+        OrderSide::Buy,
+        "1",
+        "3000.00",
+        vid,
+    );
+    ctx.add_order(order);
+    let mut report = create_order_report(
+        Some(cid),
+        vid,
+        test_instrument_id(),
+        status,
+        Quantity::from(if changed { "3" } else { "1" }),
+        Quantity::from(filled_qty),
+    );
+
+    if changed {
+        report.price = Some(Price::from("3100.00"));
+    }
+
+    if status == OrderStatus::PartiallyFilled {
+        report.avg_px = Some(dec!(3050));
+    }
+
+    let mass = create_mass_status(vec![report], vec![]);
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    let after = ctx.get_order(&cid).unwrap();
+
+    if changed {
+        assert_eq!(
+            result.events.len(),
+            if status == OrderStatus::PartiallyFilled {
+                2
+            } else {
+                1
+            }
+        );
+        assert!(matches!(result.events[0], OrderEventAny::Updated(_)));
+
+        if status == OrderStatus::PartiallyFilled {
+            assert!(matches!(result.events[1], OrderEventAny::Filled(_)));
+        }
+
+        assert_eq!(after.status(), status);
+        assert_eq!(after.quantity(), Quantity::from("3"));
+        assert_eq!(after.price(), Some(Price::from("3100.00")));
+    } else {
+        assert!(result.events.is_empty());
+        assert_eq!(after.status(), OrderStatus::PendingUpdate);
+        assert_eq!(after.quantity(), Quantity::from("1"));
+        assert_eq!(after.price(), Some(Price::from("3000.00")));
+    }
+
+    assert_eq!(after.filled_qty(), Quantity::from(filled_qty));
+}
+
+#[rstest]
+#[case::working(OrderStatus::Accepted)]
+#[case::triggered(OrderStatus::Triggered)]
+#[tokio::test]
+async fn test_reconcile_pending_update_trigger_price(#[case] status: OrderStatus) {
+    let mut ctx = TestContext::new();
+    ctx.add_instrument(test_instrument());
+    let cid = ClientOrderId::from("O-TRIGGER-AMEND");
+    let vid = VenueOrderId::from("V-TRIGGER-AMEND");
+    let mut order = OrderTestBuilder::new(OrderType::StopLimit)
+        .instrument_id(test_instrument_id())
+        .client_order_id(cid)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .price(Price::from("3100.00"))
+        .trigger_price(Price::from("3200.00"))
+        .build();
+    apply_submitted_and_accepted(&mut order, vid);
+    let pending = OrderPendingUpdateSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(cid)
+        .account_id(test_account_id())
+        .venue_order_id(vid)
+        .build();
+    order.apply(OrderEventAny::PendingUpdate(pending)).unwrap();
+    ctx.add_order(order);
+    let mut report = create_order_report(
+        Some(cid),
+        vid,
+        test_instrument_id(),
+        status,
+        Quantity::from("1"),
+        Quantity::from(0),
+    );
+    report.order_type = OrderType::StopLimit;
+    report.price = Some(Price::from("3100.00"));
+    report.trigger_price = Some(Price::from("3250.00"));
+    report.ts_triggered = Some(report.ts_last);
+    let mass = create_mass_status(vec![report], vec![]);
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass, &ctx.exec_engine);
+    assert_eq!(
+        result.events.len(),
+        if status == OrderStatus::Triggered {
+            2
+        } else {
+            1
+        }
+    );
+
+    let OrderEventAny::Updated(updated) = &result.events[0] else {
+        panic!("expected amendment before trigger, was {:?}", result.events);
+    };
+
+    assert_eq!(updated.trigger_price, Some(Price::from("3250.00")));
+
+    if status == OrderStatus::Triggered {
+        assert!(matches!(result.events[1], OrderEventAny::Triggered(_)));
+    }
+
+    let after = ctx.get_order(&cid).unwrap();
+    assert_eq!(after.status(), status);
+    assert_eq!(after.quantity(), Quantity::from("1"));
+    assert_eq!(after.price(), Some(Price::from("3100.00")));
+    assert_eq!(after.trigger_price(), Some(Price::from("3250.00")));
+    assert_eq!(after.filled_qty(), Quantity::from(0));
 }

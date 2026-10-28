@@ -52,6 +52,19 @@ ignore = [
   # object_store 0.14 is fixed, but the current DataFusion release requires object_store 0.13.
   { id = "RUSTSEC-2026-0195", reason = "quick-xml NsReader DoS via DataFusion-aligned object_store 0.13.2" },
 
+  # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
+  # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
+  # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
+  { id = "RUSTSEC-2026-0387", reason = "crypto-bigint timing leaks in signing, accepted pending an upstream-compatible fix" },
+
+  # Arrow IPC and Parquet require zstd 0.13.3 / zstd-safe 7.3.0 but use private
+  # bulk-only contexts with only std enabled. Other streaming consumers use fixed
+  # versions. Recheck these exceptions when either parent's calls or features
+  # change; remove them when both parents permit fixed versions.
+  { id = "RUSTSEC-2026-0391", reason = "zstd borrowed streaming contexts are not used by Arrow IPC or Parquet" },
+  { id = "RUSTSEC-2026-0398", reason = "zstd-safe seekable feature is disabled" },
+  { id = "RUSTSEC-2026-0403", reason = "zstd-safe streaming decompression is not used by Arrow IPC or Parquet; bulk API is unaffected" },
+
   # NOTE: lockfile scanners also flag RUSTSEC-2024-0388 (derivative), which cargo-deny
   # does not surface. Its scanner-specific ignores are in .cargo/audit.toml and
   # osv-scanner.toml.
@@ -147,7 +160,6 @@ skip = [
   { crate = "digest:<0.11" },
   { crate = "hmac:<0.13" },
   { crate = "md-5:<0.11" },
-  { crate = "sha1:<0.11" },
   { crate = "sha2:<0.11" },
 
   # RNG ecosystem - version-locked together, pulled by crypto and blockchain crates
@@ -156,6 +168,12 @@ skip = [
   { crate = "rand:<0.10" },
   { crate = "rand_chacha:<0.9" },
   { crate = "rand_core:<0.10" },
+
+  # Tokio and DataFusion still require the parking_lot 0.12 dependency family
+  { crate = "lock_api:<0.5" },
+  { crate = "parking_lot:<0.13" },
+  { crate = "parking_lot_core:<0.10" },
+  { crate = "redox_syscall:<0.9" },
 
   # Proc-macro support crates - transitive via derive macros in various crates
   { crate = "darling:<0.24" },
@@ -187,7 +205,6 @@ skip = [
   { crate = "foldhash:<0.2" },
   { crate = "num-bigint:<0.5" },
   { crate = "petgraph:<0.8" },
-  { crate = "socket2:<0.6" },
 
   # Signature traits - v2 via cosmrs/tendermint, v3 via ed25519-dalek
   { crate = "ed25519:<3" },
@@ -214,9 +231,6 @@ skip = [
   # Protobuf runtime - dYdX/cosmos/tonic use 0.13, ibapi uses 0.14
   { crate = "prost:<0.14" },
   { crate = "prost-derive:<0.14" },
-
-  # Cap'n Proto - hypersync-client uses 0.23.x, nautilus-serialization uses 0.27.x
-  { crate = "capnp:<0.27" },
 
   # TOML parser - cbindgen requires 0.9.x; the workspace and pyo3-stub-gen use 1.x
   { crate = "toml:<1" },

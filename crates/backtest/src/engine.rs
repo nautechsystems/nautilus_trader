@@ -347,15 +347,22 @@ impl BacktestEngine {
 
     /// Adds an instrument to the backtest engine for the specified venue.
     ///
+    /// Adding an instrument that is already registered with the same definition is a
+    /// no-op. Event timestamps are ignored when comparing definitions.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The instrument's associated venue has not been added via `add_venue`.
+    /// - An instrument with the same ID is already registered with a different definition.
     /// - Attempting to add a `CurrencyPair` instrument for a single-currency CASH account.
     pub fn add_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
         let instrument_id = instrument.id();
         if let Some(exchange) = self.venues.get(&instrument.id().venue) {
-            let previous_expiration_ns = exchange.borrow().instrument_expiration(instrument_id);
+            if exchange.borrow().is_instrument_registered(instrument)? {
+                log::debug!("Instrument {instrument_id} is already registered");
+                return Ok(());
+            }
 
             if matches!(
                 instrument,
@@ -370,19 +377,6 @@ impl BacktestEngine {
             exchange.borrow_mut().add_instrument(instrument.clone())?;
             if let Some(expiration_ns) = instrument.expiration_ns() {
                 self.set_instrument_expiration_timer(exchange, instrument_id, expiration_ns)?;
-            }
-
-            if let Some(previous_expiration_ns) = previous_expiration_ns
-                && instrument.expiration_ns() != Some(previous_expiration_ns)
-                && !exchange
-                    .borrow()
-                    .has_unprocessed_instrument_expiration(previous_expiration_ns)
-            {
-                let timer_name = Self::instrument_expiration_timer_name(
-                    instrument_id.venue,
-                    previous_expiration_ns,
-                );
-                self.kernel.clock.borrow_mut().cancel_timer(&timer_name);
             }
         } else {
             anyhow::bail!(
@@ -713,7 +707,12 @@ impl BacktestEngine {
         if let Some(error) = &self.funding_error {
             anyhow::bail!("{error}");
         }
-        self.check_module_errors()?;
+
+        if let Err(e) = self.check_exchange_errors() {
+            self.abort_run();
+            return Err(e);
+        }
+
         self.check_balance_error()?;
 
         if let Err(e) = self.run_impl(start, end, run_config_id, streaming) {
@@ -725,7 +724,7 @@ impl BacktestEngine {
                 || self
                     .venues
                     .values()
-                    .any(|exchange| exchange.borrow().has_module_error())
+                    .any(|exchange| exchange.borrow().has_callback_error())
             {
                 self.abort_run();
             }
@@ -979,8 +978,9 @@ impl BacktestEngine {
             | DataRef::BookDepth(_)
             | DataRef::Quote(_)
             | DataRef::Trade(_)
-            | DataRef::Bar(_) => SettlementScope::Data(Some(data.instrument_id())),
-            DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => SettlementScope::Data(None),
+            | DataRef::Bar(_)
+            | DataRef::MarkPrice(_) => SettlementScope::Data(Some(data.instrument_id())),
+            DataRef::IndexPrice(_) => SettlementScope::Data(None),
             DataRef::FundingRate(_) => SettlementScope::Data(Some(data.instrument_id())),
             DataRef::OptionGreeks(_) => SettlementScope::Data(None),
             DataRef::InstrumentStatus(_) | DataRef::InstrumentClose(_) => {
@@ -1027,7 +1027,11 @@ impl BacktestEngine {
         let result = self.end_impl();
         if let Err(e) = &result
             && (e.is::<CallbackDispatchError>()
-                || self.kernel.portfolio.borrow().balance_error().is_some())
+                || self.kernel.portfolio.borrow().balance_error().is_some()
+                || self
+                    .venues
+                    .values()
+                    .any(|exchange| exchange.borrow().has_callback_error()))
         {
             self.abort_run();
         }
@@ -1063,7 +1067,7 @@ impl BacktestEngine {
                     || self
                         .venues
                         .values()
-                        .any(|exchange| exchange.borrow().has_module_error())
+                        .any(|exchange| exchange.borrow().has_callback_error())
                 {
                     self.abort_run();
                 }
@@ -1584,7 +1588,6 @@ impl BacktestEngine {
         if matches!(
             data,
             DataRef::Instrument(_)
-                | DataRef::MarkPrice(_)
                 | DataRef::IndexPrice(_)
                 | DataRef::OptionGreeks(_)
                 | DataRef::Custom(_)
@@ -1617,7 +1620,8 @@ impl BacktestEngine {
                 DataRef::Quote(quote) => exchange_ref.process_quote_tick(quote)?,
                 DataRef::Trade(trade) => exchange_ref.process_trade_tick(trade)?,
                 DataRef::Bar(bar) => exchange_ref.process_bar(*bar)?,
-                DataRef::MarkPrice(_) | DataRef::IndexPrice(_) => {
+                DataRef::MarkPrice(mark) => exchange_ref.process_mark_price(mark)?,
+                DataRef::IndexPrice(_) => {
                     unreachable!("filtered before exchange routing")
                 }
                 DataRef::FundingRate(funding) => {
@@ -1656,9 +1660,9 @@ impl BacktestEngine {
         Ok(())
     }
 
-    fn check_module_errors(&self) -> anyhow::Result<()> {
+    fn check_exchange_errors(&self) -> anyhow::Result<()> {
         for exchange in self.venues.values() {
-            exchange.borrow().check_module_error()?;
+            exchange.borrow().check_callback_error()?;
         }
         Ok(())
     }
@@ -2185,6 +2189,7 @@ impl BacktestEngine {
         loop {
             drain_trading_cmd_queue();
             drain_data_cmd_queue();
+            self.check_exchange_errors()?;
             self.drain_exec_client_events();
             self.check_balance_error()?;
 
@@ -2483,7 +2488,9 @@ mod tests {
         enums::Environment,
         messages::{
             data::{DataCommand, UnsubscribeCommand},
-            execution::{BatchModifyOrders, ModifyOrder, SubmitOrder, TradingCommand},
+            execution::{
+                BatchModifyOrders, CancelAllOrders, ModifyOrder, SubmitOrder, TradingCommand,
+            },
         },
         msgbus::{
             self, MessagingSwitchboard, TypedHandler,
@@ -2492,7 +2499,10 @@ mod tests {
     };
     use nautilus_execution::{
         engine::{SnapshotAnchorer, stubs::StubExecutionClient},
-        models::fee::{FeeModelAny, MakerTakerFeeModel},
+        models::{
+            fee::{FeeModelAny, MakerTakerFeeModel},
+            latency::{LatencyModelHandle, StaticLatencyModel},
+        },
     };
     use nautilus_model::{
         data::{Data, InstrumentStatus, QuoteTick},
@@ -2502,7 +2512,9 @@ mod tests {
             TriggerType,
         },
         events::OrderEventAny,
-        identifiers::{AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, Venue},
+        identifiers::{
+            AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, TraderId, Venue,
+        },
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
         },
@@ -3955,6 +3967,91 @@ mod tests {
         assert_eq!(engine.last_ns, UnixNanos::from(expected_last_ns));
     }
 
+    // Returns an engine with `instrument` registered and a quote in its book
+    fn engine_with_quoted_instrument(instrument: &InstrumentAny) -> BacktestEngine {
+        let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        let venue = instrument.id().venue;
+        let venue_config = SimulatedVenueConfig::builder()
+            .venue(venue)
+            .oms_type(OmsType::Netting)
+            .account_type(AccountType::Margin)
+            .book_type(BookType::L1_MBP)
+            .starting_balances(vec![Money::from("1_000_000 USDT")])
+            .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+            .build()
+            .unwrap();
+        engine.add_venue(venue_config).unwrap();
+        engine.add_instrument(instrument).unwrap();
+        let quote = QuoteTick::new(
+            instrument.id(),
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        msgbus::send_quote(
+            format!("SimulatedExchange.process_new_quote.{venue}").into(),
+            &quote,
+        );
+        engine
+    }
+
+    fn assert_original_registration_kept(engine: &BacktestEngine, instrument: &InstrumentAny) {
+        let instrument_id = instrument.id();
+        let exchange = engine.venues.get(&instrument_id.venue).unwrap().borrow();
+        let matching_engine = exchange.get_matching_engine(&instrument_id).unwrap();
+        assert_eq!(matching_engine.raw_id, 1);
+        assert_eq!(
+            exchange.best_bid_price(instrument_id),
+            Some(Price::from("1000.00"))
+        );
+        assert_eq!(
+            exchange.best_ask_price(instrument_id),
+            Some(Price::from("1001.00"))
+        );
+        let cache = engine.kernel.cache.borrow();
+        let cached = cache.instrument(&instrument_id).unwrap();
+        assert_eq!(Instrument::ts_init(cached), Instrument::ts_init(instrument));
+        assert_eq!(cached.max_quantity(), instrument.max_quantity());
+    }
+
+    #[rstest]
+    fn test_readd_identical_instrument_keeps_matching_engine(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+        let mut engine = engine_with_quoted_instrument(&instrument);
+        let mut restamped = crypto_perpetual_ethusdt;
+        restamped.ts_event = UnixNanos::from(5);
+        restamped.ts_init = UnixNanos::from(5);
+
+        engine
+            .add_instrument(&InstrumentAny::CryptoPerpetual(restamped))
+            .unwrap();
+
+        assert_original_registration_kept(&engine, &instrument);
+    }
+
+    #[rstest]
+    fn test_readd_changed_instrument_is_rejected_and_keeps_matching_engine(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+        let mut engine = engine_with_quoted_instrument(&instrument);
+        let mut changed = crypto_perpetual_ethusdt;
+        changed.max_quantity = Some(Quantity::from("1.000"));
+
+        let result = engine.add_instrument(&InstrumentAny::CryptoPerpetual(changed));
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Instrument ETHUSDT-PERP.BINANCE is already registered with a different definition"
+        );
+        assert_original_registration_kept(&engine, &instrument);
+    }
+
     #[rstest]
     fn test_add_duplicate_venue_preserves_original_exchange(
         crypto_perpetual_ethusdt: CryptoPerpetual,
@@ -4289,6 +4386,82 @@ mod tests {
     }
 
     #[rstest]
+    #[case::end(false)]
+    #[case::streaming_resume(true)]
+    fn test_latched_latency_failure_aborts_on_end_or_streaming_resume(#[case] resume: bool) {
+        let mut engine = create_engine();
+        let ts_now = UnixNanos::new(1);
+        engine
+            .run(Some(ts_now), Some(UnixNanos::new(2)), None, true)
+            .unwrap();
+        assert_eq!(engine.kernel.clock.borrow().timestamp_ns(), ts_now);
+        assert!(engine.kernel.trader.borrow().is_running());
+        let client_id = engine.exec_clients[0].client_id();
+        let connected_before = engine
+            .kernel
+            .exec_engine
+            .borrow()
+            .get_client(&client_id)
+            .unwrap()
+            .is_connected();
+        assert!(connected_before);
+
+        let venue = Venue::from("BINANCE");
+        engine.venues[&venue]
+            .borrow_mut()
+            .set_latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                DurationNanos::ZERO,
+                DurationNanos::ZERO,
+                DurationNanos::ZERO,
+                DurationNanos::MAX,
+            )));
+        engine
+            .kernel
+            .exec_engine
+            .borrow()
+            .execute(TradingCommand::CancelAllOrders(CancelAllOrders::new(
+                TraderId::from("TRADER-001"),
+                None,
+                StrategyId::from("LATENCY-001"),
+                InstrumentId::from("ETHUSDT-PERP.BINANCE"),
+                None,
+                UUID4::new(),
+                ts_now,
+                None,
+                None,
+            )));
+
+        let error = if resume {
+            engine.run(None, None, None, true).unwrap_err()
+        } else {
+            engine.end().unwrap_err()
+        };
+
+        assert!(
+            error
+                .to_string()
+                .contains("Latency arrival timestamp exceeds u64 nanoseconds")
+        );
+        assert!(!engine.kernel.trader.borrow().is_running());
+        let connected_after = engine
+            .kernel
+            .exec_engine
+            .borrow()
+            .get_client(&client_id)
+            .unwrap()
+            .is_connected();
+        assert!(!connected_after);
+        assert_eq!(engine.backtest_end(), Some(ts_now));
+        engine.reset().unwrap();
+        assert!(
+            engine.venues[&venue]
+                .borrow()
+                .check_callback_error()
+                .is_ok()
+        );
+    }
+
+    #[rstest]
     fn test_end_reports_no_cleanly_stopped_strategies() {
         let mut empty_engine = create_engine();
         let empty_result = empty_engine.run(
@@ -4550,7 +4723,7 @@ mod tests {
         assert!(commands.iter().any(|command| matches!(
             command,
             DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument_id
+                if command.instrument_ids == [instrument_id]
         )));
     }
 

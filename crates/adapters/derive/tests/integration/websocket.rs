@@ -80,6 +80,8 @@ struct ServerState {
     disconnect_recovery_subscribes: Arc<AtomicUsize>,
     disconnect_before_private_reply: Arc<AtomicBool>,
     private_frames: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    cancel_on_disconnect_reply: Arc<tokio::sync::Mutex<Option<Value>>>,
+    cancel_on_disconnect_no_reply: Arc<AtomicBool>,
     push_notification_on_subscribe: Arc<tokio::sync::Mutex<Option<Value>>>,
     push_notification_after_first: Arc<AtomicBool>,
 }
@@ -135,7 +137,9 @@ async fn reply_request(socket: &mut WebSocket, state: &ServerState, payload: Val
         "public/login" => reply_login(socket, state, &payload, id).await,
         "subscribe" => reply_subscribe(socket, state, &payload, id).await,
         "unsubscribe" => reply_unsubscribe(socket, state, &payload, id).await,
-        method @ ("private/cancel_all" | "private/cancel_by_instrument") => {
+        method @ ("private/cancel_all"
+        | "private/cancel_by_instrument"
+        | "private/set_cancel_on_disconnect") => {
             reply_private(socket, state, &payload, id, method).await
         }
         _ => true,
@@ -335,6 +339,30 @@ async fn reply_private(
     {
         let _ = socket.send(Message::Close(None)).await;
         return false;
+    }
+
+    if method == "private/set_cancel_on_disconnect" {
+        if state.cancel_on_disconnect_no_reply.load(Ordering::SeqCst) {
+            return true;
+        }
+
+        let mut reply = state
+            .cancel_on_disconnect_reply
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| {
+                serde_json::from_str(include_str!(
+                    "../../test_data/common/cancel_on_disconnect_ok_response.json"
+                ))
+                .unwrap()
+            });
+
+        reply["id"] = json!(id);
+        return socket
+            .send(Message::Text(reply.to_string().into()))
+            .await
+            .is_ok();
     }
 
     let result = if method == "private/cancel_by_instrument" {
@@ -2044,4 +2072,214 @@ async fn test_unsubscribe_trades_removes_from_tracked_set() {
     assert_eq!(frames[0]["params"]["channels"][0], "trades.perp.ETH");
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::enable(true, include_str!("../../test_data/common/cancel_on_disconnect_enable_params.json"))]
+#[case::disable(false, include_str!("../../test_data/common/cancel_on_disconnect_disable_params.json"))]
+#[tokio::test]
+async fn test_cancel_on_disconnect_explicit_request(#[case] enabled: bool, #[case] fixture: &str) {
+    let state = ServerState::new();
+    let addr = start_server(state.clone()).await;
+    let mut client = DeriveWebSocketClient::with_credentials(
+        Some(ws_url(addr)),
+        DeriveEnvironment::Mainnet,
+        TransportBackend::default(),
+        None,
+        test_credentials(),
+        None,
+        None,
+    );
+    client.connect().await.unwrap();
+    assert!(state.private_frames.lock().await.is_empty());
+
+    client.set_cancel_on_disconnect(enabled).await.unwrap();
+    client.disconnect().await.unwrap();
+
+    let frames = state.private_frames.lock().await;
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0]["jsonrpc"], "2.0");
+    assert_eq!(frames[0]["method"], "private/set_cancel_on_disconnect");
+    assert_eq!(
+        frames[0]["params"],
+        serde_json::from_str::<Value>(fixture).unwrap()
+    );
+}
+
+#[rstest]
+#[case::scope_error(include_str!("../../test_data/common/cancel_on_disconnect_scope_error_response.json"), true)]
+#[case::null_result(include_str!("../../test_data/common/cancel_on_disconnect_invalid_response.json"), false)]
+#[case::unknown_result(include_str!("../../test_data/common/cancel_on_disconnect_unknown_response.json"), false)]
+#[case::object_result(include_str!("../../test_data/common/cancel_on_disconnect_object_response.json"), false)]
+#[tokio::test]
+async fn test_cancel_on_disconnect_rejects_failed_response(
+    #[case] fixture: &str,
+    #[case] scope_error: bool,
+) {
+    let state = ServerState::new();
+    *state.cancel_on_disconnect_reply.lock().await = Some(serde_json::from_str(fixture).unwrap());
+    let addr = start_server(state.clone()).await;
+    let mut client = DeriveWebSocketClient::with_credentials(
+        Some(ws_url(addr)),
+        DeriveEnvironment::Mainnet,
+        TransportBackend::default(),
+        None,
+        test_credentials(),
+        None,
+        None,
+    );
+    client.connect().await.unwrap();
+    let error = client.set_cancel_on_disconnect(true).await.unwrap_err();
+    client.disconnect().await.unwrap();
+
+    if scope_error {
+        let DeriveWsError::JsonRpc {
+            code,
+            message,
+            data,
+        } = error
+        else {
+            panic!("expected JSON-RPC error")
+        };
+
+        assert_eq!(code, -32602);
+        assert_eq!(message, "Trade(All) scope required");
+        assert_eq!(data, Some(json!({"scope": "Trade(All)"})));
+    } else {
+        assert!(matches!(error, DeriveWsError::Serde(_)));
+    }
+
+    assert_eq!(state.private_frames.lock().await.len(), 1);
+}
+
+#[rstest]
+#[case::timeout(false)]
+#[case::connection_loss(true)]
+#[tokio::test]
+async fn test_cancel_on_disconnect_lost_response_is_not_replayed(#[case] connection_loss: bool) {
+    let state = ServerState::new();
+    state
+        .disconnect_before_private_reply
+        .store(connection_loss, Ordering::SeqCst);
+    state
+        .cancel_on_disconnect_no_reply
+        .store(!connection_loss, Ordering::SeqCst);
+    let addr = start_server(state.clone()).await;
+    let mut client = DeriveWebSocketClient::with_credentials(
+        Some(ws_url(addr)),
+        DeriveEnvironment::Mainnet,
+        TransportBackend::default(),
+        None,
+        test_credentials(),
+        None,
+        None,
+    );
+    client.set_request_timeout(if connection_loss {
+        Duration::from_secs(5)
+    } else {
+        Duration::from_millis(200)
+    });
+
+    client.connect().await.unwrap();
+    let error = client.set_cancel_on_disconnect(true).await.unwrap_err();
+
+    if connection_loss {
+        assert!(
+            matches!(error, DeriveWsError::Transport(ref reason) if reason == "WebSocket reconnected before response was received"),
+            "{error:?}",
+        );
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while let Some(event) = client.next_event().await {
+                if matches!(event, DeriveWsMessage::Reconnected) {
+                    return;
+                }
+            }
+
+            panic!("stream ended before recovery");
+        })
+        .await
+        .unwrap();
+    } else {
+        assert!(
+            matches!(error, DeriveWsError::Timeout { ref method } if method == "private/set_cancel_on_disconnect")
+        );
+    }
+
+    client.disconnect().await.unwrap();
+    assert_eq!(state.private_frames.lock().await.len(), 1);
+}
+
+#[rstest]
+#[case::default(None)]
+#[case::enabled(Some(true))]
+#[case::disabled(Some(false))]
+#[tokio::test]
+async fn test_cancel_on_disconnect_reconnect_does_not_toggle_wallet(#[case] enabled: Option<bool>) {
+    let state = ServerState::new();
+    state
+        .disconnect_after_subscribe
+        .store(true, Ordering::SeqCst);
+    let addr = start_server(state.clone()).await;
+    let mut client = DeriveWebSocketClient::with_credentials(
+        Some(ws_url(addr)),
+        DeriveEnvironment::Mainnet,
+        TransportBackend::default(),
+        None,
+        test_credentials(),
+        None,
+        None,
+    );
+    client.connect().await.unwrap();
+    if let Some(enabled) = enabled {
+        client.set_cancel_on_disconnect(enabled).await.unwrap();
+    }
+
+    client.subscribe_ticker("ETH-PERP", "1000").await.unwrap();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while let Some(event) = client.next_event().await {
+            if matches!(event, DeriveWsMessage::Reconnected) {
+                return;
+            }
+        }
+
+        panic!("stream ended before recovery");
+    })
+    .await
+    .unwrap();
+
+    assert!(client.is_authenticated());
+    client.disconnect().await.unwrap();
+    assert_eq!(state.login_frames.lock().await.len(), 2);
+    let frames = state.private_frames.lock().await;
+    assert_eq!(frames.len(), usize::from(enabled.is_some()));
+
+    if let Some(enabled) = enabled {
+        assert_eq!(frames[0]["params"]["enabled"], enabled);
+    }
+}
+
+#[tokio::test]
+async fn test_cancel_on_disconnect_requires_credentials_and_authentication() {
+    let mut client = DeriveWebSocketClient::new(
+        None,
+        DeriveEnvironment::Mainnet,
+        TransportBackend::default(),
+        None,
+    );
+    assert!(
+        matches!(client.set_cancel_on_disconnect(true).await.unwrap_err(), DeriveWsError::MissingCredentials { operation } if operation == "private/set_cancel_on_disconnect")
+    );
+    client = DeriveWebSocketClient::with_credentials(
+        None,
+        DeriveEnvironment::Mainnet,
+        TransportBackend::default(),
+        None,
+        test_credentials(),
+        None,
+        None,
+    );
+    client.set_request_timeout(Duration::from_millis(10));
+    assert!(
+        matches!(client.set_cancel_on_disconnect(false).await.unwrap_err(), DeriveWsError::Authentication { operation, .. } if operation == "private/set_cancel_on_disconnect")
+    );
 }

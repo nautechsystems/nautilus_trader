@@ -197,8 +197,9 @@ frames (`st: false`) to avoid clearing unchanged book levels.
 
 :::note
 AX publishes no trade identifier for market data. Thus, the adapter derives `TradeTick.trade_id` from the
-trade's timestamp, price, size, and aggressor side. REST and WebSocket agree on the same trade whenever both
-report its aggressor side. Prints that AX reports identically share an ID. This affects only consumers that
+trade's timestamp, price, size, and aggressor side. The adapter rejects REST and WebSocket trades with a
+missing or invalid aggressor side, so the same print has the same ID across transports. Prints that AX
+reports identically share an ID. This affects only consumers that
 deduplicate market data on `trade_id`, because fills carry the venue's own trade IDs.
 :::
 
@@ -259,6 +260,10 @@ it accepts a snapshot. The retry interval doubles from one minute to fifteen min
 continues across reconnects with its remaining budget, and unsubscribe or shutdown cancels it. A recovery
 waiting between attempts after its budget retries at once on the new connection. Recovery never ends in a
 failed state.
+
+Subscription writes run in order while the handler continues processing commands and frames. Cancellation
+skips unsent book subscription and recovery writes and keeps their snapshot gates closed. A write already
+admitted to the network can still complete before later subscription changes.
 
 The client does not correlate subscription acknowledgements with recovery attempts. A snapshot
 queued before a replacement can complete recovery once the replacement write finishes. AX sends no
@@ -328,8 +333,9 @@ and output format.
 - `GET /fills` and `GET /funding-rates` use cursor pagination. The adapter traverses each cursor chain as a
   best-effort historical read. AX corrections during traversal are not an atomic snapshot.
 - `GET /orders` exposes cursor metadata and supports `order_id`, `order_ids`, `account_id`, and
-  optional timestamp filters. Startup mass-status reconciliation traverses its cursor chain,
-  accepts partial pages, and rejects repeated cursors or duplicate order IDs.
+  optional timestamp filters. Order-report history traversals follow the cursor chain,
+  accept partial pages, and validate declared limits and totals. Empty continuation pages,
+  repeated cursors, duplicate order IDs, and incomplete declared totals fail the request.
 - Open-order, historical-order, fill, and position report requests resolve an uncached symbol
   through `GET /instrument` and cache the result. An instrument request or parse failure fails that
   entire report request instead of dropping venue state.
@@ -356,6 +362,7 @@ and output format.
 The AX order-entry API has no order-type selector. Its single native order shape requires a price,
 which the adapter maps to a Nautilus `LIMIT` order. The adapter simulates a Nautilus `MARKET` order
 by previewing an aggressive price and submitting that priced shape with IOC.
+Tracked fills retain the submitted Nautilus order type and side, including simulated market orders.
 
 The official [REST place-order](https://docs.architect.exchange/api-reference/order-management/place-order)
 and [orders WebSocket](https://docs.architect.exchange/api-reference/order-management/orders-ws) request
@@ -390,6 +397,10 @@ configured trigger, then sends a plain limit order to this adapter.
 The adapter omits `rb` on place and replace requests, using AX's default `rej` behavior for
 post-only orders. Selecting `bo` (back off one tick from the opposite side) or `tbl` (best price on
 the same side) is not supported. See the [AX changelog](https://docs.architect.exchange/changelog).
+
+Sandbox crossing-order validation confirms that omitted `rb` and explicit `rej` reject with
+`post-only order would cross the book`. External orders that opt into `bo` or `tbl` report the
+adjusted limit in `p`; reconciliation uses that price. Post-only orders can fill after resting.
 
 Order-history, open-order, and WebSocket order responses retain `rb` as optional typed adapter metadata on
 `AxOrderDetail`, `AxOpenOrder`, and `AxWsOrder`. It describes the latest place or replace request and takes
@@ -431,6 +442,12 @@ The venue deprecates `DAY` and recommends `GTC` instead.
 | Batch cancel       | -         | The adapter sends individual cancels.                              |
 | Order lists        | ✓         | Sequential submission (orders submitted individually, non-atomic). |
 
+The adapter restores cached local open and in-flight orders before processing the orders stream. An uncertain
+send or request failure retains local tracking until a terminal event or a terminal reconciliation report
+identifies the active venue order. After replacement, queries, modifications, and cancels use the active
+venue order ID. Stale parent updates and malformed tracked updates wait for reconciliation without being
+routed as external orders.
+
 A cancel that already has a venue order ID is forwarded, including a second cancel of a
 terminal order. A strategy does not send that second cancel after the local order is already
 closed or pending cancel. The adapter emits `OrderCancelRejected` only when AX sends
@@ -462,10 +479,17 @@ one.
 
 :::note
 Bulk open-order checks use `/open-orders` when `open_check_open_only` is enabled, which is the
-default. Otherwise, they use `/orders`. Startup mass-status reconciliation uses `/orders`, so its
-snapshot includes historical terminal orders such as filled and canceled orders. Single-order
-queries via `query_order` use the dedicated `/order-status` endpoint, which works for any order
-state.
+default. Otherwise, they combine `/orders` with an unbounded `/open-orders` snapshot. Startup mass-status
+reconciliation uses the same combination, including historical terminal orders such as filled and canceled
+orders. The merged result applies history bounds only to closed reports. Active and in-flight reports
+survive the bounds and take precedence over historical rows with the same venue order ID.
+
+Single-order queries via `query_order` use `/order-status`, which works for any order state. Canceled,
+expired, and rejected orders with no remaining quantity also use `/orders` to recover their original
+quantity. Targeted reconciliation probes use `/order-status` by venue or client order ID, then fetch the
+complete `/orders` record. Only AX's HTTP 404 `no matching orders` error establishes absence. Other error
+responses, transport or decode failures, and missing detail records fail the probe. Instrument resolution,
+report parsing, and identity mismatches also fail the probe.
 
 AX open and historical order payloads do not expose a stop order type or trigger price.
 REST-derived reconciliation therefore reports every visible external order as a limit order. The
@@ -476,16 +500,56 @@ Historical order reports carry the venue reject reason (`r`, falling back to `tx
 `OrderCanceled` events can also carry the venue reason where a live cancel carries none. Reports retain the
 venue's post-only flag and subsecond timestamp.
 
+AX `/orders` payloads expose creation time without a terminal timestamp. When history contains a
+closed order with fills, the adapter also requests `/fills` in the same window (at most seven days).
+Historical reports keep `ts_accepted` at creation and raise a closed order's `ts_last` to its latest
+matching fill. With no matching fill, `ts_last` stays at creation. The fill time is a lower bound for
+cancellation or expiry. Targeted probes use the latest seven days for this fill lookup.
+
 Replaced historical order IDs are terminal. Day-complete orders expire, and expired IOC orders cancel,
 matching the WebSocket event path. An unknown order state fails the reconciliation request instead of omitting
 an order from the snapshot. A fill with an unknown sibling order state still reaches execution.
 
 Startup mass-status reconciliation bounds its `/orders` and `/fills` requests by
 `reconciliation_lookback_mins`, and positions are always reported as a current snapshot. A lookback longer
-than seven days still yields only seven days of fills, and the declared window is floored at that cap. With a
-bounded window, fills for instruments that reconcile flat apply to their orders without materializing
-positions. Thus, round trips completed inside the window do not open phantom positions on restart. Without a
-bound, every historical order on the account is fetched and reconciled at startup.
+than seven days still yields only seven days of fills. The adapter sets the mass status's `lookback_start`
+to the applied fill-window start, including the seven-day boundary when no lookback is configured.
+Without a configured lookback, the adapter still fetches every historical order. An explicit zero-minute
+lookback uses a one-nanosecond fill window because AX rejects zero-width queries.
+
+After a successful complete positions snapshot, the adapter emits explicit flat reports for instruments
+absent from AX's response but present in this account's cached open positions. It preserves explicit flat
+and non-flat venue rows. These cached flat reports let reconciliation close retained positions whose cached
+resting orders fill while the node is offline, without leaving offsetting external positions. Fills for
+instruments without a position report update orders without opening positions, so incomplete history for an
+uncached flat instrument does not require a position correction. An invalid position row fails mass-status
+collection instead of implying that its instrument is flat.
+
+Position reports divide the signed fill-ledger cost basis by signed net quantity. The
+[AX gateway schema](https://docs.architect.exchange/openapi/api-gateway.json) defines `signed_notional`
+as a deprecated alias for `signed_cost_basis`; reports prefer `signed_cost_basis` when present. This
+ledger average can change on reductions and reversals independently of Nautilus's opening-fill average,
+and it can be zero or negative.
+
+Reports use [`AvgPxReconciliation::OpeningOnly`](../concepts/execution/reconciliation.md#reported-entry-averages),
+so reconciliation uses the value for synthetic openings and reversals without comparing it with the cached
+average. Reports preserve the signed decimal quotient without rounding it to instrument price precision
+or declaring an average-price precision.
+:::
+
+:::warning[Position ownership during recovery]
+Closing fills linked to cached orders retain their strategy ownership. If closing order evidence is
+unavailable, a flat snapshot alone cannot identify which strategy owns a correction. Verify retained
+strategy positions against AX before resuming trading in that case.
+
+Special fills use external order identities. A settlement that closes strategy exposure can therefore
+leave offsetting strategy and external positions. Configure the strategy's `external_order_instrument_ids`
+when it should own those external orders. See
+[External order creation](../concepts/execution/reconciliation.md#external-order-creation).
+
+Explicit flat reports enable position reconciliation. If history starts mid-lifecycle, reconciliation may
+need a synthetic correction. With `generate_missing_orders=False`, an unresolved discrepancy prevents
+startup.
 :::
 
 :::warning
@@ -609,9 +673,15 @@ credentials are valid and have trading permissions.
   testing did not confirm conditional semantics. Use local order emulation when a strategy
   requires a stop-limit order.
 - **Order modification**: AX supports atomic order replacement via `POST /replace-order`. The execution client
-  maps `modify_order` to this endpoint and records the new venue order ID it returns. The adapter rejects a
-  modification locally if it carries a trigger price, because AX has no field for one. It also rejects a
-  modification if the order has no venue order ID yet.
+  maps `modify_order` to this endpoint. The HTTP response contains a proposed venue order ID; the orders
+  stream confirms whether replacement succeeds. Queries and cancels retain the working order ID until
+  the stream, a child fill, or a query confirms the replacement. A query of a replaced parent checks proposed IDs
+  and returns the confirmed replacement's status, including fills or cancellation. It leaves the result
+  unresolved when no replacement is confirmed. A cancel before confirmation targets the parent and
+  can be rejected; recovery then needs a late stream confirmation, a child fill, or an explicit query.
+  A crossing post-only replacement emits `OrderModifyRejected` with the venue reason
+  and leaves the original order working. The adapter rejects a modification locally if it carries a
+  trigger price, because AX has no field for one, or if the order has no venue order ID yet.
 - **Funding rate polling**: The data client polls `GET /funding-rates` for each subscribed instrument at
   `funding_rate_poll_interval_mins`. It requests a seven-day lookback to find a rate across weekends and
   holidays. It emits the latest rate only when it differs from the last one emitted.
@@ -636,16 +706,22 @@ credentials are valid and have trading permissions.
   Reconciliation does not replace an applied commission, so a streamed estimate remains even when the
   venue-reported `/fills` fee differs. That endpoint supplies the fee for a fill that was not already applied
   from the stream. The adapter converts it with `Money::from_decimal` into USD, so a sub-cent fee such as
-  `0.012188` is stored as `0.01`. An unrepresentable REST fee fails the fill-report request and mass status.
-  During startup, that error prevents the node from starting.
+  `0.012188` is stored as `0.01`. An unrepresentable REST fee fails fill-report requests, historical
+  order-status requests that need fills, and mass status. During startup, that error prevents the node
+  from starting.
 - **Fill reconciliation window**: The `/fills` endpoint requires a bounded time range and caps the span at
-  seven days. Reconciliation requests the most recent seven days of fills. Fills older than that are not
-  reconciled.
+  seven days. Fill requests cover seven days by default, or the shorter configured lookback. Order history
+  uses the configured lookback and has no start bound by default.
+
+  Older order reports can still produce inferred fills with `commission=None`. Order history does not
+  supply fees, and the adapter does not estimate historical fees from current account rates. Position
+  accounting excludes unavailable fees, so reconstructed PnL for that history is incomplete. A reported
+  zero fee remains a zero commission.
 - **Fill order identity**: AX can omit `order_id` for block trades and final settlement fills. The
   adapter derives a deterministic reconciliation order ID from `trade_id` for those classified
-  records. Classification fields are optional for regular fills with a valid `order_id`. The adapter
-  rejects rows with neither an order ID nor explicit special-fill classification, and rejects
-  inconsistent classification.
+  records and includes a matching `FILLED` market order report in startup mass status. Classification
+  fields are optional for regular fills with a valid `order_id`. The adapter rejects rows with neither
+  an order ID nor explicit special-fill classification, and rejects inconsistent classification.
 - **Unfilled IOC/FOK**: AX reports an unfilled immediate order as an expiry. The adapter maps it to
   `OrderCanceled` to match NautilusTrader semantics.
 - **One-tick quotes**: Example testers place post-only limits one tick from top of book.

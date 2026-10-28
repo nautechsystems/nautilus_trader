@@ -114,10 +114,8 @@ const TRADE_ID_DOMAIN: &[u8] = b"nautilus-architect-ax/trade-id/v1";
 /// text, because AX sends the same price as `"1.339700000000"` over REST and in a shorter form
 /// over the WebSocket.
 ///
-/// Parity relies on both transports reporting the aggressor side. `GET /trades` always does, and
-/// no sandbox WebSocket trade has omitted it, but `AxMdTrade::d` is modeled as optional and an
-/// omitted side resolves to [`AggressorSide::NoAggressor`], which would not match the REST
-/// identity for that trade.
+/// Both REST and WebSocket trade models require the aggressor side, preserving identity across
+/// transports for the same print.
 ///
 /// The result is exactly 36 characters, which is [`TradeId`]'s maximum, so a timestamp beyond
 /// 19 digits (year 2262) returns an error rather than silently truncating.

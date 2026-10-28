@@ -9,15 +9,9 @@
 
 //! Interactive Brokers market data stream processing.
 
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Debug,
-    pin::Pin,
-    sync::Arc,
-    time::Duration,
-};
+use std::{collections::HashSet, fmt::Debug, pin::Pin, sync::Arc, time::Duration};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use futures_util::Stream;
 use ibapi::{
@@ -44,7 +38,7 @@ use nautilus_model::{
     data::{Bar, BarType, BookOrder, Data, OrderBookDelta, QuoteTick, option_chain::OptionGreeks},
     enums::{BookAction, OrderSide},
     identifiers::{ClientId, InstrumentId},
-    types::{Price, Quantity},
+    types::Quantity,
 };
 use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
@@ -52,8 +46,11 @@ use tokio_util::sync::CancellationToken;
 use crate::{
     config::InteractiveBrokersDataClientConfig,
     data::{
-        cache::{OptionGreeksCache, QuoteCache, is_sentinel_price},
-        convert::{bar_type_to_ib_bar_size, ib_bar_to_nautilus_bar, ib_timestamp_to_unix_nanos},
+        cache::{OptionGreeksCache, QuoteCache},
+        convert::{
+            IbPriceConverter, bar_type_to_ib_bar_size, ib_bar_to_nautilus_bar,
+            ib_timestamp_to_unix_nanos,
+        },
         parse::{
             log_tick_parse_error, parse_index_price, parse_market_depth_operation,
             parse_option_open_interest, parse_quote_tick, parse_trade_tick,
@@ -77,7 +74,7 @@ struct StreamContext {
     data_farm_state: Arc<DataFarmConnectionState>,
     recovery_scope: DataFarmRecoveryScope,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
 }
 
@@ -318,7 +315,6 @@ impl IntoSubscriptionTick for SubscriptionItem<TickTypes> {
 }
 
 const SUBSCRIPTION_DISCONNECTED_CODE: i32 = 10182;
-const DATA_FARM_RECOVERY_HISTORY_LIMIT: usize = 1_024;
 const HISTORICAL_BAR_MIN_COUNT: i64 = 300;
 const HISTORICAL_BAR_RETRY_DELAY: Duration = Duration::from_secs(1);
 const IB_GENERIC_TICK_OPTION_OPEN_INTEREST: &str = "101";
@@ -376,31 +372,19 @@ impl DataFarmIdentity {
 
 #[derive(Debug, Default)]
 struct DataFarmRecoveryState {
-    recoveries: VecDeque<(u64, UnixNanos)>,
     recovery_generation: u64,
 }
 
 impl DataFarmRecoveryState {
-    fn record_recovery(&mut self, degraded_since_ns: UnixNanos) {
+    fn record_recovery(&mut self) {
         self.recovery_generation = self.recovery_generation.wrapping_add(1);
-        self.recoveries
-            .push_back((self.recovery_generation, degraded_since_ns));
-
-        if self.recoveries.len() > DATA_FARM_RECOVERY_HISTORY_LIMIT {
-            let (_, pruned_since_ns) = self.recoveries.pop_front().unwrap();
-
-            if let Some((_, retained_since_ns)) = self.recoveries.front_mut() {
-                // Preserve the earliest replay boundary for streams lagging behind the history
-                *retained_since_ns = (*retained_since_ns).min(pruned_since_ns);
-            }
-        }
     }
 }
 
 #[derive(Debug, Default)]
 struct DataFarmState {
-    degraded_farms: HashMap<DataFarmIdentity, UnixNanos>,
-    degraded_scopes: AHashMap<DataFarmRecoveryScope, UnixNanos>,
+    degraded_farms: HashSet<DataFarmIdentity>,
+    degraded_scopes: AHashSet<DataFarmRecoveryScope>,
     market_data: DataFarmRecoveryState,
     historical_data: DataFarmRecoveryState,
     security_definition: DataFarmRecoveryState,
@@ -444,20 +428,20 @@ impl DataFarmConnectionState {
         }
 
         let state = self.state.lock();
-        state.degraded_farms.contains_key(&farm)
+        state.degraded_farms.contains(&farm)
             || state
                 .degraded_scopes
-                .contains_key(&DataFarmRecoveryScope::from(farm.kind))
+                .contains(&DataFarmRecoveryScope::from(farm.kind))
     }
 
-    pub(super) fn handle_notice(&self, notice: &Notice, clock: &'static AtomicTime) {
+    pub(super) fn handle_notice(&self, notice: &Notice) {
         let Some(farm) = DataFarmIdentity::from_notice(notice) else {
             return;
         };
 
         match notice.connectivity_status() {
             Some(ConnectivityStatus::Broken) => {
-                self.mark_farm_degraded(farm, clock.get_time_ns());
+                self.mark_farm_degraded(farm);
                 tracing::debug!(
                     "IB data farm degraded by notice {} - {}; waiting for farm OK before resubscribe",
                     notice.code,
@@ -475,75 +459,53 @@ impl DataFarmConnectionState {
         }
     }
 
-    pub(super) fn mark_degraded(&self, generation: u64, degraded_since_ns: UnixNanos) {
-        self.mark_degraded_for(
-            DataFarmRecoveryScope::MarketData,
-            generation,
-            degraded_since_ns,
-        );
+    pub(super) fn mark_degraded(&self, generation: u64) {
+        self.mark_degraded_for(DataFarmRecoveryScope::MarketData, generation);
     }
 
-    fn mark_degraded_for(
-        &self,
-        scope: DataFarmRecoveryScope,
-        generation: u64,
-        degraded_since_ns: UnixNanos,
-    ) {
+    fn mark_degraded_for(&self, scope: DataFarmRecoveryScope, generation: u64) {
         let mut state = self.state.lock();
 
         if state.recovery(scope).recovery_generation != generation {
             return;
         }
 
-        state
-            .degraded_scopes
-            .entry(scope)
-            .and_modify(|current| *current = (*current).min(degraded_since_ns))
-            .or_insert(degraded_since_ns);
+        state.degraded_scopes.insert(scope);
     }
 
-    fn mark_farm_degraded(&self, farm: DataFarmIdentity, degraded_since_ns: UnixNanos) {
-        let mut state = self.state.lock();
-
-        state
-            .degraded_farms
-            .entry(farm)
-            .and_modify(|current| *current = (*current).min(degraded_since_ns))
-            .or_insert(degraded_since_ns);
+    fn mark_farm_degraded(&self, farm: DataFarmIdentity) {
+        self.state.lock().degraded_farms.insert(farm);
     }
 
     fn mark_ok(&self, farm: &DataFarmIdentity) -> bool {
         let mut state = self.state.lock();
 
         let family_scope = DataFarmRecoveryScope::from(farm.kind);
-        let farm_degraded_since_ns = state.degraded_farms.remove(farm);
-        let scope_degraded_since_ns = state.degraded_scopes.remove(&family_scope);
-        let family_degraded_since_ns =
-            earliest_data_loss_ns(farm_degraded_since_ns, scope_degraded_since_ns);
+        let farm_recovered = state.degraded_farms.remove(farm);
+        let scope_recovered = state.degraded_scopes.remove(&family_scope);
+        let family_recovered = farm_recovered || scope_recovered;
 
-        let historical_bars_recovery_since_ns = match farm.kind {
-            DataFarmKind::MarketData | DataFarmKind::HistoricalData => earliest_data_loss_ns(
-                family_degraded_since_ns,
-                state
+        let historical_bars_recovered = match farm.kind {
+            DataFarmKind::MarketData | DataFarmKind::HistoricalData => {
+                let scope_recovered = state
                     .degraded_scopes
-                    .remove(&DataFarmRecoveryScope::HistoricalBars),
-            ),
-            DataFarmKind::SecurityDefinition => None,
+                    .remove(&DataFarmRecoveryScope::HistoricalBars);
+                family_recovered || scope_recovered
+            }
+            DataFarmKind::SecurityDefinition => false,
         };
 
-        if let Some(degraded_since_ns) = family_degraded_since_ns {
-            state
-                .recovery_mut(family_scope)
-                .record_recovery(degraded_since_ns);
+        if family_recovered {
+            state.recovery_mut(family_scope).record_recovery();
         }
 
-        if let Some(degraded_since_ns) = historical_bars_recovery_since_ns {
+        if historical_bars_recovered {
             state
                 .recovery_mut(DataFarmRecoveryScope::HistoricalBars)
-                .record_recovery(degraded_since_ns);
+                .record_recovery();
         }
 
-        if family_degraded_since_ns.is_none() && historical_bars_recovery_since_ns.is_none() {
+        if !family_recovered && !historical_bars_recovered {
             return false;
         }
 
@@ -558,22 +520,6 @@ impl DataFarmConnectionState {
 
     fn recovery_generation_for(&self, scope: DataFarmRecoveryScope) -> u64 {
         self.state.lock().recovery(scope).recovery_generation
-    }
-
-    fn recovery_since_ns_after_for(
-        &self,
-        scope: DataFarmRecoveryScope,
-        generation: u64,
-    ) -> Option<UnixNanos> {
-        self.state
-            .lock()
-            .recovery(scope)
-            .recoveries
-            .iter()
-            .filter_map(|(recovery_generation, degraded_since_ns)| {
-                (*recovery_generation > generation).then_some(*degraded_since_ns)
-            })
-            .min()
     }
 
     async fn wait_for_recovery_after(&self, generation: u64) {
@@ -597,15 +543,6 @@ impl DataFarmConnectionState {
 fn is_subscription_disconnected_error(error: &Error) -> bool {
     matches!(error, Error::ConnectionReset)
         || matches!(error, Error::Notice(notice) if notice.code == SUBSCRIPTION_DISCONNECTED_CODE)
-}
-
-fn earliest_data_loss_ns(first: Option<UnixNanos>, second: Option<UnixNanos>) -> Option<UnixNanos> {
-    match (first, second) {
-        (Some(first), Some(second)) => Some(first.min(second)),
-        (Some(first), None) => Some(first),
-        (None, Some(second)) => Some(second),
-        (None, None) => None,
-    }
 }
 
 async fn wait_for_data_farm_recovery_or_cancel(
@@ -641,16 +578,13 @@ pub(super) fn resolve_historical_bar_start_ns(
     start_ns.unwrap_or(now_ns)
 }
 
-pub(super) fn resolve_historical_bar_replay_start_ns(
+pub(super) fn resolve_historical_bar_resume_ns(
     first_start_ns: UnixNanos,
-    last_disconnection_ns: Option<UnixNanos>,
+    last_sent_ns: Option<UnixNanos>,
 ) -> UnixNanos {
-    match last_disconnection_ns {
-        Some(last_disconnection_ns) if last_disconnection_ns > first_start_ns => {
-            last_disconnection_ns
-        }
-        _ => first_start_ns,
-    }
+    last_sent_ns.map_or(first_start_ns, |last_sent_ns| {
+        last_sent_ns.max(first_start_ns)
+    })
 }
 
 pub(super) fn calculate_historical_bar_subscription_duration(
@@ -674,15 +608,14 @@ pub(super) fn calculate_historical_bar_subscription_duration(
     }
 }
 
-fn should_emit_historical_bar(bar: &Bar, start_ns: UnixNanos) -> bool {
-    bar.ts_init >= start_ns
+fn should_emit_historical_bar(bar: &Bar, resume_ns: UnixNanos) -> bool {
+    bar.ts_event >= resume_ns
 }
 
 pub(super) async fn monitor_data_farm_notices(
     client: Arc<ibapi::Client>,
     data_farm_state: Arc<DataFarmConnectionState>,
     market_data_type: Option<ibapi::market_data::MarketDataType>,
-    clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
     is_connected: Arc<std::sync::atomic::AtomicBool>,
 ) -> anyhow::Result<()> {
@@ -718,7 +651,7 @@ pub(super) async fn monitor_data_farm_notices(
                     }
                     tracing::info!("Restored IB market data type to {market_data_type:?}");
                 }
-                data_farm_state.handle_notice(&notice, clock);
+                data_farm_state.handle_notice(&notice);
             }
         }
     }
@@ -727,10 +660,27 @@ pub(super) async fn monitor_data_farm_notices(
 #[derive(Debug)]
 struct HistoricalBarStreamState {
     first_start_ns: UnixNanos,
-    replay_start_ns: UnixNanos,
-    last_disconnection_ns: Option<UnixNanos>,
-    had_connection: bool,
+    resume_ns: UnixNanos,
+    last_sent_ns: Option<UnixNanos>,
     completion: HistoricalBarCompletion,
+}
+
+impl HistoricalBarStreamState {
+    /// Prepares a (re)subscribe and returns the historical request start.
+    ///
+    /// The replay resumes at the last sent bar, so bars lost during an outage are replayed
+    /// however the outage ended. The request starts one bar earlier so the replay includes
+    /// that bar, which is sent again with its replayed values when revised bars are enabled.
+    ///
+    /// A bar still pending from the previous stream is discarded without being published:
+    /// its grace deadline may have passed during the outage, and on re-entry the zero wait
+    /// would publish the pre-outage revision as final, resulting in the replayed true final
+    /// being dropped as already published.
+    fn begin_subscription(&mut self, bar_span_ns: u64) -> UnixNanos {
+        self.completion.discard_pending();
+        self.resume_ns = resolve_historical_bar_resume_ns(self.first_start_ns, self.last_sent_ns);
+        UnixNanos::from(self.resume_ns.as_u64().saturating_sub(bar_span_ns))
+    }
 }
 
 /// How long after its close a bar still waiting for IB's final update is published anyway.
@@ -744,7 +694,8 @@ const HISTORICAL_BAR_COMPLETION_GRACE: DurationNanos = DurationNanos::from_secs(
 /// IB revises the open bar every 5 seconds and marks no update as final. A bar completes on
 /// the first of: an update received after its close, the grace period after its close, or the
 /// next bar's first update. It persists across resubscriptions, so a replayed history cannot
-/// publish a bar twice.
+/// publish a bar twice. A bar still pending at a resubscribe is discarded without being
+/// published and completed from the replay instead.
 #[derive(Debug, Default)]
 struct HistoricalBarCompletion {
     pending: Option<Bar>,
@@ -785,6 +736,11 @@ impl HistoricalBarCompletion {
             .map(|bar| bar.ts_event.saturating_add(HISTORICAL_BAR_COMPLETION_GRACE))
     }
 
+    // Drops the pending bar without publishing it
+    fn discard_pending(&mut self) {
+        self.pending = None;
+    }
+
     fn expire(&mut self, now: UnixNanos) -> Option<Bar> {
         if self.deadline().is_none_or(|deadline| now < deadline) {
             return None;
@@ -802,7 +758,7 @@ pub(super) async fn handle_historical_bars_subscription(
     contract: ibapi::contracts::Contract,
     bar_type: BarType,
     what_to_show: HistoricalWhatToShow,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     use_rth: bool,
     start_ns: Option<UnixNanos>,
@@ -818,11 +774,12 @@ pub(super) async fn handle_historical_bars_subscription(
 
     let stream_state = Arc::new(tokio::sync::Mutex::new(HistoricalBarStreamState {
         first_start_ns,
-        replay_start_ns: first_start_ns,
-        last_disconnection_ns: None,
-        had_connection: false,
+        resume_ns: first_start_ns,
+        last_sent_ns: None,
         completion: HistoricalBarCompletion::default(),
     }));
+
+    let bar_span_ns = (bar_type.spec().timedelta().as_secs().max(1) as u64) * 1_000_000_000;
 
     let context = StreamContext {
         stream_config,
@@ -833,7 +790,7 @@ pub(super) async fn handle_historical_bars_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::HistoricalBars,
         instrument_id: bar_type.instrument_id(),
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -849,18 +806,11 @@ pub(super) async fn handle_historical_bars_subscription(
             let contract = contract.clone();
             let stream_state = Arc::clone(&stream_state);
             Box::pin(async move {
-                let replay_start_ns = {
-                    let mut state = stream_state.lock().await;
-                    state.replay_start_ns = resolve_historical_bar_replay_start_ns(
-                        state.first_start_ns,
-                        state.last_disconnection_ns,
-                    );
-                    state.replay_start_ns
-                };
+                let request_start_ns = stream_state.lock().await.begin_subscription(bar_span_ns);
 
                 let duration = calculate_historical_bar_subscription_duration(
                     bar_type,
-                    replay_start_ns,
+                    request_start_ns,
                     context.clock.get_time_ns(),
                 );
                 context
@@ -922,30 +872,17 @@ where
             () = context.data_farm_state.wait_for_recovery_after_for(
                 DataFarmRecoveryScope::HistoricalBars,
                 farm_generation,
-            ) => {
-                record_historical_bar_recovery(
-                    context,
-                    farm_generation,
-                    &stream_state,
-                )
-                .await;
-                return Ok(StreamAction::Resubscribe);
-            }
+            ) => return Ok(StreamAction::Resubscribe),
             () = monitor.wait_for_idle() => {
                 if !monitor.notify_idle() {
                     return Ok(StreamAction::Stop);
                 }
             }
             () = sleep_or_pending(completion_wait) => {
-                let expired = stream_state
-                    .lock()
-                    .await
-                    .completion
-                    .expire(context.clock.get_time_ns());
+                let mut state = stream_state.lock().await;
+                let expired = state.completion.expire(context.clock.get_time_ns());
 
-                if let Some(bar) = expired
-                    && context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err()
-                {
+                if !send_bars(&mut state, expired, |bar| send_bar(context, bar)) {
                     return Ok(StreamAction::Stop);
                 }
             }
@@ -953,60 +890,41 @@ where
                 match update {
                     Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::Historical(data)))) => {
                         if !data.bars.is_empty() { monitor.received_data(); }
-                        let replay_start_ns = mark_historical_bar_connected(&stream_state).await;
 
                         for ib_bar in &data.bars {
                             let bar = ib_bar_to_nautilus_bar(
                                 ib_bar,
                                 bar_type,
-                                context.price_precision,
+                                context.prices,
                                 context.size_precision,
                             )?;
 
-                            if !should_emit_historical_bar(&bar, replay_start_ns) {
-                                continue;
-                            }
-
-                            if handle_revised_bars {
-                                if context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err() {
-                                    return Ok(StreamAction::Stop);
-                                }
-                            } else if !send_completed_historical_bars(context, &stream_state, bar).await {
+                            if !send_historical_bar(context, &stream_state, handle_revised_bars, bar).await {
                                 return Ok(StreamAction::Stop);
                             }
                         }
                     }
                     Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::Update(ib_bar)))) => {
                         monitor.received_data();
-                        let replay_start_ns = mark_historical_bar_connected(&stream_state).await;
                         let bar = ib_bar_to_nautilus_bar(
                             &ib_bar,
                             bar_type,
-                            context.price_precision,
+                            context.prices,
                             context.size_precision,
                         )?;
 
-                        if !should_emit_historical_bar(&bar, replay_start_ns) {
-                            continue;
-                        }
-
-                        if handle_revised_bars {
-                            if context.data_sender.send(DataEvent::Data(Data::Bar(bar))).is_err() {
-                                return Ok(StreamAction::Stop);
-                            }
-                        } else if !send_completed_historical_bars(context, &stream_state, bar).await {
+                        if !send_historical_bar(context, &stream_state, handle_revised_bars, bar).await {
                             return Ok(StreamAction::Stop);
                         }
                     }
                     Some(Ok(SubscriptionItem::Data(HistoricalBarUpdate::End { .. }))) => {}
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        context.data_farm_state.handle_notice(&notice, context.clock);
+                        context.data_farm_state.handle_notice(&notice);
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
                         context.data_farm_state.mark_degraded_for(
                             DataFarmRecoveryScope::HistoricalBars,
                             farm_generation,
-                            context.clock.get_time_ns(),
                         );
 
                         if !wait_for_data_farm_recovery_or_cancel_for(
@@ -1019,12 +937,6 @@ where
                         {
                             return Ok(StreamAction::Stop);
                         }
-                        record_historical_bar_recovery(
-                            context,
-                            farm_generation,
-                            &stream_state,
-                        )
-                        .await;
                         return Ok(StreamAction::Resubscribe);
                     }
                     Some(Err(e)) => {
@@ -1033,7 +945,6 @@ where
                             bar_type,
                             e,
                         );
-                        mark_historical_bar_disconnected(context, &stream_state).await;
                         return Ok(StreamAction::Resubscribe);
                     }
                     None => {
@@ -1041,7 +952,6 @@ where
                             "Historical bars subscription ended unexpectedly for {}",
                             bar_type,
                         );
-                        mark_historical_bar_disconnected(context, &stream_state).await;
                         return Ok(StreamAction::Resubscribe);
                     }
                 }
@@ -1051,22 +961,70 @@ where
 }
 
 // Returns false when the data channel is closed
-async fn send_completed_historical_bars(
+async fn send_historical_bar(
     context: &StreamContext,
     stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
+    handle_revised_bars: bool,
     bar: Bar,
 ) -> bool {
-    let completed = stream_state
-        .lock()
-        .await
-        .completion
-        .observe(bar, context.clock.get_time_ns());
-    completed.into_iter().all(|bar| {
-        context
-            .data_sender
-            .send(DataEvent::Data(Data::Bar(bar)))
-            .is_ok()
+    let mut state = stream_state.lock().await;
+    dispatch_historical_bar(
+        &mut state,
+        handle_revised_bars,
+        context.clock.get_time_ns(),
+        bar,
+        |bar| send_bar(context, bar),
+    )
+}
+
+// Applies the replay filter and, without revised bars, the completion step, then sends.
+// Returns false when `sink` does
+fn dispatch_historical_bar(
+    state: &mut HistoricalBarStreamState,
+    handle_revised_bars: bool,
+    now: UnixNanos,
+    bar: Bar,
+    sink: impl FnMut(Bar) -> bool,
+) -> bool {
+    if !should_emit_historical_bar(&bar, state.resume_ns) {
+        return true;
+    }
+
+    let bars = if handle_revised_bars {
+        vec![bar]
+    } else {
+        state.completion.observe(bar, now)
+    };
+    send_bars(state, bars, sink)
+}
+
+// Sends each bar through `sink`, recording the latest close sent on success.
+// Returns false when `sink` does
+fn send_bars(
+    state: &mut HistoricalBarStreamState,
+    bars: impl IntoIterator<Item = Bar>,
+    mut sink: impl FnMut(Bar) -> bool,
+) -> bool {
+    bars.into_iter().all(|bar| {
+        let ts_event = bar.ts_event;
+        if !sink(bar) {
+            return false;
+        }
+        state.last_sent_ns = Some(
+            state
+                .last_sent_ns
+                .map_or(ts_event, |last_sent_ns| last_sent_ns.max(ts_event)),
+        );
+        true
     })
+}
+
+// Returns false when the data channel is closed
+fn send_bar(context: &StreamContext, bar: Bar) -> bool {
+    context
+        .data_sender
+        .send(DataEvent::Data(Data::Bar(bar)))
+        .is_ok()
 }
 
 async fn sleep_or_pending(duration: Option<Duration>) {
@@ -1074,37 +1032,6 @@ async fn sleep_or_pending(duration: Option<Duration>) {
         Some(duration) => tokio::time::sleep(duration).await,
         None => std::future::pending().await,
     }
-}
-
-async fn mark_historical_bar_connected(
-    stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
-) -> UnixNanos {
-    let mut state = stream_state.lock().await;
-    state.had_connection = true;
-    state.replay_start_ns
-}
-
-async fn mark_historical_bar_disconnected(
-    context: &StreamContext,
-    stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
-) {
-    let mut state = stream_state.lock().await;
-    if state.had_connection {
-        state.last_disconnection_ns = Some(context.clock.get_time_ns());
-    }
-}
-
-async fn record_historical_bar_recovery(
-    context: &StreamContext,
-    farm_generation: u64,
-    stream_state: &tokio::sync::Mutex<HistoricalBarStreamState>,
-) {
-    let recovered_since = context
-        .data_farm_state
-        .recovery_since_ns_after_for(DataFarmRecoveryScope::HistoricalBars, farm_generation);
-    let mut state = stream_state.lock().await;
-    state.last_disconnection_ns =
-        earliest_data_loss_ns(state.last_disconnection_ns, recovered_since);
 }
 
 fn bar_type_to_historical_bar_size(bar_type: BarType) -> anyhow::Result<HistoricalBarSize> {
@@ -1157,7 +1084,7 @@ where
                 {
                     context
                         .data_farm_state
-                        .mark_degraded(farm_generation, context.clock.get_time_ns());
+                        .mark_degraded(farm_generation);
                     tracing::warn!(
                         "IB market data stream disconnected for {}; waiting for data farm recovery: {:?}",
                         context.instrument_id,
@@ -1177,7 +1104,7 @@ where
                 }
 
                 if let Ok(SubscriptionItem::Notice(notice)) = &tick_result {
-                    context.data_farm_state.handle_notice(notice, context.clock);
+                    context.data_farm_state.handle_notice(notice);
                 }
 
                 match process_fn(tick_result, context).await? {
@@ -1194,7 +1121,7 @@ pub(super) async fn handle_quote_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: EventSender<DataEvent>,
     quote_cache: Arc<tokio::sync::Mutex<QuoteCache>>,
@@ -1215,7 +1142,7 @@ pub(super) async fn handle_quote_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -1246,7 +1173,7 @@ pub(super) async fn handle_quote_subscription(
                             process_quote_tick_result(
                                 tick_result,
                                 context.instrument_id,
-                                context.price_precision,
+                                context.prices,
                                 context.size_precision,
                                 &context.data_sender,
                                 &quote_cache,
@@ -1288,7 +1215,7 @@ pub(super) async fn handle_option_greeks_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision: 0,
+        prices: IbPriceConverter::new(0),
         size_precision: 0,
     };
 
@@ -1341,8 +1268,7 @@ pub(super) async fn handle_index_price_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
-    price_magnifier: i32,
+    prices: IbPriceConverter,
     data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
@@ -1360,7 +1286,7 @@ pub(super) async fn handle_index_price_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision: 0,
     };
 
@@ -1388,8 +1314,7 @@ pub(super) async fn handle_index_price_subscription(
                         process_index_price_tick_result(
                             tick_result,
                             context.instrument_id,
-                            context.price_precision,
-                            price_magnifier,
+                            context.prices,
                             &context.data_sender,
                             context.clock,
                         )
@@ -1408,12 +1333,11 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
     cancellation_token: CancellationToken,
-    price_magnifier: f64,
     data_farm_state: Arc<DataFarmConnectionState>,
     stream_config: StreamConfig,
 ) -> anyhow::Result<()> {
@@ -1431,7 +1355,7 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -1451,9 +1375,14 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
         move |subscription, context, farm_generation| {
             Box::pin(process_tick_by_tick_quote_stream(
                 subscription,
-                context,
+                context.instrument_id,
+                context.prices,
+                context.size_precision,
+                &context.data_sender,
+                context.clock,
+                &context.cancellation_token,
+                &context.data_farm_state,
                 farm_generation,
-                price_magnifier,
                 context.monitor("quotes", farm_generation),
             ))
         },
@@ -1461,11 +1390,17 @@ pub(super) async fn handle_tick_by_tick_quote_subscription(
     .await
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn process_tick_by_tick_quote_stream<S>(
     subscription: &mut S,
-    context: &StreamContext,
+    instrument_id: InstrumentId,
+    prices: IbPriceConverter,
+    size_precision: u8,
+    data_sender: &EventSender<DataEvent>,
+    clock: &'static AtomicTime,
+    cancellation_token: &CancellationToken,
+    data_farm_state: &DataFarmConnectionState,
     farm_generation: u64,
-    price_magnifier: f64,
     mut monitor: SubscriptionMonitor,
 ) -> anyhow::Result<StreamAction>
 where
@@ -1476,8 +1411,8 @@ where
     loop {
         tokio::select! {
             biased;
-            () = context.cancellation_token.cancelled() => return Ok(StreamAction::Stop),
-            () = context.data_farm_state.wait_for_recovery_after(farm_generation) => {
+            () = cancellation_token.cancelled() => return Ok(StreamAction::Stop),
+            () = data_farm_state.wait_for_recovery_after(farm_generation) => {
                 return Ok(StreamAction::Resubscribe);
             }
             () = monitor.wait_for_idle() => {
@@ -1490,8 +1425,8 @@ where
                     Some(Ok(SubscriptionItem::Data(bid_ask))) => {
                         monitor.received_data();
 
-                        if is_sentinel_price(bid_ask.bid_price, Some(bid_ask.bid_size))
-                            || is_sentinel_price(bid_ask.ask_price, Some(bid_ask.ask_size))
+                        if prices.is_sentinel(bid_ask.bid_price, Some(bid_ask.bid_size))
+                            || prices.is_sentinel(bid_ask.ask_price, Some(bid_ask.ask_size))
                             || !bid_ask.bid_size.is_finite()
                             || bid_ask.bid_size <= 0.0
                             || !bid_ask.ask_size.is_finite()
@@ -1499,7 +1434,7 @@ where
                         {
                             tracing::debug!(
                                 "Ignoring incomplete IB quote for {}: bid={}@{}, ask={}@{}",
-                                context.instrument_id,
+                                instrument_id,
                                 bid_ask.bid_size,
                                 bid_ask.bid_price,
                                 bid_ask.ask_size,
@@ -1508,49 +1443,46 @@ where
                             continue;
                         }
                         let ts_event = ib_timestamp_to_unix_nanos(&bid_ask.time);
-                        let ts_init = context.clock.get_time_ns();
+                        let ts_init = clock.get_time_ns();
                         let quote_tick = parse_quote_tick(
-                            context.instrument_id,
-                            Some(bid_ask.bid_price * price_magnifier),
-                            Some(bid_ask.ask_price * price_magnifier),
+                            instrument_id,
+                            Some(bid_ask.bid_price),
+                            Some(bid_ask.ask_price),
                             Some(bid_ask.bid_size),
                             Some(bid_ask.ask_size),
-                            context.price_precision,
-                            context.size_precision,
+                            prices,
+                            size_precision,
                             ts_event,
                             ts_init,
                         );
 
                         match quote_tick {
                             Ok(quote_tick) => {
-                                if context
-                                    .data_sender
+                                if data_sender
                                     .send(DataEvent::Data(Data::Quote(quote_tick)))
                                     .is_err()
                                 {
                                     return Ok(StreamAction::Stop);
                                 }
                             }
-                            Err(e) => log_tick_parse_error("quote", context.instrument_id, &e),
+                            Err(e) => log_tick_parse_error("quote", instrument_id, &e),
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        context.data_farm_state.handle_notice(&notice, context.clock);
+                        data_farm_state.handle_notice(&notice);
                         tracing::debug!(
                             "IB tick-by-tick quote notice for {}: {} - {}",
-                            context.instrument_id,
+                            instrument_id,
                             notice.code,
                             notice.message,
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        context
-                            .data_farm_state
-                            .mark_degraded(farm_generation, context.clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation);
                         if !wait_for_data_farm_recovery_or_cancel(
-                            &context.data_farm_state,
+                            data_farm_state,
                             farm_generation,
-                            &context.cancellation_token,
+                            cancellation_token,
                         )
                         .await
                         {
@@ -1562,7 +1494,7 @@ where
                     None => {
                         tracing::warn!(
                             "IB tick-by-tick quote stream ended unexpectedly for {}; resubscribing",
-                            context.instrument_id,
+                            instrument_id,
                         );
 
                         return Ok(StreamAction::Resubscribe);
@@ -1578,7 +1510,7 @@ pub(super) async fn handle_trade_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
@@ -1597,7 +1529,7 @@ pub(super) async fn handle_trade_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -1620,7 +1552,7 @@ pub(super) async fn handle_trade_subscription(
             Box::pin(process_trade_stream(
                 subscription,
                 context.instrument_id,
-                context.price_precision,
+                context.prices,
                 context.size_precision,
                 &context.data_sender,
                 context.clock,
@@ -1642,7 +1574,7 @@ pub(super) async fn handle_realtime_bars_subscription(
     bar_type_str: String,
     instrument_id: InstrumentId,
     what_to_show: RealtimeWhatToShow,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: EventSender<DataEvent>,
     clock: &'static AtomicTime,
@@ -1671,7 +1603,7 @@ pub(super) async fn handle_realtime_bars_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -1699,7 +1631,7 @@ pub(super) async fn handle_realtime_bars_subscription(
                     subscription,
                     bar_type,
                     &bar_type_str,
-                    context.price_precision,
+                    context.prices,
                     context.size_precision,
                     &context.data_sender,
                     &last_bars,
@@ -1708,7 +1640,6 @@ pub(super) async fn handle_realtime_bars_subscription(
                     &context.cancellation_token,
                     &context.data_farm_state,
                     farm_generation,
-                    context.clock,
                     context.monitor(format!("bars:{bar_type}"), farm_generation),
                 )
                 .await
@@ -1735,7 +1666,7 @@ async fn update_revised_bar_tracking(
 async fn process_trade_stream<S>(
     subscription: &mut S,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
@@ -1771,7 +1702,7 @@ where
                     Some(Ok(SubscriptionItem::Data(tick))) => {
                         monitor.received_data();
 
-                        if is_sentinel_price(tick.price, Some(tick.size))
+                        if prices.is_sentinel(tick.price, Some(tick.size))
                             || !tick.size.is_finite()
                             || tick.size <= 0.0
                         {
@@ -1790,7 +1721,7 @@ where
                             instrument_id,
                             tick.price,
                             tick.size,
-                            price_precision,
+                            prices,
                             size_precision,
                             ts_event,
                             ts_init,
@@ -1805,7 +1736,7 @@ where
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        data_farm_state.handle_notice(&notice, clock);
+                        data_farm_state.handle_notice(&notice);
                         tracing::debug!(
                             "IB trade notice for {}: {} - {}",
                             instrument_id,
@@ -1814,7 +1745,7 @@ where
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        data_farm_state.mark_degraded(farm_generation, clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation);
                         tracing::warn!(
                             "Trade subscription disconnected for {}; waiting for data farm recovery: {:?}",
                             instrument_id,
@@ -1855,7 +1786,7 @@ async fn process_realtime_bar_stream<S>(
     subscription: &mut S,
     bar_type: BarType,
     bar_type_str: &str,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: &EventSender<DataEvent>,
     last_bars: &Arc<tokio::sync::Mutex<AHashMap<String, RealtimeBar>>>,
@@ -1864,7 +1795,6 @@ async fn process_realtime_bar_stream<S>(
     cancellation_token: &CancellationToken,
     data_farm_state: &DataFarmConnectionState,
     farm_generation: u64,
-    clock: &'static AtomicTime,
     mut monitor: SubscriptionMonitor,
 ) -> anyhow::Result<StreamAction>
 where
@@ -1903,7 +1833,7 @@ where
                                 count: bar.count,
                             },
                             bar_type,
-                            price_precision,
+                            prices,
                             size_precision,
                         )?;
 
@@ -1922,7 +1852,7 @@ where
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        data_farm_state.handle_notice(&notice, clock);
+                        data_farm_state.handle_notice(&notice);
                         tracing::debug!(
                             "IB realtime bar notice for {}: {} - {}",
                             bar_type,
@@ -1931,7 +1861,7 @@ where
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        data_farm_state.mark_degraded(farm_generation, clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation);
                         tracing::warn!(
                             "Realtime bar subscription disconnected for {}; waiting for data farm recovery: {:?}",
                             bar_type,
@@ -1971,7 +1901,7 @@ where
 async fn process_market_depth_stream<S>(
     subscription: &mut S,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
@@ -2033,8 +1963,14 @@ where
                             );
                             continue;
                         };
+                        let price = match prices.price(depth.price) {
+                            Ok(price) => price,
+                            Err(e) => {
+                                tracing::warn!("Ignoring IB depth level for {instrument_id}: {e}");
+                                continue;
+                            }
+                        };
                         sequence += 1;
-                        let price = Price::new(depth.price, price_precision);
                         let size = Quantity::new(depth.size, size_precision);
                         let order_id = depth.position as u64;
                         let order = BookOrder::new(order_side, price, size, order_id);
@@ -2065,8 +2001,14 @@ where
                             );
                             continue;
                         };
+                        let price = match prices.price(depth.price) {
+                            Ok(price) => price,
+                            Err(e) => {
+                                tracing::warn!("Ignoring IB depth level for {instrument_id}: {e}");
+                                continue;
+                            }
+                        };
                         sequence += 1;
-                        let price = Price::new(depth.price, price_precision);
                         let size = Quantity::new(depth.size, size_precision);
                         let order_key = (depth.position, depth.market_maker.clone());
                         let order_id = *l2_order_ids.entry(order_key.clone()).or_insert_with(|| {
@@ -2094,7 +2036,7 @@ where
                         }
                     }
                     Some(Ok(SubscriptionItem::Notice(notice))) => {
-                        data_farm_state.handle_notice(&notice, clock);
+                        data_farm_state.handle_notice(&notice);
                         tracing::debug!(
                             "IB market depth notice for {}: {} - {}",
                             instrument_id,
@@ -2103,7 +2045,7 @@ where
                         );
                     }
                     Some(Err(e)) if is_subscription_disconnected_error(&e) => {
-                        data_farm_state.mark_degraded(farm_generation, clock.get_time_ns());
+                        data_farm_state.mark_degraded(farm_generation);
                         tracing::warn!(
                             "Market depth subscription disconnected for {}; waiting for data farm recovery: {:?}",
                             instrument_id,
@@ -2155,7 +2097,7 @@ pub(super) async fn handle_market_depth_subscription(
     client: Arc<ibapi::Client>,
     contract: ibapi::contracts::Contract,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     depth_rows: i32,
     is_smart_depth: bool,
@@ -2174,7 +2116,7 @@ pub(super) async fn handle_market_depth_subscription(
         data_farm_state,
         recovery_scope: DataFarmRecoveryScope::MarketData,
         instrument_id,
-        price_precision,
+        prices,
         size_precision,
     };
 
@@ -2208,7 +2150,7 @@ pub(super) async fn handle_market_depth_subscription(
             Box::pin(process_market_depth_stream(
                 subscription,
                 context.instrument_id,
-                context.price_precision,
+                context.prices,
                 context.size_precision,
                 &context.data_sender,
                 context.clock,
@@ -2226,7 +2168,7 @@ pub(super) async fn handle_market_depth_subscription(
 async fn process_quote_tick_result<I, E>(
     tick_result: Result<I, E>,
     instrument_id: InstrumentId,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     data_sender: &EventSender<DataEvent>,
     quote_cache: &Arc<tokio::sync::Mutex<QuoteCache>>,
@@ -2248,7 +2190,7 @@ where
                     &mut cache,
                     instrument_id,
                     &price,
-                    price_precision,
+                    prices,
                     size_precision,
                     ts_event,
                     ts_init,
@@ -2267,7 +2209,7 @@ where
                     &mut cache,
                     instrument_id,
                     &size,
-                    price_precision,
+                    prices,
                     size_precision,
                     ts_event,
                     ts_init,
@@ -2287,7 +2229,7 @@ where
                     &mut cache,
                     instrument_id,
                     &price_size,
-                    price_precision,
+                    prices,
                     size_precision,
                     ts_event,
                     ts_init,
@@ -2393,8 +2335,7 @@ where
 async fn process_index_price_tick_result<I, E>(
     tick_result: Result<I, E>,
     instrument_id: InstrumentId,
-    price_precision: u8,
-    price_magnifier: i32,
+    prices: IbPriceConverter,
     data_sender: &EventSender<DataEvent>,
     clock: &'static AtomicTime,
 ) -> anyhow::Result<StreamAction>
@@ -2406,7 +2347,7 @@ where
         Ok(SubscriptionItem::Data(TickTypes::Price(price)))
             if matches!(price.tick_type, TickType::Last) =>
         {
-            if is_sentinel_price(price.price, None) {
+            if prices.is_sentinel(price.price, None) {
                 tracing::debug!(
                     "Ignoring IB index price sentinel for {}: {}",
                     instrument_id,
@@ -2417,14 +2358,8 @@ where
 
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
-            let index_price = parse_index_price(
-                instrument_id,
-                price.price,
-                price_precision,
-                price_magnifier,
-                ts_event,
-                ts_init,
-            )?;
+            let index_price =
+                parse_index_price(instrument_id, price.price, prices, ts_event, ts_init)?;
 
             if data_sender
                 .send(DataEvent::Data(Data::IndexPrice(index_price)))
@@ -2438,7 +2373,7 @@ where
         Ok(SubscriptionItem::Data(TickTypes::PriceSize(price_size)))
             if matches!(price_size.price_tick_type, TickType::Last) =>
         {
-            if is_sentinel_price(price_size.price, Some(price_size.size)) {
+            if prices.is_sentinel(price_size.price, Some(price_size.size)) {
                 tracing::debug!(
                     "Ignoring IB index price sentinel for {}: {}",
                     instrument_id,
@@ -2449,14 +2384,8 @@ where
 
             let ts_event = clock.get_time_ns();
             let ts_init = ts_event;
-            let index_price = parse_index_price(
-                instrument_id,
-                price_size.price,
-                price_precision,
-                price_magnifier,
-                ts_event,
-                ts_init,
-            )?;
+            let index_price =
+                parse_index_price(instrument_id, price_size.price, prices, ts_event, ts_init)?;
 
             if data_sender
                 .send(DataEvent::Data(Data::IndexPrice(index_price)))
@@ -2477,7 +2406,7 @@ fn update_quote_from_price_tick(
     cache: &mut QuoteCache,
     instrument_id: InstrumentId,
     price: &TickPrice,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
@@ -2487,7 +2416,7 @@ fn update_quote_from_price_tick(
             instrument_id,
             price.price,
             None,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2496,7 +2425,7 @@ fn update_quote_from_price_tick(
             instrument_id,
             price.price,
             None,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2511,7 +2440,7 @@ fn update_quote_from_size_tick(
     cache: &mut QuoteCache,
     instrument_id: InstrumentId,
     size: &TickSize,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
@@ -2521,7 +2450,7 @@ fn update_quote_from_size_tick(
         TickType::BidSize | TickType::DelayedBidSize => cache.update_bid_size_with_filter(
             instrument_id,
             size.size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2530,7 +2459,7 @@ fn update_quote_from_size_tick(
         TickType::AskSize | TickType::DelayedAskSize => cache.update_ask_size_with_filter(
             instrument_id,
             size.size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2545,7 +2474,7 @@ fn update_quote_from_price_size_tick(
     cache: &mut QuoteCache,
     instrument_id: InstrumentId,
     price_size: &TickPriceSize,
-    price_precision: u8,
+    prices: IbPriceConverter,
     size_precision: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
@@ -2555,7 +2484,7 @@ fn update_quote_from_price_size_tick(
             instrument_id,
             price_size.price,
             Some(price_size.size),
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2564,7 +2493,7 @@ fn update_quote_from_price_size_tick(
             instrument_id,
             price_size.price,
             Some(price_size.size),
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2581,7 +2510,7 @@ fn update_quote_from_price_size_tick(
         TickType::Bid | TickType::DelayedBid => cache.update_bid_size(
             instrument_id,
             price_size.size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2589,7 +2518,7 @@ fn update_quote_from_price_size_tick(
         TickType::Ask | TickType::DelayedAsk => cache.update_ask_size(
             instrument_id,
             price_size.size,
-            price_precision,
+            prices,
             size_precision,
             ts_event,
             ts_init,
@@ -2679,7 +2608,7 @@ mod tests {
     use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
     use nautilus_live::task::TaskSlot;
     use nautilus_model::{
-        data::{Bar, BarType, Data},
+        data::{Bar, BarType, Data, QuoteTick},
         enums::BookAction,
         identifiers::{InstrumentId, Symbol, Venue},
         types::{Price, Quantity},
@@ -2694,10 +2623,13 @@ mod tests {
         QuoteCache, StreamAction, StreamConfig, SubscriptionMonitor,
         process_index_price_tick_result, process_market_depth_stream,
         process_option_greeks_tick_result, process_quote_tick_result, process_realtime_bar_stream,
-        process_trade_stream, send_quote_tick, update_quote_from_price_tick,
-        update_revised_bar_tracking,
+        process_tick_by_tick_quote_stream, process_trade_stream, send_quote_tick,
+        update_quote_from_price_tick, update_revised_bar_tracking,
     };
-    use crate::stubs::ChannelSubscription;
+    use crate::{
+        data::convert::IbPriceConverter,
+        stubs::{ChannelSubscription, currency_pair},
+    };
 
     impl<T: Send + 'static> CancellableStream for ChannelSubscription<T> {
         async fn cancel(&mut self) {
@@ -2733,39 +2665,19 @@ mod tests {
     }
 
     #[rstest]
-    fn test_resolve_historical_bar_replay_start_ns_uses_last_disconnect_when_later() {
-        let first_start_ns = UnixNanos::from(1_000);
-        let last_disconnection_ns = UnixNanos::from(1_500);
-
-        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(
-            first_start_ns,
-            Some(last_disconnection_ns),
+    #[case::nothing_sent(None, 1_000)]
+    #[case::sent_after_start(Some(1_500), 1_500)]
+    #[case::sent_before_start(Some(500), 1_000)]
+    fn test_resolve_historical_bar_resume_ns(
+        #[case] last_sent_ns: Option<u64>,
+        #[case] expected_ns: u64,
+    ) {
+        let resume_ns = super::resolve_historical_bar_resume_ns(
+            UnixNanos::from(1_000),
+            last_sent_ns.map(UnixNanos::from),
         );
 
-        assert_eq!(replay_start_ns, last_disconnection_ns);
-    }
-
-    #[rstest]
-    fn test_resolve_historical_bar_replay_start_ns_uses_first_start_when_no_prior_disconnection() {
-        let first_start_ns = UnixNanos::from(1_000);
-
-        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(first_start_ns, None);
-
-        assert_eq!(replay_start_ns, first_start_ns);
-    }
-
-    #[rstest]
-    fn test_resolve_historical_bar_replay_start_ns_uses_first_start_when_disconnection_before_start()
-     {
-        let first_start_ns = UnixNanos::from(1_000);
-        let last_disconnection_ns = UnixNanos::from(500);
-
-        let replay_start_ns = super::resolve_historical_bar_replay_start_ns(
-            first_start_ns,
-            Some(last_disconnection_ns),
-        );
-
-        assert_eq!(replay_start_ns, first_start_ns);
+        assert_eq!(resume_ns, UnixNanos::from(expected_ns));
     }
 
     #[rstest]
@@ -2783,43 +2695,32 @@ mod tests {
 
     #[rstest]
     fn test_data_farm_state_records_recovery_generation() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:usfarm"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:usfarm",
+        ));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
 
         assert_eq!(data_farm_state.recovery_generation(), 1);
-        assert!(
-            data_farm_state
-                .recovery_since_ns_after_for(DataFarmRecoveryScope::MarketData, 0)
-                .is_some()
-        );
     }
 
     #[rstest]
     fn test_data_farm_state_reports_pending_market_data_recovery() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
         let recovered = notice(2104, "Market data farm connection is OK:usfarm");
 
         assert!(!data_farm_state.recovery_pending(&recovered));
-        data_farm_state.mark_degraded(data_farm_state.recovery_generation(), UnixNanos::from(10));
+        data_farm_state.mark_degraded(data_farm_state.recovery_generation());
         assert!(data_farm_state.recovery_pending(&recovered));
 
-        data_farm_state.handle_notice(&recovered, clock);
+        data_farm_state.handle_notice(&recovered);
         assert!(!data_farm_state.recovery_pending(&recovered));
     }
 
     #[tokio::test]
     async fn test_historical_bar_recovery_tracks_market_data_recovery() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = Arc::new(DataFarmConnectionState::default());
         let initial_generation =
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars);
@@ -2834,14 +2735,11 @@ mod tests {
             state_for_waiter.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars)
         });
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:usfarm"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:usfarm",
+        ));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
 
         let observed_generation = tokio::time::timeout(Duration::from_millis(100), waiter)
             .await
@@ -2849,19 +2747,10 @@ mod tests {
             .unwrap();
 
         assert_eq!(observed_generation, 1);
-        assert!(
-            data_farm_state
-                .recovery_since_ns_after_for(
-                    DataFarmRecoveryScope::HistoricalBars,
-                    initial_generation,
-                )
-                .is_some()
-        );
     }
 
     #[tokio::test]
     async fn test_historical_bar_recovery_tracks_historical_data_recovery() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = Arc::new(DataFarmConnectionState::default());
         let initial_generation =
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars);
@@ -2876,14 +2765,8 @@ mod tests {
             state_for_waiter.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars)
         });
 
-        data_farm_state.handle_notice(
-            &notice(2105, "HMDS data farm connection is broken:ushmds"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2106, "HMDS data farm connection is OK:ushmds"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2105, "HMDS data farm connection is broken:ushmds"));
+        data_farm_state.handle_notice(&notice(2106, "HMDS data farm connection is OK:ushmds"));
 
         let observed_generation = tokio::time::timeout(Duration::from_millis(100), waiter)
             .await
@@ -2900,104 +2783,59 @@ mod tests {
 
     #[rstest]
     fn test_historical_bar_recovery_ignores_stale_subscription_degradation() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
         let initial_generation =
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars);
 
-        data_farm_state.mark_degraded_for(
-            DataFarmRecoveryScope::HistoricalBars,
-            initial_generation,
-            UnixNanos::from(10),
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm"),
-            clock,
-        );
-        data_farm_state.mark_degraded_for(
-            DataFarmRecoveryScope::HistoricalBars,
-            initial_generation,
-            UnixNanos::from(20),
-        );
-        data_farm_state.handle_notice(
-            &notice(2106, "HMDS data farm connection is OK:ushmds"),
-            clock,
-        );
+        data_farm_state
+            .mark_degraded_for(DataFarmRecoveryScope::HistoricalBars, initial_generation);
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
+        data_farm_state
+            .mark_degraded_for(DataFarmRecoveryScope::HistoricalBars, initial_generation);
+        data_farm_state.handle_notice(&notice(2106, "HMDS data farm connection is OK:ushmds"));
 
         let state = data_farm_state.state.lock();
         assert_eq!(state.historical_bars.recovery_generation, 1);
-        assert_eq!(
-            state.historical_bars.recoveries.front(),
-            Some(&(1, UnixNanos::from(10)))
-        );
         assert_eq!(state.market_data.recovery_generation, 0);
         assert_eq!(state.historical_data.recovery_generation, 0);
         assert!(state.degraded_scopes.is_empty());
     }
 
     #[rstest]
-    fn test_historical_bar_recovery_preserves_earliest_cross_family_boundary() {
-        let clock = get_atomic_clock_realtime();
+    fn test_historical_bar_recovery_counts_each_family_recovery() {
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.mark_farm_degraded(
-            DataFarmIdentity {
-                kind: DataFarmKind::MarketData,
-                name: Some(String::from("usfarm")),
-            },
-            UnixNanos::from(20),
-        );
+        data_farm_state.mark_farm_degraded(DataFarmIdentity {
+            kind: DataFarmKind::MarketData,
+            name: Some(String::from("usfarm")),
+        });
 
-        data_farm_state.mark_farm_degraded(
-            DataFarmIdentity {
-                kind: DataFarmKind::HistoricalData,
-                name: Some(String::from("ushmds")),
-            },
-            UnixNanos::from(10),
-        );
+        data_farm_state.mark_farm_degraded(DataFarmIdentity {
+            kind: DataFarmKind::HistoricalData,
+            name: Some(String::from("ushmds")),
+        });
 
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
         let market_recovery_generation =
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars);
-        data_farm_state.handle_notice(
-            &notice(2106, "HMDS data farm connection is OK:ushmds"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2106, "HMDS data farm connection is OK:ushmds"));
 
         assert_eq!(market_recovery_generation, 1);
         assert_eq!(
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars),
             2
         );
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(DataFarmRecoveryScope::HistoricalBars, 0),
-            Some(UnixNanos::from(10))
-        );
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(
-                DataFarmRecoveryScope::HistoricalBars,
-                market_recovery_generation,
-            ),
-            Some(UnixNanos::from(10))
-        );
     }
 
     #[rstest]
     fn test_security_definition_recovery_does_not_advance_historical_bars() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.handle_notice(
-            &notice(2157, "Sec-def data farm connection is broken:secdefil"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2158, "Sec-def data farm connection is OK:secdefil"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2157,
+            "Sec-def data farm connection is broken:secdefil",
+        ));
+        data_farm_state.handle_notice(&notice(2158, "Sec-def data farm connection is OK:secdefil"));
 
         assert_eq!(
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::SecurityDefinition),
@@ -3007,114 +2845,72 @@ mod tests {
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalBars),
             0
         );
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(DataFarmRecoveryScope::HistoricalBars, 0),
-            None
-        );
     }
 
     #[rstest]
     fn test_data_farm_state_recovers_each_reported_farm_independently() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:usfarm.nj"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:cashfarm"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2105, "HMDS data farm connection is broken:ushmds"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:usfarm.nj",
+        ));
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:cashfarm",
+        ));
+        data_farm_state.handle_notice(&notice(2105, "HMDS data farm connection is broken:ushmds"));
 
-        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK"), clock);
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK"));
         assert_eq!(data_farm_state.recovery_generation(), 0);
 
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm.nj"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm.nj"));
         assert_eq!(data_farm_state.recovery_generation(), 1);
         assert_eq!(
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalData),
             0
         );
 
-        data_farm_state.handle_notice(
-            &notice(2106, "HMDS data farm connection is OK:ushmds"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2106, "HMDS data farm connection is OK:ushmds"));
         assert_eq!(data_farm_state.recovery_generation(), 1);
         assert_eq!(
             data_farm_state.recovery_generation_for(DataFarmRecoveryScope::HistoricalData),
             1
         );
 
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:cashfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:cashfarm"));
         assert_eq!(data_farm_state.recovery_generation(), 2);
     }
 
     #[rstest]
-    fn test_data_farm_state_preserves_each_farm_degradation_time() {
-        let clock = get_atomic_clock_realtime();
+    fn test_data_farm_state_counts_each_farm_recovery() {
         let data_farm_state = DataFarmConnectionState::default();
 
-        data_farm_state.mark_farm_degraded(
-            DataFarmIdentity {
-                kind: DataFarmKind::MarketData,
-                name: Some(String::from("usfarm.nj")),
-            },
-            UnixNanos::from(20),
-        );
+        data_farm_state.mark_farm_degraded(DataFarmIdentity {
+            kind: DataFarmKind::MarketData,
+            name: Some(String::from("usfarm.nj")),
+        });
 
-        data_farm_state.mark_farm_degraded(
-            DataFarmIdentity {
-                kind: DataFarmKind::MarketData,
-                name: Some(String::from("cashfarm")),
-            },
-            UnixNanos::from(10),
-        );
+        data_farm_state.mark_farm_degraded(DataFarmIdentity {
+            kind: DataFarmKind::MarketData,
+            name: Some(String::from("cashfarm")),
+        });
 
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm.nj"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:cashfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm.nj"));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:cashfarm"));
         let latest_generation = data_farm_state.recovery_generation();
 
         assert_eq!(latest_generation, 2);
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(DataFarmRecoveryScope::MarketData, 0),
-            Some(UnixNanos::from(10))
-        );
-        assert_eq!(
-            data_farm_state.recovery_since_ns_after_for(DataFarmRecoveryScope::MarketData, 1),
-            Some(UnixNanos::from(10))
-        );
     }
 
     #[rstest]
     fn test_data_farm_state_ignores_stale_subscription_degradation() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
         let initial_generation = data_farm_state.recovery_generation();
 
-        data_farm_state.mark_degraded(initial_generation, UnixNanos::from(10));
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm.nj"),
-            clock,
-        );
-        data_farm_state.mark_degraded(initial_generation, UnixNanos::from(20));
+        data_farm_state.mark_degraded(initial_generation);
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm.nj"));
+        data_farm_state.mark_degraded(initial_generation);
 
         let state = data_farm_state.state.lock();
         assert_eq!(state.market_data.recovery_generation, 1);
@@ -3124,18 +2920,14 @@ mod tests {
 
     #[tokio::test]
     async fn test_data_farm_state_preserves_recovery_during_resubscription() {
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = Arc::new(DataFarmConnectionState::default());
         let initial_generation = data_farm_state.recovery_generation();
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:usfarm.nj"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:usfarm.nj"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:usfarm.nj",
+        ));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:usfarm.nj"));
         data_farm_state
             .wait_for_recovery_after(initial_generation)
             .await;
@@ -3152,14 +2944,11 @@ mod tests {
             state_for_resubscription.recovery_generation()
         });
 
-        data_farm_state.handle_notice(
-            &notice(2103, "Market data farm connection is broken:cashfarm"),
-            clock,
-        );
-        data_farm_state.handle_notice(
-            &notice(2104, "Market data farm connection is OK:cashfarm"),
-            clock,
-        );
+        data_farm_state.handle_notice(&notice(
+            2103,
+            "Market data farm connection is broken:cashfarm",
+        ));
+        data_farm_state.handle_notice(&notice(2104, "Market data farm connection is OK:cashfarm"));
         release_sender.send(()).unwrap();
         let observed_generation = resubscription_task.await.unwrap();
 
@@ -3179,8 +2968,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
-            100,
+            IbPriceConverter::new(2).with_price_magnifier(100),
             &sender.clone().into(),
             clock,
         )
@@ -3211,7 +2999,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3228,7 +3016,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3258,7 +3046,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3275,7 +3063,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3321,7 +3109,7 @@ mod tests {
             process_quote_tick_result(
                 Ok::<_, &'static str>(tick),
                 instrument_id,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender.clone().into(),
                 &quote_cache,
@@ -3373,7 +3161,7 @@ mod tests {
             let action = process_quote_tick_result(
                 Ok::<_, &'static str>(TickTypes::PriceSize(tick)),
                 instrument_id,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender.clone().into(),
                 &quote_cache,
@@ -3413,7 +3201,7 @@ mod tests {
                 size: 7.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3432,7 +3220,7 @@ mod tests {
                 size: 9.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3473,7 +3261,7 @@ mod tests {
                     size,
                 })),
                 instrument_id,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender.clone().into(),
                 &quote_cache,
@@ -3496,7 +3284,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3513,7 +3301,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3540,7 +3328,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3557,7 +3345,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3575,7 +3363,7 @@ mod tests {
                 size: 12.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3591,7 +3379,7 @@ mod tests {
                 size: 13.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3615,7 +3403,7 @@ mod tests {
                 size: 14.0,
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3645,7 +3433,7 @@ mod tests {
                 advanced_order_reject_json: String::new(),
             })),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3671,8 +3459,7 @@ mod tests {
                 attributes: TickAttribute::default(),
             })),
             instrument_id,
-            2,
-            1,
+            IbPriceConverter::new(2),
             &sender.clone().into(),
             clock,
         )
@@ -3693,7 +3480,7 @@ mod tests {
         let result = process_quote_tick_result(
             Err::<TickTypes, _>("boom"),
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &quote_cache,
@@ -3893,7 +3680,7 @@ mod tests {
         process_trade_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -3912,6 +3699,86 @@ mod tests {
             }
             other => panic!("unexpected event: {other:?}"),
         }
+    }
+
+    async fn quote_from_tick_by_tick_stream(
+        prices: IbPriceConverter,
+        bid_price: f64,
+        ask_price: f64,
+    ) -> QuoteTick {
+        let instrument_id = instrument_id();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        let (quote_sender, quote_receiver) = tokio::sync::mpsc::unbounded_channel();
+        let mut subscription = ChannelSubscription::new(quote_receiver);
+        let cancellation_token = CancellationToken::new();
+        let clock = get_atomic_clock_realtime();
+        let data_farm_state = DataFarmConnectionState::default();
+
+        quote_sender
+            .send(Ok(ibapi::market_data::realtime::BidAsk {
+                time: time::OffsetDateTime::UNIX_EPOCH,
+                bid_price,
+                ask_price,
+                bid_size: 10.0,
+                ask_size: 20.0,
+                bid_ask_attribute: ibapi::market_data::realtime::BidAskAttribute {
+                    bid_past_low: false,
+                    ask_past_high: false,
+                },
+            }))
+            .unwrap();
+
+        drop(quote_sender);
+
+        process_tick_by_tick_quote_stream(
+            &mut subscription,
+            instrument_id,
+            prices,
+            0,
+            &sender.clone().into(),
+            clock,
+            &cancellation_token,
+            &data_farm_state,
+            data_farm_state.recovery_generation(),
+            disabled_monitor(),
+        )
+        .await
+        .unwrap();
+
+        match receiver.recv().await.unwrap() {
+            DataEvent::Data(Data::Quote(quote)) => quote,
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_process_tick_by_tick_quote_stream_divides_magnified_quote() {
+        let quote = quote_from_tick_by_tick_stream(
+            IbPriceConverter::new(4).with_price_magnifier(100),
+            486.25,
+            486.5,
+        )
+        .await;
+
+        assert_eq!(quote.bid_price, Price::from("4.8625"));
+        assert_eq!(quote.ask_price, Price::from("4.8650"));
+        assert_eq!(quote.bid_size.as_f64(), 10.0);
+        assert_eq!(quote.ask_size.as_f64(), 20.0);
+    }
+
+    #[tokio::test]
+    async fn test_process_tick_by_tick_quote_stream_rounds_fx_bid_down_and_ask_up() {
+        let instrument = currency_pair("EUR", "USD", 5, "0.00005");
+
+        let quote = quote_from_tick_by_tick_stream(
+            IbPriceConverter::for_instrument(&instrument, 1),
+            1.12098,
+            1.12099,
+        )
+        .await;
+
+        assert_eq!(quote.bid_price, Price::from("1.12095"));
+        assert_eq!(quote.ask_price, Price::from("1.12100"));
     }
 
     #[tokio::test]
@@ -3940,12 +3807,10 @@ mod tests {
                     .state
                     .lock()
                     .degraded_scopes
-                    .contains_key(&DataFarmRecoveryScope::MarketData)
+                    .contains(&DataFarmRecoveryScope::MarketData)
                 {
-                    state_for_recovery.handle_notice(
-                        &notice(2104, "Market data farm connection is OK:usfarm"),
-                        clock,
-                    );
+                    state_for_recovery
+                        .handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
                     break;
                 }
 
@@ -3956,7 +3821,7 @@ mod tests {
         let action = process_trade_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -3983,7 +3848,6 @@ mod tests {
         let cancellation_token = CancellationToken::new();
         let last_bars = Arc::new(tokio::sync::Mutex::new(AHashMap::new()));
         let timeout_tasks = Arc::new(tokio::sync::Mutex::new(AHashMap::new()));
-        let clock = get_atomic_clock_realtime();
         let data_farm_state = DataFarmConnectionState::default();
 
         bar_sender
@@ -4005,7 +3869,7 @@ mod tests {
             &mut subscription,
             bar_type,
             &bar_type_str,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             &last_bars,
@@ -4014,7 +3878,6 @@ mod tests {
             &cancellation_token,
             &data_farm_state,
             data_farm_state.recovery_generation(),
-            clock,
             disabled_monitor(),
         )
         .await
@@ -4080,7 +3943,7 @@ mod tests {
         process_market_depth_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -4156,7 +4019,7 @@ mod tests {
             let action = process_market_depth_stream(
                 &mut subscription,
                 instrument_id,
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender.clone().into(),
                 clock,
@@ -4225,7 +4088,7 @@ mod tests {
         let action = process_market_depth_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -4293,7 +4156,7 @@ mod tests {
         process_trade_stream(
             &mut subscription,
             instrument_id,
-            2,
+            IbPriceConverter::new(2),
             0,
             &sender.clone().into(),
             clock,
@@ -4342,7 +4205,7 @@ mod tests {
                 price: 100.0,
                 attributes: TickAttribute::default(),
             },
-            2,
+            IbPriceConverter::new(2),
             0,
             nautilus_core::UnixNanos::new(1),
             nautilus_core::UnixNanos::new(1),
@@ -4451,7 +4314,7 @@ mod tests {
         first.received_data();
         second
             .data_farm_state
-            .handle_notice(&notice(2108, "Market data farm is inactive"), second.clock);
+            .handle_notice(&notice(2108, "Market data farm is inactive"));
         assert_eq!(first.deadline, Some(started + Duration::from_secs(7)));
         assert_eq!(second.deadline, Some(started + Duration::from_secs(5)));
         tokio::time::advance(Duration::from_secs(3)).await;
@@ -4473,14 +4336,13 @@ mod tests {
         match state {
             "cancel" => monitor.cancellation_token.cancel(),
             "recovered" => {
-                monitor.data_farm_state.handle_notice(
-                    &notice(2103, "Market data farm connection is broken:usfarm"),
-                    monitor.clock,
-                );
-                monitor.data_farm_state.handle_notice(
-                    &notice(2104, "Market data farm connection is OK:usfarm"),
-                    monitor.clock,
-                );
+                monitor.data_farm_state.handle_notice(&notice(
+                    2103,
+                    "Market data farm connection is broken:usfarm",
+                ));
+                monitor
+                    .data_farm_state
+                    .handle_notice(&notice(2104, "Market data farm connection is OK:usfarm"));
             }
             _ => unreachable!(),
         }
@@ -4518,7 +4380,7 @@ mod tests {
             process_trade_stream(
                 &mut subscription,
                 instrument_id(),
-                2,
+                IbPriceConverter::new(2),
                 0,
                 &sender,
                 clock,
@@ -4535,7 +4397,7 @@ mod tests {
         tokio::time::advance(Duration::from_secs(2)).await;
 
         for _ in 0..1000 {
-            notices.handle_notice(&notice(2108, "Market data farm is inactive"), clock);
+            notices.handle_notice(&notice(2108, "Market data farm is inactive"));
         }
 
         tokio::time::advance(Duration::from_secs(3)).await;
@@ -4578,9 +4440,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn farm_notice_does_not_mask_subscription_inactivity() {
         let (mut monitor, mut receiver) = idle_monitor(Some(5));
-        monitor
-            .data_farm_state
-            .mark_degraded(0, UnixNanos::from(17_u64));
+        monitor.data_farm_state.mark_degraded(0);
         tokio::time::advance(Duration::from_secs(5)).await;
         monitor.wait_for_idle().await;
         assert!(monitor.notify_idle());
@@ -4676,5 +4536,182 @@ mod tests {
         );
         assert_eq!(replayed, [vec![], vec![]]);
         assert_eq!(completion.deadline(), Some(secs(182.0)));
+    }
+
+    const MINUTE_NS: u64 = 60_000_000_000;
+
+    fn historical_bar_stream_state() -> super::HistoricalBarStreamState {
+        super::HistoricalBarStreamState {
+            first_start_ns: secs(0.0),
+            resume_ns: secs(0.0),
+            last_sent_ns: None,
+            completion: super::HistoricalBarCompletion::default(),
+        }
+    }
+
+    fn replay(
+        state: &mut super::HistoricalBarStreamState,
+        handle_revised_bars: bool,
+        batch: &[Bar],
+        now: UnixNanos,
+    ) -> Vec<Bar> {
+        let mut published = Vec::new();
+
+        for bar in batch {
+            super::dispatch_historical_bar(state, handle_revised_bars, now, *bar, |bar| {
+                published.push(bar);
+                true
+            });
+        }
+        published
+    }
+
+    #[rstest]
+    fn test_historical_bar_first_subscription_starts_one_bar_before_first_start() {
+        let mut state = historical_bar_stream_state();
+        state.first_start_ns = secs(120.0);
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+
+        assert_eq!(state.resume_ns, secs(120.0));
+        assert_eq!(request_start_ns, secs(60.0));
+    }
+
+    #[rstest]
+    fn test_historical_bar_repeated_resubscribe_keeps_resume_point() {
+        let mut state = historical_bar_stream_state();
+        state.begin_subscription(MINUTE_NS);
+        replay(&mut state, false, &[minute_bar(60, "100.00")], secs(100.0));
+
+        let first_retry = state.begin_subscription(MINUTE_NS);
+        let second_retry = state.begin_subscription(MINUTE_NS);
+
+        assert_eq!(first_retry, secs(0.0));
+        assert_eq!(second_retry, secs(0.0));
+        assert_eq!(state.resume_ns, secs(60.0));
+    }
+
+    // Holds a revision of the bar closing at 120 s, resubscribes at 200 s (past the
+    // 122 s grace deadline) and replays a batch whose bar for it carries its final values
+    #[rstest]
+    fn test_historical_bar_resubscribe_after_grace_publishes_replayed_final() {
+        let mut state = historical_bar_stream_state();
+        replay(
+            &mut state,
+            false,
+            &[minute_bar(60, "100.00"), minute_bar(120, "100.10")],
+            secs(115.0),
+        );
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+
+        // Re-entry: an expired deadline wins against the replay read
+        let expired = state.completion.expire(secs(200.0));
+        let mut published = Vec::new();
+        super::send_bars(&mut state, expired, |bar| {
+            published.push(bar);
+            true
+        });
+        published.extend(replay(
+            &mut state,
+            false,
+            &[minute_bar(60, "100.00"), minute_bar(120, "100.20")],
+            secs(200.0),
+        ));
+
+        assert_eq!(published, vec![minute_bar(120, "100.20")]);
+        assert_eq!(request_start_ns, secs(0.0));
+    }
+
+    #[rstest]
+    fn test_historical_bar_revised_resubscribe_resends_last_sent_bar() {
+        let mut state = historical_bar_stream_state();
+        state.begin_subscription(MINUTE_NS);
+        replay(
+            &mut state,
+            true,
+            &[minute_bar(180, "100.10"), minute_bar(240, "100.15")],
+            secs(230.0),
+        );
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+        let sent = replay(
+            &mut state,
+            true,
+            &[
+                minute_bar(120, "100.00"),
+                minute_bar(180, "100.10"),
+                minute_bar(240, "100.20"),
+                minute_bar(300, "100.30"),
+            ],
+            secs(400.0),
+        );
+
+        assert_eq!(request_start_ns, secs(180.0));
+        assert_eq!(
+            sent,
+            vec![minute_bar(240, "100.20"), minute_bar(300, "100.30")]
+        );
+        assert_eq!(state.last_sent_ns, Some(secs(300.0)));
+    }
+
+    #[rstest]
+    fn test_historical_bar_completed_resubscribe_skips_last_sent_bar() {
+        let mut state = historical_bar_stream_state();
+        state.begin_subscription(MINUTE_NS);
+        replay(
+            &mut state,
+            false,
+            &[minute_bar(180, "100.10"), minute_bar(240, "100.20")],
+            secs(300.0),
+        );
+
+        let request_start_ns = state.begin_subscription(MINUTE_NS);
+        let sent = replay(
+            &mut state,
+            false,
+            &[
+                minute_bar(120, "100.00"),
+                minute_bar(180, "100.10"),
+                minute_bar(240, "100.20"),
+                minute_bar(300, "100.30"),
+            ],
+            secs(400.0),
+        );
+
+        assert_eq!(request_start_ns, secs(180.0));
+        assert_eq!(sent, vec![minute_bar(300, "100.30")]);
+        assert_eq!(state.last_sent_ns, Some(secs(300.0)));
+    }
+
+    #[rstest]
+    fn test_send_bars_records_latest_close() {
+        let mut state = historical_bar_stream_state();
+
+        let sent = super::send_bars(
+            &mut state,
+            [minute_bar(180, "100.10"), minute_bar(120, "100.00")],
+            |_| true,
+        );
+
+        assert!(sent);
+        assert_eq!(state.last_sent_ns, Some(secs(180.0)));
+    }
+
+    #[rstest]
+    fn test_historical_bar_expired_bar_is_recorded_as_sent() {
+        let mut state = historical_bar_stream_state();
+        replay(&mut state, false, &[minute_bar(120, "100.10")], secs(115.0));
+        assert_eq!(state.last_sent_ns, None);
+
+        let expired = state.completion.expire(secs(125.0));
+        let mut published = Vec::new();
+        super::send_bars(&mut state, expired, |bar| {
+            published.push(bar);
+            true
+        });
+
+        assert_eq!(published, vec![minute_bar(120, "100.10")]);
+        assert_eq!(state.last_sent_ns, Some(secs(120.0)));
     }
 }

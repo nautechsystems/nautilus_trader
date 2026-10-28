@@ -1,7 +1,7 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "85af65c2b15d8a3c14bed2d09f99c1089fb7c93d"
-manifest_sha256 = "591f89f0394dfd8a02a4c3bda884dbdc02298d2da3a1cb4861ed8d4c6d67e97e"
+revision = "80bf50eee134222e978fadfbfc5d7a3b3d30ebcf"
+manifest_sha256 = "e2e91502b0682520f8a8cc302ce87b33687cef8421f4c4244103022cfb4ff866"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
 
@@ -38,13 +38,13 @@ executable = false
 [[file]]
 artifact = "pre-commit-zizmor"
 path = ".nautilus-engineering/pre-commit/zizmor.yaml"
-sha256 = "c156b701b14fea09ed9e6af84c20e3065a26d5240a22c85ce174ce8388c215f0"
+sha256 = "87887f9f623502a425f560e8a96f86a18857a7c30fd852d65418f8a262a82190"
 executable = false
 
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "6f4295b8774b21485587df90805b850b9db23fa7d3705289a3514a2e1f4ac4e4"
+sha256 = "88a7fb5d58cd326f50ac2edb3fadf42b407c1d82d767a5877fd4ea4ea77c3c72"
 executable = false
 
 [[file]]
@@ -62,7 +62,7 @@ executable = false
 [[file]]
 artifact = "markdown-standard"
 path = "docs/developer_guide/markdown_style.md"
-sha256 = "2ee144dd592ea5aa4f8c6d53feeb2c08e491f2dc4854932e31840047b0e9627a"
+sha256 = "392d51f8f317b6c0ea73acac5767d547c7ed3085db8962af662350a47016e553"
 executable = false
 
 [[file]]
@@ -104,7 +104,7 @@ executable = true
 [[file]]
 artifact = "github-action-pin-check"
 path = "scripts/ci/check-github-action-shas.sh"
-sha256 = "96d69ba4c985fb7e19b9274d40c2bfdd5f54f607735af73f8f21f7a0c81d7191"
+sha256 = "c65a312d41472d58898f0ec6617a03510e116fc1957875ffc0464df8e5102601"
 executable = true
 
 [[file]]
@@ -134,7 +134,7 @@ executable = true
 [[file]]
 artifact = "security-audit"
 path = "scripts/security-audit.py"
-sha256 = "19e3739aed79265c576125f73c72a3a171947193cae8b99f70d56745d306f2fb"
+sha256 = "00c190ea859d95941b60d8b4d8fe5721d2c2f80403d445b46d229bf44080b8d7"
 executable = false
 
 [[file]]

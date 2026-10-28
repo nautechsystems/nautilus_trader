@@ -15,6 +15,7 @@
 
 use std::fmt::Display;
 
+use indexmap::IndexMap;
 use nautilus_core::{
     Params,
     params::from_pydict,
@@ -154,15 +155,17 @@ pub(crate) fn write_record_params_from_py(
     params: Option<Py<PyDict>>,
 ) -> PyResult<Option<Params>> {
     let mut params = match params {
-        Some(params) => from_pydict(py, &params)?.unwrap_or_default(),
-        None => Params::new(),
+        Some(params) => from_pydict(py, &params)?
+            .map(|params| IndexMap::clone(&params))
+            .unwrap_or_default(),
+        None => IndexMap::new(),
     };
 
     if let Some(identifier) = identifier {
         params.insert("identifier".to_string(), json!(identifier));
     }
 
-    Ok((!params.is_empty()).then_some(params))
+    Ok((!params.is_empty()).then(|| Params::new(params)))
 }
 
 pub(crate) fn writer_record_filter_from_py(

@@ -18,6 +18,7 @@
 use std::str::FromStr;
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 pub use nautilus_core::serialization::{
     deserialize_empty_string_as_none, deserialize_empty_ustr_as_none,
@@ -235,7 +236,14 @@ pub fn okx_instrument_type(instrument: &InstrumentAny) -> anyhow::Result<OKXInst
 /// Returns whether the OKX symbol uses the spread ID format.
 #[must_use]
 pub fn is_okx_spread_symbol(symbol: &str) -> bool {
-    symbol.contains('_')
+    let Some((base, _)) = symbol.split_once('-') else {
+        return false;
+    };
+
+    symbol.split('_').skip(1).any(|leg| {
+        leg.split_once('-')
+            .is_some_and(|(leg_base, _)| leg_base == base)
+    })
 }
 
 /// Parses `OKXInstrumentType` from an instrument symbol.
@@ -905,6 +913,8 @@ pub fn parse_order_status_report(
         None,
     );
 
+    report.venue_position_id = venue_position_id(instrument_id, order.pos_side);
+
     // Optional fields
     if !is_market_price(&order.px)
         && let Ok(decimal) = Decimal::from_str(&order.px)
@@ -1117,26 +1127,7 @@ pub fn parse_position_status_report(
     // Convert to absolute quantity (positions are always positive in Nautilus)
     let quantity = Quantity::from_decimal_dp(quantity_dec, size_precision)?;
 
-    // Generate venue position ID only for Long/Short mode (hedging)
-    // In Net mode, venue_position_id must be None to signal NETTING OMS behavior
-    let venue_position_id = match position.pos_side {
-        OKXPositionSide::Long => {
-            // Long/Short mode - Long leg: append "-LONG"
-            position
-                .pos_id
-                .map(|pos_id| PositionId::new(format!("{pos_id}-LONG")))
-        }
-        OKXPositionSide::Short => {
-            // Long/Short mode - Short leg: append "-SHORT"
-            position
-                .pos_id
-                .map(|pos_id| PositionId::new(format!("{pos_id}-SHORT")))
-        }
-        OKXPositionSide::Net | OKXPositionSide::None => {
-            // Net mode: None signals NETTING OMS (Nautilus uses its own position IDs)
-            None
-        }
-    };
+    let venue_position_id = venue_position_id(instrument_id, position.pos_side);
 
     let avg_px_open = if position.avg_px.is_empty() {
         None
@@ -1202,11 +1193,34 @@ pub fn parse_fill_report(
         commission,
         liquidity_side,
         client_order_id,
-        None, // venue_position_id not provided by OKX fills
+        venue_position_id(
+            instrument_id,
+            detail.pos_side.unwrap_or(OKXPositionSide::None),
+        ),
         ts_event,
         ts_init,
         None, // Will generate a new UUID4
     ))
+}
+
+pub(crate) fn venue_position_id(
+    instrument_id: InstrumentId,
+    position_side: OKXPositionSide,
+) -> Option<PositionId> {
+    let suffix = match position_side {
+        OKXPositionSide::Long => "LONG",
+        OKXPositionSide::Short => "SHORT",
+        OKXPositionSide::Net | OKXPositionSide::None => return None,
+    };
+
+    if !matches!(
+        okx_instrument_type_from_symbol(instrument_id.symbol.as_str()),
+        OKXInstrumentType::Swap | OKXInstrumentType::Futures
+    ) {
+        return None;
+    }
+
+    Some(PositionId::new(format!("{instrument_id}-{suffix}")))
 }
 
 /// Parses an OKX spread order record into a Nautilus [`OrderStatusReport`].
@@ -1734,43 +1748,44 @@ fn spread_settlement_currency(
 }
 
 fn build_spread_info(definition: &OKXSpread) -> Params {
-    let mut info = Params::new();
-    info.insert(
-        "okx_sprd_id".to_string(),
-        serde_json::json!(definition.sprd_id),
-    );
-    info.insert(
-        "okx_sprd_type".to_string(),
-        serde_json::json!(spread_type_literal(definition.sprd_type)),
-    );
-    info.insert(
-        "okx_spread_state".to_string(),
-        serde_json::json!(spread_state_literal(definition.state)),
-    );
-    info.insert(
-        "okx_base_ccy".to_string(),
-        serde_json::json!(definition.base_ccy),
-    );
-    info.insert(
-        "okx_sz_ccy".to_string(),
-        serde_json::json!(definition.sz_ccy),
-    );
-    info.insert(
-        "okx_quote_ccy".to_string(),
-        serde_json::json!(definition.quote_ccy),
-    );
-    info.insert(
-        "okx_list_time".to_string(),
-        serde_json::json!(definition.list_time),
-    );
-    info.insert(
-        "okx_exp_time".to_string(),
-        serde_json::json!(definition.exp_time),
-    );
-    info.insert(
-        "okx_u_time".to_string(),
-        serde_json::json!(definition.u_time),
-    );
+    let mut info = IndexMap::from([
+        (
+            "okx_sprd_id".to_string(),
+            serde_json::json!(definition.sprd_id),
+        ),
+        (
+            "okx_sprd_type".to_string(),
+            serde_json::json!(spread_type_literal(definition.sprd_type)),
+        ),
+        (
+            "okx_spread_state".to_string(),
+            serde_json::json!(spread_state_literal(definition.state)),
+        ),
+        (
+            "okx_base_ccy".to_string(),
+            serde_json::json!(definition.base_ccy),
+        ),
+        (
+            "okx_sz_ccy".to_string(),
+            serde_json::json!(definition.sz_ccy),
+        ),
+        (
+            "okx_quote_ccy".to_string(),
+            serde_json::json!(definition.quote_ccy),
+        ),
+        (
+            "okx_list_time".to_string(),
+            serde_json::json!(definition.list_time),
+        ),
+        (
+            "okx_exp_time".to_string(),
+            serde_json::json!(definition.exp_time),
+        ),
+        (
+            "okx_u_time".to_string(),
+            serde_json::json!(definition.u_time),
+        ),
+    ]);
 
     let legs = definition
         .legs
@@ -1787,7 +1802,7 @@ fn build_spread_info(definition: &OKXSpread) -> Params {
         .collect::<Vec<_>>();
     info.insert("okx_spread_legs".to_string(), serde_json::json!(legs));
 
-    info
+    Params::new(info)
 }
 
 fn spread_type_literal(spread_type: OKXSpreadType) -> &'static str {
@@ -2005,7 +2020,7 @@ impl InstrumentParser for SpotInstrumentParser {
 
         // Parse multiplier as product of ct_mult and ct_val
         let multiplier = parse_multiplier_product(definition)?;
-        let info = build_price_limit_info(definition);
+        let info = build_price_limit_info(definition).map(Params::new);
 
         let instrument = CurrencyPair::builder()
             .instrument_id(common.instrument_id)
@@ -2166,7 +2181,7 @@ pub fn parse_swap_instrument(
     let min_notional: Option<Money> = None;
     let max_price = None; // TBD
     let min_price = None; // TBD
-    let info = build_price_limit_info(definition);
+    let info = build_price_limit_info(definition).map(Params::new);
 
     let instrument = CryptoPerpetual::builder()
         .instrument_id(instrument_id)
@@ -2357,11 +2372,13 @@ fn build_futures_info(definition: &OKXInstrument) -> Option<Params> {
         );
     }
 
-    (!info.is_empty()).then_some(info)
+    (!info.is_empty()).then(|| Params::new(info))
 }
 
-fn build_price_limit_info(definition: &OKXInstrument) -> Option<Params> {
-    let mut info = Params::new();
+fn build_price_limit_info(
+    definition: &OKXInstrument,
+) -> Option<IndexMap<String, serde_json::Value>> {
+    let mut info = IndexMap::new();
 
     insert_non_empty_info(
         &mut info,
@@ -2404,7 +2421,7 @@ fn build_price_limit_info(definition: &OKXInstrument) -> Option<Params> {
     (!info.is_empty()).then_some(info)
 }
 
-fn insert_non_empty_info(info: &mut Params, key: &str, value: &str) {
+fn insert_non_empty_info(info: &mut IndexMap<String, serde_json::Value>, key: &str, value: &str) {
     if !value.is_empty() {
         info.insert(
             key.to_string(),
@@ -4613,15 +4630,23 @@ mod tests {
     }
 
     #[rstest]
-    fn test_fill_report_parsing() {
+    #[case(None, None)]
+    #[case(Some(OKXPositionSide::Net), None)]
+    #[case(Some(OKXPositionSide::Long), Some("BTC-USDT-SWAP.OKX-LONG"))]
+    #[case(Some(OKXPositionSide::Short), Some("BTC-USDT-SWAP.OKX-SHORT"))]
+    fn test_fill_report_parsing(
+        #[case] pos_side: Option<OKXPositionSide>,
+        #[case] expected: Option<&str>,
+    ) {
         // Create a mock transaction detail for testing
         let transaction_detail = crate::http::models::OKXTransactionDetail {
-            inst_type: OKXInstrumentType::Spot,
-            inst_id: Ustr::from("BTC-USDT"),
+            inst_type: OKXInstrumentType::Swap,
+            inst_id: Ustr::from("BTC-USDT-SWAP"),
             trade_id: Ustr::from("12345"),
             ord_id: Ustr::from("67890"),
             cl_ord_id: Ustr::from("client_123"),
             bill_id: Ustr::from("bill_456"),
+            pos_side,
             fill_px: "42219.5".to_string(),
             fill_sz: "0.001".to_string(),
             side: OKXSide::Buy,
@@ -4632,7 +4657,7 @@ mod tests {
         };
 
         let account_id = AccountId::new("OKX-001");
-        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
         let fill_report = parse_fill_report(
             &transaction_detail,
             account_id,
@@ -4643,6 +4668,10 @@ mod tests {
         )
         .unwrap();
 
+        assert_eq!(
+            fill_report.venue_position_id,
+            expected.map(PositionId::from)
+        );
         assert_eq!(fill_report.account_id, account_id);
         assert_eq!(fill_report.instrument_id, instrument_id);
         assert_eq!(fill_report.trade_id, TradeId::new("12345"));
@@ -5109,7 +5138,7 @@ mod tests {
         // Long/Short mode - Long leg: "-LONG" suffix
         assert_eq!(
             report.venue_position_id,
-            Some(PositionId::new("11111-LONG"))
+            Some(PositionId::new(format!("{instrument_id}-LONG")))
         );
     }
 
@@ -5187,7 +5216,7 @@ mod tests {
         // Long/Short mode - Short leg: "-SHORT" suffix
         assert_eq!(
             report.venue_position_id,
-            Some(PositionId::new("22222-SHORT"))
+            Some(PositionId::new(format!("{instrument_id}-SHORT")))
         );
     }
 
@@ -6286,9 +6315,28 @@ mod tests {
     }
 
     #[rstest]
+    #[case("BTC-USDT", false)]
+    #[case("BTC-USDT-SWAP", false)]
+    #[case("BTC-USD_UM-SWAP", false)]
+    #[case("BTC-USD_UM-261030", false)]
+    #[case("BTC-USD_UM_XPERP-310404", false)]
+    #[case("BTC-USD-250328-50000-C", false)]
+    #[case("BTC-USDT_BTC-USDT-SWAP", true)]
+    #[case("ETH-USD-SWAP_ETH-USD-231229", true)]
+    #[case("BTC-USD_UM-261030_BTC-USD_UM-261225", true)]
+    #[case("BTC-USD_UM_XPERP-310404_BTC-USD_UM-261030", true)]
+    #[case("BTC-USD-250328-50000-C_BTC-USD-250328-60000-C", true)]
+    fn test_is_okx_spread_symbol(#[case] symbol: &str, #[case] expected: bool) {
+        assert_eq!(is_okx_spread_symbol(symbol), expected);
+    }
+
+    #[rstest]
     #[case("BTC-USDT", OKXInstrumentType::Spot)]
     #[case("BTC-USDT-SWAP", OKXInstrumentType::Swap)]
     #[case("BTC-USDT-250328", OKXInstrumentType::Futures)]
+    #[case("BTC-USD_UM-SWAP", OKXInstrumentType::Swap)]
+    #[case("BTC-USD_UM-261030", OKXInstrumentType::Futures)]
+    #[case("BTC-USD_UM_XPERP-310404", OKXInstrumentType::Futures)]
     #[case("BTC-USD-250328-50000-C", OKXInstrumentType::Option)]
     #[case("BTC-ABOVE-DAILY-260224-1600-65000", OKXInstrumentType::Events)]
     fn test_okx_instrument_type_from_symbol(
@@ -6466,5 +6514,60 @@ mod tests {
 
         assert_eq!(info.get_u64("okx_rpi_min_level"), Some(5));
         assert_eq!(info.get_str("okx_rpi_min_px_band"), Some("20"));
+    }
+
+    #[rstest]
+    #[case(
+        "ETH-USDT-SWAP.OKX",
+        OKXPositionSide::Long,
+        Some("ETH-USDT-SWAP.OKX-LONG")
+    )]
+    #[case(
+        "ETH-USDT-271231.OKX",
+        OKXPositionSide::Short,
+        Some("ETH-USDT-271231.OKX-SHORT")
+    )]
+    #[case("ETH-USDT-SWAP.OKX", OKXPositionSide::Net, None)]
+    #[case("ETH-USDT-SWAP.OKX", OKXPositionSide::None, None)]
+    #[case("ETH-USDT.OKX", OKXPositionSide::Long, None)]
+    #[case("ETH-USD-271231-2000-C.OKX", OKXPositionSide::Short, None)]
+    fn test_venue_position_id(
+        #[case] instrument_id: &str,
+        #[case] side: OKXPositionSide,
+        #[case] expected: Option<&str>,
+    ) {
+        assert_eq!(
+            venue_position_id(InstrumentId::from(instrument_id), side),
+            expected.map(PositionId::from)
+        );
+    }
+
+    #[rstest]
+    #[case(Some("long"), Some("BTC-USDT-SWAP.OKX-LONG"))]
+    #[case(Some("short"), Some("BTC-USDT-SWAP.OKX-SHORT"))]
+    #[case(Some("net"), None)]
+    #[case(None, None)]
+    fn test_fill_position_id_from_wire(#[case] side: Option<&str>, #[case] expected: Option<&str>) {
+        let mut payload: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/http_transaction_detail.json"))
+                .unwrap();
+
+        if let Some(side) = side {
+            payload["posSide"] = serde_json::Value::String(side.to_string());
+        } else {
+            payload.as_object_mut().unwrap().remove("posSide");
+        }
+
+        let detail: OKXTransactionDetail = serde_json::from_value(payload).unwrap();
+        let report = parse_fill_report(
+            &detail,
+            AccountId::from("OKX-001"),
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            2,
+            8,
+            UnixNanos::default(),
+        )
+        .unwrap();
+        assert_eq!(report.venue_position_id, expected.map(PositionId::from));
     }
 }

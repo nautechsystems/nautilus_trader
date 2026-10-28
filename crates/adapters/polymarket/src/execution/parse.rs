@@ -178,6 +178,8 @@ pub(super) fn parse_validated_order_status_report(
     // `Matched` does not mean fully filled, so resolve the status from the filled quantity.
     let order_status = if order.status == PolymarketOrderStatus::Matched {
         recovered_terminal_order_status(time_in_force, quantity, raw_filled_qty)
+    } else if order.status == PolymarketOrderStatus::Live && order.size_matched > Decimal::ZERO {
+        OrderStatus::PartiallyFilled
     } else {
         OrderStatus::from(order.status)
     };
@@ -594,16 +596,27 @@ pub fn compute_commission(
     price: Decimal,
     liquidity_side: LiquiditySide,
 ) -> anyhow::Result<Decimal> {
+    let commission =
+        compute_commission_unrounded(fee_rate, fee_exponent, size, price, liquidity_side)?;
+    Ok(commission.round_dp_with_strategy(5, RoundingStrategy::ToZero))
+}
+
+/// Computes commission before applying the five-decimal floor to a complete trade.
+pub(crate) fn compute_commission_unrounded(
+    fee_rate: Decimal,
+    fee_exponent: Decimal,
+    size: Decimal,
+    price: Decimal,
+    liquidity_side: LiquiditySide,
+) -> anyhow::Result<Decimal> {
     anyhow::ensure!(size >= Decimal::ZERO, "fee quantity must be non-negative");
     let rate = fee_curve_rate(fee_rate, price, fee_exponent)?;
 
     if liquidity_side != LiquiditySide::Taker {
         return Ok(Decimal::ZERO);
     }
-    let commission = size
-        .checked_mul(rate)
-        .context("commission calculation overflow")?;
-    Ok(commission.round_dp_with_strategy(5, RoundingStrategy::ToZero))
+    size.checked_mul(rate)
+        .context("commission calculation overflow")
 }
 
 fn fee_curve_rate(
@@ -858,6 +871,7 @@ pub fn parse_timestamp(ts_str: &str) -> Option<UnixNanos> {
 
 #[cfg(test)]
 mod tests {
+    use indexmap::IndexMap;
     use nautilus_execution::models::fee::{FeeModel, ProbabilityPriceFeeModel};
     use nautilus_model::{
         enums::{OrderSide, OrderType},
@@ -1610,7 +1624,7 @@ mod tests {
         assert_eq!(report.order_side, Some(OrderSide::Buy));
         assert_eq!(report.order_type, OrderType::Limit);
         assert_eq!(report.time_in_force, TimeInForce::Gtc);
-        assert_eq!(report.order_status, OrderStatus::Accepted);
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
         assert_eq!(report.price, Some(Price::from("0.5000")));
         assert_eq!(report.price.unwrap().precision, 4);
         assert_eq!(report.quantity, Quantity::from("100.000000"));
@@ -1628,6 +1642,40 @@ mod tests {
         assert_eq!(report.ts_init, UnixNanos::from(1_000_000_000u64));
         // Fixture has expiration=null which must surface as no expire_time.
         assert_eq!(report.expire_time, None);
+    }
+
+    #[rstest]
+    #[case::unfilled(PolymarketOrderStatus::Live, dec!(0), OrderStatus::Accepted)]
+    #[case::minimum_fill(PolymarketOrderStatus::Live, dec!(0.000001), OrderStatus::PartiallyFilled)]
+    #[case::partially_filled(PolymarketOrderStatus::Live, dec!(25), OrderStatus::PartiallyFilled)]
+    #[case::dust_leaves(PolymarketOrderStatus::Live, dec!(99.995), OrderStatus::PartiallyFilled)]
+    #[case::canceled(PolymarketOrderStatus::Canceled, dec!(25), OrderStatus::Canceled)]
+    #[case::expired(PolymarketOrderStatus::CanceledMarketResolved, dec!(25), OrderStatus::Expired)]
+    #[case::delayed(PolymarketOrderStatus::Delayed, dec!(0), OrderStatus::Accepted)]
+    fn test_parse_order_status_report_resting_status(
+        #[case] status: PolymarketOrderStatus,
+        #[case] size_matched: Decimal,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let mut order: PolymarketOpenOrder =
+            serde_json::from_str(include_str!("../../test_data/http_open_order.json")).unwrap();
+        order.status = status;
+        order.size_matched = size_matched;
+
+        let report = parse_order_status_report(
+            &order,
+            InstrumentId::from("TEST-TOKEN.POLYMARKET"),
+            AccountId::from("POLYMARKET-001"),
+            None,
+            4,
+            6,
+            UnixNanos::from(1_000_000_000u64),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.quantity, Quantity::from("100.000000"));
+        assert_eq!(report.filled_qty.as_decimal(), size_matched);
     }
 
     // Verifies parse_order_status_report wires `snap_filled_qty_to_quantity`
@@ -1897,12 +1945,11 @@ mod tests {
     #[rstest]
     fn test_fee_exponent_preserves_exact_metadata_and_rejects_invalid_metadata() {
         let mut binary = binary_option();
-        let mut info = nautilus_core::Params::new();
-        info.insert(
+        let mut info = IndexMap::from([(
             "fee_schedule".into(),
             serde_json::json!({"exponent": "1.234567890123456789012345678"}),
-        );
-        binary.info = Some(info.clone());
+        )]);
+        binary.info = Some(nautilus_core::Params::new(info.clone()));
         assert_eq!(
             instrument_fee_exponent(&InstrumentAny::BinaryOption(binary.clone())).unwrap(),
             dec!(1.234567890123456789012345678)
@@ -1917,11 +1964,11 @@ mod tests {
                 "fee_schedule".into(),
                 serde_json::json!({"exponent": value}),
             );
-            binary.info = Some(info.clone());
+            binary.info = Some(nautilus_core::Params::new(info.clone()));
             assert!(instrument_fee_exponent(&InstrumentAny::BinaryOption(binary.clone())).is_err());
         }
         info.insert("fee_schedule".into(), serde_json::json!({"exponent": 2}));
-        binary.info = Some(info);
+        binary.info = Some(nautilus_core::Params::new(info));
         assert_eq!(
             instrument_fee_exponent(&InstrumentAny::BinaryOption(binary)).unwrap(),
             dec!(2)
@@ -2093,9 +2140,9 @@ mod tests {
         assert_eq!(instrument_taker_fee(&bare).unwrap(), Decimal::ZERO);
 
         let mut binary = binary_option();
-        let mut info = nautilus_core::Params::new();
-        info.insert("fee_schedule".into(), serde_json::json!({"exponent": "1"}));
-        binary.info = Some(info.clone());
+        let mut info =
+            IndexMap::from([("fee_schedule".into(), serde_json::json!({"exponent": "1"}))]);
+        binary.info = Some(nautilus_core::Params::new(info.clone()));
         let missing = instrument_taker_fee(&InstrumentAny::BinaryOption(binary.clone()))
             .expect_err("a present schedule must include a rate");
         assert!(missing.to_string().contains("missing rate"), "{missing}");
@@ -2104,7 +2151,7 @@ mod tests {
             "fee_schedule".into(),
             serde_json::json!({"rate": "-0.01", "exponent": "1"}),
         );
-        binary.info = Some(info);
+        binary.info = Some(nautilus_core::Params::new(info));
         let negative = instrument_taker_fee(&InstrumentAny::BinaryOption(binary))
             .expect_err("a negative rate must be rejected");
         assert!(

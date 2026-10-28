@@ -84,11 +84,9 @@ fn test_config_with_params() {
     let client_id = ClientId::new("TEST");
     let instrument_ids = vec![InstrumentId::from("BTC-USDT.TEST")];
 
-    let mut sub_params = Params::new();
-    sub_params.insert("key".to_string(), serde_json::json!("value"));
+    let sub_params = Params::new([("key".to_string(), serde_json::json!("value"))].into());
 
-    let mut req_params = Params::new();
-    req_params.insert("limit".to_string(), serde_json::json!(100));
+    let req_params = Params::new([("limit".to_string(), serde_json::json!(100))].into());
 
     let mut config = DataTesterConfig::new(client_id, instrument_ids);
     config.subscribe_params = Some(sub_params.clone());

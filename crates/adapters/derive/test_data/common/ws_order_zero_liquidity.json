@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": 11009,
+    "message": "Zero liquidity for market or IOC/FOK order"
+  }
+}

@@ -84,6 +84,7 @@
 use std::{
     any::Any,
     cell::RefCell,
+    collections::VecDeque,
     fmt::Debug,
     rc::{Rc, Weak},
     time::Duration,
@@ -132,9 +133,7 @@ use crate::{
     dispatch::drain_callbacks,
     execution::{
         client::LiveExecutionClient,
-        manager::{
-            ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery, TargetedOrderReportResult,
-        },
+        manager::{ExecutionManager, ExecutionManagerConfig, TargetedOrderQuery},
     },
     runner::{AsyncRunner, AsyncRunnerChannels, PendingRunnerEvent},
     socket::{SocketReconnectLookup, SocketReconnectRegistry},
@@ -158,9 +157,9 @@ pub use metrics::{RunnerChannelMetricsSnapshot, RunnerMetricsDelta, RunnerMetric
 use metrics::{RunnerChannelQueueDepths, RunnerMetrics};
 use queue::{QueueMonitor, QueueStateTransition};
 use reconciliation::{
-    OpenOrderReportResult, OpenOrderReportTask, PositionReportTask, PositionReportTaskResult,
-    ReconciliationCheckIntervals, ReconciliationCheckState, ReportTaskOutcome,
-    TargetedOrderReportTask,
+    OpenOrderReportCollection, OpenOrderReportTask, PositionFillReportResult, PositionReportTask,
+    PositionReportTaskResult, ReconciliationCheckIntervals, ReconciliationCheckState,
+    ReportTaskOutcome, TargetedOrderReportTask,
 };
 use state::{EngineConnectionStatus, RunningTransition};
 pub use state::{LiveNodeHandle, NodeRunMode, NodeState};
@@ -398,12 +397,20 @@ impl LiveNode {
 
     /// Adds a callback for supported typed external messages.
     ///
-    /// While [`run`](Self::run) or [`run_with_mode`](Self::run_with_mode) services external ingress,
-    /// the node invokes processors in registration order before normal inbound streaming filters
-    /// for JSON or MessagePack payloads when [`msgbus::BusPayloadType::is_typed_message`] returns
-    /// `true`. Other encodings are skipped with a warning. Each callback receives the decoded
-    /// concrete value as [`Any`], allowing it to downcast to the concrete payload type. External
-    /// egress is suppressed while the processors run, so synchronous publications remain local.
+    /// While the node's run loop services external ingress, processors run in registration order
+    /// before normal inbound streaming filters for supported typed JSON or MessagePack payloads.
+    /// Unsupported encodings do not reach processors. Rust callbacks receive the decoded
+    /// concrete value as [`Any`], allowing them to downcast to the concrete payload type.
+    ///
+    /// Python callbacks receive the serialized payload shape with an added `payload_type` field.
+    /// Native data replies use the shared response representation keyed by response kind.
+    /// Callback exceptions are logged, stop remaining processors, and skip internal republishing.
+    /// The Python wrapper returns an error if the node is no longer available for mutation.
+    ///
+    /// External egress is suppressed while processors run, so synchronous publications remain
+    /// local. During data-client connection, streaming-registered `DataResponse` messages with a
+    /// pending correlation handler bypass processors and can overtake messages buffered until
+    /// normal dispatch starts.
     pub fn add_stream_processor<F>(&mut self, callback: F)
     where
         F: Fn(&dyn Any) + 'static,
@@ -1175,8 +1182,13 @@ impl LiveNode {
 
         // Startup phase 1: Connect data clients and drain instrument events into cache.
         // This ensures the cache is populated before execution clients connect.
+        let mut pending_external = VecDeque::new();
         let data_connect_result = drive_with_event_buffering(
-            self.connect_data_phase(connection_deadline),
+            drive_with_external_ingress(
+                self.connect_data_phase(connection_deadline),
+                &mut external_msgbus_rx,
+                &mut pending_external,
+            ),
             &mut pending,
             &mut time_evt_rx,
             &mut system_evt_rx,
@@ -1187,6 +1199,8 @@ impl LiveNode {
             &mut data_cmd_rx,
         )
         .await;
+
+        self.finish_external_ingress_connection(external_msgbus_rx.as_ref());
 
         if let Err(e) = data_connect_result {
             flush_all_pending(
@@ -1575,6 +1589,8 @@ impl LiveNode {
             .as_ref()
             .map(|config| QueueMonitor::new(config, metrics.snapshot()));
         let mut dispatches_since_yield = 0usize;
+        let mut skip_time = false;
+        let mut skip_data = false;
 
         let dispatch_result = loop {
             let callbacks_pending = match drain_callbacks().await {
@@ -1595,6 +1611,9 @@ impl LiveNode {
             let shutdown_deadline = self.shutdown_deadline;
             let is_shutting_down = self.state() == NodeState::ShuttingDown;
             let is_running = self.state() == NodeState::Running;
+            let commands_empty = data_cmd_rx.is_empty();
+            let poll_time = !skip_time || (data_evt_rx.is_empty() && commands_empty);
+            let poll_data = !skip_data || commands_empty;
 
             tokio::select! {
                 biased;
@@ -1635,7 +1654,7 @@ impl LiveNode {
                 result = async {
                     match open_order_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<ReportTaskOutcome<OpenOrderReportResult>>().await,
+                        None => std::future::pending::<ReportTaskOutcome<OpenOrderReportCollection>>().await,
                     }
                 }, if open_order_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
@@ -1644,6 +1663,7 @@ impl LiveNode {
 
                     match result {
                         ReportTaskOutcome::Completed(result) => {
+                            let result = result.finish();
                             let client_refs = self
                                 .exec_clients
                                 .iter()
@@ -1689,36 +1709,13 @@ impl LiveNode {
                 result = async {
                     match targeted_order_report_task.as_mut() {
                         Some(task) => task.future.as_mut().await,
-                        None => std::future::pending::<ReportTaskOutcome<Vec<TargetedOrderReportResult>>>().await,
+                        None => std::future::pending::<ReportTaskOutcome<()>>().await,
                     }
                 }, if targeted_order_report_task.is_some() => {
                     let maintenance_start = dst::time::Instant::now();
 
-                    let planned_client_order_ids = targeted_order_report_task
-                        .as_ref()
-                        .map(|task| task.planned_client_order_ids.clone())
-                        .unwrap_or_default();
-                    drop(targeted_order_report_task.take());
-
-                    match result {
-                        ReportTaskOutcome::Completed(result) => {
-                            let client_refs = self
-                                .exec_clients
-                                .iter()
-                                .map(|client| client as &dyn ExecutionClient)
-                                .collect::<Vec<_>>();
-                            let events = self
-                                .exec_manager
-                                .reconcile_targeted_order_reports(result, &client_refs);
-                            self.process_reconciliation_events(&events);
-                        }
-                        ReportTaskOutcome::TimedOut => {
-                            self.cleanup_cancelled_report_tasks(&planned_client_order_ids);
-                            log::warn!(
-                                "Targeted order report collection expired after {:?}",
-                                self.config.timeout_reconciliation,
-                            );
-                        }
+                    if let Some(task) = targeted_order_report_task.take() {
+                        self.complete_targeted_order_report_check(task, &result);
                     }
                     record_runner_maintenance(&metrics, maintenance_start, metrics_start);
                 }
@@ -1737,11 +1734,16 @@ impl LiveNode {
                             if is_shutting_down {
                                 self.cleanup_cancelled_report_tasks(&[]);
                             } else {
+                                let result = result.finish();
                                 position_report_task = self.handle_position_report_result(result);
                             }
                         }
-                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills(result)) => {
-                            self.handle_position_fill_report_result(result);
+                        ReportTaskOutcome::Completed(PositionReportTaskResult::Fills { position_result, collection }) => {
+                            let reports = collection.finish();
+                            self.handle_position_fill_report_result(PositionFillReportResult {
+                                position_result,
+                                reports,
+                            });
                         }
                         ReportTaskOutcome::TimedOut => {
                             self.cleanup_cancelled_report_tasks(&[]);
@@ -1835,7 +1837,8 @@ impl LiveNode {
                 // ordered ahead of data events so a strategy action (cancel,
                 // submit, etc.) is not delayed behind a market data backlog
                 // when the biased select polls receivers each iteration.
-                Some(handler) = time_evt_rx.recv() => {
+                Some(handler) = time_evt_rx.recv(), if poll_time => {
+                    skip_time = true;
                     let dispatch_start = dst::time::Instant::now();
                     let dispatched = AsyncRunner::handle_time_event(handler);
 
@@ -1854,6 +1857,8 @@ impl LiveNode {
                     }
                 }
                 Some(event) = system_evt_rx.recv() => {
+                    skip_time = false;
+
                     if is_shutting_down {
                         log::debug!("Residual system event: {event}");
                         residual_events += 1;
@@ -1861,6 +1866,8 @@ impl LiveNode {
                     event.dispatch(|event| self.process_system_event(event));
                 }
                 Some(command) = system_cmd_rx.recv() => {
+                    skip_time = false;
+
                     if is_shutting_down {
                         log::debug!("Residual system command: {command}");
                         residual_events += 1;
@@ -1868,6 +1875,7 @@ impl LiveNode {
                     command.dispatch(|command| self.process_system_command(command));
                 }
                 Some(evt) = exec_evt_rx.recv() => {
+                    skip_time = false;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1884,6 +1892,7 @@ impl LiveNode {
                     );
                 }
                 Some(cmd) = exec_cmd_rx.recv() => {
+                    skip_time = false;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1899,7 +1908,8 @@ impl LiveNode {
                         metrics_start,
                     );
                 }
-                message = recv_external_msgbus_message(&mut external_msgbus_rx) => {
+                message = recv_external_msgbus_message(&mut external_msgbus_rx, &mut pending_external) => {
+                    skip_time = false;
                     let external_msgbus_start = dst::time::Instant::now();
 
                     match message {
@@ -1923,7 +1933,9 @@ impl LiveNode {
                         metrics_start,
                     );
                 }
-                Some(evt) = data_evt_rx.recv() => {
+                Some(evt) = data_evt_rx.recv(), if poll_data => {
+                    skip_time = false;
+                    skip_data = true;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1939,6 +1951,8 @@ impl LiveNode {
                     );
                 }
                 Some(cmd) = data_cmd_rx.recv() => {
+                    skip_time = false;
+                    skip_data = false;
                     let dispatch_start = dst::time::Instant::now();
 
                     if is_shutting_down {
@@ -1970,7 +1984,9 @@ impl LiveNode {
             &mut open_order_report_task,
             &mut targeted_order_report_task,
             &mut position_report_task,
+            dispatch_result.is_ok(),
         );
+
         drop(external_msgbus_rx.take());
         let _ = self.kernel.cache().borrow().check_residuals();
 
@@ -2130,6 +2146,15 @@ impl LiveNode {
                 "Failed to process external message bus topic '{}': {e:#}",
                 message.topic
             );
+        }
+    }
+
+    fn finish_external_ingress_connection(
+        &mut self,
+        receiver: Option<&tokio::sync::mpsc::Receiver<BusMessage>>,
+    ) {
+        if receiver.is_none() {
+            self.close_external_ingress();
         }
     }
 
@@ -3120,9 +3145,48 @@ fn record_runner_external_msgbus(
     );
 }
 
+async fn drive_with_external_ingress<F, T>(
+    future: F,
+    receiver: &mut Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+    pending: &mut VecDeque<BusMessage>,
+) -> T
+where
+    F: std::future::Future<Output = T>,
+{
+    tokio::pin!(future);
+    let capacity = receiver
+        .as_ref()
+        .map_or(0, tokio::sync::mpsc::Receiver::max_capacity);
+
+    loop {
+        tokio::select! {
+            biased;
+
+            result = &mut future => return result,
+            message = async { match receiver.as_mut() { Some(receiver) => receiver.recv().await, None => std::future::pending().await } }, if pending.len() < capacity => {
+                let Some(message) = message else {
+                    log::info!("External message bus ingress closed");
+                    *receiver = None;
+                    continue;
+                };
+
+                match msgbus::republish_pending_external_response(&message) {
+                    Ok(true) => {},
+                    Ok(false) | Err(_) => pending.push_back(message),
+                }
+            }
+        }
+    }
+}
+
 async fn recv_external_msgbus_message(
     rx: &mut Option<tokio::sync::mpsc::Receiver<BusMessage>>,
+    pending: &mut VecDeque<BusMessage>,
 ) -> Option<BusMessage> {
+    if let Some(message) = pending.pop_front() {
+        return Some(message);
+    }
+
     match rx {
         Some(rx) => rx.recv().await,
         None => std::future::pending::<Option<BusMessage>>().await,
@@ -3437,6 +3501,7 @@ fn render_client_statuses(rows: Vec<ClientStatus>) -> String {
 
 #[cfg(test)]
 mod tests {
+    mod report_acceptance;
     mod shutdown;
 
     use std::{
@@ -3519,6 +3584,7 @@ mod tests {
             Order, OrderAny, OrderList, OrderTestBuilder,
             stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
         },
+        position::PositionReplayEvent,
         reports::{FillReport, PositionStatusReport},
         types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
@@ -3928,6 +3994,209 @@ mod tests {
                     .to_string()
             ],
         );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_startup_prioritizes_completed_connection() {
+        let message = BusMessage::with_str_topic(
+            "data.trades.FIRST",
+            BusPayloadType::TradeTick,
+            bytes::Bytes::new(),
+            SerializationEncoding::Json,
+        );
+        let (sender, receiver) = tokio::sync::mpsc::channel(1);
+        sender.send(message.clone()).await.unwrap();
+        let mut receiver = Some(receiver);
+        let mut pending = VecDeque::new();
+
+        let result =
+            drive_with_external_ingress(std::future::ready(17), &mut receiver, &mut pending).await;
+        let queued = receiver.as_mut().unwrap().try_recv().unwrap();
+
+        assert_eq!(result, 17);
+        assert!(pending.is_empty());
+        assert_eq!(
+            serde_json::to_value(queued).unwrap(),
+            serde_json::to_value(message).unwrap()
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_startup_dispatches_correlated_response_before_buffered_traffic() {
+        use bytes::Bytes;
+        use nautilus_common::messages::data::{
+            CustomDataResponse, DataResponse, DataResponseEnvelope,
+        };
+        use nautilus_model::data::DataType;
+
+        let (egress, publications, _) = CapturingExternalEgress::new();
+        let bus = Rc::new(RefCell::new(msgbus::MessageBus::default()));
+        msgbus::set_message_bus(bus.clone());
+        bus.borrow_mut()
+            .set_external_egress_config(
+                Box::new(egress),
+                &MessageBusConfig {
+                    encoding: SerializationEncoding::MsgPack,
+                    external_streams: Some(vec!["external.test".into()]),
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+
+        bus.borrow_mut()
+            .add_streaming_type(BusPayloadType::DataResponse);
+        let id = UUID4::new();
+        let response = DataResponse::Data(CustomDataResponse::new(
+            id,
+            "FEED".into(),
+            None,
+            DataType::new("Startup", None, None),
+            Bytes::from_static(b"connected"),
+            Some(101.into()),
+            Some(103.into()),
+            107.into(),
+            None,
+        ));
+        msgbus::publish_any("responses.data.FEED".into(), &response);
+        let message = BusMessage::with_str_topic(
+            "responses.data.FEED",
+            BusPayloadType::DataResponse,
+            publications.borrow()[0].payload.clone(),
+            SerializationEncoding::MsgPack,
+        );
+        let (done, connected) = tokio::sync::oneshot::channel();
+        let done = Rc::new(RefCell::new(Some(done)));
+        msgbus::register_response_handler(
+            &id,
+            TypedHandler::from(move |envelope: &DataResponseEnvelope| {
+                let Some(DataResponse::Data(reply)) = envelope.response() else {
+                    panic!("expected custom reply");
+                };
+
+                done.borrow_mut()
+                    .take()
+                    .unwrap()
+                    .send(reply.clone())
+                    .unwrap();
+            }),
+        );
+
+        msgbus::subscribe_any(
+            message.topic.as_str().into(),
+            ShareableMessageHandler::from_typed::<DataResponse, _>(|reply| {
+                msgbus::send_response(reply.correlation_id(), reply);
+            }),
+            None,
+        );
+
+        let unrelated = BusMessage::with_str_topic(
+            "data.trades.FIRST",
+            BusPayloadType::TradeTick,
+            Bytes::new(),
+            SerializationEncoding::Json,
+        );
+        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        sender.send(unrelated.clone()).await.unwrap();
+        sender.send(message).await.unwrap();
+        let mut receiver = Some(receiver);
+        let mut pending = VecDeque::new();
+        let actual = tokio::time::timeout(
+            Duration::from_secs(1),
+            drive_with_external_ingress(connected, &mut receiver, &mut pending),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(actual.correlation_id, id);
+        assert_eq!(actual.client_id, ClientId::from("FEED"));
+        assert_eq!(actual.venue, None);
+        assert_eq!(actual.data_type, DataType::new("Startup", None, None));
+        assert_eq!(
+            actual.data.downcast_ref::<Bytes>(),
+            Some(&Bytes::from_static(b"connected"))
+        );
+        assert_eq!(actual.start, Some(101.into()));
+        assert_eq!(actual.end, Some(103.into()));
+        assert_eq!(actual.ts_init, UnixNanos::from(107));
+        assert_eq!(actual.params, None);
+        assert_eq!(publications.borrow().len(), 1);
+        assert_eq!(pending.len(), 1);
+        assert_eq!(
+            serde_json::to_value(pending.pop_front().unwrap()).unwrap(),
+            serde_json::to_value(unrelated).unwrap()
+        );
+        assert!(receiver.as_ref().unwrap().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_startup_defers_unrelated_messages_with_bounded_fifo() {
+        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        let mut receiver = Some(receiver);
+
+        let message = |name: &str| {
+            BusMessage::with_str_topic(
+                name,
+                BusPayloadType::TradeTick,
+                bytes::Bytes::new(),
+                SerializationEncoding::Json,
+            )
+        };
+
+        let first = message("data.trades.FIRST");
+        let second = message("data.trades.SECOND");
+        let third = message("data.trades.THIRD");
+        sender.send(first.clone()).await.unwrap();
+        sender.send(second.clone()).await.unwrap();
+        let (done, connected) = tokio::sync::oneshot::channel();
+        let mut pending = VecDeque::new();
+        let mut connection = Box::pin(drive_with_external_ingress(
+            connected,
+            &mut receiver,
+            &mut pending,
+        ));
+        assert!(futures_util::poll!(&mut connection).is_pending());
+        sender.send(third.clone()).await.unwrap();
+        assert!(futures_util::poll!(&mut connection).is_pending());
+        done.send(()).unwrap();
+        connection.await.unwrap();
+
+        assert_eq!(pending.len(), 2);
+        assert_eq!(receiver.as_ref().unwrap().len(), 1);
+
+        for expected in [first, second, third] {
+            let received = recv_external_msgbus_message(&mut receiver, &mut pending)
+                .await
+                .unwrap();
+            assert_eq!(
+                serde_json::to_value(received).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_external_startup_retains_receiver_closure_for_lifecycle_cleanup() {
+        let (sender, receiver) = tokio::sync::mpsc::channel(2);
+        drop(sender);
+        let mut receiver = Some(receiver);
+        let mut pending = VecDeque::new();
+        let (done, connected) = tokio::sync::oneshot::channel();
+        let mut connection = Box::pin(drive_with_external_ingress(
+            connected,
+            &mut receiver,
+            &mut pending,
+        ));
+        assert!(futures_util::poll!(&mut connection).is_pending());
+        done.send(()).unwrap();
+        connection.await.unwrap();
+
+        assert!(receiver.is_none());
+        assert!(pending.is_empty());
     }
 
     #[rstest]
@@ -4373,6 +4642,66 @@ mod tests {
     }
 
     #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_run_dispatch_progress_under_load(
+        #[values(false, true)] execution: bool,
+        #[values(false, true)] slow: bool,
+    ) {
+        let config = LiveNodeConfig {
+            delay_post_stop: Duration::ZERO,
+            ..Default::default()
+        };
+        let mut node = LiveNode::build("FairDispatchNode".to_string(), Some(config)).unwrap();
+        let handle = node.handle();
+        let stop = handle.clone();
+        let callback = TimeEventCallback::RustLocal(Rc::new(move |event| {
+            if slow {
+                // Make housekeeping ready after each timer callback
+                std::thread::sleep(Duration::from_millis(110));
+            }
+
+            if event.ts_init == UnixNanos::from(8) {
+                // Check progress before shutdown can drain the queues
+                let snapshot = stop.metrics_snapshot();
+                assert_eq!(snapshot.time_events.dispatched, 7);
+
+                if execution {
+                    assert!((1..16).contains(&snapshot.exec_events.dispatched));
+                    assert_eq!(snapshot.data_events.dispatched, 0);
+                } else {
+                    assert!(snapshot.data_events.dispatched > 0);
+                    assert_eq!(snapshot.data_commands.dispatched, 1);
+                }
+                stop.stop();
+            }
+        }));
+
+        let drive = async {
+            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+
+            for ts in (1..=16_u64).map(UnixNanos::from) {
+                nautilus_common::runner::get_time_event_sender().send(TimeEventMessage::new(
+                    TimeEvent::new("fairness".into(), UUID4::new(), ts, ts),
+                    callback.clone(),
+                ));
+                get_data_event_sender().send(stub_data_event()).unwrap();
+
+                if execution {
+                    get_exec_event_sender().send(stub_exec_event()).unwrap();
+                }
+            }
+            nautilus_common::runner::get_data_cmd_sender().execute(stub_data_command());
+        };
+        tokio::time::timeout(Duration::from_secs(5), async {
+            let (result, ()) = tokio::join!(node.run(), drive);
+            result.unwrap();
+        })
+        .await
+        .unwrap();
+        assert!(handle.should_stop());
+    }
+
+    #[rstest]
     fn test_observe_exec_event_before_dispatch_skips_recent_fill_report() {
         let config = LiveNodeConfig {
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -4803,11 +5132,11 @@ mod tests {
                 command: command.clone(),
             }],
         )
-        .await;
+        .await
+        .finish();
 
         assert_eq!(*commands.borrow(), vec![command]);
-        assert!(result.successful_keys.is_empty());
-        assert!(result.reports.is_empty());
+        assert!(result.is_empty());
     }
 
     #[rstest]
@@ -4866,13 +5195,11 @@ mod tests {
                 command,
             }],
         )
-        .await;
+        .await
+        .finish();
 
-        assert_eq!(result.successful_keys, IndexSet::from([key]));
-        assert_eq!(
-            result.reports,
-            IndexMap::from([(key, vec![report_a, report_b])])
-        );
+        assert_eq!(result.keys().copied().collect::<Vec<_>>(), vec![key]);
+        assert_eq!(result, IndexMap::from([(key, vec![report_a, report_b])]));
     }
 
     #[rstest]
@@ -4936,10 +5263,10 @@ mod tests {
                 command,
             }],
         )
-        .await;
+        .await
+        .finish();
 
-        assert!(result.successful_keys.is_empty());
-        assert!(result.reports.is_empty());
+        assert!(result.is_empty());
     }
 
     #[rstest]
@@ -4999,10 +5326,11 @@ mod tests {
                 command,
             }],
         )
-        .await;
+        .await
+        .finish();
 
-        assert_eq!(result.successful_keys, IndexSet::from([key]));
-        assert_eq!(result.reports, IndexMap::from([(key, Vec::new())]));
+        assert_eq!(result.keys().copied().collect::<Vec<_>>(), vec![key]);
+        assert_eq!(result, IndexMap::from([(key, Vec::new())]));
     }
 
     #[rstest]
@@ -5020,6 +5348,8 @@ mod tests {
         let mut healthy_report = report.clone();
         healthy_report.account_id = healthy_key.1;
         let healthy_client_id = ClientId::from("HEALTHY-FILLS");
+        let empty_key = (report.instrument_id, AccountId::from("EMPTY-001"));
+        let empty_client_id = ClientId::from("EMPTY-FILLS");
         let mut clients = vec![
             LiveExecutionClient::new(Box::new(FillReportClient {
                 client_id: query.client_id,
@@ -5033,6 +5363,13 @@ mod tests {
                 account_id: healthy_key.1,
                 venue: healthy_key.0.venue,
                 outcome: FillReportClientOutcome::Reports(vec![healthy_report.clone()]),
+                commands: Rc::new(RefCell::new(Vec::new())),
+            })),
+            LiveExecutionClient::new(Box::new(FillReportClient {
+                client_id: empty_client_id,
+                account_id: empty_key.1,
+                venue: empty_key.0.venue,
+                outcome: FillReportClientOutcome::Reports(Vec::new()),
                 commands: Rc::new(RefCell::new(Vec::new())),
             })),
         ];
@@ -5059,20 +5396,32 @@ mod tests {
             command: query.command.clone(),
         };
 
+        let empty_query = PositionFillReportQuery {
+            key: empty_key,
+            client_id: empty_client_id,
+            command: query.command.clone(),
+        };
+
         let mut queries = vec![query, failed_query];
 
         if failure_first {
             queries.reverse();
         }
 
+        queries.insert(0, empty_query);
         queries.push(healthy_query);
 
-        let result = request_position_fill_reports(clients, queries).await;
+        let result = request_position_fill_reports(clients, queries)
+            .await
+            .finish();
 
-        assert_eq!(result.successful_keys, IndexSet::from([healthy_key]));
         assert_eq!(
-            result.reports,
-            IndexMap::from([(healthy_key, vec![healthy_report])])
+            result.keys().copied().collect::<Vec<_>>(),
+            vec![empty_key, healthy_key]
+        );
+        assert_eq!(
+            result,
+            IndexMap::from([(empty_key, Vec::new()), (healthy_key, vec![healthy_report])])
         );
     }
 
@@ -5125,14 +5474,15 @@ mod tests {
             commands: Rc::new(RefCell::new(Vec::new())),
         }));
 
-        let result = request_position_fill_reports(vec![client], vec![query]).await;
+        let result = request_position_fill_reports(vec![client], vec![query])
+            .await
+            .finish();
 
         if accepted {
-            assert_eq!(result.successful_keys, IndexSet::from([key]));
-            assert_eq!(result.reports, IndexMap::from([(key, vec![report])]));
+            assert_eq!(result.keys().copied().collect::<Vec<_>>(), vec![key]);
+            assert_eq!(result, IndexMap::from([(key, vec![report])]));
         } else {
-            assert!(result.successful_keys.is_empty());
-            assert!(result.reports.is_empty());
+            assert!(result.is_empty());
         }
     }
 
@@ -5237,18 +5587,16 @@ mod tests {
         position_result
             .queried_clients
             .insert(ClientId::from("SECOND"));
-        let mut successful_keys = IndexSet::from([active_key]);
-
+        let mut reports = IndexMap::from([(active_key, Vec::new())]);
         if local_activity {
-            successful_keys.insert(deferred_key);
+            reports.insert(deferred_key, Vec::new());
             node.exec_manager
                 .record_position_activity(deferred_key.0, deferred_key.1);
         }
 
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
-            reports: IndexMap::from([(active_key, Vec::new())]),
-            successful_keys,
+            reports,
         });
 
         assert_eq!(
@@ -5308,7 +5656,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5337,6 +5684,112 @@ mod tests {
     }
 
     #[rstest]
+    fn test_position_fill_prefix_rechecks_history_after_dispatch_callback() {
+        let (mut node, venue_report, mut first) =
+            position_fill_test_fixture("PositionPrefixCallbackNode", Quantity::from("0.5"));
+        first.commission = Money::from("0.13 USDT");
+        let key = (first.instrument_id, first.account_id);
+        let client_order_id = first.client_order_id.unwrap();
+        let position_result = position_report_result(&node, venue_report.clone());
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(key, vec![first.clone()])]),
+        });
+
+        let mut second = first.clone();
+        second.trade_id = TradeId::from("T-PREFIX-SECOND");
+        second.last_qty = Quantity::from("0.75");
+        second.commission = Money::from("0.29 USDT");
+        let mut third = first.clone();
+        third.trade_id = TradeId::from("T-PREFIX-THIRD");
+        third.last_qty = Quantity::from("0.25");
+        third.commission = Money::from("0.07 USDT");
+        let revision = node.exec_manager.position_activity_revision(&key);
+        let received = Rc::new(RefCell::new(Vec::new()));
+        let cache = node.kernel.cache.clone();
+        let callback_received = received.clone();
+        let second_trade_id = second.trade_id;
+
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            let OrderEventAny::Filled(fill) = event else {
+                return;
+            };
+
+            callback_received.borrow_mut().push(fill.trade_id);
+            if fill.trade_id == second_trade_id {
+                let mut cache = cache.borrow_mut();
+                let position_id = *cache.position_id(&fill.client_order_id).unwrap();
+                let mut position = cache.position_mut(&position_id).unwrap();
+                position.replay_events.retain(|event| !matches!(event, PositionReplayEvent::Filled(fill) if fill.trade_id == second_trade_id));
+            }
+        });
+
+        let strategy_id = node
+            .kernel
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .strategy_id();
+        let topic = nautilus_common::msgbus::switchboard::get_event_order_topic(strategy_id);
+        msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
+        let position_result = position_report_result(&node, venue_report);
+        node.handle_position_fill_report_result(PositionFillReportResult {
+            position_result,
+            reports: IndexMap::from([(
+                key,
+                vec![first.clone(), first.clone(), second.clone(), third.clone()],
+            )]),
+        });
+
+        msgbus::unsubscribe_order_events(topic.into(), &handler);
+        let cache = node.kernel.cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        let position_id = cache.position_id(&client_order_id).unwrap();
+        let position = cache.position_ref(position_id).unwrap();
+
+        assert_eq!(*received.borrow(), vec![second.trade_id]);
+        assert_eq!(order.filled_qty(), Quantity::from("2.25"));
+        assert_eq!(order.events().len(), 6);
+        assert_eq!(
+            order.trade_ids(),
+            vec![
+                &TradeId::from("T-POSITION-INITIAL"),
+                &first.trade_id,
+                &second.trade_id
+            ]
+        );
+        assert_eq!(
+            order.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from("0.42 USDT")]
+        );
+        assert_eq!(position.quantity, Quantity::from("2.25"));
+        assert_eq!(position.commissions(), vec![Money::from("0.42 USDT")]);
+        assert_eq!(position.replay_events.len(), 2);
+        assert_eq!(
+            cache.orders_total_count(None, Some(&key.0), None, Some(&key.1), None),
+            1
+        );
+        assert_eq!(
+            node.exec_manager.position_activity_revision(&key),
+            revision + 1
+        );
+        assert!(node.exec_manager.position_contains_fill_report(&first));
+        assert!(!node.exec_manager.position_contains_fill_report(&second));
+        assert!(!node.exec_manager.position_contains_fill_report(&third));
+        assert!(
+            !node
+                .exec_manager
+                .is_fill_recently_processed(key.1, key.0, second.trade_id)
+        );
+        assert!(
+            !node
+                .exec_manager
+                .is_fill_recently_processed(key.1, key.0, third.trade_id)
+        );
+    }
+
+    #[rstest]
     fn test_position_fill_report_match_ignores_adapter_timestamp_source() {
         let (mut node, venue_report, fill_report) =
             position_fill_test_fixture("PositionFillTimestampNode", Quantity::from("1.0"));
@@ -5346,7 +5799,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let mut rest_report = fill_report;
@@ -5385,7 +5837,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone(), later_fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5500,7 +5951,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![held_fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5645,14 +6095,12 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result: first_result,
             reports: IndexMap::from([(key, vec![fill_report])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let fresh_result = position_report_result(&node, venue_report);
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result: fresh_result,
             reports: IndexMap::from([(key, Vec::new())]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5707,7 +6155,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, reports.clone())]),
-            successful_keys: IndexSet::from([key]),
         });
 
         {
@@ -5738,7 +6185,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, reports)]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5781,7 +6227,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![conflicting_report, valid_report])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5811,7 +6256,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::new(),
-            successful_keys: IndexSet::new(),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5849,7 +6293,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5918,7 +6361,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -5946,7 +6388,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let cache = node.kernel.cache.borrow();
@@ -7663,6 +8104,7 @@ mod tests {
                 panic!("position collection should complete despite one client failure");
             };
 
+            let result = result.finish();
             assert!(result.reports.is_empty());
             assert!(open_task.is_none());
             (result.queried_clients, result.failed_clients)
@@ -7670,6 +8112,8 @@ mod tests {
             let ReportTaskOutcome::Completed(result) = open_task.unwrap().future.await else {
                 panic!("order collection should complete despite one client failure");
             };
+
+            let result = result.finish();
 
             assert!(result.reports.is_empty());
             assert!(position_task.is_none());
@@ -7902,7 +8346,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fill_report.clone()])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let order = node
@@ -7952,7 +8395,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result: replay_report,
             reports: IndexMap::from([(key, vec![fill_report])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let order = node
@@ -7994,7 +8436,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![fitting, overfill])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let order = node
@@ -8045,7 +8486,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, vec![first, second])]),
-            successful_keys: IndexSet::from([key]),
         });
 
         let order = node
@@ -8300,7 +8740,6 @@ mod tests {
         node.handle_position_fill_report_result(PositionFillReportResult {
             position_result,
             reports: IndexMap::from([(key, reports.to_vec())]),
-            successful_keys: IndexSet::from([key]),
         });
 
         node.kernel
@@ -9896,7 +10335,7 @@ mod tests {
 
         let mut pending = PendingEvents::default();
         pending.data_evts.push(
-            DataEvent::Instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+            DataEvent::Data(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()).into())
                 .into(),
         );
 
@@ -9907,7 +10346,7 @@ mod tests {
     fn stub_data_event() -> DataEvent {
         use nautilus_model::instruments::{InstrumentAny, stubs::crypto_perpetual_ethusdt};
 
-        DataEvent::Instrument(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()))
+        DataEvent::Data(InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt()).into())
     }
 
     fn stub_data_command() -> DataCommand {

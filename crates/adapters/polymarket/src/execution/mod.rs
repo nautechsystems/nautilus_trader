@@ -127,11 +127,14 @@ impl PolymarketExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if credentials cannot be resolved or clients fail to construct.
+    /// Returns an error if configuration validation fails, credentials cannot be resolved, or clients
+    /// fail to construct.
     pub fn new(
         core: ExecutionClientCore,
         config: PolymarketExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let proxy_url = config.validated_proxy_url()?;
         config.validate_signer()?;
         let secrets = Secrets::resolve(
@@ -372,18 +375,31 @@ impl ExecutionClient for PolymarketExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        self.check_not_faulted()?;
+        self.settlement.ensure_submission_allowed()?;
         self.submit_order_command(&cmd)
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
-        self.check_not_faulted()?;
+        self.settlement.ensure_submission_allowed()?;
         self.submit_order_list_command(&cmd);
         Ok(())
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         self.check_not_faulted()?;
+
+        if let Err(e) = self.settlement.ensure_submission_allowed() {
+            self.emitter.emit_order_modify_rejected_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                &e.to_string(),
+                self.clock.get_time_ns(),
+            );
+            return Ok(());
+        }
+
         self.modify_order_command(&cmd);
         Ok(())
     }
@@ -596,5 +612,44 @@ mod tests {
             resolve_maker_address(PolymarketSignatureType::Eoa, "0xsigner", funder).unwrap();
 
         assert_eq!(maker_address, expected);
+    }
+
+    #[rstest]
+    fn test_execution_client_rejects_duplicate_config_before_setup() {
+        use std::{cell::RefCell, rc::Rc};
+
+        use nautilus_common::{cache::Cache, config::ConfigError};
+        use nautilus_model::{
+            enums::{AccountType, OmsType},
+            identifiers::{TraderId, Venue},
+        };
+
+        use crate::config::PolymarketInstrumentProviderConfig;
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            ClientId::from("POLYMARKET"),
+            Venue::from("POLYMARKET"),
+            OmsType::Netting,
+            AccountId::from("POLYMARKET-001"),
+            AccountType::Cash,
+            None,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+
+        let config = PolymarketExecutionClientConfig {
+            instrument_config: Some(PolymarketInstrumentProviderConfig {
+                series_ids: Some(vec![1, 1]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let error = PolymarketExecutionClient::new(core, config)
+            .expect_err("duplicate config must fail before credentials or client setup");
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("series_ids", None))
+        );
     }
 }

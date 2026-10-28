@@ -36,6 +36,7 @@ use crate::xrate::get_exchange_rate;
 /// - `quotes_bid` and `quotes_ask` lengths are not equal.
 /// - `price_type` is equal to `Last` or `Mark` (cannot calculate from quotes).
 /// - The bid or ask side of a pair is missing.
+/// - An exchange rate calculation exceeds the decimal range.
 ///
 /// These conditions apply only to conversions between distinct currencies. Identical
 /// `from_currency` and `to_currency` return a rate of one without inspecting the quotes.

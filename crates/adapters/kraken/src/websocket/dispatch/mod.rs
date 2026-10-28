@@ -447,13 +447,13 @@ impl WsDispatchState {
     }
 }
 
-/// Resolves a Kraken-truncated client order id to its full Nautilus form.
+/// Resolves a shortened client order id to its full Nautilus form.
 ///
-/// Kraken truncates non-UUID client order ids to 18 characters; the truncation
-/// map is populated at submission time so the WebSocket consumer can recover
-/// the original id. Falls back to constructing a fresh `ClientOrderId` from
-/// the truncated string when no mapping exists (the order is then treated as
-/// external by downstream lookup).
+/// An order sent with its client order id shortened by `truncate_cl_ord_id` is
+/// echoed in that form; the truncation map, populated when such an order is
+/// submitted, lets the WebSocket consumer recover the original id. Falls back
+/// to constructing a fresh `ClientOrderId` from the echoed string when no
+/// mapping exists (the order is then treated as external by downstream lookup).
 pub(crate) fn resolve_client_order_id(
     truncated: &str,
     truncated_id_map: &Arc<AtomicMap<String, ClientOrderId>>,

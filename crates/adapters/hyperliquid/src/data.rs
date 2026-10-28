@@ -27,7 +27,7 @@ use anyhow::Context;
 use jiff::Timestamp;
 use nautilus_common::{
     cache::InstrumentLookupError,
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -37,10 +37,11 @@ use nautilus_common::{
             RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
             RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
             SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
-            SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
-            UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
-            UnsubscribeInstruments, UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeInstrumentStatus, SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
+            TradesResponse, UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth,
+            UnsubscribeCustomData, UnsubscribeFundingRates, UnsubscribeIndexPrices,
+            UnsubscribeInstrument, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
+            UnsubscribeMarkPrices, UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
 };
@@ -72,6 +73,7 @@ use crate::{
         consts::HYPERLIQUID_VENUE,
         credential::{Secrets, credential_env_vars},
         parse::{bar_type_to_interval, millis_to_nanos},
+        status::InstrumentStatusState,
     },
     config::HyperliquidDataClientConfig,
     data_types::register_hyperliquid_custom_data,
@@ -102,6 +104,7 @@ pub struct HyperliquidDataClient {
     coin_to_instrument_id: Arc<AtomicMap<Ustr, InstrumentId>>,
     // serializes instrument fetch-and-apply passes, see `refresh_instruments`
     instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
+    instrument_status: Arc<Mutex<InstrumentStatusState>>,
     stream_health: Arc<Mutex<MarketDataStreamHealthMonitor>>,
     book_sync: BookSyncTracker,
 }
@@ -203,6 +206,7 @@ impl HyperliquidDataClient {
             instruments: Arc::new(AtomicMap::new()),
             coin_to_instrument_id: Arc::new(AtomicMap::new()),
             instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
+            instrument_status: Arc::new(Mutex::new(InstrumentStatusState::default())),
             stream_health,
             book_sync: BookSyncTracker::default(),
         })
@@ -397,11 +401,12 @@ impl HyperliquidDataClient {
         // a pass that fetched before the bootstrap must not apply over its universe
         let _update_guard = self.instrument_update_lock.lock().await;
 
-        let instruments = self
+        let snapshot = self
             .http_client
-            .request_instruments()
+            .request_instruments_with_statuses()
             .await
             .context("failed to fetch instruments during bootstrap")?;
+        let instruments = snapshot.instruments;
 
         cache_instruments(
             &instruments,
@@ -410,6 +415,7 @@ impl HyperliquidDataClient {
             &self.http_client,
             &self.ws_client,
         );
+        self.instrument_status.lock().store(snapshot.statuses);
         rebuild_all_dex_asset_ctxs_mapping(&self.http_client, &self.ws_client).await;
 
         log::debug!(
@@ -440,6 +446,7 @@ impl HyperliquidDataClient {
         let instruments = Arc::clone(&self.instruments);
         let coin_to_instrument_id = Arc::clone(&self.coin_to_instrument_id);
         let instrument_update_lock = Arc::clone(&self.instrument_update_lock);
+        let instrument_status = Arc::clone(&self.instrument_status);
         let data_sender = self.data_sender.clone();
         let client_id = self.client_id;
 
@@ -468,6 +475,7 @@ impl HyperliquidDataClient {
                         &ws_client,
                         &instruments,
                         &coin_to_instrument_id,
+                        &instrument_status,
                         &data_sender,
                     ) => result,
                 };
@@ -590,7 +598,7 @@ impl HyperliquidDataClient {
                                 }
                                 NautilusWsMessage::FundingRate(update) => {
                                     if let Err(e) = data_sender
-                                        .send(DataEvent::FundingRate(update))
+                                        .send(DataEvent::Data(Data::FundingRate(update)))
                                     {
                                         log::error!("Failed to send funding rate update: {e}");
                                     }
@@ -617,9 +625,8 @@ impl HyperliquidDataClient {
                                 }
                             }
                         } else {
-                            // Connection closed or error
                             log::debug!("WebSocket next_event returned None, stream closed");
-                            tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                            break;
                         }
                     }
                 }
@@ -674,6 +681,7 @@ impl DataClient for HyperliquidDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
         self.instruments.store(AHashMap::new());
         self.coin_to_instrument_id.store(AHashMap::new());
+        self.instrument_status.lock().clear();
         Ok(())
     }
 
@@ -744,7 +752,7 @@ impl DataClient for HyperliquidDataClient {
             .context("failed to bootstrap instruments")?;
 
         for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::warn!("Failed to send instrument: {e}");
             }
         }
@@ -778,6 +786,7 @@ impl DataClient for HyperliquidDataClient {
     async fn disconnect(&mut self) -> anyhow::Result<()> {
         self.teardown_partial_connect().await?;
         self.instruments.store(AHashMap::new());
+        self.instrument_status.lock().clear();
         log::info!("Disconnected: client_id={}", self.client_id);
 
         Ok(())
@@ -960,137 +969,173 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        let instruments = self.instruments.load();
-        if let Some(instrument) = instruments.get(&cmd.instrument_id) {
-            if let Err(e) = self
-                .data_sender
-                .send(DataEvent::Instrument(instrument.clone()))
-            {
-                log::error!("Failed to send instrument {}: {e}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let instruments = self.instruments.load();
+            if let Some(instrument) = instruments.get(&instrument_id) {
+                if let Err(e) = self
+                    .data_sender
+                    .send(DataEvent::Data(instrument.clone().into()))
+                {
+                    log::error!("Failed to send instrument {instrument_id}: {e}");
+                }
+            } else {
+                log::warn!("Instrument {instrument_id} not found in cache");
             }
-        } else {
-            log::warn!("Instrument {} not found in cache", cmd.instrument_id);
-        }
-        Ok(())
+
+            Ok(())
+        })
     }
 
     fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if subscription.book_type != BookType::L2_MBP {
-            anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
-        }
-
-        let instrument_id = subscription.instrument_id;
-        let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
-        self.register_stream_health(MarketDataChannel::Deltas, instrument_id);
-
-        match self.pending_tasks.spawner() {
-            Ok(tasks) => book::recovery::spawn_subscription_task(
-                instrument_id,
-                n_sig_figs,
-                mantissa,
-                self.book_sync.clone(),
-                self.ws_client.clone(),
-                self.book_snapshot_timeout(),
-                &tasks,
-            ),
-            Err(e) => {
-                log::warn!("Skipping Hyperliquid subscribe_book_deltas after shutdown began: {e}");
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let subscription = subscription.with_instrument_ids(instrument_id);
+            if subscription.book_type != BookType::L2_MBP {
+                anyhow::bail!("Hyperliquid only supports L2_MBP order book deltas");
             }
-        }
 
-        Ok(())
+            let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+            self.register_stream_health(MarketDataChannel::Deltas, instrument_id);
+
+            match self.pending_tasks.spawner() {
+                Ok(tasks) => book::recovery::spawn_subscription_task(
+                    instrument_id,
+                    n_sig_figs,
+                    mantissa,
+                    self.book_sync.clone(),
+                    self.ws_client.clone(),
+                    self.book_snapshot_timeout(),
+                    &tasks,
+                ),
+                Err(e) => {
+                    log::warn!(
+                        "Skipping Hyperliquid subscribe_book_deltas after shutdown began: {e}"
+                    );
+                }
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_book_depth(&mut self, subscription: SubscribeBookDepth) -> anyhow::Result<()> {
-        log::debug!("Subscribing to book depth: {}", subscription.instrument_id);
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let subscription = subscription.with_instrument_ids(instrument_id);
+            log::debug!("Subscribing to book depth: {instrument_id}");
 
-        if subscription.book_type != BookType::L2_MBP {
-            anyhow::bail!("Hyperliquid only supports L2_MBP order book depth");
-        }
+            if subscription.book_type != BookType::L2_MBP {
+                anyhow::bail!("Hyperliquid only supports L2_MBP order book depth");
+            }
 
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
-        let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
-        self.register_stream_health(MarketDataChannel::Depth, instrument_id);
+            let ws = self.ws_client.clone();
+            let (n_sig_figs, mantissa) = parse_book_precision_params(subscription.params.as_ref())?;
+            self.register_stream_health(MarketDataChannel::Depth, instrument_id);
+            self.spawn_task("subscribe_book_depth", async move {
+                ws.subscribe_book_depth_with_options(instrument_id, n_sig_figs, mantissa)
+                    .await
+            });
 
-        self.spawn_task("subscribe_book_depth", async move {
-            ws.subscribe_book_depth_with_options(instrument_id, n_sig_figs, mantissa)
-                .await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
-        self.register_stream_health(MarketDataChannel::Quote, instrument_id);
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.register_stream_health(MarketDataChannel::Quote, instrument_id);
+            self.spawn_task("subscribe_quotes", async move {
+                ws.subscribe_quotes(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_quotes", async move {
-            ws.subscribe_quotes(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, subscription: SubscribeTrades) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_trades", async move {
+                ws.subscribe_trades(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_trades", async move {
-            ws.subscribe_trades(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_mark_prices", async move {
+                ws.subscribe_mark_prices(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_mark_prices", async move {
-            ws.subscribe_mark_prices(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_index_prices", async move {
+                ws.subscribe_index_prices(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_index_prices", async move {
-            ws.subscribe_index_prices(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_funding_rates", async move {
+                ws.subscribe_funding_rates(instrument_id).await
+            });
 
-        self.spawn_task("subscribe_funding_rates", async move {
-            ws.subscribe_funding_rates(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
-        let instrument_id = subscription.bar_type.instrument_id();
-        if !self.instruments.contains_key(&instrument_id) {
-            anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
-        }
+        execute_bar_subscriptions(&subscription.bar_types, |bar_type| {
+            let instrument_id = bar_type.instrument_id();
+            if !self.instruments.contains_key(&instrument_id) {
+                anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
+            }
 
-        let bar_type = subscription.bar_type;
-        let ws = self.ws_client.clone();
+            let ws = self.ws_client.clone();
+            self.spawn_task("subscribe_bars", async move {
+                ws.subscribe_bars(bar_type).await
+            });
 
-        self.spawn_task("subscribe_bars", async move {
-            ws.subscribe_bars(bar_type).await
-        });
+            Ok(())
+        })
+    }
 
-        Ok(())
+    fn subscribe_instrument_status(
+        &mut self,
+        cmd: SubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "Subscribing to instrument status: {instrument_id} (detected by the instrument refresh)"
+            );
+            let ts = self.clock.get_time_ns();
+            self.instrument_status
+                .lock()
+                .subscribe(instrument_id, &self.data_sender, ts);
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_instrument_status(
+        &mut self,
+        cmd: &UnsubscribeInstrumentStatus,
+    ) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from instrument status: {instrument_id}");
+            self.instrument_status.lock().unsubscribe(&instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument(&mut self, _cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
@@ -1109,118 +1154,106 @@ impl DataClient for HyperliquidDataClient {
         &mut self,
         unsubscription: &UnsubscribeBookDeltas,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from book deltas: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from book deltas: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-        self.remove_stream_health(MarketDataChannel::Deltas, instrument_id);
-        self.book_sync.remove(instrument_id);
+            let ws = self.ws_client.clone();
+            self.remove_stream_health(MarketDataChannel::Deltas, instrument_id);
+            self.book_sync.remove(instrument_id);
+            self.spawn_task("unsubscribe_book_deltas", async move {
+                ws.unsubscribe_book(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_book_deltas", async move {
-            ws.unsubscribe_book(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_depth(
         &mut self,
         unsubscription: &UnsubscribeBookDepth,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from book depth: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from book depth: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-        self.remove_stream_health(MarketDataChannel::Depth, instrument_id);
+            let ws = self.ws_client.clone();
+            self.remove_stream_health(MarketDataChannel::Depth, instrument_id);
+            self.spawn_task("unsubscribe_book_depth", async move {
+                ws.unsubscribe_book_depth(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_book_depth", async move {
-            ws.unsubscribe_book_depth(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from quotes: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from quotes: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
-        self.remove_stream_health(MarketDataChannel::Quote, instrument_id);
+            let ws = self.ws_client.clone();
+            self.remove_stream_health(MarketDataChannel::Quote, instrument_id);
+            self.spawn_task("unsubscribe_quotes", async move {
+                ws.unsubscribe_quotes(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_quotes", async move {
-            ws.unsubscribe_quotes(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from trades: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from trades: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_trades", async move {
+                ws.unsubscribe_trades(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_trades", async move {
-            ws.unsubscribe_trades(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_mark_prices", async move {
+                ws.unsubscribe_mark_prices(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_mark_prices", async move {
-            ws.unsubscribe_mark_prices(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_index_prices", async move {
+                ws.unsubscribe_index_prices(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_index_prices", async move {
-            ws.unsubscribe_index_prices(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_funding_rates", async move {
+                ws.unsubscribe_funding_rates(instrument_id).await
+            });
 
-        self.spawn_task("unsubscribe_funding_rates", async move {
-            ws.unsubscribe_funding_rates(instrument_id).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
-        let bar_type = unsubscription.bar_type;
-        let ws = self.ws_client.clone();
+        execute_bar_subscriptions(&unsubscription.bar_types, |bar_type| {
+            let ws = self.ws_client.clone();
+            self.spawn_task("unsubscribe_bars", async move {
+                ws.unsubscribe_bars(bar_type).await
+            });
 
-        self.spawn_task("unsubscribe_bars", async move {
-            ws.unsubscribe_bars(bar_type).await
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
@@ -1232,6 +1265,7 @@ impl DataClient for HyperliquidDataClient {
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
         let update_lock = Arc::clone(&self.instrument_update_lock);
+        let instrument_status = Arc::clone(&self.instrument_status);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let venue = self.venue();
@@ -1250,6 +1284,7 @@ impl DataClient for HyperliquidDataClient {
                 &ws,
                 &instruments_cache,
                 &coin_map,
+                &instrument_status,
                 &sender,
             )
             .await?;
@@ -1277,7 +1312,9 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        log::debug!("Requesting instrument: {}", request.instrument_id);
+        let instrument_id = request.single_instrument_id()?;
+
+        log::debug!("Requesting instrument: {instrument_id}");
 
         let http = self.http_client.clone();
         let ws = self.ws_client.clone();
@@ -1285,7 +1322,7 @@ impl DataClient for HyperliquidDataClient {
         let instruments_cache = self.instruments.clone();
         let coin_map = self.coin_to_instrument_id.clone();
         let update_lock = Arc::clone(&self.instrument_update_lock);
-        let instrument_id = request.instrument_id;
+        let instrument_status = Arc::clone(&self.instrument_status);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
@@ -1302,6 +1339,7 @@ impl DataClient for HyperliquidDataClient {
                 &ws,
                 &instruments_cache,
                 &coin_map,
+                &instrument_status,
                 &sender,
             )
             .await?;
@@ -1336,11 +1374,12 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        log::debug!("Requesting bars for {}", request.bar_type);
+        let bar_type = request.single_bar_type()?;
+
+        log::debug!("Requesting bars for {bar_type}");
 
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let bar_type = request.bar_type;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -1378,7 +1417,8 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting trades for {instrument_id}");
 
         let instruments = self.instruments.load();
@@ -1512,7 +1552,8 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting funding rates for {instrument_id}");
 
         let instruments = self.instruments.load();
@@ -1524,7 +1565,7 @@ impl DataClient for HyperliquidDataClient {
             anyhow::bail!("Funding rates are only available for perpetual instruments");
         }
 
-        let coin = instrument.raw_symbol().to_string();
+        let instrument = instrument.clone();
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1537,32 +1578,11 @@ impl DataClient for HyperliquidDataClient {
         let start_nanos = datetime_to_unix_nanos(start_dt);
         let end_nanos = datetime_to_unix_nanos(end_dt);
 
-        let now_ms = Timestamp::now().as_millisecond() as u64;
-
-        // Hyperliquid requires a startTime; default to a 7-day lookback when none given
-        let default_lookback_ms: u64 = 7 * 86_400_000;
-        let start_ms = match start_dt {
-            Some(dt) => dt.as_millisecond().max(0) as u64,
-            None => now_ms.saturating_sub(default_lookback_ms),
-        };
-        let end_ms = end_dt.map(|dt| dt.as_millisecond().max(0) as u64);
-
         self.spawn_task("request_funding_rates", async move {
-            let entries = http
-                .info_funding_history(&coin, start_ms, end_ms)
+            let funding_rates = http
+                .request_funding_rates(&instrument, start_dt, end_dt, limit)
                 .await
                 .with_context(|| format!("funding rates request failed for {instrument_id}"))?;
-
-            let mut funding_rates: Vec<FundingRateUpdate> = entries
-                .iter()
-                .map(|entry| funding_entry_to_update(entry, instrument_id))
-                .collect();
-
-            if let Some(limit) = limit
-                && funding_rates.len() > limit
-            {
-                funding_rates.truncate(limit);
-            }
 
             log::debug!(
                 "Fetched {} funding rates for {instrument_id}",
@@ -1590,7 +1610,8 @@ impl DataClient for HyperliquidDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let instruments = self.instruments.load();
         let instrument = instruments
             .get(&instrument_id)
@@ -1663,10 +1684,8 @@ fn cache_instruments(
         }
     });
 
-    for instrument in instruments {
-        http_client.cache_instrument(instrument);
-        ws_client.cache_instrument(instrument.clone());
-    }
+    http_client.merge_instruments(instruments);
+    ws_client.merge_instruments(instruments);
 }
 
 /// Rebuilds the `allDexsAssetCtxs` mapping from the HTTP client's cached instruments.
@@ -1726,7 +1745,8 @@ impl InstrumentRefresh {
     }
 }
 
-/// Fetches the instrument universe and reconciles it against the caches.
+/// Fetches the instrument universe, reconciles it against the caches, and emits
+/// instrument status changes for subscribed instruments.
 ///
 /// Holds `update_lock` across the fetch and the reconcile so concurrent passes
 /// apply in the order they fetched. The diff only asks whether a definition
@@ -1739,30 +1759,40 @@ async fn refresh_instruments(
     ws_client: &HyperliquidWebSocketClient,
     instruments_by_id: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     coin_to_instrument_id: &Arc<AtomicMap<Ustr, InstrumentId>>,
+    instrument_status: &Mutex<InstrumentStatusState>,
     data_sender: &EventSender<DataEvent>,
 ) -> anyhow::Result<InstrumentRefresh> {
     let _update_guard = update_lock.lock().await;
 
-    let fetched = http_client
-        .request_instruments()
+    let snapshot = http_client
+        .request_instruments_with_statuses()
         .await
         .context("failed to fetch Hyperliquid instruments")?;
 
-    Ok(reconcile_instruments(
-        fetched,
+    // emit statuses after definitions, so a subscriber never sees a status for an
+    // instrument it has not received
+    let refresh = reconcile_instruments(
+        snapshot.instruments,
         http_client,
         ws_client,
         instruments_by_id,
         coin_to_instrument_id,
         data_sender,
     )
-    .await)
+    .await;
+
+    let ts = get_atomic_clock_realtime().get_time_ns();
+    instrument_status
+        .lock()
+        .apply(&snapshot.statuses, &snapshot.loaded, data_sender, ts);
+
+    Ok(refresh)
 }
 
 /// Reconciles the instrument caches against a fetched instrument universe.
 ///
 /// Caches and publishes new or materially changed definitions as
-/// [`DataEvent::Instrument`]. Unchanged definitions are not republished. Cached
+/// [`DataEvent::Data`]. Unchanged definitions are not republished. Cached
 /// instruments absent from `fetched` are retained because they may still back
 /// open subscriptions.
 ///
@@ -1793,7 +1823,7 @@ async fn reconcile_instruments(
     // publish before awaiting the mapping rebuild, so a pass cancelled during the
     // rebuild cannot leave these definitions cached but unpublished
     for instrument in &changed {
-        if let Err(e) = data_sender.send(DataEvent::Instrument(instrument.clone())) {
+        if let Err(e) = data_sender.send(DataEvent::Data(instrument.clone().into())) {
             log::warn!("Failed to send instrument: {e}");
         }
     }
@@ -2515,6 +2545,7 @@ async fn request_bars_from_http(
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use nautilus_common::live::runner::set_data_event_sender;
     use nautilus_model::{
         data::{
@@ -2531,7 +2562,10 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::{consts::HYPERLIQUID_CLIENT_ID, testing::load_test_data};
+    use crate::common::{
+        consts::{HYPERLIQUID_CLIENT_ID, HYPERLIQUID_WS_URL},
+        testing::load_test_data,
+    };
 
     fn btc_perp_id() -> InstrumentId {
         InstrumentId::from("BTC-PERP.HYPERLIQUID")
@@ -3482,6 +3516,67 @@ mod tests {
         .unwrap()
     }
 
+    #[rstest]
+    #[case::disconnect(false, None)]
+    #[case::reset_then_disconnect(true, None)]
+    #[ignore = "connects to Hyperliquid mainnet public market data"]
+    #[case::mainnet(false, Some(HYPERLIQUID_WS_URL))]
+    #[tokio::test]
+    async fn test_ws_consumer_exits_when_handler_output_closes(
+        #[case] reset: bool,
+        #[case] url: Option<&str>,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(_)) = socket.next().await {}
+        });
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let url = url.map_or_else(|| format!("ws://{addr}"), str::to_owned);
+
+        let mut client = HyperliquidDataClient::new(
+            *HYPERLIQUID_CLIENT_ID,
+            HyperliquidDataClientConfig {
+                base_url_ws: Some(url),
+                ..HyperliquidDataClientConfig::default()
+            },
+        )
+        .unwrap();
+
+        client.spawn_ws().await.unwrap();
+        assert_eq!(client.session_tasks.len(), 1);
+
+        client.ws_client.disconnect().await.unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while !client.session_tasks.all_finished() {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("consumer must exit when handler output closes without cancellation");
+
+        assert!(!client.cancellation_token.is_cancelled());
+        assert!(client.session_tasks.all_finished());
+        assert!(client.pending_tasks.is_empty());
+
+        if reset {
+            client.reset().unwrap();
+        }
+
+        client.disconnect().await.unwrap();
+
+        assert!(client.session_tasks.is_empty());
+        assert!(client.pending_tasks.is_empty());
+        assert!(client.is_disconnected());
+        server.abort();
+        let _ = server.await;
+    }
+
     #[tokio::test]
     async fn test_spawn_instrument_refresh_skipped_when_interval_zero() {
         let client = data_client_with_refresh_interval(0);
@@ -3501,6 +3596,111 @@ mod tests {
 
         client.cancellation_token.cancel();
         client.await_session_tasks().await.unwrap();
+    }
+
+    #[rstest]
+    #[case::disconnect(false)]
+    #[case::reset(true)]
+    #[tokio::test]
+    async fn test_instrument_refresh_shutdown_drains_generation(#[case] reset: bool) {
+        let mut client = data_client_with_refresh_interval(1);
+        client.spawn_instrument_refresh().unwrap();
+        if reset {
+            client.reset().unwrap();
+            client.await_session_tasks().await.unwrap();
+        } else {
+            client.disconnect().await.unwrap();
+        }
+
+        assert!(client.cancellation_token.is_cancelled());
+        assert!(client.session_tasks.is_empty());
+        assert!(!client.session_tasks.is_open());
+        assert!(client.spawn_instrument_refresh().is_err());
+        assert!(client.is_disconnected());
+    }
+
+    #[tokio::test]
+    async fn test_instrument_refresh_connected_client_keeps_one_task() {
+        let mut client = data_client_with_refresh_interval(1);
+        client.spawn_instrument_refresh().unwrap();
+        client.is_connected.store(true, Ordering::Release);
+
+        client.connect().await.unwrap();
+        client.connect().await.unwrap();
+
+        assert_eq!(client.session_tasks.len(), 1);
+        client.disconnect().await.unwrap();
+        assert!(client.session_tasks.is_empty());
+    }
+
+    #[rstest]
+    fn test_cache_instruments_replaces_complete_snapshots() {
+        let client = data_client_with_refresh_interval(0);
+        let mut original = vec![
+            perp_instrument("BTC-USD-PERP", "0.1", UnixNanos::from(1)),
+            perp_instrument("ETH-USD-PERP", "0.2", UnixNanos::from(1)),
+        ];
+        let mut refreshed = vec![
+            perp_instrument("BTC-USD-PERP", "0.3", UnixNanos::from(2)),
+            perp_instrument("ETH-USD-PERP", "0.4", UnixNanos::from(2)),
+        ];
+
+        for instruments in [&mut original, &mut refreshed] {
+            let InstrumentAny::CryptoPerpetual(eth) = &mut instruments[1] else {
+                unreachable!();
+            };
+
+            eth.raw_symbol = Symbol::new("ETH");
+        }
+
+        cache_instruments(
+            &original,
+            &client.instruments,
+            &client.coin_to_instrument_id,
+            &client.http_client,
+            &client.ws_client,
+        );
+        let previous = client.instruments.load();
+        cache_instruments(
+            &refreshed,
+            &client.instruments,
+            &client.coin_to_instrument_id,
+            &client.http_client,
+            &client.ws_client,
+        );
+        let current = client.instruments.load();
+
+        assert_eq!(previous.len(), 2);
+        assert_eq!(current.len(), 2);
+
+        for (old, new) in original.iter().zip(&refreshed) {
+            assert_eq!(
+                serde_json::to_value(previous.get(&old.id()).unwrap()).unwrap(),
+                serde_json::to_value(old).unwrap(),
+            );
+            assert_eq!(
+                serde_json::to_value(current.get(&new.id()).unwrap()).unwrap(),
+                serde_json::to_value(new).unwrap(),
+            );
+            assert_eq!(
+                client
+                    .coin_to_instrument_id
+                    .get_cloned(&new.raw_symbol().inner()),
+                Some(new.id()),
+            );
+            assert_eq!(
+                serde_json::to_value(
+                    client
+                        .ws_client
+                        .instruments_cache()
+                        .load()
+                        .get(&new.raw_symbol().inner())
+                        .unwrap(),
+                )
+                .unwrap(),
+                serde_json::to_value(new).unwrap(),
+            );
+        }
     }
 
     #[rstest]

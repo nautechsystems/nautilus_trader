@@ -521,7 +521,7 @@ fn derive_instrument_info(instrument: &DeriveInstrument) -> anyhow::Result<Param
         .as_object()
         .context("DeriveInstrument did not serialize to a JSON object")?
         .clone();
-    Ok(Params::from_index_map(object.into_iter().collect()))
+    Ok(Params::new(object.into_iter().collect()))
 }
 
 fn price_from_decimal(value: Decimal, field: &str) -> anyhow::Result<Price> {
@@ -606,9 +606,13 @@ mod tests {
         struct NumericParams(Params);
         impl ToMsgPack for NumericParams {}
 
-        let mut params = Params::new();
-        params.insert("integer".to_owned(), json!(42));
-        params.insert("fraction".to_owned(), json!(0.125));
+        let params = Params::new(
+            [
+                ("integer".to_owned(), json!(42)),
+                ("fraction".to_owned(), json!(0.125)),
+            ]
+            .into(),
+        );
         let encoded = NumericParams(params).to_msgpack_bytes().unwrap();
 
         assert_eq!(

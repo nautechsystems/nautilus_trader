@@ -378,6 +378,11 @@ This groups multiple order book changes into single messages.
 - Every message is a complete depth-limited snapshot, so each update replaces the book
   rather than patching it.
 
+`subscribe_book_depth` emits `OrderBookDepth` snapshots with up to 10 levels per side and zero order counts
+because Deribit does not supply counts. These snapshots do not replace a raw-delta book or change its
+sequence tracking. Grouped `subscribe_book_deltas` subscriptions emit deltas that replace the subscribed
+book, including when they share a channel with a depth subscription.
+
 ### Subscription parameters
 
 The Nautilus adapter supports both feed types via subscription parameters:
@@ -431,15 +436,15 @@ tick-by-tick book updates.
 
 ### Sequence gap recovery
 
-The adapter records the `change_id` of every book message it applies and checks the `prev_change_id` of each
-incremental update against it. Only raw-channel updates carry `prev_change_id`. Aggregated messages are
-self-contained snapshots and need no sequence check.
+The adapter records the `change_id` of each non-grouped book message it applies and checks the
+`prev_change_id` of each incremental update against it. Grouped snapshots do not read or update this
+sequence state.
 
 When a gap is detected (a missed message), or a level in a book message fails conversion to `Price`
 or `Quantity` (for example, a value beyond their range), the adapter automatically:
 
 1. Drops that message, and every further delta for the affected instrument.
-2. Unsubscribes from that instrument's delta book channels.
+2. Unsubscribes from that instrument's non-grouped book channels.
 3. Resubscribes once the unsubscribe is acknowledged, to obtain a fresh snapshot.
 4. Resumes normal processing once each resubscribed channel delivers a snapshot that converts,
    reseeding the sequence from it.
@@ -451,10 +456,11 @@ A grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) sends a 
 so the adapter never resyncs it. It drops a snapshot that fails conversion. The next snapshot replaces the
 book.
 
-:::warning[Subscribe each instrument to one delta book channel]
-Book channels for the same instrument share one sequence and resync state. An instrument can have multiple
-delta book channels (for example `raw` and `100ms`). If a resync starts while one still awaits its initial
-snapshot, that channel can stay unsubscribed until the next reconnect.
+:::warning[Subscribe each instrument to one non-grouped book channel]
+`DeribitWebSocketClient::subscribe_book` can open non-grouped channels such as `book.{instrument}.raw`
+and `book.{instrument}.100ms`. These channels share one sequence and resync state per instrument.
+If a resync starts while one still awaits its initial snapshot, that channel can stay unsubscribed
+until the next reconnect. This warning does not apply to grouped depth subscriptions.
 :::
 
 The adapter logs a warning and skips a malformed level, including a value that does not parse as a
@@ -539,6 +545,13 @@ self.subscribe_data(
 ```
 
 ## Orders capability
+
+The adapter validates order parameters and queues `OrderSubmitted` before sending an order.
+If validation or event queuing fails, the adapter returns an error without sending the order.
+The execution engine handles that error as `OrderDenied`.
+
+For order lists, the adapter validates every member and queues all `OrderSubmitted` events
+before sending any member. A validation or queuing failure prevents all venue requests for that list.
 
 Below are the order types, execution instructions, and time-in-force options supported on Deribit.
 
@@ -733,6 +746,10 @@ global quota. If the JSON-RPC method belongs to the order or account category, i
 | `deribit:{method}` | 20 req/sec, 100 burst | Per-method bucket; falls back to the global quota.             |
 
 ### WebSocket limits
+
+The adapter combines adjacent queued subscribe requests that use the same public or private method without adding a delay.
+It splits large subscribe and unsubscribe sets so each serialized JSON-RPC request stays within 32,000 bytes, including
+the envelope. Restored subscriptions use the same size bound after reconnect.
 
 | Operation             | Adapter bucket      | Notes                                                          |
 | --------------------- | ------------------- | -------------------------------------------------------------- |

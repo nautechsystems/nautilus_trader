@@ -430,4 +430,20 @@ if ! grep -q "non-retryable verification error" "$unknown_output"; then
   fail "unknown verifier error case did not report a non-retryable error."
 fi
 
+attempt_file="${work_dir}/retained-count"
+set_attempt_count 0
+diagnostics="${work_dir}/diagnostics"
+RELEASE_VERIFICATION_DIAGNOSTICS_DIR="$diagnostics" \
+  run_release_verification_with_retry "retained checkpoint verification" 4 1 2 \
+  retryable_until_fourth_attempt > "${work_dir}/retained-output" 2>&1
+retained=("$diagnostics"/retry.*)
+[[ "${#retained[@]}" -eq 1 ]] || fail "Expected one retained verifier invocation"
+[[ "$(cat "${retained[0]}/command.txt")" == "retained checkpoint verification" ]] ||
+  fail "Retained diagnostics lost the verifier description"
+for attempt in 1 2 3 4; do
+  [[ -s "${retained[0]}/attempt-${attempt}.log" ]] || fail "Missing retained attempt log"
+  [[ -f "${retained[0]}/attempt-${attempt}.status" ]] || fail "Missing retained attempt status"
+done
+[[ "$(cat "${retained[0]}/attempt-4.status")" == "0" ]] || fail "Final attempt did not succeed"
+
 echo "release verification retry tests passed"

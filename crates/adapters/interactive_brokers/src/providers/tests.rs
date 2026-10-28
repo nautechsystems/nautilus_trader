@@ -15,6 +15,8 @@
 
 //! Tests for Interactive Brokers instrument provider.
 
+use std::collections::HashMap;
+
 use ibapi::contracts::{
     ComboLeg, ComboLegOpenClose, Contract, Currency, Exchange, LegAction, SecurityType, Symbol,
 };
@@ -41,7 +43,7 @@ use crate::{
 
 fn create_test_provider() -> InteractiveBrokersInstrumentProvider {
     let config = InteractiveBrokersInstrumentProviderConfig::default();
-    InteractiveBrokersInstrumentProvider::new(config)
+    InteractiveBrokersInstrumentProvider::new(config).unwrap()
 }
 
 fn create_test_option_spread(instrument_id: InstrumentId) -> OptionSpread {
@@ -279,7 +281,7 @@ fn test_determine_stock_venue_reuses_compatible_cached_mic_venue() {
         ..Default::default()
     };
 
-    let provider = InteractiveBrokersInstrumentProvider::new(config);
+    let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
     provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
 
     let contract = Contract {
@@ -315,6 +317,57 @@ fn test_determine_stock_smart_venue_reuses_cached_symbol_venue() {
     let venue = provider.determine_venue(&contract, None);
 
     assert_eq!(venue.as_str(), "XNAS");
+}
+
+#[rstest]
+fn test_determine_stock_venue_uses_symbol_to_mic_venue() {
+    let config = InteractiveBrokersInstrumentProviderConfig {
+        symbol_to_mic_venue: HashMap::from([("AAPL".to_string(), "EQUS".to_string())]),
+        convert_exchange_to_mic_venue: true,
+        ..Default::default()
+    };
+
+    let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
+
+    let mapped = Contract {
+        contract_id: 0,
+        symbol: Symbol::from("AAPL"),
+        security_type: SecurityType::Stock,
+        exchange: Exchange::from("SMART"),
+        primary_exchange: Exchange::from("NASDAQ"),
+        currency: Currency::from("USD"),
+        ..Default::default()
+    };
+    let unmapped = Contract {
+        symbol: Symbol::from("MSFT"),
+        ..mapped.clone()
+    };
+
+    assert_eq!(provider.determine_venue(&mapped, None).as_str(), "EQUS");
+    assert_eq!(provider.determine_venue(&unmapped, None).as_str(), "XNAS");
+}
+
+#[rstest]
+fn test_determine_stock_venue_symbol_mapping_wins_over_cached_venue() {
+    let config = InteractiveBrokersInstrumentProviderConfig {
+        symbol_to_mic_venue: HashMap::from([("AAPL".to_string(), "EQUS".to_string())]),
+        ..Default::default()
+    };
+
+    let provider = InteractiveBrokersInstrumentProvider::new(config).unwrap();
+    provider.insert_test_instrument(InstrumentAny::from(equity_aapl()), 265598, 1);
+
+    let contract = Contract {
+        contract_id: 0,
+        symbol: Symbol::from("AAPL"),
+        security_type: SecurityType::Stock,
+        exchange: Exchange::from("SMART"),
+        primary_exchange: Exchange::default(),
+        currency: Currency::from("USD"),
+        ..Default::default()
+    };
+
+    assert_eq!(provider.determine_venue(&contract, None).as_str(), "EQUS");
 }
 
 #[rstest]

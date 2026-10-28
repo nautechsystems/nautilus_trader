@@ -22,7 +22,8 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use nautilus_core::string::secret::SecretString;
+use nautilus_common::config::{ConfigError, ConfigResult, check_range, check_unique_values};
+use nautilus_core::{datetime::SECONDS_IN_MINUTE, string::secret::SecretString};
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::{
@@ -38,6 +39,7 @@ use crate::{
         urls,
     },
     filters::InstrumentFilter,
+    providers::build_gamma_params_from_hashmap,
 };
 
 const DEFAULT_UPDOWN_INTERVAL_MINS: u64 = 5;
@@ -99,12 +101,25 @@ impl Default for PolymarketUpDownEventSlugConfig {
 }
 
 impl PolymarketUpDownEventSlugConfig {
+    /// Validates assets, interval, and period count.
+    ///
+    /// Exact duplicates include blank entries. Nonblank assets must also be distinct after
+    /// trimming and lowercasing. At least one nonblank asset is required.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if assets are empty or repeated, the interval or period count is zero,
+    /// or the interval overflows seconds.
+    pub fn validate(&self) -> ConfigResult<()> {
+        self.validated_assets().map(|_| ())
+    }
+
     /// Builds event slugs using the current system time.
     ///
     /// # Errors
     ///
-    /// Returns an error if the interval or period count is zero, all assets are
-    /// blank, or the configured offset resolves before the Unix epoch.
+    /// Returns an error if configuration validation fails, the system clock precedes the Unix
+    /// epoch, or an offset resolves before the Unix epoch.
     pub fn build_event_slugs(&self) -> anyhow::Result<Vec<String>> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -114,23 +129,8 @@ impl PolymarketUpDownEventSlugConfig {
     }
 
     fn build_event_slugs_at_unix_secs(&self, unix_secs: u64) -> anyhow::Result<Vec<String>> {
-        if self.interval_mins == 0 {
-            anyhow::bail!("event_slug_builder.interval_mins must be positive");
-        }
-
-        if self.periods == 0 {
-            anyhow::bail!("event_slug_builder.periods must be positive");
-        }
-
-        let assets = self.normalized_assets();
-        if assets.is_empty() {
-            anyhow::bail!("event_slug_builder.assets must include at least one non-empty asset");
-        }
-
-        let period_secs = self
-            .interval_mins
-            .checked_mul(60)
-            .ok_or_else(|| anyhow::anyhow!("event_slug_builder.interval_mins is too large"))?;
+        let assets = self.validated_assets()?;
+        let period_secs = self.interval_mins * SECONDS_IN_MINUTE;
         let period_start = (unix_secs / period_secs) * period_secs;
         let period_secs = i128::from(period_secs);
         let period_start = i128::from(period_start);
@@ -154,18 +154,35 @@ impl PolymarketUpDownEventSlugConfig {
         Ok(slugs)
     }
 
-    fn normalized_assets(&self) -> Vec<String> {
+    fn validated_assets(&self) -> ConfigResult<Vec<String>> {
+        check_range(
+            "event_slug_builder.interval_mins",
+            self.interval_mins > 0 && self.interval_mins <= u64::MAX / SECONDS_IN_MINUTE,
+            "must be positive and fit in seconds",
+        )?;
+        check_range(
+            "event_slug_builder.periods",
+            self.periods > 0,
+            "must be positive",
+        )?;
+
+        check_unique_values("event_slug_builder.assets", &self.assets)?;
         let mut assets = Vec::new();
 
         for asset in &self.assets {
             let asset = asset.trim().to_ascii_lowercase();
-            if asset.is_empty() || assets.contains(&asset) {
+            if asset.is_empty() {
                 continue;
             }
             assets.push(asset);
         }
 
-        assets
+        check_unique_values("event_slug_builder.assets", &assets)?;
+        if assets.is_empty() {
+            return Err(ConfigError::empty_field("event_slug_builder.assets"));
+        }
+
+        Ok(assets)
     }
 }
 
@@ -232,6 +249,61 @@ impl PolymarketInstrumentProviderConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if selections contain duplicates or Gamma filters are invalid.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(values) = &self.load_ids {
+            check_unique_values("load_ids", values)?;
+        }
+
+        if let Some(values) = &self.event_slugs {
+            check_unique_values("event_slugs", values)?;
+        }
+
+        if let Some(values) = &self.market_slugs {
+            check_unique_values("market_slugs", values)?;
+        }
+
+        if let Some(values) = &self.series_ids {
+            check_unique_values("series_ids", values)?;
+        }
+
+        if let Some(builder) = &self.event_slug_builder {
+            builder.validate()?;
+        }
+
+        if let Some(filters) = &self.filters {
+            let params = build_gamma_params_from_hashmap(filters)?;
+            check_unique_values("filters.id", params.id.as_deref().unwrap_or_default())?;
+            check_unique_values(
+                "filters.tag_id",
+                params.tag_id.as_deref().unwrap_or_default(),
+            )?;
+
+            for (field, values) in [
+                ("filters.slug", params.slug.as_deref()),
+                ("filters.condition_ids", params.condition_ids.as_deref()),
+                ("filters.clob_token_ids", params.clob_token_ids.as_deref()),
+                ("filters.question_ids", params.question_ids.as_deref()),
+                (
+                    "filters.market_maker_address",
+                    params.market_maker_address.as_deref(),
+                ),
+                (
+                    "filters.sports_market_types",
+                    params.sports_market_types.as_deref(),
+                ),
+            ] {
+                check_unique_values(field, values.unwrap_or_default())?;
+            }
+        }
+
+        Ok(())
     }
 
     /// Returns whether any configured scope drives a bootstrap load.
@@ -304,7 +376,9 @@ pub struct PolymarketDataClientConfig {
     /// HTTP timeout in seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
-    /// WebSocket timeout in seconds.
+    /// Timeout in seconds per market and reference-price WebSocket connection attempt,
+    /// including reconnects, and for sends waiting for reconnection. Must be positive;
+    /// keep it above the 5-second maximum reconnect backoff.
     #[builder(default = 30)]
     pub ws_timeout_secs: u64,
     #[builder(default = crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS)]
@@ -365,11 +439,12 @@ pub struct PolymarketDataClientConfig {
     /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
-    /// Maximum time to wait for a post-reconnect or recovery order book snapshot
-    /// in seconds.
+    /// Maximum wait for an initial, post-reconnect, or recovery book snapshot, in seconds.
     ///
-    /// Set to 0 to wait indefinitely: reconnected books stay gated until the
-    /// venue replays a snapshot, with no deadline monitor.
+    /// Set to 0 to disable initial and reconnect monitors, and per-attempt snapshot deadlines
+    /// within the retry budget. Updates without a baseline can still request recovery.
+    /// During recovery, book output stays gated until a valid snapshot arrives.
+    /// Retry-budget and retry-ceiling limits still apply.
     #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
     pub book_snapshot_timeout_secs: u64,
     /// Interval for checking order book feed staleness in seconds.
@@ -426,6 +501,26 @@ impl PolymarketDataClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validates the WebSocket timeout and instrument selections.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the WebSocket timeout is zero, nested instrument selections contain
+    /// duplicates, or Gamma filters are invalid.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        check_range(
+            "ws_timeout_secs",
+            self.ws_timeout_secs > 0,
+            "must be positive",
+        )?;
+
+        if let Some(config) = &self.instrument_config {
+            config.validate()?;
+        }
+
+        Ok(())
     }
 
     /// Returns the validated proxy URL, if configured.
@@ -609,6 +704,20 @@ impl PolymarketExecutionClientConfig {
         Self::default()
     }
 
+    /// Validates the configured instrument selections.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if nested instrument selections contain duplicates or Gamma filters
+    /// are invalid.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if let Some(config) = &self.instrument_config {
+            config.validate()?;
+        }
+
+        Ok(())
+    }
+
     pub(crate) fn validate_signer(&self) -> anyhow::Result<()> {
         if self.signer_type == PolymarketSignerType::Session {
             anyhow::ensure!(
@@ -698,6 +807,7 @@ impl PolymarketExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use rstest::rstest;
 
     use super::*;
@@ -705,12 +815,7 @@ mod tests {
     #[rstest]
     fn updown_event_slug_config_builds_aligned_slugs() {
         let config = PolymarketUpDownEventSlugConfig {
-            assets: vec![
-                "BTC".to_string(),
-                " eth ".to_string(),
-                String::new(),
-                "btc".to_string(),
-            ],
+            assets: vec!["BTC".to_string(), " eth ".to_string(), String::new()],
             interval_mins: 5,
             periods: 2,
             start_offset_periods: -1,
@@ -742,9 +847,12 @@ mod tests {
             .build_event_slugs_at_unix_secs(1_700_000_123)
             .expect_err("zero interval should fail");
 
-        assert!(
-            err.to_string()
-                .contains("event_slug_builder.interval_mins must be positive")
+        assert_eq!(
+            err.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::range(
+                "event_slug_builder.interval_mins",
+                "must be positive and fit in seconds"
+            )),
         );
     }
 
@@ -1070,5 +1178,129 @@ load_ids = ["0xabc-123.POLYMARKET"]
             error.starts_with("Invalid Polymarket CLOB credentials for PolyBolt"),
             "{error}"
         );
+    }
+
+    #[rstest]
+    #[case("load_ids", serde_json::json!(["token-one.POLYMARKET", "token-two.POLYMARKET"]))]
+    #[case("event_slugs", serde_json::json!(["event-one", "event-two"]))]
+    #[case("market_slugs", serde_json::json!(["market-one", "market-two"]))]
+    #[case("series_ids", serde_json::json!([1, 2]))]
+    fn test_instrument_provider_selection_uniqueness(
+        #[case] field: &str,
+        #[case] mut values: serde_json::Value,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        if duplicate {
+            let entries = values.as_array_mut().unwrap();
+            entries.push(entries[0].clone());
+        }
+
+        let mut input =
+            serde_json::to_value(PolymarketInstrumentProviderConfig::default()).unwrap();
+        input[field] = values;
+        let config: PolymarketInstrumentProviderConfig = serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate(field, None))
+        } else {
+            Ok(())
+        };
+
+        let result = config
+            .validate()
+            .map_err(|e| e.downcast::<ConfigError>().unwrap());
+
+        assert_eq!(result, expected);
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
+
+    #[rstest]
+    #[case::exact(vec!["btc".to_string(), "btc".to_string()])]
+    #[case::normalized(vec!["BTC".to_string(), " btc ".to_string()])]
+    fn test_slug_assets_reject_duplicates(#[case] assets: Vec<String>) {
+        let config = PolymarketUpDownEventSlugConfig {
+            assets,
+            ..Default::default()
+        };
+
+        let error = config
+            .build_event_slugs_at_unix_secs(1_700_000_123)
+            .unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("event_slug_builder.assets", None))
+        );
+    }
+
+    #[rstest]
+    #[case("slug", "market-a, market-b,market-a")]
+    #[case("slug", " market-a,market-a ")]
+    #[case("condition_ids", "condition-a,condition-b,condition-a")]
+    #[case("clob_token_ids", "token-a,token-b,token-a")]
+    #[case("question_ids", "question-a,question-b,question-a")]
+    #[case("market_maker_address", "address-a,address-b,address-a")]
+    #[case("sports_market_types", "type-a,type-b,type-a")]
+    #[case("tag_id", "1,01")]
+    #[case("id", "1,2,1")]
+    #[case("id", "1,01")]
+    fn test_gamma_filter_selection_duplicates(#[case] key: &str, #[case] values: &str) {
+        let config = PolymarketInstrumentProviderConfig {
+            filters: Some(std::collections::HashMap::from([(
+                key.to_string(),
+                values.to_string(),
+            )])),
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate(format!("filters.{key}"), None))
+        );
+    }
+
+    #[rstest]
+    fn test_execution_config_rejects_duplicate_provider_selections() {
+        let config = PolymarketExecutionClientConfig {
+            instrument_config: Some(PolymarketInstrumentProviderConfig {
+                load_ids: Some(vec![
+                    InstrumentId::from("one.POLYMARKET"),
+                    InstrumentId::from("one.POLYMARKET"),
+                ]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("load_ids", None))
+        );
+    }
+
+    #[rstest]
+    #[case::interval_zero(0, 1, vec!["btc".to_string()], Err(ConfigError::range("event_slug_builder.interval_mins", "must be positive and fit in seconds")))]
+    #[case::interval_overflow(u64::MAX, 1, vec!["btc".to_string()], Err(ConfigError::range("event_slug_builder.interval_mins", "must be positive and fit in seconds")))]
+    #[case::periods_zero(5, 0, vec!["btc".to_string()], Err(ConfigError::range("event_slug_builder.periods", "must be positive")))]
+    #[case::assets_empty(5, 1, vec![], Err(ConfigError::empty_field("event_slug_builder.assets")))]
+    #[case::assets_blank(5, 1, vec![" ".to_string()], Err(ConfigError::empty_field("event_slug_builder.assets")))]
+    #[case::interval_max(u64::MAX / SECONDS_IN_MINUTE, 1, vec!["btc".to_string()], Ok(()))]
+    fn test_slug_builder_config_static_validation(
+        #[case] interval_mins: u64,
+        #[case] periods: u64,
+        #[case] assets: Vec<String>,
+        #[case] expected: ConfigResult<()>,
+    ) {
+        let config = PolymarketUpDownEventSlugConfig {
+            assets,
+            interval_mins,
+            periods,
+            ..Default::default()
+        };
+
+        assert_eq!(config.validate(), expected);
     }
 }

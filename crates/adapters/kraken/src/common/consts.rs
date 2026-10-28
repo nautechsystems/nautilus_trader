@@ -34,6 +34,10 @@ pub static KRAKEN_CLIENT_ID: LazyLock<ClientId> =
 // API Partner integration identifier
 pub const NAUTILUS_KRAKEN_BROKER_ID: &str = "AA98 N84G GOPN GL6Y";
 
+/// Maximum length of a Kraken Futures client order ID (`cliOrdId`), as the send-order API
+/// documents it.
+pub const KRAKEN_FUTURES_MAX_CLIENT_ORDER_ID_LEN: usize = 100;
+
 // WebSocket-specific constants
 pub const KRAKEN_PONG: &str = "pong";
 pub const KRAKEN_WS_TOPIC_DELIMITER: char = '.';

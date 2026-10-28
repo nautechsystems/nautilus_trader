@@ -165,6 +165,7 @@ impl ExponentialBackoff {
         // Generate random jitter
         #[cfg(not(all(feature = "simulation", madsim)))]
         let jitter = rand::rng().random_range(0..=self.jitter_ms);
+
         #[cfg(all(feature = "simulation", madsim))]
         let jitter = if madsim::runtime::Handle::try_current().is_ok() {
             madsim::rand::thread_rng().gen_range(0..=self.jitter_ms)
@@ -297,6 +298,7 @@ mod tests {
         let max = Duration::from_secs(1);
         let factor = 2.0;
         let jitter = 50;
+
         // Run several iterations to ensure that jitter stays within bounds
         for _ in 0..10 {
             let mut backoff = ExponentialBackoff::new(initial, max, factor, jitter, false).unwrap();
@@ -546,7 +548,6 @@ mod tests {
         let initial = Duration::from_millis(100);
         let max = Duration::from_secs(1);
         let mut backoff = ExponentialBackoff::new(initial, max, 2.0, 500, false).unwrap();
-
         while backoff.current_delay() < max {
             backoff.next_duration();
         }
@@ -612,6 +613,7 @@ mod tests {
         } else {
             terminal.as_u8()
         });
+
         let notify = tokio::sync::Notify::new();
         let mut wait = pin!(wait_reconnect_delay(Duration::from_secs(5), &mode, &notify));
 
@@ -649,7 +651,6 @@ mod tests {
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_throttle_floors_delay_once_threshold_trips() {
         let mut throttle = ReconnectThrottle::default();
-
         for _ in 0..RECONNECT_MIN_DELAY_ATTEMPTS {
             throttle.record_attempt();
         }
@@ -675,7 +676,6 @@ mod tests {
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_throttle_lifts_floor_after_window_expires() {
         let mut throttle = ReconnectThrottle::default();
-
         for _ in 0..RECONNECT_MIN_DELAY_ATTEMPTS {
             throttle.record_attempt();
         }
@@ -695,7 +695,6 @@ mod tests {
     #[tokio::test(flavor = "current_thread", start_paused = true)]
     async fn test_throttle_window_is_purely_time_based() {
         let mut throttle = ReconnectThrottle::default();
-
         for _ in 0..RECONNECT_MIN_DELAY_ATTEMPTS {
             throttle.record_attempt();
         }

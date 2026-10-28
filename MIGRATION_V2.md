@@ -129,10 +129,11 @@ venue/run, live reconciliation, and data/execution tester settings.
 
 Potential credentials use bounded inspection properties instead of raw readback:
 
-| Constructor field                                    | Inspection property                   |
-| ---------------------------------------------------- | ------------------------------------- |
-| `BacktestDataConfig.catalog_fs_storage_options`      | `catalog_fs_storage_option_keys`      |
-| `BacktestDataConfig.catalog_fs_rust_storage_options` | `catalog_fs_rust_storage_option_keys` |
+| Constructor field                           | Inspection property           |
+| ------------------------------------------- | ----------------------------- |
+| `DataCatalogConfig.fs_rust_storage_options` | `fs_rust_storage_option_keys` |
+
+For `BacktestDataConfig`, inspect `config.catalog.fs_rust_storage_option_keys`.
 
 Raw storage-option fields and adapter credentials remain private. Some configs offer `has_*` checks for proxy,
 database, or gateway credentials without returning values. Retain reusable secrets in application state.
@@ -220,6 +221,77 @@ step.
 | `cache.quote_tick_count`             | `cache.quote_count`            |
 | `cache.trade_tick_count`             | `cache.trade_count`            |
 
+### Data subscription lists
+
+Actor and Strategy subscriptions and their matching unsubscribe methods accept a scalar or non-empty sequence:
+
+| Subscription family                             | Python argument |
+| ----------------------------------------------- | --------------- |
+| Instrument definitions (`subscribe_instrument`) | `instrument_id` |
+| Book deltas, depth, and interval snapshots      | `instrument_id` |
+| Quotes and trades                               | `instrument_id` |
+| Mark and index prices                           | `instrument_id` |
+| Funding rates                                   | `instrument_id` |
+| Instrument status and closes                    | `instrument_id` |
+| Option Greeks                                   | `instrument_id` |
+| Bars                                            | `bar_type`      |
+
+Keep the existing Python keywords for both input forms:
+
+```python
+from nautilus_trader.model import BarType, InstrumentId
+
+instrument_ids = [
+    InstrumentId.from_str("BTCUSDT.BINANCE"),
+    InstrumentId.from_str("ETHUSDT.BINANCE"),
+]
+self.subscribe_quotes(instrument_id=instrument_ids)
+self.unsubscribe_quotes(instrument_id=instrument_ids)
+
+bar_types = [
+    BarType.from_str("BTCUSDT.BINANCE-1-MINUTE-LAST-EXTERNAL"),
+    BarType.from_str("BTCUSDT.BINANCE-5-MINUTE-LAST-EXTERNAL"),
+]
+self.subscribe_bars(bar_type=bar_types)
+self.unsubscribe_bars(bar_type=bar_types)
+```
+
+**Input rules**:
+
+- Duplicate IDs or full bar types are removed in first-occurrence order. Different bar specifications
+  for one instrument stay distinct.
+- Mixed-venue lists require `client_id`.
+- Empty lists, missing-client mixed-venue lists, and unsupported routes raise `ValueError` before
+  subscriptions change.
+- Invalid Python elements raise `TypeError` before any subscription changes, including releases.
+
+Historical requests retain their scalar instrument or bar input. Custom data, venue-wide
+`subscribe_instruments`, option chains, and DeFi keep their existing inputs.
+
+#### Bar ownership
+
+The actor acquires one subscription per standard output bar type. The first full type supplies the
+source and retained route. Unsubscribe with that full type or its `standard()` alias to release the
+original acquisition.
+
+#### Adapter command fields
+
+Update readers in both subscribe and unsubscribe hooks:
+
+| Command kind     | Scalar field    | List field       |
+| ---------------- | --------------- | ---------------- |
+| Instrument-keyed | `instrument_id` | `instrument_ids` |
+| Bars             | `bar_type`      | `bar_types`      |
+
+The serialized fields change too; upgrade producers and consumers together. Python properties are
+read-only and return list copies. Mutating a copy does not change the command.
+
+Native and Python hooks receive compatible lists, as do external MessageBus clients. Unsupported lists
+must be rejected before effects; supported lists process independent members best effort.
+
+See [Data subscription APIs](#data-subscription-apis) for Rust integration changes and
+[Subscription lists](docs/concepts/actors.md#subscription-lists) for routing and release rules.
+
 ### Identity and lifecycle inspection
 
 Replace generic identity names:
@@ -284,6 +356,16 @@ Route historical results to type-specific callbacks:
 `CustomData` responses arrive as an object, batches as one list, including empty lists.
 `on_historical_mark_prices` and `on_historical_index_prices` support native batch delivery, but the public
 Python API cannot initiate those requests.
+
+Historical request methods accept `callback=callable`. The callback receives the same string ID
+returned by the request method, replacing the v1 `UUID4` argument. It runs after `on_data_response`
+and after that request leaves pending state, including on failure.
+
+Use `request_join(request_ids, callback=None, request_id=None)` for completion joins. Pass time bounds
+to the child requests; the join waits for their completion and does not merge or replay their data.
+The actor and strategy methods `is_pending_request`, `has_pending_requests`, and `pending_requests`
+inspect the shared historical lifecycle. Pending snapshots contain string IDs. See
+[Python callbacks and joins](docs/concepts/actors.md#python-callbacks-and-joins) for ordering and cleanup.
 
 ### Events and custom subscriptions
 
@@ -679,17 +761,22 @@ becomes `delay_post_stop`.
 
 ### Backtest models and settlement
 
-Replace v1 import-path wrappers for Python/Cython fill, fee, latency, margin, and simulation modules, including
+Replace v1 import-path wrappers for Python/Cython fill, fee, margin, latency, and simulation modules, including
 `Importable*ModelConfig`, `MarginModelConfig`, their factories, and `SimulationModuleConfig`. Construct
 models/modules directly and pass them to the backtest venue: `ProbabilisticFillModel`, `FixedFeeModel`,
-`StaticLatencyModel`, `StandardMarginModel`, `LeveragedMarginModel`, or `FXRolloverInterestModule`. Native
-Rust models compose at compile time; v1 provided no runtime native model plugins.
+`StandardMarginModel`, `LeveragedMarginModel`, `StaticLatencyModel`, or `FXRolloverInterestModule`. Native
+Rust models compose at compile time; v1 provided no runtime native model plugins. Custom Python model
+subclasses are also accepted; see [behavioral models](docs/concepts/behavioral_models.md#supplying-implementations).
 
 - Backtest venues no longer accept `settlement_prices`. Add `InstrumentClose` data with
   `close_type=InstrumentCloseType.CONTRACT_EXPIRED`; its exact `close_price` settles futures, binary
   contracts, and option close legs at expiry.
 - An omitted backtest `default_leverage` now selects 10x for margin accounts and 1x for cash
   accounts. Set `default_leverage=Decimal(1)` to retain v1's unleveraged behavior.
+- Adding an instrument that is already registered no longer replaces its matching engine. An
+  identical definition is a no-op, and a different definition raises an error. A
+  `BacktestNode` catalog holding differing versions of one instrument ID now fails at build
+  instead of using the last version.
 
 ### Backtest post-run inspection
 
@@ -823,6 +910,10 @@ the new schema. Regenerate or migrate that data before upgrading a catalog in pl
 existing built-in-data catalog queries and Feather output through `BacktestEngineConfig`. These configs do not
 restore the v1 factory, download, custom-data, or generic serialization workflows.
 
+For replay inputs, pass `catalog=DataCatalogConfig(...)` to each `BacktestDataConfig` instead of flat
+catalog arguments. See [migrate flat catalog settings](docs/concepts/data/catalog.md#migrate-flat-catalog-settings)
+for the field mapping and storage-option precedence.
+
 ### Streaming output and rotation
 
 `StreamingConfig` writes Feather files to a local `writer_path` and promotes them into an optional `catalog`,
@@ -853,12 +944,73 @@ unknown codes. Both `lz4` and code `5` write Parquet `LZ4_RAW`; see [compression
 groups](docs/concepts/data/catalog.md#compression-and-row-groups).
 
 Catalog storage options are `object_store` configuration keys. V1's Rust backend logged and ignored an unknown
-key, such as GCS `project_id`; v2 fails with an error that names the key. `BacktestDataConfig` passes
-`catalog_fs_storage_options` to the same backend when `catalog_fs_rust_storage_options` is unset, so translate
-fsspec-only options to `object_store` keys, such as `anon` to `skip_signature`. See [storage
+key, such as GCS `project_id`; v2 fails with an error that names the key. Pass native options through
+`DataCatalogConfig.fs_rust_storage_options`. Translate fsspec-only options to `object_store` keys,
+such as `anon` to `skip_signature`. See [storage
 options](docs/concepts/data/catalog.md#filesystem-protocols-and-storage-options).
 
 ## Update Rust integrations
+
+### Data subscription APIs
+
+Update actor subscribe and unsubscribe overrides using these traits from `nautilus_common::messages::data`:
+
+| Input kind     | Override parameter       | Explicit scalar type |
+| -------------- | ------------------------ | -------------------- |
+| Instrument IDs | `impl IntoInstrumentIds` | `InstrumentId`       |
+| Bar types      | `impl IntoBarTypes`      | `BarType`            |
+
+Use the explicit scalar type where `.into()` relied on scalar inference.
+
+Migrated `DataActorCore` list methods return `Result<()>`. Remove `topic` or `pattern` from migrated
+subscribe calls, including `topic` from `subscribe_bars`; the core derives topics from the members.
+
+#### Validation
+
+Empty or missing-client mixed-venue lists fail before any subscription changes, including releases.
+Unsupported subscription routes fail before ownership is retained or handlers are registered.
+
+Rust actor methods panic; `DataActorCore` returns an error.
+
+For non-external data clients:
+
+- Quote lists must share one route: client, synthetic, or aggregated spread. Spread routing requires
+  `aggregate_spread_quotes=true` and a cached spread instrument.
+- Instrument definitions, books, status, closes, and option Greeks reject lists with multiple IDs and
+  a synthetic member.
+
+#### Dispatch and partial outcomes
+
+Compatible direct members retain their parent command ID, metadata, and list at the adapter boundary.
+Internal/composite bars, book snapshots, spreads, and continuous futures keep separate source acquisitions.
+
+- Hooks limited to one member can reject larger lists before effects with `single_instrument_id()` or
+  `single_bar_type()`.
+- Supported lists attempt every independent member without rolling back accepted work.
+- Native hooks keep `anyhow::Result<()>`: `Ok(())` accepts all dispatched members, `SubscriptionError`
+  reports the exact accepted subset, and any other error accepts none.
+
+Construct partial outcomes with:
+
+- `SubscriptionError::instruments(accepted, source)` for instrument IDs.
+- `SubscriptionError::bars(accepted, source)` for full bar types.
+
+Unsubscribe acceptance means successful release. Failed non-book final releases retain their saved
+inverse for explicit retries.
+
+The Python bridge accepts the whole command at queue admission. Later async hook failures, including
+unsupported-list errors, are logged without per-member outcomes. Venue acknowledgements remain separate.
+
+#### Catalog starts
+
+With `streaming`:
+
+- Direct quote/trade lists skip per-member start inference. Scalar subscriptions, including derived
+  sources, keep their inference.
+- External bars infer starts per full type and split only when effective parameters differ.
+- Explicit `start_ns` suppresses inference. Releases retain original parameters and routes.
+
+Historical requests, including `RequestBars.bar_type`, retain their scalar inputs.
 
 ### Catalog traits and backends
 
@@ -907,6 +1059,26 @@ and migration guidance.
 - Query chunk sizes are targets. Equal-timestamp groups can exceed them; instrument and custom queries can collect
   all results before yielding batches.
 
+### Option-chain selection
+
+`StrikeRange` is non-exhaustive. Existing variants support direct construction, but Rust matches outside
+`nautilus-model` require a wildcard arm. Delegate model-level selection to `StrikeRange::resolve`, or return
+an explicit unsupported-mode error from a custom selector. Matches inside `nautilus-model` remain exhaustive.
+
+This extension boundary covers `StrikeRange` only. `OptionSideFilter` retains its exhaustive `Both`,
+`Calls`, `Puts`, and `Otm` variants. `StrikeSearchProfile` uses checked construction and private fields.
+`SubscribeOptionChain` retains its existing fields and constructor.
+
+Existing selection behavior, serialized variant names, and variant order are unchanged. New variants
+are appended after existing ones, preserving variant indices for downstream index-based Serde formats.
+Older readers still reject new variants during deserialization.
+
+The [Python v2 API stability goal](README.md#versioning-and-releases) does not change the Rust crates'
+separate `0.x` versioning. Pin compatible crate versions independently of Python. Additional `StrikeRange`
+variants preserve source compatibility for downstream wildcard matches. Changing existing variant fields
+or the signatures of `SubscribeOptionChain::new` or `StrikeSearchProfile::new` still requires release notes
+and migration guidance for affected callers.
+
 ### Data variants
 
 | v1 Rust variant           | v2 Rust variant     |
@@ -934,6 +1106,23 @@ signature change does not add test-clock support to those adapters.
 
 Custom Rust cache database adapters used with live orders must implement the batch `index_order_clients`
 operation. The default trait implementation rejects non-empty claims.
+
+### Execution report tasks
+
+For Rust report-task callers, replace `task.result.await` with `(task.finish)()` on the core thread.
+**Join the collection worker first.** An early call consumes `finish` and discards later collection results.
+
+- `collection`: worker-safe HTTP requests, pagination, decoding, and report construction.
+- `finish`: synchronous finalization using current core state; it cannot suspend.
+
+With `ExecutionReportTask::new`, `finish` propagates collection errors without calling the continuation.
+It returns an error if collection is unfinished or stopped without a result.
+
+For struct literals, replace the result future with `finish: Box<dyn FnOnce() -> anyhow::Result<T>>`
+and implement the same checks.
+
+Dropping `finish` does not cancel collection. Its owner must still join or abort the worker.
+Node report handling and inline collection (`generate_*_task` returning `None`) are unchanged.
 
 ### Tokio runtime
 
@@ -1060,8 +1249,8 @@ medians, minimum-to-maximum spread, v2/v1 ratios, and percentage gaps. The drive
 
 ## Known limitations
 
-- **Request callbacks**: Python does not provide v1 joined-response, pending-request cleanup, or late and
-  duplicate delivery convenience behavior.
+- **Joined replay**: Python completion joins do not merge or replay historical data. See
+  [Python callbacks and joins](docs/concepts/actors.md#python-callbacks-and-joins).
 - **Message-bus backing**: use built-in configs such as `RedisMessageBusConfig`; arbitrary Python
   message-bus factory classes remain unsupported. V1
   `MessageBusConfig(database=DatabaseConfig(...), external_streams=[...])` maps to the builder calls

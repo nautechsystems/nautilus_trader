@@ -15,9 +15,9 @@
 
 //! Instrument filters for the Polymarket adapter.
 
-use std::fmt::Debug;
+use std::{fmt::Debug, sync::Arc};
 
-use nautilus_core::UnixNanos;
+use nautilus_core::{Params, UnixNanos};
 use nautilus_model::instruments::{BinaryOption, Instrument, InstrumentAny};
 
 use crate::{
@@ -47,9 +47,12 @@ pub trait InstrumentFilter: Debug + Send + Sync {
         None
     }
 
-    /// Event query: two-phase fetch that resolves an event slug to condition IDs,
-    /// then queries `/markets` with those IDs and the given params.
-    /// Enables server-side sorting and limiting of markets within an event.
+    /// Event queries with client-side sorting and limiting of embedded markets.
+    ///
+    /// Only `order`, `ascending`, and `max_markets` are supported. Other parameters
+    /// and unsupported order fields cause an error when loading. See
+    /// [`PolymarketGammaHttpClient::request_instruments_by_event_query`](
+    /// crate::http::gamma::PolymarketGammaHttpClient::request_instruments_by_event_query).
     fn event_queries(&self) -> Option<Vec<(String, GetGammaMarketsParams)>> {
         None
     }
@@ -176,11 +179,13 @@ impl InstrumentFilter for GammaQueryFilter {
     }
 }
 
-/// Two-phase event filter: resolves event slug → condition IDs, then queries
-/// `/markets` with those IDs and the given params (sorting, limiting, etc.).
+/// Event filter that sorts and limits an event's embedded markets client-side.
 ///
-/// This enables server-side sorting and limiting of markets within an event,
-/// unlike [`EventSlugFilter`] which returns all markets from the event.
+/// Only `order`, `ascending`, and `max_markets` are supported. Other parameters
+/// and unsupported order fields cause an error when loading. See
+/// [`PolymarketGammaHttpClient::request_instruments_by_event_query`](
+/// crate::http::gamma::PolymarketGammaHttpClient::request_instruments_by_event_query)
+/// for supported order fields. [`EventSlugFilter`] returns all markets from the event.
 #[derive(Debug, Clone)]
 pub struct EventQueryFilter {
     queries: Vec<(String, GetGammaMarketsParams)>,
@@ -280,9 +285,13 @@ pub(crate) fn binary_market_closed(instrument: &BinaryOption) -> Option<bool> {
 }
 
 pub(crate) fn set_market_closed(instrument: &mut BinaryOption, closed: bool) {
-    let mut info = instrument.info.clone().unwrap_or_default();
-    info.insert(MARKET_CLOSED_KEY.to_string(), closed.into());
-    instrument.info = Some(info);
+    let mut info = instrument
+        .info
+        .as_ref()
+        .map(Params::to_shared_map)
+        .unwrap_or_default();
+    info.insert(MARKET_CLOSED_KEY.to_string(), Arc::new(closed.into()));
+    instrument.info = Some(Params::from_shared(info));
 }
 
 /// Returns whether `instrument` is past its expiration without Gamma reporting it still open.

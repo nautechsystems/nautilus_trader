@@ -27,7 +27,10 @@ use nautilus_common::messages::{
 use nautilus_core::datetime::datetime_to_unix_nanos;
 use nautilus_model::{data::CustomData, instruments::Instrument};
 
-use super::{PolymarketDataClient, instruments::apply_live_instrument_locked};
+use super::{
+    PolymarketDataClient,
+    instruments::{apply_live_instrument_locked, cache_instruments_unchecked},
+};
 use crate::{
     common::consts::POLYMARKET_VENUE,
     providers::extract_condition_id,
@@ -93,20 +96,18 @@ pub(super) fn request_data(client: &PolymarketDataClient, request: RequestCustom
                 );
             } else {
                 summary.used_watchlist_fallback = true;
-                let snapshot = watchlist.load();
                 let selection_mode = if resolve_poll_enabled {
                     ResolveWatchSelectionMode::ManualFallback
                 } else {
                     ResolveWatchSelectionMode::ManualAllEligible
                 };
                 let selection = collect_resolve_watch_selection(
-                    &snapshot,
+                    &watchlist.read(),
                     clock.get_time_ns(),
                     grace_secs,
                     max_wait_secs,
                     selection_mode,
                 );
-                drop(snapshot);
 
                 pause_and_reconcile_resolve_watch_entries(
                     &resolve_ctx,
@@ -229,23 +230,34 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
                 }
             };
 
-            if crate::data::runtime::is_instrument_expired(&instrument, now_ns)
-                || !apply_live_instrument_locked(
-                    &closed_condition_ids,
-                    &update_state,
-                    &instruments_cache,
-                    &token_meta,
-                    &instrument,
-                    |_| {},
-                )
-            {
-                log::debug!(
-                    "Skipping expired instrument {} during request_instruments cache update",
-                    instrument.id()
-                );
-            }
-
             effective_instruments.push(instrument);
+        }
+
+        let cached_count = if update_state.retired {
+            0
+        } else {
+            let terminal_conditions = closed_condition_ids.lock();
+
+            let live: Vec<_> = effective_instruments
+                .iter()
+                .filter(|instrument| {
+                    !crate::data::runtime::is_instrument_expired_and_not_reported_open(
+                        instrument, now_ns,
+                    ) && !extract_condition_id(&instrument.id())
+                        .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+                })
+                .cloned()
+                .collect();
+
+            cache_instruments_unchecked(&instruments_cache, &token_meta, &live);
+            live.len()
+        };
+
+        let skipped_count = effective_instruments.len() - cached_count;
+        if skipped_count > 0 {
+            log::debug!(
+                "Skipped {skipped_count} instruments during request_instruments cache update"
+            );
         }
 
         let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -269,8 +281,11 @@ pub(super) fn request_instruments(client: &PolymarketDataClient, request: Reques
     }
 }
 
-pub(super) fn request_instrument(client: &PolymarketDataClient, request: RequestInstrument) {
-    let instrument_id = request.instrument_id;
+pub(super) fn request_instrument(
+    client: &PolymarketDataClient,
+    request: RequestInstrument,
+) -> anyhow::Result<()> {
+    let instrument_id = request.single_instrument_id()?;
     let http = client.provider.http_client().clone();
     let sender = client.data_sender.clone();
     let instruments_cache = client.instruments.clone();
@@ -315,7 +330,10 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
                 }
             };
 
-            if crate::data::runtime::is_instrument_expired(&inst, clock.get_time_ns()) {
+            if crate::data::runtime::is_instrument_expired_and_not_reported_open(
+                &inst,
+                clock.get_time_ns(),
+            ) {
                 log::debug!(
                     "Skipping expired instrument {instrument_id} during request_instrument cache update"
                 );
@@ -329,7 +347,7 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
                     |instrument| {
                         // Publish onto the data bus so other clients (e.g. the exec
                         // client's token map) can update from the same fetch.
-                        if let Err(e) = sender.send(DataEvent::Instrument(instrument.clone())) {
+                        if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
                             log::warn!("Failed to publish instrument {instrument_id}: {e}");
                         }
                     },
@@ -358,13 +376,15 @@ pub(super) fn request_instrument(client: &PolymarketDataClient, request: Request
     if let Err(e) = client.tasks.spawn(future) {
         log::debug!("Skipping Polymarket data task after shutdown began: {e}");
     }
+
+    Ok(())
 }
 
 pub(super) fn request_book_snapshot(
     client: &PolymarketDataClient,
     request: RequestBookSnapshot,
 ) -> anyhow::Result<()> {
-    let instrument_id = request.instrument_id;
+    let instrument_id = request.single_instrument_id()?;
     let instrument = client.ensure_market_data_request_allowed(instrument_id)?;
 
     let token_id = instrument.raw_symbol().as_str().to_string();
@@ -414,7 +434,7 @@ pub(super) fn request_trades(
     client: &PolymarketDataClient,
     request: RequestTrades,
 ) -> anyhow::Result<()> {
-    let instrument_id = request.instrument_id;
+    let instrument_id = request.single_instrument_id()?;
     let instrument = client.ensure_market_data_request_allowed(instrument_id)?;
 
     let condition_id = extract_condition_id(&instrument_id)?;

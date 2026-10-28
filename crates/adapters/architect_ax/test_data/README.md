@@ -2,7 +2,7 @@
 
 ## Captured responses
 
-`captured/` contains sanitized AX sandbox responses captured on 2026-09-24. HTTP captures retain
+Unless noted below, `captured/` contains sanitized AX sandbox responses captured on 2026-09-24. HTTP captures retain
 complete response envelopes, including pagination. The instruments response contains all 29 returned
 instruments. WebSocket files retain one complete frame for each observed message or request response.
 
@@ -16,6 +16,20 @@ candles, funding rates, funding slots, transactions, fills, orders, and open ord
 `open-reject`, `open-backoff`, `open-top`, `open-default`, and `open-inactive` captures come from
 minimum-size, noncrossing sandbox orders. They cover `rej`, `bo`, `tbl`, omitted `rb`, and `po: false`.
 All orders created for these captures were canceled or replaced, with zero executed quantity.
+
+`captured/post-only-crossing.json` contains sanitized REST requests and responses from sandbox
+validation on 2026-10-20. Each buy requests 100 EURUSD-PERP contracts at ten ticks above the sampled
+ask. Omitted `rb` and explicit `rej` reject with `post-only order would cross the book`. Explicit
+`bo` and `tbl` return adjusted `p` values in order history; the accepted `tbl` order also appears
+in open orders. Quotes can move between the book snapshot and matching, so `bo` need not equal
+the sampled ask minus one tick. The `bo` order later fills 100 contracts; an equal sell fill offsets
+that quantity. The `tbl` order is canceled with no fills. All probe orders reach terminal states.
+
+`captured/post-only-replace-rejected.json` records a sandbox replacement on 2026-10-20. The HTTP
+response proposes a new order ID, but a subsequent `t: "e"` event rejects the replacement on the
+original order ID with `post-only order would cross the book`. Its order snapshot remains
+`ACCEPTED` at the original price. The proposed order does not appear in order status or history.
+The original order is canceled during cleanup.
 
 The WebSocket captures cover L1/L2/L3 books, tickers, trades, candles, heartbeats, subscription
 responses, login, open orders, and errors. `ws-md-bc.json` and `ws-md-response-5.json` retain a BBO
@@ -52,7 +66,7 @@ the fixture lists the recognized values, including their fallback.
 
 ## Compatibility and derived cases
 
-The top-level JSON files predate this capture set. Their original capture provenance is not recorded;
+Unless noted below, the top-level JSON files predate this capture set. Their original capture provenance is not recorded;
 use them as targeted examples or compatibility cases. Required account, post-only, position cost-basis,
 margin, and instrument metadata fields are aligned with the current schemas where applicable.
 
@@ -60,6 +74,10 @@ margin, and instrument metadata fields are aligned with the current schemas wher
 schema's `ro`-only form. `ws_order_filled_unknown_state.json` and `ws_order_filled_unknown_tif.json` substitute an unknown
 sibling classification to verify that a fill still reaches execution. Files containing `invalid` test obsolete or
 malformed shapes. Tests also derive missing, null, and future enum values from these fixtures.
+
+`http_get_orders_partial_canceled.json` and `http_get_fills_partial_canceled.json` are synthetic
+fixtures for a partially filled canceled IOC. The fills arrive out of timestamp order and include
+a later fill for an unrelated order.
 
 The captures preserve these observed differences from the published schemas:
 

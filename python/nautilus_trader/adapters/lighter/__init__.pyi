@@ -116,6 +116,8 @@ class LighterExecutionClientConfig:
     def transport_backend(self) -> network.TransportBackend: ...
     @property
     def use_gtd(self) -> bool: ...
+    @property
+    def scheduled_cancel_timeout_secs(self) -> int | None: ...
     def __init__(
         self,
         account_id: model.AccountId,
@@ -135,6 +137,7 @@ class LighterExecutionClientConfig:
         deployment: LighterDeployment | None = None,
         venue: model.Venue | None = None,
         use_gtd: bool = True,
+        scheduled_cancel_timeout_secs: int | None = None,
     ) -> None: ...
     @property
     def has_proxy_url(self) -> bool: ...

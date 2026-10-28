@@ -86,7 +86,8 @@ impl SwapQuote {
         self.crossed_ticks.len()
     }
 
-    /// Determines swap direction from amount signs.
+    /// Determines swap direction from amount signs, or from price movement when both amounts are
+    /// zero.
     ///
     /// Returns `true` if swapping token0 for token1 (`zero_for_one`).
     #[pyo3(name = "zero_for_one")]

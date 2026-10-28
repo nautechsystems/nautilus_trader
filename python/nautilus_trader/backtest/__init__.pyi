@@ -44,19 +44,11 @@ class AccountAdjustmentOutcome:
 @typing.final
 class BacktestDataConfig:
     @property
-    def catalog_backend(self) -> persistence.CatalogBackend: ...
+    def catalog(self) -> persistence.DataCatalogConfig: ...
     @property
     def data_type(self) -> model.NautilusDataType: ...
     @property
-    def catalog_path(self) -> str: ...
-    @property
     def instrument_id(self) -> model.InstrumentId | None: ...
-    @property
-    def catalog_fs_protocol(self) -> str | None: ...
-    @property
-    def catalog_fs_storage_option_keys(self) -> list[str] | None: ...
-    @property
-    def catalog_fs_rust_storage_option_keys(self) -> list[str] | None: ...
     @property
     def instrument_ids(self) -> list[model.InstrumentId] | None: ...
     @property
@@ -80,10 +72,7 @@ class BacktestDataConfig:
     def __new__(
         cls,
         data_type: model.NautilusDataType,
-        catalog_path: str,
-        catalog_fs_protocol: str | None = None,
-        catalog_fs_storage_options: typing.Mapping[str, str] | None = None,
-        catalog_fs_rust_storage_options: typing.Mapping[str, str] | None = None,
+        catalog: persistence.DataCatalogConfig,
         instrument_id: model.InstrumentId | None = None,
         instrument_ids: typing.Sequence[model.InstrumentId] | None = None,
         start_time: int | str | datetime.datetime | pd.Timestamp | None = None,
@@ -94,7 +83,6 @@ class BacktestDataConfig:
         bar_spec: model.BarSpecification | None = None,
         bar_types: typing.Sequence[str] | None = None,
         optimize_file_loading: bool | None = None,
-        catalog_backend: persistence.CatalogBackend | None = None,
         batch_deltas: bool | None = None,
     ) -> BacktestDataConfig: ...
 
@@ -334,15 +322,15 @@ class BacktestVenueConfig:
     @property
     def leverages(self) -> dict[model.InstrumentId, decimal.Decimal] | None: ...
     @property
-    def margin_model(self) -> typing.Any | None: ...
-    @property
-    def modules(self) -> list[typing.Any]: ...
-    @property
     def fill_model(self) -> typing.Any | None: ...
+    @property
+    def fee_model(self) -> typing.Any | None: ...
+    @property
+    def margin_model(self) -> typing.Any | None: ...
     @property
     def latency_model(self) -> typing.Any | None: ...
     @property
-    def fee_model(self) -> typing.Any | None: ...
+    def modules(self) -> list[typing.Any]: ...
     @property
     def price_protection_points(self) -> int: ...
     @property
@@ -377,11 +365,11 @@ class BacktestVenueConfig:
         base_currency: model.Currency | None = None,
         default_leverage: decimal.Decimal | None = None,
         leverages: typing.Mapping[model.InstrumentId, decimal.Decimal] | None = None,
-        margin_model: typing.Any | None = None,
-        modules: typing.Sequence[typing.Any] | None = None,
         fill_model: typing.Any | None = None,
-        latency_model: typing.Any | None = None,
         fee_model: typing.Any | None = None,
+        margin_model: typing.Any | None = None,
+        latency_model: typing.Any | None = None,
+        modules: typing.Sequence[typing.Any] | None = None,
         price_protection_points: int | None = None,
         liquidation_enabled: bool | None = None,
         liquidation_trigger_ratio: float | None = None,
@@ -419,7 +407,7 @@ class FXRolloverInterestModule(SimulationModule):
 
 @typing.final
 class InterestRateRecord:
-    def __new__(cls, location: str, time: str, value: float) -> InterestRateRecord: ...
+    def __new__(cls, location: str, time: str, value: decimal.Decimal) -> InterestRateRecord: ...
 
 @typing.final
 class BacktestEngine:
@@ -463,9 +451,9 @@ class BacktestEngine:
         base_currency: model.Currency | None = None,
         default_leverage: decimal.Decimal | None = None,
         leverages: typing.Mapping[model.InstrumentId, decimal.Decimal] | None = None,
-        margin_model: typing.Any | None = None,
         fill_model: typing.Any | None = None,
         fee_model: typing.Any | None = None,
+        margin_model: typing.Any | None = None,
         latency_model: typing.Any | None = None,
         modules: typing.Sequence[typing.Any] | None = None,
         book_type: model.BookType = model.BookType.L1_MBP,

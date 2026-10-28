@@ -113,7 +113,7 @@ impl RpcSubscription {
         }
     }
 
-    fn pool_logs(addresses: &[Address], event_signature: String) -> Self {
+    fn pool_logs(addresses: &[Address], event_signature: &str) -> Self {
         let mut addresses: Vec<String> = addresses
             .iter()
             .map(|address| format!("{address:?}"))
@@ -662,7 +662,7 @@ impl CoreBlockchainRpcClient {
 
         self.replace_subscription(
             event_type,
-            RpcSubscription::pool_logs(addresses, event_signature),
+            RpcSubscription::pool_logs(addresses, &event_signature),
         )
         .await
     }
@@ -719,7 +719,7 @@ mod tests {
                 address!("2222222222222222222222222222222222222222"),
                 address!("1111111111111111111111111111111111111111"),
             ],
-            event_signature.clone(),
+            &event_signature,
         );
 
         let params = subscription.params();

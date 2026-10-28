@@ -127,6 +127,18 @@ pub struct HyperliquidExecutionClient {
 }
 
 impl HyperliquidExecutionClient {
+    /// Arms, replaces, or clears the account-wide scheduled cancellation of all open orders.
+    ///
+    /// See [`HyperliquidHttpClient::schedule_cancel`] for timestamp and lifecycle requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if [`HyperliquidHttpClient::schedule_cancel`] fails.
+    pub async fn schedule_cancel(&self, time: Option<u64>) -> anyhow::Result<()> {
+        self.http_client.schedule_cancel(time).await?;
+        Ok(())
+    }
+
     /// Returns a reference to the configuration.
     pub fn config(&self) -> &HyperliquidExecutionClientConfig {
         &self.config
@@ -377,11 +389,13 @@ impl HyperliquidExecutionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if either the HTTP or WebSocket client fail to construct.
+    /// Returns an error if the configuration is invalid or either transport fails to construct.
     pub fn new(
         core: ExecutionClientCore,
         config: HyperliquidExecutionClientConfig,
     ) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let secrets = Secrets::resolve(
             config
                 .private_key
@@ -414,10 +428,15 @@ impl HyperliquidExecutionClient {
         .context("failed to create Hyperliquid HTTP client")?;
 
         http_client.set_account_id(core.account_id);
-        http_client.set_account_address(account_address);
+        http_client.set_account_address(account_address)?;
         http_client.set_normalize_prices(config.normalize_prices);
         http_client.set_market_order_slippage_bps(config.market_order_slippage_bps);
         http_client.set_include_builder_attribution(config.include_builder_attribution);
+        http_client.set_info_retry_config(
+            config.max_retries,
+            Duration::from_millis(config.retry_delay_initial_ms),
+            Duration::from_millis(config.retry_delay_max_ms),
+        );
 
         if let Some(url) = &config.base_url_http {
             http_client.set_base_info_url(url.clone());
@@ -488,9 +507,7 @@ impl HyperliquidExecutionClient {
         } else {
             log::debug!("Initialized {} instruments", instruments.len());
 
-            for instrument in &instruments {
-                self.http_client.cache_instrument(instrument);
-            }
+            self.http_client.merge_instruments(&instruments);
         }
 
         self.core.set_instruments_initialized();
@@ -629,6 +646,56 @@ impl HyperliquidExecutionClient {
                 false
             }
         }
+    }
+
+    async fn start_scheduled_cancel(&self) -> anyhow::Result<()> {
+        let Some(timeout_secs) = self.config.scheduled_cancel_timeout_secs else {
+            return Ok(());
+        };
+
+        let timeout = Duration::from_secs(timeout_secs);
+        let refresh_interval = timeout / 3;
+        refresh_scheduled_cancel(&self.http_client, self.clock, timeout, refresh_interval)
+            .await
+            .context("failed to arm Hyperliquid scheduled cancellation")?;
+
+        let http_client = self.http_client.clone();
+        let ws_client = self.ws_client.clone();
+        let clock = self.clock;
+        let cancellation = self.session_tasks.cancellation_token();
+
+        self.session_tasks.spawn(async move {
+            let mut interval = tokio::time::interval_at(
+                tokio::time::Instant::now() + refresh_interval,
+                refresh_interval,
+            );
+            interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    _ = interval.tick() => {}
+                }
+
+                if !ws_client.is_active() {
+                    continue;
+                }
+
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    result = refresh_scheduled_cancel(&http_client, clock, timeout, refresh_interval) => {
+                        if let Err(e) = result {
+                            log::error!("Scheduled cancellation refresh failed; the last deadline may expire: {e:#}");
+                        }
+                    }
+                }
+            }
+        })?;
+
+        log::info!("Scheduled cancellation armed: timeout_secs={timeout_secs}");
+        Ok(())
     }
 
     fn start_outcome_settlement_poll(&self) -> anyhow::Result<()> {
@@ -1990,7 +2057,13 @@ impl ExecutionClient for HyperliquidExecutionClient {
         self.ensure_instruments_initialized_async().await?;
         let ready_bracket_parents = self.restore_staged_brackets();
 
-        if let Err(e) = self.start_ws_stream().await {
+        let setup = async {
+            self.start_scheduled_cancel().await?;
+            self.start_ws_stream().await
+        }
+        .await;
+
+        if let Err(e) = setup {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
                     "Hyperliquid execution startup teardown failed: {teardown_error}"
@@ -2104,10 +2177,11 @@ impl ExecutionClient for HyperliquidExecutionClient {
         cmd: &GenerateFillReports,
     ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
         let client = self.report_client();
+        let core = self.core.clone();
         let command = cmd.clone();
         Some(ExecutionReportTask::new(
             async move { client?.collect_fill_reports(command).await },
-            Ok,
+            move |reports| Ok(finish_fill_reports(&core, reports)),
         ))
     }
 
@@ -2153,7 +2227,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        self.report_client()?.collect_fill_reports(cmd).await
+        let reports = self.report_client()?.collect_fill_reports(cmd).await?;
+        Ok(finish_fill_reports(&self.core, reports))
     }
 
     async fn generate_position_status_reports(
@@ -2199,6 +2274,15 @@ impl ExecutionClient for HyperliquidExecutionClient {
         // a saturated response may be truncated, so coverage is not provable
         let history_capped =
             historical_orders.len() >= HYPERLIQUID_RECENT_HISTORY_LIMIT || fills_capped;
+
+        let history_start = if history_capped {
+            fills_response
+                .iter()
+                .map(|fill| UnixNanos::from(fill.time * 1_000_000))
+                .min()
+        } else {
+            None
+        };
 
         if history_capped {
             log::warn!(
@@ -2274,7 +2358,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             ts_init,
             None,
         );
-        mass_status.set_report_window(lookback_start, reports_complete);
+        mass_status.set_report_window(lookback_start.or(history_start), reports_complete);
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
@@ -2446,6 +2530,20 @@ impl HyperliquidReportClient {
     }
 }
 
+fn finish_fill_reports(
+    core: &ExecutionClientCore,
+    mut reports: Vec<FillReport>,
+) -> Vec<FillReport> {
+    let cache = core.cache();
+
+    // Unmapped fills must still match retained position fills after their order is purged
+    for report in &mut reports {
+        report.client_order_id = cache.client_order_id(&report.venue_order_id).copied();
+    }
+
+    reports
+}
+
 enum CollectedOrderReport {
     Cloid(OrderStatusReport),
     Oid(OrderStatusReport),
@@ -2615,9 +2713,7 @@ impl HyperliquidExecutionClient {
             .await
             .unwrap_or_default();
 
-        for instrument in instruments {
-            ws_client.cache_instrument(instrument);
-        }
+        ws_client.merge_instruments(&instruments);
 
         ws_client.connect().await?;
         if let Err(e) = ws_client
@@ -2661,6 +2757,8 @@ impl HyperliquidExecutionClient {
             // Venue time of the latest delivered report (the stream start before any), so a
             // stalled stream cannot push the recovery window past events lost after it.
             let mut ts_last_report = clock.get_time_ns();
+            let mut recovery_window: Option<RecoveryWindow> = None;
+            let mut reconnect_generation = 0;
             let mut recovered_reports = None;
             let (follow_up_tx, mut follow_up_rx) =
                 tokio::sync::mpsc::unbounded_channel::<FollowUpHistory>();
@@ -2668,6 +2766,7 @@ impl HyperliquidExecutionClient {
             loop {
                 let event = next_execution_event(
                     &mut recovered_reports,
+                    &mut recovery_window,
                     &mut follow_up_rx,
                     &mut ws_client,
                     &http_client,
@@ -2850,12 +2949,22 @@ impl HyperliquidExecutionClient {
                         NautilusWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
 
+                            reconnect_generation += 1;
+
+                            let window = RecoveryWindow {
+                                ts_start: recovery_window
+                                    .map_or(ts_last_report, |window| window.ts_start),
+                                generation: reconnect_generation,
+                            };
+
+                            recovery_window = Some(window);
+
                             recovered_reports = fetch_reconnect_reports(
                                 &ws_client,
                                 &http_client,
                                 &dispatch_state,
                                 &subscription_address,
-                                ts_last_report,
+                                window.ts_start,
                             )
                             .await
                             .inspect(|reports| {
@@ -2874,7 +2983,7 @@ impl HyperliquidExecutionClient {
                             spawn_follow_up_history_read(
                                 &http_client,
                                 &subscription_address,
-                                ts_last_report,
+                                window,
                                 follow_up_tx.clone(),
                                 &session_spawner,
                             );
@@ -2906,8 +3015,30 @@ impl HyperliquidExecutionClient {
     }
 }
 
+async fn refresh_scheduled_cancel(
+    http_client: &HyperliquidHttpClient,
+    clock: &AtomicTime,
+    timeout: Duration,
+    refresh_interval: Duration,
+) -> anyhow::Result<()> {
+    let timeout_ms = u64::try_from(timeout.as_millis())?;
+    let deadline = clock
+        .get_time_ms()
+        .checked_add(timeout_ms)
+        .context("scheduled cancellation deadline overflows milliseconds")?;
+
+    tokio::time::timeout(
+        refresh_interval,
+        http_client.schedule_cancel(Some(deadline)),
+    )
+    .await
+    .context("scheduled cancellation request timed out")??;
+    Ok(())
+}
+
 async fn next_execution_event(
     recovered_reports: &mut Option<Vec<ExecutionReport>>,
+    recovery_window: &mut Option<RecoveryWindow>,
     follow_up_rx: &mut tokio::sync::mpsc::UnboundedReceiver<FollowUpHistory>,
     ws_client: &mut HyperliquidWebSocketClient,
     http_client: &HyperliquidHttpClient,
@@ -2928,16 +3059,21 @@ async fn next_execution_event(
                 released.into_iter().map(ExecutionReport::Order).collect(),
             ))
         }
-        Some((orders, fills, ts_last_report)) = follow_up_rx.recv() => {
+        Some((orders, fills, window)) = follow_up_rx.recv() => {
             let reports = reconnect_reports_from_history(
                 fills,
                 orders,
-                ts_last_report.saturating_sub(RECONNECT_RECOVERY_MARGIN),
+                window.ts_start.saturating_sub(RECONNECT_RECOVERY_MARGIN),
                 ws_client,
                 http_client,
                 dispatch_state,
             )
             .inspect(|reports| {
+                // An older read cannot settle a gap reopened by a newer reconnect
+                if *recovery_window == Some(window) {
+                    *recovery_window = None;
+                }
+
                 log::info!(
                     "Recovered {} execution reports in the follow-up history read",
                     reports.len(),
@@ -2995,18 +3131,24 @@ async fn fetch_reconnect_reports(
     )
 }
 
-// Raw history a follow-up read fetched, with the last report time that bounds its window
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct RecoveryWindow {
+    ts_start: UnixNanos,
+    generation: u64,
+}
+
+// Raw history a follow-up read fetched, with the recovery window it can settle
 type FollowUpHistory = (
     Vec<HyperliquidOrderStatusEntry>,
     HyperliquidFills,
-    UnixNanos,
+    RecoveryWindow,
 );
 
 // The stream loop builds and replays the reports, so a slow read never holds back stream updates
 fn spawn_follow_up_history_read(
     http_client: &HyperliquidHttpClient,
     account_address: &str,
-    ts_last_report: UnixNanos,
+    window: RecoveryWindow,
     sender: tokio::sync::mpsc::UnboundedSender<FollowUpHistory>,
     task_spawner: &TaskSpawner,
 ) {
@@ -3018,7 +3160,7 @@ fn spawn_follow_up_history_read(
 
         match read_history(&http_client, &account_address).await {
             Ok((orders, fills)) => {
-                let _ = sender.send((orders, fills, ts_last_report));
+                let _ = sender.send((orders, fills, window));
             }
             Err(e) => log::error!("Failed the follow-up history read: {e:#}"),
         }
@@ -3429,21 +3571,26 @@ async fn collect_query_order_fills(
         }
     }
 
-    let sweep = http_client.fill_reports_from_response(fills.clone(), None)?;
+    let mut sweep = http_client.fill_reports_from_response(fills.clone(), None)?;
     if !sweep.complete {
         anyhow::bail!("fill history could not be fully resolved or parsed");
     }
 
-    for (raw, parsed) in fills.iter().zip(&sweep.reports) {
-        if raw.oid == oid
-            && (raw.sz != parsed.last_qty.as_decimal()
-                || raw.px != parsed.last_px.as_decimal()
-                || raw.fee != parsed.commission.as_decimal())
+    for (raw, parsed) in fills.iter().zip(&mut sweep.reports) {
+        if raw.oid != oid {
+            continue;
+        }
+
+        if raw.sz != parsed.last_qty.as_decimal()
+            || raw.px != parsed.last_px.as_decimal()
+            || raw.fee != parsed.commission.as_decimal()
         {
             anyhow::bail!(
                 "fill quantity, price, or commission loses precision for venue order {oid}"
             );
         }
+
+        parsed.client_order_id = Some(context.identity.client_order_id);
     }
 
     validate_query_order_fills(sweep.reports, report, context)
@@ -4835,6 +4982,43 @@ mod tests {
         assert_eq!(
             client.http_client.get_asset_index(def.symbol.as_str()),
             Some(def.asset_index),
+        );
+    }
+
+    #[rstest]
+    fn test_on_instrument_replaces_asset_index_and_precision() {
+        let mut client = make_execution_client();
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let mut defs = parse_perp_instruments(&meta, 0).unwrap();
+        let def = &mut defs[0];
+        let original = create_instrument_from_def(def, UnixNanos::from(1)).unwrap();
+        client.on_instrument(original.clone());
+        let cache = client.ws_client.instruments_cache();
+        let previous = cache.load();
+
+        def.asset_index = 73;
+        def.price_decimals = 3;
+        def.tick_size = Decimal::new(1, 3);
+        def.size_decimals = 4;
+        def.lot_size = Decimal::new(1, 4);
+        let refreshed = create_instrument_from_def(def, UnixNanos::from(2)).unwrap();
+        client.on_instrument(refreshed.clone());
+
+        assert_eq!(
+            client.http_client.get_asset_index(def.symbol.as_str()),
+            Some(73)
+        );
+        assert_eq!(
+            client.http_client.get_price_precision(def.symbol.as_str()),
+            Some(3)
+        );
+        assert_eq!(
+            serde_json::to_value(previous.get(&def.raw_symbol).unwrap()).unwrap(),
+            serde_json::to_value(original).unwrap(),
+        );
+        assert_eq!(
+            serde_json::to_value(cache.load().get(&def.raw_symbol).unwrap()).unwrap(),
+            serde_json::to_value(refreshed).unwrap(),
         );
     }
 

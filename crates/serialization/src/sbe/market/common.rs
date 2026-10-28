@@ -49,7 +49,7 @@ pub(super) const GROUP_HEADER_16_LENGTH: usize = 4;
 const VAR_STRING16_MAX_LEN: usize = (u16::MAX - 1) as usize;
 
 #[derive(Debug, Clone, Copy)]
-pub(super) struct MessageHeader {
+pub(in crate::sbe) struct MessageHeader {
     pub block_length: u16,
     pub template_id: u16,
     pub schema_id: u16,
@@ -132,7 +132,8 @@ pub(super) fn decode_price(cursor: &mut SbeCursor<'_>) -> Result<Price, SbeDecod
     let raw: PriceRaw =
         wire_to_raw(raw_i128).ok_or(SbeDecodeError::NumericOverflow { type_name: "Price" })?;
 
-    Ok(Price::from_raw(raw, precision))
+    Price::from_raw_checked(raw, precision)
+        .map_err(|_| SbeDecodeError::InvalidValue { field: "Price" })
 }
 
 #[inline]
@@ -153,7 +154,8 @@ pub(super) fn decode_quantity(cursor: &mut SbeCursor<'_>) -> Result<Quantity, Sb
         type_name: "Quantity",
     })?;
 
-    Ok(Quantity::from_raw(raw, precision))
+    Quantity::from_raw_checked(raw, precision)
+        .map_err(|_| SbeDecodeError::InvalidValue { field: "Quantity" })
 }
 
 #[inline]

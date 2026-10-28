@@ -1724,6 +1724,8 @@ impl KrakenSpotHttpClient {
         let ts_init = self.generate_ts_init();
         let asset_pairs = self.inner.get_asset_pairs(pairs.clone(), None).await?;
         self.record_pair_aliases(&asset_pairs);
+        let mut leverage_tiers = AHashMap::new();
+
         let mut instruments: Vec<InstrumentAny> = asset_pairs
             .iter()
             .filter_map(|(pair_name, definition)| {
@@ -1741,12 +1743,20 @@ impl KrakenSpotHttpClient {
                     definition.leverage_buy.clone(),
                     definition.leverage_sell.clone(),
                 );
-                self.leverage_tiers_cache.rcu(|m| {
-                    m.insert(key, tiers.clone());
-                });
+                leverage_tiers.insert(key, tiers);
                 instrument
             })
             .collect();
+
+        if !leverage_tiers.is_empty() {
+            self.leverage_tiers_cache.rcu(|cache| {
+                cache.extend(
+                    leverage_tiers
+                        .iter()
+                        .map(|(key, tiers)| (*key, tiers.clone())),
+                );
+            });
+        }
 
         // Also fetch tokenized asset pairs (xStocks). When loading all pairs this
         // picks up tokenized equities; when loading specific pairs it covers the

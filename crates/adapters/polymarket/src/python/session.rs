@@ -100,8 +100,7 @@ impl PyPolymarketSessionKeyClientConfig {
 #[pyclass(
     module = "nautilus_trader.adapters.polymarket",
     name = "PolymarketSessionKey",
-    frozen,
-    skip_from_py_object
+    frozen
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")]
 #[derive(Debug, Clone)]
@@ -134,8 +133,7 @@ impl PyPolymarketSessionKey {
 
 #[pyclass(
     module = "nautilus_trader.adapters.polymarket",
-    name = "PolymarketSessionKeyClient",
-    skip_from_py_object
+    name = "PolymarketSessionKeyClient"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")]
 #[derive(Debug)]

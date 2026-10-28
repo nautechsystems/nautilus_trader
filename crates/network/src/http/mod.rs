@@ -61,10 +61,17 @@
 //! updates. Cloudflare-fronted endpoints can reset large response bodies mid-transfer under
 //! adaptive windows. The value `false` keeps fixed windows, and any other value fails the build.
 //!
-//! Buffered responses retain only configured header fields and reject bodies larger than 100 MiB,
-//! including chunked bodies without a declared length. [`HttpClient::get_stream`] consumes bodies
-//! incrementally without a total size limit. Request URLs in transport errors and response-stream
-//! diagnostics are limited to their origin (scheme, host, and port). Setting `redact_url(true)` on the
+//! Buffered requests advertise gzip unless default or per-request headers set `Accept-Encoding`.
+//! Gzip responses are decoded before return; unsupported encodings and corrupt bodies are errors.
+//! The request deadline includes gzip decoding. Responses whose method or status forbids content
+//! preserve their encoding metadata. Decoded responses omit `Content-Encoding` and `Content-Length`,
+//! even when selected through `header_keys`.
+//!
+//! Buffered responses reject wire bodies larger than 100 MiB, including chunked bodies without a
+//! declared length. Decoded bodies have a separate 100 MiB default limit, configurable through
+//! `max_decompressed_bytes`. [`HttpClient::get_stream`] returns raw body chunks without decoding,
+//! adding `Accept-Encoding`, or applying a total size limit. Request URLs in transport errors and
+//! response-stream diagnostics are limited to their origin (scheme, host, and port). Setting `redact_url(true)` on the
 //! builder omits the origin too. This policy controls the URL context added by this client;
 //! diagnostic messages from lower layers are unchanged. The client logs request metadata only, never URLs.
 //!

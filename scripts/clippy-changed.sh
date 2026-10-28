@@ -5,6 +5,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+python3 -B "$SCRIPT_DIR/update-clippy-allowances.py" --check
 # One shared definition so this pass resolves the same feature graph as the Makefile
 # gates and the other changed-crate hook. A command substitution inside a here-string
 # does not trip errexit, so bind the list first and reject an empty one rather than
@@ -132,7 +133,7 @@ for p in data['packages']:
   desired_features="${DESIRED_FEATURES[*]}"
   if [ "$pkg" = "nautilus-serialization" ]; then
     # The crate has no default features, so compile each core format when its source changes
-    desired_features="$desired_features arrow arrow-display capnp sbe"
+    desired_features="$desired_features arrow arrow-display sbe"
   fi
 
   for feat in $desired_features; do

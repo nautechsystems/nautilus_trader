@@ -34,10 +34,11 @@ use super::{
         apply_live_instrument, publish_cached_condition_closed, query_positive_closed_markets,
     },
     runtime::is_condition_closed,
+    spawn_task,
     subscriptions::resolve_token_id_from,
 };
 use crate::{
-    common::consts::GAMMA_CONDITION_IDS_BATCH_SIZE,
+    common::{consts::GAMMA_CONDITION_IDS_BATCH_SIZE, parse::validate_market_version},
     filters::market_closed,
     http::{
         gamma::parse_markets_with_transient, models::GammaMarket, query::GetGammaMarketsParams,
@@ -45,13 +46,13 @@ use crate::{
     providers::extract_condition_id,
     resolve::{
         StrictResolvedMarket, admit_data_resolution_instrument, apply_watched_condition_resolution,
-        build_strict_resolved_market, remove_data_resolve_watch_entry,
-        upsert_data_resolve_watch_entry_from_instrument,
+        build_strict_resolved_market, upsert_data_resolve_watch_entry_from_instrument,
     },
 };
 
 #[derive(Debug)]
 enum AutoLoadOutcome {
+    Unsupported,
     Open(Vec<InstrumentAny>),
     Closed {
         instruments: Vec<InstrumentAny>,
@@ -101,12 +102,15 @@ impl Drop for AutoLoadScheduledGuard {
 
 impl PolymarketDataClient {
     pub(super) fn resume_resolution_subscriptions(&self) {
-        let status_ids = self.subscriptions.active_instrument_status_subs.load();
-        let close_ids = self.subscriptions.active_instrument_close_subs.load();
-        let mut instrument_ids = status_ids.union(&close_ids).copied().collect::<Vec<_>>();
+        let mut instrument_ids = self
+            .subscriptions
+            .active_instrument_status_subs
+            .iter()
+            .chain(self.subscriptions.active_instrument_close_subs.iter())
+            .map(|id| *id)
+            .collect::<Vec<_>>();
         instrument_ids.sort_unstable();
-        drop(status_ids);
-        drop(close_ids);
+        instrument_ids.dedup();
 
         for instrument_id in instrument_ids {
             let needs_load = {
@@ -199,9 +203,19 @@ impl PolymarketDataClient {
         let active_instrument_close_subs = self.subscriptions.active_instrument_close_subs.clone();
         let data_sender = self.data_sender.clone();
         let cancellation = self.cancellation_token.clone();
-        let resolve_poll_watchlist = self.resolve_poll_watchlist.clone();
-        let resolve_watch_apply_mutex = self.resolve_watch_apply_mutex.clone();
         let scheduled_guard = AutoLoadScheduledGuard::new(scheduled);
+        let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
+
+        let spawner = match self.tasks.spawner() {
+            Ok(spawner) => spawner,
+            Err(e) => {
+                log::debug!("Skipping Polymarket auto-load after shutdown began: {e}");
+                return;
+            }
+        };
+
+        let monitor_spawner = spawner.clone();
+
         let future = async move {
             let mut scheduled_guard = scheduled_guard;
 
@@ -296,6 +310,15 @@ impl PolymarketDataClient {
                                 .filter_map(|instrument| {
                                     extract_condition_id(&instrument.id()).ok()
                                 })
+                                .chain(
+                                    markets
+                                        .iter()
+                                        .filter(|market| {
+                                            validate_market_version(market.version.as_deref())
+                                                .is_err()
+                                        })
+                                        .map(|market| market.condition_id.clone()),
+                                )
                                 .collect();
                             let probe_condition_ids: Vec<String> = chunk
                                 .iter()
@@ -376,6 +399,7 @@ impl PolymarketDataClient {
                     attempt < max_retries && needs_resolution_hydration(condition_id, outcome)
                 };
 
+                // Resolution admission can yield, so cache and publish each leg together
                 for (condition_id, outcome) in &outcomes {
                     if should_retry_hydration(condition_id, outcome) {
                         continue;
@@ -388,6 +412,7 @@ impl PolymarketDataClient {
                     }
 
                     match outcome {
+                        AutoLoadOutcome::Unsupported => {}
                         AutoLoadOutcome::Open(loaded) => {
                             if cancellation.is_cancelled() {
                                 continue;
@@ -406,15 +431,8 @@ impl PolymarketDataClient {
                                         "Auto-loaded instrument {} filtered out",
                                         instrument.id()
                                     );
-                                    let _guard = resolve_watch_apply_mutex.lock();
-                                    active_instrument_status_subs.remove(&instrument_id);
-                                    active_instrument_close_subs.remove(&instrument_id);
-                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
-                                    remove_data_resolve_watch_entry(
-                                        &resolve_poll_watchlist,
-                                        instrument_id,
-                                        false,
-                                    );
+                                    subscriptions
+                                        .discard_filtered_instrument(instrument_id, &batch);
                                     continue;
                                 }
 
@@ -426,7 +444,7 @@ impl PolymarketDataClient {
                                     instrument,
                                     |instrument| {
                                         if let Err(e) = data_sender
-                                            .send(DataEvent::Instrument(instrument.clone()))
+                                            .send(DataEvent::Data(instrument.clone().into()))
                                         {
                                             log::error!(
                                                 "Failed to emit auto-loaded instrument {instrument_id}: {e}"
@@ -461,15 +479,8 @@ impl PolymarketDataClient {
                                         "Auto-loaded instrument {} filtered out",
                                         instrument.id()
                                     );
-                                    let _guard = resolve_watch_apply_mutex.lock();
-                                    active_instrument_status_subs.remove(&instrument_id);
-                                    active_instrument_close_subs.remove(&instrument_id);
-                                    resolve_ctx.deferred_resolutions.remove(&instrument_id);
-                                    remove_data_resolve_watch_entry(
-                                        &resolve_poll_watchlist,
-                                        instrument_id,
-                                        false,
-                                    );
+                                    subscriptions
+                                        .discard_filtered_instrument(instrument_id, &batch);
                                     continue;
                                 }
 
@@ -481,7 +492,7 @@ impl PolymarketDataClient {
                                     instrument,
                                     |instrument| {
                                         if let Err(e) = data_sender
-                                            .send(DataEvent::Instrument(instrument.clone()))
+                                            .send(DataEvent::Data(instrument.clone().into()))
                                         {
                                             log::error!(
                                                 "Failed to emit auto-loaded instrument {instrument_id}: {e}"
@@ -519,6 +530,7 @@ impl PolymarketDataClient {
                                 &instrument_update_state,
                                 &instruments,
                                 &data_sender,
+                                resolve_ctx.clock,
                             );
 
                             subscriptions
@@ -569,6 +581,11 @@ impl PolymarketDataClient {
                                 && let Ok(token_id) = resolve_token_id_from(&instruments, *id)
                             {
                                 resolve_ctx.sync_ws_subscription(*id, token_id).await;
+                                subscriptions.monitor_book_snapshot(
+                                    *id,
+                                    snapshot_timeout,
+                                    &monitor_spawner,
+                                );
                             } else {
                                 next_batch.insert(*id);
                             }
@@ -578,7 +595,7 @@ impl PolymarketDataClient {
                         {
                             next_batch.insert(*id);
                         }
-                        Some(AutoLoadOutcome::Closed { .. }) => {
+                        Some(AutoLoadOutcome::Unsupported | AutoLoadOutcome::Closed { .. }) => {
                             // Terminal for live data; settlement metadata is
                             // retained by `retire_instrument`.
                         }
@@ -647,9 +664,7 @@ impl PolymarketDataClient {
             }
         };
 
-        if let Err(e) = self.tasks.spawn(future) {
-            log::debug!("Skipping Polymarket data task after shutdown began: {e}");
-        }
+        spawn_task(&spawner, future);
     }
 }
 
@@ -659,7 +674,16 @@ fn record_auto_load_outcomes(
     markets: &[GammaMarket],
     instruments: Vec<InstrumentAny>,
 ) {
-    for market in markets.iter().filter(|market| market.closed == Some(true)) {
+    for market in markets
+        .iter()
+        .filter(|market| validate_market_version(market.version.as_deref()).is_err())
+    {
+        outcomes.insert(market.condition_id.clone(), AutoLoadOutcome::Unsupported);
+    }
+
+    for market in markets.iter().filter(|market| {
+        market.closed == Some(true) && validate_market_version(market.version.as_deref()).is_ok()
+    }) {
         let incoming = build_strict_resolved_market(market);
         match outcomes
             .entry(market.condition_id.clone())
@@ -688,6 +712,7 @@ fn record_auto_load_outcomes(
             .entry(condition_id)
             .or_insert(AutoLoadOutcome::Unknown)
         {
+            AutoLoadOutcome::Unsupported => {}
             AutoLoadOutcome::Closed { instruments, .. } => {
                 if market_closed(&instrument) == Some(true) {
                     instruments.push(instrument);

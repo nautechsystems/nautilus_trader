@@ -1,0 +1,293 @@
+{
+  "default": {
+    "time": "2026-10-20T20:32:03.356695+00:00",
+    "request": {
+      "s": "EURUSD-PERP",
+      "d": "B",
+      "p": "1.1247",
+      "q": 100,
+      "tif": "GTC",
+      "po": true,
+      "tag": "NTPOProbe"
+    },
+    "bid": "1.1222",
+    "ask": "1.1237",
+    "tick": "0.0001",
+    "place_response": {
+      "oid": "fixture-crossing-1"
+    },
+    "status": {
+      "status": {
+        "symbol": "EURUSD-PERP",
+        "order_id": "fixture-crossing-1",
+        "state": "REJECTED",
+        "filled_quantity": 0,
+        "remaining_quantity": 0,
+        "reject_message": "post-only order would cross the book"
+      }
+    },
+    "open_orders": {
+      "orders": [],
+      "total_count": 0,
+      "limit": 100,
+      "offset": 0
+    },
+    "history": {
+      "orders": [
+        {
+          "oid": "fixture-crossing-1",
+          "u": "fixture-account",
+          "aid": "fixture-account",
+          "s": "EURUSD-PERP",
+          "p": "1.1247",
+          "q": 100,
+          "xq": 0,
+          "rq": 0,
+          "o": "REJECTED",
+          "d": "B",
+          "tif": "GTC",
+          "tag": "NTPOProbe",
+          "po": true,
+          "rb": "rej",
+          "txt": "post-only order would cross the book",
+          "ts": 1792528324,
+          "tn": 115431724
+        }
+      ],
+      "limit": 10
+    },
+    "final_status": {
+      "status": {
+        "symbol": "EURUSD-PERP",
+        "order_id": "fixture-crossing-1",
+        "state": "REJECTED",
+        "filled_quantity": 0,
+        "remaining_quantity": 0,
+        "reject_message": "post-only order would cross the book"
+      }
+    }
+  },
+  "reject": {
+    "time": "2026-10-20T20:32:10.171122+00:00",
+    "request": {
+      "s": "EURUSD-PERP",
+      "d": "B",
+      "p": "1.1248",
+      "q": 100,
+      "tif": "GTC",
+      "po": true,
+      "tag": "NTPOProbe",
+      "rb": "rej"
+    },
+    "bid": "1.1222",
+    "ask": "1.1238",
+    "tick": "0.0001",
+    "place_response": {
+      "oid": "fixture-crossing-2"
+    },
+    "status": {
+      "status": {
+        "symbol": "EURUSD-PERP",
+        "order_id": "fixture-crossing-2",
+        "state": "REJECTED",
+        "filled_quantity": 0,
+        "remaining_quantity": 0,
+        "reject_message": "post-only order would cross the book"
+      }
+    },
+    "open_orders": {
+      "orders": [],
+      "total_count": 0,
+      "limit": 100,
+      "offset": 0
+    },
+    "history": {
+      "orders": [
+        {
+          "oid": "fixture-crossing-2",
+          "u": "fixture-account",
+          "aid": "fixture-account",
+          "s": "EURUSD-PERP",
+          "p": "1.1248",
+          "q": 100,
+          "xq": 0,
+          "rq": 0,
+          "o": "REJECTED",
+          "d": "B",
+          "tif": "GTC",
+          "tag": "NTPOProbe",
+          "po": true,
+          "rb": "rej",
+          "txt": "post-only order would cross the book",
+          "ts": 1792528330,
+          "tn": 917950763
+        }
+      ],
+      "limit": 10
+    },
+    "final_status": {
+      "status": {
+        "symbol": "EURUSD-PERP",
+        "order_id": "fixture-crossing-2",
+        "state": "REJECTED",
+        "filled_quantity": 0,
+        "remaining_quantity": 0,
+        "reject_message": "post-only order would cross the book"
+      }
+    }
+  },
+  "back_off": {
+    "time": "2026-10-20T20:32:16.856070+00:00",
+    "request": {
+      "s": "EURUSD-PERP",
+      "d": "B",
+      "p": "1.1247",
+      "q": 100,
+      "tif": "GTC",
+      "po": true,
+      "tag": "NTPOProbe",
+      "rb": "bo"
+    },
+    "bid": "1.1222",
+    "ask": "1.1237",
+    "tick": "0.0001",
+    "place_response": {
+      "oid": "fixture-crossing-3"
+    },
+    "status": {
+      "status": {
+        "symbol": "EURUSD-PERP",
+        "order_id": "fixture-crossing-3",
+        "state": "FILLED",
+        "filled_quantity": 100,
+        "remaining_quantity": 0
+      }
+    },
+    "open_orders": {
+      "orders": [],
+      "total_count": 0,
+      "limit": 100,
+      "offset": 0
+    },
+    "history": {
+      "orders": [
+        {
+          "oid": "fixture-crossing-3",
+          "u": "fixture-account",
+          "aid": "fixture-account",
+          "s": "EURUSD-PERP",
+          "p": "1.1237",
+          "q": 100,
+          "xq": 100,
+          "rq": 0,
+          "o": "FILLED",
+          "d": "B",
+          "tif": "GTC",
+          "tag": "NTPOProbe",
+          "po": true,
+          "rb": "bo",
+          "ts": 1792528337,
+          "tn": 610946534
+        }
+      ],
+      "limit": 10
+    },
+    "final_status": {
+      "status": {
+        "symbol": "EURUSD-PERP",
+        "order_id": "fixture-crossing-3",
+        "state": "FILLED",
+        "filled_quantity": 100,
+        "remaining_quantity": 0
+      }
+    }
+  },
+  "top_of_book": {
+    "time": "2026-10-20T20:32:23.488383+00:00",
+    "request": {
+      "s": "EURUSD-PERP",
+      "d": "B",
+      "p": "1.1247",
+      "q": 100,
+      "tif": "GTC",
+      "po": true,
+      "tag": "NTPOProbe",
+      "rb": "tbl"
+    },
+    "bid": "1.1222",
+    "ask": "1.1237",
+    "tick": "0.0001",
+    "place_response": {
+      "oid": "fixture-crossing-4"
+    },
+    "status": {
+      "status": {
+        "symbol": "EURUSD-PERP",
+        "order_id": "fixture-crossing-4",
+        "state": "ACCEPTED",
+        "filled_quantity": 0,
+        "remaining_quantity": 100
+      }
+    },
+    "open_orders": {
+      "orders": [
+        {
+          "oid": "fixture-crossing-4",
+          "u": "fixture-account",
+          "aid": "fixture-account",
+          "s": "EURUSD-PERP",
+          "p": "1.1222",
+          "q": 100,
+          "xq": 0,
+          "rq": 100,
+          "o": "ACCEPTED",
+          "d": "B",
+          "tif": "GTC",
+          "tag": "NTPOProbe",
+          "po": true,
+          "rb": "tbl",
+          "ts": 1792528344,
+          "tn": 240769090
+        }
+      ],
+      "total_count": 1,
+      "limit": 100,
+      "offset": 0
+    },
+    "history": {
+      "orders": [
+        {
+          "oid": "fixture-crossing-4",
+          "u": "fixture-account",
+          "aid": "fixture-account",
+          "s": "EURUSD-PERP",
+          "p": "1.1222",
+          "q": 100,
+          "xq": 0,
+          "rq": 100,
+          "o": "ACCEPTED",
+          "d": "B",
+          "tif": "GTC",
+          "tag": "NTPOProbe",
+          "po": true,
+          "rb": "tbl",
+          "ts": 1792528344,
+          "tn": 240769090
+        }
+      ],
+      "limit": 10
+    },
+    "cancel_response": {
+      "cxl_rx": true
+    },
+    "final_status": {
+      "status": {
+        "symbol": "EURUSD-PERP",
+        "order_id": "fixture-crossing-4",
+        "state": "CANCELED",
+        "filled_quantity": 0,
+        "remaining_quantity": 0
+      }
+    }
+  }
+}

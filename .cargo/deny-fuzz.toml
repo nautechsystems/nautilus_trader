@@ -10,6 +10,7 @@ feature-depth = 1
 
 [advisories]
 unused-ignored-advisory = "deny"
+ignore = []
 
 [licenses]
 unused-allowed-license = "allow"

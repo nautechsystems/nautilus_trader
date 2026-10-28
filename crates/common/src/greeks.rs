@@ -437,7 +437,7 @@ impl GreeksCalculator {
         {
             check_option_greeks_data(&cached_greeks)?;
             if let Some(pos) = position {
-                cached_greeks.pnl = cached_greeks.price - pos.avg_px_open;
+                cached_greeks.pnl = cached_greeks.price - pos.avg_px_open.as_f64();
             }
 
             check_option_greeks_data(&cached_greeks)?;
@@ -485,7 +485,10 @@ impl GreeksCalculator {
 
         let final_greeks = shocked_greeks.as_ref().unwrap_or(&greeks_data);
         check_option_greeks_data(final_greeks)?;
-        let pnl = position.map_or(final_greeks.pnl, |pos| final_greeks.price - pos.avg_px_open);
+        let pnl = position.map_or(final_greeks.pnl, |pos| {
+            final_greeks.price - pos.avg_px_open.as_f64()
+        });
+
         check_greeks_values(pnl, final_greeks.price, final_greeks.greeks)?;
 
         if is_fresh {
@@ -652,7 +655,7 @@ impl GreeksCalculator {
             GreeksData::from_delta(instrument_id, delta, multiplier.as_f64(), ts_event);
 
         if let Some(pos) = position {
-            greeks_data.pnl = (underlying_price + spot_shock) - pos.avg_px_open;
+            greeks_data.pnl = (underlying_price + spot_shock) - pos.avg_px_open.as_f64();
             greeks_data.price = greeks_data.pnl;
         }
 
@@ -1152,7 +1155,7 @@ impl GreeksCalculator {
                 }
             }
 
-            let quantity = position.signed_qty;
+            let quantity = position.signed_qty.as_f64();
             let instrument_greeks = self.instrument_greeks(
                 position_instrument_id,
                 Some(flat_interest_rate),
@@ -1487,6 +1490,7 @@ mod tests {
         types::{Currency, Price, Quantity},
     };
     use rstest::rstest;
+    use rust_decimal::Decimal;
     use ustr::Ustr;
 
     use super::*;
@@ -2485,10 +2489,10 @@ mod tests {
         msgbus::set_message_bus(Rc::new(RefCell::new(msgbus::MessageBus::default())));
 
         let mut expected_position = expected.clone();
-        expected_position.pnl = expected_position.price - position.avg_px_open;
+        expected_position.pnl = expected_position.price - position.avg_px_open.as_f64();
         assert_portfolio_greeks_eq(
             &result,
-            &(position.signed_qty * &expected_position.to_portfolio_greeks()),
+            &(position.signed_qty.as_f64() * &expected_position.to_portfolio_greeks()),
         );
         assert_eq!(cached.is_some(), cache_greeks || publish_greeks);
         assert_eq!(published.borrow().len(), usize::from(publish_greeks));
@@ -2587,8 +2591,9 @@ mod tests {
             .unwrap();
 
         let mut expected_position = expected.clone();
-        expected_position.pnl = expected_position.price - position.avg_px_open;
-        let expected_portfolio = position.signed_qty * &expected_position.to_portfolio_greeks();
+        expected_position.pnl = expected_position.price - position.avg_px_open.as_f64();
+        let expected_portfolio =
+            position.signed_qty.as_f64() * &expected_position.to_portfolio_greeks();
         assert_portfolio_greeks_eq(&result, &expected_portfolio);
         assert_greeks_eq(
             &calculator.cache.borrow().greeks(&option_id).unwrap(),
@@ -2812,7 +2817,7 @@ mod tests {
                 None,
             )
             .unwrap();
-        let expected = open_position.signed_qty * &expected.to_portfolio_greeks();
+        let expected = open_position.signed_qty.as_f64() * &expected.to_portfolio_greeks();
 
         assert_ne!(expected.delta, 0.0);
         assert_portfolio_greeks_eq(
@@ -2927,8 +2932,9 @@ mod tests {
                 None,
             )
             .unwrap();
-        let expected_long = long_position.signed_qty * &long_greeks.to_portfolio_greeks();
-        let expected_short = short_position.signed_qty * &short_greeks.to_portfolio_greeks();
+        let expected_long = long_position.signed_qty.as_f64() * &long_greeks.to_portfolio_greeks();
+        let expected_short =
+            short_position.signed_qty.as_f64() * &short_greeks.to_portfolio_greeks();
         let expected = expected_long + expected_short;
 
         assert_ne!(expected.pnl, 0.0);
@@ -2943,11 +2949,11 @@ mod tests {
         );
         assert_portfolio_greeks_eq(
             &calculate_portfolio_greeks(&calculator, Some(PositionSide::Long)).unwrap(),
-            &(long_position.signed_qty * &long_greeks.to_portfolio_greeks()),
+            &(long_position.signed_qty.as_f64() * &long_greeks.to_portfolio_greeks()),
         );
         assert_portfolio_greeks_eq(
             &calculate_portfolio_greeks(&calculator, Some(PositionSide::Short)).unwrap(),
-            &(short_position.signed_qty * &short_greeks.to_portfolio_greeks()),
+            &(short_position.signed_qty.as_f64() * &short_greeks.to_portfolio_greeks()),
         );
     }
 
@@ -5365,10 +5371,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_instrument_greeks_rejects_invalid_pnl_without_publishing() {
+    fn test_instrument_greeks_projects_extreme_decimal_price() {
         let (calculator, mut position, now) = portfolio_option_calculator();
         let id = position.instrument_id;
-        position.avg_px_open = f64::NAN;
+        position.avg_px_open = Decimal::MAX;
         let observed = Rc::new(RefCell::new(Vec::new()));
         let captured = Rc::clone(&observed);
         calculator.subscribe_greeks(
@@ -5378,7 +5384,7 @@ mod tests {
             }),
         );
 
-        let error = InstrumentGreeksParams::builder()
+        let result = InstrumentGreeksParams::builder()
             .instrument_id(id)
             .ts_event(now)
             .position(position)
@@ -5387,13 +5393,11 @@ mod tests {
             .publish_greeks(true)
             .build()
             .calculate(&calculator)
-            .unwrap_err();
-        assert_eq!(
-            error.downcast_ref::<OptionValuationError>(),
-            Some(&OptionValuationError::InvalidResult)
-        );
-        assert_eq!(observed.borrow().len(), 0);
-        assert!(calculator.cache.borrow().greeks(&id).is_none());
+            .unwrap();
+        assert_eq!(result.pnl, result.price - Decimal::MAX.as_f64());
+        let cached = calculator.cache.borrow().greeks(&id).unwrap();
+        assert_eq!(observed.borrow().len(), 1);
+        assert_greeks_eq(&observed.borrow()[0], &cached);
     }
 
     #[rstest]

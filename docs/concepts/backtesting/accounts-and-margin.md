@@ -105,13 +105,14 @@ venue = BacktestVenueConfig(
     account_type=AccountType.MARGIN,
     book_type=BookType.L1_MBP,
     starting_balances=["1_000_000 USD"],
-    margin_model=StandardMarginModel(),
     fee_model=MakerTakerFeeModel(
         maker_rate=Decimal("0"),
         taker_rate=Decimal("0"),
     ),
+    margin_model=StandardMarginModel(),
 )
 ```
 
-`BacktestVenueConfig` accepts the built-in `StandardMarginModel` and `LeveragedMarginModel`
-objects directly. The high-level configuration does not load custom margin models from class-path strings.
+`BacktestVenueConfig` accepts built-in and custom Python margin model objects directly. See
+[Python model selection](../accounting.md#python-model-selection) for the callback contract.
+The high-level configuration does not load custom margin models from class-path strings.

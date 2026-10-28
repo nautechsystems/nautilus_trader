@@ -1062,7 +1062,7 @@ mod tests {
                 KRAKEN_PAIR_DECIMALS_KEY.to_string(),
                 serde_json::Value::from(u64::from(scale)),
             );
-            Params::from_index_map(map)
+            Params::new(map)
         });
         InstrumentAny::CurrencyPair(
             CurrencyPair::builder()

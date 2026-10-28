@@ -31,7 +31,10 @@ use http::Method;
 use rstest::rstest;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-use super::{HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse};
+use super::{
+    HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse,
+    client::content_encoding_tests::gzip,
+};
 
 #[rstest]
 #[case(301)]
@@ -69,6 +72,7 @@ async fn rejected_redirect_preserves_response_without_contacting_destination(#[c
             .unwrap();
         (headers, body)
     });
+
     let client = HttpClient::builder()
         .redirect_policy(HttpRedirectPolicy::Reject)
         .headers(HashMap::from([("x-api-key".into(), "test-key".into())]))
@@ -112,6 +116,7 @@ async fn pooled_requests_consume_complete_bodies() {
             stream.write_all(b"HTTP/1.1 206 Partial Content\r\nTransfer-Encoding: chunked\r\nX-Receipt: receipt-53\r\n\r\n3\r\nabc\r\n4\r\ndefg\r\n0\r\n\r\n").await.unwrap();
         }
     });
+
     let client = HttpClient::builder()
         .header_keys(vec!["x-receipt".into()])
         .use_system_proxy(false)
@@ -135,6 +140,7 @@ async fn pooled_requests_consume_complete_bodies() {
         );
         assert_eq!(response.body, Bytes::from_static(b"abcdefg"));
     }
+
     peer.await.unwrap();
 }
 
@@ -157,6 +163,7 @@ async fn redirect_method_body_and_credentials_match(
         let addr = listener.local_addr().unwrap();
         let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target = destination.local_addr().unwrap();
+
         let peer = tokio::spawn(async move {
             let (mut stream, _) = listener.accept().await.unwrap();
             read_headers(&mut stream).await;
@@ -171,12 +178,14 @@ async fn redirect_method_body_and_credentials_match(
                 body.resize(7, 0);
                 stream.read_exact(&mut body).await.unwrap();
             }
+
             stream
                 .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\nok")
                 .await
                 .unwrap();
             (headers, body)
         });
+
         let defaults = HashMap::from([
             ("authorization".into(), "Bearer private-27".into()),
             ("cookie".into(), "session=private-91".into()),
@@ -205,10 +214,7 @@ async fn redirect_method_body_and_credentials_match(
             "{headers}"
         );
         assert!(!headers.contains("private-"), "{headers}");
-        assert!(
-            headers.contains(&format!("referer: http://{addr}/start\r\n")),
-            "{headers}"
-        );
+        assert!(!headers.contains("\r\nreferer:"), "{headers}");
         assert_eq!(
             headers.contains("content-type: application/octet-stream"),
             retained
@@ -222,6 +228,110 @@ async fn redirect_method_body_and_credentials_match(
             }
         );
     }
+}
+
+#[rstest]
+#[case::same_origin(true)]
+#[case::cross_origin(false)]
+#[tokio::test]
+async fn redirect_referer_matches_origin(
+    #[case] same_origin: bool,
+    #[values(false, true)] initial_referer: bool,
+    #[values(false, true)] intermediate: bool,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let destination = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+
+    let target = if same_origin {
+        addr
+    } else {
+        destination.local_addr().unwrap()
+    };
+
+    let peer = tokio::spawn(async move {
+        let mut origin_headers = Vec::new();
+
+        for step in 0..=usize::from(intermediate) {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            origin_headers.push(read_headers(&mut stream).await);
+
+            let location = if intermediate && step == 0 {
+                "/continue?signature=SECRET".to_string()
+            } else {
+                format!("http://{target}/next")
+            };
+
+            stream.write_all(format!("HTTP/1.1 302 Found\r\nContent-Length: 0\r\nConnection: close\r\nLocation: {location}\r\n\r\n").as_bytes()).await.unwrap();
+        }
+
+        let destination = if same_origin { listener } else { destination };
+        let (mut stream, _) = destination.accept().await.unwrap();
+        let headers = read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 201 Created\r\nContent-Length: 2\r\n\r\nok")
+            .await
+            .unwrap();
+        (origin_headers, headers)
+    });
+
+    let mut headers = HashMap::new();
+    if initial_referer {
+        headers.insert(
+            "referer".into(),
+            "https://private.example/signed?token=PRIOR_SECRET".into(),
+        );
+    }
+
+    let client = HttpClient::builder()
+        .headers(headers)
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+    let response = send(
+        &client,
+        Method::GET,
+        format!("http://{addr}/start?signature=SECRET#fragment"),
+        None,
+    )
+    .await
+    .unwrap();
+    let (origin_headers, headers) = peer.await.unwrap();
+
+    assert_eq!(response.status.as_u16(), 201);
+    assert_eq!(response.body, Bytes::from_static(b"ok"));
+    assert_eq!(response.headers, HashMap::new());
+    assert_eq!(origin_headers.len(), 1 + usize::from(intermediate));
+    assert!(origin_headers[0].starts_with("GET /start?signature=SECRET HTTP/1.1\r\n"));
+    assert_eq!(
+        origin_headers[0]
+            .contains("\r\nreferer: https://private.example/signed?token=PRIOR_SECRET\r\n"),
+        initial_referer
+    );
+
+    if intermediate {
+        assert!(origin_headers[1].starts_with("GET /continue?signature=SECRET HTTP/1.1\r\n"));
+        assert!(origin_headers[1].contains(&format!(
+            "\r\nreferer: http://{addr}/start?signature=SECRET\r\n"
+        )));
+    }
+
+    assert!(headers.starts_with("GET /next HTTP/1.1\r\n"));
+    let referrers: Vec<_> = headers
+        .lines()
+        .filter(|line| line.to_ascii_lowercase().starts_with("referer:"))
+        .collect();
+
+    let path = if intermediate { "continue" } else { "start" };
+
+    let expected = if same_origin {
+        vec![format!("referer: http://{addr}/{path}?signature=SECRET")]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(referrers, expected);
 }
 
 #[rstest]
@@ -247,6 +357,7 @@ async fn redirect_limit_preserves_same_origin_credentials(
                 "{headers}"
             );
             assert!(headers.contains("cookie: session=91\r\n"), "{headers}");
+
             let response = if step == redirects {
                 "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone".to_string()
             } else {
@@ -255,9 +366,11 @@ async fn redirect_limit_preserves_same_origin_credentials(
                     step + 1
                 )
             };
+
             stream.write_all(response.as_bytes()).await.unwrap();
         }
     });
+
     let client = HttpClient::builder()
         .headers(HashMap::from([
             ("authorization".into(), "Bearer token-37".into()),
@@ -296,6 +409,7 @@ async fn redirect_rejects_unsupported_scheme() {
         read_headers(&mut stream).await;
         stream.write_all(b"HTTP/1.1 302 Found\r\nContent-Length: 0\r\nLocation: ftp://127.0.0.1/file\r\n\r\n").await.unwrap();
     });
+
     let client = HttpClient::builder()
         .use_system_proxy(false)
         .timeout_secs(3)
@@ -330,6 +444,7 @@ async fn truncated_body_returns_transport_error(
             .unwrap();
         stream.shutdown().await.unwrap();
     });
+
     let client = HttpClient::builder()
         .redact_url(redact_url)
         .use_system_proxy(false)
@@ -349,11 +464,13 @@ async fn truncated_body_returns_transport_error(
     } else {
         send(&client, Method::GET, url, None).await.unwrap_err()
     };
+
     peer.await.unwrap();
 
     let HttpClientError::TransportError(message) = error else {
         panic!("expected transport error, was {error:?}");
     };
+
     assert!(
         message.contains("end of file before message length reached"),
         "{message}"
@@ -382,7 +499,6 @@ async fn streamed_response_url_policy_redacts_debug_and_body_errors(
     const QUERY_SECRET: &str = "stream-query-secret";
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-
     let peer = tokio::spawn(async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let request = read_headers(&mut stream).await;
@@ -474,6 +590,7 @@ async fn body_deadline_overrides_default_and_closes_connection() {
             0
         );
     });
+
     let client = HttpClient::builder()
         .timeout_secs(20)
         .use_system_proxy(false)
@@ -505,6 +622,7 @@ async fn http_proxy_preserves_absolute_target_and_authentication() {
             .unwrap();
         headers
     });
+
     let proxy = format!("http://{USERNAME}:{PASSWORD}@{addr}");
     let client = HttpClient::builder()
         .proxy_url(proxy.clone())
@@ -564,6 +682,7 @@ async fn canceled_request_releases_partial_response() {
             "connection was not released: {read:?}"
         );
     });
+
     let client = HttpClient::builder()
         .use_system_proxy(false)
         .build()
@@ -574,6 +693,7 @@ async fn canceled_request_releases_partial_response() {
             .get(format!("http://{addr}/body"), None, None, None, None)
             .await
     });
+
     received.await.unwrap();
     request.abort();
     assert!(request.await.unwrap_err().is_cancelled());
@@ -592,6 +712,7 @@ async fn streamed_response_exceeds_buffered_limit() {
             .await
             .unwrap();
     });
+
     let mut client = HttpClient::builder()
         .use_system_proxy(false)
         .timeout_secs(3)
@@ -607,6 +728,7 @@ async fn streamed_response_exceeds_buffered_limit() {
     while let Some(chunk) = response.chunk().await.unwrap() {
         body.extend_from_slice(&chunk);
     }
+
     peer.await.unwrap();
     assert_eq!(status, http::StatusCode::PARTIAL_CONTENT);
     assert_eq!(body, b"abcdefgh");
@@ -635,6 +757,7 @@ async fn streamed_response_releases_partial_body(#[case] timeout: bool) {
             0
         );
     });
+
     let client = HttpClient::builder()
         .use_system_proxy(false)
         .timeout_secs(1)
@@ -656,6 +779,7 @@ async fn streamed_response_releases_partial_body(#[case] timeout: bool) {
             Err(HttpClientError::TimeoutError(_))
         ));
     }
+
     drop(response);
     peer.await.unwrap();
 }
@@ -712,6 +836,7 @@ fn platform_tls_http2_and_protocol_retries() {
                             }
                         }
                     });
+
                     let client = HttpClient::builder()
                         .use_system_proxy(false)
                         .timeout_secs(3)
@@ -741,6 +866,7 @@ fn platform_tls_http2_and_protocol_retries() {
                             "{result:?}"
                         );
                     }
+
                     peer.abort();
                     assert!(peer.await.unwrap_err().is_cancelled());
                 }
@@ -902,7 +1028,6 @@ fn http2_initial_window_follows_environment() {
             let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
             let port = listener.local_addr().unwrap().port();
             let url = format!("https://localhost:{port}/");
-
             let mut task = tokio::spawn(async move { send(&client, Method::GET, url, None).await });
 
             let (stream, _) = tokio::select! {
@@ -966,7 +1091,6 @@ fn platform_roots_load_once_per_process() {
 
     let roots = std::path::PathBuf::from(std::env::var_os("SSL_CERT_FILE").unwrap());
     let parked = roots.with_extension("parked");
-
     tokio::runtime::Builder::new_current_thread()
         .enable_all()
         .build()
@@ -1098,5 +1222,465 @@ async fn read_headers(stream: &mut (impl tokio::io::AsyncRead + Unpin)) -> Strin
     while !bytes.ends_with(b"\r\n\r\n") {
         bytes.push(stream.read_u8().await.unwrap());
     }
+
     String::from_utf8(bytes).unwrap()
+}
+
+fn header_value<'a>(request: &'a str, name: &str) -> Option<&'a str> {
+    request.lines().skip(1).find_map(|line| {
+        let (key, value) = line.split_once(':')?;
+        key.eq_ignore_ascii_case(name).then(|| value.trim())
+    })
+}
+
+#[tokio::test]
+async fn buffered_request_asks_for_gzip_and_decodes_body() {
+    let payload = "x".repeat(64 * 1024);
+    let compressed = gzip(payload.as_bytes());
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let body = compressed.clone();
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_headers(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+        request
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let response = send(&client, Method::GET, format!("http://{addr}/gzip"), None)
+        .await
+        .unwrap();
+
+    assert_eq!(
+        header_value(&peer.await.unwrap(), "accept-encoding"),
+        Some("gzip")
+    );
+    assert_eq!(response.body.as_ref(), payload.as_bytes());
+}
+
+#[rstest]
+#[case::per_request(None, true)]
+#[case::default(Some("identity"), false)]
+#[case::override_default(Some("gzip"), true)]
+#[tokio::test]
+async fn buffered_request_respects_caller_encoding_and_skips_decoding(
+    #[case] default_encoding: Option<&str>,
+    #[case] override_encoding: bool,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nraw!")
+            .await
+            .unwrap();
+        request
+    });
+
+    let defaults = default_encoding
+        .map(|value| HashMap::from([("Accept-Encoding".into(), value.into())]))
+        .unwrap_or_default();
+    let headers =
+        override_encoding.then(|| HashMap::from([("AcCePt-EnCoDiNg".into(), "identity".into())]));
+    let client = HttpClient::builder()
+        .headers(defaults)
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let response = client
+        .request(
+            Method::GET,
+            format!("http://{addr}/identity"),
+            None,
+            headers,
+            None,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(
+        header_value(&peer.await.unwrap(), "accept-encoding"),
+        Some("identity")
+    );
+    assert_eq!(response.body, Bytes::from_static(b"raw!"));
+}
+
+#[tokio::test]
+async fn streamed_response_does_not_negotiate_encoding() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let body = gzip(b"streamed");
+    let peer_body = body.clone();
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let request = read_headers(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            peer_body.len()
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&peer_body).await.unwrap();
+        request
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let mut response = client
+        .get_stream(format!("http://{addr}/stream-gzip"))
+        .await
+        .unwrap();
+    let mut got = Vec::new();
+    while let Some(chunk) = response.chunk().await.unwrap() {
+        got.extend_from_slice(&chunk);
+    }
+
+    assert_eq!(header_value(&peer.await.unwrap(), "accept-encoding"), None);
+    assert_eq!(got, body, "streams must hand back wire bytes unchanged");
+}
+
+#[tokio::test]
+async fn unsupported_content_encoding_is_an_error() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nContent-Encoding: br\r\nContent-Length: 3\r\n\r\nabc")
+            .await
+            .unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let error = send(&client, Method::GET, format!("http://{addr}/brotli"), None)
+        .await
+        .unwrap_err();
+    peer.await.unwrap();
+
+    assert!(
+        matches!(error, HttpClientError::Error(ref message) if message.contains("unsupported HTTP content-encoding 'br'")),
+        "{error:?}"
+    );
+}
+
+#[rstest]
+#[case::empty(b"".as_slice())]
+#[case::invalid(b"nope".as_slice())]
+#[tokio::test]
+async fn corrupt_gzip_body_is_an_error(#[case] body: &'static [u8]) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(body).await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let error = send(&client, Method::GET, format!("http://{addr}/corrupt"), None)
+        .await
+        .unwrap_err();
+    peer.await.unwrap();
+
+    assert!(
+        matches!(error, HttpClientError::Error(ref message) if message.contains("failed to decode gzip response body")),
+        "{error:?}"
+    );
+}
+
+#[tokio::test]
+async fn decoded_body_drops_encoding_and_wire_length_headers() {
+    let payload = b"decoded-payload";
+    let body = gzip(payload);
+    let served = body.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            served.len()
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&served).await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .headers(HashMap::from([(
+            "accept-encoding".to_string(),
+            "gzip".to_string(),
+        )]))
+        .header_keys(vec!["Content-Encoding".into(), "Content-Length".into()])
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let response = send(&client, Method::GET, format!("http://{addr}/tardis"), None)
+        .await
+        .unwrap();
+    peer.await.unwrap();
+
+    assert_eq!(response.body.as_ref(), payload);
+    assert_eq!(response.headers, HashMap::new());
+}
+
+#[rstest]
+#[case::at_decompressed_cap(4096, true)]
+#[case::above_decompressed_cap(4095, false)]
+#[tokio::test]
+async fn decompression_is_bounded_by_max_decompressed_bytes_not_wire_limit(
+    #[case] max_decompressed_bytes: usize,
+    #[case] accepted: bool,
+) {
+    // A compressed body within the wire limit can legitimately decode beyond it (Tardis serves
+    // all-symbol instrument lists of hundreds of MB this way), so only the decompressed cap applies
+    let max_response_bytes = 1024;
+    let payload = vec![b'x'; 4096];
+    let body = gzip(&payload);
+    assert!(body.len() < max_response_bytes);
+    assert!(payload.len() > max_response_bytes);
+    let served = body.clone();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            served.len()
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&served).await.unwrap();
+    });
+
+    let mut client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .max_decompressed_bytes(max_decompressed_bytes)
+        .build()
+        .unwrap();
+    client.client.max_response_bytes = max_response_bytes;
+
+    let result = send(&client, Method::GET, format!("http://{addr}/large"), None).await;
+    peer.await.unwrap();
+
+    if accepted {
+        assert_eq!(result.unwrap().body.as_ref(), payload.as_slice());
+    } else {
+        let error = result.unwrap_err();
+        assert!(
+            matches!(error, HttpClientError::Error(ref message) if message.contains(&format!("decompressed HTTP response body exceeds maximum of {max_decompressed_bytes} bytes"))),
+            "{error:?}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn decompression_defaults_to_response_body_limit() {
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .build()
+        .unwrap();
+
+    assert_eq!(
+        client.client.max_decompressed_bytes,
+        client.client.max_response_bytes
+    );
+}
+
+#[rstest]
+#[case::head_ok(Method::HEAD, 200)]
+#[case::head_error(Method::HEAD, 404)]
+#[case::no_content(Method::GET, 204)]
+#[case::reset_content(Method::GET, 205)]
+#[case::not_modified(Method::GET, 304)]
+#[tokio::test]
+async fn bodyless_response_preserves_encoding_metadata(
+    #[case] method: Method,
+    #[case] status: u16,
+) {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 {status} Response\r\nContent-Encoding: gzip\r\nConnection: close\r\n\r\n"
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .header_keys(vec!["content-encoding".into()])
+        .build()
+        .unwrap();
+
+    let response = send(&client, method, format!("http://{addr}/empty"), None)
+        .await
+        .unwrap();
+    peer.await.unwrap();
+
+    assert_eq!(response.status.as_u16(), status);
+    assert_eq!(
+        response.headers,
+        HashMap::from([("content-encoding".into(), "gzip".into())])
+    );
+    assert_eq!(response.body, Bytes::new());
+}
+
+#[rstest]
+#[case::complete(usize::MAX, false, true)]
+#[case::at_cap(12, false, true)]
+#[case::above_cap(11, false, false)]
+#[case::corrupt_second_member(12, true, false)]
+#[tokio::test]
+async fn gzip_members_are_decoded_and_bounded(
+    #[case] max_decompressed_bytes: usize,
+    #[case] corrupt: bool,
+    #[case] accepted: bool,
+) {
+    let mut body = gzip(b"first-");
+    let mut second = gzip(b"second");
+    if corrupt {
+        let crc_offset = second.len() - 8;
+        second[crc_offset] ^= 1;
+    }
+
+    body.extend(second);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .max_decompressed_bytes(max_decompressed_bytes)
+        .build()
+        .unwrap();
+
+    let result = send(&client, Method::GET, format!("http://{addr}/members"), None).await;
+    peer.await.unwrap();
+
+    if accepted {
+        assert_eq!(result.unwrap().body, Bytes::from_static(b"first-second"));
+    } else {
+        let HttpClientError::Error(message) = result.unwrap_err() else {
+            panic!("expected decoding error");
+        };
+
+        if corrupt {
+            assert!(
+                message.starts_with("failed to decode gzip response body:"),
+                "{message}"
+            );
+        } else {
+            assert_eq!(
+                message,
+                "decompressed HTTP response body exceeds maximum of 11 bytes"
+            );
+        }
+    }
+}
+
+#[rstest]
+#[case::repeated(
+    "Content-Encoding: gzip\r\nContent-Encoding: gzip",
+    "unsupported multiple HTTP content-encoding fields"
+)]
+#[case::combined(
+    "Content-Encoding: gzip, gzip",
+    "unsupported HTTP content-encoding 'gzip, gzip'"
+)]
+#[case::invalid("Content-Encoding: ÿ", "invalid HTTP content-encoding value")]
+#[tokio::test]
+async fn unsupported_encoding_chains_are_rejected(
+    #[case] encoding_headers: &str,
+    #[case] expected: &str,
+) {
+    let body = gzip(&gzip(b"decoded-payload"));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let head = format!(
+        "HTTP/1.1 200 OK\r\n{encoding_headers}\r\nContent-Length: {}\r\n\r\n",
+        body.len()
+    );
+
+    let peer = tokio::spawn(async move {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        read_headers(&mut stream).await;
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(&body).await.unwrap();
+    });
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(3)
+        .build()
+        .unwrap();
+
+    let result = send(
+        &client,
+        Method::GET,
+        format!("http://{addr}/encodings"),
+        None,
+    )
+    .await;
+    peer.await.unwrap();
+
+    let HttpClientError::Error(message) = result.unwrap_err() else {
+        panic!("expected encoding error");
+    };
+
+    assert_eq!(message, expected);
 }

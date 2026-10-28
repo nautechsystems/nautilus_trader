@@ -217,6 +217,14 @@ pub fn record_batch_with_timestamps(
 ) -> Result<RecordBatch, ArrowError> {
     validate_encode_precisions(schema.metadata())?;
 
+    if columns.len() != schema.fields().len() {
+        return Err(ArrowError::InvalidArgumentError(format!(
+            "number of columns({}) must match number of fields({}) in schema",
+            columns.len(),
+            schema.fields().len()
+        )));
+    }
+
     let columns = schema
         .fields()
         .iter()
@@ -898,6 +906,26 @@ pub(crate) fn decode_required_u8(
         ));
     }
     Ok(values.value(row))
+}
+
+pub(crate) fn validate_required_column(
+    values: &dyn Array,
+    field: &'static str,
+) -> Result<(), EncodingError> {
+    if let Some(row) = first_logical_null(values) {
+        return Err(EncodingError::ParseError(
+            field,
+            format!("row {row}: required value is null"),
+        ));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn first_logical_null(values: &dyn Array) -> Option<usize> {
+    values
+        .logical_nulls()
+        .and_then(|nulls| nulls.iter().position(|valid| !valid))
 }
 
 #[cfg(test)]
@@ -1779,6 +1807,26 @@ mod tests {
         assert_eq!(
             err.to_string(),
             "Invalid argument error: Metadata 'price_precision' is 17, maximum supported catalog scale is 16"
+        );
+    }
+
+    #[rstest]
+    fn test_record_batch_with_timestamps_rejects_surplus_columns() {
+        let schema = Arc::new(Schema::new(vec![Field::new(
+            "ts_event",
+            timestamp_data_type(),
+            false,
+        )]));
+        let columns = vec![
+            Arc::new(UInt64Array::from(vec![1])) as ArrayRef,
+            Arc::new(UInt64Array::from(vec![2])) as ArrayRef,
+        ];
+
+        let error = record_batch_with_timestamps(schema, columns).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument error: number of columns(2) must match number of fields(1) in schema"
         );
     }
 

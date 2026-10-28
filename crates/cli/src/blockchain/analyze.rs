@@ -491,7 +491,7 @@ async fn create_data_client(
         .postgres_cache_database_config(postgres_connect_options)
         .build();
     let cancellation_token = tokio_util::sync::CancellationToken::new();
-    let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token);
+    let mut data_client = BlockchainDataClientCore::new(config, None, None, cancellation_token)?;
     data_client.initialize_cache_database().await;
     data_client.cache.initialize_chain().await;
 

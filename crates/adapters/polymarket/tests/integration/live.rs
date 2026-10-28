@@ -19,6 +19,7 @@
 use std::{cell::RefCell, rc::Rc, time::Duration};
 
 use axum::http::StatusCode;
+use indexmap::IndexMap;
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
@@ -26,7 +27,7 @@ use nautilus_common::{
     msgbus::{self, TypedHandler},
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_live::{
     SocketReconnectRequestOutcome,
     testing::{ExecutionHarness, RoutedKind},
@@ -362,6 +363,87 @@ async fn tracked_partial_then_full_fill_is_exact_and_deduplicated() {
         &h.instrument_id(),
         &order.client_order_id(),
         false,
+    );
+}
+
+#[rstest]
+#[case::confirmed(false)]
+#[case::failed(true)]
+#[tokio::test]
+async fn multilevel_taker_fill_preserves_economics_through_settlement(#[case] failed: bool) {
+    let mut h = harness::Harness::build_with_cache(seed_taker_fee_schedule).await;
+    let order = harness::limit_order(h.instrument_id(), "O-MULTILEVEL");
+    submit_until_accepted(&mut h, &order).await;
+    let mut trade = user_trade("ws_user_trade_full.json", "MATCHED");
+    trade["price"] = json!("0.4");
+    let mut first = trade["maker_orders"][0].clone();
+    first["matched_amount"] = json!("65.5");
+    first["price"] = json!("0.4");
+    first["side"] = json!("SELL");
+    let mut second = first.clone();
+    second["order_id"] = json!("counterparty-order-2");
+    second["matched_amount"] = json!("34.5");
+    second["price"] = json!("0.41");
+    trade["maker_orders"] = json!([first, second]);
+    let mut terminal = trade.clone();
+    terminal["status"] = json!(if failed { "FAILED" } else { "CONFIRMED" });
+    serve_rest_trades(&h, &[terminal.clone()]).await;
+    h.mock_state.send_user(trade.clone()).await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| order_reached(
+            cache,
+            &order,
+            OrderStatus::Filled
+        ))
+        .await
+    );
+
+    let cached = cached_order(&h, &order);
+    let fills: Vec<_> = cached
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[0].trade_id, TradeId::from("trade-0xfull"));
+    assert_eq!(fills[0].last_qty, Quantity::from("100"));
+    assert_eq!(fills[0].last_px, Price::from("0.40345"));
+    assert_eq!(fills[0].commission, Some(Money::from("0.48131 pUSD")));
+
+    h.mock_state.send_user(trade).await;
+    h.mock_state.send_user(terminal).await;
+
+    if failed {
+        assert!(
+            h.pump_until(DEADLINE, |cache| {
+                cache
+                    .order(&order.client_order_id())
+                    .is_some_and(|cached| cached.filled_qty().is_zero())
+            })
+            .await
+        );
+    }
+
+    assert!(reports_resume(&mut h).await);
+    h.pump_for(Duration::from_millis(100)).await;
+    let cached = cached_order(&h, &order);
+    assert_eq!(
+        event_count(&cached, |event| matches!(event, OrderEventAny::Filled(_))),
+        1
+    );
+    assert_eq!(
+        event_count(&cached, |event| matches!(
+            event,
+            OrderEventAny::FillVoided(_)
+        )),
+        usize::from(failed)
+    );
+    assert_eq!(
+        cached.filled_qty(),
+        Quantity::from(if failed { "0" } else { "100" })
     );
 }
 
@@ -741,6 +823,52 @@ async fn startup_reconciliation_correlates_tracked_open_order() {
         .expect("tracked order should remain cached");
     assert_eq!(tracked.status(), OrderStatus::Accepted);
     assert_eq!(tracked.events().len(), tracked_event_count);
+}
+
+#[rstest]
+#[tokio::test]
+async fn reconciliation_preserves_resting_partially_filled_order(
+    #[values(false, true)] mass_status: bool,
+) {
+    let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
+    let h =
+        harness::Harness::build_with_cache(|execution| seed_partially_filled(execution, &order))
+            .await;
+    let before = cached_order(&h, &order);
+    *h.mock_state.trades_response_override.lock().await = Some(load_json("http_empty_page.json"));
+
+    let report = if mass_status {
+        let mut orders = load_json("http_open_orders_harness.json");
+        orders["data"][0]["size_matched"] = json!("25.0000");
+        *h.mock_state.orders_response_override.lock().await = Some(orders);
+        let mass_status = h.reconcile_from_venue().await;
+        let reports = mass_status.order_reports();
+        assert_eq!(reports.len(), 1);
+        reports
+            .values()
+            .next()
+            .expect("partially filled order report")
+            .clone()
+    } else {
+        *h.mock_state.single_order_response.lock().await = Some(load_json("http_open_order.json"));
+        let report =
+            generate_order_status_report(&h, &order, VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+                .await;
+        h.exec_engine()
+            .borrow_mut()
+            .reconcile_order_status_report(&report);
+        report
+    };
+
+    let cached = cached_order(&h, &order);
+
+    assert_eq!(before.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+    assert_eq!(report.quantity, Quantity::from("100.0000"));
+    assert_eq!(report.filled_qty, Quantity::from("25.0000"));
+    assert_eq!(cached.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(cached.filled_qty(), Quantity::from("25.0000"));
+    assert_eq!(cached.events(), before.events());
 }
 
 #[rstest]
@@ -2822,14 +2950,12 @@ fn seed_taker_fee_schedule(execution: &ExecutionHarness) {
         panic!("expected binary option harness instrument");
     };
 
-    binary
-        .info
-        .as_mut()
-        .expect("harness instrument info")
-        .insert(
-            "fee_schedule".into(),
-            json!({"exponent": "1", "rate": "0.02", "takerOnly": true, "rebateRate": "0"}),
-        );
+    let mut info = IndexMap::clone(binary.info.as_ref().expect("harness instrument info"));
+    info.insert(
+        "fee_schedule".into(),
+        json!({"exponent": "1", "rate": "0.02", "takerOnly": true, "rebateRate": "0"}),
+    );
+    binary.info = Some(Params::new(info));
     execution
         .cache()
         .borrow_mut()

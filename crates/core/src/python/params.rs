@@ -27,7 +27,7 @@ use crate::{
     python::{serialization::serialize_pyobject_pyo3, to_pyvalue_err},
 };
 
-/// Converts a Python dict to `Params` (IndexMap<String, Value>).
+/// Converts a Python dict to `Params`.
 ///
 /// An empty dict canonicalizes to `None`, distinguishing "no params provided"
 /// from a populated map. This is not the inverse of [`params_to_pydict`], which
@@ -129,14 +129,14 @@ pub fn value_to_pyobject(py: Python<'_>, val: &Value) -> PyResult<Py<PyAny>> {
     }
 }
 
-/// Converts `Params` (IndexMap<String, Value>) to a Python dict.
+/// Converts `Params` to a Python dict.
 ///
 /// # Errors
 ///
 /// Returns an error if conversion of any value fails.
 pub fn params_to_pydict(py: Python<'_>, params: &Params) -> PyResult<Py<PyDict>> {
     let dict = PyDict::new(py);
-    for (key, value) in params {
+    for (key, value) in params.borrowed_entries() {
         let py_value = value_to_pyobject(py, value)?;
         dict.set_item(key, py_value)?;
     }
@@ -186,29 +186,41 @@ mod tests {
     }
 
     #[rstest]
-    fn test_params_pydict_roundtrip() {
-        let mut params = Params::new();
-        params.insert("null".to_string(), Value::Null);
-        params.insert("enabled".to_string(), json!(true));
-        params.insert(
-            "name".to_string(),
-            json!("Nautilus \u{65e5}\u{672c}\u{8a9e}"),
-        );
-        params.insert("signed".to_string(), json!(-7));
-        params.insert("unsigned".to_string(), json!(42_u64));
-        params.insert("signed_min".to_string(), json!(i64::MIN));
-        params.insert("unsigned_max".to_string(), json!(u64::MAX));
-        params.insert("ratio".to_string(), json!(2.5));
-        params.insert("large_float".to_string(), json!(2_f64.powi(65)));
-        params.insert("levels".to_string(), json!([1, "two", false]));
-        params.insert(
-            "nested".to_string(),
-            json!({"venue": "SIM", "limits": [i64::MIN, u64::MAX]}),
+    fn test_params_pydict_roundtrip(#[values(false, true)] shared: bool) {
+        let params = Params::new(
+            [
+                ("null".to_string(), Value::Null),
+                ("enabled".to_string(), json!(true)),
+                (
+                    "name".to_string(),
+                    json!("Nautilus \u{65e5}\u{672c}\u{8a9e}"),
+                ),
+                ("signed".to_string(), json!(-7)),
+                ("unsigned".to_string(), json!(42_u64)),
+                ("signed_min".to_string(), json!(i64::MIN)),
+                ("unsigned_max".to_string(), json!(u64::MAX)),
+                ("ratio".to_string(), json!(2.5)),
+                ("large_float".to_string(), json!(2_f64.powi(65))),
+                ("levels".to_string(), json!([1, "two", false])),
+                (
+                    "nested".to_string(),
+                    json!({"venue": "SIM", "limits": [i64::MIN, u64::MAX]}),
+                ),
+            ]
+            .into(),
         );
 
+        let params = if shared {
+            Params::from_shared(params.to_shared_map())
+        } else {
+            params
+        };
+
+        let retained = params.estimated_heap_size();
         Python::initialize();
         Python::attach(|py| {
             let dict = params_to_pydict(py, &params).unwrap();
+            assert_eq!(params.estimated_heap_size(), retained);
             let restored = pydict_to_params(py, &dict).unwrap().unwrap();
             let empty = PyDict::new(py).unbind();
             let absent = pydict_to_params(py, &empty).unwrap();

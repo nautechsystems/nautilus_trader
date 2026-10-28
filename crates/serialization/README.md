@@ -9,7 +9,7 @@
 Data serialization and format conversion for [NautilusTrader](https://nautilustrader.io).
 
 The `nautilus-serialization` crate provides data serialization capabilities for converting
-trading data between different formats including Apache Arrow, Parquet, and Cap'n Proto.
+trading data between different formats including Apache Arrow, Parquet, JSON, MessagePack, and SBE.
 This enables efficient data storage, retrieval, and interoperability across different systems:
 
 - **Apache Arrow integration**: Schema definitions and encoding/decoding for market data types.
@@ -17,12 +17,11 @@ This enables efficient data storage, retrieval, and interoperability across diff
 - **Record batch processing**: Efficient batch operations for time-series data.
 - **Schema management**: Type-safe schema definitions with metadata preservation.
 - **Cross-format conversion**: Data interchange between Arrow, Parquet, and native types.
-- **Cap'n Proto serialization**: Zero-copy, schema-based serialization for efficient data interchange.
 - **SBE decode utilities**: Zero-copy cursor, shared decode errors, and generic var/group decoders for SBE parsers.
 
 > [!WARNING]
 >
-> SBE and Cap'n Proto schemas are not yet stable and may break between releases.
+> SBE schemas are not yet stable and may break between releases.
 
 ## NautilusTrader
 
@@ -38,7 +37,6 @@ This crate provides feature flags to control source code inclusion during compil
 
 - `arrow`: Enables Apache Arrow schema definitions and RecordBatch encoding/decoding.
 - `arrow-display`: Enables display-friendly Arrow encoders for market data and requires `arrow`.
-- `capnp`: Enables [Cap'n Proto](https://capnproto.org) serialization support.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision`: Enables
   [high-precision mode](https://nautilustrader.io/docs/nightly/getting_started/installation/#precision-mode)
@@ -46,124 +44,39 @@ This crate provides feature flags to control source code inclusion during compil
 - `python`: Enables Python bindings from [PyO3](https://pyo3.rs).
 - `sbe`: Enables generic SBE (Simple Binary Encoding) decode utilities.
 
-### Building with Cap'n Proto support
+## SBE depth layouts
 
-To build with Cap'n Proto serialization enabled:
-
-```bash
-cargo build -p nautilus-serialization --features capnp
-```
-
-The Cap'n Proto compiler is required. See the
-[Environment Setup](../../docs/developer_guide/environment_setup.md#capn-proto) guide for
-installation instructions. The required version is specified in
-`.nautilus-engineering/tools.toml`.
-
-## Cap'n Proto schemas
-
-When the `capnp` feature is enabled, this crate provides zero-copy serialization using Cap'n Proto schemas.
-
-### Schema location
-
-Cap'n Proto schemas are bundled with the crate in `schemas/capnp/`:
-
-- `common/identifiers.capnp` - Identifier types (TraderId, InstrumentId, etc.)
-- `common/types.capnp` - Value types (Price, Quantity, Money, etc.)
-- `common/enums.capnp` - Trading enumerations
-- `commands/trading.capnp` - Trading commands
-- `commands/data.capnp` - Data subscription/request commands
-- `events/order.capnp` - Order events
-- `events/position.capnp` - Position events
-- `events/account.capnp` - Account events
-- `data/market.capnp` - Market data types (quotes, trades, bars, order books)
-- `data/instruments.capnp` - Instrument types
-
-### Generated modules
-
-During build, schemas are compiled to Rust code and made available as:
-
-- `nautilus_serialization::identifiers_capnp`
-- `nautilus_serialization::types_capnp`
-- `nautilus_serialization::enums_capnp`
-- `nautilus_serialization::trading_capnp`
-- `nautilus_serialization::data_capnp`
-- `nautilus_serialization::order_capnp`
-- `nautilus_serialization::position_capnp`
-- `nautilus_serialization::account_capnp`
-- `nautilus_serialization::market_capnp`
-- `nautilus_serialization::instruments_capnp`
-
-### Usage example
-
-```rust
-use nautilus_model::types::Price;
-use nautilus_serialization::capnp::{ToCapnp, FromCapnp};
-
-// Serialize a Price
-let price = Price::from("123.45");
-let bytes = nautilus_serialization::capnp::conversions::serialize_price(&price).unwrap();
-
-// Deserialize back
-let decoded = nautilus_serialization::capnp::conversions::deserialize_price(&bytes).unwrap();
-assert_eq!(price, decoded);
-```
-
-See the `conversions` module for trait-based serialization patterns:
-
-```rust
-use nautilus_model::identifiers::InstrumentId;
-use nautilus_serialization::capnp::{ToCapnp, FromCapnp, identifiers_capnp};
-
-let instrument_id = InstrumentId::from("AAPL.NASDAQ");
-
-// Using traits
-let mut message = capnp::message::Builder::new_default();
-let builder = message.init_root::<identifiers_capnp::instrument_id::Builder>();
-instrument_id.to_capnp(builder);
-
-// Serialize to bytes
-let mut bytes = Vec::new();
-capnp::serialize::write_message(&mut bytes, &message).unwrap();
-
-// Deserialize
-let reader = capnp::serialize::read_message(
-    &mut &bytes[..],
-    capnp::message::ReaderOptions::new()
-).unwrap();
-let root = reader.get_root::<identifiers_capnp::instrument_id::Reader>().unwrap();
-let decoded = InstrumentId::from_capnp(root).unwrap();
-```
-
-### Contributing schemas
-
-When adding or modifying schemas:
-
-1. Edit schema files in the appropriate subdirectory under `schemas/capnp/`.
-2. Use lowerCamelCase for field names to match Cap'n Proto conventions.
-3. Generate a unique schema ID using: `capnp id`.
-4. Implement `ToCapnp` and `FromCapnp` traits in `src/capnp/conversions.rs`.
-   Instrument types live in `src/capnp/instruments.rs`.
-5. Add integration tests in `tests/` to verify roundtrip serialization.
-
-The build script (`build.rs`) automatically discovers and compiles all `.capnp` files during build.
+SBE uses the legacy ten-level layout for ten bids and ten asks with canonical sides and zero order IDs.
+Other snapshots, including padded levels, use a variable-length layout with up to 10,000 levels per side.
+Its decoder applies native level validation and removes absent levels together with their counts.
+Readers that support only the legacy layout cannot decode the variable-length template. SBE schemas are
+version-unstable as noted above.
 
 ## Serialization format comparison
 
-This crate supports three serialization formats for market data types. Choose the format based on your use case:
+The supported serialization formats serve different market data use cases. Choose the format based on your use case:
 
-| Format      | Serialize | Deserialize | Size      | Use case                                   |
-| ----------- | --------- | ----------- | --------- | ------------------------------------------ |
-| Cap'n Proto | ~267ns    | ~350ns      | 264 bytes | High-frequency data streams, IPC, caching. |
-| JSON        | ~332ns    | ~779ns      | 174 bytes | Human-readable output, debugging, APIs.    |
-| MsgPack     | ~375ns    | ~634ns      | 134 bytes | Compact storage, network transmission.     |
-| Arrow       | TBD       | TBD         | Columnar  | Batch processing, Parquet, IPC, analytics. |
+Latencies are the median of three full sessions' mean estimates, each with 100 Criterion samples,
+a 3-second warmup, and a 5-second measurement period.
 
-Performance numbers shown for `QuoteTick` serialization (measured on AMD Ryzen 9 7950X). Cap'n Proto provides the
-fastest serialization and deserialization, while MsgPack offers the smallest size. Arrow is optimized for batch
-processing rather than individual messages.
+| Format  | Serialize | Deserialize | Size      | Use case                                   |
+| ------- | --------- | ----------- | --------- | ------------------------------------------ |
+| JSON    | 344 ns    | 356 ns      | 185 bytes | Human-readable output, debugging, APIs.    |
+| MsgPack | 413 ns    | 221 ns      | 135 bytes | Compact storage, network transmission.     |
+| Arrow   | TBD       | TBD         | Columnar  | Batch processing, Parquet, IPC, analytics. |
 
-**Note:** Cap'n Proto performance can be further optimized through zero-copy techniques and direct buffer manipulation
-for specialized use cases.
+Measured 2026-10-19 with the existing `serialization_comparison` QuoteTick fixture
+on AMD Ryzen Threadripper 9980X, Linux 7.0.0-34-generic, and rustc 1.99.0
+(b940084d7 2026-09-28). The `bench-lto` build uses standard precision and the `sbe` feature.
+Processes run with the `performance` governor and per-process ASLR disabled;
+SMT and CPU boost remain enabled. No builds, full test suites, or profiling run concurrently.
+
+The largest `(maximum - minimum) / median` spread across these four cases is 2.3%.
+JSON and MessagePack round trips preserve every fixture field.
+Sizes are encoded byte lengths for that fixture. Reproduce the publication controls described in the
+[benchmarking guide](../../docs/developer_guide/benchmarking.md#measure-criterion-for-publication).
+
+Arrow is optimized for batch processing rather than individual messages.
 
 ### Usage examples
 
@@ -197,83 +110,26 @@ let msgpack_bytes = quote.to_msgpack_bytes()?;
 let decoded = QuoteTick::from_msgpack_bytes(&msgpack_bytes)?;
 ```
 
-#### Cap'n Proto serialization
-
-```rust
-use nautilus_model::data::QuoteTick;
-use nautilus_serialization::capnp::{ToCapnp, FromCapnp, market_capnp};
-
-let quote = QuoteTick { /* ... */ };
-
-// Serialize to Cap'n Proto
-let mut message = capnp::message::Builder::new_default();
-let builder = message.init_root::<market_capnp::quote_tick::Builder>();
-quote.to_capnp(builder);
-
-let mut bytes = Vec::new();
-capnp::serialize::write_message(&mut bytes, &message)?;
-
-// Deserialize from Cap'n Proto
-let reader = capnp::serialize::read_message(
-    &mut &bytes[..],
-    capnp::message::ReaderOptions::new()
-)?;
-let root = reader.get_root::<market_capnp::quote_tick::Reader>()?;
-let decoded = QuoteTick::from_capnp(root)?;
-```
-
 ## Benchmarking
 
-This crate has two different benchmark tracks:
-
-- `serialization_comparison` compares JSON, MsgPack, and Cap'n Proto for a smaller set of types
-- `market_data_capnp_vs_sbe` compares Cap'n Proto and SBE at the wire level across the full
-  market data surface
-
-### format comparison benchmarks
-
-Run benchmarks to compare JSON, MsgPack, and Cap'n Proto:
+`serialization_comparison` compares JSON and MessagePack for quotes, trades, and bars. With the `sbe`
+feature, it also compares decoding batches of 100 and 1,000 trades using JSON, MessagePack, and SBE.
+The SBE batches use benchmark-only count and length framing around the existing per-trade messages.
 
 ```bash
-# Compare all formats for QuoteTick
-cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison -- QuoteTick
-
-# Compare all formats for TradeTick
-cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison -- TradeTick
-
-# Compare all formats for Bar
-cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison -- Bar
-
-# Run all Cap'n Proto benchmarks (including OrderBookDeltas with varying sizes)
-cargo bench -p nautilus-serialization --features capnp --bench capnp_serialization
-
-# Run all comparison benchmarks
-cargo bench -p nautilus-serialization --features capnp --bench serialization_comparison
+CARGO_BUILD_JOBS=8 cargo bench --profile bench-lto -p nautilus-serialization \
+  --features sbe --bench serialization_comparison
 ```
 
-### SBE benchmarks
-
-Run the SBE microbenchmarks and the exhaustive Cap'n Proto vs SBE wire benchmarks:
+Run the SBE cursor decode microbenchmarks with:
 
 ```bash
-# Run SBE cursor decode microbenchmarks
-cargo bench -p nautilus-serialization --no-default-features --features sbe --bench sbe_decoding
-
-# Run exhaustive market data wire benchmarks: Cap'n Proto vs SBE
-cargo bench -p nautilus-serialization --no-default-features --features "capnp sbe" --bench market_data_capnp_vs_sbe
+CARGO_BUILD_JOBS=8 cargo bench --profile bench-lto -p nautilus-serialization \
+  --features sbe --bench sbe_decoding
 ```
 
-The `market_data_capnp_vs_sbe` bench covers:
-
-- All supported market data wire types: `BookOrder`, `OrderBookDelta`, `OrderBookDeltas`,
-  `OrderBookDepth`, `QuoteTick`, `TradeTick`, `BarType`, `Bar`, `MarkPriceUpdate`,
-  `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`, and `InstrumentClose`
-- `OrderBookDeltas` scaling at `1`, `10`, and `100` deltas
-- All `DataAny` market data variants
-- SBE encode, SBE encode with buffer reuse, SBE decode, Cap'n Proto encode, and Cap'n Proto decode
-
-Use `serialization_comparison` for general format tradeoffs. Use `market_data_capnp_vs_sbe` for
-SBE parity and wire-performance work.
+For complete native messages and local MessageBus delivery, see the
+[native codec benchmark](../common/benches/codecs/README.md).
 
 ## Documentation
 

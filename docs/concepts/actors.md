@@ -428,6 +428,280 @@ The system distinguishes between two data flows:
    - Processed through specific handlers like `on_bar()`, `on_quote()`, etc.
    - Used for ongoing event processing.
 
+### Historical request lists
+
+Each historical request selects one data type. These methods accept a scalar or a non-empty list:
+
+| Data                   | Request methods                                                      | Python argument |
+| ---------------------- | -------------------------------------------------------------------- | --------------- |
+| Instrument definitions | `request_instrument`                                                 | `instrument_id` |
+| Quotes and trades      | `request_quotes`, `request_trades`                                   | `instrument_id` |
+| Order books            | `request_book_snapshot`, `request_book_deltas`, `request_book_depth` | `instrument_id` |
+| Funding rates          | `request_funding_rates`                                              | `instrument_id` |
+| Bars                   | `request_bars`                                                       | `bar_type`      |
+
+Rust accepts vectors, arrays, and slices as well as scalar values. Python keeps the singular keyword
+for sequence inputs. Duplicate members are removed in first-occurrence order.
+
+- IDs must share a venue unless `client_id` is explicit.
+- Quote and trade requests with multiple IDs reject a record limit before dispatch.
+- Multiple-member support depends on the adapter. Book, funding-rate, and bar requests require one member.
+
+Databento supports lists for instrument definitions, quotes, and trades. Other adapter paths reject
+unsupported lists with a clear error. Custom data, venue-wide instrument requests, option-chain
+requests, and DeFi requests keep their existing inputs.
+
+Invalid routing and multi-ID record limits fail in the request call (`ValueError` in Python,
+`Err` in Rust). Unsupported lists reach `on_data_response` as a completed envelope with
+`failure_reason` set. Catalog hits can still supply partial data.
+
+### Historical completion
+
+`on_data_response(response)` runs after the typed payload hook for each envelope. The envelope keeps
+the root correlation ID, and `completed` marks the final envelope for that request.
+When present, `sub_correlation_id` identifies the child request.
+
+Requests with `params["time_range_generator"]` deliver each window's payload through the typed hook
+and `on_data_response`, with `completed=False`. On success, the final envelope has an empty payload.
+Its `params["data_count"]` reports the total count when nonzero.
+
+Check `failure_reason` at completion. Operational failures preserve data from successful work. A
+terminal envelope can have `data=None`; it then has no payload metadata and invokes no typed payload hook.
+
+Submit a request for another data type from the completion hook. Each call has its own correlation ID.
+For an actor with `instrument_ids` configured:
+
+```python
+def on_start(self):
+    self.quotes_request_id = self.request_quotes(instrument_id=self.config.instrument_ids)
+
+
+def on_data_response(self, response):
+    if response.correlation_id != self.quotes_request_id or not response.completed:
+        return
+    if response.failure_reason is not None:
+        self.log.error(response.failure_reason)
+        return
+    self.request_trades(instrument_id=self.config.instrument_ids)
+```
+
+#### Python callbacks and joins
+
+Python actors and strategies accept an optional `callback` on historical request methods.
+The callable receives the request ID as a string, matching the method's return value. It runs once
+on terminal success or failure, after the typed payload hook and `on_data_response`, with that
+request no longer pending. Intermediate envelopes do not invoke it. Callback exceptions retain their
+tracebacks in the log and do not prevent other completions.
+
+The callback does not receive the outcome; inspect or record `failure_reason` in `on_data_response`,
+which runs first. A failed request's partial data still reaches the typed payload hooks.
+Callbacks can submit follow-up requests. A successful reset or disposal, or a call to `fault()`,
+discards unfinished callbacks and joins. If one happens during a response hook, that response's
+callback is also discarded.
+
+Use `request_join(request_ids, callback=None, request_id=None)` to wait for historical requests
+already issued by the same actor or strategy:
+
+```python
+def on_start(self):
+    quotes_id = self.request_quotes(instrument_id=self.config.instrument_ids)
+    trades_id = self.request_trades(instrument_id=self.config.instrument_ids)
+    self.request_join([quotes_id, trades_id], callback=self._on_history_complete)
+
+
+def _on_history_complete(self, request_id):
+    self.log.info(f"Historical requests completed: {request_id}")
+```
+
+A join follows the completion-group rules below and returns its own string ID. It coordinates
+completion while each child retains its payload delivery; it does not merge or replay the data.
+`request_join` and `is_pending_request` accept string IDs or `UUID4` objects. A join of completed
+children can invoke its callback before `request_join` returns. Use the callback argument to identify
+it, or supply a previously stored `request_id` to recognize it in `on_data_response`.
+
+Inspect historical requests on the actor or strategy:
+
+- `is_pending_request(request_id)` checks an individual request or join.
+- `has_pending_requests()` checks whether any historical request or join is pending.
+- `pending_requests()` returns a snapshot set of their string IDs, including callback-free requests.
+
+#### Completion groups
+
+In Rust, use `request_group(request_ids, request_id)` to receive one completion event after several requests finish.
+Pass a non-empty list of distinct request IDs issued by the same actor. Completed requests and other
+groups are valid children. Empty, duplicate, or unknown child IDs return an error without creating a
+group. The supplied group ID must not match an existing request or group ID in the actor.
+
+Each child keeps its own typed payload delivery. The group emits a terminal `on_data_response` envelope
+with its own correlation ID and no payload. It waits for every child, including after a failure.
+Its `failure_reason` identifies the first failed child in the supplied order, or is absent on success.
+
+Groups notify after the active response hook returns. Groups made ready by the same child notify in
+registration order. A group whose children have already completed can notify before `request_group`
+returns. Store and supply a group UUID before the call if the hook needs to recognize that event:
+
+```rust
+use nautilus_core::UUID4;
+
+let group_id = UUID4::new();
+self.history_group = Some(group_id);
+self.request_group(vec![quotes_id, trades_id], Some(group_id))?;
+```
+
+The runner queues follow-up requests submitted from completion hooks. Hook errors are
+logged and do not prevent group completion. Request IDs and failure metadata remain available for
+grouping until actor request cleanup; payload batches are not retained for grouping. Successful reset
+or disposal, fault, and `release_subscriptions` clear this state and discard unfinished groups without
+completion events. Python `request_join` uses the same lifecycle.
+
+### Subscription lists
+
+Actor and Strategy subscriptions accept one identifier or a non-empty collection. The matching
+unsubscribe methods accept the same inputs.
+
+| Data                   | Subscribe methods                                                             | Python argument |
+| ---------------------- | ----------------------------------------------------------------------------- | --------------- |
+| Instrument definitions | `subscribe_instrument`                                                        | `instrument_id` |
+| Order books            | `subscribe_book_deltas`, `subscribe_book_depth`, `subscribe_book_at_interval` | `instrument_id` |
+| Quotes and trades      | `subscribe_quotes`, `subscribe_trades`                                        | `instrument_id` |
+| Mark and index prices  | `subscribe_mark_prices`, `subscribe_index_prices`                             | `instrument_id` |
+| Funding rates          | `subscribe_funding_rates`                                                     | `instrument_id` |
+| Instrument events      | `subscribe_instrument_status`, `subscribe_instrument_close`                   | `instrument_id` |
+| Option Greeks          | `subscribe_option_greeks`                                                     | `instrument_id` |
+| Bars                   | `subscribe_bars`                                                              | `bar_type`      |
+
+Rust accepts scalar values, vectors, arrays, and slices. Python keeps the scalar keyword for both
+scalar and sequence inputs. Duplicate IDs or full bar types are removed in first-occurrence order.
+Different bar specifications for one instrument stay distinct.
+
+```rust tab="Rust"
+self.subscribe_quotes(instrument_id, None, None);
+self.subscribe_quotes([first_id, second_id], None, None);
+self.unsubscribe_quotes([first_id, second_id], None, None);
+self.subscribe_trades([first_id, second_id], None, None);
+```
+
+```python tab="Python"
+self.subscribe_quotes(instrument_id=instrument_id)
+self.subscribe_quotes(instrument_id=[first_id, second_id])
+self.unsubscribe_quotes(instrument_id=[first_id, second_id])
+self.subscribe_trades(instrument_id=[first_id, second_id])
+```
+
+These subscription list rules do not change custom data, venue-wide `subscribe_instruments(Venue)`,
+option-chain, or DeFi inputs.
+
+#### Routing and validation
+
+- **Venues**: IDs must share a venue unless `client_id` is explicit. This applies to subscribe and unsubscribe.
+- **Book settings**: Settings apply to every ID. Unsubscribe with the original `is_parent` parameter and snapshot interval.
+- **Trades**: The actor groups synthetic IDs separately from other IDs, even with an explicit client.
+
+For non-external data clients, the actor also checks these subscription routes:
+
+- Quote lists must share one route: client, synthetic, or aggregated spread. Spread routing requires
+  `aggregate_spread_quotes=true` and a cached spread instrument.
+- Instrument definitions, books, status, closes, and option Greeks reject any list with multiple IDs
+  and a synthetic member.
+
+External data clients handle those quote and synthetic route mixtures themselves.
+
+Empty or missing-client mixed-venue lists fail before any subscription changes, including releases.
+Unsupported subscription routes fail before ownership is retained or handlers are registered:
+
+| API             | Validation failure |
+| --------------- | ------------------ |
+| Rust actor      | Panic              |
+| `DataActorCore` | `Err`              |
+| Python          | `ValueError`       |
+
+Invalid Python elements raise `TypeError` before any subscription changes, including releases.
+
+#### Bar ownership
+
+The actor acquires one subscription per standard output bar type. The first full requested type
+supplies the source; later source variants for that output do not acquire another owner.
+
+Unsubscribe with the original full type or its `standard()` alias. Both release the original full type.
+
+```rust tab="Rust"
+self.subscribe_bars([first_bar_type, second_bar_type], None, None);
+self.unsubscribe_bars([first_bar_type, second_bar_type], None, None);
+```
+
+```python tab="Python"
+self.subscribe_bars(bar_type=[first_bar_type, second_bar_type])
+self.unsubscribe_bars(bar_type=[first_bar_type, second_bar_type])
+```
+
+#### Ownership and releases
+
+- The actor retains ownership per instrument and dispatches only newly acquired IDs. A shared feed
+  stays active until its last owner releases it.
+- Releases use the original route and parameters. Members acquired in separate calls remain in
+  separate release commands; a scalar acquisition therefore has a scalar release.
+- The client adapter keeps failed non-book final release commands for explicit retries. Actors do not
+  retry failed releases automatically.
+
+:::warning
+Non-book releases remove one anonymous ownership claim per member. Balance subscribe and unsubscribe
+calls. Repeating a whole release list after partial success is not guaranteed to have no further effects.
+:::
+
+#### Adapter delivery and failures
+
+Compatible direct members reach native and Python hooks as one ordered list, with their parent command
+ID and metadata. This applies to subscribe and unsubscribe; external MessageBus clients also receive lists.
+
+Hooks reject unsupported lists before effects. Supported lists process independent members best effort
+without rolling back accepted work. The engine logs preparation failures and forwards successfully
+prepared members. Adapters can batch venue requests or iterate locally.
+
+Internal and composite bars, book snapshots, spreads, and continuous futures acquire separate source
+subscriptions. These derived commands keep their own ownership and can contain one member even when
+the parent contains several.
+
+Native hooks report synchronous acceptance:
+
+| Hook result         | Accepted members                                        |
+| ------------------- | ------------------------------------------------------- |
+| `Ok(())`            | Every dispatched member                                 |
+| `SubscriptionError` | Exact `instrument_ids_accepted` or `bar_types_accepted` |
+| Other error         | None                                                    |
+
+Bar outcomes use full bar types. Unsubscribe acceptance means successful release. Failure logs identify
+unaccepted or unreleased members.
+
+The Python bridge accepts the whole command when the runtime admits it to the client queue. Later async
+hook failures are logged without per-member outcomes to the engine. Venue acknowledgements remain separate.
+
+#### Catalog start times
+
+With `streaming`, the engine infers catalog `start_ns` only when `params` does not supply it:
+
+| Subscription       | Catalog start inference |
+| ------------------ | ----------------------- |
+| Single quote/trade | Per instrument          |
+| Quote/trade list   | None                    |
+| External bars      | Per full bar type       |
+
+Pass explicit `start_ns` for one shared batch start. External bar types with equal effective parameters
+stay in one list; different starts produce ordered subsets with the same command ID.
+
+Releases can regroup those subsets using their original parameters, routes, and acquisition boundaries.
+Scalar derived sources keep their own catalog inference.
+
+#### Custom Rust integrations
+
+- Override instrument methods with `impl IntoInstrumentIds` and bar methods with `impl IntoBarTypes`.
+  Pass explicit `InstrumentId` or `BarType` values where `.into()` relied on scalar inference.
+- Migrated `DataActorCore` list methods return `Result<()>`. Remove `topic` or `pattern` from migrated
+  subscribe calls; the core derives topics from each member.
+- Read `instrument_ids` or `bar_types` in commands. The serialized fields also carry lists, so upgrade
+  producers and consumers together. Python command properties are read-only and return list copies.
+- Hooks limited to one member can reject lists before effects with `single_instrument_id()` or
+  `single_bar_type()`. Construct partial errors with `SubscriptionError::instruments` or `SubscriptionError::bars`.
+
 ### Callback handlers
 
 Common data operations map to these handlers:

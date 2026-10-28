@@ -1342,8 +1342,10 @@ mod streaming_tests {
 
     use nautilus_common::{
         clock::VirtualClock,
-        messages::data::{DataCommand, QuotesResponse, RequestCommand, RequestQuotes},
-        msgbus::{self, MStr, ShareableMessageHandler},
+        messages::data::{
+            DataCommand, DataResponse, DataResponseEnvelope, RequestCommand, RequestQuotes,
+        },
+        msgbus::{self, MStr, TypedHandler},
     };
     use nautilus_core::Params;
     use nautilus_model::{
@@ -1412,8 +1414,12 @@ mod streaming_tests {
         let received_quotes = received.clone();
         msgbus::register_response_handler(
             &request_id,
-            ShareableMessageHandler::from_typed(move |response: &QuotesResponse| {
-                *received_quotes.borrow_mut() = response.data.clone();
+            TypedHandler::from(move |envelope: &DataResponseEnvelope| {
+                let Some(DataResponse::Quotes(response)) = envelope.response() else {
+                    panic!("expected quotes");
+                };
+
+                *received_quotes.borrow_mut() = response.data.to_vec();
             }),
         );
         let request = RequestQuotes::new(
@@ -1442,8 +1448,7 @@ mod streaming_tests {
     fn test_configured_catalog_error_names_rejected_param() {
         let directory = tempdir().unwrap();
         let path = directory.path().to_string_lossy().into_owned();
-        let mut params = Params::new();
-        params.insert("batch_size".to_string(), serde_json::json!(1024));
+        let params = Params::new([("batch_size".to_string(), serde_json::json!(1024))].into());
 
         let config = KernelConfig {
             catalogs: vec![
@@ -2203,7 +2208,7 @@ mod lifecycle_tests {
         assert!(commands.iter().any(|command| matches!(
             command,
             DataCommand::Subscribe(SubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument_id
+                if command.instrument_ids == [instrument_id]
         )));
 
         data_commands.clear();
@@ -2218,7 +2223,7 @@ mod lifecycle_tests {
         assert!(commands.iter().any(|command| matches!(
             command,
             DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument_id
+                if command.instrument_ids == [instrument_id]
         )));
     }
 
@@ -2261,7 +2266,7 @@ mod lifecycle_tests {
         assert!(commands.iter().any(|command| matches!(
             command,
             DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
-                if command.instrument_id == instrument_id
+                if command.instrument_ids == [instrument_id]
         )));
 
         drop(emulator);

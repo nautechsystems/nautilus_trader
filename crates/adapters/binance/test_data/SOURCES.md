@@ -63,3 +63,14 @@ for cases where a docs example is missing or stale.
 - The fixture `futures/http_json/position_risk_hedge.json` is a narrow derived
   position-risk response used to cover simultaneous long and short hedge-mode
   rows for one symbol.
+- The fixtures `futures/http_json/order_partially_filled.json` and
+  `futures/http_json/order_partial_fills.json` are synthetic variants of
+  `futures/http_json/order_response.json` and `futures/http_json/user_trade.json`
+  with matching order IDs and fills between creation and update times.
+- The fixture `futures/http_json/algo_order_response.json` uses distinct creation
+  and update times to test acceptance timestamps.
+- The fixtures `spot/user_data_sbe/list_status_executing.sbe` and
+  `spot/user_data_sbe/list_status_rejected.sbe` contain synthetic template-606 payloads
+  with distinct child identities and microsecond timestamps, encoded from the
+  [Spot SBE schema 3:5](https://github.com/binance/binance-spot-api-docs/blob/master/sbe/schemas/spot_3_5.xml).
+  They cover an executing OCO list and a rejected list with a venue reason; they are not mainnet captures.

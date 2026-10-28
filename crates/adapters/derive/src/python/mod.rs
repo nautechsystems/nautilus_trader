@@ -16,7 +16,6 @@
 //! Python bindings from `pyo3`.
 
 pub mod config;
-pub mod enums;
 pub mod factories;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};

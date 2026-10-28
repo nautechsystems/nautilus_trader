@@ -1613,6 +1613,18 @@ fn recover_released_feather_file(partial_path: &Path) {
 }
 
 fn recover_partial_feather_file(partial_path: &Path) -> anyhow::Result<()> {
+    let metadata = match fs::symlink_metadata(partial_path) {
+        Ok(metadata) => metadata,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
+        Err(e) => return Err(e.into()),
+    };
+
+    anyhow::ensure!(
+        metadata.is_file(),
+        "Partial Feather path must be a regular file: {}",
+        partial_path.display(),
+    );
+
     let file = match OpenOptions::new().read(true).write(true).open(partial_path) {
         Ok(file) => file,
         Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(()),
@@ -2950,13 +2962,29 @@ mod tests {
 
     #[rstest]
     #[cfg(unix)]
+    fn recovery_leaves_partial_file_symlinks_untouched() {
+        let temp_dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let partial = write_partial_file(outside.path(), &[1, 2]);
+        let original = fs::read(&partial).unwrap();
+        let link = temp_dir.path().join("quotes_0.feather.partial");
+        std::os::unix::fs::symlink(&partial, &link).unwrap();
+
+        recover_partial_feather_files(temp_dir.path());
+
+        assert_eq!(fs::read(&partial).unwrap(), original);
+        assert_eq!(fs::read_link(&link).unwrap(), partial);
+        assert!(!link.with_extension("").exists());
+        assert!(!partial.with_extension("").exists());
+    }
+
+    #[rstest]
+    #[cfg(unix)]
     fn recovery_continues_after_a_file_it_cannot_recover() {
         let temp_dir = TempDir::new().unwrap();
         let run = temp_dir.path().join("run");
         let partial = write_partial_file(&run, &[1]);
 
-        // A partial path that resolves to a directory fails to open for writing on every Unix
-        // platform, even as root
         let unrecoverable = temp_dir.path().join("bad.feather.partial");
         std::os::unix::fs::symlink(&run, &unrecoverable).unwrap();
 
@@ -2968,8 +2996,9 @@ mod tests {
             warnings,
             vec![
                 format!(
-                    "Failed to recover Feather file {}: Is a directory (os error 21)",
-                    unrecoverable.display()
+                    "Failed to recover Feather file {}: Partial Feather path must be a regular file: {}",
+                    unrecoverable.display(),
+                    unrecoverable.display(),
                 ),
                 format!(
                     "Recovered 1 record batch(es) into Feather file {}, dropped 8 trailing byte(s)",

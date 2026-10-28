@@ -88,6 +88,8 @@ const DATA_STREAM_COUNT: usize = 4;
 const DATA_ROUTE_COUNT: usize = 1_000;
 const ORDER_SWEEP_QUOTE_COUNT: usize = 1_000;
 const ORDER_TYPE_SWEEP_ORDERS: usize = 9;
+// Clear the fixture's minimum notional at the lowest passive limit price
+const LIMIT_ORDER_SIZE: &str = "0.012";
 const BASE_TS_NS: u64 = 1_735_689_600_000_000_000;
 const QUOTE_INTERVAL_NS: u64 = 1_000_000;
 const TRADE_OFFSET_NS: u64 = 500_000;
@@ -189,6 +191,11 @@ fn bench_run(c: &mut Criterion) {
             },
         );
 
+        record_position_workload(
+            &format!("alternating_market_orders_{data_count}"),
+            build_alternating_market_orders(data.clone(), quote_count),
+        );
+
         group.bench_with_input(
             BenchmarkId::new("alternating_market_orders", data_count),
             &data,
@@ -258,6 +265,11 @@ fn bench_position_history(c: &mut Criterion) {
         let data = generate_market_data(instrument_id, order_count);
         let data_count = data.len();
         group.throughput(Throughput::Elements(order_count as u64));
+        record_position_workload(
+            &format!("accumulating_market_orders_{order_count}"),
+            build_accumulating_market_orders(data.clone(), order_count),
+        );
+
         group.bench_with_input(
             BenchmarkId::new("accumulating_market_orders", order_count),
             &data,
@@ -409,6 +421,17 @@ where
     }
 
     elapsed
+}
+
+fn record_position_workload(case: &str, mut engine: BacktestEngine) {
+    engine
+        .run(None, None, None, false)
+        .expect("position workload should run");
+    let result = engine
+        .get_canonical_result()
+        .expect("position workload result should project");
+    canonical::write_result(case, &result).expect("position workload result should export");
+    engine.dispose();
 }
 
 fn run_position_history_iterations<F>(
@@ -1151,7 +1174,7 @@ impl PassiveLimitOrders {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from(LIMIT_ORDER_SIZE),
             max_orders,
             quote_count: 0,
             orders_submitted: 0,
@@ -1236,7 +1259,7 @@ impl GtdLimitExpiry {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from(LIMIT_ORDER_SIZE),
             max_orders,
             quote_count: 0,
             orders_submitted: 0,
@@ -1315,7 +1338,7 @@ impl OrderTypeSweep {
         Self {
             core: StrategyCore::new(config),
             instrument_id,
-            trade_size: Quantity::from("0.010"),
+            trade_size: Quantity::from(LIMIT_ORDER_SIZE),
             submitted: false,
         }
     }

@@ -407,7 +407,7 @@ the calculation fails.
 - `entry`: Opening side for the current cycle (`BUY` for `LONG`, `SELL` for `SHORT`). Updates when
   the position reverses direction.
 - `quantity`: Current absolute position size.
-- `signed_qty`: Signed position size (positive for `LONG`, negative for `SHORT`).
+- `signed_qty`: Decimal signed position size (positive for `LONG`, negative for `SHORT`).
 - `peak_qty`: Maximum quantity reached during the current open-close cycle.
 - `is_open`: Whether position is open.
 - `is_closed`: Whether position is closed (`FLAT`).
@@ -416,10 +416,10 @@ the calculation fails.
 
 ### Pricing and valuation
 
-- `avg_px_open`: Average entry price.
-- `avg_px_close`: Average exit price when closing.
+- `avg_px_open`: Decimal average entry price.
+- `avg_px_close`: Decimal average exit price when closing.
 - `realized_pnl`: Realized profit/loss.
-- `realized_return`: Realized return as decimal (for example, 0.05 for 5%).
+- `realized_return`: Floating-point return ratio (for example, 0.05 for 5%).
 - `quote_currency`: Quote currency of the instrument.
 - `base_currency`: Base currency if applicable.
 - `settlement_currency`: Currency for PnL settlement.
@@ -484,41 +484,59 @@ See the [Execution guide](execution/) for reconciliation best practices.
 
 ## Numerical precision
 
-`Position` uses `f64` for signed quantity, average prices, realized returns, and PnL intermediates. `Price`,
-`Quantity`, and `Money` keep their fixed-point representations at the API boundary, but conversions between
-these types and `f64` can introduce rounding.
+`Position` uses checked domain and raw arithmetic for exact quantity and fee operations, and `Decimal`
+for signed quantity, average prices, cost basis, and PnL residuals.
+`Price`, `Quantity`, and `Money` retain their fixed-point representations. Python `signed_qty`, `avg_px_open`,
+and `avg_px_close` properties return `decimal.Decimal` values when present. `realized_return` remains a
+floating-point analytics projection and does not feed accounting.
 
-`f64` represents each integer exactly only through `2^53`. Above that boundary, conversion can lose low-order
-bits. It provides roughly 15 to 16 significant decimal digits rather than a fixed number of exact decimal
-places.
+The arithmetic has a finite bound: a 96-bit coefficient and a maximum decimal scale of 28. Input conversions
+must fit exactly. Derived products, cost sums, division, and proportional intermediates round within that
+bound. An operation fails if an input loses precision, an intermediate overflows, or a nonzero intermediate
+disappears. At Decimal's precision limit, PnL sums may absorb a disappearing residual smaller than one native
+settlement `Money` unit. A disappearing operand of at least one native unit still fails; representable residuals
+remain in the position.
+The fallible fill, adjustment, settlement, purge, and fill-void operations leave the position unchanged on error.
 
-The design avoids the higher computational cost of arbitrary-precision arithmetic. The
-average-price calculation also avoids multiplying raw fixed-point values because those products can
-overflow their integer representation. Average prices reuse the prior `f64` average, and realized
-PnL is converted between `Money` and `f64` as fills accumulate. The resulting precision depends on
-the values, settlement-currency precision, and sequence of fills.
+### Cost basis and rounding
 
-Numerical limits affect quantity, inverse PnL, and high-precision fills:
+Opening and closing cost accumulators retain the amounts behind average prices. A rounded average never
+feeds the cost basis. A partial reduction retains unallocated opening cost, and the final reduction consumes
+that remainder. A separate Decimal PnL remainder retains fractions below the native Money scale between
+updates.
 
-- **Quantity**: `quantity` is derived from `signed_qty` at the instrument's `size_precision`. If that
-  conversion rounds a residual quantity to zero, the position becomes `FLAT` and normalizes `signed_qty` to
-  zero.
-- **Inverse PnL**: calculations for non-premium instruments reject nonpositive open or close prices and
-  positive prices below `1e-15`.
-- **DeFi precision**: with the `defi` feature, conversion of a `Price` or `Quantity` with more than 16 decimal
-  places to `f64` panics. Thus, `Position` does not support 17- or 18-decimal fill values.
+Derived Money amounts round midpoint to even at the native scale: nine decimal places in standard mode and
+16 in high-precision mode. A currency with a finer supported precision uses that precision instead. Currency
+display precision does not truncate the stored amount. Reversal fee allocation works in native Money units:
+the closing share truncates toward zero, and the opening share receives the residual, preserving the fee total.
 
-Tests in `crates/model/src/position.rs` cover a `0.01` USD commission, nine-decimal price inputs, 100
-sequential fills, prices from `0.00001` to `99999.99999`, and same-price round trips. These cases do
-not establish a universal precision bound.
+| Operation                                                      | Accounting result                                         |
+| -------------------------------------------------------------- | --------------------------------------------------------- |
+| Open one unit with a `0.000001 USD` fee                        | Realized PnL is `-0.000001 USD`.                          |
+| Buy `0.01` at `0.1234`, then sell it at `0.1235`, without fees | Realized PnL is `0.000001 USD`.                           |
+| Close a `0.9` long with a sell of `1` and a `0.006 USD` fee    | Closing fee is `0.0054 USD`; opening fee is `0.0006 USD`. |
 
-:::warning
-For exact decimal arithmetic in regulatory reporting or audit records, perform a separate decimal calculation
-from the original fills and adjustments. Keep that calculation. Converting `Position` float outputs back to
-decimal, including through `signed_decimal_qty()`, cannot restore discarded precision. `Position` does not
-provide an exact-decimal guarantee. Validate the instruments, currencies, amount ranges, and fill sequences
-used by the application.
-:::
+Supported quantity precision can exceed the instrument's display precision, for example after a base-currency
+fee. The position retains that quantity rather than rounding it to flat. Strategy close orders round such
+quantities down to multiples of the instrument's size increment. Dust remains open; no close order is submitted
+when the entire quantity rounds to zero. Non-premium inverse PnL requires
+positive prices. With the `defi` feature, 17- and 18-decimal inputs are supported when the input and resulting
+accounting fit the Decimal and domain bounds.
+
+### Persistence and replay
+
+Serialized positions include opening cost, closing cost, closed quantity, and the PnL remainder. Preserve
+these fields when restoring a position that will process more fills. `Position.to_dict()` includes this state,
+and `Position.from_dict()` validates its accounting inputs. Position lifecycle and snapshot financial values
+use decimal text in Arrow; SQL stores signed quantity and average prices as `NUMERIC`.
+
+Position payloads and EventStore lifecycle accounting from older builds do not satisfy this contract.
+Regenerate those stores from the original inputs before replaying with this version. The EventStore
+envelope format marker does not version individual accounting payloads.
+
+EventStore replay derives accounting from fills, adjustments, and settlement. Lifecycle notifications validate
+that accounting rather than replacing it with averages that omit cost basis and residuals. This layout has no
+reader for the prior floating-point accounting format.
 
 ## Integration with other components
 

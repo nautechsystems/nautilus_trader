@@ -191,7 +191,10 @@ pub struct BetfairExecutionClient {
 
 impl BetfairExecutionClient {
     /// Creates a new [`BetfairExecutionClient`] instance.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client or stream configuration is invalid.
     pub fn new(
         core: ExecutionClientCore,
         http_client: BetfairHttpClient,
@@ -199,7 +202,10 @@ impl BetfairExecutionClient {
         stream_config: BetfairStreamConfig,
         config: BetfairExecutionClientConfig,
         currency: Currency,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+        stream_config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let emitter = ExecutionEventEmitter::new(
             clock,
@@ -217,7 +223,7 @@ impl BetfairExecutionClient {
         let session_tasks = TaskGroup::new();
         let pending_tasks = TaskGroup::new();
 
-        Self {
+        Ok(Self {
             core,
             clock,
             emitter,
@@ -236,7 +242,7 @@ impl BetfairExecutionClient {
             pending_tasks,
             shutdown_errors: Vec::new(),
             account_refresh_tx: None,
-        }
+        })
     }
 
     /// Returns true while new-order submissions are halted for stream recovery.
@@ -7962,7 +7968,7 @@ mod tests {
         assert_eq!(order.avg_px(), Some(dec!(9.47)));
         assert_eq!(filled.last_px.as_decimal(), dec!(12));
         assert_eq!(position.quantity.as_decimal(), dec!(2));
-        assert_eq!(position.avg_px_open, restatement.last_px.as_f64());
+        assert_eq!(position.avg_px_open, restatement.last_px.as_decimal());
         assert_eq!(position.events[0].last_px, filled.last_px);
         assert_eq!(voided.trade_id, filled.trade_id);
         assert_eq!(voided.last_px, filled.last_px);
@@ -8261,7 +8267,8 @@ mod tests {
             config.stream_config(),
             config,
             Currency::GBP(),
-        );
+        )
+        .unwrap();
 
         client.sync_ocm_state_from_cache();
 
@@ -8397,7 +8404,8 @@ mod tests {
             config.stream_config(),
             config,
             Currency::GBP(),
-        );
+        )
+        .unwrap();
 
         client.sync_ocm_state_from_cache();
 

@@ -74,7 +74,7 @@ use crate::{
             parse_futures_fill_report, parse_futures_instrument,
             parse_futures_order_event_status_report, parse_futures_order_status_details_report,
             parse_futures_order_status_report, parse_futures_position_status_report,
-            parse_futures_public_execution, truncate_cl_ord_id,
+            parse_futures_public_execution,
         },
         urls::get_kraken_http_base_url,
     },
@@ -2329,7 +2329,7 @@ impl KrakenFuturesHttpClient {
 
         let mut builder = KrakenFuturesSendOrderParamsBuilder::default();
         builder
-            .cli_ord_id(truncate_cl_ord_id(&client_order_id))
+            .cli_ord_id(client_order_id.to_string())
             .broker(NAUTILUS_KRAKEN_BROKER_ID)
             .symbol(raw_symbol)
             .side(kraken_side)
@@ -2673,8 +2673,8 @@ impl KrakenFuturesHttpClient {
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
-        let order_id = venue_order_id.as_ref().map(|id| id.to_string());
-        let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
+        let (order_id, cli_ord_id) =
+            order_identifier(client_order_id.as_ref(), venue_order_id.as_ref());
 
         if order_id.is_none() && cli_ord_id.is_none() {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
@@ -3009,8 +3009,8 @@ impl KrakenFuturesHttpClient {
             .get_cached_instrument(&instrument_id.symbol.inner())
             .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
 
-        let order_id = venue_order_id.as_ref().map(|id| id.to_string());
-        let cli_ord_id = client_order_id.as_ref().map(truncate_cl_ord_id);
+        let (order_id, cli_ord_id) =
+            order_identifier(client_order_id.as_ref(), venue_order_id.as_ref());
 
         if order_id.is_none() && cli_ord_id.is_none() {
             anyhow::bail!("Either client_order_id or venue_order_id must be provided");
@@ -3047,6 +3047,19 @@ impl KrakenFuturesHttpClient {
     }
 }
 
+/// The identifiers a cancel or edit names an order by, as `(order_id, cliOrdId)`: its venue order
+/// ID when known, else its full client order ID. An order sent with a shortened client order ID is
+/// held under that form, so its full ID beside the venue order ID could name no order.
+pub(crate) fn order_identifier(
+    client_order_id: Option<&ClientOrderId>,
+    venue_order_id: Option<&VenueOrderId>,
+) -> (Option<String>, Option<String>) {
+    match venue_order_id {
+        Some(venue_order_id) => (Some(venue_order_id.to_string()), None),
+        None => (None, client_order_id.map(ToString::to_string)),
+    }
+}
+
 pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
     matches!(
         status.parse::<KrakenSendStatus>(),
@@ -3056,7 +3069,11 @@ pub(crate) fn is_futures_submit_rejection(status: &str) -> bool {
             | KrakenSendStatus::WouldCauseLiquidation
             | KrakenSendStatus::PostWouldExecute
             | KrakenSendStatus::IocWouldNotExecute
-            | KrakenSendStatus::ReduceOnlyWouldIncreasePosition)
+            | KrakenSendStatus::ReduceOnlyWouldIncreasePosition
+            | KrakenSendStatus::ClientOrderIdAlreadyExist
+            | KrakenSendStatus::ClientOrderIdTooBig
+            | KrakenSendStatus::ClientOrderIdTooLong
+            | KrakenSendStatus::ClientOrderIdInvalid)
     )
 }
 
@@ -4606,6 +4623,17 @@ mod tests {
             query.split('&').any(|param| param == "sort=desc"),
             "{query}"
         );
+    }
+
+    /// The venue refuses a client order ID it already holds, or one too long or otherwise invalid,
+    /// so these statuses reject the submission rather than leave it ambiguous.
+    #[rstest]
+    #[case::already_exists("clientOrderIdAlreadyExist")]
+    #[case::too_big("clientOrderIdTooBig")]
+    #[case::too_long("clientOrderIdTooLong")]
+    #[case::invalid("clientOrderIdInvalid")]
+    fn test_client_order_id_send_statuses_reject_the_submission(#[case] status: &str) {
+        assert!(is_futures_submit_rejection(status));
     }
 
     fn cache_test_futures_instrument(client: &KrakenFuturesHttpClient) -> InstrumentId {

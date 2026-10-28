@@ -32,6 +32,7 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
+use super::validate_required_instrument_columns;
 use crate::arrow::{
     ArrowSchemaProvider, EncodeToRecordBatch, EncodingError, KEY_INSTRUMENT_ID,
     KEY_PRICE_PRECISION, extract_column, extract_column_by_name,
@@ -229,9 +230,10 @@ impl EncodeToRecordBatch for Commodity {
 ///
 /// [`DecodeFromRecordBatch`]: crate::arrow::DecodeFromRecordBatch
 pub fn decode_commodity_batch(
-    #[allow(unused)] metadata: &HashMap<String, String>,
+    metadata: &HashMap<String, String>,
     record_batch: &RecordBatch,
 ) -> Result<Vec<Commodity>, EncodingError> {
+    validate_required_instrument_columns::<Commodity>(metadata, record_batch)?;
     let record_batch = record_batch_with_u64_timestamps(record_batch)?;
     let record_batch = &record_batch;
     let cols = record_batch.columns();
@@ -363,7 +365,8 @@ pub fn decode_commodity_batch(
                         EncodingError::ParseError("max_notional", format!("row {i}: invalid type"))
                     })?
                     .value(i);
-                Some(Money::from_str(max_not_str).map_err(|e| {
+
+                Some(Money::from_str_exact(max_not_str).map_err(|e| {
                     EncodingError::ParseError("max_notional", format!("row {i}: {e}"))
                 })?)
             };
@@ -379,7 +382,8 @@ pub fn decode_commodity_batch(
                         EncodingError::ParseError("min_notional", format!("row {i}: invalid type"))
                     })?
                     .value(i);
-                Some(Money::from_str(min_not_str).map_err(|e| {
+
+                Some(Money::from_str_exact(min_not_str).map_err(|e| {
                     EncodingError::ParseError("min_notional", format!("row {i}: {e}"))
                 })?)
             };

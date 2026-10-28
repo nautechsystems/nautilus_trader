@@ -1851,16 +1851,6 @@ PYO3_SIGNATURE_RE = re.compile(r"#\[pyo3\(signature\s*=\s*\((.*?)\)\)\]", re.DOT
 
 CONFIG_READBACK_REPLACEMENTS = {
     (
-        "nautilus_trader.backtest",
-        "BacktestDataConfig",
-        "catalog_fs_storage_options",
-    ): "catalog_fs_storage_option_keys",
-    (
-        "nautilus_trader.backtest",
-        "BacktestDataConfig",
-        "catalog_fs_rust_storage_options",
-    ): "catalog_fs_rust_storage_option_keys",
-    (
         "nautilus_trader.persistence",
         "DataCatalogConfig",
         "fs_rust_storage_options",

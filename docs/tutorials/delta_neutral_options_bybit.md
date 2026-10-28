@@ -215,8 +215,9 @@ When `enter_strangle` is `true` and both mark IVs have arrived, the
 strategy places SELL limit orders using the `order_iv` parameter:
 
 ```rust
-let mut call_params = Params::new();
-call_params.insert("order_iv".to_string(), json!(call_entry_iv.to_string()));
+let call_params = Params::new(
+    [("order_iv".to_string(), json!(call_entry_iv.to_string()))].into(),
+);
 
 self.submit_order(call_order, None, Some(client_id), Some(call_params))?;
 ```

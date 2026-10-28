@@ -229,15 +229,19 @@ Configure a `BacktestNode` run with both data streams for the option instruments
 the series:
 
 ```python
+from nautilus_trader.config import BacktestDataConfig
+from nautilus_trader.config import DataCatalogConfig
+from nautilus_trader.model import NautilusDataType
+
 data = [
     BacktestDataConfig(
         data_type=NautilusDataType.QuoteTick,
-        catalog_path="/path/to/catalog",
+        catalog=DataCatalogConfig(path="/path/to/catalog"),
         instrument_ids=option_instrument_ids,
     ),
     BacktestDataConfig(
         data_type=NautilusDataType.OptionGreeks,
-        catalog_path="/path/to/catalog",
+        catalog=DataCatalogConfig(path="/path/to/catalog"),
         instrument_ids=option_instrument_ids,
     ),
 ]

@@ -18,13 +18,14 @@
 use std::collections::HashMap;
 
 use arrow::record_batch::RecordBatch;
+use indexmap::IndexMap;
 use nautilus_core::Params;
 use nautilus_serialization::arrow::U64ColumnRef;
 
 /// Converts string Arrow schema metadata into generic catalog params.
 #[must_use]
 pub(crate) fn arrow_metadata_to_params(metadata: &HashMap<String, String>) -> Params {
-    let mut params = Params::new();
+    let mut params = IndexMap::new();
     let mut entries = metadata.iter().collect::<Vec<_>>();
     entries.sort_by_key(|(key, _)| *key);
 
@@ -32,7 +33,7 @@ pub(crate) fn arrow_metadata_to_params(metadata: &HashMap<String, String>) -> Pa
         params.insert(key.clone(), serde_json::Value::String(value.clone()));
     }
 
-    params
+    Params::new(params)
 }
 
 /// Returns the inclusive `ts_init` range across Arrow record batches.

@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::config::{ConfigResult, check_unique_values};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
@@ -158,8 +159,59 @@ impl Default for TardisDataClientConfig {
     }
 }
 
+impl TardisReplayConfig {
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        validate_replay_options(&self.options)
+    }
+}
+
+impl TardisDataClientConfig {
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        validate_replay_options(&self.options)?;
+        check_unique_values("stream_options", &self.stream_options)?;
+
+        for (index, option) in self.stream_options.iter().enumerate() {
+            if let Some(symbols) = &option.symbols {
+                check_unique_values(format!("stream_options[{index}].symbols"), symbols)?;
+            }
+
+            check_unique_values(
+                format!("stream_options[{index}].data_types"),
+                &option.data_types,
+            )?;
+        }
+
+        Ok(())
+    }
+}
+
+fn validate_replay_options(options: &[ReplayNormalizedRequestOptions]) -> ConfigResult<()> {
+    check_unique_values("options", options)?;
+
+    for (index, option) in options.iter().enumerate() {
+        if let Some(symbols) = &option.symbols {
+            check_unique_values(format!("options[{index}].symbols"), symbols)?;
+        }
+
+        check_unique_values(format!("options[{index}].data_types"), &option.data_types)?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use rstest::rstest;
 
     use super::*;
@@ -328,5 +380,65 @@ normalize_symbols = false
         ));
         assert_eq!(config.extract_bbo_as_quotes, Some(true));
         assert!(matches!(config.compression, Some(ParquetCompression::Zstd)));
+    }
+
+    #[rstest]
+    #[case::replay_symbols(false, "symbols")]
+    #[case::replay_types(false, "data_types")]
+    #[case::replay_options(false, "options")]
+    #[case::stream_symbols(true, "symbols")]
+    #[case::stream_types(true, "data_types")]
+    #[case::stream_options(true, "stream_options")]
+    fn test_option_selection_duplicates(#[case] stream: bool, #[case] field: &str) {
+        let mut option = serde_json::json!({
+            "exchange": "binance-futures", "symbols": ["BTCUSDT"],
+            "dataTypes": ["trade"], "from": "2024-01-01", "to": "2024-01-02"
+        });
+
+        if stream {
+            option.as_object_mut().unwrap().remove("from");
+            option.as_object_mut().unwrap().remove("to");
+        }
+
+        match field {
+            "symbols" => option["symbols"] = serde_json::json!(["BTCUSDT", "ETHUSDT", "BTCUSDT"]),
+            "data_types" => option["dataTypes"] = serde_json::json!(["trade", "quote", "trade"]),
+            _ => {}
+        }
+
+        let mut options = vec![option.clone()];
+        if field == "options" || field == "stream_options" {
+            options.push(option);
+        }
+
+        let key = if stream { "stream_options" } else { "options" };
+        let mut input = serde_json::json!({});
+        input[key] = serde_json::json!(options);
+        let config: TardisDataClientConfig = serde_json::from_value(input.clone()).unwrap();
+
+        let expected_field = if field == key {
+            key.to_string()
+        } else {
+            format!("{key}[0].{field}")
+        };
+
+        let expected = Err(ConfigError::duplicate(expected_field, None));
+        let result = config.validate();
+
+        let replay_result = if stream {
+            None
+        } else {
+            Some(
+                serde_json::from_value::<TardisReplayConfig>(input)
+                    .unwrap()
+                    .validate(),
+            )
+        };
+
+        assert_eq!(result, expected);
+
+        if let Some(result) = replay_result {
+            assert_eq!(result, expected);
+        }
     }
 }

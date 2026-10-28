@@ -51,14 +51,14 @@ use nautilus_common::{
     messages::{
         DataEvent, ExecutionEvent, ExecutionReport,
         data::{
-            RequestBars, RequestBookDeltas, RequestBookDepth, RequestBookSnapshot,
-            RequestCustomData, RequestFundingRates, RequestInstrument, RequestInstruments,
-            RequestOptionChainReferencePrice, RequestQuotes, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData, SubscribeFundingRates,
-            SubscribeIndexPrices, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeInstruments, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
+            DataRequestFailed, DataResponseEnvelope, RequestBars, RequestBookDeltas,
+            RequestBookDepth, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
+            RequestInstrument, RequestInstruments, RequestOptionChainReferencePrice, RequestQuotes,
+            RequestTrades, SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth,
+            SubscribeCustomData, SubscribeFundingRates, SubscribeIndexPrices, SubscribeInstrument,
+            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeInstruments,
+            SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
             UnsubscribeFundingRates, UnsubscribeIndexPrices, UnsubscribeInstrument,
             UnsubscribeInstrumentClose, UnsubscribeInstrumentStatus, UnsubscribeInstruments,
             UnsubscribeMarkPrices, UnsubscribeOptionGreeks, UnsubscribeQuotes, UnsubscribeTrades,
@@ -106,7 +106,10 @@ use nautilus_model::{
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use parking_lot::Mutex;
-use pyo3::{prelude::*, types::PyDict};
+use pyo3::{
+    prelude::*,
+    types::{PyCFunction, PyDict, PyTuple},
+};
 use rust_decimal::Decimal;
 
 use self::{
@@ -467,9 +470,9 @@ impl ClientOutput {
     #[pyo3(name = "instrument")]
     fn py_instrument(&self, py: Python<'_>, instrument: Py<PyAny>) -> PyResult<()> {
         self.sender()?;
-        self.send(DataEvent::Instrument(pyobject_to_instrument_any(
-            py, instrument,
-        )?))
+        self.send(DataEvent::Data(
+            pyobject_to_instrument_any(py, instrument)?.into(),
+        ))
     }
 
     #[pyo3(name = "data")]
@@ -477,8 +480,14 @@ impl ClientOutput {
         self.sender()?;
         self.send(DataEvent::Data(extract_data(data)?))
     }
-    #[pyo3(name = "response")]
-    fn py_response(&self, response: &Bound<'_, PyAny>) -> PyResult<()> {
+
+    #[pyo3(name = "response", signature = (response, completed=None, sub_correlation_id=None))]
+    fn py_response(
+        &self,
+        response: &Bound<'_, PyAny>,
+        completed: Option<bool>,
+        sub_correlation_id: Option<nautilus_core::UUID4>,
+    ) -> PyResult<()> {
         self.sender()?;
         let (client_id, response) = extract_response(response)?;
         if self.state.lock().client_id != Some(client_id) {
@@ -487,7 +496,35 @@ impl ClientOutput {
             ));
         }
 
-        self.send(DataEvent::Response(response))
+        let envelope =
+            DataResponseEnvelope::new(response, completed.unwrap_or(true), sub_correlation_id);
+        self.send(DataEvent::ResponseEnvelope(envelope))
+    }
+
+    /// Completes a failed data request, preserving an optional partial response.
+    #[pyo3(name = "request_failed", signature = (request_id, reason, response=None))]
+    fn py_request_failed(
+        &self,
+        request_id: nautilus_core::UUID4,
+        reason: String,
+        response: Option<&Bound<'_, PyAny>>,
+    ) -> PyResult<()> {
+        self.sender()?;
+        let response = response.map(extract_response).transpose()?;
+        if let Some((client_id, response)) = &response
+            && (self.state.lock().client_id != Some(*client_id)
+                || response.correlation_id() != &request_id)
+        {
+            return Err(to_pytype_err(
+                "Partial response identity does not match the failed request",
+            ));
+        }
+
+        self.send(DataEvent::RequestFailed(DataRequestFailed {
+            request_id,
+            reason,
+            response: response.map(|(_, response)| response),
+        }))
     }
 
     #[pyo3(name = "event")]
@@ -1600,90 +1637,70 @@ impl DataClient for PythonClient {
     }
 
     fn request_data(&self, request: RequestCustomData) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                ("_request_data", (PyRequestCustomData { request },)),
-            )
+            let argument = Py::new(py, PyRequestCustomData { request })?.into_any();
+            self.call_request(py, "_request_data", request_id, argument)
         })?;
 
         Ok(())
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                ("_request_instruments", (PyRequestInstruments { request },)),
-            )
+            let argument = Py::new(py, PyRequestInstruments { request })?.into_any();
+            self.call_request(py, "_request_instruments", request_id, argument)
         })?;
 
         Ok(())
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                ("_request_instrument", (PyRequestInstrument { request },)),
-            )
+            let argument = Py::new(py, PyRequestInstrument { request })?.into_any();
+            self.call_request(py, "_request_instrument", request_id, argument)
         })?;
 
         Ok(())
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                (
-                    "_request_book_snapshot",
-                    (PyRequestBookSnapshot { request },),
-                ),
-            )
+            let argument = Py::new(py, PyRequestBookSnapshot { request })?.into_any();
+            self.call_request(py, "_request_book_snapshot", request_id, argument)
         })?;
 
         Ok(())
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                ("_request_quotes", (PyRequestQuotes { request },)),
-            )
+            let argument = Py::new(py, PyRequestQuotes { request })?.into_any();
+            self.call_request(py, "_request_quotes", request_id, argument)
         })?;
 
         Ok(())
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                ("_request_trades", (PyRequestTrades { request },)),
-            )
+            let argument = Py::new(py, PyRequestTrades { request })?.into_any();
+            self.call_request(py, "_request_trades", request_id, argument)
         })?;
 
         Ok(())
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                (
-                    "_request_funding_rates",
-                    (PyRequestFundingRates { request },),
-                ),
-            )
+            let argument = Py::new(py, PyRequestFundingRates { request })?.into_any();
+            self.call_request(py, "_request_funding_rates", request_id, argument)
         })?;
 
         Ok(())
@@ -1693,14 +1710,14 @@ impl DataClient for PythonClient {
         &self,
         request: RequestOptionChainReferencePrice,
     ) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
+            let argument = Py::new(py, PyRequestOptionChainReferencePrice { request })?.into_any();
+            self.call_request(
                 py,
-                "call",
-                (
-                    "_request_option_chain_reference_price",
-                    (PyRequestOptionChainReferencePrice { request },),
-                ),
+                "_request_option_chain_reference_price",
+                request_id,
+                argument,
             )
         })?;
 
@@ -1708,33 +1725,30 @@ impl DataClient for PythonClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime
-                .call_method1(py, "call", ("_request_bars", (PyRequestBars { request },)))
+            let argument = Py::new(py, PyRequestBars { request })?.into_any();
+            self.call_request(py, "_request_bars", request_id, argument)
         })?;
 
         Ok(())
     }
 
     fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                ("_request_book_depth", (PyRequestBookDepth { request },)),
-            )
+            let argument = Py::new(py, PyRequestBookDepth { request })?.into_any();
+            self.call_request(py, "_request_book_depth", request_id, argument)
         })?;
 
         Ok(())
     }
 
     fn request_book_deltas(&self, request: RequestBookDeltas) -> anyhow::Result<()> {
+        let request_id = request.request_id;
         Python::attach(|py| {
-            self.runtime.call_method1(
-                py,
-                "call",
-                ("_request_book_deltas", (PyRequestBookDeltas { request },)),
-            )
+            let argument = Py::new(py, PyRequestBookDeltas { request })?.into_any();
+            self.call_request(py, "_request_book_deltas", request_id, argument)
         })?;
 
         Ok(())
@@ -1789,6 +1803,60 @@ struct PythonExecutionClient {
     client: PythonClient,
     identity: ExecutionIdentity,
     cache: CacheView,
+}
+
+impl PythonClient {
+    fn call_request(
+        &self,
+        py: Python<'_>,
+        operation: &str,
+        request_id: nautilus_core::UUID4,
+        argument: Py<PyAny>,
+    ) -> PyResult<()> {
+        let task = self
+            .runtime
+            .call_method1(py, "call", (operation, (argument,)))?;
+        let output = self.output.clone();
+
+        let callback = PyCFunction::new_closure(
+            py,
+            None,
+            None,
+            move |args: &Bound<'_, PyTuple>, _kwargs: Option<&Bound<'_, PyDict>>| {
+                let task = args.get_item(0)?;
+
+                let reason = if task.call_method0("cancelled")?.extract::<bool>()? {
+                    Some("Python data request canceled".to_owned())
+                } else {
+                    let exception = task.call_method0("exception")?;
+                    if exception.is_none() {
+                        None
+                    } else {
+                        Some(exception.str()?.to_str()?.to_owned())
+                    }
+                };
+
+                if let Some(reason) = reason {
+                    if output.state.lock().disposed {
+                        return Ok(());
+                    }
+
+                    if let Err(e) = output.send(DataEvent::RequestFailed(DataRequestFailed {
+                        request_id,
+                        reason,
+                        response: None,
+                    })) {
+                        log::error!("Failed to deliver Python data request failure: {e}");
+                    }
+                }
+
+                Ok::<(), PyErr>(())
+            },
+        )?;
+
+        task.call_method1(py, "add_done_callback", (callback,))?;
+        Ok(())
+    }
 }
 
 #[async_trait(?Send)]
@@ -2202,7 +2270,7 @@ fn mass_status_matches(
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::{clock::VirtualClock, enums::LogLevel};
+    use nautilus_common::{clock::VirtualClock, enums::LogLevel, messages::data::DataResponse};
     use nautilus_core::python::to_pyvalue_err;
     use nautilus_model::{
         enums::{OrderStatus, OrderType, TimeInForce},
@@ -2260,7 +2328,7 @@ class Runtime:
             task.set_result(self.result)
         return task
     def call(self, operation, args):
-        self.calls.append((operation, args))
+        return self.call_awaited(operation, args)
     def _handles_order_venue(self, venue):
         self.calls.append(('venue', venue))
         if self.failure is not None:
@@ -2397,6 +2465,75 @@ class Runtime:
                 .unwrap();
             assert_eq!(*forwarded, command);
         });
+    }
+
+    #[rstest]
+    #[case::success(false, false, false, None)]
+    #[case::failure(true, false, false, Some("History unavailable"))]
+    #[case::canceled(false, true, false, Some("Python data request canceled"))]
+    #[case::disposed(true, false, true, None)]
+    fn test_data_request_task_delivers_terminal_failure(
+        native_execution_client: PythonExecutionClient,
+        #[case] failed: bool,
+        #[case] canceled: bool,
+        #[case] disposed: bool,
+        #[case] expected_reason: Option<&str>,
+    ) {
+        let client = native_execution_client.client;
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        client.output.state.lock().sender = Some(sender.into());
+        let request_id = nautilus_core::UUID4::new();
+        Python::attach(|py| {
+            let runtime = client.runtime.bind(py);
+            if failed {
+                runtime
+                    .setattr("failure", to_pyvalue_err("History unavailable").value(py))
+                    .unwrap();
+            }
+
+            runtime.setattr("cancelled", canceled).unwrap();
+
+            let request = RequestQuotes::new(
+                InstrumentId::from("AUD/USD.SIM"),
+                None,
+                None,
+                None,
+                Some(client.client_id),
+                request_id,
+                UnixNanos::from(179),
+                None,
+            );
+            client.request_quotes(request).unwrap();
+            if disposed {
+                client.output.invalidate();
+            }
+
+            let event_loop = runtime.getattr("loop").unwrap();
+            let tick = py
+                .import("asyncio")
+                .unwrap()
+                .call_method1("sleep", (0,))
+                .unwrap();
+            event_loop
+                .call_method1("run_until_complete", (tick,))
+                .unwrap();
+        });
+
+        if let Some(reason) = expected_reason {
+            let DataEvent::RequestFailed(failure) = receiver.try_recv().unwrap() else {
+                panic!("expected request failure");
+            };
+
+            assert_eq!(failure.request_id, request_id);
+            assert_eq!(failure.reason, reason);
+            assert!(failure.response.is_none());
+        }
+
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty
+                | tokio::sync::mpsc::error::TryRecvError::Disconnected)
+        ));
     }
 
     #[rstest]
@@ -2704,10 +2841,16 @@ class Runtime:
                     211_u64,
                 ))
                 .unwrap();
-            output.py_response(&response).unwrap();
+            output.py_response(&response, None, None).unwrap();
 
-            let DataEvent::Response(DataResponse::OptionChainReferencePrice(response)) =
-                receiver.try_recv().unwrap()
+            let DataEvent::ResponseEnvelope(envelope) = receiver.try_recv().unwrap() else {
+                panic!("Expected completed response");
+            };
+
+            assert!(envelope.completed());
+            assert_eq!(envelope.failure_reason(), None);
+
+            let Some(DataResponse::OptionChainReferencePrice(response)) = envelope.response()
             else {
                 panic!("Expected option reference response");
             };
@@ -2729,7 +2872,10 @@ class Runtime:
                 ))
                 .unwrap();
             assert_eq!(
-                output.py_response(&foreign).unwrap_err().to_string(),
+                output
+                    .py_response(&foreign, None, None)
+                    .unwrap_err()
+                    .to_string(),
                 "TypeError: Response client identity does not match its owner"
             );
             assert!(matches!(
@@ -2737,6 +2883,140 @@ class Runtime:
                 Err(tokio::sync::mpsc::error::TryRecvError::Empty)
             ));
         });
+    }
+
+    #[rstest]
+    #[case::intermediate(Some(false), false, false)]
+    #[case::completed(Some(true), false, false)]
+    #[case::provenance(None, true, false)]
+    #[case::partial_failure(None, false, true)]
+    fn test_data_output_preserves_completion_and_partial_payload(
+        #[case] completed: Option<bool>,
+        #[case] provenance: bool,
+        #[case] failed: bool,
+    ) {
+        use crate::python::client::responses::PyQuotesResponse;
+        Python::initialize();
+        let output = ClientOutput::py_new();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let client_id = ClientId::from("HISTORY");
+        let root = nautilus_core::UUID4::new();
+        let source = provenance.then(nautilus_core::UUID4::new);
+        let instrument_id = InstrumentId::from("AUD/USD.SIM");
+
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1.00000"),
+            Price::from("1.00010"),
+            Quantity::from("13"),
+            Quantity::from("17"),
+            UnixNanos::from(19),
+            UnixNanos::from(23),
+        );
+        {
+            let mut state = output.state.lock();
+            state.sender = Some(sender.into());
+            state.client_id = Some(client_id);
+        }
+
+        Python::attach(|py| {
+            let response = py
+                .get_type::<PyQuotesResponse>()
+                .call1((client_id, instrument_id, vec![quote], root, 227_u64))
+                .unwrap();
+
+            if failed {
+                output
+                    .py_request_failed(root, "Missing sibling".to_owned(), Some(&response))
+                    .unwrap();
+            } else {
+                output.py_response(&response, completed, source).unwrap();
+            }
+        });
+
+        let event = receiver.try_recv().unwrap();
+
+        let response = match event {
+            DataEvent::ResponseEnvelope(envelope) => {
+                assert_eq!(envelope.correlation_id(), &root);
+                assert_eq!(envelope.completed(), completed.unwrap_or(true));
+                assert_eq!(envelope.sub_correlation_id(), source);
+                assert_eq!(envelope.failure_reason(), None);
+                envelope.response().unwrap().clone()
+            }
+            DataEvent::RequestFailed(failure) if failed => {
+                assert_eq!(failure.request_id, root);
+                assert_eq!(failure.reason, "Missing sibling");
+                failure.response.unwrap()
+            }
+            _ => panic!("expected envelope or partial failure"),
+        };
+
+        let DataResponse::Quotes(response) = response else {
+            panic!("expected quotes");
+        };
+
+        assert_eq!(response.correlation_id, root);
+        assert_eq!(response.client_id, client_id);
+        assert_eq!(response.instrument_ids, vec![instrument_id]);
+        assert_eq!(response.data.as_ref(), &vec![quote]);
+        assert_eq!(response.start, None);
+        assert_eq!(response.end, None);
+        assert_eq!(response.ts_init, UnixNanos::from(227));
+        assert_eq!(response.params, None);
+        assert_eq!(
+            receiver.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+    }
+
+    #[rstest]
+    #[case::foreign_client(true)]
+    #[case::foreign_request(false)]
+    fn test_data_output_rejects_foreign_partial_response(#[case] foreign_client: bool) {
+        use crate::python::client::responses::PyQuotesResponse;
+        Python::initialize();
+        let output = ClientOutput::py_new();
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        let root = nautilus_core::UUID4::new();
+        {
+            let mut state = output.state.lock();
+            state.sender = Some(sender.into());
+            state.client_id = Some(ClientId::from("HISTORY"));
+        }
+
+        Python::attach(|py| {
+            let client_id = ClientId::from(if foreign_client { "OTHER" } else { "HISTORY" });
+
+            let correlation_id = if foreign_client {
+                root
+            } else {
+                nautilus_core::UUID4::new()
+            };
+
+            let response = py
+                .get_type::<PyQuotesResponse>()
+                .call1((
+                    client_id,
+                    InstrumentId::from("AUD/USD.SIM"),
+                    Vec::<QuoteTick>::new(),
+                    correlation_id,
+                    229_u64,
+                ))
+                .unwrap();
+            assert_eq!(
+                output
+                    .py_request_failed(root, "History failed".to_owned(), Some(&response))
+                    .unwrap_err()
+                    .to_string(),
+                "TypeError: Partial response identity does not match the failed request"
+            );
+        });
+
+        assert_eq!(
+            receiver.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
     }
 
     #[rstest]
@@ -2978,8 +3258,7 @@ class Runtime:
                 command.correlation_id = Some(nautilus_core::UUID4::new());
                 command.causation_id = Some(nautilus_core::UUID4::new());
                 command.log_receipt_level = LogLevel::Debug;
-                let mut params = Params::default();
-                params.insert("probe".to_owned(), serde_json::Value::from(17));
+                let params = Params::new([("probe".to_owned(), serde_json::Value::from(17))].into());
                 command.params = Some(params);
                 let first = $report;
                 let mut second = first.clone();

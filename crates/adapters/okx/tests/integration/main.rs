@@ -18,6 +18,7 @@
     reason = "integration tests combine arrange-act-assert flows that exceed the default threshold"
 )]
 
+mod account_bills;
 mod book_lifecycle;
 mod data_client;
 mod dst;

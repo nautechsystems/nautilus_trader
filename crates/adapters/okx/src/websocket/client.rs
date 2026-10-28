@@ -76,7 +76,7 @@ use super::{
     messages::{
         OKXAuthentication, OKXAuthenticationArg, OKXSubscriptionArg, OKXWsMessage, OKXWsRequest,
         WsAmendOrderParamsBuilder, WsAttachAlgoOrdParams, WsCancelOrderParamsBuilder,
-        WsMassCancelParams, WsPostAlgoOrderParamsBuilder, WsPostOrderParamsBuilder,
+        WsMassCancelParams, WsPostOrderParamsBuilder,
     },
     subscription::topic_from_subscription_arg,
 };
@@ -89,8 +89,7 @@ use crate::common::{
     credential::Credential,
     enums::{
         OKXBookChannel, OKXGreeksType, OKXInstrumentType, OKXOrderType, OKXPositionSide,
-        OKXTargetCurrency, OKXTradeMode, OKXTriggerType, OKXVipLevel,
-        conditional_order_to_algo_type, is_conditional_order,
+        OKXTargetCurrency, OKXTradeMode, OKXVipLevel,
     },
     parse::{
         bar_spec_as_okx_channel, okx_instrument_type, okx_instrument_type_from_symbol,
@@ -756,8 +755,7 @@ impl OKXWebSocketClient {
             .connect()
             .await?;
 
-        // Replace connection state so all clones see the underlying WebSocketClient's state
-        self.connection_mode.store(client.connection_mode_atomic());
+        let connection_mode = client.connection_mode_atomic();
         let reconnect_handle = client.reconnect_handle();
 
         let (msg_tx, rx) = tokio::sync::mpsc::unbounded_channel::<OKXWsMessage>();
@@ -765,7 +763,16 @@ impl OKXWebSocketClient {
         self.out_rx = Some(Arc::new(rx));
 
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
+
+        // Queue initialization before clones can subscribe through the new sender
+        if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
+            anyhow::bail!("Failed to send WebSocket client to handler: {e}");
+        }
+
         *self.cmd_tx.write().await = cmd_tx.clone();
+
+        // Clones observing active must already see the initialized sender
+        self.connection_mode.store(connection_mode);
 
         let signal = self.signal.clone();
         let auth_tracker = self.auth_tracker.clone();
@@ -911,27 +918,6 @@ impl OKXWebSocketClient {
         if let Err(e) = handler_spawner.spawn(handler_task) {
             self.out_rx = None;
             anyhow::bail!("Failed to register WebSocket handler task: {e}");
-        }
-
-        let set_client_result = {
-            let cmd_tx = self.cmd_tx.read().await;
-            cmd_tx.send(HandlerCommand::SetClient(client))
-        };
-
-        if let Err(e) = set_client_result {
-            self.handler_tasks.begin_shutdown();
-            self.signal.store(true, Ordering::Release);
-            let handler_abort = self.handler_abort.lock().clone();
-            handler_abort.cancel();
-            let shutdown_result = self.close_stream_task(Duration::from_secs(2)).await;
-            self.out_rx = None;
-            anyhow::bail!(match shutdown_result {
-                Ok(()) => format!("Failed to send WebSocket client to handler: {e}"),
-                Err(shutdown_error) => format!(
-                    "Failed to send WebSocket client to handler: {e}; handler shutdown failed: \
-                     {shutdown_error}"
-                ),
-            });
         }
 
         if let Some(control) = &self.socket_control {
@@ -3328,124 +3314,39 @@ impl OKXWebSocketClient {
         self.ws_batch_cancel_orders(args, client_order_ids).await
     }
 
-    /// Submits an algo order (conditional/stop order).
+    /// Rejects algo placement on the WebSocket transport; use the HTTP client instead.
     ///
     /// # Errors
     ///
-    /// Returns an error if the order parameters are invalid or if the request
-    /// cannot be sent.
-    ///
-    /// # References
-    ///
-    /// <https://www.okx.com/docs-v5/en/#order-book-trading-algo-trading-post-place-algo-order>
+    /// Returns an error if called: OKX does not accept this client's `order-algo` operation.
     #[expect(clippy::too_many_arguments)]
+    #[expect(
+        clippy::unused_async,
+        clippy::unused_async_trait_impl,
+        reason = "Preserves the published async API while rejecting an unsupported operation"
+    )]
     pub async fn submit_algo_order(
         &self,
         _trader_id: TraderId,
         _strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-        td_mode: OKXTradeMode,
-        client_order_id: ClientOrderId,
-        order_side: OrderSide,
-        order_type: OrderType,
-        quantity: Quantity,
-        trigger_price: Option<Price>,
-        trigger_type: Option<TriggerType>,
-        limit_price: Option<Price>,
-        reduce_only: Option<bool>,
-        callback_ratio: Option<String>,
-        callback_spread: Option<String>,
-        activation_price: Option<Price>,
+        _instrument_id: InstrumentId,
+        _td_mode: OKXTradeMode,
+        _client_order_id: ClientOrderId,
+        _order_side: OrderSide,
+        _order_type: OrderType,
+        _quantity: Quantity,
+        _trigger_price: Option<Price>,
+        _trigger_type: Option<TriggerType>,
+        _limit_price: Option<Price>,
+        _reduce_only: Option<bool>,
+        _callback_ratio: Option<String>,
+        _callback_spread: Option<String>,
+        _activation_price: Option<Price>,
     ) -> Result<(), OKXWsError> {
-        if !is_conditional_order(order_type) {
-            return Err(OKXWsError::ClientError(format!(
-                "Order type {order_type:?} is not a conditional order"
-            )));
-        }
-
-        let mut builder = WsPostAlgoOrderParamsBuilder::default();
-
-        if !matches!(order_side, OrderSide::Buy | OrderSide::Sell) {
-            return Err(OKXWsError::ClientError(
-                "Invalid order side for OKX".to_string(),
-            ));
-        }
-
-        let inst_id_code = self
-            .get_inst_id_code(&instrument_id.symbol.inner())
-            .ok_or_else(|| {
-                OKXWsError::ClientError(format!(
-                    "No instIdCode cached for {instrument_id}, cannot submit algo order"
-                ))
-            })?;
-        builder.inst_id_code(inst_id_code);
-
-        builder.td_mode(td_mode);
-        builder.cl_ord_id(client_order_id.as_str());
-        builder.side(order_side);
-        builder.ord_type(
-            conditional_order_to_algo_type(order_type)
-                .map_err(|e| OKXWsError::ClientError(e.to_string()))?,
-        );
-        builder.sz(quantity.to_string());
-
-        if let Some(tp) = trigger_price {
-            builder.trigger_px(tp.to_string());
-        }
-
-        // Map Nautilus TriggerType to OKX trigger type
-        let okx_trigger_type = trigger_type.map_or(OKXTriggerType::Last, Into::into);
-        builder.trigger_px_type(okx_trigger_type);
-
-        // For stop-limit orders, set the limit price
-        if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched)
-            && let Some(price) = limit_price
-        {
-            builder.order_px(price.to_string());
-        }
-
-        if let Some(reduce) = reduce_only {
-            builder.reduce_only(reduce);
-        }
-
-        if let Some(ratio) = callback_ratio {
-            builder.callback_ratio(ratio);
-        }
-
-        if let Some(spread) = callback_spread {
-            builder.callback_spread(spread);
-        }
-
-        if let Some(active) = activation_price {
-            builder.active_px(active.to_string());
-        }
-
-        builder.tag(OKX_NAUTILUS_BROKER_ID);
-
-        let params = builder
-            .build()
-            .map_err(|e| OKXWsError::ClientError(format!("Build algo order params error: {e}")))?;
-
-        let request_id = self.generate_unique_request_id();
-        let request = OKXWsRequest {
-            id: Some(request_id.clone()),
-            op: super::enums::OKXWsOperation::OrderAlgo,
-            exp_time: None,
-            args: vec![params],
-        };
-
-        let payload = serde_json::to_string(&request)
-            .map_err(|e| OKXWsError::JsonError(format!("Failed to serialize algo order: {e}")))?;
-
-        let cmd = HandlerCommand::Send {
-            payload,
-            rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_ALGO_ORDER.to_vec()),
-            request_id: Some(request_id),
-            client_order_ids: vec![client_order_id],
-            op: Some(super::enums::OKXWsOperation::OrderAlgo),
-        };
-
-        self.send_cmd(cmd).await
+        Err(OKXWsError::ClientError(
+            "OKX algo placement requires HTTP; use OKXHttpClient::place_algo_order_with_domain_types"
+                .to_string(),
+        ))
     }
 
     /// Cancels an algo order.
@@ -3753,6 +3654,7 @@ fn log_receiver_dropped(signal: &AtomicBool, item: &str) {
 
 #[cfg(test)]
 mod tests {
+    use futures_util::StreamExt;
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
     use nautilus_model::{identifiers::ClientId, instruments::stubs::crypto_perpetual_ethusdt};
@@ -3982,6 +3884,98 @@ mod tests {
         assert_eq!(
             client.request_id_counter.load(Ordering::SeqCst),
             initial_counter + 2
+        );
+    }
+
+    #[tokio::test]
+    async fn subscribe_during_connect_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, received_rx) = tokio::sync::oneshot::channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            if let Some(Ok(message)) = socket.next().await {
+                let _ = received_tx.send(message);
+
+                while matches!(socket.next().await, Some(Ok(_))) {}
+            }
+        });
+
+        let mut ws_client = OKXWebSocketClient::new(
+            Some(format!("ws://{addr}")),
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            TransportBackend::default(),
+            None,
+        )
+        .unwrap();
+        let observer = ws_client.clone();
+        let sender = Arc::clone(&ws_client.cmd_tx);
+        let publication = sender.read().await;
+        let mut connect = Box::pin(ws_client.connect());
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            loop {
+                assert!(futures_util::poll!(connect.as_mut()).is_pending());
+
+                if sender.try_read().is_err() {
+                    break;
+                }
+
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .expect("connect must wait to publish its sender");
+
+        let active_before_publication = observer.is_active();
+        let mut subscribe =
+            Box::pin(observer.subscribe_inst_id(OKXWsChannel::Trades, Ustr::from("BTC-USDT")));
+        assert!(futures_util::poll!(subscribe.as_mut()).is_pending());
+
+        // Queue a writer behind Subscribe to hold any later SetClient read lock
+        let mut barrier = Box::pin(sender.write());
+        assert!(futures_util::poll!(barrier.as_mut()).is_pending());
+        drop(publication);
+        let connect_result = futures_util::poll!(connect.as_mut());
+        subscribe.await.expect("concurrent subscribe command");
+        let barrier = barrier.await;
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx).await;
+        drop(barrier);
+
+        if let std::task::Poll::Ready(result) = connect_result {
+            result.expect("connect failed");
+        } else {
+            connect.as_mut().await.expect("connect failed");
+        }
+
+        drop(connect);
+        ws_client.close().await.expect("close failed");
+        server.await.expect("server task failed");
+
+        assert!(
+            !active_before_publication,
+            "active before sender publication"
+        );
+        let message = received.expect("subscription must reach server").unwrap();
+
+        let Message::Text(text) = message else {
+            panic!("expected text subscription")
+        };
+
+        let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "op": "subscribe",
+                "args": [{ "channel": "trades", "instId": "BTC-USDT" }],
+            })
         );
     }
 

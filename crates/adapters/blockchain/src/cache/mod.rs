@@ -2218,7 +2218,8 @@ mod tests {
             .http_rpc_url("http://127.0.0.1:9".into())
             .use_hypersync_for_live_data(true)
             .build();
-        let mut core = BlockchainDataClientCore::new(config, None, None, CancellationToken::new());
+        let mut core =
+            BlockchainDataClientCore::new(config, None, None, CancellationToken::new()).unwrap();
         core.cache.database = Some(database);
         core.cache.add_dex(dex).await?;
         core.cache.add_token(token0).await?;

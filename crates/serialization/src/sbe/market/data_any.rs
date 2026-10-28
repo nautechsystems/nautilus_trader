@@ -38,7 +38,14 @@ impl MarketSbeMessage for DataAny {
                 <OrderBookDeltas as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::BookDepth(value) => {
-                writer.write_u16_le(data_any_variant::ORDER_BOOK_DEPTH);
+                writer.write_u16_le(
+                    if value.template_id() == template_id::ORDER_BOOK_DEPTH_FULL {
+                        data_any_variant::ORDER_BOOK_DEPTH_FULL
+                    } else {
+                        data_any_variant::ORDER_BOOK_DEPTH
+                    },
+                );
+
                 <OrderBookDepth as MarketSbeMessage>::encode_body(value, writer)
             }
             Self::Quote(value) => {
@@ -93,6 +100,9 @@ impl MarketSbeMessage for DataAny {
             data_any_variant::ORDER_BOOK_DEPTH => Ok(Self::BookDepth(
                 <OrderBookDepth as MarketSbeMessage>::decode_body(cursor)?,
             )),
+            data_any_variant::ORDER_BOOK_DEPTH_FULL => {
+                Ok(Self::BookDepth(super::book::decode_depth_full(cursor)?))
+            }
             data_any_variant::QUOTE => Ok(Self::Quote(
                 <QuoteTick as MarketSbeMessage>::decode_body(cursor)?,
             )),

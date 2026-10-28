@@ -435,6 +435,17 @@ mod tests {
     }
 
     #[rstest]
+    fn test_order_filled_exact_usd_round_trip(mut order_filled: OrderFilled) {
+        order_filled.commission = Some(Money::from_str_exact("0.000001 USD").unwrap());
+        let metadata = order_filled.metadata();
+        let batch =
+            OrderFilled::encode_batch(&metadata, std::slice::from_ref(&order_filled)).unwrap();
+        let decoded = OrderFilled::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded, vec![order_filled]);
+    }
+
+    #[rstest]
     fn test_order_fill_voided_round_trip() {
         roundtrip(OrderFillVoidedSpec::builder().is_reopened(true).build());
     }

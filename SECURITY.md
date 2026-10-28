@@ -99,6 +99,11 @@ The sections below detail the controls at each layer of that lifecycle.
   community time to detect and quarantine compromised releases. Development tools are pinned to
   explicit versions across `.nautilus-engineering/tools.toml`, `tools.toml`, `Cargo.toml`, and
   related manifests, and version bumps are reviewed during security audits.
+- **Container image cooldowns**: Require images to be at least 7 days old unless an exception is
+  explicitly reviewed. Measure age from `created` in the image configuration for the exact
+  pinned digest, not the bundled software release date or tag update time. For multi-architecture indexes,
+  use the newest `created` timestamp among the target-platform images. Rebuilding an image restarts
+  its cooldown.
 - **Wheel-only Python installs**: The `no-build-package` list in `[tool.uv]` enumerates every
   third-party package locked in `python/uv.lock` and forbids `uv` from building any of them from source.
   In normal operation uv prefers wheels, so the setting is a no-op; it kicks in only if a listed

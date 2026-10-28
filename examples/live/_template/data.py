@@ -43,17 +43,18 @@ class TemplateDataClient(MarketDataClient):
         pass
 
     async def _subscribe_quotes(self, command) -> None:
-        self._handle_data(
-            QuoteTick(
-                instrument_id=command.instrument_id,
-                bid_price=Price.from_str("1.12345"),
-                ask_price=Price.from_str("1.12349"),
-                bid_size=Quantity.from_str("17000"),
-                ask_size=Quantity.from_str("23000"),
-                ts_event=19,
-                ts_init=29,
-            ),
-        )
+        for instrument_id in command.instrument_ids:
+            self._handle_data(
+                QuoteTick(
+                    instrument_id=instrument_id,
+                    bid_price=Price.from_str("1.12345"),
+                    ask_price=Price.from_str("1.12349"),
+                    bid_size=Quantity.from_str("17000"),
+                    ask_size=Quantity.from_str("23000"),
+                    ts_event=19,
+                    ts_init=29,
+                ),
+            )
 
     async def _unsubscribe_quotes(self, command) -> None:
         pass

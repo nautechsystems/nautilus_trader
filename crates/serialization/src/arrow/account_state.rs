@@ -80,7 +80,10 @@ impl DecodeTypedFromRecordBatch for AccountState {
 #[cfg(test)]
 mod tests {
     use nautilus_core::Params;
-    use nautilus_model::events::account::stubs::cash_account_state;
+    use nautilus_model::{
+        events::account::stubs::cash_account_state,
+        types::{AccountBalance, Money},
+    };
     use rstest::rstest;
     use serde_json::json;
 
@@ -88,12 +91,16 @@ mod tests {
 
     #[rstest]
     fn test_account_state_round_trip(cash_account_state: AccountState) {
-        let mut info = Params::new();
-        info.insert(
-            "total_wallet_balance".to_string(),
-            json!("1525000.00000001"),
+        let info = Params::new(
+            [
+                (
+                    "total_wallet_balance".to_string(),
+                    json!("1525000.00000001"),
+                ),
+                ("can_trade".to_string(), json!(true)),
+            ]
+            .into(),
         );
-        info.insert("can_trade".to_string(), json!(true));
         let state = cash_account_state.with_info(Some(info));
         let metadata = state.metadata();
         let batch = AccountState::encode_batch(&metadata, std::slice::from_ref(&state)).unwrap();
@@ -105,6 +112,27 @@ mod tests {
         assert_eq!(decoded[0].margins, state.margins);
         assert_eq!(decoded[0].base_currency, state.base_currency);
         assert_eq!(decoded[0].info, state.info);
+    }
+
+    #[rstest]
+    fn test_account_state_exact_usd_round_trip(mut cash_account_state: AccountState) {
+        cash_account_state.balances = vec![AccountBalance::new(
+            Money::from_str_exact("1.0001 USD").unwrap(),
+            Money::from_str_exact("0.000001 USD").unwrap(),
+            Money::from_str_exact("1.000099 USD").unwrap(),
+        )];
+        let metadata = cash_account_state.metadata();
+        let batch =
+            AccountState::encode_batch(&metadata, std::slice::from_ref(&cash_account_state))
+                .unwrap();
+        let decoded = AccountState::decode_typed_batch(batch.schema().metadata(), batch).unwrap();
+
+        assert_eq!(decoded.len(), 1);
+        assert_eq!(decoded[0].balances, cash_account_state.balances);
+        assert_eq!(
+            serde_json::to_value(&decoded[0]).unwrap(),
+            serde_json::to_value(&cash_account_state).unwrap(),
+        );
     }
 
     #[rstest]

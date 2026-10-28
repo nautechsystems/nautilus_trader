@@ -15,7 +15,7 @@
 
 //! Effective order book snapshot state transitions.
 
-use indexmap::IndexMap;
+use ahash::AHashMap;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas},
@@ -82,8 +82,8 @@ fn apply_snapshot_and_diff_fallback(
 
 fn compute_effective_deltas(
     book_new: &OrderBook,
-    mut old_bids: IndexMap<Price, (Quantity, usize)>,
-    mut old_asks: IndexMap<Price, (Quantity, usize)>,
+    mut old_bids: AHashMap<Price, (Quantity, usize)>,
+    mut old_asks: AHashMap<Price, (Quantity, usize)>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
 ) -> Option<OrderBookDeltas> {
@@ -126,18 +126,14 @@ fn compute_effective_deltas(
         ts_init,
     );
 
-    if deltas.is_empty() {
-        return None;
-    }
-
-    deltas.last_mut().expect("deltas not empty").flags |= RecordFlag::F_LAST as u8;
+    deltas.last_mut()?.flags |= RecordFlag::F_LAST as u8;
 
     Some(OrderBookDeltas::new(instrument_id, deltas))
 }
 
 fn level_sizes<'a>(
     levels: impl Iterator<Item = &'a BookLevel>,
-) -> IndexMap<Price, (Quantity, usize)> {
+) -> AHashMap<Price, (Quantity, usize)> {
     levels
         .enumerate()
         .filter_map(|(index, level)| {
@@ -155,7 +151,7 @@ fn level_sizes<'a>(
 fn diff_new_levels<'a>(
     deltas: &mut Vec<OrderBookDelta>,
     new_levels: impl Iterator<Item = &'a BookLevel>,
-    old_sizes: &mut IndexMap<Price, (Quantity, usize)>,
+    old_sizes: &mut AHashMap<Price, (Quantity, usize)>,
     instrument_id: InstrumentId,
     side: OrderSide,
     ts_event: UnixNanos,
@@ -166,7 +162,7 @@ fn diff_new_levels<'a>(
             continue;
         };
 
-        let action = match old_sizes.swap_remove(&order.price) {
+        let action = match old_sizes.remove(&order.price) {
             Some((old_size, _)) if old_size != order.size => BookAction::Update,
             Some(_) => continue,
             None => BookAction::Add,
@@ -186,7 +182,7 @@ fn diff_new_levels<'a>(
 
 fn append_deletes(
     deltas: &mut Vec<OrderBookDelta>,
-    old_sizes: IndexMap<Price, (Quantity, usize)>,
+    old_sizes: AHashMap<Price, (Quantity, usize)>,
     instrument_id: InstrumentId,
     side: OrderSide,
     ts_event: UnixNanos,

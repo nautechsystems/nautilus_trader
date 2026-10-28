@@ -29,13 +29,13 @@ use nautilus_model::{
         FuturesSpread, IndexInstrument, InstrumentAny, OptionContract, OptionSpread,
         PerpetualContract, TokenizedAsset,
     },
-    types::{Currency, Money, Price, Quantity},
+    types::{Currency, Price, Quantity},
 };
 use rust_decimal::Decimal;
 use sqlx::{FromRow, Row, postgres::PgRow, types::Json};
 use ustr::Ustr;
 
-use crate::sql::models::{enums::AssetClassPg, read_u8, read_u64};
+use crate::sql::models::{decode_money, enums::AssetClassPg, read_u8, read_u64};
 
 #[derive(Debug)]
 pub struct InstrumentAnyRow(pub InstrumentAny);
@@ -244,11 +244,15 @@ impl<'r> FromRow<'r, PgRow> for BettingInstrumentRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -352,11 +356,15 @@ impl<'r> FromRow<'r, PgRow> for BinaryOptionRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -449,11 +457,15 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -506,6 +518,10 @@ impl<'r> FromRow<'r, PgRow> for CryptoFutureRow {
 }
 
 impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
+    #[expect(
+        clippy::too_many_lines,
+        reason = "SQL row mapping mirrors the full crypto option constructor"
+    )]
     fn from_row(row: &'r PgRow) -> Result<Self, sqlx::Error> {
         let id = row.try_get::<String, _>("id").map(InstrumentId::from)?;
         let raw_symbol = row.try_get::<String, _>("raw_symbol").map(Symbol::from)?;
@@ -554,11 +570,15 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -651,11 +671,15 @@ impl<'r> FromRow<'r, PgRow> for CryptoPerpetualRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -743,11 +767,15 @@ impl<'r> FromRow<'r, PgRow> for CurrencyPairRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -1084,11 +1112,15 @@ impl<'r> FromRow<'r, PgRow> for CommodityRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -1209,11 +1241,15 @@ impl<'r> FromRow<'r, PgRow> for CfdRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -1307,11 +1343,15 @@ impl<'r> FromRow<'r, PgRow> for PerpetualContractRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -1415,11 +1455,15 @@ impl<'r> FromRow<'r, PgRow> for CryptoFuturesSpreadRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -1518,11 +1562,15 @@ impl<'r> FromRow<'r, PgRow> for CryptoOptionSpreadRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|value| Money::from(value.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()
@@ -1611,11 +1659,15 @@ impl<'r> FromRow<'r, PgRow> for TokenizedAssetRow {
         let max_notional = row
             .try_get::<Option<String>, _>("max_notional")
             .ok()
-            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "max_notional"))
+            .transpose()?;
         let min_notional = row
             .try_get::<Option<String>, _>("min_notional")
             .ok()
-            .and_then(|res| res.map(|res| Money::from(res.as_str())));
+            .flatten()
+            .map(|value| decode_money(&value, "min_notional"))
+            .transpose()?;
         let max_price = row
             .try_get::<Option<String>, _>("max_price")
             .ok()

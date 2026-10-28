@@ -24,13 +24,13 @@ use std::{
     time::Duration,
 };
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use jiff::Timestamp;
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent, DataResponse,
@@ -72,7 +72,7 @@ use crate::{
         recovery::{spawn_recovery_monitor, spawn_recovery_task, start_recovery},
         sync::{BookFrame, BookSubscription, BookSubscriptions},
     },
-    common::{consts::COINAPI, credential::resolve_api_key, symbol::VenueSymbol},
+    common::{consts::COINAPI, credential::resolve_api_key},
     config::{CoinApiDataClientConfig, CoinApiInstrumentSelection},
     http::{
         client::{CoinApiHttpClient, HistoryPages},
@@ -145,7 +145,7 @@ impl CoinApiDataClient {
     ///
     /// Panics if the data event sender is not initialized on this thread.
     pub fn new(client_id: ClientId, config: CoinApiDataClientConfig) -> anyhow::Result<Self> {
-        validate_selections(&config.instruments)?;
+        config.validate()?;
         validate_price_precisions(&config.instruments, &config.price_precisions)?;
         let api_key = resolve_api_key(config.api_key.clone())?;
         let http = CoinApiHttpClient::new(api_key.clone(), config.http_config())?;
@@ -553,7 +553,7 @@ impl DataClient for CoinApiDataClient {
         for instrument in loaded {
             if let Err(e) = self
                 .data_sender
-                .send(DataEvent::Instrument(instrument.instrument))
+                .send(DataEvent::Data(instrument.instrument.into()))
             {
                 log::warn!("Failed to send instrument: {e}");
             }
@@ -623,78 +623,100 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        let data_type = match cmd.book_type {
-            BookType::L2_MBP => DataType::Book,
-            BookType::L3_MBO => DataType::BookL3,
-            BookType::L1_MBP => anyhow::bail!("CoinAPI streams L2_MBP and L3_MBO book deltas"),
-        };
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
 
-        // Every channel sends the full book, so a depth limit cannot reduce the stream
-        self.subscribe_book(cmd.instrument_id, data_type, None)
+            let data_type = match cmd.book_type {
+                BookType::L2_MBP => DataType::Book,
+                BookType::L3_MBO => DataType::BookL3,
+                BookType::L1_MBP => anyhow::bail!("CoinAPI streams L2_MBP and L3_MBO book deltas"),
+            };
+
+            // Every channel sends the full book, so a depth limit cannot reduce the stream
+            self.subscribe_book(instrument_id, data_type, None)
+        })
     }
 
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            cmd.book_type == BookType::L2_MBP,
-            "CoinAPI depth snapshots are L2_MBP, was {}",
-            cmd.book_type
-        );
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            anyhow::ensure!(
+                cmd.book_type == BookType::L2_MBP,
+                "CoinAPI depth snapshots are L2_MBP, was {}",
+                cmd.book_type
+            );
 
-        let depth = cmd.depth.map_or(DEPTH10_LEN, NonZeroUsize::get);
-        let (data_type, _) = BOOK_DEPTH_CHANNELS
-            .into_iter()
-            .find(|(_, levels)| depth <= *levels)
-            .context(format!(
-                "CoinAPI depth snapshots list at most 50 levels, was {depth}"
-            ))?;
+            let depth = cmd.depth.map_or(DEPTH10_LEN, NonZeroUsize::get);
+            let (data_type, _) = BOOK_DEPTH_CHANNELS
+                .into_iter()
+                .find(|(_, levels)| depth <= *levels)
+                .context(format!(
+                    "CoinAPI depth snapshots list at most 50 levels, was {depth}"
+                ))?;
 
-        self.subscribe_book(cmd.instrument_id, data_type, Some(depth))
+            self.subscribe_book(instrument_id, data_type, Some(depth))
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        self.subscribe_channel(cmd.instrument_id, channel(DataType::Quote, None))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_channel(instrument_id, channel(DataType::Quote, None))
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        self.subscribe_channel(cmd.instrument_id, channel(DataType::Trade, None))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_channel(instrument_id, channel(DataType::Trade, None))
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        anyhow::ensure!(
-            bar_type.aggregation_source() == AggregationSource::External,
-            "CoinAPI streams only external bars, was {bar_type}"
-        );
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            anyhow::ensure!(
+                bar_type.aggregation_source() == AggregationSource::External,
+                "CoinAPI streams only external bars, was {bar_type}"
+            );
 
-        let period_id = bar_spec_to_period_id(bar_type.spec())?;
-        self.subscribe_channel(
-            bar_type.instrument_id(),
-            channel(DataType::Ohlcv, Some(period_id)),
-        )
+            let period_id = bar_spec_to_period_id(bar_type.spec())?;
+            self.subscribe_channel(
+                bar_type.instrument_id(),
+                channel(DataType::Ohlcv, Some(period_id)),
+            )
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        self.unsubscribe_book(cmd.instrument_id, false)
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_book(instrument_id, false)
+        })
     }
 
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
-        self.unsubscribe_book(cmd.instrument_id, true)
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_book(instrument_id, true)
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        self.unsubscribe_channel(cmd.instrument_id, channel(DataType::Quote, None))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel(instrument_id, channel(DataType::Quote, None))
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        self.unsubscribe_channel(cmd.instrument_id, channel(DataType::Trade, None))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel(instrument_id, channel(DataType::Trade, None))
+        })
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let period_id = bar_spec_to_period_id(cmd.bar_type.spec())?;
-        self.unsubscribe_channel(
-            cmd.bar_type.instrument_id(),
-            channel(DataType::Ohlcv, Some(period_id)),
-        )
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let period_id = bar_spec_to_period_id(bar_type.spec())?;
+            self.unsubscribe_channel(
+                bar_type.instrument_id(),
+                channel(DataType::Ohlcv, Some(period_id)),
+            )
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
@@ -721,12 +743,10 @@ impl DataClient for CoinApiDataClient {
                 load_instruments(&http, &selections, &price_precisions, clock.get_time_ns())
                     .await?;
 
+            index.extend(&loaded);
             let instruments = loaded
                 .iter()
-                .map(|instrument| {
-                    index.insert(instrument);
-                    instrument.instrument.clone()
-                })
+                .map(|instrument| instrument.instrument.clone())
                 .collect();
 
             let response = DataResponse::Instruments(InstrumentsResponse::new(
@@ -747,7 +767,7 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let selections = select_instruments(&self.config.instruments, |candidate| {
             *candidate == instrument_id
         });
@@ -794,7 +814,8 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let (symbol_id, instrument) = self.loaded(instrument_id)?;
 
         let query = BookQuery {
@@ -831,7 +852,8 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let (symbol_id, instrument, range) =
             self.history(instrument_id, request.start, request.end, request.limit)?;
 
@@ -867,7 +889,8 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let (symbol_id, instrument, range) =
             self.history(instrument_id, request.start, request.end, request.limit)?;
 
@@ -903,7 +926,8 @@ impl DataClient for CoinApiDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        let bar_type = request.bar_type;
+        let bar_type = request.single_bar_type()?;
+
         anyhow::ensure!(
             bar_type.aggregation_source() == AggregationSource::External,
             "CoinAPI provides only external bars, was {bar_type}"
@@ -1085,9 +1109,20 @@ struct InstrumentIndexState {
 
 impl InstrumentIndex {
     fn insert(&self, loaded: &CoinApiInstrument) {
+        self.extend(std::slice::from_ref(loaded));
+    }
+
+    fn extend(&self, loaded: &[CoinApiInstrument]) {
+        if loaded.is_empty() {
+            return;
+        }
+
         self.state.rcu(|state| {
             let mut next = (**state).clone();
-            next.insert(loaded);
+            for instrument in loaded {
+                next.insert(instrument);
+            }
+
             Arc::new(next)
         });
     }
@@ -1146,33 +1181,6 @@ impl InstrumentIndexState {
                 .insert(symbol_id, loaded.instrument.clone());
         }
     }
-}
-
-fn validate_selections(selections: &[CoinApiInstrumentSelection]) -> anyhow::Result<()> {
-    let mut seen = AHashSet::new();
-
-    for selection in selections {
-        anyhow::ensure!(
-            !selection.instrument_ids.is_empty(),
-            "CoinAPI selection for {} lists no instruments",
-            selection.exchange_id
-        );
-
-        for instrument_id in &selection.instrument_ids {
-            let exchange_id = VenueSymbol::from_native(*instrument_id)?.exchange_id;
-            anyhow::ensure!(
-                exchange_id == selection.exchange_id,
-                "{instrument_id} maps to CoinAPI exchange {exchange_id}, not {}",
-                selection.exchange_id
-            );
-            anyhow::ensure!(
-                seen.insert(*instrument_id),
-                "{instrument_id} is selected more than once"
-            );
-        }
-    }
-
-    Ok(())
 }
 
 fn validate_price_precisions(
@@ -1715,7 +1723,7 @@ mod tests {
     )]
     #[case(
         vec![selection("COINBASE", &["BTC-USD.COINBASE"]), selection("COINBASE", &["BTC-USD.COINBASE"])],
-        Some("BTC-USD.COINBASE is selected more than once")
+        Some("duplicate instruments")
     )]
     #[case(
         vec![selection("DERIBIT", &["BTC-PERPETUAL.DERIBIT"])],
@@ -1725,7 +1733,12 @@ mod tests {
         #[case] selections: Vec<CoinApiInstrumentSelection>,
         #[case] expected: Option<&str>,
     ) {
-        let result = validate_selections(&selections);
+        let config = CoinApiDataClientConfig {
+            instruments: selections,
+            ..Default::default()
+        };
+
+        let result = config.validate();
 
         assert_eq!(result.err().map(|e| e.to_string()).as_deref(), expected);
     }
@@ -1860,6 +1873,56 @@ mod tests {
         );
         assert_eq!(index.instrument(original.symbol_id), None);
         assert_eq!(index.instrument(latest.symbol_id), Some(latest.instrument));
+    }
+
+    #[rstest]
+    fn batch_refresh_retains_stream_aliases_and_disjoint_updates() {
+        let symbols: Vec<crate::http::models::Symbol> =
+            serde_json::from_str(include_str!("../test_data/symbols.json")).unwrap();
+        let (loaded, _) = crate::http::parse::parse_instruments(&symbols, 17.into());
+        assert!(loaded.len() >= 2);
+        let index = InstrumentIndex::default();
+        index.begin_stream(&loaded);
+
+        let (refreshed, _) = crate::http::parse::parse_instruments(&symbols, 29.into());
+
+        let refreshed: Vec<_> = refreshed
+            .into_iter()
+            .enumerate()
+            .map(|(i, loaded)| CoinApiInstrument {
+                symbol_id: Ustr::from(&format!("REFRESHED_{i}")),
+                ..loaded
+            })
+            .collect();
+
+        let barrier = std::sync::Barrier::new(2);
+        let split = refreshed.len() / 2;
+        std::thread::scope(|scope| {
+            for batch in [&refreshed[..split], &refreshed[split..]] {
+                scope.spawn(|| {
+                    barrier.wait();
+                    index.extend(batch);
+                });
+            }
+        });
+
+        for (original, refreshed) in loaded.iter().zip(&refreshed) {
+            let id = original.instrument.id();
+            assert_eq!(index.stream_symbol_id(id), Some(original.symbol_id));
+            assert_eq!(index.loaded(id).unwrap().0, refreshed.symbol_id);
+
+            for alias in [original.symbol_id, refreshed.symbol_id] {
+                assert_eq!(
+                    serde_json::to_value(index.instrument(alias).unwrap()).unwrap(),
+                    serde_json::to_value(&refreshed.instrument).unwrap()
+                );
+            }
+        }
+
+        let state = index.state.load();
+        assert_eq!(state.symbol_ids.len(), loaded.len());
+        assert_eq!(state.stream_symbol_ids.len(), loaded.len());
+        assert_eq!(state.by_symbol_id.len(), loaded.len() * 2);
     }
 
     #[rstest]

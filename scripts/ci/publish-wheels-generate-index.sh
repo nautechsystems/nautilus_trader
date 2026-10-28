@@ -17,18 +17,28 @@ listing="${work_dir}/listing"
 remote_files="${work_dir}/remote-files"
 existing_index="${work_dir}/index.html"
 hashes="${work_dir}/hashes"
+etag_file="${index_file}.etag"
+rm -f "$etag_file"
+
+# Capture the ETag before listing wheels so a concurrent index write invalidates this snapshot
+if etag="$(aws s3api get-object --bucket "$bucket" --key "${prefix}/index.html" \
+  "$existing_index" --query ETag --output text --endpoint-url="$endpoint" \
+  --cli-connect-timeout 10 --cli-read-timeout 60 2> "${work_dir}/error")"; then
+  if [[ -z "$etag" || "$etag" == "None" || "$etag" == "*" ]]; then
+    echo "Error: R2 index response is missing an ETag" >&2
+    exit 1
+  fi
+elif grep -Eq '\((NoSuchKey|404)\)' "${work_dir}/error"; then
+  etag='*'
+  : > "$existing_index"
+else
+  cat "${work_dir}/error" >&2
+  exit 1
+fi
 
 aws s3 ls "$bucket_path" --endpoint-url="$endpoint" \
   --cli-connect-timeout 10 --cli-read-timeout 60 > "$listing"
 awk 'NF >= 4 { print $4 }' "$listing" | sort -u > "$remote_files"
-
-if grep -Fxq "index.html" "$remote_files"; then
-  aws s3 cp "${bucket_path}index.html" "$existing_index" \
-    --endpoint-url="$endpoint" --no-progress \
-    --cli-connect-timeout 10 --cli-read-timeout 60
-else
-  : > "$existing_index"
-fi
 
 existing_hash() {
   local filename=$1
@@ -85,5 +95,6 @@ sort -t $'\t' -k1,1 -o "$hashes" "$hashes"
   done < "$hashes"
   echo '</body></html>'
 } > "$index_file"
+printf '%s\n' "$etag" > "$etag_file"
 
 echo "Generated exact package index with $(wc -l < "$hashes" | tr -d ' ') wheels"

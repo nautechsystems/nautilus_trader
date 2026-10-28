@@ -27,6 +27,7 @@ use thiserror::Error;
 use ustr::Ustr;
 
 use crate::{
+    deserialization::StringInput,
     identifiers::{InstrumentId, Symbol, Venue},
     instruments::CryptoOption,
 };
@@ -359,7 +360,7 @@ impl<'de> Deserialize<'de> for OptionSeriesId {
     where
         D: serde::Deserializer<'de>,
     {
-        let s: std::borrow::Cow<'de, str> = Deserialize::deserialize(deserializer)?;
+        let StringInput(s) = Deserialize::deserialize(deserializer)?;
         Self::from_str(s.as_ref()).map_err(serde::de::Error::custom)
     }
 }

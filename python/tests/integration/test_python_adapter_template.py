@@ -32,6 +32,7 @@ from nautilus_trader.config import ExecutionClientConfig
 from nautilus_trader.config import InstrumentProviderConfig
 from nautilus_trader.config import LiveNodeConfig
 from nautilus_trader.live import LiveNode
+from nautilus_trader.live import QuotesResponse
 from nautilus_trader.live.clients import ExecutionClientFactory
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import AccountType
@@ -1090,6 +1091,96 @@ def test_cancel_all_orders_preserves_filter_and_cancels_core_order(output) -> No
         assert received[0].strategy_id == consumer.strategy_id
         assert received[0].instrument_id == INSTRUMENT_ID
         assert received[0].reconciliation is False
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_hosted_historical_callbacks_and_join(failed: bool) -> None:
+    """
+    Complete a joined Python adapter request after partial output on the hosted loop.
+    """
+    events = []
+    failures = []
+    quotes = [
+        QuoteTick(
+            instrument_id=INSTRUMENT_ID,
+            bid_price=Price.from_str("1.12345"),
+            ask_price=Price.from_str("1.12349"),
+            bid_size=Quantity.from_str("17000"),
+            ask_size=Quantity.from_str("23000"),
+            ts_event=19,
+            ts_init=29,
+        ),
+    ]
+
+    class Client(TemplateDataClient):
+        async def _request_quotes(self, request):
+            response = QuotesResponse(
+                client_id=self.client_id,
+                instrument_id=request.instrument_id,
+                data=quotes,
+                correlation_id=request.request_id,
+                ts_init=37,
+            )
+
+            if failed:
+                self._output.request_failed(request.request_id, "Partial history", response)
+            else:
+                self._handle_response(response)
+
+    class Factory(TemplateDataClientFactory):
+        @staticmethod
+        def create(**kwargs: object) -> object:
+            return Client(
+                **kwargs,
+                venue=VENUE,
+                instrument_provider=TemplateInstrumentProvider(),
+            )
+
+    class Consumer(Strategy):
+        def on_start(self):
+            self.root = self.request_quotes(INSTRUMENT_ID, callback=self.complete)
+            self.group = self.request_join([self.root], callback=self.joined)
+
+        def on_historical_quotes(self, batch):
+            events.append(("payload", batch))
+
+        def on_data_response(self, response):
+            failures.append(response.failure_reason)
+            events.append(("response", response.correlation_id))
+
+        def complete(self, request_id):
+            events.append(("callback", request_id, self.is_pending_request(request_id)))
+
+        def joined(self, request_id):
+            events.append(("joined", request_id, self.pending_requests()))
+            self.shutdown_system("Historical completion checked")
+
+    node = (
+        LiveNode.builder("HISTORY", TraderId("TEMPLATE-001"), Environment.SANDBOX)
+        .with_delay_post_stop_secs(0)
+        .with_timeout_connection(2)
+        .with_timeout_disconnection_secs(1)
+        .add_data_client(
+            "TEMPLATE",
+            Factory,
+            DataClientConfig(instrument_provider=InstrumentProviderConfig(load_all=True)),
+        )
+        .build()
+    )
+    consumer = Consumer()
+    node.add_strategy(consumer)
+    asyncio.run(run_hosted(node))
+
+    assert events == [
+        ("payload", quotes),
+        ("response", consumer.root),
+        ("callback", consumer.root, False),
+        ("response", consumer.group),
+        ("joined", consumer.group, set()),
+    ]
+    assert failures == (
+        ["Partial history", f"Request {consumer.root}: Partial history"] if failed else [None, None]
+    )
 
 
 def build_node(

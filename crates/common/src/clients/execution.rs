@@ -49,14 +49,14 @@ pub const DEFAULT_POSITION_RECONCILIATION_TOLERANCE: Decimal =
 
 /// Owned report collection with a core-thread continuation.
 ///
-/// Only `collection` runs on a worker. `result` receives the collected value and finishes it on
-/// the caller's thread, allowing cache-dependent decisions without moving a live client or cache.
+/// Only `collection` runs on a worker. After the worker terminates, `finish` uses the caller's
+/// core state to complete reports without moving the live client or cache.
 #[must_use]
 pub struct ExecutionReportTask<T> {
     /// Worker-safe collection, including decoding and report construction.
     pub collection: Pin<Box<dyn Future<Output = ()> + Send>>,
-    /// Core-thread receipt and finalization of the collection.
-    pub result: Pin<Box<dyn Future<Output = anyhow::Result<T>>>>,
+    /// Synchronous core-thread finalization after the collection worker is joined.
+    pub finish: Box<dyn FnOnce() -> anyhow::Result<T>>,
 }
 
 impl<T> Debug for ExecutionReportTask<T> {
@@ -68,28 +68,30 @@ impl<T> Debug for ExecutionReportTask<T> {
 }
 
 impl<T: 'static> ExecutionReportTask<T> {
-    /// Creates an owned collection and its core-thread continuation.
+    /// Creates an owned collection and a synchronous core-thread continuation.
     ///
     /// The collection must not access the live cache. Neither phase may apply execution events.
     /// The continuation runs only after the worker terminates; canceled collections never run it.
+    ///
+    /// Finalization propagates collection errors without calling the continuation. It also returns
+    /// an error if collection is unfinished or stopped without a result.
     pub fn new<C, F, M>(collection: F, finish: M) -> Self
     where
         C: Send + 'static,
         F: Future<Output = anyhow::Result<C>> + Send + 'static,
         M: FnOnce(C) -> anyhow::Result<T> + 'static,
     {
-        let (sender, receiver) = futures::channel::oneshot::channel();
-
+        let (sender, mut receiver) = futures::channel::oneshot::channel();
         Self {
             collection: Box::pin(async move {
                 let _ = sender.send(collection.await);
             }),
-            result: Box::pin(async move {
-                finish(
-                    receiver
-                        .await
-                        .context("report collection stopped without a result")??,
-                )
+            finish: Box::new(move || {
+                let collected = receiver
+                    .try_recv()
+                    .context("report collection stopped without a result")?
+                    .context("report collection has not finished")??;
+                finish(collected)
             }),
         }
     }
@@ -350,8 +352,8 @@ pub trait ExecutionClient {
 
     /// Prepares worker-safe single-order collection, or uses inline collection.
     ///
-    /// Preparation and the task's continuation run on the core thread. Neither may retain a
-    /// borrowed client across an await. Return `None` when collection is not yet worker-safe.
+    /// Preparation and the task's continuation run synchronously on the core thread.
+    /// Return `None` when collection is not yet worker-safe.
     fn generate_order_status_report_task(
         &self,
         _cmd: &GenerateOrderStatusReport,
@@ -575,7 +577,10 @@ pub async fn generate_mass_status<C: ExecutionClient + ?Sized>(
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{
+        cell::{Cell, RefCell},
+        rc::Rc,
+    };
 
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -588,6 +593,105 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn report_task_rejects_unfinished_collection() {
+        let finalized = Rc::new(Cell::new(0));
+        let finalized_for_task = Rc::clone(&finalized);
+
+        let task = ExecutionReportTask::new(async { Ok(17) }, move |value| {
+            finalized_for_task.set(value);
+            Ok(value)
+        });
+
+        let error = (task.finish)().unwrap_err();
+
+        assert_eq!(error.to_string(), "report collection has not finished");
+        assert_eq!(finalized.get(), 0);
+    }
+
+    #[rstest]
+    fn report_task_propagates_collection_error_without_finalizing() {
+        let finalized = Rc::new(Cell::new(0));
+        let finalized_for_task = Rc::clone(&finalized);
+
+        let task = ExecutionReportTask::new(
+            async { Err::<usize, _>(anyhow::anyhow!("report endpoint unavailable")) },
+            move |value| {
+                finalized_for_task.set(value);
+                Ok(value)
+            },
+        );
+
+        futures::executor::block_on(task.collection);
+
+        let error = (task.finish)().unwrap_err();
+
+        assert_eq!(error.to_string(), "report endpoint unavailable");
+        assert_eq!(finalized.get(), 0);
+    }
+
+    #[rstest]
+    #[case::unpolled(false)]
+    #[case::pending(true)]
+    fn report_task_rejects_dropped_collection(#[case] poll_collection: bool) {
+        let finalized = Rc::new(Cell::new(0));
+        let finalized_for_task = Rc::clone(&finalized);
+        let mut task = ExecutionReportTask::new(std::future::pending(), move |value: usize| {
+            finalized_for_task.set(value);
+            Ok(value)
+        });
+
+        if poll_collection {
+            let mut context = std::task::Context::from_waker(futures::task::noop_waker_ref());
+            assert!(task.collection.as_mut().poll(&mut context).is_pending());
+        }
+
+        drop(task.collection);
+
+        let error = (task.finish)().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "report collection stopped without a result"
+        );
+        assert_eq!(finalized.get(), 0);
+    }
+
+    #[rstest]
+    fn report_task_finalizes_with_current_core_state() {
+        let current = Rc::new(Cell::new(11));
+        let current_for_task = Rc::clone(&current);
+
+        let task = ExecutionReportTask::new(async { Ok(13) }, move |value| {
+            Ok(value + current_for_task.get())
+        });
+
+        futures::executor::block_on(task.collection);
+        current.set(29);
+
+        let result = (task.finish)().unwrap();
+
+        assert_eq!(result, 42);
+    }
+
+    #[rstest]
+    fn report_task_propagates_continuation_error() {
+        let finalized = Rc::new(Cell::new(0));
+        let finalized_for_task = Rc::clone(&finalized);
+
+        let task = ExecutionReportTask::new(async { Ok(23) }, move |value| {
+            finalized_for_task.set(value);
+            Err::<usize, _>(anyhow::anyhow!("report finalization failed"))
+        });
+
+        futures::executor::block_on(task.collection);
+
+        let error = (task.finish)().unwrap_err();
+
+        assert_eq!(error.to_string(), "report finalization failed");
+        assert_eq!(finalized.get(), 23);
+    }
 
     struct RecordingExecutionClient {
         modified_order_ids: Rc<RefCell<Vec<ClientOrderId>>>,

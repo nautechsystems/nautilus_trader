@@ -15,7 +15,7 @@
 
 //! Static backtest replay using the shared ordered batch iterator.
 
-use nautilus_data::replay::DataIterator;
+use nautilus_data::replay::{DataIterator, ReplayPoll};
 use nautilus_model::data::{Data, DataBatch, DataRef};
 
 /// Multi-stream, time-ordered data iterator used by the backtest engine.
@@ -61,12 +61,18 @@ impl BacktestDataIterator {
     }
 
     /// Resets all stream cursors to the beginning.
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "static replay cannot contain sources or moved book frames"
+    )]
     pub fn reset_all_cursors(&mut self) {
-        self.iterator.reset_all_cursors();
+        self.iterator
+            .reset_all_cursors()
+            .expect("static replay has no sources or moved book frames");
     }
 
-    pub(crate) fn peek(&self) -> Option<DataRef<'_>> {
-        self.iterator.peek()
+    pub(crate) fn peek(&mut self) -> Option<DataRef<'_>> {
+        static_item(self.iterator.peek())
     }
 
     pub(crate) fn advance(&mut self) {
@@ -76,12 +82,20 @@ impl BacktestDataIterator {
     /// Returns the next market [`Data`] element across all streams in chronological order.
     #[expect(clippy::should_implement_trait)]
     pub fn next(&mut self) -> Option<Data> {
-        self.iterator.next()
+        static_item(self.iterator.next())
     }
 
     /// Returns whether all streams have been fully consumed.
     #[must_use]
     pub fn is_done(&self) -> bool {
         self.iterator.is_done()
+    }
+}
+
+fn static_item<T>(poll: anyhow::Result<ReplayPoll<T>>) -> Option<T> {
+    match poll.expect("static replay cannot load or fail") {
+        ReplayPoll::Ready(data) => Some(data),
+        ReplayPoll::Complete => None,
+        ReplayPoll::Pending { .. } => unreachable!("static replay has no pending sources"),
     }
 }

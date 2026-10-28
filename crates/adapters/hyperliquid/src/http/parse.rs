@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::unix_nanos_to_iso8601};
 use nautilus_model::{
@@ -519,10 +520,11 @@ fn build_outcome_info(
     side_name: Option<&str>,
     parent_question: Option<&OutcomeQuestion>,
 ) -> Params {
-    let mut info = Params::new();
+    let mut info = IndexMap::from([
+        ("outcome_index".into(), json!(market.outcome)),
+        ("outcome_side".into(), json!(side)),
+    ]);
 
-    info.insert("outcome_index".into(), json!(market.outcome));
-    info.insert("outcome_side".into(), json!(side));
     if let Some(name) = side_name {
         info.insert("side_name".into(), Value::String(name.to_string()));
     }
@@ -565,7 +567,7 @@ fn build_outcome_info(
         }
     }
 
-    info
+    Params::new(info)
 }
 
 fn pow10_neg(decimals: u32) -> Decimal {
@@ -792,10 +794,10 @@ const HYPERLIQUID_MIN_ORDER_NOTIONAL: Decimal = Decimal::TEN;
 /// and `InstrumentAny` is the only instrument shape published on the message bus.
 /// Carrying the index here lets the execution client register a market discovered
 /// after its own bootstrap without refetching venue metadata.
-fn info_with_asset_index(info: Option<Params>, asset_index: u32) -> Params {
+fn info_with_asset_index(info: Option<IndexMap<String, Value>>, asset_index: u32) -> Params {
     let mut info = info.unwrap_or_default();
     info.insert(ASSET_INDEX_INFO_KEY.to_string(), json!(asset_index));
-    info
+    Params::new(info)
 }
 
 /// Converts a single Hyperliquid instrument definition into a Nautilus `InstrumentAny`.
@@ -827,7 +829,7 @@ pub fn create_instrument_from_def(
             let base_currency = get_currency(&def.base);
             let quote_currency = get_currency(&def.quote);
             let min_notional = Some(min_order_notional(quote_currency)?);
-            let info = serde_json::from_str::<Params>(&def.raw_data).ok();
+            let info = serde_json::from_str::<IndexMap<String, Value>>(&def.raw_data).ok();
             let info = info_with_asset_index(info, def.asset_index);
 
             Some(InstrumentAny::CurrencyPair(
@@ -887,6 +889,8 @@ pub fn create_instrument_from_def(
         HyperliquidMarketType::Outcome => {
             let outcome = def.outcome.as_ref()?;
             let currency = get_outcome_currency(&def.quote);
+            let info = outcome.info.as_deref().cloned();
+            let info = info_with_asset_index(info, def.asset_index);
 
             Some(InstrumentAny::BinaryOption(
                 BinaryOption::builder()
@@ -902,7 +906,7 @@ pub fn create_instrument_from_def(
                     .size_increment(size_increment)
                     .maybe_outcome(outcome.side_name)
                     .maybe_description(outcome.description)
-                    .info(info_with_asset_index(outcome.info.clone(), def.asset_index))
+                    .info(info)
                     .ts_event(ts_init)
                     .ts_init(ts_init)
                     .build()
@@ -1060,7 +1064,9 @@ pub fn parse_order_status_report_from_basic(
 
     // Add client order ID if present
     if let Some(cloid) = &order.cloid {
-        report = report.with_client_order_id(ClientOrderId::new(cloid.as_str()));
+        let client_order_id =
+            ClientOrderId::new_checked(cloid.as_str()).context("invalid order client order ID")?;
+        report = report.with_client_order_id(client_order_id);
     }
 
     if matches!(order.tif, Some(HyperliquidTimeInForce::Alo)) {
@@ -1218,6 +1224,8 @@ pub fn filter_recent_public_trades(
 
 /// Parse Hyperliquid fill to FillReport.
 ///
+/// Preserves the raw venue CLOID as the client order ID when present.
+///
 /// # Errors
 ///
 /// Returns an error if required fields are missing or invalid.
@@ -1272,6 +1280,12 @@ pub fn parse_fill_report(
 
     let ts_event = UnixNanos::from(fill.time * 1_000_000);
     let report_id = UUID4::new();
+    let client_order_id = fill
+        .cloid
+        .as_deref()
+        .map(ClientOrderId::new_checked)
+        .transpose()
+        .context("invalid fill client order ID")?;
 
     let report = FillReport::new(
         account_id,
@@ -1283,7 +1297,7 @@ pub fn parse_fill_report(
         last_px,
         commission,
         liquidity_side,
-        None, // client_order_id - to be linked by execution engine
+        client_order_id,
         None, // venue_position_id
         ts_event,
         ts_init,
@@ -1394,6 +1408,67 @@ mod tests {
     fn test_parse_fill_side() {
         assert_eq!(parse_fill_side(&HyperliquidSide::Buy), OrderSide::Buy,);
         assert_eq!(parse_fill_side(&HyperliquidSide::Sell), OrderSide::Sell,);
+    }
+
+    #[rstest]
+    #[case::with_cloid(Some("0x0123456789abcdef0123456789abcdef"))]
+    #[case::without_cloid(None)]
+    fn test_parse_fill_report_client_order_id(#[case] cloid: Option<&str>) {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let instrument = create_instrument_from_def(&defs[0], UnixNanos::default()).unwrap();
+        let mut fills: Vec<HyperliquidFill> = load_test_data("http_query_order_fills.json");
+        fills[0].cloid = cloid.map(String::from);
+        let account_id = AccountId::from("HYPERLIQUID-REST");
+        let ts_init = UnixNanos::from(1_700_000_003_000_000_000);
+
+        let report = parse_fill_report(&fills[0], &instrument, account_id, ts_init).unwrap();
+
+        assert_eq!(report.client_order_id, cloid.map(ClientOrderId::new));
+        assert_eq!(report.account_id, account_id);
+        assert_eq!(report.instrument_id, instrument.id());
+        assert_eq!(report.venue_order_id, VenueOrderId::from("900029"));
+        assert_eq!(
+            report.trade_id,
+            make_fill_trade_id(
+                "0xquery-fill-a",
+                900029,
+                dec!(90000),
+                dec!(0.0004),
+                1_700_000_001_000,
+                dec!(0)
+            )
+        );
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.last_qty.as_decimal(), dec!(0.0004));
+        assert_eq!(report.last_px.as_decimal(), dec!(90000));
+        assert_eq!(report.commission, Money::from("0.010 USDC"));
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.ts_event, UnixNanos::from(1_700_000_001_000_000_000));
+        assert_eq!(report.ts_init, ts_init);
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::whitespace("   ")]
+    #[case::non_ascii("0x\u{e9}")]
+    fn test_parse_fill_report_rejects_invalid_client_order_id(#[case] cloid: &str) {
+        let instrument = create_btc_perp_instrument();
+        let mut fills: Vec<HyperliquidFill> = load_test_data("http_query_order_fills.json");
+        fills[0].cloid = Some(cloid.to_string());
+
+        let result = parse_fill_report(
+            &fills[0],
+            &instrument,
+            AccountId::from("HYPERLIQUID-REST"),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "invalid fill client order ID"
+        );
     }
 
     #[rstest]
@@ -2868,6 +2943,30 @@ mod tests {
         assert_eq!(report.order_type, OrderType::Limit);
         assert!(report.trigger_price.is_none());
         assert!(report.trigger_type.is_none());
+    }
+
+    #[rstest]
+    #[case::empty("")]
+    #[case::whitespace("   ")]
+    #[case::non_ascii("0x\u{e9}")]
+    fn test_parse_order_status_report_rejects_invalid_client_order_id(#[case] cloid: &str) {
+        let instrument = create_btc_perp_instrument();
+        let mut order: WsBasicOrderData =
+            serde_json::from_value(frontend_open_order_row("Limit", false, "0.0")).unwrap();
+        order.cloid = Some(cloid.to_string());
+
+        let result = parse_order_status_report_from_basic(
+            &order,
+            &HyperliquidOrderStatusEnum::Open,
+            &instrument,
+            AccountId::from("HYPERLIQUID-REST"),
+            UnixNanos::default(),
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "invalid order client order ID"
+        );
     }
 
     #[rstest]

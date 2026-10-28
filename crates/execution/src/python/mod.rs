@@ -50,6 +50,7 @@ pub fn execution(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<crate::models::fill::CompetitionAwareFillModel>()?;
     m.add_class::<crate::models::fill::VolumeSensitiveFillModel>()?;
     m.add_class::<crate::models::fill::MarketHoursFillModel>()?;
+    m.add_class::<latency::PyLatencyModel>()?;
     m.add_class::<crate::models::latency::StaticLatencyModel>()?;
     Ok(())
 }

@@ -213,6 +213,7 @@ impl PolymarketDataClient {
                                 now_ns,
                                 &subscriptions,
                                 Some(&cancellation),
+                                clock,
                             ) => result,
                             () = cancellation.cancelled() => break,
                         };
@@ -258,20 +259,22 @@ impl PolymarketDataClient {
                         subscriptions.retire_expired(now_ns)
                         .await;
 
-                        let snapshot = watchlist.load();
-                        let watched_conditions = snapshot.len();
-                        let watched_instruments = snapshot
-                            .values()
-                            .map(|entry| entry.tracked.len())
-                            .sum::<usize>();
-                        let selection = collect_resolve_watch_selection(
-                            &snapshot,
-                            now_ns,
-                            grace_secs,
-                            max_wait_secs,
-                            ResolveWatchSelectionMode::AutoPoll,
-                        );
-                        drop(snapshot);
+                        let (watched_conditions, watched_instruments, selection) = {
+                            let snapshot = watchlist.read();
+                            let watched_conditions = snapshot.len();
+                            let watched_instruments = snapshot
+                                .values()
+                                .map(|entry| entry.tracked.len())
+                                .sum::<usize>();
+                            let selection = collect_resolve_watch_selection(
+                                &snapshot,
+                                now_ns,
+                                grace_secs,
+                                max_wait_secs,
+                                ResolveWatchSelectionMode::AutoPoll,
+                            );
+                            (watched_conditions, watched_instruments, selection)
+                        };
 
                         if !selection.pause_condition_ids.is_empty() {
                             log::warn!(
@@ -426,7 +429,7 @@ impl PolymarketDataClient {
 
         // Fence callbacks which resume after cancellation without yielding to the task runner
         update_guard.retire_generation();
-        self.resolve_poll_watchlist = std::sync::Arc::new(AtomicMap::new());
+        self.resolve_poll_watchlist = std::sync::Arc::default();
         self.pending_resolutions.clear();
         self.deferred_resolutions.rcu(|entries| entries.clear());
         self.instruments = std::sync::Arc::new(AtomicMap::new());
@@ -563,6 +566,7 @@ impl PolymarketDataClient {
         }
 
         self.subscriptions.book_sync.clear();
+        self.subscriptions.book_integrity.lock().clear();
 
         if let Err(e) = self.polybolt_feed.disconnect().await {
             self.shutdown_errors.push(e.to_string());
@@ -574,9 +578,7 @@ impl PolymarketDataClient {
             && !self.polybolt_feed.has_retained_tasks().await;
 
         if drained {
-            self.subscriptions
-                .ws_open_tokens
-                .rcu(|tokens| tokens.clear());
+            self.subscriptions.ws_open_tokens.clear();
 
             if self.reset_pending {
                 self.ws_client.clear_reconnect_state();
@@ -589,6 +591,7 @@ impl PolymarketDataClient {
                         self.proxy_url.clone(),
                         self.polybolt_socket_control.clone(),
                         self.polybolt_credential.clone(),
+                        self.config.ws_timeout_secs,
                     );
                 self.reset_pending = false;
             }
@@ -619,6 +622,7 @@ mod tests {
         cache::Cache,
         clients::{DataClient, ExecutionClient},
         clock::{Clock, VirtualClock},
+        config::ConfigError,
         live::{
             dst::time::Instant,
             runner::{replace_data_event_sender, replace_exec_event_sender},
@@ -649,6 +653,7 @@ mod tests {
     };
     use nautilus_network::{
         retry::RetryConfig,
+        transport::TransportError,
         websocket::{TransportBackend, proxy::ProxyUrl},
     };
     use nautilus_sandbox::{SandboxExecutionClient, SandboxExecutionClientConfig};
@@ -659,7 +664,7 @@ mod tests {
     use super::{super::NEW_MARKET_FETCH_MAX_CONCURRENCY_CAP, *};
     use crate::{
         common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
-        config::PolymarketDataClientConfig,
+        config::{PolymarketDataClientConfig, PolymarketInstrumentProviderConfig},
         data::instruments::{apply_live_instrument, cache_instrument_unchecked},
         http::{
             clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
@@ -668,6 +673,179 @@ mod tests {
         resolve::upsert_resolve_watch_entry_from_instrument,
         websocket::{messages::PolymarketWsMessage, pool::PolymarketMarketConnectionPool},
     };
+
+    #[rstest]
+    #[case::plain_duplicates(false, false)]
+    #[case::proxy_duplicates(true, false)]
+    #[case::plain_credentials(false, true)]
+    #[case::proxy_credentials(true, true)]
+    fn test_constructor_rejects_invalid_config(
+        #[case] with_proxy: bool,
+        #[case] credentials: bool,
+    ) {
+        let mut config = PolymarketDataClientConfig {
+            instrument_config: Some(PolymarketInstrumentProviderConfig {
+                series_ids: Some(vec![10684, 10684]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let expected_credential_error = if credentials {
+            config.instrument_config = None;
+            config.api_key = Some("fixture-key".into());
+            config.api_secret = Some("not base64!".into());
+            config.passphrase = Some("fixture-passphrase".into());
+            Some(config.polybolt_credential().unwrap_err().to_string())
+        } else {
+            None
+        };
+
+        let gamma = PolymarketGammaHttpClient::new(None, 1, RetryConfig::default()).unwrap();
+        let clob = PolymarketClobPublicClient::new(None, 1).unwrap();
+        let data_api = PolymarketDataApiHttpClient::new(None, 1).unwrap();
+
+        let ws_client = PolymarketMarketConnectionPool::new(
+            None,
+            false,
+            TransportBackend::default(),
+            WS_DEFAULT_SUBSCRIPTIONS,
+        );
+
+        let result = if with_proxy {
+            PolymarketDataClient::new_with_proxy(
+                *POLYMARKET_CLIENT_ID,
+                config,
+                gamma,
+                clob,
+                data_api,
+                ws_client,
+                None,
+            )
+        } else {
+            PolymarketDataClient::new(
+                *POLYMARKET_CLIENT_ID,
+                config,
+                gamma,
+                clob,
+                data_api,
+                ws_client,
+            )
+        };
+
+        let error = result.unwrap_err();
+
+        if let Some(expected) = expected_credential_error {
+            assert_eq!(error.to_string(), expected);
+        } else {
+            assert_eq!(
+                error.downcast_ref::<ConfigError>(),
+                Some(&ConfigError::duplicate("series_ids", None)),
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::initial(false)]
+    #[case::reset(true)]
+    #[tokio::test]
+    async fn data_websocket_connection_timeout(
+        #[case] after_reset: bool,
+        #[values(TransportBackend::Sockudo, TransportBackend::Tungstenite)]
+        backend: TransportBackend,
+    ) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move {
+            let mut connections = Vec::new();
+
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                connections.push(stream);
+            }
+        });
+
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(tx);
+
+        let config = PolymarketDataClientConfig {
+            ws_timeout_secs: 1,
+            transport_backend: backend,
+            base_url_reference_prices: Some(url.clone()),
+            api_key: Some("fixture-key".into()),
+            api_secret: Some("Zml4dHVyZQ==".into()),
+            passphrase: Some("fixture-passphrase".into()),
+            ..Default::default()
+        };
+
+        let gamma = PolymarketGammaHttpClient::new(None, 1, RetryConfig::default()).unwrap();
+        let clob = PolymarketClobPublicClient::new(None, 1).unwrap();
+        let data_api = PolymarketDataApiHttpClient::new(None, 1).unwrap();
+
+        let ws_client = PolymarketMarketConnectionPool::new(
+            Some(url),
+            false,
+            backend,
+            WS_DEFAULT_SUBSCRIPTIONS,
+        );
+        let mut client = PolymarketDataClient::new(
+            *POLYMARKET_CLIENT_ID,
+            config,
+            gamma,
+            clob,
+            data_api,
+            ws_client,
+        )
+        .unwrap();
+
+        if after_reset {
+            client.reset_client();
+            client.disconnect_client().await.unwrap();
+        }
+
+        let market_error =
+            tokio::time::timeout(Duration::from_secs(20), client.ws_client.connect())
+                .await
+                .expect(
+                    "configured market handshake retries must finish before five old 15s attempts",
+                )
+                .unwrap_err();
+        client
+            .polybolt_feed
+            .track_subscribe(polybolt_crypto_data_type("btcusd"))
+            .unwrap();
+        let reference_error =
+            tokio::time::timeout(Duration::from_secs(3), client.polybolt_feed.connect())
+                .await
+                .expect(
+                    "configured reference-price handshake must finish before the old 15s timeout",
+                )
+                .unwrap_err();
+        client.disconnect_client().await.unwrap();
+        server.abort();
+
+        for error in [market_error, reference_error] {
+            assert!(
+                matches!(error.downcast_ref::<TransportError>(), Some(TransportError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut),
+                "{error:#}",
+            );
+        }
+    }
+
+    #[rstest]
+    fn data_websocket_timeout_rejects_zero() {
+        let config = PolymarketDataClientConfig {
+            ws_timeout_secs: 0,
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::range("ws_timeout_secs", "must be positive"))
+        );
+    }
 
     struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
 
@@ -732,6 +910,7 @@ mod tests {
             ws,
             proxy_url,
         )
+        .unwrap()
     }
 
     fn make_client_with_fetch_concurrency(concurrency: usize) -> PolymarketDataClient {
@@ -768,24 +947,105 @@ mod tests {
             data_api,
             ws,
         )
+        .unwrap()
     }
 
     #[rstest]
-    fn test_data_client_wires_clob_client_for_fee_rate_fallback() {
-        let client = make_client_for_reset_test();
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn test_data_client_keeps_missing_taker_rate_at_zero(#[case] missing_schedule: bool) {
+        let mut market: Value = serde_json::from_str(include_str!(
+            "../../test_data/gamma_market_fee_zero_rate.json"
+        ))
+        .unwrap();
 
-        assert!(client.provider().http_client().clob_client().is_some());
+        if missing_schedule {
+            market["feeSchedule"] = Value::Null;
+        }
+
+        let response = serde_json::to_string(&vec![market]).unwrap();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let asserted = Arc::clone(&calls);
+
+        let router = axum::Router::new()
+            .route(
+                "/markets",
+                axum::routing::get(move || {
+                    let response = response.clone();
+                    async move { response }
+                }),
+            )
+            .route(
+                "/fee-rate",
+                axum::routing::get(move || {
+                    calls.fetch_add(1, Ordering::SeqCst);
+                    async { include_str!("../../test_data/clob_fee_rate_response_nonzero.json") }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let gamma = PolymarketGammaHttpClient::new(
+            Some(format!("http://{address}")),
+            5,
+            RetryConfig::default(),
+        )
+        .unwrap();
+        let clob = PolymarketClobPublicClient::new(Some(format!("http://{address}")), 5).unwrap();
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+        replace_data_event_sender(tx);
+
+        let client = PolymarketDataClient::new(
+            ClientId::from("POLY-TEST"),
+            PolymarketDataClientConfig::default(),
+            gamma,
+            clob,
+            PolymarketDataApiHttpClient::new(None, 5).unwrap(),
+            PolymarketMarketConnectionPool::new(
+                None,
+                false,
+                TransportBackend::default(),
+                WS_DEFAULT_SUBSCRIPTIONS,
+            ),
+        )
+        .unwrap();
+        let instruments = client
+            .provider()
+            .http_client()
+            .request_instruments_by_slugs(vec!["fee-market".to_string()])
+            .await
+            .unwrap();
+        server.abort();
+
+        assert_eq!(asserted.load(Ordering::SeqCst), 0);
+        assert_eq!(instruments.len(), 2);
+
+        for instrument in instruments {
+            let InstrumentAny::BinaryOption(binary) = instrument else {
+                panic!("expected a binary option instrument");
+            };
+
+            let info = binary.info.unwrap();
+            let schedule: crate::http::models::FeeSchedule =
+                serde_json::from_value(info.get("fee_schedule").unwrap().clone()).unwrap();
+            assert_eq!(schedule.rate, rust_decimal::Decimal::ZERO);
+            assert_eq!(schedule.exponent, rust_decimal::Decimal::ONE);
+            assert!(schedule.taker_only);
+            assert_eq!(schedule.rebate_rate, rust_decimal::Decimal::new(2, 1));
+        }
     }
 
     fn polybolt_crypto_data_type(symbol: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
+        let metadata =
+            Params::new([("symbol".to_string(), Value::String(symbol.to_string()))].into());
         DataType::new("PolymarketCryptoPrice", Some(metadata), None)
     }
 
     fn polybolt_equity_data_type(symbol: &str) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert("symbol".to_string(), Value::String(symbol.to_string()));
+        let metadata =
+            Params::new([("symbol".to_string(), Value::String(symbol.to_string()))].into());
         DataType::new("PolymarketEquityPrice", Some(metadata), None)
     }
 
@@ -818,14 +1078,18 @@ mod tests {
         binary.activation_ns = UnixNanos::default();
         binary.expiration_ns = expiration_ns;
 
-        let mut info = Params::new();
-        info.insert(
-            "token_id".to_string(),
-            serde_json::Value::String(raw_symbol.to_string()),
-        );
-        info.insert(
-            "condition_id".to_string(),
-            serde_json::Value::String(condition_id.to_string()),
+        let info = Params::new(
+            [
+                (
+                    "token_id".to_string(),
+                    serde_json::Value::String(raw_symbol.to_string()),
+                ),
+                (
+                    "condition_id".to_string(),
+                    serde_json::Value::String(condition_id.to_string()),
+                ),
+            ]
+            .into(),
         );
         binary.info = Some(info);
 
@@ -1343,7 +1607,10 @@ mod tests {
                 expected_ids.insert(instrument_id);
             }
 
-            assert_eq!(**set.load(), expected_ids);
+            assert_eq!(
+                set.iter().map(|id| *id).collect::<ahash::AHashSet<_>>(),
+                expected_ids
+            );
         }
 
         let mut expected_pending = ahash::AHashSet::from_iter([unrelated_id]);
@@ -1680,6 +1947,7 @@ mod tests {
         assert!(
             client
                 .resolve_poll_watchlist
+                .read()
                 .contains_key(&"0xCOND-POLL".to_string())
         );
     }
@@ -1729,7 +1997,7 @@ mod tests {
                 .last_quotes
                 .contains_key(&instrument_id)
         );
-        assert!(client.resolve_poll_watchlist.load().is_empty());
+        assert!(client.resolve_poll_watchlist.read().is_empty());
     }
 
     #[rstest]
@@ -1840,6 +2108,7 @@ mod tests {
         // Settlement drops the watch entry, so the next cycle must revisit the condition
         client
             .resolve_poll_watchlist
+            .write()
             .remove(&"0xCOND-WATCH".to_string());
 
         wait_until_async(
@@ -1917,7 +2186,7 @@ mod tests {
                         .all(|id| !client.subscriptions.book_sync.book_gated(*id))
                     && client.subscriptions.pending_auto_loads.lock().is_empty()
                     && client.instruments.load().len() == watched_count
-                    && client.resolve_poll_watchlist.load().len() == watched_count
+                    && client.resolve_poll_watchlist.read().len() == watched_count
             },
             tokio::time::Duration::from_secs(5),
         )
@@ -1951,7 +2220,7 @@ mod tests {
         );
         assert!(client.subscriptions.pending_auto_loads.lock().is_empty());
         assert_eq!(client.instruments.load().len(), watched_count);
-        assert_eq!(client.resolve_poll_watchlist.load().len(), watched_count);
+        assert_eq!(client.resolve_poll_watchlist.read().len(), watched_count);
     }
 
     #[rstest]
@@ -2216,7 +2485,7 @@ mod tests {
 
             // Quote-only churn opens no position, so nothing reaches the resolution watchlist and
             // no instrument is retained as watchlist metadata.
-            assert_eq!(client.resolve_poll_watchlist.len(), 0);
+            assert_eq!(client.resolve_poll_watchlist.read().len(), 0);
 
             let sweep_events = sandbox
                 .test_clock
@@ -2262,7 +2531,7 @@ mod tests {
                 );
             }
 
-            assert_eq!(client.resolve_poll_watchlist.len(), 0);
+            assert_eq!(client.resolve_poll_watchlist.read().len(), 0);
         }
 
         // Neither sweep settles: an expired quote-only instrument has no exposure to close.

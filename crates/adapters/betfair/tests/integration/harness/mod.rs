@@ -91,7 +91,8 @@ impl Harness {
             plain_stream_config(stream_port),
             BetfairExecutionClientConfig::default(),
             Currency::GBP(),
-        );
+        )
+        .unwrap();
         client.start().unwrap();
 
         let feeder = StreamFeeder::spawn(listener);

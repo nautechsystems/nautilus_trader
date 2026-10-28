@@ -85,12 +85,14 @@ impl Connector {
                     "proxy URL is malformed".into(),
                 ));
             }
+
             matcher
         } else if use_system_proxy {
             Matcher::from_system()
         } else {
             Matcher::builder().build()
         };
+
         let mut http = HttpConnector::new();
         http.enforce_http(false);
         http.set_nodelay(true);

@@ -49,7 +49,7 @@ public_index="${work_dir}/public-index.html"
 public_matches=false
 attempt=1
 while [[ "$attempt" -le 5 ]]; do
-  if curl -fsSLo "$public_index" "${index_url%/}/nautilus-trader/" &&
+  if curl --connect-timeout 10 --max-time 60 -fsSLo "$public_index" "${index_url%/}/nautilus-trader/" &&
     cmp -s "$index_file" "$public_index"; then
     public_matches=true
     break
@@ -77,7 +77,7 @@ done < "$manifest"
 
 venv="${work_dir}/install"
 uv venv --python 3.13 "$venv"
-UV_NO_CACHE=1 uv pip install \
+UV_NO_CACHE=1 UV_HTTP_TIMEOUT=120 UV_HTTP_RETRIES=5 uv pip install \
   --python "${venv}/bin/python" \
   --index-url "$index_url" \
   "nautilus-trader==${version}"

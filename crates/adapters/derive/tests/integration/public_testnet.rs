@@ -27,13 +27,17 @@ use nautilus_derive::{
     http::DeriveHttpClient,
     providers::DeriveInstrumentProvider,
     websocket::{
-        DeriveWebSocketClient, DeriveWsMessage, parse_orderbook_deltas, parse_orderbook_depth,
-        parse_orderbook_msg, parse_ticker_msg, parse_ticker_quote, parse_ticker_quote_from_rest,
+        DeriveWebSocketClient, DeriveWsMessage, parse_candle_record,
+        parse_funding_rate_history_record, parse_index_price, parse_mark_price,
+        parse_orderbook_deltas, parse_orderbook_depth, parse_orderbook_msg, parse_ticker_msg,
+        parse_ticker_quote, parse_ticker_quote_from_rest,
     },
 };
 use nautilus_model::{
+    data::BarType,
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
+    types::Price,
 };
 use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
@@ -253,4 +257,128 @@ async fn test_public_v3_discovery_and_market_data() {
     tokio::time::timeout(Duration::from_secs(90), validation)
         .await
         .expect("public testnet validation exceeds 90 seconds");
+}
+
+#[tokio::test]
+#[ignore = "requires Derive mainnet public network access through an authorized route"]
+async fn test_public_mainnet_required_market_data_decimals() {
+    let environment = DeriveEnvironment::Mainnet;
+    let http = DeriveHttpClient::new(urls::rest_url(environment), Some(15), None, None).unwrap();
+    let definition = http.get_instrument("ETH-PERP").await.unwrap();
+    let instrument = parse_derive_instrument_any(&definition, UnixNanos::from(1))
+        .unwrap()
+        .unwrap();
+    let id = InstrumentId::from("ETH-PERP.DERIVE");
+    assert_eq!(instrument.id(), id);
+    let ts_init = UnixNanos::from(123);
+    let end_ms = (get_atomic_clock_realtime().get_time_ns().as_u64() / 1_000_000) as i64;
+    let candles = http
+        .get_candles("ETH-PERP", end_ms / 1000 - 86_400, end_ms / 1000, 3600)
+        .await
+        .unwrap();
+    assert!(!candles.is_empty());
+    let bar_type = BarType::from("ETH-PERP.DERIVE-1-HOUR-LAST-EXTERNAL");
+
+    for candle in &candles {
+        let bar = parse_candle_record(
+            candle,
+            bar_type,
+            instrument.price_precision(),
+            instrument.size_precision(),
+            ts_init,
+        )
+        .unwrap();
+        assert_eq!(bar.bar_type, bar_type);
+        assert_eq!(bar.open.as_decimal(), candle.open_price);
+        assert_eq!(bar.high.as_decimal(), candle.high_price);
+        assert_eq!(bar.low.as_decimal(), candle.low_price);
+        assert_eq!(bar.close.as_decimal(), candle.close_price);
+        assert_eq!(bar.volume.as_decimal(), candle.volume_contracts);
+        assert_eq!(
+            bar.ts_event.as_u64(),
+            (candle.timestamp_bucket as u64 + 3600) * 1_000_000_000
+        );
+        assert_eq!(bar.ts_init, ts_init);
+    }
+
+    let funding = http
+        .get_funding_rate_history(
+            "ETH-PERP",
+            Some(end_ms - 86_400_000),
+            Some(end_ms),
+            Some(3600),
+        )
+        .await
+        .unwrap();
+    assert!(!funding.funding_rate_history.is_empty());
+
+    for record in &funding.funding_rate_history {
+        let update = parse_funding_rate_history_record(record, id, None, ts_init).unwrap();
+        assert_eq!(update.instrument_id, id);
+        assert_eq!(update.rate, record.funding_rate);
+        assert_eq!(
+            update.ts_event.as_u64(),
+            record.timestamp as u64 * 1_000_000
+        );
+        assert_eq!(update.ts_init, ts_init);
+    }
+
+    let mut ws_client =
+        DeriveWebSocketClient::new(None, environment, TransportBackend::default(), None);
+    ws_client.connect().await.unwrap();
+    let mut events = ws_client.take_event_receiver().unwrap();
+    let validation = async {
+        ws_client
+            .subscribe_ticker("ETH-PERP", "1000")
+            .await
+            .unwrap();
+
+        let payload = loop {
+            if let DeriveWsMessage::Subscription(payload) = events.recv().await.unwrap() {
+                break payload;
+            }
+        };
+
+        let ticker = parse_ticker_msg(&payload).unwrap();
+        let mark = parse_mark_price(&ticker, instrument.price_precision(), ts_init)
+            .unwrap()
+            .unwrap();
+        let index = parse_index_price(&ticker, instrument.price_precision(), ts_init)
+            .unwrap()
+            .unwrap();
+        assert_eq!(mark.instrument_id, id);
+        assert_eq!(index.instrument_id, id);
+        assert_eq!(
+            mark.value,
+            Price::from_decimal_dp(ticker.data.mark_price(), instrument.price_precision()).unwrap()
+        );
+        assert_eq!(
+            index.value,
+            Price::from_decimal_dp(ticker.data.index_price(), instrument.price_precision())
+                .unwrap()
+        );
+        assert_eq!(
+            mark.ts_event.as_u64(),
+            ticker.data.timestamp() as u64 * 1_000_000
+        );
+        assert_eq!(index.ts_event, mark.ts_event);
+        assert_eq!(mark.ts_init, ts_init);
+        assert_eq!(index.ts_init, ts_init);
+        ws_client
+            .unsubscribe_ticker("ETH-PERP", "1000")
+            .await
+            .unwrap();
+    };
+
+    let result = tokio::time::timeout(Duration::from_secs(30), validation).await;
+    tokio::time::timeout(Duration::from_secs(5), ws_client.disconnect())
+        .await
+        .unwrap()
+        .unwrap();
+    result.unwrap();
+    println!(
+        "Derive mainnet: ticker mark/index, {} candles, {} funding samples decoded and converted",
+        candles.len(),
+        funding.funding_rate_history.len()
+    );
 }

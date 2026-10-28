@@ -29,7 +29,7 @@ use ahash::AHashMap;
 use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -140,6 +140,7 @@ pub struct BinanceFuturesDataClient {
     shutdown_errors: Vec<String>,
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+    instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     book_sync: BookSyncTracker,
     book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
     book_unsubscribes_pending: Arc<AtomicMap<InstrumentId, Vec<BookDrain>>>,
@@ -283,6 +284,7 @@ impl BinanceFuturesDataClient {
             shutdown_errors: Vec::new(),
             instruments: Arc::new(AtomicMap::new()),
             status_cache: Arc::new(AtomicMap::new()),
+            instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             book_sync,
             book_subscriptions: Arc::new(AtomicMap::new()),
             book_unsubscribes_pending: Arc::new(AtomicMap::new()),
@@ -410,12 +412,14 @@ impl BinanceFuturesDataClient {
         provider: &crate::config::BinanceInstrumentProviderConfig,
         instruments_cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         status_cache: &Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
+        instrument_update_lock: &tokio::sync::Mutex<()>,
         ws: &BinanceFuturesWebSocketClient,
         ws_public: &BinanceFuturesWebSocketClient,
         sender: &EventSender<DataEvent>,
         clock: &'static AtomicTime,
         emit_status_changes: bool,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
+        let _guard = instrument_update_lock.lock().await;
         let instruments = http
             .request_instruments_with_config(provider)
             .await
@@ -457,7 +461,7 @@ impl BinanceFuturesDataClient {
         }
 
         for instrument in &instruments {
-            if let Err(e) = sender.send(DataEvent::Instrument(instrument.clone())) {
+            if let Err(e) = sender.send(DataEvent::Data(instrument.clone().into())) {
                 log::warn!("Failed to send refreshed Binance Futures instrument: {e}");
             }
         }
@@ -541,10 +545,12 @@ impl BinanceFuturesDataClient {
     }
 
     fn liquidation_data_type(instrument_id: InstrumentId) -> DataType {
-        let mut metadata = Params::new();
-        metadata.insert(
-            "instrument_id".to_string(),
-            serde_json::Value::String(instrument_id.to_string()),
+        let metadata = Params::new(
+            [(
+                "instrument_id".to_string(),
+                serde_json::Value::String(instrument_id.to_string()),
+            )]
+            .into(),
         );
         DataType::new(
             "BinanceFuturesLiquidation",
@@ -775,7 +781,9 @@ impl BinanceFuturesDataClient {
                         Ok((mark_update, index_update, funding_update, custom_update)) => {
                             Self::send_data(data_sender, Data::MarkPrice(mark_update));
                             Self::send_data(data_sender, Data::IndexPrice(index_update));
-                            if let Err(e) = data_sender.send(DataEvent::FundingRate(funding_update))
+
+                            if let Err(e) =
+                                data_sender.send(DataEvent::Data(Data::FundingRate(funding_update)))
                             {
                                 log::error!("Failed to emit funding rate: {e}");
                             }
@@ -1006,11 +1014,19 @@ impl BinanceFuturesDataClient {
     }
 }
 
-fn upsert_instrument(
+fn upsert_instruments(
     cache: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    instrument: InstrumentAny,
+    instruments: &[InstrumentAny],
 ) {
-    cache.insert(instrument.id(), instrument);
+    if instruments.is_empty() {
+        return;
+    }
+
+    cache.rcu(|cache| {
+        for instrument in instruments {
+            cache.insert(instrument.id(), instrument.clone());
+        }
+    });
 }
 
 fn parse_order_book_snapshot(
@@ -1209,6 +1225,7 @@ impl DataClient for BinanceFuturesDataClient {
             &self.config.instrument_provider,
             &self.instruments,
             &self.status_cache,
+            &self.instrument_update_lock,
             &self.ws_client,
             &self.ws_public_client,
             &self.data_sender,
@@ -1350,6 +1367,7 @@ impl DataClient for BinanceFuturesDataClient {
                 let poll_sender = self.data_sender.clone();
                 let poll_instruments = self.instruments.clone();
                 let poll_status_cache = self.status_cache.clone();
+                let poll_update_lock = self.instrument_update_lock.clone();
                 let poll_cancel = self.cancellation_token.clone();
                 let poll_clock = self.clock;
 
@@ -1361,6 +1379,8 @@ impl DataClient for BinanceFuturesDataClient {
                     loop {
                         tokio::select! {
                             _ = interval.tick() => {
+                                let _guard = poll_update_lock.lock().await;
+
                                 match poll_http.request_symbol_statuses().await {
                                     Ok(symbol_statuses) => {
                                         let ts = poll_clock.get_time_ns();
@@ -1410,6 +1430,7 @@ impl DataClient for BinanceFuturesDataClient {
                 let provider = self.config.instrument_provider.clone();
                 let instruments = self.instruments.clone();
                 let statuses = self.status_cache.clone();
+                let update_lock = self.instrument_update_lock.clone();
                 let ws = self.ws_client.clone();
                 let ws_public = self.ws_public_client.clone();
                 let sender = self.data_sender.clone();
@@ -1428,6 +1449,7 @@ impl DataClient for BinanceFuturesDataClient {
                                     &provider,
                                     &instruments,
                                     &statuses,
+                                    &update_lock,
                                     &ws,
                                     &ws_public,
                                     &sender,
@@ -1618,59 +1640,81 @@ impl DataClient for BinanceFuturesDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if cmd.book_type == BookType::L1_MBP {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            if cmd.book_type == BookType::L1_MBP {
+                anyhow::ensure!(
+                    cmd.depth.is_none_or(|depth| depth.get() == 1),
+                    "Binance Futures L1_MBP supports depth 1 only"
+                );
+                anyhow::ensure!(
+                    !self.book_subscriptions.contains_key(&instrument_id),
+                    "cannot subscribe L1_MBP and L2_MBP for the same Binance Futures instrument"
+                );
+                self.l1_book_subscriptions.rcu(|subscriptions| {
+                    *subscriptions.entry(instrument_id).or_insert(0) += 1;
+                });
+
+                self.subscribe_top_of_book(instrument_id);
+                return Ok(());
+            }
+
+            if cmd.book_type != BookType::L2_MBP {
+                anyhow::bail!(
+                    "Binance Futures supports L1_MBP and L2_MBP order book subscriptions"
+                );
+            }
+
             anyhow::ensure!(
-                cmd.depth.is_none_or(|depth| depth.get() == 1),
-                "Binance Futures L1_MBP supports depth 1 only"
-            );
-            anyhow::ensure!(
-                !self.book_subscriptions.contains_key(&cmd.instrument_id),
+                !self.l1_book_subscriptions.contains_key(&instrument_id),
                 "cannot subscribe L1_MBP and L2_MBP for the same Binance Futures instrument"
             );
-            self.l1_book_subscriptions.rcu(|subscriptions| {
-                *subscriptions.entry(cmd.instrument_id).or_insert(0) += 1;
-            });
-            self.subscribe_top_of_book(cmd.instrument_id);
-            return Ok(());
-        }
 
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!("Binance Futures supports L1_MBP and L2_MBP order book subscriptions");
-        }
-        anyhow::ensure!(
-            !self.l1_book_subscriptions.contains_key(&cmd.instrument_id),
-            "cannot subscribe L1_MBP and L2_MBP for the same Binance Futures instrument"
-        );
+            let depth = cmd.depth.map_or(1000, |d| d.get() as u32);
 
-        let instrument_id = cmd.instrument_id;
-        let depth = cmd.depth.map_or(1000, |d| d.get() as u32);
+            if !BINANCE_BOOK_DEPTHS.contains(&depth) {
+                anyhow::bail!(
+                    "Invalid depth {depth} for Binance Futures order book. \
+                    Valid values: {BINANCE_BOOK_DEPTHS:?}"
+                );
+            }
 
-        if !BINANCE_BOOK_DEPTHS.contains(&depth) {
-            anyhow::bail!(
-                "Invalid depth {depth} for Binance Futures order book. \
-                Valid values: {BINANCE_BOOK_DEPTHS:?}"
-            );
-        }
+            if let Some(existing) = self.book_subscriptions.load().get(&instrument_id) {
+                anyhow::ensure!(
+                    *existing == depth,
+                    "Binance Futures book depth cannot change while subscribed"
+                );
+            }
 
-        if let Some(existing) = self.book_subscriptions.load().get(&instrument_id) {
-            anyhow::ensure!(
-                *existing == depth,
-                "Binance Futures book depth cannot change while subscribed"
-            );
-        }
+            // Establish gate protection before publishing the new semantics, so a
+            // concurrent consumer cannot parse an old-stream frame with them
+            let stream = book_stream(&instrument_id, depth);
+            revive_book_drains(&self.book_unsubscribes_pending, instrument_id, &stream);
 
-        // Establish gate protection before publishing the new semantics, so a
-        // concurrent consumer cannot parse an old-stream frame with them
-        let stream = book_stream(&instrument_id, depth);
-        revive_book_drains(&self.book_unsubscribes_pending, instrument_id, &stream);
+            self.book_subscriptions.insert(instrument_id, depth);
 
-        self.book_subscriptions.insert(instrument_id, depth);
+            // A resubscription to the drained stream carries identical frame semantics, so
+            // the gate no longer needs to hold for it; its confirmation may never arrive
+            satisfy_book_drain(&self.book_unsubscribes_pending, instrument_id, &stream);
 
-        // A resubscription to the drained stream carries identical frame semantics, so
-        // the gate no longer needs to hold for it; its confirmation may never arrive
-        satisfy_book_drain(&self.book_unsubscribes_pending, instrument_id, &stream);
+            if is_partial_book_depth(depth) {
+                let ws = self.ws_public_client.clone();
+                self.spawn_ws(
+                    chain_command(&self.book_command_tail, async move {
+                        ws.subscribe(vec![stream])
+                            .await
+                            .context("book deltas subscription")
+                    }),
+                    "order book subscription",
+                );
 
-        if is_partial_book_depth(depth) {
+                return Ok(());
+            }
+
+            // Resync from the next diff, cancelling any recovery from a prior subscription
+            self.book_sync.subscribe(instrument_id);
+
+            // Subscribe to the unthrottled diff depth stream for Futures.
             let ws = self.ws_public_client.clone();
             self.spawn_ws(
                 chain_command(&self.book_command_tail, async move {
@@ -1680,285 +1724,291 @@ impl DataClient for BinanceFuturesDataClient {
                 }),
                 "order book subscription",
             );
-            return Ok(());
-        }
 
-        // Resync from the next diff, cancelling any recovery from a prior subscription
-        self.book_sync.subscribe(instrument_id);
-
-        // Subscribe to the unthrottled diff depth stream for Futures.
-        let ws = self.ws_public_client.clone();
-        self.spawn_ws(
-            chain_command(&self.book_command_tail, async move {
-                ws.subscribe(vec![stream])
-                    .await
-                    .context("book deltas subscription")
-            }),
-            "order book subscription",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        self.subscribe_top_of_book(cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_top_of_book(instrument_id);
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws_client.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
 
-        // Binance Futures uses aggTrade for aggregate trades
-        let stream = format!("{}@aggTrade", format_binance_stream_symbol(&instrument_id));
+            // Binance Futures uses aggTrade for aggregate trades
+            let stream = format!("{}@aggTrade", format_binance_stream_symbol(&instrument_id));
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe(vec![stream])
-                    .await
-                    .context("trades subscription")
-            },
-            "trade subscription",
-        );
-        Ok(())
+            self.spawn_ws(
+                async move {
+                    ws.subscribe(vec![stream])
+                        .await
+                        .context("trades subscription")
+                },
+                "trade subscription",
+            );
+
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        let ws = self.ws_client.clone();
-        let interval = bar_spec_to_binance_interval(bar_type.spec())?;
-        anyhow::ensure!(
-            interval != crate::common::enums::BinanceKlineInterval::Second1,
-            "Binance Futures does not support second-level kline intervals"
-        );
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.ws_client.clone();
+            let interval = bar_spec_to_binance_interval(bar_type.spec())?;
+            anyhow::ensure!(
+                interval != crate::common::enums::BinanceKlineInterval::Second1,
+                "Binance Futures does not support second-level kline intervals"
+            );
 
-        let stream = format!(
-            "{}@kline_{}",
-            format_binance_stream_symbol(&bar_type.instrument_id()),
-            interval.as_str()
-        );
+            let stream = format!(
+                "{}@kline_{}",
+                format_binance_stream_symbol(&bar_type.instrument_id()),
+                interval.as_str()
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe(vec![stream])
-                    .await
-                    .context("bars subscription")
-            },
-            "bar subscription",
-        );
-        Ok(())
+            self.spawn_ws(
+                async move {
+                    ws.subscribe(vec![stream])
+                        .await
+                        .context("bars subscription")
+                },
+                "bar subscription",
+            );
+
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let should_subscribe = {
+                let prev = self
+                    .mark_price_refs
+                    .load()
+                    .get(&instrument_id)
+                    .copied()
+                    .unwrap_or(0);
+                self.mark_price_refs.rcu(|m| {
+                    let count = m.entry(instrument_id).or_insert(0);
+                    *count += 1;
+                });
 
-        let should_subscribe = {
-            let prev = self
-                .mark_price_refs
-                .load()
-                .get(&instrument_id)
-                .copied()
-                .unwrap_or(0);
-            self.mark_price_refs.rcu(|m| {
-                let count = m.entry(instrument_id).or_insert(0);
-                *count += 1;
-            });
-            prev == 0
-        };
+                prev == 0
+            };
 
-        if should_subscribe {
-            let ws = self.ws_client.clone();
-            let stream = format!(
-                "{}@markPrice@1s",
-                format_binance_stream_symbol(&instrument_id)
-            );
+            if should_subscribe {
+                let ws = self.ws_client.clone();
+                let stream = format!(
+                    "{}@markPrice@1s",
+                    format_binance_stream_symbol(&instrument_id)
+                );
 
-            self.spawn_ws(
-                async move {
-                    ws.subscribe(vec![stream])
-                        .await
-                        .context("mark prices subscription")
-                },
-                "mark prices subscription",
-            );
-        }
-        Ok(())
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe(vec![stream])
+                            .await
+                            .context("mark prices subscription")
+                    },
+                    "mark prices subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let should_subscribe = {
+                let prev = self
+                    .mark_price_refs
+                    .load()
+                    .get(&instrument_id)
+                    .copied()
+                    .unwrap_or(0);
+                self.mark_price_refs.rcu(|m| {
+                    let count = m.entry(instrument_id).or_insert(0);
+                    *count += 1;
+                });
 
-        let should_subscribe = {
-            let prev = self
-                .mark_price_refs
-                .load()
-                .get(&instrument_id)
-                .copied()
-                .unwrap_or(0);
-            self.mark_price_refs.rcu(|m| {
-                let count = m.entry(instrument_id).or_insert(0);
-                *count += 1;
-            });
-            prev == 0
-        };
+                prev == 0
+            };
 
-        if should_subscribe {
-            let ws = self.ws_client.clone();
-            let stream = format!(
-                "{}@markPrice@1s",
-                format_binance_stream_symbol(&instrument_id)
-            );
+            if should_subscribe {
+                let ws = self.ws_client.clone();
+                let stream = format!(
+                    "{}@markPrice@1s",
+                    format_binance_stream_symbol(&instrument_id)
+                );
 
-            self.spawn_ws(
-                async move {
-                    ws.subscribe(vec![stream])
-                        .await
-                        .context("index prices subscription")
-                },
-                "index prices subscription",
-            );
-        }
-        Ok(())
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe(vec![stream])
+                            .await
+                            .context("index prices subscription")
+                    },
+                    "index prices subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let should_subscribe = {
+                let prev = self
+                    .mark_price_refs
+                    .load()
+                    .get(&instrument_id)
+                    .copied()
+                    .unwrap_or(0);
+                self.mark_price_refs.rcu(|m| {
+                    let count = m.entry(instrument_id).or_insert(0);
+                    *count += 1;
+                });
 
-        let should_subscribe = {
-            let prev = self
-                .mark_price_refs
-                .load()
-                .get(&instrument_id)
-                .copied()
-                .unwrap_or(0);
-            self.mark_price_refs.rcu(|m| {
-                let count = m.entry(instrument_id).or_insert(0);
-                *count += 1;
-            });
-            prev == 0
-        };
+                prev == 0
+            };
 
-        if should_subscribe {
-            let ws = self.ws_client.clone();
-            let stream = format!(
-                "{}@markPrice@1s",
-                format_binance_stream_symbol(&instrument_id)
-            );
+            if should_subscribe {
+                let ws = self.ws_client.clone();
+                let stream = format!(
+                    "{}@markPrice@1s",
+                    format_binance_stream_symbol(&instrument_id)
+                );
 
-            self.spawn_ws(
-                async move {
-                    ws.subscribe(vec![stream])
-                        .await
-                        .context("funding rates subscription")
-                },
-                "funding rates subscription",
-            );
-        }
-        Ok(())
+                self.spawn_ws(
+                    async move {
+                        ws.subscribe(vec![stream])
+                            .await
+                            .context("funding rates subscription")
+                    },
+                    "funding rates subscription",
+                );
+            }
+
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "subscribe_instrument_status: {id} (status changes detected via periodic exchange info polling)",
-            id = cmd.instrument_id,
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "subscribe_instrument_status: {instrument_id} (status changes detected via periodic exchange info polling)",
+            );
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-
-        if let Some(count) = self
-            .l1_book_subscriptions
-            .load()
-            .get(&instrument_id)
-            .copied()
-        {
-            if count == 1 {
-                self.l1_book_subscriptions.remove(&instrument_id);
-            } else {
-                self.l1_book_subscriptions.rcu(|subscriptions| {
-                    if let Some(existing) = subscriptions.get_mut(&instrument_id) {
-                        *existing -= 1;
-                    }
-                });
-            }
-            self.unsubscribe_top_of_book(instrument_id);
-            return Ok(());
-        }
-        let ws = self.ws_public_client.clone();
-
-        let Some(depth) = self.book_subscriptions.load().get(&instrument_id).copied() else {
-            return Ok(());
-        };
-        self.book_subscriptions.remove(&instrument_id);
-
-        // Stop book sync so an in-flight snapshot cannot emit after unsubscribe
-        self.book_sync.remove(instrument_id);
-
-        let stream = book_stream(&instrument_id, depth);
-        let generation = self.book_drain_generation;
-        self.book_drain_generation += 1;
-
-        // Gate depth frames on the venue's unsubscribe confirmation. Arm eagerly so a
-        // not-yet-registered subscribe cannot slip frames past the gate; the spawned
-        // task disarms when the pool reports no unsubscribe was sent
-        arm_book_drain(
-            &self.book_unsubscribes_pending,
-            instrument_id,
-            generation,
-            &stream,
-        );
-
-        let book_unsubscribes_pending = self.book_unsubscribes_pending.clone();
-        self.spawn_ws(
-            chain_command(&self.book_command_tail, async move {
-                let sent = ws
-                    .unsubscribe_correlated(vec![stream.clone()], generation)
-                    .await
-                    .context("book deltas unsubscribe");
-
-                match sent {
-                    Ok(sent) if sent.contains(&stream) => Ok(()),
-                    Ok(_) => {
-                        remove_book_drain(&book_unsubscribes_pending, generation);
-                        Ok(())
-                    }
-                    Err(e) => {
-                        remove_book_drain(&book_unsubscribes_pending, generation);
-                        Err(e)
-                    }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if let Some(count) = self
+                .l1_book_subscriptions
+                .load()
+                .get(&instrument_id)
+                .copied()
+            {
+                if count == 1 {
+                    self.l1_book_subscriptions.remove(&instrument_id);
+                } else {
+                    self.l1_book_subscriptions.rcu(|subscriptions| {
+                        if let Some(existing) = subscriptions.get_mut(&instrument_id) {
+                            *existing -= 1;
+                        }
+                    });
                 }
-            }),
-            "order book unsubscribe",
-        );
-        Ok(())
+
+                self.unsubscribe_top_of_book(instrument_id);
+                return Ok(());
+            }
+
+            let ws = self.ws_public_client.clone();
+
+            let Some(depth) = self.book_subscriptions.load().get(&instrument_id).copied() else {
+                return Ok(());
+            };
+
+            self.book_subscriptions.remove(&instrument_id);
+
+            // Stop book sync so an in-flight snapshot cannot emit after unsubscribe
+            self.book_sync.remove(instrument_id);
+
+            let stream = book_stream(&instrument_id, depth);
+            let generation = self.book_drain_generation;
+            self.book_drain_generation += 1;
+
+            // Gate depth frames on the venue's unsubscribe confirmation. Arm eagerly so a
+            // not-yet-registered subscribe cannot slip frames past the gate; the spawned
+            // task disarms when the pool reports no unsubscribe was sent
+            arm_book_drain(
+                &self.book_unsubscribes_pending,
+                instrument_id,
+                generation,
+                &stream,
+            );
+
+            let book_unsubscribes_pending = self.book_unsubscribes_pending.clone();
+            self.spawn_ws(
+                chain_command(&self.book_command_tail, async move {
+                    let sent = ws
+                        .unsubscribe_correlated(vec![stream.clone()], generation)
+                        .await
+                        .context("book deltas unsubscribe");
+
+                    match sent {
+                        Ok(sent) if sent.contains(&stream) => Ok(()),
+                        Ok(_) => {
+                            remove_book_drain(&book_unsubscribes_pending, generation);
+                            Ok(())
+                        }
+                        Err(e) => {
+                            remove_book_drain(&book_unsubscribes_pending, generation);
+                            Err(e)
+                        }
+                    }
+                }),
+                "order book unsubscribe",
+            );
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        self.unsubscribe_top_of_book(cmd.instrument_id);
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_top_of_book(instrument_id);
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws_client.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
 
-        let stream = format!("{}@aggTrade", format_binance_stream_symbol(&instrument_id));
+            let stream = format!("{}@aggTrade", format_binance_stream_symbol(&instrument_id));
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe(vec![stream])
-                    .await
-                    .context("trades unsubscribe")
-                    .map(|_| ())
-            },
-            "trade unsubscribe",
-        );
-        Ok(())
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe(vec![stream])
+                        .await
+                        .context("trades unsubscribe")
+                        .map(|_| ())
+                },
+                "trade unsubscribe",
+            );
+
+            Ok(())
+        })
     }
 
     fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
@@ -2085,169 +2135,176 @@ impl DataClient for BinanceFuturesDataClient {
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        let ws = self.ws_client.clone();
-        let interval = bar_spec_to_binance_interval(bar_type.spec())?;
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.ws_client.clone();
+            let interval = bar_spec_to_binance_interval(bar_type.spec())?;
 
-        let stream = format!(
-            "{}@kline_{}",
-            format_binance_stream_symbol(&bar_type.instrument_id()),
-            interval.as_str()
-        );
+            let stream = format!(
+                "{}@kline_{}",
+                format_binance_stream_symbol(&bar_type.instrument_id()),
+                interval.as_str()
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe(vec![stream])
-                    .await
-                    .context("bars unsubscribe")
-                    .map(|_| ())
-            },
-            "bar unsubscribe",
-        );
-        Ok(())
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe(vec![stream])
+                        .await
+                        .context("bars unsubscribe")
+                        .map(|_| ())
+                },
+                "bar unsubscribe",
+            );
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let should_unsubscribe = {
+                let prev = self.mark_price_refs.load().get(&instrument_id).copied();
+                match prev {
+                    Some(count) if count <= 1 => {
+                        self.mark_price_refs.remove(&instrument_id);
+                        true
+                    }
+                    Some(_) => {
+                        self.mark_price_refs.rcu(|m| {
+                            if let Some(count) = m.get_mut(&instrument_id) {
+                                *count = count.saturating_sub(1);
+                            }
+                        });
 
-        let should_unsubscribe = {
-            let prev = self.mark_price_refs.load().get(&instrument_id).copied();
-            match prev {
-                Some(count) if count <= 1 => {
-                    self.mark_price_refs.remove(&instrument_id);
-                    true
+                        false
+                    }
+                    None => false,
                 }
-                Some(_) => {
-                    self.mark_price_refs.rcu(|m| {
-                        if let Some(count) = m.get_mut(&instrument_id) {
-                            *count = count.saturating_sub(1);
-                        }
-                    });
-                    false
-                }
-                None => false,
+            };
+
+            if should_unsubscribe {
+                let ws = self.ws_client.clone();
+                let symbol_lower = format_binance_stream_symbol(&instrument_id);
+                let streams = vec![
+                    format!("{symbol_lower}@markPrice"),
+                    format!("{symbol_lower}@markPrice@1s"),
+                    format!("{symbol_lower}@markPrice@3s"),
+                ];
+
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe(streams)
+                            .await
+                            .context("mark prices unsubscribe")
+                            .map(|_| ())
+                    },
+                    "mark prices unsubscribe",
+                );
             }
-        };
 
-        if should_unsubscribe {
-            let ws = self.ws_client.clone();
-            let symbol_lower = format_binance_stream_symbol(&instrument_id);
-            let streams = vec![
-                format!("{symbol_lower}@markPrice"),
-                format!("{symbol_lower}@markPrice@1s"),
-                format!("{symbol_lower}@markPrice@3s"),
-            ];
-
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe(streams)
-                        .await
-                        .context("mark prices unsubscribe")
-                        .map(|_| ())
-                },
-                "mark prices unsubscribe",
-            );
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let should_unsubscribe = {
+                let prev = self.mark_price_refs.load().get(&instrument_id).copied();
+                match prev {
+                    Some(count) if count <= 1 => {
+                        self.mark_price_refs.remove(&instrument_id);
+                        true
+                    }
+                    Some(_) => {
+                        self.mark_price_refs.rcu(|m| {
+                            if let Some(count) = m.get_mut(&instrument_id) {
+                                *count = count.saturating_sub(1);
+                            }
+                        });
 
-        let should_unsubscribe = {
-            let prev = self.mark_price_refs.load().get(&instrument_id).copied();
-            match prev {
-                Some(count) if count <= 1 => {
-                    self.mark_price_refs.remove(&instrument_id);
-                    true
+                        false
+                    }
+                    None => false,
                 }
-                Some(_) => {
-                    self.mark_price_refs.rcu(|m| {
-                        if let Some(count) = m.get_mut(&instrument_id) {
-                            *count = count.saturating_sub(1);
-                        }
-                    });
-                    false
-                }
-                None => false,
+            };
+
+            if should_unsubscribe {
+                let ws = self.ws_client.clone();
+                let symbol_lower = format_binance_stream_symbol(&instrument_id);
+                let streams = vec![
+                    format!("{symbol_lower}@markPrice"),
+                    format!("{symbol_lower}@markPrice@1s"),
+                    format!("{symbol_lower}@markPrice@3s"),
+                ];
+
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe(streams)
+                            .await
+                            .context("index prices unsubscribe")
+                            .map(|_| ())
+                    },
+                    "index prices unsubscribe",
+                );
             }
-        };
 
-        if should_unsubscribe {
-            let ws = self.ws_client.clone();
-            let symbol_lower = format_binance_stream_symbol(&instrument_id);
-            let streams = vec![
-                format!("{symbol_lower}@markPrice"),
-                format!("{symbol_lower}@markPrice@1s"),
-                format!("{symbol_lower}@markPrice@3s"),
-            ];
-
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe(streams)
-                        .await
-                        .context("index prices unsubscribe")
-                        .map(|_| ())
-                },
-                "index prices unsubscribe",
-            );
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let should_unsubscribe = {
+                let prev = self.mark_price_refs.load().get(&instrument_id).copied();
+                match prev {
+                    Some(count) if count <= 1 => {
+                        self.mark_price_refs.remove(&instrument_id);
+                        true
+                    }
+                    Some(_) => {
+                        self.mark_price_refs.rcu(|m| {
+                            if let Some(count) = m.get_mut(&instrument_id) {
+                                *count = count.saturating_sub(1);
+                            }
+                        });
 
-        let should_unsubscribe = {
-            let prev = self.mark_price_refs.load().get(&instrument_id).copied();
-            match prev {
-                Some(count) if count <= 1 => {
-                    self.mark_price_refs.remove(&instrument_id);
-                    true
+                        false
+                    }
+                    None => false,
                 }
-                Some(_) => {
-                    self.mark_price_refs.rcu(|m| {
-                        if let Some(count) = m.get_mut(&instrument_id) {
-                            *count = count.saturating_sub(1);
-                        }
-                    });
-                    false
-                }
-                None => false,
+            };
+
+            if should_unsubscribe {
+                let ws = self.ws_client.clone();
+                let symbol_lower = format_binance_stream_symbol(&instrument_id);
+                let streams = vec![
+                    format!("{symbol_lower}@markPrice"),
+                    format!("{symbol_lower}@markPrice@1s"),
+                    format!("{symbol_lower}@markPrice@3s"),
+                ];
+
+                self.spawn_ws(
+                    async move {
+                        ws.unsubscribe(streams)
+                            .await
+                            .context("funding rates unsubscribe")
+                            .map(|_| ())
+                    },
+                    "funding rates unsubscribe",
+                );
             }
-        };
 
-        if should_unsubscribe {
-            let ws = self.ws_client.clone();
-            let symbol_lower = format_binance_stream_symbol(&instrument_id);
-            let streams = vec![
-                format!("{symbol_lower}@markPrice"),
-                format!("{symbol_lower}@markPrice@1s"),
-                format!("{symbol_lower}@markPrice@3s"),
-            ];
-
-            self.spawn_ws(
-                async move {
-                    ws.unsubscribe(streams)
-                        .await
-                        .context("funding rates unsubscribe")
-                        .map(|_| ())
-                },
-                "funding rates unsubscribe",
-            );
-        }
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "unsubscribe_instrument_status: {id}",
-            id = cmd.instrument_id,
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("unsubscribe_instrument_status: {instrument_id}",);
+            Ok(())
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
@@ -2268,9 +2325,7 @@ impl DataClient for BinanceFuturesDataClient {
         self.spawn_command(async move {
             match http.request_instruments_with_config(&provider).await {
                 Ok(instruments) => {
-                    for instrument in &instruments {
-                        upsert_instrument(&instruments_cache, instrument.clone());
-                    }
+                    upsert_instruments(&instruments_cache, &instruments);
 
                     let response = DataResponse::Instruments(InstrumentsResponse::new(
                         request_id,
@@ -2298,7 +2353,7 @@ impl DataClient for BinanceFuturesDataClient {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start = request.start;
@@ -2312,9 +2367,7 @@ impl DataClient for BinanceFuturesDataClient {
         self.spawn_command(async move {
             match http.request_instruments_with_config(&provider).await {
                 Ok(all_instruments) => {
-                    for instrument in &all_instruments {
-                        upsert_instrument(&instruments, instrument.clone());
-                    }
+                    upsert_instruments(&instruments, &all_instruments);
 
                     let instrument = all_instruments
                         .into_iter()
@@ -2623,7 +2676,7 @@ impl DataClient for BinanceFuturesDataClient {
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let limit = request.limit.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -2673,7 +2726,7 @@ impl DataClient for BinanceFuturesDataClient {
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -2716,7 +2769,7 @@ impl DataClient for BinanceFuturesDataClient {
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         let http = self.http_client.clone();
         let sender = self.data_sender.clone();
-        let bar_type = request.bar_type;
+        let bar_type = request.single_bar_type()?;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u32);
@@ -2775,7 +2828,7 @@ impl DataClient for BinanceFuturesDataClient {
         let http = self.http_client.clone();
         let book_sync = self.book_sync.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let params = request.params;
@@ -3049,10 +3102,12 @@ fn unsubscribe_ticker(
 }
 
 fn ticker_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesTicker",
@@ -3062,10 +3117,12 @@ fn ticker_data_type(instrument_id: InstrumentId) -> DataType {
 }
 
 fn mark_price_data_type(instrument_id: InstrumentId) -> DataType {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     DataType::new(
         "BinanceFuturesMarkPriceUpdate",

@@ -28,7 +28,7 @@ use anyhow::Context;
 use dashmap::{DashMap, DashSet, mapref::entry::Entry};
 use nautilus_common::{
     cache::InstrumentLookupError,
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -616,7 +616,7 @@ impl LighterDataClient {
                                     );
 
                                     if let Err(e) = data_sender
-                                        .send(DataEvent::Instrument(instrument.clone()))
+                                        .send(DataEvent::Data(instrument.clone().into()))
                                     {
                                         log::warn!(
                                             "Failed to send refreshed Lighter instrument: {e}"
@@ -899,7 +899,7 @@ fn emit_lighter_instrument_status(
         None,
     );
 
-    if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+    if let Err(e) = sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
         log::error!("Failed to send Lighter instrument status: {e}");
     }
 }
@@ -999,7 +999,7 @@ impl DataClient for LighterDataClient {
             .context("failed to bootstrap Lighter instruments")?;
 
         for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::warn!("Failed to send instrument: {e}");
             }
         }
@@ -1072,362 +1072,354 @@ impl DataClient for LighterDataClient {
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        let instruments = self.instruments.load();
-        if let Some(instrument) = instruments.get(&cmd.instrument_id) {
-            if let Err(e) = self
-                .data_sender
-                .send(DataEvent::Instrument(instrument.clone()))
-            {
-                log::error!("Failed to send instrument {}: {e}", cmd.instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let instruments = self.instruments.load();
+            if let Some(instrument) = instruments.get(&instrument_id) {
+                if let Err(e) = self
+                    .data_sender
+                    .send(DataEvent::Data(instrument.clone().into()))
+                {
+                    log::error!("Failed to send instrument {instrument_id}: {e}");
+                }
+            } else {
+                log::warn!("Instrument {instrument_id} not found in cache");
             }
-        } else {
-            log::warn!("Instrument {} not found in cache", cmd.instrument_id);
-        }
-        Ok(())
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from instrument: {} (cache replay only)",
-            cmd.instrument_id,
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from instrument: {instrument_id} (cache replay only)",);
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         subscription: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let instrument_id = subscription.instrument_id;
-
-        self.instrument_status_subscriptions.insert(instrument_id);
-        if self.emit_cached_instrument_status(instrument_id) {
-            return Ok(());
-        }
-
-        let http = self.http_client.clone();
-        let ws = self.ws_client.clone();
-        let registry = Arc::clone(&self.registry);
-        let sender = self.data_sender.clone();
-        let instruments_cache = Arc::clone(&self.instruments);
-        let statuses = Arc::clone(&self.instrument_statuses);
-        let subscriptions = Arc::clone(&self.instrument_status_subscriptions);
-        let clock = self.clock;
-
-        self.spawn_task(async move {
-            match http.request_instrument_with_status(instrument_id).await {
-                Ok((instrument, status)) => {
-                    instruments_cache.rcu(|map| {
-                        map.insert(instrument.id(), instrument.clone());
-                    });
-
-                    if let Some(market_index) = registry.market_index(&instrument.id()) {
-                        ws.cache_instrument(market_index, instrument.clone());
-                    }
-
-                    cache_lighter_instrument_status(&statuses, instrument.id(), status);
-                    let ts_init = clock.get_time_ns();
-                    emit_lighter_instrument_status_if_subscribed(
-                        &sender,
-                        &subscriptions,
-                        instrument.id(),
-                        status,
-                        ts_init,
-                        ts_init,
-                    );
-                }
-                Err(e) => {
-                    log::error!(
-                        "Failed to fetch Lighter instrument status for {instrument_id}: {e:?}"
-                    );
-                }
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            self.instrument_status_subscriptions.insert(instrument_id);
+            if self.emit_cached_instrument_status(instrument_id) {
+                return Ok(());
             }
-        });
 
-        Ok(())
+            let http = self.http_client.clone();
+            let ws = self.ws_client.clone();
+            let registry = Arc::clone(&self.registry);
+            let sender = self.data_sender.clone();
+            let instruments_cache = Arc::clone(&self.instruments);
+            let statuses = Arc::clone(&self.instrument_statuses);
+            let subscriptions = Arc::clone(&self.instrument_status_subscriptions);
+            let clock = self.clock;
+
+            self.spawn_task(async move {
+                match http.request_instrument_with_status(instrument_id).await {
+                    Ok((instrument, status)) => {
+                        instruments_cache.rcu(|map| {
+                            map.insert(instrument.id(), instrument.clone());
+                        });
+
+                        if let Some(market_index) = registry.market_index(&instrument.id()) {
+                            ws.cache_instrument(market_index, instrument.clone());
+                        }
+
+                        cache_lighter_instrument_status(&statuses, instrument.id(), status);
+                        let ts_init = clock.get_time_ns();
+                        emit_lighter_instrument_status_if_subscribed(
+                            &sender,
+                            &subscriptions,
+                            instrument.id(),
+                            status,
+                            ts_init,
+                            ts_init,
+                        );
+                    }
+                    Err(e) => {
+                        log::error!(
+                            "Failed to fetch Lighter instrument status for {instrument_id}: {e:?}"
+                        );
+                    }
+                }
+            });
+
+            Ok(())
+        })
     }
 
     fn subscribe_book_deltas(&mut self, subscription: SubscribeBookDeltas) -> anyhow::Result<()> {
-        validate_book_deltas_subscription(subscription.book_type)?;
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let subscription = subscription.with_instrument_ids(instrument_id);
+            validate_book_deltas_subscription(subscription.book_type)?;
 
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.subscribe_book(instrument_id).await {
+                    log::error!("Failed to subscribe to Lighter book deltas: {e:?}");
+                }
+            });
 
-        self.spawn_task(async move {
-            if let Err(e) = ws.subscribe_book(instrument_id).await {
-                log::error!("Failed to subscribe to Lighter book deltas: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_book_depth(&mut self, subscription: SubscribeBookDepth) -> anyhow::Result<()> {
-        log::debug!("Subscribing to book depth: {}", subscription.instrument_id);
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let subscription = subscription.with_instrument_ids(instrument_id);
+            log::debug!("Subscribing to book depth: {instrument_id}");
 
-        validate_book_depth_subscription(subscription.book_type)?;
+            validate_book_depth_subscription(subscription.book_type)?;
 
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.subscribe_book_depth(instrument_id).await {
+                    log::error!("Failed to subscribe to Lighter book depth: {e:?}");
+                }
+            });
 
-        self.spawn_task(async move {
-            if let Err(e) = ws.subscribe_book_depth(instrument_id).await {
-                log::error!("Failed to subscribe to Lighter book depth: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, subscription: SubscribeQuotes) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.subscribe_quotes(instrument_id).await {
+                    log::error!("Failed to subscribe to Lighter quotes: {e:?}");
+                }
+            });
 
-        self.spawn_task(async move {
-            if let Err(e) = ws.subscribe_quotes(instrument_id).await {
-                log::error!("Failed to subscribe to Lighter quotes: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, subscription: SubscribeTrades) -> anyhow::Result<()> {
-        let ws = self.ws_client.clone();
-        let instrument_id = subscription.instrument_id;
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.subscribe_trades(instrument_id).await {
+                    log::error!("Failed to subscribe to Lighter trades: {e:?}");
+                }
+            });
 
-        self.spawn_task(async move {
-            if let Err(e) = ws.subscribe_trades(instrument_id).await {
-                log::error!("Failed to subscribe to Lighter trades: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, subscription: SubscribeMarkPrices) -> anyhow::Result<()> {
-        let instrument_id = subscription.instrument_id;
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let channel = self.perp_market_stats_channel(instrument_id, "mark price")?;
+            self.activate_market_stats_subscription(
+                instrument_id,
+                channel,
+                MarketStatsKind::MarkPrice,
+                "mark price",
+            );
 
-        let channel = self.perp_market_stats_channel(instrument_id, "mark price")?;
-        self.activate_market_stats_subscription(
-            instrument_id,
-            channel,
-            MarketStatsKind::MarkPrice,
-            "mark price",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, subscription: SubscribeIndexPrices) -> anyhow::Result<()> {
-        let instrument_id = subscription.instrument_id;
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let channel = self.index_market_stats_channel(instrument_id)?;
+            self.activate_market_stats_subscription(
+                instrument_id,
+                channel,
+                MarketStatsKind::IndexPrice,
+                "index price",
+            );
 
-        let channel = self.index_market_stats_channel(instrument_id)?;
-        self.activate_market_stats_subscription(
-            instrument_id,
-            channel,
-            MarketStatsKind::IndexPrice,
-            "index price",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_funding_rates(
         &mut self,
         subscription: SubscribeFundingRates,
     ) -> anyhow::Result<()> {
-        let instrument_id = subscription.instrument_id;
+        execute_instrument_subscriptions(&subscription.instrument_ids, |instrument_id| {
+            let channel = self.perp_market_stats_channel(instrument_id, "funding rate")?;
+            self.activate_market_stats_subscription(
+                instrument_id,
+                channel,
+                MarketStatsKind::FundingRate,
+                "funding rate",
+            );
 
-        let channel = self.perp_market_stats_channel(instrument_id, "funding rate")?;
-        self.activate_market_stats_subscription(
-            instrument_id,
-            channel,
-            MarketStatsKind::FundingRate,
-            "funding rate",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, subscription: SubscribeBars) -> anyhow::Result<()> {
-        let bar_type = subscription.bar_type;
+        execute_bar_subscriptions(&subscription.bar_types, |bar_type| {
+            let resolution = LighterCandleResolution::try_from(&bar_type)?;
+            anyhow::ensure!(
+                resolution.is_ws_streamable(),
+                "Lighter does not offer {bar_type} on the candle WebSocket stream",
+            );
 
-        let resolution = LighterCandleResolution::try_from(&bar_type)?;
-        anyhow::ensure!(
-            resolution.is_ws_streamable(),
-            "Lighter does not offer {bar_type} on the candle WebSocket stream",
-        );
-
-        let instrument_id = bar_type.instrument_id();
-        if !self.instruments.contains_key(&instrument_id) {
-            return Err(InstrumentLookupError::not_found(instrument_id).into());
-        }
-
-        let ws = self.ws_client.clone();
-        self.spawn_task(async move {
-            if let Err(e) = ws.subscribe_candles(instrument_id, resolution).await {
-                log::error!("Failed to subscribe to Lighter candles for {bar_type}: {e:?}");
+            let instrument_id = bar_type.instrument_id();
+            if !self.instruments.contains_key(&instrument_id) {
+                return Err(InstrumentLookupError::not_found(instrument_id).into());
             }
-        });
 
-        Ok(())
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.subscribe_candles(instrument_id, resolution).await {
+                    log::error!("Failed to subscribe to Lighter candles for {bar_type}: {e:?}");
+                }
+            });
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(
         &mut self,
         unsubscription: &UnsubscribeBookDeltas,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from book deltas: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from book deltas: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.unsubscribe_book(instrument_id).await {
+                    log::error!("Failed to unsubscribe from Lighter book deltas: {e:?}");
+                }
+            });
 
-        self.spawn_task(async move {
-            if let Err(e) = ws.unsubscribe_book(instrument_id).await {
-                log::error!("Failed to unsubscribe from Lighter book deltas: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_depth(
         &mut self,
         unsubscription: &UnsubscribeBookDepth,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from book depth: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from book depth: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.unsubscribe_book_depth(instrument_id).await {
+                    log::error!("Failed to unsubscribe from Lighter book depth: {e:?}");
+                }
+            });
 
-        self.spawn_task(async move {
-            if let Err(e) = ws.unsubscribe_book_depth(instrument_id).await {
-                log::error!("Failed to unsubscribe from Lighter book depth: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, unsubscription: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from quotes: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from quotes: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
+                    log::error!("Failed to unsubscribe from Lighter quotes: {e:?}");
+                }
+            });
 
-        self.spawn_task(async move {
-            if let Err(e) = ws.unsubscribe_quotes(instrument_id).await {
-                log::error!("Failed to unsubscribe from Lighter quotes: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, unsubscription: &UnsubscribeTrades) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribing from trades: {}",
-            unsubscription.instrument_id
-        );
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            log::debug!("Unsubscribing from trades: {instrument_id}");
 
-        let ws = self.ws_client.clone();
-        let instrument_id = unsubscription.instrument_id;
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.unsubscribe_trades(instrument_id).await {
+                    log::error!("Failed to unsubscribe from Lighter trades: {e:?}");
+                }
+            });
 
-        self.spawn_task(async move {
-            if let Err(e) = ws.unsubscribe_trades(instrument_id).await {
-                log::error!("Failed to unsubscribe from Lighter trades: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         unsubscription: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let instrument_id = unsubscription.instrument_id;
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            self.instrument_status_subscriptions.remove(&instrument_id);
 
-        self.instrument_status_subscriptions.remove(&instrument_id);
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_mark_prices(
         &mut self,
         unsubscription: &UnsubscribeMarkPrices,
     ) -> anyhow::Result<()> {
-        let instrument_id = unsubscription.instrument_id;
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            self.deactivate_market_stats_subscription(
+                instrument_id,
+                MarketStatsKind::MarkPrice,
+                "mark price",
+            );
 
-        self.deactivate_market_stats_subscription(
-            instrument_id,
-            MarketStatsKind::MarkPrice,
-            "mark price",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_index_prices(
         &mut self,
         unsubscription: &UnsubscribeIndexPrices,
     ) -> anyhow::Result<()> {
-        let instrument_id = unsubscription.instrument_id;
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            self.deactivate_market_stats_subscription(
+                instrument_id,
+                MarketStatsKind::IndexPrice,
+                "index price",
+            );
 
-        self.deactivate_market_stats_subscription(
-            instrument_id,
-            MarketStatsKind::IndexPrice,
-            "index price",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_funding_rates(
         &mut self,
         unsubscription: &UnsubscribeFundingRates,
     ) -> anyhow::Result<()> {
-        let instrument_id = unsubscription.instrument_id;
+        execute_instrument_subscriptions(&unsubscription.instrument_ids, |instrument_id| {
+            self.deactivate_market_stats_subscription(
+                instrument_id,
+                MarketStatsKind::FundingRate,
+                "funding rate",
+            );
 
-        self.deactivate_market_stats_subscription(
-            instrument_id,
-            MarketStatsKind::FundingRate,
-            "funding rate",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_bars(&mut self, unsubscription: &UnsubscribeBars) -> anyhow::Result<()> {
-        let bar_type = unsubscription.bar_type;
+        execute_bar_subscriptions(&unsubscription.bar_types, |bar_type| {
+            let resolution = match LighterCandleResolution::try_from(&bar_type) {
+                Ok(resolution) => resolution,
+                Err(e) => {
+                    log::warn!("Skipping Lighter candle unsubscribe for {bar_type}: {e}");
+                    return Ok(());
+                }
+            };
 
-        let resolution = match LighterCandleResolution::try_from(&bar_type) {
-            Ok(resolution) => resolution,
-            Err(e) => {
-                log::warn!("Skipping Lighter candle unsubscribe for {bar_type}: {e}");
-                return Ok(());
-            }
-        };
+            let instrument_id = bar_type.instrument_id();
+            let ws = self.ws_client.clone();
+            self.spawn_task(async move {
+                if let Err(e) = ws.unsubscribe_candles(instrument_id, resolution).await {
+                    log::error!("Failed to unsubscribe from Lighter candles for {bar_type}: {e:?}");
+                }
+            });
 
-        let instrument_id = bar_type.instrument_id();
-        let ws = self.ws_client.clone();
-        self.spawn_task(async move {
-            if let Err(e) = ws.unsubscribe_candles(instrument_id, resolution).await {
-                log::error!("Failed to unsubscribe from Lighter candles for {bar_type}: {e:?}");
-            }
-        });
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn request_instruments(&self, request: RequestInstruments) -> anyhow::Result<()> {
@@ -1511,7 +1503,9 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        log::debug!("Requesting Lighter instrument: {}", request.instrument_id);
+        let instrument_id = request.single_instrument_id()?;
+
+        log::debug!("Requesting Lighter instrument: {instrument_id}");
 
         let http = self.http_client.clone();
         let ws = self.ws_client.clone();
@@ -1520,7 +1514,6 @@ impl DataClient for LighterDataClient {
         let instruments_cache = Arc::clone(&self.instruments);
         let status_cache = Arc::clone(&self.instrument_statuses);
         let status_subscriptions = Arc::clone(&self.instrument_status_subscriptions);
-        let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
@@ -1575,7 +1568,8 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        let bar_type = request.bar_type;
+        let bar_type = request.single_bar_type()?;
+
         log::debug!("Requesting Lighter bars for {bar_type}");
 
         LighterCandleResolution::try_from(&bar_type)?;
@@ -1629,15 +1623,17 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         anyhow::bail!(
-            "Lighter does not support historical quote requests for {}; \
-             subscribe to quotes via WebSocket for live BBO ticks",
-            request.instrument_id,
+            "Lighter does not support historical quote requests for {instrument_id}; \
+             subscribe to quotes via WebSocket for live BBO ticks"
         )
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting Lighter trades for {instrument_id}");
 
         let instrument = self
@@ -1685,7 +1681,8 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting Lighter funding rates for {instrument_id}");
 
         let instrument = self
@@ -1741,7 +1738,8 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         log::debug!("Requesting Lighter book snapshot for {instrument_id}");
 
         let instrument = self
@@ -1804,10 +1802,11 @@ impl DataClient for LighterDataClient {
     }
 
     fn request_book_depth(&self, request: RequestBookDepth) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         anyhow::bail!(
-            "Lighter does not support historical order book depth requests for {}; \
-             use request_book_snapshot for an L2 snapshot or subscribe_book_depth for live depth",
-            request.instrument_id,
+            "Lighter does not support historical order book depth requests for {instrument_id}; \
+             use request_book_snapshot for an L2 snapshot or subscribe_book_depth for live depth"
         )
     }
 }
@@ -2019,7 +2018,7 @@ mod tests {
 
         let event = receiver.recv().await.expect("instrument status event");
         match event {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(status.instrument_id, instrument_id);
                 assert_eq!(status.action, MarketStatusAction::Trading);
                 assert_eq!(status.is_trading, Some(true));
@@ -2059,7 +2058,7 @@ mod tests {
             .expect("instrument status event");
 
         match event {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(status.instrument_id, instrument_id);
                 assert_eq!(status.action, MarketStatusAction::Trading);
                 assert_eq!(status.is_trading, Some(true));
@@ -2291,7 +2290,7 @@ mod tests {
         }
 
         match receiver.try_recv().unwrap() {
-            DataEvent::FundingRate(update) => {
+            DataEvent::Data(Data::FundingRate(update)) => {
                 assert_eq!(update.instrument_id, instrument_id);
                 assert_eq!(update.rate, Decimal::new(12, 6));
             }
@@ -2613,13 +2612,13 @@ mod tests {
             DataEvent::Response(DataResponse::FundingRates(response)) => {
                 assert_eq!(response.instrument_id, instrument_id);
                 assert_eq!(response.data.len(), 2);
-                assert_eq!(response.data[0].rate, Decimal::new(12, 4));
+                assert_eq!(response.data[0].rate, Decimal::new(12, 6));
                 assert_eq!(response.data[0].interval, Some(60));
                 assert_eq!(
                     response.data[0].ts_event,
                     UnixNanos::from(1_778_702_400_000_000_000)
                 );
-                assert_eq!(response.data[1].rate, Decimal::new(-2, 4));
+                assert_eq!(response.data[1].rate, Decimal::new(-2, 6));
                 assert_eq!(response.data[1].interval, Some(60));
             }
             event => panic!("expected funding rates response, was {event:?}"),
@@ -2656,7 +2655,7 @@ mod tests {
 
         match event {
             DataEvent::Response(DataResponse::Trades(response)) => {
-                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(response.instrument_ids, vec![instrument_id]);
                 assert_eq!(response.data.len(), 1);
                 let tick = &response.data[0];
                 assert_eq!(tick.instrument_id, instrument_id);
@@ -2736,7 +2735,7 @@ mod tests {
 
         match event {
             DataEvent::Response(DataResponse::Trades(response)) => {
-                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(response.instrument_ids, vec![instrument_id]);
                 assert!(response.data.is_empty());
             }
             event => panic!("expected trades response, was {event:?}"),
@@ -2773,7 +2772,7 @@ mod tests {
 
         match event {
             DataEvent::Response(DataResponse::Trades(response)) => {
-                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(response.instrument_ids, vec![instrument_id]);
                 assert!(response.data.is_empty());
             }
             event => panic!("expected trades response, was {event:?}"),
@@ -2811,7 +2810,7 @@ mod tests {
 
         match event {
             DataEvent::Response(DataResponse::Trades(response)) => {
-                assert_eq!(response.instrument_id, instrument_id);
+                assert_eq!(response.instrument_ids, vec![instrument_id]);
                 assert_eq!(
                     response
                         .data
@@ -2960,7 +2959,7 @@ mod tests {
 
         let sender = client.data_sender.clone();
         client.spawn_task(async move {
-            let _ = sender.send(DataEvent::Instrument(instrument));
+            let _ = sender.send(DataEvent::Data(instrument.into()));
         });
 
         let result = tokio::time::timeout(Duration::from_millis(200), receiver.recv()).await;
@@ -3002,7 +3001,7 @@ mod tests {
         let (hold_tx, hold_rx) = tokio::sync::oneshot::channel::<()>();
         client.spawn_task(async move {
             let _ = hold_rx.await;
-            let _ = sender.send(DataEvent::Instrument(instrument));
+            let _ = sender.send(DataEvent::Data(instrument.into()));
         });
         assert_eq!(client.tasks.len(), 1);
 

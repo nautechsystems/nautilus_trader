@@ -180,9 +180,12 @@ impl DockerizedIBGateway {
     /// # Errors
     ///
     /// Returns an error if:
+    /// - Configuration validation fails.
     /// - Username or password is not provided and not available in environment variables.
     /// - Docker client creation fails.
     pub fn new(mut config: DockerizedIBGatewayConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let username = config
             .username
             .take()
@@ -579,6 +582,28 @@ mod tests {
 
     use super::DockerizedIBGateway;
     use crate::config::{DockerizedIBGatewayConfig, TradingMode};
+
+    #[rstest]
+    #[case::timeout_zero(0, None, "Timeout must be greater than 0")]
+    #[case::timeout_high(3601, None, "Timeout must be less than 3600 seconds")]
+    #[case::vnc_port(300, Some(5899), "VNC port must be between 5900 and 5999")]
+    fn test_constructor_rejects_invalid_config(
+        #[case] timeout: u64,
+        #[case] vnc_port: Option<u16>,
+        #[case] expected: &str,
+    ) {
+        let config = DockerizedIBGatewayConfig {
+            username: None,
+            password: None,
+            timeout,
+            vnc_port,
+            ..Default::default()
+        };
+
+        let error = DockerizedIBGateway::new(config).unwrap_err();
+
+        assert_eq!(error.to_string(), expected);
+    }
 
     #[rstest]
     #[case(TradingMode::Paper, 4002)]

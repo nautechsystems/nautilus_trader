@@ -555,15 +555,21 @@ mod tests {
         let mut core = ExecutionAlgorithmCore::new(config);
         let primary1 = ClientOrderId::new("O-001");
         let primary2 = ClientOrderId::new("O-002");
-        let mut params1 = Params::new();
-        params1.insert(
-            "route".to_string(),
-            serde_json::Value::String("A".to_string()),
+
+        let params1 = Params::new(
+            [(
+                "route".to_string(),
+                serde_json::Value::String("A".to_string()),
+            )]
+            .into(),
         );
-        let mut params2 = Params::new();
-        params2.insert(
-            "route".to_string(),
-            serde_json::Value::String("B".to_string()),
+
+        let params2 = Params::new(
+            [(
+                "route".to_string(),
+                serde_json::Value::String("B".to_string()),
+            )]
+            .into(),
         );
 
         core.remember_submit_params(primary1, Some(params1));

@@ -17,12 +17,14 @@
 
 use std::env;
 
+use alloy_primitives::Address;
+
 use crate::{
     common::{
         credential::{EvmPrivateKey, VaultAddress, credential_env_vars},
         enums::HyperliquidEnvironment,
     },
-    http::error::Result,
+    http::error::{Error, Result},
     signing::HyperliquidEip712Signer,
 };
 
@@ -30,10 +32,13 @@ use crate::{
 ///
 /// Precedence is explicit account address, explicit vault address, environment account address,
 /// environment vault address, then the signer address derived from the private key.
+/// Explicit and environment account addresses are trimmed, validated as `0x`-prefixed lowercase
+/// or EIP-55 checksummed hex, and normalized to lowercase. A blank explicit account address is
+/// invalid; a blank environment account address is ignored.
 ///
 /// # Errors
 ///
-/// Returns an error if a selected vault address or private key is invalid.
+/// Returns an error if a selected account address, vault address, or private key is invalid.
 pub fn resolve_execution_account_address(
     private_key: Option<&str>,
     vault_address: Option<&str>,
@@ -63,8 +68,8 @@ fn resolve_execution_account_address_from_values(
     env_vault_address: Option<&str>,
     env_account_address: Option<&str>,
 ) -> Result<Option<String>> {
-    if let Some(address) = trim_nonempty(account_address) {
-        return Ok(Some(address));
+    if let Some(address) = account_address {
+        return normalize_account_address(address).map(Some);
     }
 
     if let Some(address) = trim_nonempty(vault_address) {
@@ -72,7 +77,7 @@ fn resolve_execution_account_address_from_values(
     }
 
     if let Some(address) = trim_nonempty(env_account_address) {
-        return Ok(Some(address));
+        return normalize_account_address(&address).map(Some);
     }
 
     if let Some(address) = trim_nonempty(env_vault_address) {
@@ -93,6 +98,21 @@ fn resolve_execution_account_address_from_values(
 fn trim_nonempty(value: Option<&str>) -> Option<String> {
     let value = value?.trim();
     (!value.is_empty()).then(|| value.to_string())
+}
+
+pub(crate) fn normalize_account_address(value: &str) -> Result<String> {
+    let value = value.trim();
+    let address = value
+        .parse::<Address>()
+        .map_err(|_| Error::bad_request("Account address must be 20 bytes of valid hex"))?;
+    let normalized = format!("{address:#x}");
+    if value != normalized && value != address.to_checksum(None) {
+        return Err(Error::bad_request(
+            "Account address must be 0x-prefixed lowercase or EIP-55 checksummed hex",
+        ));
+    }
+
+    Ok(normalized)
 }
 
 #[cfg(test)]
@@ -220,5 +240,130 @@ mod tests {
                 .contains("Vault address must be 20 bytes of valid hex"),
             "unexpected error: {err}",
         );
+    }
+
+    #[rstest]
+    #[case("0xd8da6bf26964af9d7eed9e03e53415d37aa96045")]
+    #[case("0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045")]
+    #[case(" \t0xd8dA6BF26964aF9D7eEd9e03E53415D37aA96045\n")]
+    fn test_resolve_execution_account_address_normalizes(#[case] address: &str) {
+        let explicit = resolve_execution_account_address_from_values(
+            Some(PRIVATE_KEY),
+            None,
+            Some(address),
+            None,
+            None,
+            None,
+        )
+        .unwrap();
+        let from_env = resolve_execution_account_address_from_values(
+            Some(PRIVATE_KEY),
+            None,
+            None,
+            None,
+            None,
+            Some(address),
+        )
+        .unwrap();
+
+        assert_eq!(
+            explicit.as_deref(),
+            Some("0xd8da6bf26964af9d7eed9e03e53415d37aa96045")
+        );
+        assert_eq!(from_env, explicit);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case(" \t\n")]
+    #[case("0xd8da6bf26964af9d7eed9e03e53415d37aa9604")]
+    #[case("0xd8da6bf26964af9d7eed9e03e53415d37aa960450")]
+    #[case("0xd8da6bf26964af9d7eed9e03e53415d37aa9604g")]
+    #[case("0xd8da6bf26964af9d7eed9e03e53415d37aa9604é")]
+    fn test_resolve_execution_account_address_rejects_invalid_hex(#[case] address: &str) {
+        let e = resolve_execution_account_address_from_values(
+            Some(PRIVATE_KEY),
+            Some(EXPLICIT_VAULT),
+            Some(address),
+            None,
+            None,
+            Some(ENV_ACCOUNT),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "bad request: Account address must be 20 bytes of valid hex"
+        );
+    }
+
+    #[rstest]
+    #[case("d8da6bf26964af9d7eed9e03e53415d37aa96045")]
+    #[case("0Xd8da6bf26964af9d7eed9e03e53415d37aa96045")]
+    #[case("0xd8Da6BF26964aF9D7eEd9e03E53415D37aA96045")]
+    #[case("0xD8DA6BF26964AF9D7EED9E03E53415D37AA96045")]
+    fn test_resolve_execution_account_address_rejects_invalid_format(#[case] address: &str) {
+        let e = resolve_execution_account_address_from_values(
+            Some(PRIVATE_KEY),
+            Some(EXPLICIT_VAULT),
+            Some(address),
+            None,
+            None,
+            Some(ENV_ACCOUNT),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "bad request: Account address must be 0x-prefixed lowercase or EIP-55 checksummed hex"
+        );
+    }
+
+    #[rstest]
+    fn test_resolve_execution_account_address_rejects_invalid_env_account() {
+        let e = resolve_execution_account_address_from_values(
+            Some(PRIVATE_KEY),
+            None,
+            None,
+            None,
+            Some(ENV_VAULT),
+            Some("0xinvalid"),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "bad request: Account address must be 20 bytes of valid hex"
+        );
+    }
+
+    #[rstest]
+    #[case(None, None, None)]
+    #[case(
+        Some(PRIVATE_KEY),
+        None,
+        Some("0xc96aaa54e2d44c299564da76e1cd3184a2386b8d")
+    )]
+    #[case(
+        Some(PRIVATE_KEY),
+        Some(ENV_VAULT),
+        Some("0xdddddddddddddddddddddddddddddddddddddddd")
+    )]
+    fn test_resolve_execution_account_address_ignores_empty_env_account(
+        #[case] private_key: Option<&str>,
+        #[case] vault_address: Option<&str>,
+        #[case] expected: Option<&str>,
+    ) {
+        let result = resolve_execution_account_address_from_values(
+            None,
+            None,
+            None,
+            private_key,
+            vault_address,
+            Some(" \t\n"),
+        )
+        .unwrap();
+
+        assert_eq!(result.as_deref(), expected);
     }
 }

@@ -492,6 +492,87 @@ mod tests {
         assert_eq!(replayed.init_event(), &expected_init);
     }
 
+    fn assert_last_event_views(order: &OrderAny) {
+        fn generic_last_event<T: Order + ?Sized>(order: &T) -> &OrderEventAny {
+            order.last_event()
+        }
+
+        let events = order.events();
+        let expected = *events.last().unwrap();
+        assert!(std::ptr::eq(order.last_event(), expected));
+        assert!(std::ptr::eq(generic_last_event(order), expected));
+
+        let concrete: &dyn Order = match order {
+            OrderAny::Limit(order) => order,
+            OrderAny::LimitIfTouched(order) => order,
+            OrderAny::Market(order) => order,
+            OrderAny::MarketIfTouched(order) => order,
+            OrderAny::MarketToLimit(order) => order,
+            OrderAny::StopLimit(order) => order,
+            OrderAny::StopMarket(order) => order,
+            OrderAny::TrailingStopLimit(order) => order,
+            OrderAny::TrailingStopMarket(order) => order,
+        };
+        assert!(std::ptr::eq(concrete.last_event(), expected));
+    }
+
+    #[rstest]
+    #[case::limit(OrderType::Limit)]
+    #[case::limit_if_touched(OrderType::LimitIfTouched)]
+    #[case::market(OrderType::Market)]
+    #[case::market_if_touched(OrderType::MarketIfTouched)]
+    #[case::market_to_limit(OrderType::MarketToLimit)]
+    #[case::stop_limit(OrderType::StopLimit)]
+    #[case::stop_market(OrderType::StopMarket)]
+    #[case::trailing_stop_limit(OrderType::TrailingStopLimit)]
+    #[case::trailing_stop_market(OrderType::TrailingStopMarket)]
+    fn test_last_event_borrows_latest_native_event(#[case] order_type: OrderType) {
+        let mut order = order_for_list_id_test(order_type);
+        assert_last_event_views(&order);
+
+        let denied = crate::events::OrderDenied::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            "Risk denied".into(),
+            UUID4::new(),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        order.apply(OrderEventAny::Denied(denied)).unwrap();
+        assert_last_event_views(&order);
+    }
+
+    #[rstest]
+    #[case::limit(OrderType::Limit)]
+    #[case::limit_if_touched(OrderType::LimitIfTouched)]
+    #[case::market(OrderType::Market)]
+    #[case::market_if_touched(OrderType::MarketIfTouched)]
+    #[case::market_to_limit(OrderType::MarketToLimit)]
+    #[case::stop_limit(OrderType::StopLimit)]
+    #[case::stop_market(OrderType::StopMarket)]
+    #[case::trailing_stop_limit(OrderType::TrailingStopLimit)]
+    #[case::trailing_stop_market(OrderType::TrailingStopMarket)]
+    #[should_panic(expected = "Order invariant violated: no events")]
+    fn test_last_event_preserves_empty_history_panic(#[case] order_type: OrderType) {
+        let mut order = order_for_list_id_test(order_type);
+        let core: &mut OrderCore = match &mut order {
+            OrderAny::Limit(order) => order,
+            OrderAny::LimitIfTouched(order) => order,
+            OrderAny::Market(order) => order,
+            OrderAny::MarketIfTouched(order) => order,
+            OrderAny::MarketToLimit(order) => order,
+            OrderAny::StopLimit(order) => order,
+            OrderAny::StopMarket(order) => order,
+            OrderAny::TrailingStopLimit(order) => order,
+            OrderAny::TrailingStopMarket(order) => order,
+        };
+        core.events.clear();
+
+        let _ = Order::last_event(&order);
+    }
+
     fn order_for_list_id_test(order_type: OrderType) -> OrderAny {
         OrderTestBuilder::new(order_type)
             .instrument_id(InstrumentId::from("BTC-USDT.BINANCE"))

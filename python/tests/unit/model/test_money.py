@@ -604,6 +604,64 @@ def test_from_decimal_respects_currency_precision() -> None:
     assert str(money_usdt) == "100.12345670 USDT"
 
 
+@pytest.mark.parametrize(
+    ("amount", "expected"),
+    [
+        ("1.0001", "1.0001 USD"),
+        ("0.000001", "0.000001 USD"),
+        ("-0.000001", "-0.000001 USD"),
+        ("1E-7", "0.0000001 USD"),
+        ("-0E-12", "0.00 USD"),
+    ],
+)
+def test_exact_usd_constructors_and_pickle(amount: str, expected: str) -> None:
+    """
+    Preserve sub-cent USD through constructors and Python pickle.
+    """
+    decimal = Decimal(amount)
+    money = Money.from_decimal_exact(decimal, USD)
+    parsed = Money.from_str_exact(f"{amount} USD")
+    restored = pickle.loads(pickle.dumps(money))
+
+    assert money.currency == USD
+    assert money.currency.precision == 2
+    assert money.as_decimal() == decimal
+    assert str(money) == expected
+    assert parsed == money
+    assert restored == money
+    assert restored.as_decimal() == decimal
+
+
+def test_exact_decimal_rejects_precision_lost_during_python_conversion() -> None:
+    """
+    Reject a residual that a bounded Decimal parser would round away.
+    """
+    amount = Decimal("1." + "0" * 28 + "1")
+
+    with pytest.raises(ValueError, match="amount exceeds native money precision"):
+        Money.from_decimal_exact(amount, USD)
+
+
+@pytest.mark.parametrize("amount", ["NaN", "Infinity", "sNaN"])
+def test_exact_decimal_rejects_nonfinite_input(amount: str) -> None:
+    """
+    Reject non-finite decimal values at both exact construction boundaries.
+    """
+    with pytest.raises(ValueError, match=f"Invalid decimal value '{amount}'"):
+        Money.from_decimal_exact(Decimal(amount), USD)
+
+    with pytest.raises(ValueError, match=f"Invalid decimal value '{amount}'"):
+        Money.from_str_exact(f"{amount} USD")
+
+
+def test_exact_decimal_rejects_float_input() -> None:
+    """
+    Reject binary floats at the explicit decimal boundary.
+    """
+    with pytest.raises(TypeError, match="value must be a Decimal"):
+        Money.from_decimal_exact(0.1, USD)
+
+
 def test_from_decimal_high_precision_rounds_to_currency() -> None:
     """
     Test from decimal high precision rounds to currency.

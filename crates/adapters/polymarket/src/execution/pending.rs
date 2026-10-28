@@ -57,6 +57,22 @@ pub(crate) struct PendingCancelTracker {
 }
 
 impl PendingCancelTracker {
+    pub(super) fn venue_order_id_or_defer(
+        &self,
+        client_order_id: ClientOrderId,
+        lookup: impl FnOnce() -> Option<VenueOrderId>,
+    ) -> Option<VenueOrderId> {
+        // Submit registration must not check pending cancels between lookup and insertion
+        let mut guard = self.client_order_ids.lock();
+        let venue_order_id = lookup();
+
+        if venue_order_id.is_none() {
+            guard.insert(client_order_id);
+        }
+
+        venue_order_id
+    }
+
     pub(crate) fn insert(&self, client_order_id: ClientOrderId) -> bool {
         self.client_order_ids.lock().insert(client_order_id)
     }
@@ -72,9 +88,86 @@ impl PendingCancelTracker {
 
 #[cfg(test)]
 mod tests {
+    use std::{sync::mpsc, thread};
+
+    use nautilus_live::execution::context::OrderContext;
+    use nautilus_model::{
+        enums::OrderType,
+        identifiers::InstrumentId,
+        orders::{Order, OrderTestBuilder},
+        types::Quantity,
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::execution::context::OrderContextRegistry;
+
+    #[rstest]
+    #[case::unknown(None, true)]
+    #[case::known(Some(VenueOrderId::from("V-CANCEL")), false)]
+    fn test_cancel_uses_known_venue_id_or_defers(
+        #[case] venue_order_id: Option<VenueOrderId>,
+        #[case] deferred: bool,
+    ) {
+        let tracker = PendingCancelTracker::default();
+        let client_order_id = ClientOrderId::from("O-CANCEL");
+        let other_client_order_id = ClientOrderId::from("O-OTHER");
+        tracker.insert(other_client_order_id);
+
+        let result = tracker.venue_order_id_or_defer(client_order_id, || venue_order_id);
+
+        assert_eq!(result, venue_order_id);
+        assert_eq!(tracker.contains(&client_order_id), deferred);
+        assert!(tracker.contains(&other_client_order_id));
+    }
+
+    #[rstest]
+    fn test_cancel_deferral_cannot_be_missed_by_submit_registration() {
+        let tracker = PendingCancelTracker::default();
+        let contexts = OrderContextRegistry::default();
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(InstrumentId::from("TEST.POLYMARKET"))
+            .client_order_id(ClientOrderId::from("O-RACING-CANCEL"))
+            .quantity(Quantity::from("7"))
+            .build();
+        let client_order_id = order.client_order_id();
+        let venue_order_id = VenueOrderId::from("V-RACING-CANCEL");
+        let (lookup_tx, lookup_rx) = mpsc::channel();
+        let (registered_tx, registered_rx) = mpsc::channel();
+
+        thread::scope(|scope| {
+            let tracker = &tracker;
+            let contexts = &contexts;
+            let order = &order;
+
+            let submit = scope.spawn(move || {
+                lookup_rx.recv().unwrap();
+                contexts.recover_context(venue_order_id, OrderContext::from(order));
+                let pending_check_blocked = tracker.client_order_ids.try_lock().is_none();
+                registered_tx.send(pending_check_blocked).unwrap();
+                tracker.contains(&client_order_id)
+            });
+
+            let result = tracker.venue_order_id_or_defer(client_order_id, || {
+                let stale_venue_order_id = contexts.venue_order_id(&client_order_id);
+                assert_eq!(stale_venue_order_id, None);
+                lookup_tx.send(()).unwrap();
+                assert!(registered_rx.recv().unwrap());
+                stale_venue_order_id
+            });
+
+            let submit_saw_cancel = submit.join().unwrap();
+
+            assert_eq!(result, None);
+            assert!(submit_saw_cancel);
+            assert_eq!(
+                contexts.venue_order_id(&client_order_id),
+                Some(venue_order_id)
+            );
+            assert!(tracker.remove(&client_order_id));
+            assert!(!tracker.contains(&client_order_id));
+        });
+    }
 
     #[rstest]
     #[case::missing(0, None)]

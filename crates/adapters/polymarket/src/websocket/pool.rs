@@ -35,6 +35,7 @@ use std::sync::{
 };
 
 use ahash::AHashMap;
+use futures_util::{StreamExt, stream::FuturesUnordered};
 use nautilus_live::{
     SocketControlFactory,
     book::snapshot::SnapshotGate,
@@ -76,6 +77,7 @@ struct PoolInner {
     transport_backend: TransportBackend,
     subscribe_new_markets: bool,
     max_subscriptions: usize,
+    connect_timeout_secs: Mutex<Option<u64>>,
     // Serializes routing and shard growth; held across the async wire sends.
     wire_mutex: tokio::sync::Mutex<()>,
     // Never locked across an await, so routing futures stay `Send`.
@@ -96,17 +98,30 @@ struct PoolState {
 struct PoolDrain<'a> {
     owner: &'a Mutex<PoolState>,
     state: PoolState,
+    completed: Vec<usize>,
 }
 
 impl<'a> PoolDrain<'a> {
     fn take(owner: &'a Mutex<PoolState>) -> Self {
         let state = std::mem::take(&mut *owner.lock());
-        Self { owner, state }
+        Self {
+            owner,
+            state,
+            completed: Vec::new(),
+        }
     }
 }
 
 impl Drop for PoolDrain<'_> {
     fn drop(&mut self) {
+        for id in &self.completed {
+            self.state.shards.remove(id);
+        }
+
+        // Prune once, including when cancellation interrupts the drain
+        self.state
+            .assignments
+            .retain(|_, id| self.state.shards.contains_key(id));
         *self.owner.lock() = std::mem::take(&mut self.state);
     }
 }
@@ -203,6 +218,11 @@ impl PolymarketMarketConnectionPool {
                 proxy_url,
             )),
         }
+    }
+
+    pub(crate) fn with_connect_timeout(self, timeout_secs: u64) -> Self {
+        *self.inner.connect_timeout_secs.lock() = Some(timeout_secs);
+        self
     }
 
     /// Configures socket state reporting and reconnect control for every connection in the pool.
@@ -302,55 +322,56 @@ impl PolymarketMarketConnectionPool {
         let _wire = self.inner.wire_mutex.lock().await;
 
         let mut drain = PoolDrain::take(&self.inner.state);
-        let shard_ids = drain.state.shards.keys().copied().collect::<Vec<_>>();
-        for shard_id in shard_ids {
-            let shard = drain
+        {
+            let errors = Mutex::new(&mut drain.state.shutdown_errors);
+            let mut disconnects = drain
                 .state
                 .shards
-                .get_mut(&shard_id)
-                .expect("market shard ID collected from pool state");
-            let mut shard_failed = false;
+                .iter_mut()
+                .map(|(&shard_id, shard)| {
+                    let errors = &errors;
+                    async move {
+                        let mut failed = false;
+                        shard.forwarder.abort();
+                        if let Some(outcome) = finish_task(
+                            &mut shard.forwarder,
+                            std::time::Duration::ZERO,
+                            std::time::Duration::from_secs(2),
+                        )
+                        .await
+                        {
+                            match outcome {
+                                TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
+                                TaskJoinOutcome::Failed(error) => {
+                                    failed = true;
+                                    errors.lock().push(format!(
+                                        "market shard {shard_id} forwarder failed: {error}"
+                                    ));
+                                }
+                                TaskJoinOutcome::Incomplete => {
+                                    failed = true;
+                                    errors.lock().push(format!(
+                                        "market shard {shard_id} forwarder did not stop after abort"
+                                    ));
+                                }
+                            }
+                        }
 
-            shard.forwarder.abort();
-            if let Some(outcome) = finish_task(
-                &mut shard.forwarder,
-                std::time::Duration::ZERO,
-                std::time::Duration::from_secs(2),
-            )
-            .await
-            {
-                match outcome {
-                    TaskJoinOutcome::Completed(()) | TaskJoinOutcome::Aborted => {}
-                    TaskJoinOutcome::Failed(error) => {
-                        shard_failed = true;
-                        drain
-                            .state
-                            .shutdown_errors
-                            .push(format!("market shard {shard_id} forwarder failed: {error}"));
+                        if let Err(e) = shard.client.disconnect().await {
+                            failed = true;
+                            errors
+                                .lock()
+                                .push(format!("market shard {shard_id} disconnect failed: {e}"));
+                        }
+                        (shard_id, failed)
                     }
-                    TaskJoinOutcome::Incomplete => {
-                        shard_failed = true;
-                        drain.state.shutdown_errors.push(format!(
-                            "market shard {shard_id} forwarder did not stop after abort"
-                        ));
-                    }
+                })
+                .collect::<FuturesUnordered<_>>();
+
+            while let Some((shard_id, failed)) = disconnects.next().await {
+                if !failed {
+                    drain.completed.push(shard_id);
                 }
-            }
-
-            if let Err(e) = shard.client.disconnect().await {
-                shard_failed = true;
-                drain
-                    .state
-                    .shutdown_errors
-                    .push(format!("market shard {shard_id} disconnect failed: {e}"));
-            }
-
-            if !shard_failed {
-                drain.state.shards.remove(&shard_id);
-                drain
-                    .state
-                    .assignments
-                    .retain(|_, assigned_id| *assigned_id != shard_id);
             }
         }
 
@@ -555,6 +576,7 @@ impl PoolInner {
             transport_backend,
             subscribe_new_markets,
             max_subscriptions,
+            connect_timeout_secs: Mutex::new(None),
             wire_mutex: tokio::sync::Mutex::new(()),
             state: Mutex::new(PoolState::default()),
             out_tx: Mutex::new(None),
@@ -813,6 +835,12 @@ impl PoolInner {
             self.transport_backend,
             self.proxy_url.clone(),
         );
+
+        let client = match *self.connect_timeout_secs.lock() {
+            Some(timeout_secs) => client.with_connect_timeout(timeout_secs),
+            None => client,
+        };
+
         let factory = self.socket_factory.lock().clone();
 
         if let Some(factory) = factory {
@@ -997,6 +1025,7 @@ mod tests {
     };
     use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
     use nautilus_model::identifiers::ClientId;
+    use nautilus_network::transport::TransportError;
     use parking_lot::{Condvar, Mutex as TestMutex};
     use rstest::rstest;
     use tokio_util::sync::CancellationToken;
@@ -1179,6 +1208,83 @@ mod tests {
         );
     }
 
+    async fn blocked_forwarder() -> (TaskSlot<()>, std::sync::mpsc::Sender<()>) {
+        let (release, blocked) = std::sync::mpsc::channel();
+        let (started, ready) = tokio::sync::oneshot::channel();
+        let handle = tokio::task::spawn_blocking(move || {
+            let _ = started.send(());
+            let _ = blocked.recv();
+        });
+        ready.await.unwrap();
+        (TaskSlot::from_handle(handle), release)
+    }
+
+    #[rstest]
+    #[case::single(1)]
+    #[case::many(64)]
+    #[tokio::test(start_paused = true)]
+    async fn pool_disconnects_concurrently_and_preserves_failures(#[case] count: usize) {
+        let pool = PolymarketMarketConnectionPool::new(None, false, TransportBackend::default(), 1);
+        let mut state = state_with_shards(&vec![1; count]);
+        let mut releases = Vec::new();
+
+        for (&id, shard) in &mut state.shards {
+            let (forwarder, release) = blocked_forwarder().await;
+            shard.forwarder = forwarder;
+            releases.push(release);
+            state.assignments.insert(Ustr::from(&id.to_string()), id);
+        }
+        *pool.inner.state.lock() = state;
+
+        let started = tokio::time::Instant::now();
+        let expected = Duration::from_secs(2);
+        let mut disconnect = std::pin::pin!(pool.disconnect());
+        let result = loop {
+            if let std::task::Poll::Ready(result) = futures_util::poll!(disconnect.as_mut()) {
+                break result;
+            }
+            assert!(started.elapsed() < expected + Duration::from_secs(1));
+            tokio::time::advance(Duration::from_millis(100)).await;
+        };
+        assert!(started.elapsed() >= expected);
+        let error = result.unwrap_err().to_string();
+        let failures = error.matches("forwarder did not stop after abort");
+        assert_eq!(failures.count(), count);
+        assert_eq!(pool.connection_count(), count);
+        assert_eq!(pool.subscription_count(), count);
+
+        drop(releases);
+        pool.disconnect().await.expect("cleanup retry");
+        assert_eq!(pool.connection_count(), 0);
+        assert_eq!(pool.subscription_count(), 0);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn canceled_pool_disconnect_restores_only_unfinished_ownership() {
+        let pool = PolymarketMarketConnectionPool::new(None, false, TransportBackend::default(), 1);
+        let mut state = state_with_shards(&[1, 1]);
+        let (forwarder, release) = blocked_forwarder().await;
+        state.shards.get_mut(&1).unwrap().forwarder = forwarder;
+        state.assignments = AHashMap::from([(Ustr::from("done"), 0), (Ustr::from("pending"), 1)]);
+        *pool.inner.state.lock() = state;
+
+        {
+            let mut disconnect = std::pin::pin!(pool.disconnect());
+            assert!(futures_util::poll!(disconnect.as_mut()).is_pending());
+        }
+        assert_eq!(pool.connection_count(), 1);
+        assert_eq!(
+            pool.inner.state.lock().assignments,
+            AHashMap::from([(Ustr::from("pending"), 1)])
+        );
+
+        drop(release);
+        pool.disconnect().await.expect("cleanup retry");
+        assert_eq!(pool.connection_count(), 0);
+        assert_eq!(pool.subscription_count(), 0);
+    }
+
     #[rstest]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn canceled_shard_close_restores_unfinished_ownership() {
@@ -1249,6 +1355,39 @@ mod tests {
     fn zero_max_subscriptions_clamps_to_default() {
         let inner = PoolInner::new(None, TransportBackend::default(), false, 0);
         assert_eq!(inner.max_subscriptions, WS_DEFAULT_SUBSCRIPTIONS);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn secondary_market_connection_timeout() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move {
+            let mut connections = Vec::new();
+
+            loop {
+                let (stream, _) = listener.accept().await.unwrap();
+                connections.push(stream);
+            }
+        });
+
+        let pool =
+            PolymarketMarketConnectionPool::new(Some(url), false, TransportBackend::default(), 1)
+                .with_connect_timeout(1);
+        let mut ws_client = pool.inner.market_client(false, PRIMARY_SHARD_ID + 1);
+
+        let error = tokio::time::timeout(Duration::from_secs(20), ws_client.connect())
+            .await
+            .expect("secondary shard must use the configured connection timeout")
+            .unwrap_err();
+        server.abort();
+
+        assert!(
+            matches!(error.downcast_ref::<TransportError>(),
+                Some(TransportError::Io(e)) if e.kind() == std::io::ErrorKind::TimedOut),
+            "{error:#}",
+        );
     }
 
     #[rstest]

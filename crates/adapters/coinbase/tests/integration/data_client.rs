@@ -435,7 +435,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     let mut instrument_count = 0;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             instrument_count += 1;
         }
     }
@@ -844,7 +844,7 @@ async fn test_data_client_request_trades() {
 
     match event {
         DataEvent::Response(DataResponse::Trades(trades_response)) => {
-            assert_eq!(trades_response.instrument_id, instrument_id);
+            assert_eq!(trades_response.instrument_ids, vec![instrument_id]);
             assert!(!trades_response.data.is_empty(), "should have trades");
 
             // Trades should be sorted ascending by ts_event
@@ -1076,7 +1076,7 @@ async fn test_data_client_subscribe_index_and_funding_emits_both_kinds() {
             while let Ok(evt) = rx.try_recv() {
                 match evt {
                     DataEvent::Data(Data::IndexPrice(ip)) => got_index = Some(ip),
-                    DataEvent::FundingRate(fr) => got_funding = Some(fr),
+                    DataEvent::Data(Data::FundingRate(fr)) => got_funding = Some(fr),
                     _ => {}
                 }
             }
@@ -1297,7 +1297,7 @@ async fn test_data_client_unsubscribe_during_inflight_poll_masks_dropped_kind() 
             while let Ok(evt) = rx.try_recv() {
                 match evt {
                     DataEvent::Data(Data::IndexPrice(_)) => saw_index = true,
-                    DataEvent::FundingRate(_) => saw_funding = true,
+                    DataEvent::Data(Data::FundingRate(_)) => saw_funding = true,
                     _ => {}
                 }
             }
@@ -1340,7 +1340,7 @@ async fn test_data_client_unsubscribe_during_inflight_poll_masks_dropped_kind() 
         || {
             while let Ok(evt) = rx.try_recv() {
                 match evt {
-                    DataEvent::FundingRate(_) => saw_funding = true,
+                    DataEvent::Data(Data::FundingRate(_)) => saw_funding = true,
                     DataEvent::Data(Data::IndexPrice(_)) => {
                         saw_index_after_unsubscribe = true;
                     }
@@ -1436,11 +1436,8 @@ async fn test_data_client_unsubscribe_last_kind_during_inflight_poll_emits_nothi
     let mut stale_event = false;
 
     while let Ok(evt) = rx.try_recv() {
-        match evt {
-            DataEvent::Data(Data::IndexPrice(_)) | DataEvent::FundingRate(_) => {
-                stale_event = true;
-            }
-            _ => {}
+        if let DataEvent::Data(Data::IndexPrice(_) | Data::FundingRate(_)) = evt {
+            stale_event = true;
         }
     }
     assert!(
@@ -1493,7 +1490,7 @@ async fn test_data_client_subscribe_instrument_status_rekeys_aliased_product() {
             let received = Arc::clone(&received_clone);
             let found = loop {
                 match rx.try_recv() {
-                    Ok(DataEvent::InstrumentStatus(status)) => {
+                    Ok(DataEvent::Data(Data::InstrumentStatus(status))) => {
                         *received.lock() = Some(status);
                         break true;
                     }

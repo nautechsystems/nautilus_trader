@@ -30,12 +30,7 @@ use crate::{
 };
 
 #[derive(Clone, Debug)]
-#[pyo3::pyclass(
-    frozen,
-    name = "FixedTickScheme",
-    module = "nautilus_trader.model",
-    skip_from_py_object
-)]
+#[pyo3::pyclass(frozen, name = "FixedTickScheme", module = "nautilus_trader.model")]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 pub struct PyFixedTickScheme {
     name: String,
@@ -94,12 +89,7 @@ impl PyFixedTickScheme {
 }
 
 #[derive(Clone, Debug)]
-#[pyo3::pyclass(
-    frozen,
-    name = "TieredTickScheme",
-    module = "nautilus_trader.model",
-    skip_from_py_object
-)]
+#[pyo3::pyclass(frozen, name = "TieredTickScheme", module = "nautilus_trader.model")]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.model")]
 pub struct PyTieredTickScheme {
     name: String,

@@ -18,10 +18,7 @@ use nautilus_core::{
     UUID4, UnixNanos,
     python::{
         IntoPyObjectNautilusExt,
-        parsing::{
-            get_optional, get_optional_parsed, get_required, get_required_parsed,
-            get_required_string,
-        },
+        parsing::{get_optional, get_optional_parsed, get_required, get_required_parsed},
         to_pyruntime_err, to_pyvalue_err,
     },
 };
@@ -377,15 +374,28 @@ impl MarketToLimitOrder {
     #[staticmethod]
     #[pyo3(name = "from_dict")]
     fn py_from_dict(values: &Bound<'_, PyDict>) -> PyResult<Self> {
-        let trader_id = TraderId::from(get_required_string(values, "trader_id")?.as_str());
-        let strategy_id = StrategyId::from(get_required_string(values, "strategy_id")?.as_str());
-        let instrument_id = InstrumentId::from(get_required_string(values, "instrument_id")?);
-        let client_order_id =
-            ClientOrderId::from(get_required_string(values, "client_order_id")?.as_str());
+        let trader_id = get_required_parsed(values, "trader_id", |s| {
+            TraderId::new_checked(s).map_err(|e| e.to_string())
+        })?;
+
+        let strategy_id = get_required_parsed(values, "strategy_id", |s| {
+            StrategyId::new_checked(s).map_err(|e| e.to_string())
+        })?;
+
+        let instrument_id = get_required_parsed(values, "instrument_id", |s| {
+            s.parse::<InstrumentId>().map_err(|e| e.to_string())
+        })?;
+
+        let client_order_id = get_required_parsed(values, "client_order_id", |s| {
+            ClientOrderId::new_checked(s).map_err(|e| e.to_string())
+        })?;
+
         let order_side = get_required_parsed(values, "side", |s| {
             s.parse::<OrderSide>().map_err(|e| e.to_string())
         })?;
-        let quantity = Quantity::from(get_required_string(values, "quantity")?.as_str());
+
+        let quantity = get_required_parsed(values, "quantity", |s| s.parse::<Quantity>())?;
+
         let time_in_force = get_required_parsed(values, "time_in_force", |s| {
             s.parse::<TimeInForce>().map_err(|e| e.to_string())
         })?;
@@ -394,30 +404,38 @@ impl MarketToLimitOrder {
         let quote_quantity = get_required::<bool>(values, "is_quote_quantity")?;
         let expire_time = get_optional::<u64>(values, "expire_time_ns")?.map(UnixNanos::from);
         let display_quantity =
-            get_optional_parsed(values, "display_qty", |s| Ok(Quantity::from(s.as_str())))?;
+            get_optional_parsed(values, "display_qty", |s| s.parse::<Quantity>())?;
+
         let contingency_type = get_optional_parsed(values, "contingency_type", |s| {
             s.parse::<ContingencyType>().map_err(|e| e.to_string())
         })?;
+
         let order_list_id = get_optional_parsed(values, "order_list_id", |s| {
-            Ok(OrderListId::from(s.as_str()))
+            OrderListId::new_checked(s).map_err(|e| e.to_string())
         })?;
-        let linked_order_ids =
-            get_optional::<Vec<String>>(values, "linked_order_ids")?.map(|vec| {
-                vec.iter()
-                    .map(|s| ClientOrderId::from(s.as_str()))
-                    .collect()
-            });
+
+        let linked_order_ids = get_optional::<Vec<String>>(values, "linked_order_ids")?
+            .map(|vec| {
+                vec.into_iter()
+                    .map(ClientOrderId::new_checked)
+                    .collect::<Result<Vec<_>, _>>()
+            })
+            .transpose()
+            .map_err(|e| to_pyvalue_err(format!("Failed to parse 'linked_order_ids': {e}")))?;
+
         let parent_order_id = get_optional_parsed(values, "parent_order_id", |s| {
-            Ok(ClientOrderId::from(s.as_str()))
+            ClientOrderId::new_checked(s).map_err(|e| e.to_string())
         })?;
+
         let exec_algorithm_id = get_optional_parsed(values, "exec_algorithm_id", |s| {
-            Ok(ExecAlgorithmId::from(s.as_str()))
+            ExecAlgorithmId::new_checked(s).map_err(|e| e.to_string())
         })?;
         let exec_algorithm_params =
             get_optional::<IndexMap<String, String>>(values, "exec_algorithm_params")?
                 .map(str_indexmap_to_ustr);
+
         let exec_spawn_id = get_optional_parsed(values, "exec_spawn_id", |s| {
-            Ok(ClientOrderId::from(s.as_str()))
+            ClientOrderId::new_checked(s).map_err(|e| e.to_string())
         })?;
         let tags = get_optional::<Vec<String>>(values, "tags")?
             .map(|vec| vec.iter().map(|s| Ustr::from(s)).collect());

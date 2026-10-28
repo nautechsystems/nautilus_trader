@@ -560,23 +560,36 @@ status, open-only report runs, and targeted single-order queries consult
 before treating the order as missing. That window reports
 orders that are open or were filled or canceled in the last 5 seconds.
 
-The venue echoes the submitted client order ID. The adapter shortens it to 18
-characters unless it already fits or is a UUID (hyphenated or 32 hex characters).
-Mass status and open-only report runs map each window report to a cached order:
+The venue echoes the client order ID an order was sent with, which the window is
+asked about under both forms the venue can hold it under (see
+[Client order IDs](#client-order-ids)). Mass status and open-only report runs map
+each window report to a cached order:
 
 - A cached venue order ID identifies the order directly.
-- Otherwise, exactly one order queried by client order ID must hold the shortened
+- Otherwise, exactly one order queried by client order ID must hold the echoed
   ID, and exactly one report with an unknown venue order ID must carry it. The
   instrument and side must match, and the venue placement time must be no more
   than five seconds before the order's creation time, allowing for clock skew.
+  This keeps out an older order whose ID shortens alike or that reused the ID.
+  Two reports that would name one order, one echoing each form, name neither.
 
 The adapter withholds any other window report with a warning naming the reason,
 because it cannot tie that report to exactly one cached order.
 
-The venue order ID and client order ID requests run one after the other. A
-shortened client order ID matches every order that shortens alike, so an order
-asked about by venue order ID can come back from the client order ID request
-too, in a different state. The adapter chooses the latest state regardless of
+The client order ID request returns every order holding the ID. A window
+report of an order the open-orders or history read already returned names that
+report by the cached order it describes and is then left out, so the order
+reaches reconciliation once with the venue read's fields, such as time in force,
+post-only and trigger fields, which the window lacks. When that report is open
+and the window report is a later update, the report takes the window's status,
+quantities, prices, cancel reason and update time, and the window rules below
+apply to it. A
+closed report keeps its state. A run scoped to one instrument keeps only that
+instrument's window reports.
+
+The venue order ID and client order ID requests run one after the other, so an
+order asked about by venue order ID can come back from the client order ID
+request too, in a different state. The adapter chooses the latest state regardless of
 which request ran later: a closed state over an open one, then the later venue
 update, then the larger filled quantity. The naming rule above and
 the fill-price rule below apply to the report kept.
@@ -853,6 +866,50 @@ every holding it covers and an absent report is genuine evidence of flat.
 :::
 
 ### Futures reconciliation
+
+#### Client order IDs
+
+Futures orders are sent with their full client order ID: Kraken Futures takes
+up to 100 characters, and an order whose ID is longer is denied before it is
+sent, with every other open member of its order list. The venue reports a client
+order ID it already holds, or one too long or otherwise invalid, as a send status
+that rejects the order.
+
+A cancel or edit names the order by one identifier: its venue order ID when
+known, else its full client order ID.
+
+Open-order and fill reports read the client order ID under the documented
+`cliOrdId` key, and under `cli_ord_id` as well. An echoed ID that is empty or not
+a valid client order ID, such as one another tool on the account sent, names no
+order.
+
+A futures order sent with its ID shortened to `O` and its last 17 characters, as
+a spot ID longer than 18 characters is unless it is a UUID, is held under that
+form. Every REST report and fill of an order the cache indexes by venue order ID
+carries the cached client order ID, whatever the venue echoes, and the
+orders-status window is asked about a held order under both forms. A cancel or
+edit of such an order reaches it only by its venue order ID; one sent before a
+report carrying that ID reaches the cache names no order at the venue and is
+rejected.
+
+A targeted single-order query takes the report carrying the order's venue order
+ID when known. Otherwise a row is the order's when it echoes the client order ID
+in either form, on the order's instrument and side, placed no more than five
+seconds before the order's creation; an older row is another order whose ID
+shortens alike or that reused the ID. A fill carries no placement time, so its
+fill time stands in, which rules out only a fill executed before the order's
+creation. A row or fill of a venue order the cache indexes for another order
+never fits, whatever it echoes, since that order's full ID can be this order's
+shortened one. With the venue order ID unknown, the query fails when one read holds
+rows of two venue orders that fit, or a fitting row of a venue order the cache
+indexes for no order that echoes the full ID of another cached order sent without
+a venue order ID, on that order's instrument and side and placed no more than five
+seconds before its creation, or, no row fitting, when the recent fills that fit
+belong to two venue orders, include such a fill, or fall short of the order's
+quantity; with it known,
+the query fails when no row or fill carries it and a fitting row or fill of
+another venue order appears. Either way reconciliation defers the order rather
+than taking a row or reporting the order missing.
 
 #### Order status reports
 

@@ -2,6 +2,7 @@
   "id": "fee-free-1",
   "conditionId": "0xdddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
   "question": "Fee-free market",
+  "version": "v1",
   "clobTokenIds": "[\"77777777777777777777777777777777777777777777777777777777777777777777777777777\", \"88888888888888888888888888888888888888888888888888888888888888888888888888888\"]",
   "outcomes": "[\"Yes\", \"No\"]",
   "active": true,

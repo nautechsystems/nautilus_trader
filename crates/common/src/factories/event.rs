@@ -476,8 +476,7 @@ mod tests {
 
     #[rstest]
     fn test_generate_account_state_attaches_info(factory: OrderEventFactory) {
-        let mut info = Params::new();
-        info.insert("source".into(), "unit-test".into());
+        let info = Params::new([("source".into(), "unit-test".into())].into());
 
         let event = factory.generate_account_state(
             Vec::new(),

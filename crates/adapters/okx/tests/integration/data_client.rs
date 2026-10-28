@@ -536,8 +536,8 @@ async fn test_option_chain_reference_price_response(
         UnixNanos::from(1_734_393_600_000_000_000),
     );
     let instrument_id = InstrumentId::from("BTC-USD-241217-92000-C.OKX");
-    let mut params = Params::new();
-    params.insert("test-case".to_string(), json!(instrument_type));
+    let params = Params::new([("test-case".to_string(), json!(instrument_type))].into());
+
     let request = RequestOptionChainReferencePrice::new(
         series_id,
         instrument_id,
@@ -592,8 +592,8 @@ async fn test_rpi_request_book_snapshot_routes_to_rpi_endpoint() {
         collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
             .await;
 
-    let mut params = Params::new();
-    params.insert("rpi".to_string(), json!(true));
+    let params = Params::new([("rpi".to_string(), json!(true))].into());
+
     let request = RequestBookSnapshot::new(
         InstrumentId::from("BTC-USD.OKX"),
         NonZeroUsize::new(2),

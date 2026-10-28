@@ -17,6 +17,7 @@
 
 use std::num::NonZeroU32;
 
+use nautilus_common::config::{ConfigResult, check_unique_values};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
@@ -177,6 +178,17 @@ fn default_per_channel_subscription_limit() -> usize {
 }
 
 impl DydxAdapterConfig {
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("grpc_urls", &self.grpc_urls)?;
+        check_unique_values("authenticator_ids", &self.authenticator_ids)?;
+        Ok(())
+    }
+
     /// Creates a config with URLs and chain ID resolved for the given network.
     ///
     /// Use this instead of `Default::default()` when constructing a testnet config
@@ -413,6 +425,17 @@ impl Default for DydxExecutionClientConfig {
 }
 
 impl DydxExecutionClientConfig {
+    /// Validates that configured selections contain no duplicates.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if a selection repeats a value.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("grpc_urls", &self.grpc_urls)?;
+        check_unique_values("authenticator_ids", &self.authenticator_ids)?;
+        Ok(())
+    }
+
     /// Returns the gRPC URLs to use, with fallback support.
     ///
     /// Returns `grpc_urls` if non-empty, otherwise uses `grpc_endpoint` if provided,
@@ -471,6 +494,12 @@ impl DydxExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{
+        cache::Cache, clock::VirtualClock, config::ConfigError, factories::ExecutionClientFactory,
+    };
+    use nautilus_model::identifiers::TraderId;
     use rstest::rstest;
 
     use super::*;
@@ -659,6 +688,92 @@ mod tests {
         assert_eq!(
             config.grpc_rate_limit_per_second,
             expected.grpc_rate_limit_per_second,
+        );
+    }
+
+    #[rstest]
+    #[case("grpc_urls", serde_json::json!(["https://one.example", "https://two.example"]))]
+    #[case("authenticator_ids", serde_json::json!([1, 2]))]
+    fn test_adapter_selection_uniqueness(
+        #[case] field: &str,
+        #[case] mut values: serde_json::Value,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        if duplicate {
+            let entries = values.as_array_mut().unwrap();
+            entries.push(entries[0].clone());
+        }
+
+        let mut input = serde_json::to_value(DydxAdapterConfig::default()).unwrap();
+        input[field] = values;
+        let config: DydxAdapterConfig = serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate(field, None))
+        } else {
+            Ok(())
+        };
+
+        let result = config.validate();
+
+        assert_eq!(result, expected);
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
+
+    #[rstest]
+    #[case("grpc_urls", serde_json::json!(["https://one.example", "https://two.example"]))]
+    #[case("authenticator_ids", serde_json::json!([1, 2]))]
+    fn test_execution_selection_uniqueness(
+        #[case] field: &str,
+        #[case] mut values: serde_json::Value,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        if duplicate {
+            let entries = values.as_array_mut().unwrap();
+            entries.push(entries[0].clone());
+        }
+
+        let mut input = serde_json::to_value(DydxExecutionClientConfig::default()).unwrap();
+        input[field] = values;
+        let config: DydxExecutionClientConfig = serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate(field, None))
+        } else {
+            Ok(())
+        };
+
+        let result = config.validate();
+
+        assert_eq!(result, expected);
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
+
+    #[rstest]
+    fn test_factory_rejects_duplicate_selections_before_setup() {
+        let config = DydxExecutionClientConfig {
+            authenticator_ids: vec![1, 2, 1],
+            ..Default::default()
+        };
+
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let error = crate::factories::DydxExecutionClientFactory::new()
+            .create(
+                TraderId::from("TESTER-001"),
+                "DYDX",
+                &config,
+                cache.into(),
+                clock,
+            )
+            .err()
+            .expect("duplicate config must fail before credentials or client setup");
+
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("authenticator_ids", None))
         );
     }
 }

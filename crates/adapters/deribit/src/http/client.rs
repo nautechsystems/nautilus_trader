@@ -25,6 +25,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
@@ -1188,12 +1189,15 @@ impl DeribitHttpClient {
 
     fn combo_leg_info(instrument: &InstrumentAny, combo: &DeribitCombo) -> Option<Params> {
         let existing_info = match instrument {
-            InstrumentAny::CryptoOptionSpread(spread) => spread.info.clone(),
-            InstrumentAny::CryptoFuturesSpread(spread) => spread.info.clone(),
+            InstrumentAny::CryptoOptionSpread(spread) => spread.info.as_ref(),
+            InstrumentAny::CryptoFuturesSpread(spread) => spread.info.as_ref(),
             _ => return None,
         };
 
-        let mut info = existing_info.unwrap_or_default();
+        let mut info = existing_info
+            .map(|info| IndexMap::clone(info))
+            .unwrap_or_default();
+
         let legs = combo
             .legs
             .iter()
@@ -1216,7 +1220,7 @@ impl DeribitHttpClient {
         );
         info.insert("deribit_combo_legs".to_string(), json!(legs));
 
-        Some(info)
+        Some(Params::new(info))
     }
 
     /// Requests historical trades for an instrument within a time range.

@@ -24,6 +24,9 @@ mod requests;
 mod runtime;
 mod subscriptions;
 
+#[cfg(test)]
+mod test_logging;
+
 use std::{
     future::Future,
     sync::{
@@ -36,7 +39,7 @@ use std::{
 use dashmap::DashMap;
 use nautilus_common::{
     cache::InstrumentLookupError,
-    clients::DataClient,
+    clients::{DataClient, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -91,7 +94,7 @@ use crate::{
     },
     polybolt::{PolymarketPolyBoltFeed, is_supported_polybolt_data_type},
     providers::PolymarketInstrumentProvider,
-    resolve::{PendingResolution, ResolveContext, ResolveWatchEntry, StrictResolvedMarket},
+    resolve::{PendingResolution, ResolveContext, ResolveWatchlist, StrictResolvedMarket},
     websocket::{POLYBOLT_STREAMS_ENDPOINT, pool::PolymarketMarketConnectionPool},
 };
 
@@ -122,7 +125,7 @@ pub struct PolymarketDataClient {
     instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     subscriptions: DataSubscriptions,
     instrument_update_state: Arc<Mutex<InstrumentUpdateState>>,
-    resolve_poll_watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
+    resolve_poll_watchlist: Arc<ResolveWatchlist>,
     resolve_watch_apply_mutex: Arc<Mutex<()>>,
     pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
@@ -140,6 +143,10 @@ pub struct PolymarketDataClient {
 
 impl PolymarketDataClient {
     /// Creates a new [`PolymarketDataClient`].
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configuration is invalid.
     pub fn new(
         client_id: ClientId,
         config: PolymarketDataClientConfig,
@@ -147,7 +154,7 @@ impl PolymarketDataClient {
         clob_public_client: PolymarketClobPublicClient,
         data_api_client: PolymarketDataApiHttpClient,
         ws_client: PolymarketMarketConnectionPool,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
         Self::new_with_proxy(
             client_id,
             config,
@@ -160,23 +167,31 @@ impl PolymarketDataClient {
     }
 
     /// Creates a new data client with an optional validated proxy URL.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the configuration is invalid.
     pub fn new_with_proxy(
         client_id: ClientId,
         mut config: PolymarketDataClientConfig,
-        mut gamma_client: PolymarketGammaHttpClient,
+        gamma_client: PolymarketGammaHttpClient,
         clob_public_client: PolymarketClobPublicClient,
         data_api_client: PolymarketDataApiHttpClient,
         ws_client: PolymarketMarketConnectionPool,
         proxy_url: Option<ProxyUrl>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+        let polybolt_credential = config.polybolt_credential()?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let socket_factory = SocketControlFactory::new(client_id, Some(*POLYMARKET_VENUE));
-        let ws_client = ws_client.with_socket_factory(socket_factory.clone());
+        let ws_client = ws_client
+            .with_connect_timeout(config.ws_timeout_secs)
+            .with_socket_factory(socket_factory.clone());
         let polybolt_socket_control = Some(socket_factory.control(POLYBOLT_STREAMS_ENDPOINT));
-        gamma_client.set_clob_client(clob_public_client.clone());
         let provider =
-            PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone());
+            PolymarketInstrumentProvider::new(gamma_client, config.instrument_config.clone())?;
         let configured_fetch_max_concurrency = config.new_market_fetch_max_concurrency;
         let fetch_max_concurrency =
             clamp_new_market_fetch_max_concurrency(configured_fetch_max_concurrency);
@@ -194,18 +209,14 @@ impl PolymarketDataClient {
 
         let polybolt_url = config.reference_prices_url();
         let polybolt_transport_backend = config.transport_backend;
+        let ws_timeout_secs = config.ws_timeout_secs;
         let polybolt_data_sender = data_sender.clone();
-
-        let polybolt_credential = config.polybolt_credential().unwrap_or_else(|e| {
-            log::error!("{e}; PolyBolt price subscriptions will be rejected");
-            None
-        });
 
         let tasks = TaskGroup::new();
         let cancellation_token = tasks.cancellation_token();
 
         let instruments = Arc::new(AtomicMap::new());
-        let resolve_poll_watchlist = Arc::new(AtomicMap::new());
+        let resolve_poll_watchlist = Arc::new(ResolveWatchlist::default());
         let resolve_watch_apply_mutex = Arc::new(Mutex::new(()));
         let deferred_resolutions = Arc::new(AtomicMap::new());
 
@@ -218,7 +229,7 @@ impl PolymarketDataClient {
             config.subscribe_new_markets,
         );
 
-        Self {
+        Ok(Self {
             clock,
             client_id,
             config,
@@ -251,13 +262,14 @@ impl PolymarketDataClient {
                 proxy_url.clone(),
                 polybolt_socket_control.clone(),
                 polybolt_credential.clone(),
+                ws_timeout_secs,
             ),
             polybolt_socket_control,
             polybolt_credential,
             proxy_url,
             reset_pending: false,
             shutdown_errors: Vec::new(),
-        }
+        })
     }
 
     /// Returns a reference to the client configuration.
@@ -461,6 +473,12 @@ impl PolymarketDataClient {
                     snapshot_timeout,
                     &spawner,
                 );
+            } else if !was_open {
+                resolve_ctx.subscriptions.monitor_book_snapshot(
+                    instrument_id,
+                    snapshot_timeout,
+                    &spawner,
+                );
             }
         };
 
@@ -526,8 +544,7 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        request_instrument(self, request);
-        Ok(())
+        request_instrument(self, request)
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
@@ -544,20 +561,22 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn subscribe_instrument(&mut self, cmd: SubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!(
-            "Subscribed to instrument definition updates for {}; shared instrument sources remain active",
-            cmd.instrument_id
-        );
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "Subscribed to instrument definition updates for {instrument_id}; shared instrument sources remain active"
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!(
-            "Unsubscribed from instrument {}; shared instrument sources remain active",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "Unsubscribed from instrument {instrument_id}; shared instrument sources remain active"
+            );
+            Ok(())
+        })
     }
 
     fn subscribe(&mut self, cmd: SubscribeCustomData) -> anyhow::Result<()> {
@@ -596,31 +615,32 @@ impl DataClient for PolymarketDataClient {
             );
         }
 
-        let instrument_id = cmd.instrument_id;
-        self.ensure_live_subscription_allowed(instrument_id)?;
-        let cached = self.instruments.load().contains_key(&instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ensure_live_subscription_allowed(instrument_id)?;
+            let cached = self.instruments.load().contains_key(&instrument_id);
 
-        if !cached && !self.config.auto_load_missing_instruments {
-            anyhow::bail!(
-                "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
-            );
-        }
+            if !cached && !self.config.auto_load_missing_instruments {
+                anyhow::bail!(
+                    "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
+                );
+            }
 
-        // Mark intent before routing so unsubscribe can race-safely clear it.
-        if !self
-            .subscriptions
-            .add_delta_subscription_intent(instrument_id, self.config.compute_effective_deltas)
-        {
-            return Ok(());
-        }
+            // Mark intent before routing so unsubscribe can race-safely clear it.
+            if !self
+                .subscriptions
+                .add_delta_subscription_intent(instrument_id, self.config.compute_effective_deltas)
+            {
+                return Ok(());
+            }
 
-        if !cached {
-            self.queue_pending_load(instrument_id);
-            return Ok(());
-        }
+            if !cached {
+                self.queue_pending_load(instrument_id);
+                return Ok(());
+            }
 
-        self.sync_book_subscription(instrument_id);
-        Ok(())
+            self.sync_book_subscription(instrument_id);
+            Ok(())
+        })
     }
 
     fn subscribe_book_depth(&mut self, _cmd: SubscribeBookDepth) -> anyhow::Result<()> {
@@ -630,132 +650,145 @@ impl DataClient for PolymarketDataClient {
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.ensure_live_subscription_allowed(instrument_id)?;
-        let cached = self.instruments.load().contains_key(&instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ensure_live_subscription_allowed(instrument_id)?;
+            let cached = self.instruments.load().contains_key(&instrument_id);
 
-        if !cached && !self.config.auto_load_missing_instruments {
-            anyhow::bail!(
-                "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
-            );
-        }
+            if !cached && !self.config.auto_load_missing_instruments {
+                anyhow::bail!(
+                    "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
+                );
+            }
 
-        if !self
-            .subscriptions
-            .add_live_subscription_intent(instrument_id, SubscriptionKind::Quotes)
-        {
-            return Ok(());
-        }
+            if !self
+                .subscriptions
+                .add_live_subscription_intent(instrument_id, SubscriptionKind::Quotes)
+            {
+                return Ok(());
+            }
 
-        if !cached {
-            self.queue_pending_load(instrument_id);
-            return Ok(());
-        }
+            if !cached {
+                self.queue_pending_load(instrument_id);
+                return Ok(());
+            }
 
-        self.sync_ws_subscription(instrument_id);
-        Ok(())
+            self.sync_ws_subscription(instrument_id);
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        self.ensure_live_subscription_allowed(instrument_id)?;
-        let cached = self.instruments.load().contains_key(&instrument_id);
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.ensure_live_subscription_allowed(instrument_id)?;
+            let cached = self.instruments.load().contains_key(&instrument_id);
 
-        if !cached && !self.config.auto_load_missing_instruments {
-            anyhow::bail!(
-                "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
-            );
-        }
+            if !cached && !self.config.auto_load_missing_instruments {
+                anyhow::bail!(
+                    "Instrument {instrument_id} not found, and `auto_load_missing_instruments` is disabled"
+                );
+            }
 
-        if !self
-            .subscriptions
-            .add_live_subscription_intent(instrument_id, SubscriptionKind::Trades)
-        {
-            return Ok(());
-        }
+            if !self
+                .subscriptions
+                .add_live_subscription_intent(instrument_id, SubscriptionKind::Trades)
+            {
+                return Ok(());
+            }
 
-        if !cached {
-            self.queue_pending_load(instrument_id);
-            return Ok(());
-        }
+            if !cached {
+                self.queue_pending_load(instrument_id);
+                return Ok(());
+            }
 
-        self.sync_ws_subscription(instrument_id);
-        Ok(())
+            self.sync_ws_subscription(instrument_id);
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        self.subscribe_resolution(cmd.instrument_id, SubscriptionKind::Status)
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_resolution(instrument_id, SubscriptionKind::Status)
+        })
     }
 
     fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        self.subscribe_resolution(cmd.instrument_id, SubscriptionKind::Close)
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.subscribe_resolution(instrument_id, SubscriptionKind::Close)
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let token_id = self
-            .subscriptions
-            .unsubscribe(instrument_id, SubscriptionKind::Deltas);
-        if let Some(token_id) = token_id {
-            self.sync_ws_subscription_for_token(instrument_id, token_id);
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let token_id = self
+                .subscriptions
+                .unsubscribe(instrument_id, SubscriptionKind::Deltas);
+            if let Some(token_id) = token_id {
+                self.sync_ws_subscription_for_token(instrument_id, token_id);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let token_id = self
-            .subscriptions
-            .unsubscribe(instrument_id, SubscriptionKind::Quotes);
-        if let Some(token_id) = token_id {
-            self.sync_ws_subscription_for_token(instrument_id, token_id);
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let token_id = self
+                .subscriptions
+                .unsubscribe(instrument_id, SubscriptionKind::Quotes);
+            if let Some(token_id) = token_id {
+                self.sync_ws_subscription_for_token(instrument_id, token_id);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let token_id = self
-            .subscriptions
-            .unsubscribe(instrument_id, SubscriptionKind::Trades);
-        if let Some(token_id) = token_id {
-            self.sync_ws_subscription_for_token(instrument_id, token_id);
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let token_id = self
+                .subscriptions
+                .unsubscribe(instrument_id, SubscriptionKind::Trades);
+            if let Some(token_id) = token_id {
+                self.sync_ws_subscription_for_token(instrument_id, token_id);
+            }
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let token_id = self
-            .subscriptions
-            .unsubscribe(instrument_id, SubscriptionKind::Status);
-        if let Some(token_id) = token_id {
-            self.sync_ws_subscription_for_token(instrument_id, token_id);
-        }
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let token_id = self
+                .subscriptions
+                .unsubscribe(instrument_id, SubscriptionKind::Status);
+            if let Some(token_id) = token_id {
+                self.sync_ws_subscription_for_token(instrument_id, token_id);
+            }
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_close(
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let token_id = self
-            .subscriptions
-            .unsubscribe(instrument_id, SubscriptionKind::Close);
-        if let Some(token_id) = token_id {
-            self.sync_ws_subscription_for_token(instrument_id, token_id);
-        }
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let token_id = self
+                .subscriptions
+                .unsubscribe(instrument_id, SubscriptionKind::Close);
+            if let Some(token_id) = token_id {
+                self.sync_ws_subscription_for_token(instrument_id, token_id);
+            }
+
+            Ok(())
+        })
     }
 
     fn unsubscribe(&mut self, cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {

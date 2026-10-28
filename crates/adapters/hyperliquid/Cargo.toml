@@ -75,6 +75,7 @@ bon = { workspace = true }
 dashmap = { workspace = true }
 derive_builder = { workspace = true }
 futures-util = { workspace = true }
+indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }
@@ -224,6 +225,12 @@ doc = false
 name = "hyperliquid-chained-modify-smoke"
 path = "examples/chained_modify_smoke.rs"
 required-features = ["examples"]
+doc = false
+
+# Run with `cargo run --example hyperliquid-scheduled-cancel --package nautilus-hyperliquid -- testnet`.
+[[example]]
+name = "hyperliquid-scheduled-cancel"
+path = "examples/scheduled_cancel.rs"
 doc = false
 
 # Public market-data validation; explicitly connects to Hyperliquid mainnet.

@@ -39,6 +39,7 @@ from nautilus_trader.model import InstrumentCloseType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import InstrumentStatus
 from nautilus_trader.model import MarketStatusAction
+from nautilus_trader.model import Money
 from nautilus_trader.model import NautilusDataType
 from nautilus_trader.model import NautilusRecordType
 from nautilus_trader.model import Price
@@ -116,6 +117,95 @@ def test_catalog_missing_directory_error(tmp_path: Path, file_uri: bool) -> None
     catalog = ParquetDataCatalog(base_path)
 
     assert catalog.list_data_types() == []
+
+
+@pytest.mark.parametrize("method", ["read_live_run", "read_backtest", "convert_stream_to_data"])
+@pytest.mark.parametrize(
+    "instance_id",
+    ["", ".", "..", "../run", "run/child", r"run\child", "/run", r"\run", "C:run", r"C:\run"],
+)
+def test_catalog_run_rejects_path_bearing_ids(
+    tmp_path: Path,
+    method: str,
+    instance_id: str,
+) -> None:
+    """
+    Reject path-bearing IDs at each Python run entry point.
+    """
+    catalog = ParquetDataCatalog(str(tmp_path))
+    arguments = [NautilusDataType.QuoteTick] if method == "convert_stream_to_data" else []
+
+    with pytest.raises(OSError, match="Invalid run instance ID"):
+        getattr(catalog, method)(instance_id, *arguments)
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["read_live_run", "read_backtest", "convert_stream_to_data"],
+)
+@pytest.mark.parametrize("absolute", [False, True])
+def test_catalog_run_rejects_external_paths_before_recovery(
+    tmp_path: Path,
+    method: str,
+    absolute: bool,
+) -> None:
+    """
+    Preserve external partial files when a run ID names their directory.
+    """
+    run = tmp_path / "outside"
+    writer = StreamingFeatherWriter(str(run), cache=Cache(), clock=Clock.new_test())
+    writer.write(TestDataProviderPyo3.quote_tick())
+    writer.close()
+    [sealed] = run.rglob("*.feather")
+    partial = sealed.with_name(f"{sealed.name}.partial")
+    sealed.rename(partial)
+    original = partial.read_bytes()
+    catalog_path = tmp_path / "catalog"
+    (catalog_path / "live").mkdir(parents=True)
+    (catalog_path / "backtest").mkdir()
+    catalog = ParquetDataCatalog(str(catalog_path))
+    instance_id = str(run) if absolute else "../../outside"
+    arguments = [NautilusDataType.QuoteTick] if method == "convert_stream_to_data" else []
+
+    with pytest.raises(OSError, match="Invalid run instance ID"):
+        getattr(catalog, method)(instance_id, *arguments)
+
+    assert partial.read_bytes() == original
+    assert not sealed.exists()
+
+
+@pytest.mark.parametrize(
+    ("method", "environment"),
+    [("read_live_run", "live"), ("read_backtest", "backtest")],
+)
+@pytest.mark.parametrize("locked", [False, True])
+def test_catalog_run_preserves_recovery_and_writer_locks(
+    tmp_path: Path,
+    method: str,
+    environment: str,
+    locked: bool,
+) -> None:
+    """
+    Recover abandoned streams and leave an active writer's stream alone.
+    """
+    run = tmp_path / environment / "run-001"
+    writer = StreamingFeatherWriter(str(run), cache=Cache(), clock=Clock.new_test())
+    quote = TestDataProviderPyo3.quote_tick()
+    writer.write(quote)
+    writer.flush()
+
+    if not locked:
+        writer.close()
+        [sealed] = run.rglob("*.feather")
+        sealed.rename(sealed.with_name(f"{sealed.name}.partial"))
+
+    catalog = ParquetDataCatalog(str(tmp_path))
+    data = getattr(catalog, method)("run-001")
+    writer.close()
+
+    assert data == ([] if locked else [quote])
+    assert getattr(catalog, method)("run-001") == [quote]
+    assert list(run.rglob("*.partial")) == []
 
 
 @pytest.mark.parametrize(
@@ -496,6 +586,26 @@ def test_query_data_arrow_bytes_rejects_string_selector(tmp_path: Path) -> None:
 
     with pytest.raises(TypeError, match="data_type must be NautilusDataType"):
         catalog.query_data_arrow_bytes("QuoteTick")  # type: ignore[arg-type]
+
+
+def test_catalog_instrument_exact_money_notional_roundtrip(tmp_path: Path) -> None:
+    """
+    Restore exact notional limits through Parquet without currency rounding.
+    """
+    catalog = _catalog(tmp_path, "exact_notional")
+    maximum = Money.from_str_exact("1.0001 USD")
+    minimum = Money.from_str_exact("0.0001 USD")
+    payload = TestInstrumentProvider.audusd_sim().to_dict()
+    payload["max_notional"] = str(maximum)
+    payload["min_notional"] = str(minimum)
+    instrument = CurrencyPair.from_dict(payload)
+    catalog.write_instruments([instrument])
+    restored = catalog.instruments(instrument_ids=[str(instrument.id)])
+
+    assert len(restored) == 1
+    assert restored[0].id == instrument.id
+    assert restored[0].max_notional == maximum
+    assert restored[0].min_notional == minimum
 
 
 def test_catalog_instruments_applies_where_clause(tmp_path: Path) -> None:

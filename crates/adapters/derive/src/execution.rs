@@ -95,7 +95,10 @@ use crate::{
             MIN_SIGNATURE_TTL, TRIGGER_ORDER_SIGNATURE_TTL, WS_REQUEST_TIMEOUT,
         },
         credential::DeriveCredential,
-        enums::{DeriveInstrumentType, DeriveOrderSide, DeriveOrderStatus},
+        enums::{
+            DeriveInstrumentType, DeriveOrderSide, DeriveOrderStatus, DeriveOrderType,
+            DeriveTimeInForce,
+        },
         parse::{
             STRATEGY_REASON_MAX_CHARS, derive_order_type_to_nautilus_for_order,
             derive_rejection_due_post_only, derive_status_to_nautilus, format_instrument_id,
@@ -119,8 +122,8 @@ use crate::{
             DeriveCancelByInstrumentParams, DeriveCancelByLabelParams, DeriveCancelParams,
             DeriveCancelTriggerOrderParams, DeriveGetOpenOrdersParams, DeriveGetOrderHistoryParams,
             DeriveGetOrderParams, DeriveGetPositionsParams, DeriveGetSubaccountParams,
-            DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams, PaginationCursor,
-            order_replace_to_derive_payload, order_to_derive_payload,
+            DeriveGetTradeHistoryParams, DeriveGetTriggerOrdersParams, DeriveOrderParams,
+            PaginationCursor, order_replace_to_derive_payload, order_to_derive_payload,
             trigger_order_to_derive_payload, validate_order_support,
             validate_trigger_order_support,
         },
@@ -140,6 +143,7 @@ use crate::{
 };
 
 const DERIVE_PRIVATE_PAGE_SIZE: u32 = 500;
+const CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Live execution client for Derive.
 ///
@@ -157,7 +161,7 @@ pub struct DeriveExecutionClient {
     http_client: DeriveHttpClient,
     ws_client: DeriveWebSocketClient,
     ws_exec: DeriveWsExecutionHandle,
-    instruments: Arc<AtomicMap<InstrumentId, DeriveInstrument>>,
+    instruments: Arc<AtomicMap<InstrumentId, Arc<DeriveInstrument>>>,
     nonce_manager: Arc<NonceManager>,
     signing: SigningContext,
     is_connected: Arc<AtomicBool>,
@@ -216,34 +220,14 @@ impl DeriveExecutionClient {
             config.rest_url(),
             http_credentials,
             Some(config.http_timeout_secs),
-            proxy_url.clone(),
+            proxy_url,
             Some(retry_config),
         )
         .context("failed to create Derive HTTP client")?;
 
-        let ws_credentials = DeriveWsCredentials::new(
-            credential.wallet_address().to_string(),
-            credential.session_key(),
-        )
-        .context("failed to build Derive WebSocket credentials")?;
-        let mut ws_client = DeriveWebSocketClient::with_credentials(
-            Some(config.ws_url()),
-            config.environment,
-            config.transport_backend,
-            proxy_url,
-            ws_credentials,
-            config.max_matching_requests_per_second,
-            config.max_per_instrument_matching_requests_per_second,
-        )
-        .with_socket_control(SocketControl::new(
-            core.client_id,
-            Some(*DERIVE_VENUE),
-            "derive-user-streams",
-        ));
-
-        if let Some(secs) = config.ws_timeout_secs {
-            ws_client.set_request_timeout(Duration::from_secs(secs));
-        }
+        let ws_client = create_ws_client(&config, &credential)?.with_socket_control(
+            SocketControl::new(core.client_id, Some(*DERIVE_VENUE), "derive-user-streams"),
+        );
 
         // The handle shares the client's command channel, which survives the
         // reconnect swap, so it stays valid for the client's lifetime.
@@ -318,6 +302,15 @@ impl DeriveExecutionClient {
     ///
     /// Returns an error if instrument identity or price and size increments are invalid.
     pub fn cache_instrument(&self, instrument: DeriveInstrument) -> anyhow::Result<()> {
+        let instrument_id = self.register_instrument_precision(&instrument)?;
+        self.instruments.insert(instrument_id, Arc::new(instrument));
+        Ok(())
+    }
+
+    fn register_instrument_precision(
+        &self,
+        instrument: &DeriveInstrument,
+    ) -> anyhow::Result<InstrumentId> {
         let instrument_id = format_instrument_id(instrument.instrument_name)?;
         anyhow::ensure!(
             instrument.tick_size > Decimal::ZERO,
@@ -336,11 +329,9 @@ impl DeriveExecutionClient {
             price_increment.precision,
             size_increment.precision,
         );
-        self.instruments.insert(instrument_id, instrument);
-        Ok(())
+        Ok(instrument_id)
     }
 
-    /// Spawns a fire-and-forget task tracked in `pending_tasks` for teardown.
     fn spawn_task<F>(&self, description: impl Into<Cow<'static, str>>, fut: F)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
@@ -407,9 +398,22 @@ impl DeriveExecutionClient {
             .cloned()
             .collect();
 
-        for instrument in instruments {
-            self.cache_native_instrument(&instrument)?;
-        }
+        let mut pending = Vec::with_capacity(instruments.len());
+        let result: anyhow::Result<()> = (|| {
+            for instrument in &instruments {
+                let definition = Self::native_instrument(instrument)?;
+                let instrument_id = self.register_instrument_precision(&definition)?;
+                pending.push((instrument_id, Arc::new(definition)));
+            }
+
+            Ok(())
+        })();
+
+        self.instruments.rcu(|cache| {
+            cache.extend(pending.iter().cloned());
+        });
+
+        result?;
 
         self.core.set_instruments_initialized();
         Ok(())
@@ -478,7 +482,7 @@ impl DeriveExecutionClient {
             let sender = try_get_data_event_sender()
                 .context("Derive instrument event sender is unavailable")?;
             sender
-                .send(DataEvent::Instrument(instrument))
+                .send(DataEvent::Data(instrument.into()))
                 .map_err(|e| {
                     anyhow::anyhow!("Failed to publish required Derive instrument {id}: {e}")
                 })?;
@@ -511,6 +515,10 @@ impl DeriveExecutionClient {
     }
 
     fn cache_native_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        self.cache_instrument(Self::native_instrument(instrument)?)
+    }
+
+    fn native_instrument(instrument: &InstrumentAny) -> anyhow::Result<DeriveInstrument> {
         let info = instrument
             .info()
             .context("Derive instrument has no venue metadata")?;
@@ -521,8 +529,7 @@ impl DeriveExecutionClient {
             "Derive metadata identity does not match {}",
             instrument.id(),
         );
-        self.cache_instrument(definition)?;
-        Ok(())
+        Ok(definition)
     }
 
     fn reconciliation_context(&self) -> DeriveReconciliationContext {
@@ -542,7 +549,7 @@ impl DeriveExecutionClient {
         }
     }
 
-    fn validate_order(&self, order: &OrderAny) -> Result<(), OrderDeniedReason> {
+    fn validate_order(&self, order: &OrderAny) -> anyhow::Result<()> {
         if is_derive_trigger_order_type(order.order_type()) {
             validate_trigger_order_support(order)?;
         } else {
@@ -557,12 +564,12 @@ impl DeriveExecutionClient {
                 Some(InstrumentAny::CurrencyPair(_))
             )
         {
-            return Err(OrderDeniedReason::UnsupportedReduceOnly);
+            anyhow::bail!(OrderDeniedReason::UnsupportedReduceOnly);
         }
 
         if order.order_type() == OrderType::Market && cache.quote(&order.instrument_id()).is_none()
         {
-            return Err(OrderDeniedReason::MarketPriceUnavailable {
+            anyhow::bail!(OrderDeniedReason::MarketPriceUnavailable {
                 order_type: order.order_type(),
                 instrument_id: order.instrument_id(),
             });
@@ -589,13 +596,8 @@ impl DeriveExecutionClient {
         }
     }
 
-    /// Blocks until the account appears in the cache, or `timeout_secs` elapses.
-    ///
-    /// The execution engine populates the cache from the [`refresh_account_state`]
-    /// event asynchronously; strategies that begin issuing orders before the
-    /// account is registered race the portfolio. Connecting blocks here so the
-    /// runner can rely on `core.cache().account(account_id)` immediately after
-    /// `connect()` returns.
+    // Account events populate the cache asynchronously, so connect waits for registration
+    // before strategies can issue orders against the portfolio.
     async fn await_account_registered(&self, timeout_secs: f64) -> anyhow::Result<()> {
         let account_id = self.core.account_id;
 
@@ -623,10 +625,7 @@ impl DeriveExecutionClient {
         }
     }
 
-    /// Reverses the partial state `connect()` set up before the failing step:
-    /// cancels the shared cancellation token, aborts the WS dispatch task,
-    /// and closes the WS client. Used when initial account state cannot be
-    /// loaded so that the next `connect()` call starts from a clean slate.
+    // Shared by disconnect and failed connect steps so the next connect starts clean
     async fn teardown_partial_connect(&mut self) -> anyhow::Result<()> {
         self.cancellation_token.cancel();
         self.abort_session_tasks();
@@ -655,6 +654,90 @@ impl DeriveExecutionClient {
         }
 
         Ok(())
+    }
+
+    async fn connect_ws(&mut self) -> anyhow::Result<()> {
+        if self.config.cancel_on_disconnect
+            && let Err(e) = self.enable_cancel_on_disconnect().await
+        {
+            if let Err(teardown_error) = self.teardown_partial_connect().await {
+                return Err(e.context(format!(
+                    "Derive cancel-on-disconnect startup teardown failed: {teardown_error}"
+                )));
+            }
+
+            return Err(e);
+        }
+
+        if let Err(e) = self.ws_client.connect().await {
+            let e = anyhow::Error::new(e).context("failed to connect Derive WebSocket");
+            if self.config.cancel_on_disconnect
+                && let Err(teardown_error) = self.teardown_partial_connect().await
+            {
+                return Err(e.context(teardown_error));
+            }
+
+            return Err(e);
+        }
+
+        Ok(())
+    }
+
+    async fn enable_cancel_on_disconnect(&self) -> anyhow::Result<()> {
+        #[derive(serde::Deserialize)]
+        struct AccountSettings {
+            cancel_on_disconnect: bool,
+        }
+
+        let mut setup_client = create_ws_client(&self.config, &self.credential)?;
+        let setup_result = async {
+            setup_client
+                .connect()
+                .await
+                .context("failed to authenticate Derive cancel-on-disconnect setup connection")?;
+            setup_client
+                .set_cancel_on_disconnect(true)
+                .await
+                .context("failed to enable Derive cancel-on-disconnect")?;
+
+            let confirmation = time::timeout(CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT, async {
+                loop {
+                    let settings: AccountSettings = self
+                        .http_client
+                        .send_private(
+                            "private/get_account",
+                            &serde_json::json!({"wallet": self.credential.wallet_address()}),
+                        )
+                        .await
+                        .context("failed to read Derive cancel-on-disconnect setting")?;
+
+                    if settings.cancel_on_disconnect {
+                        return Ok::<(), anyhow::Error>(());
+                    }
+
+                    time::sleep(Duration::from_millis(250)).await;
+                }
+            });
+
+            Box::pin(confirmation).await.with_context(|| {
+                format!(
+                    "Derive cancel-on-disconnect was not confirmed within {} seconds",
+                    CANCEL_ON_DISCONNECT_CONFIRMATION_TIMEOUT.as_secs(),
+                )
+            })?
+        }
+        .await;
+
+        let disconnect_result = setup_client
+            .disconnect()
+            .await
+            .context("failed to close Derive cancel-on-disconnect setup connection");
+
+        match (setup_result, disconnect_result) {
+            (Err(e), Err(disconnect_error)) => Err(e.context(disconnect_error)),
+            (Err(e), Ok(())) => Err(e),
+            (Ok(()), result) => result,
+        }
     }
 
     fn start_ws_dispatch(
@@ -1033,10 +1116,7 @@ impl ExecutionClient for DeriveExecutionClient {
             }
         }
 
-        self.ws_client
-            .connect()
-            .await
-            .context("failed to connect Derive WebSocket")?;
+        self.connect_ws().await?;
 
         let Some(rx) = self.ws_client.take_event_receiver() else {
             let e = anyhow::anyhow!("Derive execution WS event receiver not initialized");
@@ -1214,6 +1294,7 @@ impl ExecutionClient for DeriveExecutionClient {
         }
 
         let is_trigger_order = is_derive_trigger_order_type(order.order_type());
+        let cancel_on_disconnect = self.config.cancel_on_disconnect;
         let market_quote = (order.order_type() == OrderType::Market).then_some(());
 
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
@@ -1463,7 +1544,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 )
             };
 
-            let payload = match payload_result {
+            let mut payload = match payload_result {
                 Ok(p) => p,
                 Err(e) => {
                     log::warn!("Order encode failed for {}: {e}", order_for_task.client_order_id());
@@ -1473,6 +1554,8 @@ impl ExecutionClient for DeriveExecutionClient {
                     return Ok(());
                 }
             };
+
+            enable_resting_order_mmp(&mut payload, cancel_on_disconnect);
 
             // Pre-flight debug log so a venue 11012-style rejection can be
             // diagnosed without re-running with full payload tracing.
@@ -1537,6 +1620,24 @@ impl ExecutionClient for DeriveExecutionClient {
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
         let orders = self.core.get_orders_for_list(&cmd.order_list)?;
+
+        if orders.iter().any(|order| {
+            order.is_contingency()
+                || order.is_child_order()
+                || order.linked_order_ids().is_some_and(|ids| !ids.is_empty())
+        }) {
+            let reason = OrderDeniedReason::UnsupportedOrderList {
+                detail: "Derive does not support native contingent order lists".to_string(),
+            }
+            .to_string();
+
+            for order in &orders {
+                self.emitter.emit_order_denied(order, &reason);
+            }
+
+            return Ok(());
+        }
+
         let denials: Vec<_> = orders
             .iter()
             .map(|order| self.validate_order(order).err())
@@ -1544,8 +1645,11 @@ impl ExecutionClient for DeriveExecutionClient {
 
         if denials.iter().any(Option::is_some) {
             for (order, denial) in orders.iter().zip(denials) {
-                let reason = denial.unwrap_or(OrderDeniedReason::OrderListDenied {
-                    order_list_id: cmd.order_list.id,
+                let reason = denial.unwrap_or_else(|| {
+                    OrderDeniedReason::OrderListDenied {
+                        order_list_id: cmd.order_list.id,
+                    }
+                    .into()
                 });
 
                 self.emitter.emit_order_denied(order, &reason.to_string());
@@ -1869,6 +1973,7 @@ impl ExecutionClient for DeriveExecutionClient {
             .unwrap_or_else(|| (order.quantity(), order.price()));
         let target_quantity = cmd.quantity.unwrap_or(quantity);
         let target_price = cmd.price.or(price);
+        let cancel_on_disconnect = self.config.cancel_on_disconnect;
 
         let venue_symbol = format_venue_symbol(&cmd.instrument_id)?.to_string();
         let http_client = self.http_client.clone();
@@ -2014,6 +2119,7 @@ impl ExecutionClient for DeriveExecutionClient {
             };
 
             payload.expected_filled_amount = Some(expected_filled_amount);
+            enable_resting_order_mmp(&mut payload.order, cancel_on_disconnect);
 
             {
                 let _delivery = dispatch_state.delivery_guard();
@@ -2224,6 +2330,48 @@ impl OrderReportEvidence {
     }
 }
 
+fn create_ws_client(
+    config: &DeriveExecutionClientConfig,
+    credential: &DeriveCredential,
+) -> anyhow::Result<DeriveWebSocketClient> {
+    let credentials = DeriveWsCredentials::new(
+        credential.wallet_address().to_string(),
+        credential.session_key(),
+    )
+    .context("failed to build Derive WebSocket credentials")?;
+    let mut ws_client = DeriveWebSocketClient::with_credentials(
+        Some(config.ws_url()),
+        config.environment,
+        config.transport_backend,
+        config
+            .proxy_url
+            .as_ref()
+            .map(|value| value.expose_secret().to_owned()),
+        credentials,
+        config.max_matching_requests_per_second,
+        config.max_per_instrument_matching_requests_per_second,
+    );
+
+    if let Some(secs) = config.ws_timeout_secs {
+        ws_client.set_request_timeout(Duration::from_secs(secs));
+    }
+
+    Ok(ws_client)
+}
+
+fn enable_resting_order_mmp(payload: &mut DeriveOrderParams, enabled: bool) {
+    if enabled
+        && payload.order_type == DeriveOrderType::Limit
+        && payload.trigger_type.is_none()
+        && matches!(
+            payload.time_in_force,
+            DeriveTimeInForce::Gtc | DeriveTimeInForce::PostOnly
+        )
+    {
+        payload.mmp = Some(true);
+    }
+}
+
 fn log_report_receipt(count: usize, report_type: &str, level: LogLevel) {
     match level {
         LogLevel::Off => {}
@@ -2388,7 +2536,7 @@ struct DeriveReconciliationContext {
     subaccount_id: u64,
     clock: &'static AtomicTime,
     dispatch_state: Arc<WsDispatchState>,
-    instruments: Arc<AtomicMap<InstrumentId, DeriveInstrument>>,
+    instruments: Arc<AtomicMap<InstrumentId, Arc<DeriveInstrument>>>,
     orders: AHashMap<ClientOrderId, OrderBinding>,
     terminal_revision: Arc<()>,
 }
@@ -3374,7 +3522,12 @@ impl DeriveReconciliationContext {
             .map(|report| report.venue_order_id)
             .collect();
         let companions = self
-            .collect_companion_order_records(&history, &open.reports, &fill_reports)
+            .collect_companion_order_records(
+                &history,
+                &open.reports,
+                &fill_reports,
+                start.is_some(),
+            )
             .await?;
         reports_complete &= companions.complete;
         records_complete &= companions.records_complete;
@@ -3671,6 +3824,7 @@ impl DeriveReconciliationContext {
         history: &CollectedReports<DeriveOrder>,
         open: &[DeriveOrder],
         fills: &[FillReport],
+        allow_partial: bool,
     ) -> anyhow::Result<CollectedReports<DeriveOrder>> {
         if !history.records_complete {
             return Ok(CollectedReports {
@@ -3727,6 +3881,12 @@ impl DeriveReconciliationContext {
                                     matches!(cause, DeriveHttpError::JsonRpc { code: 11006, .. })
                                 }) =>
                         {
+                            if !allow_partial {
+                                return Err(
+                                    e.context("incomplete unbounded Derive report coverage")
+                                );
+                            }
+
                             records_complete = false;
                             queried_orders.insert(fill.venue_order_id, None);
                             log::warn!(
@@ -4261,7 +4421,7 @@ fn add_missing_flat_position_reports(
     account_id: AccountId,
     touched_instruments: AHashSet<InstrumentId>,
     position_instruments: &AHashSet<InstrumentId>,
-    instruments: &AtomicMap<InstrumentId, DeriveInstrument>,
+    instruments: &AtomicMap<InstrumentId, Arc<DeriveInstrument>>,
     ts_init: UnixNanos,
 ) {
     let mut flat_reports = Vec::new();
@@ -5303,10 +5463,8 @@ fn tracked_order_identity(
     })
 }
 
-/// Synthesizes and emits `OrderAccepted` when one has not yet been emitted
-/// for the order. Used to guarantee the `Submitted -> Accepted -> ...`
-/// lifecycle when a fill or terminal event arrives before (or instead of)
-/// the venue's `Open` notice.
+// Preserve Submitted -> Accepted -> ... when a fill or terminal event precedes
+// or replaces the venue's Open notice.
 #[expect(clippy::too_many_arguments)]
 fn ensure_accepted_emitted(
     emitter: &ExecutionEventEmitter,
@@ -5484,7 +5642,7 @@ fn emit_tracked_order_event(
                 return;
             }
 
-            dispatch_state.forget(&client_order_id);
+            dispatch_state.record_canceled(client_order_id, report.quantity, report.filled_qty);
         }
         OrderStatus::Expired | OrderStatus::Rejected => {
             emit_expiry_or_rejection(
@@ -5669,16 +5827,8 @@ fn emit_tracked_fill(
     true
 }
 
-/// Derives the worst-acceptable limit price for a market order from the
-/// top-of-book quote and a slippage bound in basis points, rounded to the
-/// instrument's `tick_size`.
-///
-/// Buys lift the ask by `slippage_bps` then round up to the next tick; sells
-/// drop the bid by the same and round down. The result is the signed
-/// `limit_price` slot in the EIP-712 trade module data; the venue uses it
-/// as a worst-case bound while the order sweeps. A non-positive sell bound
-/// is rejected (`None`) so the caller can deny the order rather than sign
-/// an invalid zero limit.
+// The EIP-712 limit_price bounds the market sweep; reject non-positive bounds
+// so the caller rejects the order instead of signing an invalid limit.
 fn market_order_limit_price(
     quote: &QuoteTick,
     side: OrderSide,
@@ -5842,10 +5992,7 @@ async fn refresh_market_order_quote(
     )
 }
 
-/// Rounds `value` to the nearest multiple of `tick_size`. Buys round up so
-/// the signed bound remains acceptable to the venue; sells round down so the
-/// caller does not accidentally tighten the floor. A non-positive `tick_size`
-/// is treated as a no-op.
+// Round buys up and sells down so tick alignment does not tighten the signed bound
 fn round_to_tick(value: Decimal, tick_size: Decimal, side: OrderSide) -> Decimal {
     if tick_size <= Decimal::ZERO {
         return value;
@@ -5862,19 +6009,19 @@ fn round_to_tick(value: Decimal, tick_size: Decimal, side: OrderSide) -> Decimal
 
 async fn cached_or_fetch_instrument(
     http_client: &DeriveHttpClient,
-    instruments: &Arc<AtomicMap<InstrumentId, DeriveInstrument>>,
+    instruments: &Arc<AtomicMap<InstrumentId, Arc<DeriveInstrument>>>,
     instrument_id: &InstrumentId,
     venue_symbol: &str,
 ) -> anyhow::Result<DeriveInstrument> {
     if let Some(cached) = instruments.get_cloned(instrument_id) {
-        return Ok(cached);
+        return Ok((*cached).clone());
     }
 
     let instrument = http_client
         .get_instrument(venue_symbol)
         .await
         .with_context(|| format!("failed to fetch instrument {venue_symbol}"))?;
-    instruments.insert(*instrument_id, instrument.clone());
+    instruments.insert(*instrument_id, Arc::new(instrument.clone()));
     Ok(instrument)
 }
 
@@ -6879,6 +7026,42 @@ mod tests {
     }
 
     #[rstest]
+    fn test_cache_instrument_shares_metadata_across_snapshots() {
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let perp = sample_derive_instrument();
+        let option: DeriveInstrument =
+            serde_json::from_str(include_str!("../test_data/options/instrument_eth.json")).unwrap();
+        let perp_id = format_instrument_id(perp.instrument_name).unwrap();
+        let option_id = format_instrument_id(option.instrument_name).unwrap();
+
+        client.cache_instrument(perp.clone()).unwrap();
+        let before = client.instruments.load();
+        client.cache_instrument(option.clone()).unwrap();
+        let after = client.instruments.load();
+
+        assert_eq!(before.len(), 1);
+        assert_eq!(after.len(), 2);
+        assert!(Arc::ptr_eq(&before[&perp_id], &after[&perp_id]));
+
+        for (id, expected) in [(perp_id, perp), (option_id, option)] {
+            assert_eq!(
+                serde_json::to_value(&after[&id]).unwrap(),
+                serde_json::to_value(&expected).unwrap()
+            );
+            assert_eq!(after[&id].raw, expected.raw);
+        }
+
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&perp_id),
+            Some((2, 3))
+        );
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&option_id),
+            Some((1, 2))
+        );
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn test_bootstrap_restores_cached_instrument_context() {
         let cache = Rc::new(RefCell::new(Cache::default()));
@@ -6911,6 +7094,99 @@ mod tests {
             Some((2, 3))
         );
         assert!(client.core.instruments_initialized());
+    }
+
+    #[tokio::test]
+    async fn test_bootstrap_validation_failure_retains_successful_prefix() {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from(DERIVE),
+            *DERIVE_VENUE,
+            OmsType::Netting,
+            AccountId::from("DERIVE-001"),
+            AccountType::Margin,
+            None,
+            cache.clone(),
+        );
+        let client = DeriveExecutionClient::new(core, test_config()).unwrap();
+        let perp = sample_derive_instrument();
+        let option: DeriveInstrument =
+            serde_json::from_str(include_str!("../test_data/options/instrument_eth.json")).unwrap();
+        let retained: DeriveInstrument =
+            serde_json::from_str(include_str!("../test_data/spot/instrument_eth.json")).unwrap();
+        let retained_id = format_instrument_id(retained.instrument_name).unwrap();
+        client.cache_instrument(retained.clone()).unwrap();
+        let before = client.instruments.load();
+
+        for definition in [&perp, &option] {
+            let instrument = parse_derive_instrument_any(definition, UnixNanos::default())
+                .unwrap()
+                .unwrap();
+            cache.borrow_mut().add_instrument(instrument).unwrap();
+        }
+
+        let ordered: Vec<_> = cache
+            .borrow()
+            .instruments(&DERIVE_VENUE, None)
+            .iter()
+            .map(|instrument| instrument.id())
+            .collect();
+        let invalid_id = ordered[1];
+        let mut invalid = cache.borrow().instrument(&invalid_id).unwrap().clone();
+        match &mut invalid {
+            InstrumentAny::CryptoPerpetual(instrument) => instrument.info = None,
+            InstrumentAny::CryptoOption(instrument) => instrument.info = None,
+            _ => unreachable!(),
+        }
+
+        cache.borrow_mut().add_instrument(invalid).unwrap();
+
+        let error = client.ensure_instruments_initialized().await.unwrap_err();
+
+        assert_eq!(error.to_string(), "Derive instrument has no venue metadata");
+        assert_eq!(
+            cache
+                .borrow()
+                .instruments(&DERIVE_VENUE, None)
+                .iter()
+                .map(|instrument| instrument.id())
+                .collect::<Vec<_>>(),
+            ordered
+        );
+        assert_eq!(client.instruments.len(), 2);
+        assert!(!client.core.instruments_initialized());
+        assert!(!client.instruments.contains_key(&invalid_id));
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&invalid_id),
+            None
+        );
+        let after = client.instruments.load();
+        assert!(Arc::ptr_eq(&before[&retained_id], &after[&retained_id]));
+
+        for expected in [&perp, &option, &retained] {
+            let id = format_instrument_id(expected.instrument_name).unwrap();
+            if id == invalid_id {
+                continue;
+            }
+
+            assert_eq!(
+                serde_json::to_value(&after[&id]).unwrap(),
+                serde_json::to_value(expected).unwrap()
+            );
+        }
+
+        let precision = if ordered[0] == format_instrument_id(perp.instrument_name).unwrap() {
+            (2, 3)
+        } else {
+            (1, 2)
+        };
+
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&ordered[0]),
+            Some(precision)
+        );
     }
 
     #[rstest]
@@ -7707,6 +7983,191 @@ mod tests {
         );
         state.forget(&cid);
         assert!(!state.trigger_active(&cid));
+    }
+
+    #[rstest]
+    #[case(0, false)]
+    #[case(1, false)]
+    #[case(2, false)]
+    #[case(0, true)]
+    #[case(1, true)]
+    #[case(2, true)]
+    fn test_canceled_partial_fill_retains_identity_until_trades_arrive(
+        #[case] fills_before_cancel: usize,
+        #[case] submit_response: bool,
+    ) {
+        let clock = get_atomic_clock_realtime();
+        let state = WsDispatchState::new(42);
+        let client_order_id = ClientOrderId::from("PARTIAL-IOC-1");
+        let account_id = AccountId::from("DERIVE-001");
+
+        let identity = OrderIdentity {
+            instrument_id: InstrumentId::from("ETH-PERP.DERIVE"),
+            strategy_id: StrategyId::from("S-1"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+        };
+
+        state.register_identity(client_order_id, identity);
+        state.record_order_shape(client_order_id, Quantity::from("1.000"), None);
+        let mut order: DeriveOrder = serde_json::from_str(include_str!(
+            "../test_data/perps/http_order_eth_partially_filled.json"
+        ))
+        .unwrap();
+        order.label = client_order_id.as_str().into();
+        order.order_id = "order-abc".into();
+        order.amount = dec!(1.0);
+        order.filled_amount = dec!(0.5);
+        order.order_status = DeriveOrderStatus::Cancelled;
+        order.order_type = DeriveOrderType::Limit;
+        let trade: DeriveTrade = serde_json::from_str(include_str!(
+            "../test_data/perps/http_private_trade_eth.json"
+        ))
+        .unwrap();
+
+        let trades: Vec<_> = [dec!(0.2), dec!(0.3)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, qty)| {
+                let mut trade = trade.clone();
+                trade.label = client_order_id.as_str().into();
+                trade.trade_id = format!("partial-ioc-{i}");
+                trade.trade_amount = qty;
+                trade
+            })
+            .collect();
+
+        let (emitter, mut rx) = test_emitter(clock);
+        dispatch_trades_payload(
+            DeriveTradesSubscriptionData {
+                trades: trades[..fills_before_cancel].to_vec(),
+            },
+            &emitter,
+            account_id,
+            clock,
+            &state,
+        );
+
+        for _ in 0..2 {
+            dispatch_orders_payload(
+                DeriveOrdersSubscriptionData {
+                    orders: vec![order.clone()],
+                },
+                &emitter,
+                account_id,
+                clock,
+                &state,
+            );
+        }
+
+        assert_eq!(
+            state.identity(&client_order_id),
+            (fills_before_cancel < trades.len()).then_some(identity),
+        );
+
+        for _ in 0..2 {
+            if submit_response {
+                dispatch_order_result(
+                    DeriveOrderResult {
+                        order: order.clone(),
+                        trades: trades.clone(),
+                    },
+                    client_order_id,
+                    &emitter,
+                    account_id,
+                    clock,
+                    &state,
+                );
+            } else {
+                for trade in &trades {
+                    dispatch_trades_payload(
+                        DeriveTradesSubscriptionData {
+                            trades: vec![trade.clone()],
+                        },
+                        &emitter,
+                        account_id,
+                        clock,
+                        &state,
+                    );
+
+                    dispatch_orders_payload(
+                        DeriveOrdersSubscriptionData {
+                            orders: vec![order.clone()],
+                        },
+                        &emitter,
+                        account_id,
+                        clock,
+                        &state,
+                    );
+                }
+            }
+        }
+
+        let mut accepted = 0;
+        let mut canceled = 0;
+        let mut fills = Vec::new();
+        let mut events = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                ExecutionEvent::Order(OrderEventAny::Accepted(event)) => {
+                    assert_eq!(event.client_order_id, client_order_id);
+                    accepted += 1;
+                    events.push("accepted");
+                }
+                ExecutionEvent::Order(OrderEventAny::Canceled(event)) => {
+                    assert_eq!(event.client_order_id, client_order_id);
+                    canceled += 1;
+                    events.push("canceled");
+                }
+                ExecutionEvent::Order(OrderEventAny::Filled(fill)) => {
+                    fills.push(fill);
+                    events.push("filled");
+                }
+                other => panic!("Expected tracked order events, received {other:?}"),
+            }
+        }
+
+        let expected_events: Vec<_> = std::iter::once("accepted")
+            .chain(std::iter::repeat_n("filled", fills_before_cancel))
+            .chain(std::iter::once("canceled"))
+            .chain(std::iter::repeat_n(
+                "filled",
+                trades.len() - fills_before_cancel,
+            ))
+            .collect();
+        assert_eq!(events, expected_events);
+        assert_eq!(accepted, 1);
+        assert_eq!(canceled, 1);
+        assert_eq!(fills.len(), trades.len());
+
+        for (fill, trade) in fills.iter().zip(&trades) {
+            assert_eq!(fill.trader_id, emitter.trader_id());
+            assert_eq!(fill.strategy_id, identity.strategy_id);
+            assert_eq!(fill.instrument_id, identity.instrument_id);
+            assert_eq!(fill.client_order_id, client_order_id);
+            assert_eq!(fill.venue_order_id, VenueOrderId::from("order-abc"));
+            assert_eq!(fill.account_id, account_id);
+            assert_eq!(fill.trade_id.as_str(), trade.trade_id);
+            assert_eq!(fill.order_side, identity.order_side);
+            assert_eq!(fill.order_type, identity.order_type);
+            assert_eq!(fill.last_qty.as_decimal(), trade.trade_amount);
+            assert_eq!(fill.last_px.as_decimal(), dec!(3499));
+            assert_eq!(fill.currency, Currency::USDC());
+            assert_eq!(fill.liquidity_side, LiquiditySide::Maker);
+            assert_eq!(fill.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
+            assert_eq!(fill.position_id, None);
+            assert_eq!(
+                fill.commission,
+                Some(Money::from_decimal(dec!(0.02), Currency::USDC()).unwrap())
+            );
+            assert_eq!(fill.info, None);
+            assert_eq!(fill.causation_id, None);
+            assert!(!fill.reconciliation);
+        }
+
+        assert_eq!(state.identity(&client_order_id), None);
+        assert!(state.is_terminal(&client_order_id, identity.instrument_id));
     }
 
     #[rstest]

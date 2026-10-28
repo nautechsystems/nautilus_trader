@@ -210,8 +210,10 @@ pub(crate) mod tests {
         INSTALL_LOGGER.call_once(|| {
             log::set_logger(&CAPTURING_LOGGER).expect("test logger already installed");
         });
+
         log::set_max_level(LevelFilter::Trace);
         CAPTURING_LOGGER.clear(targets);
+
         LogCapture {
             logger: &CAPTURING_LOGGER,
             _guard: guard,

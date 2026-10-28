@@ -17,10 +17,11 @@
 
 use std::collections::HashMap;
 
-use nautilus_core::string::secret::SecretString;
+use nautilus_common::{config::check_unique_values, python::config_error_to_pyvalue_err};
+use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::websocket::TransportBackend;
-use pyo3::pymethods;
+use pyo3::{PyResult, pymethods};
 use ustr::Ustr;
 
 use crate::{
@@ -41,15 +42,17 @@ impl CoinApiInstrumentSelection {
         instrument_ids: Vec<InstrumentId>,
         filter_symbol_id: Option<String>,
         filter_asset_id: Option<String>,
-    ) -> Self {
-        Self {
+    ) -> PyResult<Self> {
+        check_unique_values("instrument_ids", &instrument_ids)
+            .map_err(config_error_to_pyvalue_err)?;
+        Ok(Self {
             exchange_id: Ustr::from(exchange_id),
             query: SymbolsQuery {
                 filter_symbol_id,
                 filter_asset_id,
             },
             instrument_ids,
-        }
+        })
     }
 
     #[getter]
@@ -114,10 +117,10 @@ impl CoinApiDataClientConfig {
         retry_delay_initial_ms: Option<u64>,
         retry_delay_max_ms: Option<u64>,
         retry_max_elapsed_ms: Option<u64>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
 
-        Self {
+        let config = Self {
             api_key: api_key.map(SecretString::from),
             base_url_http,
             base_url_ws,
@@ -136,7 +139,10 @@ impl CoinApiDataClientConfig {
                 .unwrap_or(defaults.retry_delay_initial_ms),
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             retry_max_elapsed_ms: retry_max_elapsed_ms.unwrap_or(defaults.retry_max_elapsed_ms),
-        }
+        };
+
+        config.validate().map_err(to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -165,7 +171,8 @@ mod tests {
             vec![instrument_id],
             Some("COINBASE_SPOT_BTC_USD".into()),
             Some("BTC".into()),
-        );
+        )
+        .unwrap();
         assert_eq!(selection.exchange_id(), "COINBASE");
         assert_eq!(selection.instrument_ids(), [instrument_id]);
         assert_eq!(
@@ -189,7 +196,8 @@ mod tests {
             Some(29),
             Some(53),
             Some(71_000),
-        );
+        )
+        .unwrap();
 
         assert_eq!(config.api_key.as_ref().unwrap().expose_secret(), "test-key");
         assert_eq!(

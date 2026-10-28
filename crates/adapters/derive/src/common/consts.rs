@@ -131,6 +131,9 @@ pub const DECIMAL_SCALE: u128 = 1_000_000_000_000_000_000;
 pub const DECIMAL_PRECISION: u32 = 12;
 
 pub const HTTP_TIMEOUT: Duration = Duration::from_secs(10);
+pub const HTTP_MAX_RETRIES: u32 = 3;
+pub const HTTP_RETRY_DELAY_INITIAL_MS: u64 = 100;
+pub const HTTP_RETRY_DELAY_MAX_MS: u64 = 5_000;
 
 /// Default timeout for blocking on account registration during execution
 /// client `connect()`.

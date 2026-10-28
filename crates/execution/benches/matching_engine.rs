@@ -45,7 +45,10 @@ use nautilus_execution::{
 };
 use nautilus_model::{
     accounts::MarginAccount,
-    data::{BookOrder, OrderBookDelta, QuoteTick, TradeTick, stubs::OrderBookDeltaTestBuilder},
+    data::{
+        Bar, BarType, BookOrder, OrderBookDelta, QuoteTick, TradeTick,
+        stubs::OrderBookDeltaTestBuilder,
+    },
     enums::{
         AccountType, AggressorSide, BookAction, BookType, ContingencyType, OmsType, OrderSide,
         OrderStatus, OrderType, PositionSide,
@@ -112,6 +115,7 @@ fn bench_market_data(c: &mut Criterion) {
     let quotes = generate_quotes(instrument_id, MARKET_DATA_COUNT);
     let trades = generate_trades(instrument_id, MARKET_DATA_COUNT);
     let deltas = generate_deltas(instrument_id, MARKET_DATA_COUNT);
+    let bars = generate_bars(instrument_id, MARKET_DATA_COUNT);
     let mut group = c.benchmark_group("matching_engine/market_data");
 
     group.throughput(Throughput::Elements(MARKET_DATA_COUNT as u64));
@@ -120,11 +124,7 @@ fn bench_market_data(c: &mut Criterion) {
             run_iterations(
                 iters,
                 || build_engine(BookType::L1_MBP),
-                |state| {
-                    for quote in &quotes {
-                        state.engine.process_quote_tick(black_box(quote));
-                    }
-                },
+                |state| process_quotes(state, &quotes),
                 |state| {
                     assert_eq!(
                         state.engine.get_book().update_count,
@@ -145,11 +145,7 @@ fn bench_market_data(c: &mut Criterion) {
             run_iterations(
                 iters,
                 || build_engine(BookType::L1_MBP),
-                |state| {
-                    for trade in &trades {
-                        state.engine.process_trade_tick(black_box(trade));
-                    }
-                },
+                |state| process_trades(state, &trades),
                 |state| {
                     assert_eq!(
                         state.engine.get_book().update_count,
@@ -158,6 +154,35 @@ fn bench_market_data(c: &mut Criterion) {
                     assert_eq!(
                         state.engine.get_book().ts_last,
                         trades.last().unwrap().ts_event
+                    );
+                    assert_events(state, EventCounts::default());
+                },
+            )
+        });
+    });
+
+    group.bench_function(BenchmarkId::new("bar_l1", MARKET_DATA_COUNT), |b| {
+        b.iter_custom(|iters| {
+            run_iterations(
+                iters,
+                || {
+                    build_engine_with_config(
+                        BookType::L1_MBP,
+                        OrderMatchingEngineConfig {
+                            bar_execution: true,
+                            ..Default::default()
+                        },
+                    )
+                },
+                |state| {
+                    for bar in &bars {
+                        state.engine.process_bar(black_box(bar));
+                    }
+                },
+                |state| {
+                    assert_eq!(
+                        state.engine.get_book().ts_last,
+                        bars.last().unwrap().ts_init
                     );
                     assert_events(state, EventCounts::default());
                 },
@@ -226,11 +251,7 @@ fn bench_queue_position(c: &mut Criterion) {
                 run_iterations(
                     iters,
                     || build_queue_engine(BookType::L2_MBP, &orders, Some(&bid), None),
-                    |state| {
-                        for trade in &trades {
-                            state.engine.process_trade_tick(black_box(trade));
-                        }
-                    },
+                    |state| process_trades(state, &trades),
                     |state| {
                         assert_events(state, EventCounts::default());
                         assert_order_status(state, OrderStatus::Accepted, order_count);
@@ -305,11 +326,7 @@ fn bench_queue_position(c: &mut Criterion) {
                         );
                         build_queue_engine(BookType::L1_MBP, &orders, None, Some(&quote))
                     },
-                    |state| {
-                        for quote in &quotes {
-                            state.engine.process_quote_tick(black_box(quote));
-                        }
-                    },
+                    |state| process_quotes(state, &quotes),
                     |state| {
                         assert_eq!(
                             state.engine.get_book().update_count,
@@ -317,6 +334,34 @@ fn bench_queue_position(c: &mut Criterion) {
                         );
                         assert_events(state, EventCounts::default());
                         assert_order_status(state, OrderStatus::Accepted, order_count);
+                    },
+                )
+            });
+        });
+
+        // Trades away from pending L1 prices expose deferred queue scan cost
+        group.bench_function(BenchmarkId::new("trade_l1_pending", order_count), |b| {
+            b.iter_custom(|iters| {
+                run_iterations(
+                    iters,
+                    || {
+                        let quote = quote(
+                            instrument_id,
+                            Price::from("1490.00"),
+                            Price::from("1500.00"),
+                            0,
+                        );
+                        build_queue_engine(BookType::L1_MBP, &orders, None, Some(&quote))
+                    },
+                    |state| process_trades(state, &trades),
+                    |state| {
+                        assert_eq!(
+                            state.engine.get_book().update_count,
+                            (MARKET_DATA_COUNT + 1) as u64,
+                        );
+                        assert_events(state, EventCounts::default());
+                        assert_order_status(state, OrderStatus::Accepted, order_count);
+                        assert_eq!(state.engine.get_open_orders().len(), order_count);
                     },
                 )
             });
@@ -391,11 +436,7 @@ fn bench_liquidity_consumption(c: &mut Criterion) {
                 run_iterations(
                     iters,
                     || build_liquidity_engine(level_count, MARKET_DATA_COUNT),
-                    |state| {
-                        for trade in &trades {
-                            state.engine.process_trade_tick(black_box(trade));
-                        }
-                    },
+                    |state| process_trades(state, &trades),
                     |state| {
                         assert_eq!(state.engine.get_core().last, Some(worst_price));
                         assert_events(state, EventCounts::default());
@@ -855,6 +896,18 @@ fn process_deltas(state: &mut BenchEngine, deltas: &[OrderBookDelta]) {
             .engine
             .process_order_book_delta(black_box(delta))
             .expect("L2 delta should be processed");
+    }
+}
+
+fn process_quotes(state: &mut BenchEngine, quotes: &[QuoteTick]) {
+    for quote in quotes {
+        state.engine.process_quote_tick(black_box(quote));
+    }
+}
+
+fn process_trades(state: &mut BenchEngine, trades: &[TradeTick]) {
+    for trade in trades {
+        state.engine.process_trade_tick(black_box(trade));
     }
 }
 
@@ -1338,6 +1391,26 @@ fn generate_trades(instrument_id: InstrumentId, count: usize) -> Vec<TradeTick> 
                     AggressorSide::Sell
                 },
                 TradeId::from(format!("T-{i}").as_str()),
+                ts,
+                ts,
+            )
+        })
+        .collect()
+}
+
+fn generate_bars(instrument_id: InstrumentId, count: usize) -> Vec<Bar> {
+    let bar_type = BarType::from(format!("{instrument_id}-1-MINUTE-LAST-EXTERNAL").as_str());
+    (0..count)
+        .map(|i| {
+            let open_cents = 149_000 + i as i64 % 100;
+            let ts = UnixNanos::from(BASE_TS_NS + i as u64 * 60_000_000_000);
+            Bar::new(
+                bar_type,
+                price_from_cents(open_cents),
+                price_from_cents(open_cents + 20),
+                price_from_cents(open_cents - 20),
+                price_from_cents(open_cents + 5),
+                Quantity::from("4.000"),
                 ts,
                 ts,
             )

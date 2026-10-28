@@ -244,6 +244,17 @@ its schema from the bar aggregation, and `subscribe_data()` from the data type n
 listed. The matching historical requests, `request_quotes()` and `request_trades()`, take the same
 `schema` values and defaults.
 
+`request_instrument()`, `request_quotes()`, and `request_trades()` accept identifier lists. The adapter
+groups identifiers by dataset and preserves successful groups if another group fails. Check
+`on_data_response()` for the completion state and failure reason. Quote and trade requests with
+multiple IDs do not accept a record limit.
+
+Book and bar requests require one list member. A parent-symbol `request_book_deltas()` can return
+several book payloads under the same correlation ID; completion follows the last payload.
+
+Actor and Strategy historical requests include both bounds on `ts_init`. Bar requests select bars
+by close time even when `bars_timestamp_on_close=False`.
+
 :::warning
 The "Available Databento schemas" column lists adapter-supported choices for
 that Nautilus subscription method. The selected dataset must also support the
@@ -279,11 +290,48 @@ self.subscribe_instrument(
 )
 ```
 
+### Subscription lists
+
+Implemented instrument subscriptions accept one ID or a non-empty list through `instrument_id`.
+External bar subscriptions accept full bar types through `bar_type`.
+
+#### Quote and trade batching
+
+Quotes and trades use one subscription per dataset. The adapter validates every ID before dispatch
+and applies `price_precision` to each symbol.
+
+- A dataset enqueue failure is logged and does not stop later datasets.
+- Accepted datasets are not rolled back. The client reports exactly their accepted IDs.
+- The client adapter tracks accepted members and sends only missing IDs when another subscribe
+  command reaches it. Retry is not automatic.
+
+:::note
+Repeating a subscribe call on the same actor sends no command while that actor retains its local
+subscription. To retry, release that local subscription first, or subscribe from another owner.
+:::
+
+#### Other subscriptions
+
+Other implemented instrument hooks and external bar hooks iterate members locally:
+
+- Existing dataset and schema rules apply to each member.
+- A member failure reports the exact synchronous accepted subset.
+- Full bar types on the same instrument remain distinct.
+
+Granular unsubscribe is a documented no-op for every member. Stop the live session to remove its subscriptions.
+
 ### Quote subscriptions (MBP and L1)
 
 ```python
 # Default MBP-1 quotes (also emits trades on trade events)
 self.subscribe_quotes(instrument_id, client_id=DATABENTO_CLIENT_ID)
+
+# One subscription for both raw symbols in GLBX.MDP3
+self.subscribe_quotes(
+    instrument_id=[InstrumentId.from_str("ESZ6.GLBX"), InstrumentId.from_str("NQZ6.GLBX")],
+    params={"price_precision": 2},
+    client_id=DATABENTO_CLIENT_ID,
+)
 
 # Explicit MBP-1 schema
 self.subscribe_quotes(
@@ -315,6 +363,9 @@ self.subscribe_quotes(
 ```
 
 ### Trade subscriptions
+
+Trade calls accept an instrument list as described in
+[Quote and trade batching](#quote-and-trade-batching).
 
 ```python
 # Trade ticks only
@@ -612,7 +663,8 @@ instrument has received its first delta.
 The live client buffers MBO messages until a record carries the `F_LAST` flag closing the match event, then
 passes one `OrderBookDeltas` container to the handler. Records that decode to no delta (a fill attribution, a
 status action, or a trade) can still carry `F_LAST`. Thus, the client honors the raw flag independently of the
-decoded payload. Otherwise, a partial event would be stranded and merged into the next event. A trade that
+decoded payload. Otherwise, a partial event would be stranded and merged into the next event. When MBO carries
+the instrument's trades (see [Real-time client architecture](#real-time-client-architecture)), a trade that
 closes the event follows the flushed container.
 
 Snapshot records (`F_SNAPSHOT`) accumulate into the same buffer and flush with the first non-snapshot event
@@ -813,6 +865,18 @@ dataset on the first subscription for that dataset, and every schema for that da
 handler runs one async task that races the next gateway record against the next engine command. Thus, later
 subscriptions reach the running session without a reconnect.
 
+The `trades`, `mbp-1`, `tbbo`, `cmbp-1`, `tcbbo`, and `mbo` schemas all carry an instrument's trades. When
+one instrument is subscribed on several of them, such as quotes on `mbp-1` beside trades on `trades`, the
+handler sends each trade only once. The first schema to deliver a trade for the instrument carries its trades
+until the handler reconnects, and trades decoded from the other schemas are dropped. Quotes and book deltas
+from those schemas are still sent. Which schema delivers first can differ between sessions, so with `mbo`
+beside another trade schema, a trade does not always follow its event's book deltas. Limitations:
+
+- The `mbp-1` and `tbbo` schemas share a record type, so subscribing to both for one instrument still
+  delivers each trade, and the quote at each trade, twice.
+- A continuous symbol stops carrying a contract when it rolls. If a schema subscribed on a continuous symbol
+  carries a contract's trades, the other schemas' trades for that contract stay dropped after the roll.
+
 A single `DatabentoHistoricalClient` serves every historical request from the
 data client, including the instrument definitions fetched to seed price precision.
 
@@ -886,7 +950,7 @@ All reconnections include:
 - **Cycle reset**: Each successful session (>60s) resets the timeout clock and the backoff delay.
 - **Command buffering**: Commands received during backoff are applied to the next session.
 
-Individual unsubscribe requests log a warning and are ignored because Databento
+Individual unsubscribe requests log at debug level and are ignored because Databento
 live sessions do not support granular unsubscribe. Stop the session to remove a
 subscription from the live gateway.
 

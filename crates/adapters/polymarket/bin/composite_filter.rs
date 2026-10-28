@@ -17,8 +17,8 @@
 //!
 //! This example combines:
 //!
-//! - [`EventQueryFilter`] - two-phase fetch: resolves an event slug to
-//!   condition IDs, then queries `/markets` with sorting and limiting.
+//! - [`EventQueryFilter`] - fetches an event's embedded markets, then sorts
+//!   and limits them client-side.
 //!   Here we fetch the top 20 markets by liquidity from the 2028
 //!   presidential election event.
 //! - [`PredicateFilter`] - post-fetch refinement (keeps only outcome "Yes")
@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         http_client,
         None,
         vec![Arc::new(event_query), Arc::new(predicate)],
-    );
+    )?;
 
     log::info!("Loading top-20 presidential election markets by liquidity (outcome='Yes')...");
     provider.load_all(None).await?;

@@ -74,6 +74,7 @@ bon = { workspace = true }
 bytes = { workspace = true }
 bzip2 = { workspace = true }
 flate2 = { workspace = true }
+indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }

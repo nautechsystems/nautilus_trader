@@ -132,6 +132,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 axum = { workspace = true }
 bytes = { workspace = true }
 criterion = { workspace = true }
+cucumber = { workspace = true }
 madsim = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
@@ -157,6 +158,11 @@ name = "reconciliation"
 path = "benches/reconciliation.rs"
 harness = false
 
+[[bench]]
+name = "msgbus_python"
+harness = false
+required-features = ["python"]
+
 [[test]]
 name = "integration"
 path = "tests/integration/main.rs"
@@ -166,3 +172,8 @@ required-features = ["node"]
 name = "book"
 path = "tests/book/main.rs"
 required-features = ["test-support"]
+
+[[test]]
+name = "spec"
+path = "tests/spec/main.rs"
+required-features = ["node"]

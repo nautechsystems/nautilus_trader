@@ -44,10 +44,10 @@ use super::{
     },
     reconciliation::{
         FillContext, FillReportScope, ResolvedBalanceScope, TargetOrderReportScope,
-        apply_fill_time_filters, build_fill_reports_from_trades,
+        apply_fill_time_filters, apply_logical_order_quantity, build_fill_reports_from_trades,
         build_reconciliation_position_reports, build_target_order_report,
-        cap_order_report_filled_qty, normalize_terminal_order_report_quantity,
-        venue_leg_filled_before_and_quantity, venue_qty_matches,
+        cap_order_report_filled_qty, filter_unsupported_orders, filter_unsupported_positions,
+        normalize_terminal_order_report_quantity, venue_leg_filled_before_and_quantity,
     },
     responses::confirm_modify_replacement,
 };
@@ -225,7 +225,6 @@ impl PolymarketExecutionClient {
 
         let resolved_client_order_id = authority.client_order_id;
         let cached = authority.cached_order;
-        let cached_quantity = cached.as_ref().map(Order::quantity);
         let cached_order_type = cached.as_ref().map_or(OrderType::Limit, Order::order_type);
         let cached_tif = cached
             .as_ref()
@@ -317,13 +316,16 @@ impl PolymarketExecutionClient {
             return Ok(Some(report));
         }
 
-        let Some(quantity) = cached_quantity else {
+        let Some(cached_order) = cached.as_ref() else {
             log::debug!(
                 "Order {venue_order_id} has trades but no cached order; deferring to engine"
             );
             return Ok(None);
         };
 
+        let quantity = cached_order.quantity();
+        let (filled_before, leg_quantity) =
+            venue_leg_filled_before_and_quantity(cached_order, venue_order_id, size_prec)?;
         let total_filled_dec = sum_filled_quantity(&order_fills);
         let avg_px = weighted_average_price(&order_fills, total_filled_dec);
         let raw_filled_qty = Quantity::from_decimal_dp(total_filled_dec, size_prec)?;
@@ -334,8 +336,11 @@ impl PolymarketExecutionClient {
             .max()
             .unwrap_or(ts_init);
 
-        let order_status = recovered_terminal_order_status(cached_tif, quantity, raw_filled_qty);
-        let filled_qty = raw_filled_qty;
+        let order_status =
+            recovered_terminal_order_status(cached_tif, leg_quantity, raw_filled_qty);
+        let filled_qty = filled_before
+            .checked_add(raw_filled_qty)
+            .context("logical filled quantity overflow")?;
 
         log::debug!(
             "Recovered {} status for {venue_order_id} from {} trade(s) (filled_qty={filled_qty}, quantity={quantity})",
@@ -364,8 +369,17 @@ impl PolymarketExecutionClient {
             None,
         );
         report.price = cached_price;
-        report.avg_px = avg_px;
-        normalize_terminal_order_report_quantity(&mut report, Quantity::zero(size_prec));
+
+        report.avg_px = if filled_before.is_zero() {
+            avg_px
+        } else {
+            None
+        };
+
+        normalize_terminal_order_report_quantity(
+            &mut report,
+            cached_order.non_reopened_voided_qty(),
+        );
 
         Ok(Some(report))
     }
@@ -783,6 +797,16 @@ impl PolymarketExecutionClient {
         } else {
             self.config.reconciliation_load_ids()
         };
+
+        filter_unsupported_orders(
+            &self.http_client,
+            &mut orders,
+            &self.shared_token_instruments,
+            &ctx,
+            cmd.instrument_id,
+            collection_load_ids,
+        )
+        .await?;
         let (mut reports, _) = super::reconciliation::build_order_reports_from_orders(
             &orders,
             &self.shared_token_instruments,
@@ -910,6 +934,28 @@ impl PolymarketExecutionClient {
             });
         }
 
+        let mut logical_fill_offsets = modify_fill_offsets.clone();
+        for report in &mut reports {
+            if logical_fill_offsets.contains_key(&report.venue_order_id) {
+                continue;
+            }
+
+            let cached_order = report
+                .client_order_id
+                .and_then(|id| self.core.cache().order_owned(&id))
+                .or_else(|| {
+                    self.core
+                        .cache()
+                        .client_order_id(&report.venue_order_id)
+                        .and_then(|id| self.core.cache().order_owned(id))
+                });
+
+            if let Some(cached_order) = cached_order {
+                let filled_before = apply_logical_order_quantity(report, &cached_order)?;
+                logical_fill_offsets.insert(report.venue_order_id, filled_before);
+            }
+        }
+
         let needs_confirmed_fills = reports.iter().any(|report| {
             let cached_filled = report
                 .client_order_id
@@ -956,42 +1002,11 @@ impl PolymarketExecutionClient {
         for report in &mut reports {
             let cached_order = report
                 .client_order_id
-                .and_then(|id| self.core.cache().order_owned(&id))
-                .or_else(|| {
-                    self.core
-                        .cache()
-                        .client_order_id(&report.venue_order_id)
-                        .and_then(|id| self.core.cache().order_owned(id))
-                });
-            let filled_before_leg = if let Some(filled_before) =
-                modify_fill_offsets.get(&report.venue_order_id).copied()
-            {
-                filled_before
-            } else if let Some(cached_order) = cached_order.as_ref() {
-                let (filled_before, leg_quantity) = venue_leg_filled_before_and_quantity(
-                    cached_order,
-                    report.venue_order_id,
-                    report.quantity.precision,
-                )?;
-                anyhow::ensure!(
-                    venue_qty_matches(
-                        report.order_side == Some(OrderSide::Buy),
-                        report.quantity.as_decimal(),
-                        report.filled_qty.as_decimal(),
-                        leg_quantity.as_decimal(),
-                    ),
-                    "provider venue-leg quantity {} does not match expected quantity {leg_quantity}",
-                    report.quantity,
-                );
-                report.quantity = cached_order.quantity();
-                report.filled_qty = filled_before
-                    .checked_add(report.filled_qty)
-                    .context("logical filled quantity overflow")?;
-                filled_before
-            } else {
-                Quantity::zero(report.quantity.precision)
-            };
-
+                .and_then(|id| self.core.cache().order_owned(&id));
+            let filled_before_leg = logical_fill_offsets
+                .get(&report.venue_order_id)
+                .copied()
+                .unwrap_or_else(|| Quantity::zero(report.quantity.precision));
             let cached_filled = cached_order.as_ref().map_or_else(
                 || Quantity::zero(report.quantity.precision),
                 Order::filled_qty,
@@ -1013,17 +1028,11 @@ impl PolymarketExecutionClient {
             );
         }
 
-        let reports = if cmd.open_only {
-            reports
-                .into_iter()
-                .filter(|report| {
-                    report.order_status.is_open()
-                        || modify_fill_offsets.contains_key(&report.venue_order_id)
-                })
-                .collect()
-        } else {
-            reports
-        };
+        reports.retain(|report| {
+            !cmd.open_only
+                || report.order_status.is_open()
+                || modify_fill_offsets.contains_key(&report.venue_order_id)
+        });
 
         log::debug!("Generated {} order status reports", reports.len());
         Ok(reports)
@@ -1084,13 +1093,23 @@ impl PolymarketExecutionClient {
             "Session positions cannot be inferred from wallet-wide holdings"
         );
         let ctx = self.fill_context();
-        let positions = self
+        let mut positions = self
             .data_api_client
             .get_positions(ctx.user_address)
             .await
             .context("failed to fetch positions from Data API")?;
 
         let ts_now = self.clock.get_time_ns();
+        let resolved_balances = self.resolved_balance_scope();
+        filter_unsupported_positions(
+            &self.http_client,
+            &mut positions,
+            &self.shared_token_instruments,
+            cmd.instrument_id,
+            self.config.reconciliation_load_ids(),
+            &resolved_balances,
+        )
+        .await?;
         let reports = build_reconciliation_position_reports(
             &positions,
             self.core.account_id,
@@ -1098,7 +1117,7 @@ impl PolymarketExecutionClient {
             &self.shared_token_instruments,
             cmd.instrument_id,
             self.config.reconciliation_load_ids(),
-            &self.resolved_balance_scope(),
+            &resolved_balances,
         )?;
 
         log::debug!("Generated {} position status reports", reports.len());

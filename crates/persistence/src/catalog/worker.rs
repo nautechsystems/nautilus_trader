@@ -773,8 +773,7 @@ mod tests {
             "second write failed",
             "third write failed",
         ] {
-            let mut params = Params::new();
-            params.insert("test_error".to_string(), message.into());
+            let params = Params::new([("test_error".to_string(), message.into())].into());
             worker
                 .write_async(CatalogWriteJob {
                     data: DataBatch::Quote(vec![stub_quote()].into()),

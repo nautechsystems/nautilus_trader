@@ -116,7 +116,7 @@ async fn test_websocket_client_authenticate() {
     };
 
     let token = CancellationToken::new();
-    let client = KrakenSpotWebSocketClient::new(config, token, None);
+    let client = KrakenSpotWebSocketClient::new(config, token, None).unwrap();
 
     // Authenticate
     let result = client.authenticate().await;
@@ -128,7 +128,7 @@ async fn test_websocket_client_authenticate() {
 async fn test_websocket_client_authenticate_without_credentials() {
     let config = KrakenDataClientConfig::default();
     let token = CancellationToken::new();
-    let client = KrakenSpotWebSocketClient::new(config, token, None);
+    let client = KrakenSpotWebSocketClient::new(config, token, None).unwrap();
 
     // Try to authenticate without credentials
     let result = client.authenticate().await;

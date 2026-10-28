@@ -15,6 +15,7 @@
 
 //! Configuration structures for the Derive adapter.
 
+use nautilus_common::config::{ConfigResult, check_unique_values};
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
@@ -22,7 +23,14 @@ use nautilus_network::websocket::TransportBackend;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-use crate::common::{enums::DeriveEnvironment, urls};
+use crate::{
+    common::{
+        consts::{HTTP_MAX_RETRIES, HTTP_RETRY_DELAY_INITIAL_MS, HTTP_RETRY_DELAY_MAX_MS},
+        enums::DeriveEnvironment,
+        urls,
+    },
+    providers::normalize_currency,
+};
 
 /// Configuration for the Derive data client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
@@ -59,7 +67,8 @@ pub struct DeriveDataClientConfig {
     /// Empty snapshots count as updates; a zero value disables stale book recovery.
     #[builder(default = 120)]
     pub book_stale_threshold_secs: u64,
-    /// Interval for refreshing instruments in minutes.
+    /// Interval in minutes for refreshing instruments of configured currencies.
+    /// A zero value disables periodic refresh.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
     /// Underlying currencies to load on connect. Empty means lazy-load by
@@ -73,7 +82,7 @@ pub struct DeriveDataClientConfig {
     /// WebSocket request.
     #[builder(default = true)]
     pub auto_load_missing_instruments: bool,
-    /// WebSocket transport backend (defaults to `Sockudo` when that feature is enabled).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
@@ -104,6 +113,23 @@ impl DeriveDataClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Validates that configured currency entries contain no duplicates.
+    ///
+    /// Nonblank currencies must also be distinct after trimming.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if currency entries repeat or nonblank entries match after trimming.
+    pub fn validate(&self) -> ConfigResult<()> {
+        check_unique_values("currencies", &self.currencies)?;
+        let normalized: Vec<_> = self
+            .currencies
+            .iter()
+            .filter_map(|currency| normalize_currency(currency))
+            .collect();
+        check_unique_values("currencies", &normalized)
     }
 
     /// Returns the REST API base URL, respecting environment and overrides.
@@ -162,13 +188,13 @@ pub struct DeriveExecutionClientConfig {
     #[builder(default = 10)]
     pub http_timeout_secs: u64,
     /// Maximum number of retry attempts for HTTP requests.
-    #[builder(default = 3)]
+    #[builder(default = HTTP_MAX_RETRIES)]
     pub max_retries: u32,
     /// Initial retry delay in milliseconds.
-    #[builder(default = 100)]
+    #[builder(default = HTTP_RETRY_DELAY_INITIAL_MS)]
     pub retry_delay_initial_ms: u64,
     /// Maximum retry delay in milliseconds.
-    #[builder(default = 5000)]
+    #[builder(default = HTTP_RETRY_DELAY_MAX_MS)]
     pub retry_delay_max_ms: u64,
     /// Optional per-operation WebSocket timeout in seconds (login, subscribe,
     /// reads, writes). When unset, the low-level `WS_REQUEST_TIMEOUT` applies.
@@ -176,7 +202,7 @@ pub struct DeriveExecutionClientConfig {
     /// Per-contract USDC fee cap signed into every order. Required for
     /// execution and must be greater than zero.
     pub max_fee_per_contract: Option<Decimal>,
-    /// WebSocket transport backend (defaults to `Sockudo` when that feature is enabled).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
     /// Override for the EIP-712 domain separator. Falls back to the shipped
@@ -211,6 +237,11 @@ pub struct DeriveExecutionClientConfig {
     /// are absent from `public/getRateLimits`.
     /// See <https://docs.derive.xyz/rate-limits>.
     pub max_per_instrument_matching_requests_per_second: Option<u32>,
+    /// Enables wallet-wide cancel-on-disconnect before accepting orders and tags resting limit orders
+    /// with `mmp: true`. Requires `Trade(All)` across all subaccounts and signature expiry at most
+    /// 15 minutes. False leaves the wallet setting unchanged. Shutdown never disables the setting.
+    #[builder(default)]
+    pub cancel_on_disconnect: bool,
 }
 
 #[cfg(feature = "python")]
@@ -235,6 +266,7 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecutionClientConfig {
     market_order_slippage_bps: u32,
     max_matching_requests_per_second: Option<u32>,
     max_per_instrument_matching_requests_per_second: Option<u32>,
+    cancel_on_disconnect: bool,
 });
 
 impl Default for DeriveExecutionClientConfig {
@@ -271,7 +303,9 @@ impl DeriveExecutionClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if `max_fee_per_contract` is missing or not greater than zero.
+    /// Returns an error if:
+    /// - `max_fee_per_contract` is missing or not greater than zero.
+    /// - Cancel-on-disconnect uses a signature expiry greater than 15 minutes.
     pub fn validate(&self) -> anyhow::Result<()> {
         let Some(max_fee_per_contract) = self.max_fee_per_contract else {
             anyhow::bail!("max_fee_per_contract is required");
@@ -279,6 +313,12 @@ impl DeriveExecutionClientConfig {
 
         if max_fee_per_contract <= Decimal::ZERO {
             anyhow::bail!("max_fee_per_contract must be greater than zero");
+        }
+
+        if self.cancel_on_disconnect && self.signature_expiry_secs > 15 * 60 {
+            anyhow::bail!(
+                "cancel_on_disconnect requires signature_expiry_secs at most 900 seconds"
+            );
         }
 
         Ok(())
@@ -303,9 +343,23 @@ impl DeriveExecutionClientConfig {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case("currencies")]
+    fn test_data_config_rejects_duplicate_selections(#[case] field: &str) {
+        let mut input = serde_json::to_value(DeriveDataClientConfig::default()).unwrap();
+        input[field] = serde_json::json!(["first", "second", "first"]);
+        let config: DeriveDataClientConfig = serde_json::from_value(input).unwrap();
+        let original = serde_json::to_value(&config).unwrap();
+        let result = config.validate();
+
+        assert_eq!(result, Err(ConfigError::duplicate(field, None)));
+        assert_eq!(serde_json::to_value(&config).unwrap(), original);
+    }
 
     #[rstest]
     fn test_data_config_defaults() {
@@ -392,6 +446,7 @@ mod tests {
     #[rstest]
     fn test_exec_config_defaults() {
         let config = DeriveExecutionClientConfig::default();
+        assert!(!config.cancel_on_disconnect);
         assert_eq!(config.environment, DeriveEnvironment::Mainnet);
         assert_eq!(config.http_timeout_secs, 10);
         assert_eq!(config.max_retries, 3);
@@ -402,6 +457,36 @@ mod tests {
                 .is_none()
         );
         assert!(!config.has_credentials());
+    }
+
+    #[rstest]
+    #[case::enabled_maximum(true, 900, true)]
+    #[case::enabled_too_long(true, 901, false)]
+    #[case::disabled_long_expiry(false, 901, true)]
+    fn test_exec_config_cancel_on_disconnect_signature_expiry(
+        #[case] enabled: bool,
+        #[case] expiry_secs: u64,
+        #[case] valid: bool,
+    ) {
+        let config = DeriveExecutionClientConfig::builder()
+            .cancel_on_disconnect(enabled)
+            .signature_expiry_secs(expiry_secs)
+            .max_fee_per_contract(Decimal::ONE)
+            .build();
+        let result = config.validate();
+        let decoded: DeriveExecutionClientConfig =
+            serde_json::from_value(serde_json::to_value(&config).unwrap()).unwrap();
+
+        assert_eq!(decoded.cancel_on_disconnect, enabled);
+        assert_eq!(decoded.signature_expiry_secs, expiry_secs);
+        assert_eq!(result.is_ok(), valid);
+
+        if !valid {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "cancel_on_disconnect requires signature_expiry_secs at most 900 seconds"
+            );
+        }
     }
 
     #[rstest]
@@ -460,5 +545,28 @@ mod tests {
         let debug = format!("{config:?}");
         assert!(!debug.contains("redacted"));
         assert!(debug.contains("session_key: None"));
+    }
+
+    #[rstest]
+    #[case::trimmed(vec!["BTC", "ETH", " BTC "], true)]
+    #[case::blank(vec!["", ""], true)]
+    #[case::distinct(vec![" ETH ", "BTC"], false)]
+    fn test_currencies_normalized_uniqueness(#[case] values: Vec<&str>, #[case] duplicate: bool) {
+        let currencies: Vec<_> = values.into_iter().map(str::to_string).collect();
+
+        let config = DeriveDataClientConfig {
+            currencies: currencies.clone(),
+            ..Default::default()
+        };
+
+        let expected = if duplicate {
+            Err(ConfigError::duplicate("currencies", None))
+        } else {
+            Ok(())
+        };
+
+        let result = config.validate();
+        assert_eq!(result, expected);
+        assert_eq!(config.currencies, currencies);
     }
 }

@@ -626,13 +626,12 @@ impl BinanceSpotWsTradingHandler {
                     }
                 }
                 606 => {
-                    log::debug!(
-                        "Received SBE ListStatusEvent ({} bytes), not yet decoded",
-                        data.len()
-                    );
-                    return Ok(BinanceSpotWsTradingMessage::Error(
-                        "SBE ListStatusEvent decoding not yet implemented".to_string(),
-                    ));
+                    return Ok(match super::decode_sbe::decode_list_status(data) {
+                        Ok(status) => BinanceSpotWsTradingMessage::ListStatus(status),
+                        Err(e) => BinanceSpotWsTradingMessage::Error(format!(
+                            "SBE ListStatusEvent decode failed: {e}"
+                        )),
+                    });
                 }
                 607 => {
                     log::debug!(
@@ -1059,6 +1058,51 @@ mod tests {
             .unwrap();
         handler.inner.as_ref().unwrap().disconnect().await;
         server.abort();
+    }
+
+    #[rstest]
+    #[case::valid(false)]
+    #[case::malformed(true)]
+    fn test_list_status_routes_typed_message_or_controlled_error(#[case] malformed: bool) {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, _out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = BinanceSpotWsTradingHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            Arc::new(SigningCredential::new(
+                "api-key".to_owned(),
+                "secret".to_owned(),
+            )),
+        );
+        let mut data = crate::common::testing::load_fixture_bytes(
+            "spot/user_data_sbe/list_status_executing.sbe",
+        );
+
+        if malformed {
+            data.pop();
+        }
+
+        let message = handler.decode_ws_api_response(&data).unwrap();
+        if malformed {
+            let BinanceSpotWsTradingMessage::Error(reason) = message else {
+                panic!("Expected controlled error");
+            };
+
+            assert!(reason.starts_with("SBE ListStatusEvent decode failed:"));
+        } else {
+            let BinanceSpotWsTradingMessage::ListStatus(status) = message else {
+                panic!("Expected typed list status");
+            };
+
+            assert_eq!(
+                status,
+                super::super::decode_sbe::decode_list_status(&data).unwrap()
+            );
+        }
     }
 
     #[rstest]

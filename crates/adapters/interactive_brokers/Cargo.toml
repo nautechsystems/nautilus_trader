@@ -78,6 +78,7 @@ bon = { workspace = true }
 dashmap = { workspace = true }
 futures-util = { workspace = true }
 ibapi = { workspace = true }
+indexmap = { workspace = true }
 jiff = { workspace = true }
 log = { workspace = true }
 parking_lot = { workspace = true }

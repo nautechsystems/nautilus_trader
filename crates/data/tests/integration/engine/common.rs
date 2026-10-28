@@ -13,6 +13,10 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+#[cfg(feature = "streaming")]
+use indexmap::IndexMap;
+use nautilus_common::messages::data::IntoInstrumentIds;
+
 use super::*;
 
 #[fixture]
@@ -202,17 +206,22 @@ impl DataClient for FailingRequestDataClient {
 }
 
 pub(super) fn parent_params() -> Params {
-    let mut params = Params::new();
-    params.insert(PARAMS_IS_PARENT.to_string(), json!(true));
-    params
+    Params::new([(PARAMS_IS_PARENT.to_string(), json!(true))].into())
 }
 
+#[cfg_attr(
+    feature = "streaming",
+    allow(
+        clippy::needless_pass_by_value,
+        reason = "returns owned params when streaming is disabled"
+    )
+)]
 pub(super) fn client_subscription_params(params: Params) -> Params {
     #[cfg(feature = "streaming")]
     {
-        let mut params = params;
+        let mut params = IndexMap::clone(&params);
         params.insert("start_ns".to_string(), Value::Null);
-        params
+        Params::new(params)
     }
 
     #[cfg(not(feature = "streaming"))]
@@ -388,13 +397,13 @@ pub(super) fn data_engine_clock_at(now: u64) -> Rc<RefCell<dyn Clock>> {
 
 pub(super) fn execute_book_snapshot_subscribe(
     data_engine: &Rc<RefCell<DataEngine>>,
-    instrument_id: InstrumentId,
+    instrument_ids: impl IntoInstrumentIds,
     client_id: ClientId,
     venue: Venue,
     interval_ms: NonZeroUsize,
 ) {
     let subscribe = SubscribeBookSnapshots::new(
-        instrument_id,
+        instrument_ids,
         BookType::L2_MBP,
         Some(client_id),
         Some(venue),
@@ -415,13 +424,13 @@ pub(super) fn execute_book_snapshot_subscribe(
 
 pub(super) fn execute_book_snapshot_unsubscribe(
     data_engine: &Rc<RefCell<DataEngine>>,
-    instrument_id: InstrumentId,
+    instrument_ids: impl IntoInstrumentIds,
     client_id: ClientId,
     venue: Venue,
     interval_ms: NonZeroUsize,
 ) {
     let unsubscribe = UnsubscribeBookSnapshots::new(
-        instrument_id,
+        instrument_ids,
         interval_ms,
         Some(client_id),
         Some(venue),
@@ -576,9 +585,11 @@ pub(super) fn subscribe_synthetic_quotes_cmd(instrument_id: InstrumentId) -> Dat
     )))
 }
 
-pub(super) fn subscribe_synthetic_trades_cmd(instrument_id: InstrumentId) -> DataCommand {
+pub(super) fn subscribe_synthetic_trades_cmd(
+    instrument_ids: impl IntoInstrumentIds,
+) -> DataCommand {
     DataCommand::Subscribe(SubscribeCommand::Trades(SubscribeTrades::new(
-        instrument_id,
+        instrument_ids,
         None,
         Some(Venue::synthetic()),
         UUID4::new(),

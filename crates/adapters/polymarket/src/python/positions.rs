@@ -33,8 +33,7 @@ use crate::{
 #[pyclass(
     module = "nautilus_trader.adapters.polymarket",
     name = "PolymarketPositionOutcome",
-    frozen,
-    skip_from_py_object
+    frozen
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")]
 #[derive(Clone, Debug)]
@@ -103,8 +102,7 @@ impl PyPolymarketPositionOutcome {
 /// Submitted position operation that can be polled to a terminal Relayer state.
 #[pyclass(
     module = "nautilus_trader.adapters.polymarket",
-    name = "PolymarketPositionTransaction",
-    skip_from_py_object
+    name = "PolymarketPositionTransaction"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")]
 #[derive(Debug)]
@@ -160,8 +158,7 @@ impl From<PolymarketPositionTransaction> for PyPolymarketPositionTransaction {
 /// Deposit Wallet client for split, merge, and redeem position operations.
 #[pyclass(
     module = "nautilus_trader.adapters.polymarket",
-    name = "PolymarketPositionClient",
-    skip_from_py_object
+    name = "PolymarketPositionClient"
 )]
 #[pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.polymarket")]
 #[derive(Debug)]

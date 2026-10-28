@@ -136,7 +136,28 @@ impl<'de> Deserialize<'de> for StrikeSearchProfile {
 }
 
 /// Defines which strikes to include in an option chain subscription.
+///
+/// Existing variants support direct construction. Downstream matches require a
+/// wildcard arm so new selection modes can be added without changing those matches.
+/// Use [`Self::resolve`] for model-level selection, or reject unsupported modes
+/// explicitly when implementing a custom selector.
+///
+/// An exhaustive match outside this crate does not compile:
+///
+/// ```compile_fail,E0004
+/// use nautilus_model::data::StrikeRange;
+///
+/// fn is_fixed(range: &StrikeRange) -> bool {
+///     match range {
+///         StrikeRange::Fixed(_) => true,
+///         StrikeRange::AtmRelative { .. } => false,
+///         StrikeRange::AtmPercent { .. } => false,
+///         StrikeRange::Delta { .. } => false,
+///     }
+/// }
+/// ```
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[non_exhaustive]
 pub enum StrikeRange {
     /// Subscribe to a fixed set of strike prices.
     Fixed(Vec<Price>),
@@ -263,11 +284,11 @@ pub struct OptionGreeks {
     pub convention: GreeksConvention,
     /// Core Greek sensitivity values.
     pub greeks: OptionGreekValues,
-    /// Mark implied volatility.
+    /// Mark implied volatility as a fraction (0.552 represents 55.2%).
     pub mark_iv: Option<f64>,
-    /// Bid implied volatility.
+    /// Bid implied volatility as a fraction (0.552 represents 55.2%).
     pub bid_iv: Option<f64>,
-    /// Ask implied volatility.
+    /// Ask implied volatility as a fraction (0.552 represents 55.2%).
     pub ask_iv: Option<f64>,
     /// Underlying price at time of Greeks calculation.
     pub underlying_price: Option<f64>,

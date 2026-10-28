@@ -25,11 +25,19 @@ use nautilus_betfair::{
 };
 use nautilus_common::{
     clients::DataClient,
+    config::ConfigError,
     live::runner::{replace_system_event_sender, set_data_event_sender},
-    messages::{DataEvent, data::SubscribeBookDeltas, system::SocketState},
+    messages::{
+        DataEvent,
+        data::{
+            SubscribeBookDeltas, SubscribeQuotes, SubscribeTrades, UnsubscribeQuotes,
+            UnsubscribeTrades,
+        },
+        system::SocketState,
+    },
     testing::wait_until_async,
 };
-use nautilus_core::UUID4;
+use nautilus_core::{UUID4, UnixNanos};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::Data,
@@ -76,7 +84,8 @@ fn create_test_data_client_with_config(
         NavigationFilter::default(),
         currency,
         None,
-    );
+    )
+    .unwrap();
 
     (client, rx)
 }
@@ -232,6 +241,59 @@ fn live_runner(selection_id: u64) -> InstrumentId {
         selection_id,
         rust_decimal::Decimal::ZERO,
     )
+}
+
+#[rstest]
+#[case::single(1)]
+#[case::batch(2)]
+#[tokio::test]
+async fn test_quote_and_trade_subscriptions_are_noops(
+    #[case] count: usize,
+    #[values(false, true)] trades: bool,
+) {
+    let (mut client, mut data_rx) = create_test_data_client("127.0.0.1:1".parse().unwrap(), 1);
+    let ids = [
+        InstrumentId::from("1-180294978-6146434-0.BETFAIR"),
+        InstrumentId::from("1-180294978-6146435-0.BETFAIR"),
+    ];
+
+    let subscribe = SubscribeQuotes::new(
+        &ids[..count],
+        Some(*BETFAIR_CLIENT_ID),
+        Some(*BETFAIR_VENUE),
+        UUID4::new(),
+        UnixNanos::from(11),
+        None,
+        None,
+    );
+
+    let unsubscribe = UnsubscribeQuotes::new(
+        &ids[..count],
+        Some(*BETFAIR_CLIENT_ID),
+        Some(*BETFAIR_VENUE),
+        UUID4::new(),
+        UnixNanos::from(17),
+        None,
+        None,
+    );
+
+    if trades {
+        let subscribe: SubscribeTrades =
+            serde_json::from_value(serde_json::to_value(subscribe).unwrap()).unwrap();
+        let unsubscribe: UnsubscribeTrades =
+            serde_json::from_value(serde_json::to_value(unsubscribe).unwrap()).unwrap();
+        client.subscribe_trades(subscribe).unwrap();
+        client.unsubscribe_trades(&unsubscribe).unwrap();
+    } else {
+        client.subscribe_quotes(subscribe).unwrap();
+        client.unsubscribe_quotes(&unsubscribe).unwrap();
+    }
+
+    assert!(!client.is_connected());
+    assert!(matches!(
+        data_rx.try_recv(),
+        Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+    ));
 }
 
 #[rstest]
@@ -507,7 +569,7 @@ async fn test_data_client_emits_instruments_on_connect() {
     let mut instrument_count = 0;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             instrument_count += 1;
         }
     }
@@ -855,13 +917,13 @@ async fn test_data_client_emits_instrument_before_status_on_market_definition() 
 
     for _ in 0..30 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::Instrument(_))) => {
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {
                 if instrument_arrival.is_none() {
                     instrument_arrival = Some(seen);
                 }
                 seen += 1;
             }
-            Ok(Some(DataEvent::InstrumentStatus(event))) => {
+            Ok(Some(DataEvent::Data(Data::InstrumentStatus(event)))) => {
                 if status_arrival.is_none() {
                     status_arrival = Some(seen);
                     status_action = Some(event.action);
@@ -935,7 +997,7 @@ async fn test_data_client_handles_sub_image_snapshot() {
                     break;
                 }
             }
-            Ok(Some(DataEvent::Instrument(_))) => {
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {
                 found_instrument = true;
 
                 if found_deltas {
@@ -1129,7 +1191,7 @@ async fn test_data_client_handles_bsp_settled_emits_close_status() {
 
     for _ in 0..40 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::InstrumentStatus(event)))
+            Ok(Some(DataEvent::Data(Data::InstrumentStatus(event))))
                 if event.action == MarketStatusAction::Close =>
             {
                 close_status_seen = true;
@@ -1195,7 +1257,7 @@ async fn test_data_client_handles_bsp_sub_image_emits_instrument_and_deltas() {
 
     for _ in 0..40 {
         match tokio::time::timeout(Duration::from_secs(3), rx.recv()).await {
-            Ok(Some(DataEvent::Instrument(_))) => {
+            Ok(Some(DataEvent::Data(Data::Instrument(_)))) => {
                 if !instrument_seen {
                     instrument_seen = true;
                     instrument_idx = Some(idx);
@@ -1319,7 +1381,7 @@ async fn test_data_client_connect_is_idempotent() {
     let mut first_instruments = 0usize;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             first_instruments += 1;
         }
     }
@@ -1365,7 +1427,7 @@ async fn test_data_client_connect_is_idempotent() {
     let mut second_instruments = 0usize;
 
     while let Ok(event) = rx.try_recv() {
-        if matches!(event, DataEvent::Instrument(_)) {
+        if matches!(event, DataEvent::Data(Data::Instrument(_))) {
             second_instruments += 1;
         }
     }
@@ -1715,7 +1777,9 @@ async fn test_data_client_recovers_book_after_unparsable_runner_change() {
 
 #[rstest]
 #[tokio::test]
-async fn test_data_client_subscription_writes_keep_every_subscribed_market() {
+async fn test_data_client_subscription_writes_keep_every_subscribed_market(
+    #[values(1, RESUB_DELTA_MARKET_IDS.len())] chunk_size: usize,
+) {
     let (addr, _state) = start_mock_http().await;
     let (stream_port, listener) = start_mock_stream().await;
     let (mut client, _rx) = create_test_data_client(addr, stream_port);
@@ -1738,16 +1802,21 @@ async fn test_data_client_subscription_writes_keep_every_subscribed_market() {
 
     client.connect().await.unwrap();
 
-    // Each command writes its subscription before the next, so writes arrive in command order
-    for market_id in RESUB_DELTA_MARKET_IDS {
-        let instrument_id = nautilus_betfair::common::parse::make_instrument_id(
-            market_id,
-            6_146_434,
-            rust_decimal::Decimal::ZERO,
-        );
+    let ids: Vec<_> = RESUB_DELTA_MARKET_IDS
+        .iter()
+        .map(|market_id| {
+            nautilus_betfair::common::parse::make_instrument_id(
+                market_id,
+                6_146_434,
+                rust_decimal::Decimal::ZERO,
+            )
+        })
+        .collect();
+
+    for ids in ids.chunks(chunk_size) {
         client
             .subscribe_book_deltas(SubscribeBookDeltas::new(
-                instrument_id,
+                ids,
                 BookType::L2_MBP,
                 None,
                 Some(*BETFAIR_VENUE),
@@ -1863,4 +1932,46 @@ async fn test_data_client_unparsable_recovery_image_fails_its_recovery() {
     client.disconnect().await.unwrap();
     let _ = server_done_tx.send(());
     server.await.unwrap();
+}
+
+#[rstest]
+#[case::client(false)]
+#[case::stream(true)]
+fn test_constructor_rejects_invalid_config(#[case] stream: bool) {
+    let mut config = BetfairDataClientConfig {
+        market_ids: Some(vec!["1.1".to_string(), "1.1".to_string()]),
+        ..Default::default()
+    };
+
+    let mut stream_config = plain_stream_config(1);
+
+    if stream {
+        config.market_ids = None;
+        stream_config.heartbeat_secs = Some(0);
+    }
+
+    let http_client = create_test_http_client("127.0.0.1:1".parse().unwrap());
+    let error = BetfairDataClient::new(
+        *BETFAIR_CLIENT_ID,
+        http_client,
+        test_credential(),
+        stream_config,
+        config,
+        NavigationFilter::default(),
+        Currency::GBP(),
+        None,
+    )
+    .expect_err("invalid config must fail before client setup");
+
+    if stream {
+        assert_eq!(
+            error.to_string(),
+            "heartbeat_secs must be positive when set"
+        );
+    } else {
+        assert_eq!(
+            error.downcast_ref::<ConfigError>(),
+            Some(&ConfigError::duplicate("market_ids", None)),
+        );
+    }
 }

@@ -67,50 +67,50 @@ impl Debug for PolymarketInstrumentProvider {
 
 impl PolymarketInstrumentProvider {
     /// Creates a new [`PolymarketInstrumentProvider`] with an empty store and no filters.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if selections contain duplicates or Gamma filters are invalid.
     pub fn new(
         http_client: PolymarketGammaHttpClient,
         config: Option<PolymarketInstrumentProviderConfig>,
-    ) -> Self {
-        Self {
-            store: InstrumentStore::new(),
-            http_client,
-            token_index: AHashMap::new(),
-            filters: Vec::new(),
-            config: config.unwrap_or_default(),
-        }
+    ) -> anyhow::Result<Self> {
+        Self::with_filters(http_client, config, Vec::new())
     }
 
     /// Creates a new [`PolymarketInstrumentProvider`] with multiple filters.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if selections contain duplicates or Gamma filters are invalid.
     pub fn with_filters(
         http_client: PolymarketGammaHttpClient,
         config: Option<PolymarketInstrumentProviderConfig>,
         filters: Vec<Arc<dyn InstrumentFilter>>,
-    ) -> Self {
-        Self {
+    ) -> anyhow::Result<Self> {
+        let config = config.unwrap_or_default();
+        config.validate()?;
+
+        Ok(Self {
             store: InstrumentStore::new(),
             http_client,
             token_index: AHashMap::new(),
             filters,
-            config: config.unwrap_or_default(),
-        }
+            config,
+        })
     }
 
     /// Creates a new [`PolymarketInstrumentProvider`] with a single filter.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if selections contain duplicates or Gamma filters are invalid.
     pub fn with_filter(
         http_client: PolymarketGammaHttpClient,
         config: Option<PolymarketInstrumentProviderConfig>,
         filter: Arc<dyn InstrumentFilter>,
-    ) -> Self {
-        Self {
-            store: InstrumentStore::new(),
-            http_client,
-            token_index: AHashMap::new(),
-            filters: vec![filter],
-            config: config.unwrap_or_default(),
-        }
+    ) -> anyhow::Result<Self> {
+        Self::with_filters(http_client, config, vec![filter])
     }
 
     /// Adds an instrument filter for subsequent `load_all()` calls.
@@ -456,6 +456,8 @@ pub async fn fetch_configured_instruments(
     config: &PolymarketInstrumentProviderConfig,
     filters: &[Arc<dyn InstrumentFilter>],
 ) -> anyhow::Result<Vec<InstrumentAny>> {
+    config.validate()?;
+
     let mut instruments = Vec::new();
 
     if has_bootstrap_scope(config, filters) {
@@ -1003,6 +1005,7 @@ fn parse_gamma_filter_list(scope: &str, key: &str, value: &str) -> anyhow::Resul
     if values.is_empty() || values.iter().any(String::is_empty) {
         anyhow::bail!("Gamma {scope} filter '{key}' must contain non-empty comma-separated values")
     }
+
     Ok(values)
 }
 
@@ -1155,9 +1158,12 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
 
 #[cfg(test)]
 mod tests {
+    use nautilus_common::config::ConfigError;
+    use nautilus_network::retry::RetryConfig;
     use rstest::rstest;
 
     use super::*;
+    use crate::{config::PolymarketUpDownEventSlugConfig, filters::MarketSlugFilter};
 
     #[rstest]
     #[case("0xcondition-0xtoken", Some("0xtoken"))]
@@ -1169,5 +1175,56 @@ mod tests {
     ) {
         let instrument_id = InstrumentId::from(format!("{symbol}.POLYMARKET").as_str());
         assert_eq!(extract_token_id(&instrument_id).ok().as_deref(), expected,);
+    }
+
+    #[rstest]
+    #[case::plain(0)]
+    #[case::multiple_filters(1)]
+    #[case::single_filter(2)]
+    fn test_constructor_rejects_invalid_config(
+        #[case] constructor: u8,
+        #[values(false, true)] builder: bool,
+    ) {
+        let http_client = PolymarketGammaHttpClient::new(
+            Some("http://127.0.0.1:1".to_string()),
+            1,
+            RetryConfig::default(),
+        )
+        .unwrap();
+
+        let mut config = PolymarketInstrumentProviderConfig {
+            series_ids: Some(vec![10684, 10684]),
+            ..Default::default()
+        };
+
+        let expected = if builder {
+            config.series_ids = None;
+            config.event_slug_builder = Some(PolymarketUpDownEventSlugConfig {
+                interval_mins: 0,
+                ..Default::default()
+            });
+
+            ConfigError::range(
+                "event_slug_builder.interval_mins",
+                "must be positive and fit in seconds",
+            )
+        } else {
+            ConfigError::duplicate("series_ids", None)
+        };
+
+        let filter = Arc::new(MarketSlugFilter::from_slugs(vec!["market".to_string()]));
+
+        let result = match constructor {
+            0 => PolymarketInstrumentProvider::new(http_client, Some(config)),
+            1 => {
+                PolymarketInstrumentProvider::with_filters(http_client, Some(config), vec![filter])
+            }
+            2 => PolymarketInstrumentProvider::with_filter(http_client, Some(config), filter),
+            _ => unreachable!(),
+        };
+
+        let error = result.unwrap_err();
+
+        assert_eq!(error.downcast_ref::<ConfigError>(), Some(&expected));
     }
 }

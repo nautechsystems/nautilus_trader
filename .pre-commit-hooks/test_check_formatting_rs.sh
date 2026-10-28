@@ -402,6 +402,121 @@ if (cd "$scope_case" && CHANGED_BASE_SHA="$base" bash "$HOOK") > "$scope_case/ou
 fi
 rg -q 'crates/common/src/lib.rs:8' "$scope_case/output.txt"
 
+precommit_case="$CASE_ROOT/precommit-branch"
+create_case "$precommit_case"
+write_rs "$precommit_case/crates/common/src/lib.rs" \
+  'fn existing() {' \
+  '    prepare();' \
+  '    if ready { run(); }' \
+  '}'
+git -C "$precommit_case" commit -qm Baseline
+base=$(git -C "$precommit_case" rev-parse HEAD)
+git -C "$precommit_case" update-ref refs/remotes/origin/develop "$base"
+write_rs "$precommit_case/crates/common/src/changed.rs" \
+  'fn changed() {' \
+  '    prepare();' \
+  '    if enabled { run(); }' \
+  '}'
+git -C "$precommit_case" commit -qm Changed
+
+mkdir "$precommit_case/bin"
+cat > "$precommit_case/bin/prek" << 'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "${CHANGED_BASE_SHA-unset}" "$@" > "$PRECOMMIT_LOG"
+exit "${PRECOMMIT_EXIT:-0}"
+EOF
+chmod +x "$precommit_case/bin/prek"
+
+run_precommit() {
+  (
+    cd "$REPO_ROOT"
+    GIT_DIR="$precommit_case/.git" GIT_WORK_TREE="$precommit_case" \
+      PATH="$precommit_case/bin:$PATH" PRECOMMIT_LOG="$precommit_case/prek.txt" \
+      make --no-print-directory -s -o check-cargo-cooldown pre-commit
+  ) > "$precommit_case/output.txt" 2>&1
+}
+
+(CHANGED_BASE_SHA=HEAD run_precommit)
+printf '%s\n' HEAD run --all-files > "$precommit_case/expected.txt"
+cmp "$precommit_case/expected.txt" "$precommit_case/prek.txt"
+rm "$precommit_case/prek.txt"
+
+if (CHANGED_BASE_SHA='' run_precommit); then
+  echo "Expected make pre-commit to use origin/develop when CHANGED_BASE_SHA is empty"
+  exit 1
+fi
+rg -q 'crates/common/src/changed.rs:3' "$precommit_case/output.txt"
+
+for local_change in clean staged unstaged outside deleted; do
+  case "$local_change" in
+    staged)
+      write_rs "$precommit_case/crates/common/src/local.rs" 'fn local() {}'
+      ;;
+    unstaged)
+      printf '\n// Local edit\n' >> "$precommit_case/crates/common/src/local.rs"
+      ;;
+    outside)
+      write_rs "$precommit_case/tests/other.rs" 'fn other() {}'
+      ;;
+    deleted)
+      rm "$precommit_case/crates/common/src/local.rs"
+      ;;
+  esac
+
+  if (
+    unset CHANGED_BASE_SHA
+    run_precommit
+  ); then
+    echo "Expected make pre-commit to detect a committed violation with $local_change changes"
+    exit 1
+  fi
+
+  rg -q 'crates/common/src/changed.rs:3' "$precommit_case/output.txt"
+  if rg -q 'crates/common/src/lib.rs:3' "$precommit_case/output.txt" ||
+    [[ -e "$precommit_case/prek.txt" ]]; then
+    echo "Expected only branch violations and no prek invocation"
+    exit 1
+  fi
+done
+
+write_rs "$precommit_case/crates/common/src/changed.rs" \
+  'fn changed() {' \
+  '    prepare();' \
+  '' \
+  '    if enabled { run(); }' \
+  '}'
+(
+  unset CHANGED_BASE_SHA
+  run_precommit
+)
+printf '%s\n' unset run --all-files > "$precommit_case/expected.txt"
+cmp "$precommit_case/expected.txt" "$precommit_case/prek.txt"
+
+write_rs "$precommit_case/crates/common/src/lib.rs" \
+  'fn existing() {' \
+  '    prepare();' \
+  '' \
+  '    if ready { run(); }' \
+  '}'
+(CHANGED_BASE_SHA=missing-ref run_precommit)
+rg -q 'Cannot resolve CHANGED_BASE_SHA' "$precommit_case/output.txt"
+printf '%s\n' missing-ref run --all-files > "$precommit_case/expected.txt"
+cmp "$precommit_case/expected.txt" "$precommit_case/prek.txt"
+
+rm "$precommit_case/prek.txt"
+if (
+  unset CHANGED_BASE_SHA
+  PRECOMMIT_EXIT=19 run_precommit
+); then
+  echo "Expected make pre-commit to propagate a prek failure"
+  exit 1
+else
+  [[ $? -eq 2 ]]
+fi
+printf '%s\n' unset run --all-files > "$precommit_case/expected.txt"
+cmp "$precommit_case/expected.txt" "$precommit_case/prek.txt"
+
 module_scope_case="$CASE_ROOT/changed-module-boundary"
 create_case "$module_scope_case"
 write_rs "$module_scope_case/crates/common/src/mod.rs" \

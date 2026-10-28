@@ -241,7 +241,12 @@ pub(crate) fn parse_l3_update(
                     // Compare the raw wire decimal so a sub-tick discrepancy still
                     // takes the price-change branch rather than rounding to the
                     // same `Price` and leaving the cached FIFO `seq` in place.
-                    if cached.price_raw == event.limit_price.raw {
+                    // Kraken keeps queue priority only when the size decreases. Any
+                    // other modify (a larger or unchanged size) also takes the
+                    // delete/add branch and moves to the back of the level.
+                    if cached.price_raw == event.limit_price.raw
+                        && event.order_qty.value < cached.size
+                    {
                         let book_order = BookOrder::new(cached.side, new_price, new_size, order_id);
                         let delta = OrderBookDelta::new(
                             instrument_id,
@@ -286,9 +291,7 @@ pub(crate) fn parse_l3_update(
                             ts_event,
                             ts_init,
                         )
-                        .context(
-                            "Failed to construct Delete OrderBookDelta for price-change modify",
-                        )?;
+                        .context("Failed to construct Delete OrderBookDelta for requeued modify")?;
                         *sequence += 1;
                         deltas.push(del_delta);
 
@@ -517,6 +520,7 @@ mod tests {
     use serde_json::value::RawValue;
 
     use super::*;
+    use crate::websocket::spot_v2::level_3::checksum::build_checksum_string;
 
     #[derive(serde::Deserialize)]
     struct RawDataMessage {
@@ -791,6 +795,96 @@ mod tests {
         assert_eq!(result.deltas.len(), 2);
         assert_eq!(result.deltas[0].action, BookAction::Delete);
         assert_eq!(result.deltas[1].action, BookAction::Add);
+    }
+
+    fn bid_1_modify_update(order_qty: &str) -> KrakenL3UpdateData {
+        let json = format!(
+            r#"{{
+                "symbol": "BTC/USD",
+                "timestamp": "2024-01-15T12:00:02.000000Z",
+                "checksum": 0,
+                "bids": [
+                    {{
+                        "event": "modify",
+                        "order_id": "order-bid-1",
+                        "limit_price": 42000.5,
+                        "order_qty": {order_qty},
+                        "timestamp": "2024-01-15T12:00:02.000000Z"
+                    }}
+                ],
+                "asks": []
+            }}"#
+        );
+        serde_json::from_str(&json).unwrap()
+    }
+
+    #[rstest]
+    #[case::size_increase("0.9", "4200108420020204200051242000594199903")]
+    #[case::size_unchanged("0.5", "4200108420020204200051242000554199903")]
+    fn test_parse_l3_update_modify_without_size_decrease_moves_to_back_of_level(
+        #[case] order_qty: &str,
+        #[case] expected_checksum_string: &str,
+    ) {
+        let update = bid_1_modify_update(order_qty);
+        let instrument = make_instrument();
+        let hasher = BookOrderIdHasher::new();
+        let mut sequence = 100u64;
+        let mut open_orders = populated_open_orders();
+        let bid_1 = hasher.hash("order-bid-1");
+        let bid_2 = hasher.hash("order-bid-2");
+        assert!(open_orders[&bid_1].seq < open_orders[&bid_2].seq);
+
+        let (deltas, _ts_event) = parse_l3_update(
+            &update,
+            &instrument,
+            &hasher,
+            &mut sequence,
+            UnixNanos::default(),
+            &mut open_orders,
+            1000,
+        )
+        .unwrap();
+        let result = deltas.unwrap();
+
+        assert_eq!(result.deltas.len(), 2);
+        assert_eq!(result.deltas[0].action, BookAction::Delete);
+        assert_eq!(result.deltas[0].order.size, Quantity::from("0.5"));
+        assert_eq!(result.deltas[1].action, BookAction::Add);
+        assert_eq!(result.deltas[1].order.size, Quantity::from(order_qty));
+        assert!(open_orders[&bid_1].seq > open_orders[&bid_2].seq);
+
+        // Bids at 42000.5 now checksum as order-bid-2 then order-bid-1
+        assert_eq!(
+            build_checksum_string(&open_orders),
+            expected_checksum_string
+        );
+    }
+
+    #[rstest]
+    fn test_parse_l3_update_modify_size_decrease_keeps_priority() {
+        let update = bid_1_modify_update("0.4");
+        let instrument = make_instrument();
+        let hasher = BookOrderIdHasher::new();
+        let mut sequence = 100u64;
+        let mut open_orders = populated_open_orders();
+        let bid_1 = hasher.hash("order-bid-1");
+        let seq_before = open_orders[&bid_1].seq;
+
+        let (deltas, _ts_event) = parse_l3_update(
+            &update,
+            &instrument,
+            &hasher,
+            &mut sequence,
+            UnixNanos::default(),
+            &mut open_orders,
+            1000,
+        )
+        .unwrap();
+        let result = deltas.unwrap();
+
+        assert_eq!(result.deltas.len(), 1);
+        assert_eq!(result.deltas[0].action, BookAction::Update);
+        assert_eq!(open_orders[&bid_1].seq, seq_before);
     }
 
     #[rstest]

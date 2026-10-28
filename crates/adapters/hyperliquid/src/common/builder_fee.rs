@@ -85,9 +85,14 @@ pub struct BuilderFeeApprovalResult {
 /// - Testnet: `HYPERLIQUID_TESTNET_PK`
 /// - Mainnet: `HYPERLIQUID_PK`
 ///
-/// Set `HYPERLIQUID_TESTNET=true` to use testnet.
+/// Set `HYPERLIQUID_TESTNET` to `true` or `1` for testnet, or `false` or `0`
+/// for mainnet (the default when unset). Boolean words are case-insensitive.
+/// Returns `false` without submitting a request if the value is invalid, including empty strings.
 pub async fn approve_from_env(non_interactive: bool) -> bool {
-    let is_testnet = testnet_from_env();
+    let Some(is_testnet) = testnet_from_env() else {
+        return false;
+    };
+
     let Some(private_key) = private_key_from_env(is_testnet) else {
         return false;
     };
@@ -122,9 +127,14 @@ pub async fn approve_from_env(non_interactive: bool) -> bool {
 /// - Testnet: `HYPERLIQUID_TESTNET_PK`
 /// - Mainnet: `HYPERLIQUID_PK`
 ///
-/// Set `HYPERLIQUID_TESTNET=true` to use testnet.
+/// Set `HYPERLIQUID_TESTNET` to `true` or `1` for testnet, or `false` or `0`
+/// for mainnet (the default when unset). Boolean words are case-insensitive.
+/// Returns `false` without submitting a request if the value is invalid, including empty strings.
 pub async fn revoke_from_env(non_interactive: bool) -> bool {
-    let is_testnet = testnet_from_env();
+    let Some(is_testnet) = testnet_from_env() else {
+        return false;
+    };
+
     let Some(private_key) = private_key_from_env(is_testnet) else {
         return false;
     };
@@ -182,8 +192,16 @@ pub async fn revoke_builder_fee(
     submit_builder_fee_update(private_key, is_testnet).await
 }
 
-fn testnet_from_env() -> bool {
-    env::var("HYPERLIQUID_TESTNET").is_ok_and(|v| v.to_lowercase() == "true" || v == "1")
+fn testnet_from_env() -> Option<bool> {
+    match env::var("HYPERLIQUID_TESTNET") {
+        Ok(value) if value.eq_ignore_ascii_case("true") || value == "1" => Some(true),
+        Ok(value) if value.eq_ignore_ascii_case("false") || value == "0" => Some(false),
+        Err(env::VarError::NotPresent) => Some(false),
+        Ok(_) | Err(env::VarError::NotUnicode(_)) => {
+            println!("Error: HYPERLIQUID_TESTNET must be true, false, 1, or 0");
+            None
+        }
+    }
 }
 
 fn private_key_from_env(is_testnet: bool) -> Option<String> {

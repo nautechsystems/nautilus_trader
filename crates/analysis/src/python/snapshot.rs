@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use pyo3::prelude::*;
 
@@ -23,7 +23,7 @@ use crate::snapshot::PortfolioStatistics;
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PortfolioStatistics {
     #[getter]
-    fn pnls(&self) -> HashMap<String, HashMap<String, f64>> {
+    fn pnls(&self) -> BTreeMap<String, BTreeMap<String, f64>> {
         self.pnls
             .iter()
             .map(|(currency, stats)| {
@@ -36,17 +36,17 @@ impl PortfolioStatistics {
     }
 
     #[getter]
-    fn returns(&self) -> HashMap<String, f64> {
+    fn returns(&self) -> BTreeMap<String, f64> {
         self.returns.clone().into_iter().collect()
     }
 
     #[getter]
-    fn general(&self) -> HashMap<String, f64> {
+    fn general(&self) -> BTreeMap<String, f64> {
         self.general.clone().into_iter().collect()
     }
 
     #[getter]
-    fn returns_series(&self) -> HashMap<u64, f64> {
+    fn returns_series(&self) -> BTreeMap<u64, f64> {
         self.returns_series
             .iter()
             .map(|(timestamp, value)| (timestamp.as_u64(), *value))

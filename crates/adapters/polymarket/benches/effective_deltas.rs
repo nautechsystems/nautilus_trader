@@ -15,8 +15,8 @@
 
 //! Effective order book snapshot benches.
 //!
-//! Each case measures the state transition and emitted domain batch. Criterion clones the seeded
-//! book outside the timed region so the result reflects production work rather than fixture reset.
+//! Snapshot cases exclude fixture-reset clones. The inbound case includes decoding, decimal
+//! conversion, and the transactional book clone used by dispatch.
 
 #[path = "../src/data/effective_deltas.rs"]
 mod effective_deltas;
@@ -32,6 +32,10 @@ use nautilus_model::{
     identifiers::InstrumentId,
     orderbook::OrderBook,
     types::{Price, Quantity},
+};
+use nautilus_polymarket::websocket::{
+    messages::{MarketWsMessage, PolymarketBookSnapshot},
+    parse::parse_book_snapshot,
 };
 use rust_decimal::Decimal;
 
@@ -89,6 +93,37 @@ fn bench_snapshots(c: &mut Criterion) {
     }
 
     group.finish();
+}
+
+fn bench_inbound_snapshot(c: &mut Criterion) {
+    let instrument_id = InstrumentId::from("CAPTURED.POLYMARKET");
+    let snapshot: PolymarketBookSnapshot =
+        serde_json::from_str(include_str!("../test_data/ws_book_snapshot_captured.json")).unwrap();
+    let ts_init = UnixNanos::from(1_786_604_072_222_000_000_u64);
+    let deltas = parse_book_snapshot(&snapshot, instrument_id, 2, SIZE_PRECISION, ts_init).unwrap();
+    let book = seeded_book(instrument_id, &deltas);
+    let text = serde_json::to_string(&MarketWsMessage::Book(snapshot)).unwrap();
+    let mut scratch = book.clone();
+    assert_eq!(
+        apply_snapshot_and_diff(&mut scratch, &deltas).unwrap(),
+        None
+    );
+
+    // Include decoding, decimal conversion, and the transactional book clone used by dispatch
+    c.bench_function("effective_deltas/inbound_snapshot_captured", |b| {
+        b.iter(|| {
+            let MarketWsMessage::Book(snapshot) = MarketWsMessage::parse(black_box(&text)).unwrap()
+            else {
+                unreachable!()
+            };
+
+            let deltas =
+                parse_book_snapshot(&snapshot, instrument_id, 2, SIZE_PRECISION, ts_init).unwrap();
+            let mut scratch = book.clone();
+            let effective = apply_snapshot_and_diff(&mut scratch, &deltas).unwrap();
+            black_box((scratch, effective));
+        });
+    });
 }
 
 fn seeded_book(instrument_id: InstrumentId, snapshot: &OrderBookDeltas) -> OrderBook {
@@ -170,5 +205,5 @@ fn delta(
     OrderBookDelta::new(instrument_id, action, order, flags, 0, ts_init, ts_init)
 }
 
-criterion_group!(benches, bench_snapshots);
+criterion_group!(benches, bench_snapshots, bench_inbound_snapshot);
 criterion_main!(benches);

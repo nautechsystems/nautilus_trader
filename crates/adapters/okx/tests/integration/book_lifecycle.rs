@@ -753,7 +753,7 @@ async fn depth_and_deltas_use_independent_feeds(
         {
             DataEvent::Data(Data::BookDepth(value)) => depth = Some(value),
             DataEvent::Data(Data::BookDeltas(value)) => deltas = Some(value),
-            DataEvent::Instrument(_) => {}
+            DataEvent::Data(Data::Instrument(_)) => {}
             other => panic!("unexpected event: {other:?}"),
         }
     }
@@ -775,8 +775,7 @@ async fn depth_and_deltas_use_independent_feeds(
     different.depth = std::num::NonZeroUsize::new(3);
     assert!(session.client.subscribe_book_depth(different).is_err());
     let mut conflict = subscribe_depth();
-    let mut params = Params::new();
-    params.insert("rpi".to_string(), json!(true));
+    let params = Params::new([("rpi".to_string(), json!(true))].into());
     conflict.params = Some(params);
     assert!(session.client.subscribe_book_depth(conflict).is_err());
 
@@ -971,7 +970,7 @@ async fn spread_depth_and_deltas_keep_shared_feed_until_last_unsubscribe(
         {
             DataEvent::Data(Data::BookDepth(depth)) => initial_depth = Some(depth),
             DataEvent::Data(Data::BookDeltas(deltas)) => initial_deltas = Some(deltas),
-            DataEvent::Instrument(_) => {}
+            DataEvent::Data(Data::Instrument(_)) => {}
             other => panic!("unexpected event: {other:?}"),
         }
     }

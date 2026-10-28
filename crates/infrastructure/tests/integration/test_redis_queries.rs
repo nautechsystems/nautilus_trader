@@ -629,8 +629,7 @@ mod serial_tests {
         ensure_stub_custom_data_registered();
         let (database, trader_key) = setup_test_database().await;
 
-        let mut metadata = Params::new();
-        metadata.insert("source".to_string(), json!("redis"));
+        let metadata = Params::new([("source".to_string(), json!("redis"))].into());
         let matching = stub_custom_data(3000, 3, Some(metadata), Some("id1".to_string()));
         let non_matching = stub_custom_data(3001, 4, None, Some("id1".to_string()));
         database.add_custom_data(&matching).unwrap();

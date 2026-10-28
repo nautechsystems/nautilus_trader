@@ -242,6 +242,7 @@ async fn test_websocket_connection(#[case] endpoint: &str) {
     };
 
     let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None)
+        .unwrap()
         .with_socket_control(SocketControl::with_registry(
             ClientId::from("KRAKEN"),
             Some(Venue::from("KRAKEN")),
@@ -294,7 +295,8 @@ async fn test_websocket_is_active_lifecycle() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     assert!(!client.is_active());
     assert!(client.is_closed());
@@ -330,7 +332,8 @@ async fn test_websocket_subscribe_quotes() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -367,7 +370,8 @@ async fn test_websocket_subscribe_trades() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -408,7 +412,8 @@ async fn test_websocket_subscribe_book() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -449,7 +454,8 @@ async fn test_websocket_subscribe_bars() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -486,7 +492,8 @@ async fn test_websocket_unsubscribe_quotes() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -534,7 +541,8 @@ async fn test_websocket_unsubscribe_trades() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -582,7 +590,8 @@ async fn test_websocket_unsubscribe_book() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -633,7 +642,8 @@ async fn test_websocket_unsubscribe_bars() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -682,7 +692,8 @@ async fn test_websocket_send_ping() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
@@ -715,7 +726,8 @@ async fn test_websocket_multiple_subscriptions() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -761,7 +773,8 @@ async fn test_websocket_get_subscriptions() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -800,7 +813,8 @@ async fn test_websocket_wait_until_active_timeout() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     assert!(client.connect().await.is_err());
 
@@ -823,7 +837,8 @@ async fn test_websocket_disconnect_and_close() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
@@ -842,7 +857,8 @@ async fn test_websocket_disconnect_and_close() {
         },
         CancellationToken::new(),
         None,
-    );
+    )
+    .unwrap();
 
     client2.connect().await.unwrap();
     client2.close().await.unwrap();
@@ -861,7 +877,7 @@ async fn test_websocket_cancel_all_requests() {
         ..Default::default()
     };
 
-    let client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     // Verify cancellation token is accessible before cancelling
     let token = client.cancellation_token();
@@ -883,7 +899,7 @@ async fn test_websocket_url_getter() {
         ..Default::default()
     };
 
-    let client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     assert_eq!(client.url(), url);
 }
@@ -899,7 +915,8 @@ async fn test_websocket_reconnection_after_disconnect() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     // First connection
     client.connect().await.unwrap();
@@ -937,7 +954,8 @@ async fn test_websocket_subscription_after_reconnect() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     // Connect and subscribe
     client.connect().await.unwrap();
@@ -994,7 +1012,8 @@ async fn test_websocket_connection_to_invalid_url() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     // Connection should fail
     let result = client.connect().await;
@@ -1013,7 +1032,8 @@ async fn test_websocket_dropped_connection_handling() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     // First connection should be dropped by server
     let _ = client.connect().await;
@@ -1043,7 +1063,8 @@ async fn test_websocket_multiple_rapid_connections() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     // Rapidly connect and disconnect multiple times
     for _ in 0..3 {
@@ -1070,7 +1091,8 @@ async fn test_websocket_subscribe_before_active() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     // Connect but don't wait for active
     client.connect().await.unwrap();
@@ -1099,7 +1121,8 @@ async fn test_websocket_disconnect_while_subscribing() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -1135,7 +1158,8 @@ async fn test_websocket_concurrent_subscriptions() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -1186,7 +1210,8 @@ async fn test_websocket_unsubscribe_not_subscribed() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -1216,7 +1241,8 @@ async fn test_websocket_double_subscribe() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -1257,7 +1283,8 @@ async fn test_websocket_is_active_lifecycle_detailed() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     // Before connect
     assert!(!client.is_active());
@@ -1289,7 +1316,8 @@ async fn test_websocket_close_idempotent() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
     client.wait_until_active(5.0).await.unwrap();
@@ -1313,7 +1341,8 @@ async fn test_websocket_subscribe_quotes_sends_bbo_event_trigger() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -1361,7 +1390,8 @@ async fn test_websocket_unsubscribe_quotes_sends_bbo_event_trigger() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 
@@ -1420,7 +1450,8 @@ async fn test_websocket_quotes_subscription_uses_quotes_key() {
         ..Default::default()
     };
 
-    let mut client = KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None);
+    let mut client =
+        KrakenSpotWebSocketClient::new(config, CancellationToken::new(), None).unwrap();
 
     client.connect().await.unwrap();
 

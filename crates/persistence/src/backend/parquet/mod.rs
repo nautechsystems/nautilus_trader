@@ -184,8 +184,7 @@ mod tests {
     #[case::unknown("no_such_param")]
     fn open_catalog_rejects_params_naming_key(#[case] key: &str) {
         let directory = TempDir::new().unwrap();
-        let mut params = Params::new();
-        params.insert(key.to_string(), json!(1024));
+        let params = Params::new([(key.to_string(), json!(1024))].into());
         let config = DataCatalogConfig::builder()
             .path(directory.path().to_string_lossy().to_string())
             .params(params)

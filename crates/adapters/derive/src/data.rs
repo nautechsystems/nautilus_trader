@@ -32,7 +32,7 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use nautilus_common::{
     cache::{InstrumentLookupError, fifo::FifoCache, quote::QuoteCache},
-    clients::DataClient,
+    clients::{DataClient, execute_instrument_subscriptions},
     live::{
         dst::time::{self, Instant},
         runner::get_data_event_sender,
@@ -89,7 +89,8 @@ use crate::{
     config::DeriveDataClientConfig,
     http::{DeriveHttpClient, query::PaginationCursor},
     providers::{
-        DeriveInstrumentProvider, fetch_instrument_definitions, parse_instrument_definitions,
+        DeriveInstrumentProvider, fetch_instrument_definitions, normalize_currency,
+        parse_instrument_definitions,
     },
     websocket::{
         DEFAULT_ORDERBOOK_DEPTH, DEFAULT_ORDERBOOK_GROUP, DEFAULT_TICKER_INTERVAL,
@@ -141,8 +142,10 @@ impl DeriveDataClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the HTTP client cannot be initialized.
+    /// Returns an error if currencies repeat or the HTTP client cannot be initialized.
     pub fn new(client_id: ClientId, config: DeriveDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let proxy_url = config
@@ -216,8 +219,6 @@ impl DeriveDataClient {
         })
     }
 
-    /// Spawns a fire-and-forget task, tracks its handle in `pending_tasks`
-    /// for teardown abort, and logs failures with the task description.
     fn spawn_task<F>(&self, description: impl Into<Cow<'static, str>>, fut: F)
     where
         F: std::future::Future<Output = anyhow::Result<()>> + Send + 'static,
@@ -245,10 +246,8 @@ impl DeriveDataClient {
         self.ws_client.begin_shutdown();
     }
 
-    /// Clears every local subscription map. Called from `disconnect` and
-    /// `reset` because the venue drops all subscriptions on socket close,
-    /// and aborted in-flight subscribe tasks can leak entries staged before
-    /// spawn (they never reach their on-error rollback branch).
+    // The venue drops subscriptions on socket close, and aborted tasks can leave
+    // staged entries whose rollback never runs.
     fn clear_subscription_state(&self) {
         let _guard = self.subscription_lock.lock();
         self.channel_subscriptions.clear();
@@ -388,6 +387,56 @@ impl DeriveDataClient {
                                 &tasks,
                             );
                         }
+                    }
+                }
+            }
+        })?;
+
+        Ok(())
+    }
+
+    fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        let minutes = self.config.update_instruments_interval_mins;
+        let currencies: Vec<_> = self
+            .config
+            .currencies
+            .iter()
+            .filter_map(|currency| normalize_currency(currency).map(ToOwned::to_owned))
+            .collect();
+
+        if minutes == 0 || currencies.is_empty() {
+            return Ok(());
+        }
+
+        let interval = Duration::from_secs(minutes.saturating_mul(60));
+        let cancellation = self.cancellation_token.clone();
+        let http_client = self.http_client.clone();
+        let include_expired = self.config.include_expired;
+        let instruments = Arc::clone(&self.instruments);
+        let sender = self.data_sender.clone();
+        let subscription_lock = Arc::clone(&self.subscription_lock);
+
+        self.session_tasks.spawn(async move {
+            loop {
+                tokio::select! {
+                    biased;
+                    () = cancellation.cancelled() => break,
+                    () = time::sleep(interval) => {}
+                }
+
+                for currency in &currencies {
+                    let result = tokio::select! {
+                        biased;
+                        () = cancellation.cancelled() => return,
+                        result = fetch_instrument_definitions(&http_client, currency, include_expired) => result,
+                    };
+
+                    match result {
+                        Ok(definitions) => {
+                            let loaded = parse_instrument_definitions(definitions);
+                            cache_instruments(loaded, &instruments, &sender, &cancellation, &subscription_lock);
+                        }
+                        Err(e) => log::warn!("Failed to refresh Derive instruments for {currency}: {e}"),
                     }
                 }
             }
@@ -635,7 +684,10 @@ impl DeriveDataClient {
         if ctx.active_funding_subs.contains(&instrument_id) {
             match parse_funding_rate(msg, ts_init) {
                 Ok(Some(update)) => {
-                    if let Err(e) = ctx.data_sender.send(DataEvent::FundingRate(update)) {
+                    if let Err(e) = ctx
+                        .data_sender
+                        .send(DataEvent::Data(Data::FundingRate(update)))
+                    {
                         log::error!("Failed to send Derive funding rate: {e}");
                     }
                 }
@@ -647,7 +699,10 @@ impl DeriveDataClient {
         if ctx.active_greeks_subs.contains(&instrument_id) {
             match parse_option_greeks(msg, ts_init) {
                 Ok(Some(greeks)) => {
-                    if let Err(e) = ctx.data_sender.send(DataEvent::OptionGreeks(greeks)) {
+                    if let Err(e) = ctx
+                        .data_sender
+                        .send(DataEvent::Data(Data::OptionGreeks(greeks)))
+                    {
                         log::error!("Failed to send Derive option greeks: {e}");
                     }
                 }
@@ -710,7 +765,7 @@ impl DeriveDataClient {
     }
 
     fn cache_provider_instruments(&self) {
-        let mut instruments = self
+        let instruments = self
             .provider
             .store()
             .get_all()
@@ -718,17 +773,13 @@ impl DeriveDataClient {
             .cloned()
             .collect::<Vec<_>>();
 
-        instruments.sort_by_key(|instrument| instrument.id());
-        for instrument in instruments {
-            self.cache_instrument(&instrument);
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
-                log::warn!("Failed to send Derive instrument: {e}");
-            }
-        }
-    }
-
-    fn cache_instrument(&self, instrument: &InstrumentAny) {
-        cache_instrument(&self.instruments, instrument);
+        cache_instruments(
+            instruments,
+            &self.instruments,
+            &self.data_sender,
+            &self.cancellation_token,
+            &self.subscription_lock,
+        );
     }
 
     fn prepare_subscribe(&self, instrument_id: InstrumentId) -> anyhow::Result<bool> {
@@ -755,15 +806,16 @@ impl DeriveDataClient {
         let definitions = fetch_instrument_definitions(&http_client, currency, include_expired)
             .await
             .with_context(|| format!("failed to lazy-load Derive instruments for {currency}"))?;
-        let mut found = false;
-
-        for instrument in parse_instrument_definitions(definitions) {
-            if instrument.id() == instrument_id {
-                found = true;
+        let loaded = parse_instrument_definitions(definitions);
+        instruments.rcu(|cache| {
+            for instrument in &loaded {
+                cache.insert(instrument.id(), instrument.clone());
             }
+        });
 
-            cache_instrument(&instruments, &instrument);
-        }
+        let found = loaded
+            .iter()
+            .any(|instrument| instrument.id() == instrument_id);
 
         if !found {
             anyhow::bail!(InstrumentLookupError::not_found(instrument_id));
@@ -899,6 +951,7 @@ impl DataClient for DeriveDataClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         log::info!("Stopping Derive data client: {}", self.client_id);
         self.cancellation_token.cancel();
+        let _guard = self.subscription_lock.lock();
         self.abort_session_tasks();
         self.abort_pending_tasks();
         self.book_sync.clear();
@@ -916,7 +969,11 @@ impl DataClient for DeriveDataClient {
 
         // Leave the cancellation token cancelled; connect() refreshes it
         // (and tears down the inner WS client) on the next lifecycle start.
-        self.instruments.store(AHashMap::new());
+        {
+            let _guard = self.subscription_lock.lock();
+            self.instruments.store(AHashMap::new());
+        }
+
         self.clear_subscription_state();
         self.provider.store_mut().clear();
         Ok(())
@@ -948,6 +1005,7 @@ impl DataClient for DeriveDataClient {
         if self.cancellation_token.is_cancelled()
             || !self.session_tasks.is_open()
             || !self.pending_tasks.is_open()
+            || !self.session_tasks.is_empty()
         {
             self.teardown_partial_connect().await?;
             self.cancellation_token = CancellationToken::new();
@@ -986,7 +1044,8 @@ impl DataClient for DeriveDataClient {
             .take_event_receiver()
             .ok_or_else(|| anyhow::anyhow!("Derive WebSocket event receiver not initialized"))
             .and_then(|rx| self.spawn_stream_task(rx))
-            .and_then(|()| self.spawn_book_monitor());
+            .and_then(|()| self.spawn_book_monitor())
+            .and_then(|()| self.spawn_instrument_refresh());
 
         if let Err(e) = session_result {
             if let Err(teardown_error) = self.teardown_partial_connect().await {
@@ -1014,265 +1073,297 @@ impl DataClient for DeriveDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!("Derive only supports L2_MBP order book deltas");
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            if cmd.book_type != BookType::L2_MBP {
+                anyhow::bail!("Derive only supports L2_MBP order book deltas");
+            }
 
-        let instrument_id = cmd.instrument_id;
-        let owner = ChannelOwner::BookDeltas(instrument_id);
-        let lifecycle = self.subscription_lifecycle();
-        if lifecycle.is_active(owner) {
-            return Ok(());
-        }
-
-        let instrument_name = format_venue_symbol(&instrument_id)?.to_string();
-        let group = orderbook_group(&cmd.params)?;
-        let depth = orderbook_depth(cmd.depth.map(|d| d.get()), &cmd.params)?;
-        let channel = orderbook_channel(&instrument_name, &group, &depth);
-        let request = ChannelRequest::from_channel(&channel)?;
-        let needs_load = self.prepare_subscribe(instrument_id)?;
-
-        let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
-            return Ok(());
-        };
-
-        let ws = self.ws_handle();
-        let http_client = self.http_client.clone();
-        let include_expired = self.config.include_expired;
-        let instruments = Arc::clone(&self.instruments);
-
-        self.spawn_task("subscribe_book_deltas", async move {
-            if needs_load
-                && let Err(e) = Self::lazy_load_instrument(
-                    http_client,
-                    instruments,
-                    instrument_id,
-                    include_expired,
-                )
-                .await
-            {
-                lifecycle.rollback(owner, generation);
-                log::error!("Lazy-load failed for {instrument_id} (book deltas): {e}");
+            let owner = ChannelOwner::BookDeltas(instrument_id);
+            let lifecycle = self.subscription_lifecycle();
+            if lifecycle.is_active(owner) {
                 return Ok(());
             }
 
-            run_channel_subscribe(lifecycle, owner, generation, request, ws).await
-        });
+            let instrument_name = format_venue_symbol(&instrument_id)?.to_string();
+            let group = orderbook_group(&cmd.params)?;
+            let depth = orderbook_depth(cmd.depth.map(|d| d.get()), &cmd.params)?;
+            let channel = orderbook_channel(&instrument_name, &group, &depth);
+            let request = ChannelRequest::from_channel(&channel)?;
+            let needs_load = self.prepare_subscribe(instrument_id)?;
 
-        Ok(())
+            let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
+                return Ok(());
+            };
+
+            let ws = self.ws_handle();
+            let http_client = self.http_client.clone();
+            let include_expired = self.config.include_expired;
+            let instruments = Arc::clone(&self.instruments);
+
+            self.spawn_task("subscribe_book_deltas", async move {
+                if needs_load
+                    && let Err(e) = Self::lazy_load_instrument(
+                        http_client,
+                        instruments,
+                        instrument_id,
+                        include_expired,
+                    )
+                    .await
+                {
+                    lifecycle.rollback(owner, generation);
+                    log::error!("Lazy-load failed for {instrument_id} (book deltas): {e}");
+                    return Ok(());
+                }
+
+                run_channel_subscribe(lifecycle, owner, generation, request, ws).await
+            });
+
+            Ok(())
+        })
     }
 
     fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
-        if cmd.book_type != BookType::L2_MBP {
-            anyhow::bail!("Derive only supports L2_MBP order book depth");
-        }
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            if cmd.book_type != BookType::L2_MBP {
+                anyhow::bail!("Derive only supports L2_MBP order book depth");
+            }
 
-        let instrument_id = cmd.instrument_id;
-        let owner = ChannelOwner::BookDepth(instrument_id);
-        let lifecycle = self.subscription_lifecycle();
-        if lifecycle.is_active(owner) {
-            return Ok(());
-        }
-
-        let instrument_name = format_venue_symbol(&instrument_id)?.to_string();
-        let group = orderbook_group(&cmd.params)?;
-        let depth = DeriveOrderbookDepth::D10.to_string();
-        let channel = orderbook_channel(&instrument_name, &group, &depth);
-        let request = ChannelRequest::from_channel(&channel)?;
-        let needs_load = self.prepare_subscribe(instrument_id)?;
-
-        let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
-            return Ok(());
-        };
-
-        let ws = self.ws_handle();
-        let http_client = self.http_client.clone();
-        let include_expired = self.config.include_expired;
-        let instruments = Arc::clone(&self.instruments);
-
-        self.spawn_task("subscribe_book_depth", async move {
-            if needs_load
-                && let Err(e) = Self::lazy_load_instrument(
-                    http_client,
-                    instruments,
-                    instrument_id,
-                    include_expired,
-                )
-                .await
-            {
-                lifecycle.rollback(owner, generation);
-                log::error!("Lazy-load failed for {instrument_id} (book depth): {e}");
+            let owner = ChannelOwner::BookDepth(instrument_id);
+            let lifecycle = self.subscription_lifecycle();
+            if lifecycle.is_active(owner) {
                 return Ok(());
             }
 
-            run_channel_subscribe(lifecycle, owner, generation, request, ws).await
-        });
+            let instrument_name = format_venue_symbol(&instrument_id)?.to_string();
+            let group = orderbook_group(&cmd.params)?;
+            let depth = DeriveOrderbookDepth::D10.to_string();
+            let channel = orderbook_channel(&instrument_name, &group, &depth);
+            let request = ChannelRequest::from_channel(&channel)?;
+            let needs_load = self.prepare_subscribe(instrument_id)?;
 
-        Ok(())
+            let Some(generation) = lifecycle.activate(owner, Some(&channel)) else {
+                return Ok(());
+            };
+
+            let ws = self.ws_handle();
+            let http_client = self.http_client.clone();
+            let include_expired = self.config.include_expired;
+            let instruments = Arc::clone(&self.instruments);
+
+            self.spawn_task("subscribe_book_depth", async move {
+                if needs_load
+                    && let Err(e) = Self::lazy_load_instrument(
+                        http_client,
+                        instruments,
+                        instrument_id,
+                        include_expired,
+                    )
+                    .await
+                {
+                    lifecycle.rollback(owner, generation);
+                    log::error!("Lazy-load failed for {instrument_id} (book depth): {e}");
+                    return Ok(());
+                }
+
+                run_channel_subscribe(lifecycle, owner, generation, request, ws).await
+            });
+
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(cmd.instrument_id, &cmd.params, TickerFeed::Quote, "quotes")
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(instrument_id, &cmd.params, TickerFeed::Quote, "quotes")
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let owner = ChannelOwner::Trades(instrument_id);
-        let lifecycle = self.subscription_lifecycle();
-        if lifecycle.is_active(owner) {
-            return Ok(());
-        }
-
-        let needs_load = self.prepare_subscribe(instrument_id)?;
-
-        let Some(generation) = lifecycle.activate(owner, None) else {
-            return Ok(());
-        };
-
-        let ws = self.ws_handle();
-        let http_client = self.http_client.clone();
-        let include_expired = self.config.include_expired;
-        let instruments = Arc::clone(&self.instruments);
-
-        self.spawn_task("subscribe_trades", async move {
-            if needs_load
-                && let Err(e) = Self::lazy_load_instrument(
-                    http_client,
-                    Arc::clone(&instruments),
-                    instrument_id,
-                    include_expired,
-                )
-                .await
-            {
-                lifecycle.rollback(owner, generation);
-                log::error!("Lazy-load failed for {instrument_id} (trades): {e}");
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let owner = ChannelOwner::Trades(instrument_id);
+            let lifecycle = self.subscription_lifecycle();
+            if lifecycle.is_active(owner) {
                 return Ok(());
             }
 
-            if !lifecycle.is_current(owner, generation) {
-                return Ok(());
-            }
+            let needs_load = self.prepare_subscribe(instrument_id)?;
 
-            let Some(instrument) = instruments.get_cloned(&instrument_id) else {
-                lifecycle.rollback(owner, generation);
-                log::error!("Instrument {instrument_id} not found for Derive trades");
+            let Some(generation) = lifecycle.activate(owner, None) else {
                 return Ok(());
             };
 
-            let channel = match trade_channel(&instrument) {
-                Ok(channel) => channel,
-                Err(e) => {
+            let ws = self.ws_handle();
+            let http_client = self.http_client.clone();
+            let include_expired = self.config.include_expired;
+            let instruments = Arc::clone(&self.instruments);
+
+            self.spawn_task("subscribe_trades", async move {
+                if needs_load
+                    && let Err(e) = Self::lazy_load_instrument(
+                        http_client,
+                        Arc::clone(&instruments),
+                        instrument_id,
+                        include_expired,
+                    )
+                    .await
+                {
                     lifecycle.rollback(owner, generation);
-                    log::error!("Failed to resolve Derive trades channel: {e}");
+                    log::error!("Lazy-load failed for {instrument_id} (trades): {e}");
                     return Ok(());
                 }
-            };
 
-            let request = match ChannelRequest::from_channel(&channel) {
-                Ok(request) => request,
-                Err(e) => {
-                    lifecycle.rollback(owner, generation);
-                    log::error!("Invalid Derive trades channel `{channel}`: {e}");
+                if !lifecycle.is_current(owner, generation) {
                     return Ok(());
                 }
-            };
 
-            if !lifecycle.attach_channel(owner, generation, channel) {
-                return Ok(());
-            }
+                let Some(instrument) = instruments.get_cloned(&instrument_id) else {
+                    lifecycle.rollback(owner, generation);
+                    log::error!("Instrument {instrument_id} not found for Derive trades");
+                    return Ok(());
+                };
 
-            run_channel_subscribe(lifecycle, owner, generation, request, ws).await
-        });
+                let channel = match trade_channel(&instrument) {
+                    Ok(channel) => channel,
+                    Err(e) => {
+                        lifecycle.rollback(owner, generation);
+                        log::error!("Failed to resolve Derive trades channel: {e}");
+                        return Ok(());
+                    }
+                };
 
-        Ok(())
+                let request = match ChannelRequest::from_channel(&channel) {
+                    Ok(request) => request,
+                    Err(e) => {
+                        lifecycle.rollback(owner, generation);
+                        log::error!("Invalid Derive trades channel `{channel}`: {e}");
+                        return Ok(());
+                    }
+                };
+
+                if !lifecycle.attach_channel(owner, generation, channel) {
+                    return Ok(());
+                }
+
+                run_channel_subscribe(lifecycle, owner, generation, request, ws).await
+            });
+
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(
-            cmd.instrument_id,
-            &cmd.params,
-            TickerFeed::Mark,
-            "mark prices",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(instrument_id, &cmd.params, TickerFeed::Mark, "mark prices")
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(
-            cmd.instrument_id,
-            &cmd.params,
-            TickerFeed::Index,
-            "index prices",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(
+                instrument_id,
+                &cmd.params,
+                TickerFeed::Index,
+                "index prices",
+            )
+        })
     }
 
     fn subscribe_funding_rates(&mut self, cmd: SubscribeFundingRates) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(
-            cmd.instrument_id,
-            &cmd.params,
-            TickerFeed::Funding,
-            "funding rates",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(
+                instrument_id,
+                &cmd.params,
+                TickerFeed::Funding,
+                "funding rates",
+            )
+        })
     }
 
     fn subscribe_option_greeks(&mut self, cmd: SubscribeOptionGreeks) -> anyhow::Result<()> {
-        self.subscribe_ticker_feed(
-            cmd.instrument_id,
-            &cmd.params,
-            TickerFeed::Greeks,
-            "option greeks",
-        )
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            self.subscribe_ticker_feed(
+                instrument_id,
+                &cmd.params,
+                TickerFeed::Greeks,
+                "option greeks",
+            )
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::BookDeltas(cmd.instrument_id))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::BookDeltas(instrument_id))
+        })
     }
 
     fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::BookDepth(cmd.instrument_id))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::BookDepth(instrument_id))
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Quote,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Quote,
+            })
         })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Trades(cmd.instrument_id))
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Trades(instrument_id))
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Mark,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Mark,
+            })
         })
     }
 
     fn unsubscribe_index_prices(&mut self, cmd: &UnsubscribeIndexPrices) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Index,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Index,
+            })
         })
     }
 
     fn unsubscribe_funding_rates(&mut self, cmd: &UnsubscribeFundingRates) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Funding,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Funding,
+            })
         })
     }
 
     fn unsubscribe_option_greeks(&mut self, cmd: &UnsubscribeOptionGreeks) -> anyhow::Result<()> {
-        self.unsubscribe_channel_owner(ChannelOwner::Ticker {
-            instrument_id: cmd.instrument_id,
-            feed: TickerFeed::Greeks,
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.unsubscribe_channel_owner(ChannelOwner::Ticker {
+                instrument_id,
+                feed: TickerFeed::Greeks,
+            })
         })
     }
 
     fn request_quotes(&self, request: RequestQuotes) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         // No historical quote endpoint; `public/get_tickers` is a current snapshot.
-        let instrument_id = request.instrument_id;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1345,7 +1436,7 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1481,7 +1572,7 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_funding_rates(&self, request: RequestFundingRates) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
         let instrument = self
             .instruments
             .get_cloned(&instrument_id)
@@ -1562,7 +1653,8 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
-        let bar_type = request.bar_type;
+        let bar_type = request.single_bar_type()?;
+
         anyhow::ensure!(
             bar_type.aggregation_source() == AggregationSource::External,
             "Derive only supports EXTERNAL aggregation source (got {bar_type})",
@@ -1836,10 +1928,14 @@ impl DataClient for DeriveDataClient {
             for currency in currencies {
                 match fetch_instrument_definitions(&http_client, &currency, include_expired).await {
                     Ok(definitions) => {
-                        for instrument in parse_instrument_definitions(definitions) {
-                            cache_instrument(&instruments_cache, &instrument);
-                            all_instruments.push(instrument);
-                        }
+                        let instruments = parse_instrument_definitions(definitions);
+                        instruments_cache.rcu(|cache| {
+                            for instrument in &instruments {
+                                cache.insert(instrument.id(), instrument.clone());
+                            }
+                        });
+
+                        all_instruments.extend(instruments);
                     }
                     Err(e) => {
                         log::error!("Failed to fetch Derive instruments for {currency}: {e:?}");
@@ -1869,7 +1965,8 @@ impl DataClient for DeriveDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
-        let instrument_id = request.instrument_id;
+        let instrument_id = request.single_instrument_id()?;
+
         let venue_symbol = format_venue_symbol(&instrument_id)?.to_string();
 
         let http_client = self.http_client.clone();
@@ -2549,6 +2646,33 @@ impl DeriveDataClient {
     }
 }
 
+fn cache_instruments(
+    mut loaded: Vec<InstrumentAny>,
+    instruments: &AtomicMap<InstrumentId, InstrumentAny>,
+    sender: &EventSender<DataEvent>,
+    cancellation: &CancellationToken,
+    subscription_lock: &Mutex<()>,
+) {
+    loaded.sort_by_key(|instrument| instrument.id());
+    let _guard = subscription_lock.lock();
+
+    if cancellation.is_cancelled() {
+        return;
+    }
+
+    instruments.rcu(|cache| {
+        for instrument in &loaded {
+            cache.insert(instrument.id(), instrument.clone());
+        }
+    });
+
+    for instrument in loaded {
+        if let Err(e) = sender.send(DataEvent::Data(instrument.into())) {
+            log::warn!("Failed to send Derive instrument: {e}");
+        }
+    }
+}
+
 fn cache_instrument(
     instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
     instrument: &InstrumentAny,
@@ -2765,6 +2889,46 @@ mod tests {
         let content = std::fs::read_to_string(data_path().join(filename))
             .unwrap_or_else(|_| panic!("failed to read {filename}"));
         serde_json::from_str(&content).expect("invalid json")
+    }
+
+    #[rstest]
+    #[case::stop("stop")]
+    #[case::reset("reset")]
+    #[case::dispose("dispose")]
+    #[tokio::test]
+    async fn test_cache_instruments_rejects_completion_after_shutdown(#[case] shutdown: &str) {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+        let mut client =
+            DeriveDataClient::new(*DERIVE_CLIENT_ID, DeriveDataClientConfig::default()).unwrap();
+        let original = perp_instrument();
+        let instrument_id = original.id();
+        client.instruments.insert(instrument_id, original.clone());
+        let mut definition: DeriveInstrument =
+            serde_json::from_value(load_json("perps/instrument_eth.json")).unwrap();
+        definition.amount_step = dec!(0.007);
+        let refreshed = parse_derive_instrument_any(&definition, UnixNanos::from(751))
+            .unwrap()
+            .unwrap();
+        let cancellation = client.cancellation_token.clone();
+        match shutdown {
+            "stop" => client.stop().unwrap(),
+            "reset" => client.reset().unwrap(),
+            "dispose" => client.dispose().unwrap(),
+            _ => unreachable!(),
+        }
+
+        cache_instruments(
+            vec![refreshed],
+            &client.instruments,
+            &client.data_sender,
+            &cancellation,
+            &client.subscription_lock,
+        );
+
+        let expected = (shutdown != "reset").then_some(original);
+        assert_eq!(client.instruments.get_cloned(&instrument_id), expected);
+        assert!(receiver.try_recv().is_err());
     }
 
     #[tokio::test]
@@ -4112,7 +4276,7 @@ mod tests {
         );
 
         match rx.try_recv().unwrap() {
-            DataEvent::FundingRate(update) => {
+            DataEvent::Data(Data::FundingRate(update)) => {
                 assert_eq!(update.instrument_id, instrument_id);
                 assert_eq!(update.rate, "0.0002".parse().unwrap());
             }
@@ -4168,7 +4332,7 @@ mod tests {
         DeriveDataClient::handle_ws_message(DeriveWsMessage::Subscription(payload), &ctx);
 
         match rx.try_recv().unwrap() {
-            DataEvent::OptionGreeks(greeks) => {
+            DataEvent::Data(Data::OptionGreeks(greeks)) => {
                 assert_eq!(greeks.instrument_id, instrument_id);
                 assert!((greeks.greeks.delta - 0.55).abs() < 1e-9);
                 assert!((greeks.greeks.gamma - 0.0008).abs() < 1e-9);
@@ -4225,7 +4389,7 @@ mod tests {
                         "duplicate IndexPriceUpdate emission"
                     );
                 }
-                DataEvent::FundingRate(f) => {
+                DataEvent::Data(Data::FundingRate(f)) => {
                     assert!(
                         funding.replace(f).is_none(),
                         "duplicate FundingRate emission"

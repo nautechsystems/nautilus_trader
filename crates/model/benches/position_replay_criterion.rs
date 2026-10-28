@@ -28,10 +28,11 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
     },
-    instruments::{CurrencyPair, InstrumentAny},
+    instruments::{CryptoPerpetual, CurrencyPair, Instrument, InstrumentAny},
     position::Position,
-    types::{Currency, Price, Quantity},
+    types::{Currency, Money, Price, Quantity},
 };
+use rust_decimal_macros::dec;
 use ustr::Ustr;
 
 const HISTORY_COUNTS: [usize; 3] = [8, 64, 512];
@@ -155,6 +156,64 @@ fn bench_fill_void_replay(c: &mut Criterion) {
     group.finish();
 }
 
+fn bench_accounting(c: &mut Criterion) {
+    let (linear, _) = position_with_fills(8);
+    let last = Price::from("1.12500");
+    assert_eq!(
+        linear.try_unrealized_pnl(last).unwrap(),
+        Money::from("1 USD")
+    );
+    c.bench_function("position/accounting/linear_pnl", |b| {
+        b.iter(|| black_box(linear.try_unrealized_pnl(black_box(last)).unwrap()));
+    });
+
+    let instrument = instrument_inverse();
+    let mut opening = fill(0, OrderSide::Buy, Quantity::from(100_000));
+    opening.instrument_id = instrument.id();
+    opening.last_px = Price::from("10000.0");
+    opening.currency = Currency::BTC();
+    let inverse = Position::new(&instrument, opening);
+    let last = Price::from("20000.0");
+    assert_eq!(
+        inverse.try_unrealized_pnl(last).unwrap(),
+        Money::from("5 BTC")
+    );
+    c.bench_function("position/accounting/inverse_pnl", |b| {
+        b.iter(|| black_box(inverse.try_unrealized_pnl(black_box(last)).unwrap()));
+    });
+
+    let mut reversal = fill(9, OrderSide::Sell, Quantity::from(2));
+    reversal.commission = Some(Money::from("0.02 USD"));
+    let event_id = UUID4::new();
+    let (closing, opening) = reversal
+        .split_for_position_flip(Quantity::from(1), None, event_id)
+        .unwrap();
+    assert_eq!(closing.commission, Some(Money::from("0.01 USD")));
+    assert_eq!(opening.commission, Some(Money::from("0.01 USD")));
+    c.bench_function("position/accounting/fee_split", |b| {
+        b.iter(|| {
+            black_box(
+                reversal
+                    .split_for_position_flip(black_box(Quantity::from(1)), None, event_id)
+                    .unwrap(),
+            )
+        });
+    });
+
+    let price = Price::from("1.23456");
+    let quantity = Quantity::from("1.23456789");
+    let fee = Money::from_str_exact("0.000001 USD").unwrap();
+    c.bench_function("position/accounting/domain_conversion", |b| {
+        b.iter(|| {
+            black_box((
+                black_box(price).as_decimal(),
+                black_box(quantity).as_decimal(),
+                black_box(fee).as_decimal(),
+            ))
+        });
+    });
+}
+
 fn position_for_fill(position: &Position) -> Position {
     let mut position = position.clone();
     position.events.reserve(1);
@@ -215,6 +274,31 @@ fn instrument() -> InstrumentAny {
     )
 }
 
+fn instrument_inverse() -> InstrumentAny {
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(InstrumentId::from("BTCUSD.BYBIT"))
+        .raw_symbol(Symbol::from("BTCUSD"))
+        .base_currency(Currency::BTC())
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::BTC())
+        .is_inverse(true)
+        .price_precision(1)
+        .size_precision(0)
+        .price_increment(Price::from("0.5"))
+        .size_increment(Quantity::from("1"))
+        .max_notional(Money::from("10000000 USD"))
+        .min_notional(Money::from("1 USD"))
+        .max_price(Price::from("10000000"))
+        .min_price(Price::from("0.01"))
+        .margin_init(dec!(0.01))
+        .margin_maint(dec!(0.0035))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    InstrumentAny::CryptoPerpetual(instrument)
+}
+
 fn fill(index: usize, side: OrderSide, quantity: Quantity) -> OrderFilled {
     OrderFilled::new(
         TraderId::from("TRADER-001"),
@@ -271,6 +355,7 @@ fn fill_void(fill: &OrderFilled) -> OrderFillVoided {
 criterion_group!(
     benches,
     bench_fill_apply,
+    bench_accounting,
     bench_requires_replay_state,
     bench_fill_void_replay
 );

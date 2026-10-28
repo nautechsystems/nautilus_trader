@@ -63,10 +63,13 @@ params = {
 
 `continuous_future_adjustment_mode` defaults to `BACKWARD_SPREAD` when omitted.
 
-The `bar_type` on the request or command is the **target** continuous bar type, for example
-`"ES.XCME-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"`. The root identifier (`ES.XCME`) is the
-continuous root, not a real contract. Each segment's raw source data comes from the real contract
-in the transitions list.
+The request's `bar_type` or each subscription `bar_types` member identifies a **target** continuous bar type,
+such as `"ES.XCME-1-MINUTE-LAST-INTERNAL@1-MINUTE-EXTERNAL"`.
+
+Subscription targets share the command's `params`. Use separate commands for different chains or settings.
+
+`ES.XCME` identifies the continuous root, not a real contract. Each segment gets raw source data from
+the real contract in the transitions list.
 
 The continuous target bar type must be **internally aggregated**. Externally aggregated bars are
 not supported as continuous targets, but they can serve as the per-segment source.

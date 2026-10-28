@@ -16,6 +16,8 @@
 use std::fmt::Display;
 
 use bytes::Bytes;
+use nautilus_core::UUID4;
+use nautilus_model::identifiers::TraderId;
 use serde::{Deserialize, Serialize, de::Error as _};
 use ustr::Ustr;
 
@@ -28,6 +30,19 @@ pub enum BusPayloadCategory {
     MarketData,
     BuiltIn,
     Other,
+}
+
+/// Identifies the publisher and position of an external stream delivery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BusMessageSource {
+    /// Stable identity of the external publisher.
+    pub publisher_id: TraderId,
+    /// Identity of the publisher process lifetime.
+    pub instance_id: UUID4,
+    /// Publisher-owned stream carrying the message.
+    pub stream: Ustr,
+    /// Position within that stream and publisher lifetime.
+    pub sequence: u64,
 }
 
 /// The payload type carried by a [`BusMessage`].
@@ -58,6 +73,9 @@ pub enum BusPayloadType {
     PortfolioSnapshot,
     SubscribeCommand,
     UnsubscribeCommand,
+    RequestCommand,
+    DataResponse,
+    DataResponseEnvelope,
     TradingCommand,
     GenerateExecutionMassStatus,
     OrderStatusReport,
@@ -94,6 +112,9 @@ impl BusPayloadType {
         Self::PortfolioSnapshot,
         Self::SubscribeCommand,
         Self::UnsubscribeCommand,
+        Self::RequestCommand,
+        Self::DataResponse,
+        Self::DataResponseEnvelope,
         Self::TradingCommand,
         Self::GenerateExecutionMassStatus,
         Self::OrderStatusReport,
@@ -136,6 +157,9 @@ impl BusPayloadType {
             Self::PortfolioSnapshot => "PortfolioSnapshot",
             Self::SubscribeCommand => "SubscribeCommand",
             Self::UnsubscribeCommand => "UnsubscribeCommand",
+            Self::RequestCommand => "RequestCommand",
+            Self::DataResponse => "DataResponse",
+            Self::DataResponseEnvelope => "DataResponseEnvelope",
             Self::TradingCommand => "TradingCommand",
             Self::GenerateExecutionMassStatus => "GenerateExecutionMassStatus",
             Self::OrderStatusReport => "OrderStatusReport",
@@ -199,6 +223,9 @@ impl BusPayloadType {
         match name {
             "SubscribeCommand" => Some(Self::SubscribeCommand),
             "UnsubscribeCommand" => Some(Self::UnsubscribeCommand),
+            "RequestCommand" => Some(Self::RequestCommand),
+            "DataResponse" => Some(Self::DataResponse),
+            "DataResponseEnvelope" => Some(Self::DataResponseEnvelope),
             "TradingCommand" => Some(Self::TradingCommand),
             "GenerateExecutionMassStatus" => Some(Self::GenerateExecutionMassStatus),
             "OrderStatusReport" => Some(Self::OrderStatusReport),
@@ -216,6 +243,9 @@ impl BusPayloadType {
             self,
             Self::SubscribeCommand
                 | Self::UnsubscribeCommand
+                | Self::RequestCommand
+                | Self::DataResponse
+                | Self::DataResponseEnvelope
                 | Self::TradingCommand
                 | Self::GenerateExecutionMassStatus
                 | Self::OrderStatusReport
@@ -247,7 +277,6 @@ impl BusPayloadType {
         match encoding {
             SerializationEncoding::Json | SerializationEncoding::MsgPack => true,
             SerializationEncoding::Sbe => cfg!(feature = "sbe") && self.has_bus_binary_schema(),
-            SerializationEncoding::Capnp => cfg!(feature = "capnp") && self.has_bus_binary_schema(),
         }
     }
 
@@ -338,6 +367,9 @@ pub struct BusMessage {
     /// The encoding the `payload` is serialized with, so the receiver can decode it without
     /// relying on its own configuration (mirrors a wire `content-type`).
     pub encoding: SerializationEncoding,
+    /// Publisher provenance supplied by the external backing, when available.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<BusMessageSource>,
 }
 
 impl BusMessage {
@@ -349,11 +381,13 @@ impl BusMessage {
         encoding: SerializationEncoding,
     ) -> Self {
         debug_assert!(!topic.is_empty());
+
         Self {
             topic,
             payload_type,
             payload,
             encoding,
+            source: None,
         }
     }
 
@@ -400,6 +434,37 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_source_round_trip_and_legacy_message_compatibility(#[case] with_source: bool) {
+        let mut message = BusMessage::with_str_topic(
+            "external.responses",
+            BusPayloadType::DataResponse,
+            Bytes::from_static(b"reply"),
+            SerializationEncoding::MsgPack,
+        );
+
+        if with_source {
+            message.source = Some(BusMessageSource {
+                publisher_id: "PUBLISHER-017".into(),
+                instance_id: UUID4::new(),
+                stream: "snapshot".into(),
+                sequence: 37,
+            });
+        }
+
+        let encoded = serde_json::to_value(&message).unwrap();
+        let decoded: BusMessage = serde_json::from_value(encoded.clone()).unwrap();
+
+        assert_eq!(encoded.get("source").is_some(), with_source);
+        assert_eq!(decoded.topic, message.topic);
+        assert_eq!(decoded.payload_type, message.payload_type);
+        assert_eq!(decoded.payload, message.payload);
+        assert_eq!(decoded.encoding, message.encoding);
+        assert_eq!(decoded.source, message.source);
+    }
 
     #[rstest]
     #[case("test/topic", "payload data")]
@@ -475,16 +540,7 @@ mod tests {
         not(feature = "sbe"),
         case(BusPayloadType::QuoteTick, SerializationEncoding::Sbe, false)
     )]
-    #[cfg_attr(
-        feature = "capnp",
-        case(BusPayloadType::QuoteTick, SerializationEncoding::Capnp, true)
-    )]
-    #[cfg_attr(
-        not(feature = "capnp"),
-        case(BusPayloadType::QuoteTick, SerializationEncoding::Capnp, false)
-    )]
     #[case(BusPayloadType::AccountState, SerializationEncoding::Json, true)]
-    #[case(BusPayloadType::AccountState, SerializationEncoding::Capnp, false)]
     #[case(BusPayloadType::Instrument, SerializationEncoding::Sbe, false)]
     #[cfg_attr(
         feature = "sbe",
@@ -493,14 +549,6 @@ mod tests {
     #[cfg_attr(
         not(feature = "sbe"),
         case(BusPayloadType::OptionGreeks, SerializationEncoding::Sbe, false)
-    )]
-    #[cfg_attr(
-        feature = "capnp",
-        case(BusPayloadType::OptionGreeks, SerializationEncoding::Capnp, true)
-    )]
-    #[cfg_attr(
-        not(feature = "capnp"),
-        case(BusPayloadType::OptionGreeks, SerializationEncoding::Capnp, false)
     )]
     #[case(
         BusPayloadType::Custom(Ustr::from("CustomPayload")),
@@ -537,6 +585,8 @@ mod tests {
         let payload_types = [
             (BusPayloadType::SubscribeCommand, "SubscribeCommand"),
             (BusPayloadType::UnsubscribeCommand, "UnsubscribeCommand"),
+            (BusPayloadType::RequestCommand, "RequestCommand"),
+            (BusPayloadType::DataResponse, "DataResponse"),
             (BusPayloadType::TradingCommand, "TradingCommand"),
             (
                 BusPayloadType::GenerateExecutionMassStatus,
@@ -576,7 +626,6 @@ mod tests {
             assert!(payload_type.supports(SerializationEncoding::Json));
             assert!(payload_type.supports(SerializationEncoding::MsgPack));
             assert!(!payload_type.supports(SerializationEncoding::Sbe));
-            assert!(!payload_type.supports(SerializationEncoding::Capnp));
         }
     }
 }

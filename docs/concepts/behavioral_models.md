@@ -18,8 +18,8 @@ support it. Here, pluggable means that users replace behavior through these inte
 | ------- | ------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
 | Fill    | Simulated limit-fill eligibility, slippage, and optional synthetic liquidity.        | `DefaultFillModel`, `BestPriceFillModel`, `TwoTierFillModel`. |
 | Fee     | Commission calculated from an order, fill, instrument, and optional pricing context. | `MakerTakerFeeModel`, `FixedFeeModel`, `PerContractFeeModel`. |
-| Latency | Simulated delays for order submission, modification, and cancellation.               | `StaticLatencyModel`.                                         |
 | Margin  | Initial order margin and maintenance position margin.                                | `StandardMarginModel`, `LeveragedMarginModel`.                |
+| Latency | Simulated delays for order submission, modification, and cancellation.               | `StaticLatencyModel`.                                         |
 
 Fill models range from using the recorded book to supplying synthetic liquidity with tiered,
 partial-fill, size-aware, competition-aware, volume-sensitive, or market-hours behavior. See
@@ -29,9 +29,9 @@ on fill simulation.
 Fee models also include `ProbabilityPriceFeeModel`, `CappedOptionFeeModel`, and `TieredNotionalOptionFeeModel`
 for probability-priced instruments and option fee schedules.
 
-`StaticLatencyModel` adds a base delay to separately configured insert, update, and cancel delays. The [margin
-models](backtesting/accounts-and-margin.md#margin-models) select whether instrument margin requirements are
-reduced by account leverage.
+The [margin models](backtesting/accounts-and-margin.md#margin-models) select whether instrument margin
+requirements are reduced by account leverage. `StaticLatencyModel` adds a base delay to separately configured
+insert, update, and cancel delays.
 
 Fill and latency models control simulated execution. They do not determine whether or when a live venue fills
 an order. Model behavior applies at the engine or account boundary that consumes it. Changing a model does not
@@ -40,27 +40,110 @@ replace order-state validation, execution routing, or the rest of the runtime.
 ## Simulation modules
 
 [Simulation modules](backtesting/simulation-modules.md) provide a related extension point for
-behavior across the simulated exchange lifecycle. Instead of answering a fill, fee, latency, or
-margin calculation, a module processes exchange state and returns account adjustments. Built-in
+behavior across the simulated exchange lifecycle. Instead of answering a fill, fee, margin, or
+latency calculation, a module processes exchange state and returns account adjustments. Built-in
 FX rollover and CFD swap modules use this interface. Custom modules can extend simulation behavior
 through the same lifecycle and acknowledgement contract.
 
 ## Supplying implementations
 
 Rust callers can implement the model family's trait and pass the implementation through its runtime
-handle. Python support depends on **both the family and the configuration API**:
+handle. Python callers can supply built-in or custom models through these APIs. Model parameters follow
+the order `fill_model`, `fee_model`, `margin_model`, and `latency_model`. When available, `modules` follows
+the model group. Use keyword arguments to keep calls independent of parameter order.
 
-| Family  | `BacktestVenueConfig` from Python                    | `BacktestEngine.add_venue()` from Python             |
-| ------- | ---------------------------------------------------- | ---------------------------------------------------- |
-| Fill    | Built-in model objects.                              | Built-in models or custom Python fill-model objects. |
-| Fee     | Built-in models or custom Python commission objects. | Built-in models or custom Python commission objects. |
-| Latency | `StaticLatencyModel`.                                | `StaticLatencyModel`.                                |
-| Margin  | `StandardMarginModel` or `LeveragedMarginModel`.     | `StandardMarginModel` or `LeveragedMarginModel`.     |
+| Family  | `BacktestVenueConfig`                    | `BacktestEngine.add_venue()`             | `SandboxExecutionClientConfig`           |
+| ------- | ---------------------------------------- | ---------------------------------------- | ---------------------------------------- |
+| Fill    | Built-in models or custom Python models. | Built-in models or custom Python models. | Built-in models or custom Python models. |
+| Fee     | Built-in models or custom Python models. | Built-in models or custom Python models. | Built-in models or custom Python models. |
+| Margin  | Built-in models or custom Python models. | Built-in models or custom Python models. | Built-in models or custom Python models. |
+| Latency | Built-in models or custom Python models. | Built-in models or custom Python models. | Built-in models or custom Python models. |
 
-A custom Python fill model implements the [fill-model protocol](backtesting/fill-models.md#configuration). A
-custom Python fee model supplies `get_commission`. It can also provide `get_commission_with_context` when its
-calculation needs the underlying price. The engine invokes these methods when it needs the corresponding
-decision or calculation.
+Configuration copies share the supplied custom Python model instance. Its random generator, replay state,
+and other state persist across runs and `engine.reset()`. For an independent run, reset that state yourself
+or construct a new engine with a fresh model.
+
+### Custom Python fill models
+
+Pass a `FillModel` subclass or a compatible Python object as `fill_model` to
+`BacktestVenueConfig`, `BacktestEngine.add_venue()`, `BacktestEngine.change_fill_model(venue, fill_model)`,
+or `SandboxExecutionClientConfig`. See [custom fill models](backtesting/fill-models.md#custom-fill-models)
+for the required methods, optional spread-fill behavior, and liquidity hook.
+
+### Custom Python fee models
+
+Implement `get_commission(order, fill_quantity, fill_px, instrument)` and return a `Money` commission
+for each fill. Subclass `FeeModel` or supply a Python object with this method, then pass the instance as
+`fee_model` to `BacktestVenueConfig`, `BacktestEngine.add_venue()`, or `SandboxExecutionClientConfig`.
+
+When the calculation needs the underlying price, implement `get_commission_with_context`.
+It receives the same arguments and an additional `underlying_px`. The engine supplies an underlying price
+only for `CryptoOption` and `OptionContract` instruments when one is available; otherwise, it passes `None`.
+Without an override, the engine calls `get_commission`.
+
+### Custom Python margin models
+
+Pass a subclass of `nautilus_trader.model.MarginModel` or a compatible Python object as `margin_model`
+to these APIs. See [Python model selection](accounting.md#python-model-selection) for the callback contract.
+
+### Custom Python latency models
+
+Subclass `LatencyModel` and override all three methods. Each method returns an `int` delay in
+`[0, 2**64 - 1]` nanoseconds, including any base latency; the engine adds none. Boolean values are invalid.
+
+```python
+from random import Random
+
+from nautilus_trader.execution import LatencyModel
+
+
+class SampledLatency(LatencyModel):
+    def __init__(self, seed=42):
+        self._rng = Random(seed)
+
+    def get_insert_latency(self, command, ts_now):
+        return self._rng.choice((1_000_000, 2_000_000, 5_000_000))
+
+    def get_update_latency(self, command, ts_now):
+        return self._rng.choice((500_000, 1_000_000))
+
+    def get_delete_latency(self, command, ts_now):
+        return self._rng.choice((250_000, 500_000))
+```
+
+Pass an instance as `latency_model` to `BacktestVenueConfig`, `BacktestEngine.add_venue()`, or
+`SandboxExecutionClientConfig`. Custom objects that do not subclass `LatencyModel` raise `TypeError`.
+An unimplemented callback raises `NotImplementedError` when called and triggers the failure handling below.
+
+In backtests, the engine calls the model only for queued commands. Venues created from `BacktestVenueConfig`
+always queue commands. `BacktestEngine.add_venue()` queues commands by default; with `use_message_queue=False`,
+it processes them immediately without calling the latency model.
+
+Each callback receives the concrete command and `ts_now`, the current clock time in Unix nanoseconds:
+simulation time in backtests and the sandbox client's clock time in sandbox.
+
+| Method               | Command types                                          |
+| -------------------- | ------------------------------------------------------ |
+| `get_insert_latency` | `SubmitOrder`, `SubmitOrderList`.                      |
+| `get_update_latency` | `ModifyOrder`, `BatchModifyOrders`.                    |
+| `get_delete_latency` | `CancelOrder`, `BatchCancelOrders`, `CancelAllOrders`. |
+
+Import command classes from `nautilus_trader.live`. For single-order commands, use
+`command.client_order_id` to look up measured delays. The same methods receive whole batch commands and
+return one delay for all their members. The engine calls the model once per command.
+
+Backtest arrival time is `command.ts_init + delay`; the engine processes the command at the first eligible
+[settlement point](backtesting/execution-flow.md#latency-delayed-commands) at or after that time.
+Sandbox arrival time is `ts_now + delay`, where `ts_now` is the receipt time.
+
+Callback errors, invalid delays, and arrival-time overflow have these effects:
+
+- **`BacktestEngine`**: `run()` or `end()` raises `RuntimeError` and aborts the run. Call `engine.reset()`
+  before the next run.
+- **`BacktestNode`**: the node logs the error and omits that run's result by default. With `raise_exception=True`
+  in `BacktestRunConfig`, it raises the error instead.
+- **Sandbox**: the client rejects failed submits and emits modify or cancel rejections for targets that remain
+  open. It logs and discards a failed `CancelAllOrders`.
 
 ## Model family structure
 
@@ -83,8 +166,7 @@ Adapter-specific models live in their adapter crate when a core enum variant wou
 dependency. Low-level Rust code passes these models through the corresponding handle.
 
 Python exposure uses an explicit bridge for the model family. Depending on the storage boundary, this is an
-enum variant or a trait implementation passed through the handle. Latency and margin configuration accept
-built-in models only from Python.
+enum variant or a trait implementation passed through the handle.
 
 ## Dispatch boundary
 

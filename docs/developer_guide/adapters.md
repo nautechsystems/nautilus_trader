@@ -873,15 +873,15 @@ Keep their freshness semantics distinct:
 The shared [`DataEvent`](../../crates/common/src/messages/mod.rs) envelope determines how data
 enters the engine:
 
-| Variant                       | Use                                                                 | Contract to preserve                                                                |
-| ----------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| `DataEvent::Instrument`       | Instrument definitions from bootstrap, requests, or updates.        | Preserve complete identity, precision, and venue timestamps when available.         |
-| `DataEvent::InstrumentStatus` | Trading or availability status changes.                             | Emit meaningful transitions rather than unchanged polling snapshots.                |
-| `DataEvent::Data`             | Trades, quotes, order-book data, bars, and other typed market data. | Complete parsing and event boundary construction before emission.                   |
-| `DataEvent::Response`         | Results for current or historical data requests.                    | Preserve request correlation, parameters, filters, and freshness semantics.         |
-| `DataEvent::FundingRate`      | Funding rate updates for derivatives.                               | Preserve the venue's effective or event time and instrument identity.               |
-| `DataEvent::OptionGreeks`     | Venue-provided option greeks.                                       | Preserve the source instrument and distinguish venue values from local calculation. |
-| `DataEvent::DeFi`             | Feature-gated decentralized finance data.                           | Emit only when the adapter and build expose the shared `defi` feature.              |
+| Variant                                      | Use                                                            | Contract to preserve                                                                |
+| -------------------------------------------- | -------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| `DataEvent::Data(Data::Instrument(_))`       | Instrument definitions from bootstrap, requests, or updates.   | Preserve complete identity, precision, and venue timestamps when available.         |
+| `DataEvent::Data(Data::InstrumentStatus(_))` | Trading or availability status changes.                        | Emit meaningful transitions rather than unchanged polling snapshots.                |
+| `DataEvent::Data`                            | All typed data, including the payloads listed above and below. | Complete parsing and event boundary construction before emission.                   |
+| `DataEvent::Response`                        | Results for current or historical data requests.               | Preserve request correlation, parameters, filters, and freshness semantics.         |
+| `DataEvent::Data(Data::FundingRate(_))`      | Funding rate updates for derivatives.                          | Preserve the venue's effective or event time and instrument identity.               |
+| `DataEvent::Data(Data::OptionGreeks(_))`     | Venue-provided option greeks.                                  | Preserve the source instrument and distinguish venue values from local calculation. |
+| `DataEvent::DeFi`                            | Feature-gated decentralized finance data.                      | Emit only when the adapter and build expose the shared `defi` feature.              |
 
 Add a regression test that changes the upstream instrument response between two requests. The
 second response must reflect the new venue state rather than a private cache entry.
@@ -1284,6 +1284,10 @@ On failure, log the error and leave the trade unprocessed. Do not confirm or ter
 or mark them permanently unreconcilable. A duplicate or reconnect replay can retry the trade. Scheduled REST
 reconciliation stays the authoritative recovery path. The WebSocket handler does not start an immediate REST
 request.
+
+Polymarket instead quarantines invalid trades and immediately starts targeted REST resolution;
+repaired WebSocket replays remain quarantined. Apply its
+[TC-E89 exception](spec_exec_testing.md#tc-e89-websocket-commission-failure) for recovery and deduplication.
 
 #### Bounded mass-status reports
 
@@ -1945,9 +1949,22 @@ in either design:
 
 > No public subscribe, order, or control command can overtake handler initialization.
 
-Queue initialization before publishing a command sender or connected state, or use another
-mechanism that proves the same ordering. Test a command issued at the connection boundary so a
-race cannot silently drop it.
+Use this startup order for command-based clients:
+
+1. Create the transport and command channels privately.
+1. Queue `SetClient`, required cache initialization, and initial subscription replay.
+1. Publish the initialized sender under the existing publication lock.
+1. Publish the connection epoch, if present, and then the active connection state.
+
+Synchronize cache writers with the startup snapshot and sender publication so an update either enters
+the snapshot or reaches the new handler. If cache dispatch depends on active state, publish that state
+before releasing the guard. Synchronous cache writers must preserve the same ordering.
+
+Keep authentication that awaits handler responses after handler startup and outside these locks.
+
+Clients that construct a handler with its transport, or publish an initialized connection pool slot,
+must preserve the same invariant. Test a command issued at the connection boundary so a race cannot
+silently drop it. Also test that the client remains inactive while sender publication is blocked.
 
 ### Authentication
 
@@ -2052,6 +2069,16 @@ A handler-mode client requests a reconnect through the shared client rather than
 must distinguish `ReconnectRequestOutcome` variants, use the reconnect handle's `request_reconnect`.
 Transports that are already reconnecting, disconnecting, closed, or unsupported each need a different
 response. Stream-mode clients own their reconnect loop, and their handles report `Unsupported`.
+
+:::note
+Never require the old socket to remain live until a replacement is ready. Use the existing reconnect
+path instead of adding parallel connection ownership, buffering, and epoch coordination to avoid a
+reconnect gap.
+
+Execution reconciliation can often recover missed order and fill state. Use venue-supported snapshots
+or replay for market-data gaps. Recovery depends on venue coverage and does not guarantee delivery of
+every missed message.
+:::
 
 #### Shutdown
 

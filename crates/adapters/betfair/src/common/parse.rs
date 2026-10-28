@@ -16,6 +16,7 @@
 //! Parsing utilities that convert Betfair payloads into Nautilus domain models.
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_core::{Params, UUID4, UnixNanos, datetime::NANOSECONDS_IN_MILLISECOND};
 use nautilus_model::{
@@ -419,7 +420,8 @@ pub fn parse_account_state(
 
     let balance = AccountBalance::from_total_and_locked(total, exposure, currency)?;
 
-    let mut info = Params::new();
+    let mut info = IndexMap::new();
+
     let mut push_decimal = |key: &str, val: Option<Decimal>| {
         if let Some(decimal) = val {
             info.insert(
@@ -446,7 +448,12 @@ pub fn parse_account_state(
             serde_json::Value::from(wallet.to_string()),
         );
     }
-    let info = if info.is_empty() { None } else { Some(info) };
+
+    let info = if info.is_empty() {
+        None
+    } else {
+        Some(Params::new(info))
+    };
 
     Ok(AccountState::new(
         account_id,

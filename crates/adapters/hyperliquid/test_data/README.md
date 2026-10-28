@@ -31,6 +31,12 @@ from live responses. Tests use them in both whole-request and per-order rejectio
 cancel actions with absent, false, and true fast flags. These synthetic vectors are not captured
 from the venue.
 
+### Scheduled cancellation
+
+`schedule_cancel.json` contains synthetic arm, replace, and clear JSON and independently constructed
+MessagePack vectors, plus synthetic success and rejection responses. The eligibility rejection follows
+an observed venue response with account-specific traded volume replaced by zero.
+
 ### Order decimal serialization
 
 `order_decimal_signing.json` contains synthetic JSON, named MessagePack, connection IDs, and signature

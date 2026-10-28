@@ -87,14 +87,19 @@ pub struct BlockchainDataClient {
 
 impl BlockchainDataClient {
     /// Creates a new [`BlockchainDataClient`] instance for the specified configuration.
-    #[must_use]
-    pub fn new(client_id: ClientId, config: BlockchainDataClientConfig) -> Self {
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if DEX selections contain duplicates.
+    pub fn new(client_id: ClientId, config: BlockchainDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let chain = Arc::clone(&config.chain);
         let (command_tx, command_rx) = tokio::sync::mpsc::unbounded_channel();
         let (hypersync_tx, hypersync_rx) = tokio::sync::mpsc::unbounded_channel();
         let socket_factory = SocketControlFactory::new(client_id, None);
         let session_tasks = TaskGroup::new();
-        Self {
+        Ok(Self {
             client_id,
             chain,
             core_client: None,
@@ -106,7 +111,7 @@ impl BlockchainDataClient {
             command_rx: Some(command_rx),
             cancellation_token: session_tasks.cancellation_token(),
             session_tasks,
-        }
+        })
     }
 
     /// Spawns the main processing task that handles commands and blockchain data.
@@ -119,23 +124,29 @@ impl BlockchainDataClient {
     fn spawn_process_task(
         &mut self,
     ) -> anyhow::Result<tokio::sync::oneshot::Receiver<anyhow::Result<()>>> {
-        let Some(command_rx) = self.command_rx.take() else {
-            anyhow::bail!("Command receiver already taken");
-        };
+        anyhow::ensure!(self.command_rx.is_some(), "Command receiver already taken");
 
         let cancellation_token = self.cancellation_token.clone();
 
         let data_tx = nautilus_common::live::runner::get_data_event_sender();
 
-        let mut hypersync_rx = self.hypersync_rx.take().unwrap();
-        let hypersync_tx = self.hypersync_tx.take();
+        let hypersync_tx = self.hypersync_tx.clone();
 
         let mut core_client = BlockchainDataClientCore::new(
             self.config.clone(),
             hypersync_tx,
             Some(data_tx),
             cancellation_token.clone(),
-        );
+        )?;
+        let command_rx = self
+            .command_rx
+            .take()
+            .expect("command receiver was checked");
+        let mut hypersync_rx = self
+            .hypersync_rx
+            .take()
+            .expect("HyperSync receiver is available before startup");
+        self.hypersync_tx = None;
         core_client.set_socket_control(self.socket_factory.control("blockchain-rpc"));
 
         let (startup_tx, startup_rx) = tokio::sync::oneshot::channel();
@@ -1240,6 +1251,8 @@ impl DataClient for BlockchainDataClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
+        self.config.validate()?;
+
         if self.session_tasks.is_open() && !self.session_tasks.is_empty() {
             return Ok(());
         }

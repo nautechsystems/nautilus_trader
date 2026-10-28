@@ -63,6 +63,7 @@ fuzz_target!(|data: &[u8]| {
         integrator_taker_fee: read_u32(data, 81),
         integrator_maker_fee: read_u32(data, 85),
         skip_nonce: data[89],
+        ..Default::default()
     };
 
     let tx = CreateOrderTxInfo {

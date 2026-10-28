@@ -18,11 +18,14 @@
 use ibapi::orders::{Order as IBOrder, TimeInForce};
 use nautilus_model::{
     enums::{OrderSide, OrderType as NautilusOrderType, TrailingOffsetType},
+    events::OrderDeniedReason,
     instruments::Instrument,
     orders::{Order as NautilusOrder, any::OrderAny},
 };
 
-use super::{convert_price, format_ib_datetime, trigger_type_to_ib_trigger_method};
+use super::{
+    convert_decimal, convert_price, format_ib_datetime, trigger_type_to_ib_trigger_method,
+};
 use crate::{
     common::enums::IbOrderType, providers::instruments::InteractiveBrokersInstrumentProvider,
 };
@@ -45,35 +48,38 @@ pub(super) fn apply_quantity_policy(
     }
 
     let instrument_id = order.instrument_id();
+
     if !instrument_provider
         .find(&instrument_id)
         .is_some_and(|instrument| instrument.is_inverse())
     {
-        anyhow::bail!(
-            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse \
-             instruments; {instrument_id} must use the base quantity"
-        );
+        anyhow::bail!(OrderDeniedReason::unsupported_quote_quantity_with_detail(
+            format!(
+                "Interactive Brokers only accepts a quote quantity (`cash_qty`) for inverse instruments; {instrument_id} must use the base quantity"
+            )
+        ));
     }
 
     // IBKR accepts a cash quantity (`cash_qty`) only for BUY orders on these instruments;
     // a SELL must use the base quantity (`total_quantity`)
     if order.order_side() != OrderSide::Buy {
-        anyhow::bail!(
+        anyhow::bail!(OrderDeniedReason::unsupported_quote_quantity_with_detail(
             "Interactive Brokers only accepts a quote quantity (`cash_qty`) for BUY orders; \
-             a SELL must use the base quantity"
-        );
+                 a SELL must use the base quantity"
+        ));
     }
 
     // IBKR rejects a cash quantity on any order type other than MKT with error 10244
     // ("Cash Quantity cannot be used for this order"), so deny it before submission. The final
     // IB type decides: a MARKET order with AT_THE_CLOSE is sent as MOC.
     if ib_order.order_type != IbOrderType::Market.as_str() {
-        anyhow::bail!(
-            "Interactive Brokers only accepts a quote quantity (`cash_qty`) for MARKET orders \
-             (IB error 10244 for {} sent as {}); use the base quantity",
-            order.order_type(),
-            ib_order.order_type,
-        );
+        anyhow::bail!(OrderDeniedReason::unsupported_quote_quantity_with_detail(
+            format!(
+                "Interactive Brokers only accepts a quote quantity (`cash_qty`) for MARKET orders (IB error 10244 for {} sent as {}); use the base quantity",
+                order.order_type(),
+                ib_order.order_type
+            )
+        ));
     }
 
     ib_order.cash_qty = Some(order.quantity().as_f64());
@@ -85,7 +91,7 @@ pub(super) fn apply_quantity_policy(
 pub(super) fn apply_trailing_order_policy(
     ib_order: &mut IBOrder,
     order: &OrderAny,
-    price_magnifier: f64,
+    price_magnifier: i32,
 ) -> anyhow::Result<()> {
     if !matches!(
         order.order_type(),
@@ -95,16 +101,13 @@ pub(super) fn apply_trailing_order_policy(
     }
 
     if let Some(trailing_offset) = order.trailing_offset() {
-        let trailing_offset_f64 = trailing_offset.to_string().parse::<f64>().map_err(|e| {
-            anyhow::anyhow!("Failed to convert trailing offset {trailing_offset} to f64: {e}")
-        })?;
-
         match order.trailing_offset_type() {
             Some(TrailingOffsetType::BasisPoints) => {
+                let trailing_offset_f64 = convert_decimal(trailing_offset, 1)?;
                 ib_order.trailing_percent = Some(trailing_offset_f64 / 100.0);
             }
             Some(TrailingOffsetType::Price) | None => {
-                ib_order.aux_price = Some(trailing_offset_f64);
+                ib_order.aux_price = Some(convert_decimal(trailing_offset, price_magnifier)?);
             }
             Some(other) => anyhow::bail!("`TrailingOffsetType` {other:?} is not supported"),
         }

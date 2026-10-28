@@ -115,6 +115,10 @@ impl PayloadKeySet {
         Self::from_key_bytes(active, retired, deployment_id.to_string()).map(Some)
     }
 
+    #[allow(
+        clippy::needless_pass_by_value,
+        reason = "owns the active key so its bytes are zeroized before returning"
+    )]
     fn from_key_bytes(
         active: Zeroizing<[u8; 32]>,
         retired: Vec<Zeroizing<[u8; 32]>>,
@@ -415,7 +419,7 @@ fn parse_envelope(envelope: &[u8]) -> anyhow::Result<ParsedEnvelope<'_>> {
         envelope[0]
     );
 
-    let key_id = envelope[1..1 + KEY_ID_LEN]
+    let key_id = envelope[1..=KEY_ID_LEN]
         .try_into()
         .expect("fixed key ID slice length");
     let nonce_start = 1 + KEY_ID_LEN;

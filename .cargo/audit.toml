@@ -5,11 +5,10 @@
 # surfaces but cargo-deny does not match against the resolved feature graph:
 #   - RUSTSEC-2024-0388 (derivative, unmaintained via alloy-primitives -> ruint -> ark-ff)
 #
-# With the current Cargo.lock, chrono 0.4.45 and chrono-tz 0.10.4 (IANA 2025b)
-# remain transitive via Arrow/DataFusion; object_store is an additional chrono path.
-# Rust core time zones use jiff 0.2.35 with bundled IANA 2026c. Future unmaintained
-# advisories for chrono or chrono-tz require documented ignore entries here and in
-# deny.toml pending upstream migration.
+# Chrono and chrono-tz remain transitive via Arrow/DataFusion; object_store also
+# depends on chrono. Core time zones use jiff with bundled data. Future
+# unmaintained advisories for chrono or chrono-tz require documented ignores here
+# and in deny.toml pending upstream migration.
 
 [advisories]
 ignore = [
@@ -39,4 +38,40 @@ ignore = [
   "RUSTSEC-2026-0195",
   # faster-hex unsound hex_decode_unchecked, transitive via hypersync, no in-graph caller
   "RUSTSEC-2026-0306",
+
+  # crypto-bigint timing leaks affect secret arithmetic in transaction signing.
+  # Alloy and cosmrs require k256 0.13 -> elliptic-curve 0.13 -> crypto-bigint 0.5.
+  # Accept this risk until upstream permits crypto-bigint >=0.7.6 or backports the fix.
+  "RUSTSEC-2026-0387",
+
+  # Arrow IPC and Parquet require zstd 0.13.3 / zstd-safe 7.3.0 but use private
+  # bulk-only contexts with only std enabled. Other streaming consumers use fixed
+  # versions. Recheck these exceptions when either parent's calls or features
+  # change; remove them when both parents permit fixed versions.
+  # Borrowed streaming contexts are not used
+  "RUSTSEC-2026-0391",
+  # Experimental stable-input buffers are disabled
+  "RUSTSEC-2026-0395",
+  # Seekable contexts are disabled
+  "RUSTSEC-2026-0396",
+  # Streaming OutBuffer::around_pos is not used
+  "RUSTSEC-2026-0397",
+  # Seekable decompression is disabled
+  "RUSTSEC-2026-0398",
+  # Experimental dictionary initialization is disabled
+  "RUSTSEC-2026-0399",
+  # Bulk contexts are never mixed with unfinished streams
+  "RUSTSEC-2026-0400",
+  # Dictionary training is disabled
+  "RUSTSEC-2026-0401",
+  # Experimental context cloning and multithreading are disabled
+  "RUSTSEC-2026-0402",
+  # Streaming decompression is not used; the bulk API is unaffected
+  "RUSTSEC-2026-0403",
+  # Experimental decompression-context cloning is disabled
+  "RUSTSEC-2026-0404",
+  # Seekable streaming compression is disabled
+  "RUSTSEC-2026-0405",
+  # Multithreaded contexts are disabled
+  "RUSTSEC-2026-0406",
 ]

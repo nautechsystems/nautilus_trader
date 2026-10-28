@@ -152,6 +152,8 @@ impl<E: Clone + std::error::Error> BookRecovery<E> {
     /// ends a pending attempt, and each attempt after it is bounded by
     /// `max(snapshot_timeout, 60 seconds)`. Errors that `should_retry` rejects skip the rest of
     /// the budget.
+    ///
+    /// Whole-attempt deadlines use `create_error`; `timeout_error` handles snapshot deadlines.
     #[allow(
         clippy::missing_panics_doc,
         reason = "the ceiling backoff configuration is static and valid"
@@ -225,7 +227,12 @@ impl<E: Clone + std::error::Error> BookRecovery<E> {
 
                     let result = time::timeout(attempt_max, attempt())
                         .await
-                        .unwrap_or_else(|_| Err(timeout_error()));
+                        .unwrap_or_else(|_| {
+                            Err(create_error(format!(
+                                "Book recovery attempt timed out after {}ms (whole-attempt deadline)",
+                                attempt_max.as_millis(),
+                            )))
+                        });
 
                     match result {
                         Ok(()) => return,
@@ -469,6 +476,7 @@ mod tests {
         let recovery = BookRecovery::<SendError>::default();
         let attempts = AtomicUsize::new(0);
         let started = time::Instant::now();
+        let attempt_started = parking_lot::Mutex::new(started);
 
         recovery
             .run(
@@ -476,6 +484,7 @@ mod tests {
                 Duration::from_secs(1),
                 |_, gate| {
                     let attempt = attempts.fetch_add(1, Ordering::SeqCst) + 1;
+                    *attempt_started.lock() = time::Instant::now();
                     gate.open();
 
                     // The tenth attempt is the second at the ceiling interval
@@ -487,7 +496,10 @@ mod tests {
                 },
                 |_| true,
                 SendError::BrokenPipe,
-                || SendError::Timeout,
+                || {
+                    assert_eq!(attempt_started.lock().elapsed(), Duration::from_secs(1));
+                    SendError::Timeout
+                },
             )
             .await;
 
@@ -553,15 +565,19 @@ mod tests {
 
     // Neither a disabled snapshot deadline nor a write that never completes may end the retries
     #[rstest]
-    #[case::disabled_snapshot_deadline(Duration::ZERO, false)]
-    #[case::stalled_write(Duration::from_secs(10), true)]
+    #[case::disabled_snapshot_deadline(Duration::ZERO, false, 60_000)]
+    #[case::stalled_write(Duration::from_secs(10), true, 60_000)]
+    #[case::long_snapshot_deadline(Duration::from_secs(120), true, 120_000)]
     #[tokio::test(start_paused = true)]
     async fn ceiling_attempts_are_bounded_and_continue(
         #[case] snapshot_timeout: Duration,
         #[case] stall_write: bool,
+        #[case] attempt_timeout_ms: u64,
     ) {
         let recovery = BookRecovery::<SendError>::default();
         let attempts = AtomicUsize::new(0);
+        let attempt_started = parking_lot::Mutex::new(time::Instant::now());
+        let timeouts = AtomicUsize::new(0);
 
         let result = time::timeout(
             Duration::from_secs(700),
@@ -570,6 +586,7 @@ mod tests {
                 snapshot_timeout,
                 |_, gate| {
                     attempts.fetch_add(1, Ordering::SeqCst);
+                    *attempt_started.lock() = time::Instant::now();
                     let stall = stall_write;
                     async move {
                         if stall {
@@ -581,15 +598,32 @@ mod tests {
                     }
                 },
                 |_| true,
-                SendError::BrokenPipe,
-                || SendError::Timeout,
+                |message| {
+                    if attempts.load(Ordering::SeqCst) > 1 {
+                        assert_eq!(
+                            message,
+                            format!(
+                                "Book recovery attempt timed out after {attempt_timeout_ms}ms (whole-attempt deadline)"
+                            ),
+                        );
+                        assert_eq!(
+                            attempt_started.lock().elapsed(),
+                            Duration::from_millis(attempt_timeout_ms),
+                        );
+                        timeouts.fetch_add(1, Ordering::SeqCst);
+                    }
+
+                    SendError::BrokenPipe(message)
+                },
+                || panic!("whole-attempt timeout must not use the snapshot error factory"),
             ),
         )
         .await;
 
-        // The budget ends at 180s; ceiling attempts start near 240s and 420s, each bounded
+        // The budget ends at 180s; two bounded ceiling attempts finish before the 700s timeout
         assert!(result.is_err());
         assert_eq!(attempts.load(Ordering::SeqCst), 3);
+        assert_eq!(timeouts.load(Ordering::SeqCst), 2);
         assert!(recovery.is_running());
     }
 

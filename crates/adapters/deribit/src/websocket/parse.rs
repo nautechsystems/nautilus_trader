@@ -25,8 +25,8 @@ use nautilus_core::{
 use nautilus_model::{
     data::{
         Bar, BarType, BookOrder, Data, FundingRateUpdate, IndexPriceUpdate, MarkPriceUpdate,
-        OrderBookDelta, OrderBookDeltas, QuoteTick, TradeTick, bar::BarSpecification,
-        option_chain::OptionGreeks,
+        OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+        bar::BarSpecification, option_chain::OptionGreeks,
     },
     enums::{
         AggregationSource, AggressorSide, BarAggregation, BookAction, GreeksConvention,
@@ -430,6 +430,40 @@ pub fn parse_book_msg(
     }
 }
 
+/// Parses a grouped book snapshot into depth data, with zero order counts because Deribit
+/// does not supply them. Skips levels under the same rules as [`parse_book_snapshot`].
+///
+/// # Errors
+///
+/// Returns an error if a level's price or amount cannot convert to `Price` or `Quantity`.
+pub(crate) fn parse_book_depth(
+    msg: &DeribitBookMsg<'_>,
+    instrument: &InstrumentAny,
+    ts_init: UnixNanos,
+) -> anyhow::Result<OrderBookDepth> {
+    let snapshot = parse_book_snapshot(msg, instrument, ts_init)?;
+    let (bids, asks): (Vec<_>, Vec<_>) = snapshot
+        .deltas
+        .iter()
+        .filter(|delta| delta.action == BookAction::Add)
+        .map(|delta| delta.order)
+        .partition(|order| order.side == OrderSide::Buy.into());
+    let bid_counts = vec![0; bids.len()];
+    let ask_counts = vec![0; asks.len()];
+
+    OrderBookDepth::new_checked(
+        snapshot.instrument_id,
+        bids,
+        asks,
+        bid_counts,
+        ask_counts,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+        msg.change_id,
+        snapshot.ts_event,
+        ts_init,
+    )
+}
+
 // An amount below half the size increment rounds to zero, which a book level cannot hold, so
 // callers treat the level as absent.
 fn is_zero_at_size_precision(
@@ -604,14 +638,15 @@ pub fn parse_ticker_to_option_greeks(
     let deribit_greeks = msg.greeks.as_ref()?;
     let instrument_id = instrument.id();
     let ts_event = UnixNanos::new(msg.timestamp * NANOSECONDS_IN_MILLISECOND);
+    let iv_to_fraction = |iv: Decimal| iv.to_f64().map(|v| v / 100.0);
 
     Some(OptionGreeks {
         instrument_id,
         convention: GreeksConvention::BlackScholes,
         greeks: deribit_greeks.to_greek_values(),
-        mark_iv: msg.mark_iv.and_then(|v| v.to_f64()),
-        bid_iv: msg.bid_iv.and_then(|v| v.to_f64()),
-        ask_iv: msg.ask_iv.and_then(|v| v.to_f64()),
+        mark_iv: msg.mark_iv.and_then(iv_to_fraction),
+        bid_iv: msg.bid_iv.and_then(iv_to_fraction),
+        ask_iv: msg.ask_iv.and_then(iv_to_fraction),
         underlying_price: msg.underlying_price.and_then(|v| v.to_f64()),
         open_interest: Some(msg.open_interest.to_f64().unwrap_or(0.0)),
         ts_event,
@@ -1336,7 +1371,8 @@ pub enum OrderEventType {
 
 #[cfg(test)]
 mod tests {
-    use rstest::rstest;
+    use nautilus_model::data::greeks::OptionGreekValues;
+    use rstest::{fixture, rstest};
     use rust_decimal_macros::dec;
     use serde::de::DeserializeOwned;
 
@@ -1892,6 +1928,106 @@ mod tests {
     }
 
     #[rstest]
+    #[case::populated(true, true)]
+    #[case::bids_only(true, false)]
+    #[case::asks_only(false, true)]
+    #[case::empty(false, false)]
+    fn test_parse_book_depth(#[case] has_bids: bool, #[case] has_asks: bool) {
+        let instrument = test_perpetual_instrument();
+        let json = load_test_json("ws_book_grouped_snapshot.json");
+        let mut response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        if !has_bids {
+            response["params"]["data"]["bids"] = serde_json::json!([]);
+        }
+
+        if !has_asks {
+            response["params"]["data"]["asks"] = serde_json::json!([]);
+        }
+
+        let data = response["params"]["data"].to_string();
+        let msg: DeribitBookMsg = serde_json::from_str(&data).unwrap();
+        let ts_init = UnixNanos::new(1_769_246_173_072_123_456);
+        let depth = parse_book_depth(&msg, &instrument, ts_init).unwrap();
+
+        let bids = if has_bids {
+            vec![
+                ("89532.5", "254900"),
+                ("89532.0", "1000"),
+                ("89531.0", "2000"),
+                ("89529.5", "3530"),
+                ("89529.0", "4030"),
+                ("89528.0", "500"),
+                ("89527.5", "35170"),
+                ("89526.0", "75010"),
+                ("89525.0", "10000"),
+                ("89523.5", "11000"),
+            ]
+        } else {
+            vec![]
+        };
+
+        let asks = if has_asks {
+            vec![
+                ("89533.0", "91570"),
+                ("89533.5", "10000"),
+                ("89537.0", "13290"),
+                ("89538.5", "6990"),
+                ("89540.0", "11000"),
+                ("89540.5", "26520"),
+                ("89541.0", "3550"),
+                ("89542.5", "11000"),
+                ("89543.0", "480"),
+                ("89545.5", "29500"),
+            ]
+        } else {
+            vec![]
+        };
+
+        let bid_count = bids.len();
+        let ask_count = asks.len();
+
+        let bids: Vec<_> = bids
+            .into_iter()
+            .enumerate()
+            .map(|(i, (price, size))| {
+                BookOrder::new(
+                    OrderSide::Buy,
+                    Price::from(price),
+                    Quantity::from(size),
+                    i as u64,
+                )
+            })
+            .collect();
+
+        let asks: Vec<_> = asks
+            .into_iter()
+            .enumerate()
+            .map(|(i, (price, size))| {
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from(price),
+                    Quantity::from(size),
+                    (bid_count + i) as u64,
+                )
+            })
+            .collect();
+
+        let expected = OrderBookDepth::new(
+            InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            bids,
+            asks,
+            vec![0; bid_count],
+            vec![0; ask_count],
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+            136_725_664_747,
+            UnixNanos::new(1_769_246_173_071_000_000),
+            ts_init,
+        );
+
+        assert_eq!(depth, expected);
+    }
+
+    #[rstest]
     fn test_parse_ticker_to_mark_price() {
         let instrument = test_perpetual_instrument();
         let json = load_test_json("ws_ticker.json");
@@ -1927,6 +2063,93 @@ mod tests {
             index_price.ts_event,
             UnixNanos::new(1_765_541_474_086_000_000)
         );
+    }
+
+    #[rstest]
+    #[case::all_present(Some(dec!(55.2)), Some(dec!(54.0)), Some(dec!(56.5)))]
+    #[case::missing_mark(None, Some(dec!(54.0)), Some(dec!(56.5)))]
+    #[case::missing_bid(Some(dec!(55.2)), None, Some(dec!(56.5)))]
+    #[case::missing_ask(Some(dec!(55.2)), Some(dec!(54.0)), None)]
+    #[case::all_missing(None, None, None)]
+    fn test_parse_ticker_to_option_greeks(
+        option_ticker: (DeribitTickerMsg, InstrumentAny),
+        #[case] mark_iv: Option<Decimal>,
+        #[case] bid_iv: Option<Decimal>,
+        #[case] ask_iv: Option<Decimal>,
+    ) {
+        let (mut msg, instrument) = option_ticker;
+        msg.mark_iv = mark_iv;
+        msg.bid_iv = bid_iv;
+        msg.ask_iv = ask_iv;
+        let ts_init = UnixNanos::new(1_765_541_474_087_000_000);
+
+        let greeks = parse_ticker_to_option_greeks(&msg, &instrument, ts_init).unwrap();
+
+        assert_eq!(
+            greeks.instrument_id,
+            InstrumentId::from("BTC-27DEC24-100000-C.DERIBIT"),
+        );
+        assert_eq!(greeks.convention, GreeksConvention::BlackScholes);
+        assert_eq!(
+            greeks.greeks,
+            OptionGreekValues {
+                delta: 0.45,
+                gamma: 0.00012,
+                vega: 14.25,
+                theta: -23.5,
+                rho: 8.75,
+            },
+        );
+
+        for (actual, expected) in [
+            (greeks.mark_iv, mark_iv.map(|_| 0.552)),
+            (greeks.bid_iv, bid_iv.map(|_| 0.54)),
+            (greeks.ask_iv, ask_iv.map(|_| 0.565)),
+        ] {
+            match expected {
+                Some(expected) => assert!((actual.unwrap() - expected).abs() < 1e-12),
+                None => assert_eq!(actual, None),
+            }
+        }
+
+        assert_eq!(greeks.underlying_price, Some(95000.5));
+        assert_eq!(greeks.open_interest, Some(123.5));
+        assert_eq!(greeks.ts_event, UnixNanos::new(1_765_541_474_086_000_000));
+        assert_eq!(greeks.ts_init, ts_init);
+        assert_eq!(msg.mark_iv, mark_iv);
+        assert_eq!(msg.bid_iv, bid_iv);
+        assert_eq!(msg.ask_iv, ask_iv);
+    }
+
+    #[rstest]
+    fn test_parse_ticker_to_option_greeks_without_greeks(
+        option_ticker: (DeribitTickerMsg, InstrumentAny),
+    ) {
+        let (mut msg, instrument) = option_ticker;
+        msg.greeks = None;
+
+        assert_eq!(
+            parse_ticker_to_option_greeks(&msg, &instrument, UnixNanos::default()),
+            None,
+        );
+    }
+
+    #[fixture]
+    fn option_ticker() -> (DeribitTickerMsg, InstrumentAny) {
+        let json = load_test_json("http_get_instrument_option.json");
+        let response: DeribitJsonRpcResponse<DeribitInstrument> =
+            serde_json::from_str(&json).unwrap();
+        let instrument = parse_deribit_instrument_any(
+            &response.result.unwrap(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        let json = load_test_json("ws_ticker_option.json");
+        let response: serde_json::Value = serde_json::from_str(&json).unwrap();
+        let msg = serde_json::from_str(&response["params"]["data"].to_string()).unwrap();
+        (msg, instrument)
     }
 
     #[rstest]

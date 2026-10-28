@@ -1050,8 +1050,7 @@ mod tests {
             register_polymarket_custom_data();
             let _result = ensure_rust_extractor_registered::<PolymarketCryptoPrice>();
 
-            let mut metadata = Params::new();
-            metadata.insert("symbol".to_string(), json!("btcusd"));
+            let metadata = Params::new([("symbol".to_string(), json!("btcusd"))].into());
 
             let payload = Arc::new(PolymarketCryptoPrice::new(
                 "btcusd".to_string(),

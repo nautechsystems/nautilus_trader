@@ -74,6 +74,7 @@ async fn spawn_connect_proxy(upstream: SocketAddr) -> (SocketAddr, Arc<ProxyCapt
                 Ok(pair) => pair,
                 Err(_) => break,
             };
+
             let cap = Arc::clone(&capture_loop);
             tokio::spawn(async move {
                 if let Err(e) = handle_connect(stream, upstream, cap).await {
@@ -104,14 +105,17 @@ async fn handle_connect(
     }
 
     let mut headers = Vec::new();
+
     loop {
         let mut line = String::new();
         let n = reader.read_line(&mut line).await?;
         if n == 0 || line == "\r\n" {
             break;
         }
+
         headers.push(line.trim_end_matches("\r\n").to_string());
     }
+
     *capture.last_headers.lock().await = headers;
     capture.connect_count.fetch_add(1, Ordering::SeqCst);
 
@@ -132,10 +136,13 @@ async fn handle_connect(
             if n == 0 {
                 break;
             }
+
             up_write.write_all(&buf[..n]).await?;
         }
+
         Ok::<_, std::io::Error>(())
     };
+
     let upstream_to_client = async {
         let mut buf = vec![0u8; 8192];
         loop {
@@ -143,8 +150,10 @@ async fn handle_connect(
             if n == 0 {
                 break;
             }
+
             write_half.write_all(&buf[..n]).await?;
         }
+
         Ok::<_, std::io::Error>(())
     };
 
@@ -160,7 +169,6 @@ async fn handle_connect(
 async fn spawn_echo_server(received: Arc<Mutex<Vec<String>>>) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         let mut ws = accept_async(stream).await.expect("ws handshake");
@@ -168,6 +176,7 @@ async fn spawn_echo_server(received: Arc<Mutex<Vec<String>>>) -> SocketAddr {
             match msg {
                 Ok(tungstenite::Message::Text(t)) => {
                     received.lock().await.push(t.to_string());
+
                     if ws
                         .send(tungstenite::Message::Text(t.clone()))
                         .await
@@ -203,6 +212,7 @@ async fn websocket_client_routes_through_http_connect_proxy(#[case] backend: Tra
 
     let echoes: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let echoes_clone = Arc::clone(&echoes);
+
     let handler: MessageHandler = Arc::new(move |msg: Message| {
         if let Message::Text(b) = msg {
             let s = String::from_utf8_lossy(&b).to_string();
@@ -250,6 +260,7 @@ async fn websocket_client_routes_through_http_connect_proxy(#[case] backend: Tra
         if !received.lock().await.is_empty() && !echoes.lock().await.is_empty() {
             break;
         }
+
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
 
@@ -271,6 +282,7 @@ async fn websocket_client_routes_through_http_connect_proxy(#[case] backend: Tra
 async fn websocket_client_without_proxy_connects_directly(#[case] backend: TransportBackend) {
     let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
+
     let config = WebSocketConfig {
         url: format!("ws://{echo_addr}/"),
         headers: vec![],
@@ -307,8 +319,10 @@ async fn websocket_client_without_proxy_connects_directly(#[case] backend: Trans
         if !received.lock().await.is_empty() {
             break;
         }
+
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+
     let messages = received.lock().await.clone();
     client.disconnect().await;
 
@@ -328,6 +342,7 @@ async fn websocket_client_invalid_proxy_error_redacts_credentials(
     const SECRET: &str = "invalid-websocket-proxy-secret";
     let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
+
     let config = WebSocketConfig {
         url: format!("ws://{echo_addr}/"),
         headers: vec![],
@@ -378,6 +393,7 @@ async fn websocket_client_unreachable_proxy_error_redacts_credentials(
     drop(proxy_listener);
     let received: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
     let echo_addr = spawn_echo_server(Arc::clone(&received)).await;
+
     let config = WebSocketConfig {
         url: format!("ws://{echo_addr}/"),
         headers: vec![],
@@ -465,8 +481,10 @@ async fn websocket_client_falls_back_to_direct_for_socks_proxy(#[case] backend: 
         if !received.lock().await.is_empty() {
             break;
         }
+
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+
     let msgs = received.lock().await.clone();
     client.disconnect().await;
     assert_eq!(msgs, vec!["ping".to_string()]);
@@ -478,7 +496,6 @@ async fn websocket_client_falls_back_to_direct_for_socks_proxy(#[case] backend: 
 async fn spawn_one_drop_echo_server(received: Arc<Mutex<Vec<String>>>) -> SocketAddr {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
-
     tokio::spawn(async move {
         let (stream, _) = listener.accept().await.unwrap();
         // First client: complete the handshake then drop immediately
@@ -492,6 +509,7 @@ async fn spawn_one_drop_echo_server(received: Arc<Mutex<Vec<String>>>) -> Socket
                 Ok(pair) => pair,
                 Err(_) => break,
             };
+
             let received = Arc::clone(&received);
 
             tokio::spawn(async move {
@@ -500,6 +518,7 @@ async fn spawn_one_drop_echo_server(received: Arc<Mutex<Vec<String>>>) -> Socket
                     match msg {
                         Ok(tungstenite::Message::Text(t)) => {
                             received.lock().await.push(t.to_string());
+
                             if ws
                                 .send(tungstenite::Message::Text(t.clone()))
                                 .await
@@ -627,8 +646,10 @@ async fn websocket_client_reuses_proxy_url_on_reconnect(#[case] backend: Transpo
         if capture.connect_count.load(Ordering::SeqCst) >= 2 {
             break;
         }
+
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
+
     let connects = capture.connect_count.load(Ordering::SeqCst);
     client.disconnect().await;
     assert!(

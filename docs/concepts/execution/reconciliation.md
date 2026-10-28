@@ -741,6 +741,16 @@ do not require NETTING lifecycle inference.
 
 ### Failure handling
 
+During startup, an execution client's mass-status request has three outcomes:
+
+- **Available (`Ok(Some(...))`)**: Reconcile the supplied reports. An unresolved in-scope position
+  report prevents actors and strategies from starting.
+- **Unavailable (`Ok(None)`)**: Log a warning and continue startup. This compatibility policy does
+  not establish that the venue is flat; no position target can be inferred from the missing report.
+- **Failed (`Err(...)`) or timed out**: Abort startup and follow the startup cleanup path.
+
+Report processing also follows these rules:
+
 - An adapter can preserve successful report legs after an individual source failure. Explicitly
   bounded mass statuses must mark the result incomplete. Incompleteness does not veto an explicit
   position report. A bounded fill with no explicit position report does not change a position.
@@ -796,6 +806,32 @@ local policy resolutions from venue-reported outcomes.
 
 ### Order consistency checks
 
+An open-order check queries all execution clients before running their deferred report processing.
+Each client stays busy until that work finishes or its reports are discarded; other report requests to
+that client fail as already running.
+
+The timeout starts when the check starts and uses `timeout_reconciliation`
+(`timeout_reconciliation_secs` in Python). The node accepts the batch only before the deadline.
+A batch ready exactly at the deadline is discarded.
+
+Once the batch is accepted, deferred adapter processing and report application run synchronously,
+without another deadline check or cancellation point. Slow processing does not discard accepted reports.
+Discarding a batch or targeted response skips deferred adapter work; it cannot undo state changes an adapter
+makes during collection.
+
+Targeted follow-up queries use one timeout budget starting when their task starts. For each order, the node
+tries available responsible clients in order and stops at the first matching status. It queries any required
+companion fills before starting the next order's status query. Each status query keeps its client busy until
+deferred processing or disposal. A companion fill query releases that client before the next order's query.
+
+The node accepts each status or fill response only before the original deadline, then runs deferred
+processing.
+A response ready exactly at the deadline is discarded. Accepted results stay under node ownership until
+reconciliation, including after fill timeout, fill error, cancellation, or normal shutdown. Slow processing
+cannot discard accepted results. A canceled or expired status with unaccounted fills stays deferred until
+those fills arrive. A timed out or canceled task does not resolve orders as missing. Fatal callback failure
+stops further dispatch and discards the retained results.
+
 The table below applies when cache state differs from venue state. A missing open-order report does not by
 itself prove a pending modify or cancel outcome. Thus, these checks leave those states unresolved until
 another check can determine the venue state.
@@ -842,6 +878,21 @@ completed orders from their query results.
 
 ### Position checks
 
+#### Report acceptance
+
+Position snapshots and their authoritative fill queries use separate `timeout_reconciliation` deadlines.
+Each stage collects all results before accepting them, and accepts only while `now < deadline`. Each
+client stays busy until all its retained report processing finishes or its results are discarded.
+
+Accepted stages run deferred processing and pass reports to reconciliation synchronously, even if processing
+crosses the deadline. Expiry or cancellation skips deferred processing; it cannot undo state changes
+an adapter makes during collection.
+
+During shutdown, the node discards unused position snapshots without running deferred processing, applies accepted
+fill stages, and retains ownership of collection workers until they drain.
+
+#### Retries and query failures
+
 Position checks use separate retry counters per instrument and account. A successful position
 match clears the counter, while repeated unresolved discrepancies stop active reconciliation for
 that pair until the discrepancy clears.
@@ -871,6 +922,10 @@ event.
 The engine caps single-order queries per cycle with `max_single_order_queries_per_cycle`. Remaining orders are
 deferred to the next cycle. `single_order_query_delay_ms` spaces out consecutive queries to avoid rate limits.
 This handles bulk query failures across hundreds of orders without overwhelming the venue API.
+
+Targeted tasks apply the delay between available-client status attempts across all orders in the task.
+Unavailable clients consume no delay. A companion fill request follows its matching status without an extra
+pacing delay; the next status attempt uses the configured delay and the remaining timeout budget.
 
 ## Common reconciliation scenarios
 

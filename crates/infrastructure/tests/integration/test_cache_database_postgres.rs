@@ -40,7 +40,7 @@ mod serial_tests {
         },
         enums::{CurrencyType, InstrumentCloseType, OmsType, OrderSide, OrderStatus, OrderType},
         events::{
-            OrderEventAny, OrderFilled, OrderSnapshot,
+            OrderEventAny, OrderFilled, OrderSnapshot, PositionSnapshot,
             account::stubs::{
                 cash_account_state_million_usd, wallet_account_state, wallet_account_state_changed,
             },
@@ -454,14 +454,74 @@ mod serial_tests {
         database.close().unwrap();
     }
 
+    #[rstest]
+    #[case::binary_option(binary_option().into_any())]
+    #[case::cfd(cfd_gold().into_any())]
+    #[case::commodity(commodity_gold().into_any())]
+    #[case::crypto_future(crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001")).into_any())]
+    #[case::crypto_futures_spread(crypto_futures_spread_btc_deribit().into_any())]
+    #[case::crypto_option(crypto_option_btc_deribit(3, 1, Price::from("0.001"), Quantity::from("0.1")).into_any())]
+    #[case::crypto_option_spread(crypto_option_spread_btc_deribit().into_any())]
+    #[case::crypto_perpetual(crypto_perpetual_ethusdt().into_any())]
+    #[case::currency_pair(currency_pair_ethusdt().into_any())]
+    #[case::perpetual_contract(perpetual_contract_eurusd().into_any())]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_instrument_exact_money_notional_restart(#[case] instrument: InstrumentAny) {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        for currency in [
+            instrument.base_currency(),
+            Some(instrument.quote_currency()),
+            Some(instrument.settlement_currency()),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            database.add_currency(&currency).unwrap();
+        }
+
+        let currency = instrument.quote_currency();
+        let maximum = Money::from_str_exact(&format!("1.000000001 {currency}")).unwrap();
+        let minimum = Money::from_str_exact(&format!("0.000000003 {currency}")).unwrap();
+        let mut encoded = serde_json::to_value(instrument).unwrap();
+        let fields = encoded
+            .as_object_mut()
+            .unwrap()
+            .values_mut()
+            .next()
+            .unwrap();
+        fields["max_notional"] = serde_json::to_value(maximum).unwrap();
+        fields["min_notional"] = serde_json::to_value(minimum).unwrap();
+        let instrument: InstrumentAny = serde_json::from_value(encoded).unwrap();
+        let id = instrument.id();
+        database.add_instrument(&instrument).unwrap();
+        database.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let restored = restarted.load_instrument(&id).await.unwrap().unwrap();
+        let all = restarted.load_instruments().await.unwrap();
+
+        assert_eq!(restored.id(), id);
+        assert_eq!(restored.max_notional(), Some(maximum));
+        assert_eq!(restored.min_notional(), Some(minimum));
+        assert_eq!(all[&id].max_notional(), Some(maximum));
+        assert_eq!(all[&id].min_notional(), Some(minimum));
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
     #[tokio::test(flavor = "multi_thread")]
     async fn test_currency_pair_info_survives_cache_restore() {
         let mut database = get_test_pg_cache_database().await.unwrap();
         let mut pair = currency_pair_ethusdt();
-        let mut info = Params::new();
-        info.insert("raw_symbol".to_owned(), serde_json::Value::from("ETHUSDT"));
-        info.insert("z".to_owned(), serde_json::Value::from(1e16));
-        info.insert("a".to_owned(), serde_json::Value::from(2));
+
+        let info = Params::new(
+            [
+                ("raw_symbol".to_owned(), serde_json::Value::from("ETHUSDT")),
+                ("z".to_owned(), serde_json::Value::from(1e16)),
+                ("a".to_owned(), serde_json::Value::from(2)),
+            ]
+            .into(),
+        );
         pair.info = Some(info.clone());
         let instrument = pair.into_any();
         database
@@ -1377,6 +1437,121 @@ mod serial_tests {
     }
 
     #[tokio::test(flavor = "multi_thread")]
+    async fn test_exact_usd_account_restart() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        let total = Money::from_str_exact("1.0001 USD").unwrap();
+        let locked = Money::from_str_exact("0.000001 USD").unwrap();
+        let free = Money::from_str_exact("1.000099 USD").unwrap();
+        let mut event = cash_account_state_million_usd("1 USD", "0 USD", "1 USD");
+        event.balances = vec![AccountBalance::new(total, locked, free)];
+        let account = AccountAny::Cash(CashAccount::new(event, false, false));
+        pg_cache.add_currency(&Currency::USD()).unwrap();
+        pg_cache.add_account(&account).unwrap();
+        pg_cache.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let restored = restarted
+            .load_account(&account.id())
+            .await
+            .unwrap()
+            .unwrap();
+        let balance = restored.last_event().unwrap().balances[0];
+
+        assert_eq!(balance.total, total);
+        assert_eq!(balance.locked, locked);
+        assert_eq!(balance.free, free);
+        assert_entirely_equal(restored, account);
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_exact_usd_order_and_position_snapshot_restart() {
+        let mut pg_cache = get_test_pg_cache_database().await.unwrap();
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        pg_cache
+            .add_currency(&instrument.base_currency().unwrap())
+            .unwrap();
+        pg_cache.add_currency(&instrument.quote_currency()).unwrap();
+        pg_cache.add_instrument(&instrument).unwrap();
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .client_order_id(ClientOrderId::new("O-EXACT-USD"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1"))
+            .build();
+        pg_cache.add_order(&order, None).unwrap();
+        let account_id = AccountId::new("SIM-001");
+        let submitted = TestOrderEventStubs::submitted(&order, account_id);
+        order.apply(submitted).unwrap();
+        pg_cache.update_order(order.last_event()).unwrap();
+        let accepted =
+            TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::new("V-EXACT-USD"));
+        order.apply(accepted).unwrap();
+        pg_cache.update_order(order.last_event()).unwrap();
+        let commission = Money::from_str_exact("0.000001 USD").unwrap();
+        let position_id = PositionId::new("P-EXACT-USD");
+
+        let OrderEventAny::Filled(fill) = TestOrderEventStubs::filled(
+            &order,
+            &instrument,
+            Some(TradeId::new("T-EXACT-USD")),
+            Some(position_id),
+            Some(Price::from("0.60000")),
+            Some(Quantity::from("1")),
+            None,
+            Some(commission),
+            Some(UnixNanos::from(123)),
+            Some(account_id),
+        ) else {
+            unreachable!();
+        };
+
+        order.apply(OrderEventAny::Filled(fill.clone())).unwrap();
+        pg_cache.update_order(order.last_event()).unwrap();
+        let order_snapshot = OrderSnapshot::from(order.clone());
+        pg_cache.add_order_snapshot(&order_snapshot).unwrap();
+        let position = Position::new(&instrument, fill);
+        let unrealized = Money::from_str_exact("0.000007 USD").unwrap();
+        let mut position_snapshot = PositionSnapshot::from(&position, Some(unrealized));
+        position_snapshot.realized_pnl = Some(Money::from_str_exact("0.000003 USD").unwrap());
+        position_snapshot.avg_px_open =
+            Decimal::from_str("0.6666666666666666666666666667").unwrap();
+        position_snapshot.avg_px_close =
+            Some(Decimal::from_str("0.9999999999999999999999999999").unwrap());
+        pg_cache.add_position_snapshot(&position_snapshot).unwrap();
+        pg_cache.close().unwrap();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let restored_order = restarted
+            .load_order(&order.client_order_id())
+            .await
+            .unwrap()
+            .unwrap();
+        let restored_order_snapshot = restarted
+            .load_order_snapshot(&order.client_order_id())
+            .unwrap()
+            .unwrap();
+        let restored_position_snapshot = restarted
+            .load_position_snapshot(&position_id)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(restored_order_snapshot.commissions, vec![commission]);
+        assert_eq!(restored_position_snapshot.commissions, vec![commission]);
+        assert_eq!(restored_position_snapshot.unrealized_pnl, Some(unrealized));
+        assert_eq!(
+            restored_position_snapshot.realized_pnl,
+            position_snapshot.realized_pnl
+        );
+        assert_entirely_equal(restored_order, order);
+        assert_entirely_equal(restored_order_snapshot, order_snapshot);
+        assert_entirely_equal(restored_position_snapshot, position_snapshot);
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
     async fn test_add_and_update_wallet_account() {
         let mut pg_cache = get_test_pg_cache_database().await.unwrap();
 
@@ -1629,7 +1804,8 @@ mod serial_tests {
             "a".to_string() => serde_json::Value::String("1".to_string()),
             "b".to_string() => serde_json::Value::String("2".to_string()),
         };
-        let params = Params::from_index_map(metadata);
+        let params = Params::new(metadata);
+
         let data_type = DataType::new(
             "RustTestCustomData",
             Some(params),

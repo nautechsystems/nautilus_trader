@@ -48,7 +48,7 @@ use nautilus_common::{
         ExecutionEvent, SystemEvent,
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GeneratePositionStatusReports,
-            ModifyOrder, SubmitOrder,
+            ModifyOrder, SubmitOrder, SubmitOrderList,
         },
         system::SocketState,
     },
@@ -70,8 +70,10 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     events::{AccountState, OrderEventAny},
-    identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
-    orders::{Order, OrderAny, OrderTestBuilder},
+    identifiers::{
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+    },
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -883,32 +885,122 @@ async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_local_submit_validation_failure_emits_order_rejected() {
-    let (client, mut rx, cache, _request_count) =
+async fn test_local_submit_validation_failure_returns_error() {
+    let (client, _rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
     let client_order_id = ClientOrderId::new("local-submit-reject-test-001");
     let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::AtTheOpen);
 
-    client
+    let error = client
         .submit_order(submit_order_command(&order_any))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "Unsupported time_in_force AtTheOpen for Deribit"
+    );
+    assert_eq!(request_count.load(Ordering::Relaxed), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_sends_all_valid_orders() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+    let sell = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(ClientOrderId::from("list-submit-002"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("20"))
+        .price(Price::from("51000"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(sell.clone(), None, None, false)
         .unwrap();
 
-    match recv_until(&mut rx, |event| {
-        matches!(
-            event,
-            ExecutionEvent::Order(OrderEventAny::Rejected(event))
-                if event.client_order_id == client_order_id
-        )
-    })
-    .await
-    {
-        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
-            assert_eq!(event.client_order_id, client_order_id);
-            assert!(event.reason.contains("Unsupported time_in_force"));
-        }
-        other => panic!("Expected Rejected event, was {other:?}"),
+    let orders = [
+        add_sized_limit_order_to_cache(
+            &cache,
+            ClientOrderId::from("list-submit-001"),
+            Quantity::from("10"),
+            Price::from("50000"),
+        ),
+        sell,
+    ];
+
+    let order_list = OrderList::new(
+        OrderListId::from("list-submit"),
+        test_instrument_id(),
+        test_strategy_id(),
+        orders.iter().map(Order::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+    client
+        .submit_order_list(SubmitOrderList::new(
+            test_trader_id(),
+            Some(*DERIBIT_CLIENT_ID),
+            test_strategy_id(),
+            order_list,
+            orders
+                .iter()
+                .map(|order| order.init_event().clone())
+                .collect(),
+            None,
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap();
+
+    let mut submitted = Vec::new();
+
+    for _ in &orders {
+        let event = recv_until(&mut rx, |event| {
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(_)))
+        })
+        .await;
+
+        let ExecutionEvent::Order(OrderEventAny::Submitted(event)) = event else {
+            panic!("Expected submitted event, was {event:?}");
+        };
+
+        submitted.push(event.client_order_id);
     }
+
+    wait_for_command_requests(&state.command_request_count, 2).await;
+    let requests = state.command_requests.lock().await;
+
+    assert_eq!(
+        submitted,
+        vec![orders[0].client_order_id(), orders[1].client_order_id()]
+    );
+    assert_eq!(requests.len(), 2);
+
+    for (order, amount, price, method) in [
+        (&orders[0], 10, 50000, "private/buy"),
+        (&orders[1], 20, 51000, "private/sell"),
+    ] {
+        let request = find_command_request(&requests, order.client_order_id());
+        let params = &request["params"];
+
+        assert_eq!(request["method"].as_str(), Some(method));
+        assert_eq!(params["amount"].as_u64(), Some(amount));
+        assert_eq!(params["price"].as_u64(), Some(price));
+        assert_eq!(params["instrument_name"].as_str(), Some("BTC-PERPETUAL"));
+        assert_eq!(params["time_in_force"].as_str(), Some("good_til_cancelled"));
+    }
+
+    drop(requests);
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -1035,7 +1127,7 @@ async fn test_limit_submit_sends_or_rejects_unrepresentable_amount() {
     let (addr, state) = start_test_server().await.unwrap();
     let request_count = state.command_request_count.clone();
     let command_request_texts = state.command_request_texts.clone();
-    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
     client.connect().await.unwrap();
 
@@ -1047,11 +1139,9 @@ async fn test_limit_submit_sends_or_rejects_unrepresentable_amount() {
         Price::from("65000.5"),
     );
 
-    client
-        .submit_order(submit_order_command(&order_any))
-        .unwrap();
-
+    let result = client.submit_order(submit_order_command(&order_any));
     if serde_json_keeps_number_text() {
+        result.unwrap();
         wait_for_command_requests(&request_count, 1).await;
 
         let texts = command_request_texts.lock().await;
@@ -1059,15 +1149,10 @@ async fn test_limit_submit_sends_or_rejects_unrepresentable_amount() {
 
         assert_eq!(request.params.amount.get(), "100000000.005000001");
     } else {
-        // Without arbitrary precision, an f64 cannot carry the amount
-        match recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await {
-            ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
-                assert_eq!(event.client_order_id, client_order_id);
-                assert_eq!(event.reason.as_str(), UNREPRESENTABLE_PARAMS_REASON);
-            }
-            other => panic!("Expected Rejected event, was {other:?}"),
-        }
-
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            UNREPRESENTABLE_PARAMS_REASON
+        );
         assert_eq!(request_count.load(Ordering::Relaxed), 0);
     }
 
@@ -1627,12 +1712,16 @@ fn serde_json_keeps_number_text() -> bool {
 }
 
 fn find_command_request_params(requests: &[Value], client_order_id: ClientOrderId) -> &Value {
+    &find_command_request(requests, client_order_id)["params"]
+}
+
+fn find_command_request(requests: &[Value], client_order_id: ClientOrderId) -> &Value {
     requests
         .iter()
-        .filter_map(|request| request.get("params"))
-        .find(|params| {
-            params
-                .get("label")
+        .find(|request| {
+            request
+                .get("params")
+                .and_then(|params| params.get("label"))
                 .and_then(Value::as_str)
                 .is_some_and(|label| label == client_order_id.as_str())
         })

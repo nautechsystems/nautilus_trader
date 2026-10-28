@@ -79,7 +79,6 @@ impl CfdSwapRate {
         module = "nautilus_trader.backtest",
         extends = PySimulationModule,
         unsendable,
-        skip_from_py_object
     )
 )]
 pub struct CfdSwapModule {

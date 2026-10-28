@@ -6,10 +6,10 @@
     "category": "linear",
     "list": [
       {
-        "symbol": "TSLAUSDT",
+        "symbol": "AMDSTOCKUSDT",
         "contractType": "LinearPerpetual",
         "status": "Trading",
-        "baseCoin": "TSLA",
+        "baseCoin": "AMDSTOCK",
         "quoteCoin": "USDT",
         "launchTime": "0",
         "deliveryTime": "0",
@@ -28,7 +28,12 @@
         "fundingInterval": 480,
         "settleCoin": "USDT",
         "symbolId": 7,
-        "symbolType": "stock"
+        "symbolType": "stock",
+        "displayName": "AMDSTOCKUSDT",
+        "fullName": "Advanced Micro Devices",
+        "marketRegion": "US",
+        "underlyingTicker": "AMD",
+        "tags": []
       }
     ]
   },

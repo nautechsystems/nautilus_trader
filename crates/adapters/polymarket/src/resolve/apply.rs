@@ -34,7 +34,7 @@ use super::{
     parsing::{
         StrictResolvedMarket, build_resolved_market_from_clob_market, build_strict_resolved_market,
     },
-    watchlist::{ResolveWatchEntry, TrackedInstrument},
+    watchlist::{ResolveWatchlist, TrackedInstrument},
 };
 use crate::{
     common::consts::{GAMMA_CONDITION_IDS_BATCH_SIZE, POLYMARKET_PRICE_PRECISION},
@@ -156,7 +156,7 @@ pub(crate) struct ResolveContext {
     pub(crate) clock: &'static AtomicTime,
     pub(crate) data_sender: EventSender<DataEvent>,
     pub(crate) instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
-    pub(crate) watchlist: Arc<AtomicMap<String, ResolveWatchEntry>>,
+    pub(crate) watchlist: Arc<ResolveWatchlist>,
     pub(crate) apply_mutex: Arc<Mutex<()>>,
     pub(crate) pending_resolutions: Arc<DashMap<String, PendingResolution>>,
     pub(crate) deferred_resolutions: Arc<AtomicMap<InstrumentId, StrictResolvedMarket>>,
@@ -180,7 +180,7 @@ pub(crate) async fn pause_and_reconcile_resolve_watch_entries(
 
         // Include already paused entries so interrupted cleanup converges after reconnect
         ctx.watchlist
-            .load()
+            .read()
             .values()
             .filter(|entry| entry.paused)
             .flat_map(|entry| entry.tracked.values())
@@ -495,7 +495,7 @@ async fn apply_condition_resolution_inner(
             return ResolveApplyResult::Ignored;
         }
 
-        let entry = ctx.watchlist.get_cloned(&condition_id_string);
+        let entry = ctx.watchlist.read().get(&condition_id_string).cloned();
 
         // Ownership can grow while waiting for reconciliation, so validate the retained
         // payload again against every known leg before emitting or removing any owner.
@@ -526,23 +526,21 @@ async fn apply_condition_resolution_inner(
         let active_status_ids: AHashSet<InstrumentId> = ctx
             .subscriptions
             .status_subscriptions()
-            .load()
             .iter()
+            .map(|id| *id.key())
             .filter(|instrument_id| {
                 matches_condition(instrument_id) || watched_instrument_ids.contains(instrument_id)
             })
-            .copied()
             .collect();
 
         let active_close_ids: AHashSet<InstrumentId> = ctx
             .subscriptions
             .close_subscriptions()
-            .load()
             .iter()
+            .map(|id| *id.key())
             .filter(|instrument_id| {
                 matches_condition(instrument_id) || watched_instrument_ids.contains(instrument_id)
             })
-            .copied()
             .collect();
 
         if entry.is_none() && active_status_ids.is_empty() && active_close_ids.is_empty() {
@@ -642,7 +640,7 @@ async fn apply_condition_resolution_inner(
         }
 
         if tracked_instruments.is_empty() && deferred_ids.is_empty() {
-            ctx.watchlist.remove(&condition_id_string);
+            ctx.watchlist.write().remove(&condition_id_string);
             return ResolveApplyResult::Ignored;
         }
 
@@ -652,9 +650,11 @@ async fn apply_condition_resolution_inner(
             let mut instrument = instrument.clone();
             if let InstrumentAny::BinaryOption(binary) = &mut instrument {
                 crate::filters::set_market_closed(binary, true);
+                binary.ts_init = ts_init;
+                binary.ts_event = ts_init;
             }
 
-            if let Err(e) = ctx.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = ctx.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::error!("Failed to emit admitted resolution instrument: {e}");
                 return ResolveApplyResult::Ignored;
             }
@@ -677,7 +677,10 @@ async fn apply_condition_resolution_inner(
                     None,
                 );
 
-                if let Err(e) = ctx.data_sender.send(DataEvent::InstrumentStatus(status)) {
+                if let Err(e) = ctx
+                    .data_sender
+                    .send(DataEvent::Data(NautilusData::InstrumentStatus(status)))
+                {
                     log::error!(
                         "Failed to emit instrument status for {}: {e}",
                         tracked.instrument_id
@@ -730,7 +733,7 @@ async fn apply_condition_resolution_inner(
         );
 
         // Clear settlement state before releasing the corresponding subscription intents
-        ctx.watchlist.remove(&condition_id_string);
+        ctx.watchlist.write().remove(&condition_id_string);
 
         for instrument_id in active_status_ids.union(&active_close_ids) {
             if !deferred_ids.contains(instrument_id) {
@@ -778,6 +781,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::resolve::ResolveWatchEntry;
 
     fn make_resolve_context() -> (
         ResolveContext,
@@ -786,7 +790,7 @@ mod tests {
         let (data_tx, data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         let (ws_tx, _ws_rx) = tokio::sync::mpsc::unbounded_channel();
         let instruments = Arc::new(AtomicMap::new());
-        let watchlist = Arc::new(AtomicMap::new());
+        let watchlist = Arc::new(ResolveWatchlist::default());
         let owner_lock = Arc::new(Mutex::new(()));
         let deferred_resolutions = Arc::new(AtomicMap::new());
 
@@ -821,7 +825,7 @@ mod tests {
         ctx.subscriptions
             .status_subscriptions()
             .insert(InstrumentId::from("0xCOND-0xYES.POLYMARKET"));
-        ctx.watchlist.insert(
+        ctx.watchlist.write().insert(
             "0xCOND".to_string(),
             ResolveWatchEntry {
                 condition_id: "0xCOND".to_string(),
@@ -846,7 +850,7 @@ mod tests {
         );
         assert!(matches!(
             data_rx.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(NautilusData::InstrumentStatus(_)))
         ));
         assert!(data_rx.try_recv().is_err());
     }
@@ -943,7 +947,7 @@ mod tests {
         assert!(ctx.subscriptions.is_condition_closed("0xCOND"));
         assert!(matches!(
             data_rx.try_recv(),
-            Ok(DataEvent::InstrumentStatus(_))
+            Ok(DataEvent::Data(NautilusData::InstrumentStatus(_)))
         ));
         assert!(matches!(
             data_rx.try_recv(),
@@ -959,7 +963,7 @@ mod tests {
         ctx.subscriptions
             .status_subscriptions()
             .insert(instrument_id);
-        ctx.watchlist.insert(
+        ctx.watchlist.write().insert(
             "0xCOND".to_string(),
             ResolveWatchEntry {
                 condition_id: "0xCOND".to_string(),
@@ -1086,7 +1090,7 @@ mod tests {
     async fn resolution_clears_pending_barrier_when_watch_disappears() {
         let (ctx, _data_rx) = make_resolve_context();
         let instrument_id = InstrumentId::from("0xCOND-0xYES.POLYMARKET");
-        ctx.watchlist.insert(
+        ctx.watchlist.write().insert(
             "0xCOND".to_string(),
             ResolveWatchEntry {
                 condition_id: "0xCOND".to_string(),
@@ -1121,7 +1125,7 @@ mod tests {
             apply_condition_resolution(&apply_ctx, "0xCOND", "0xYES", "Yes").await
         });
         tokio::task::yield_now().await;
-        ctx.watchlist.remove(&"0xCOND".to_string());
+        ctx.watchlist.write().remove(&"0xCOND".to_string());
         drop(reconcile_guard);
 
         assert_eq!(

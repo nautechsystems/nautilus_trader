@@ -128,9 +128,9 @@ setup outside the measured function and compare counts produced by the same tool
 | Goal                               | Command                                                               |
 | ---------------------------------- | --------------------------------------------------------------------- |
 | All benches in one crate           | `cargo bench -p nautilus-execution`                                   |
-| One core bench module              | `cargo bench -p nautilus-execution --bench matching_core`             |
+| One core bench module              | `cargo bench -p nautilus-execution --bench matching`                  |
 | One engine bench module            | `cargo bench -p nautilus-execution --bench matching_engine`           |
-| One core benchmark name pattern    | `cargo bench -p nautilus-execution --bench matching_core -- iterate`  |
+| One core benchmark name pattern    | `cargo bench -p nautilus-execution --bench matching -- iterate`       |
 | One engine benchmark name pattern  | `cargo bench -p nautilus-execution --bench matching_engine -- submit` |
 | Quick smoke run (low sample count) | `cargo bench ... -- --quick`                                          |
 | All nightly registered benches     | `make cargo-ci-benches`                                               |

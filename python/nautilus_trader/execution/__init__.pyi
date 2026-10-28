@@ -15,6 +15,7 @@ __all__ = [
     "FeeModel",
     "FillModel",
     "FixedFeeModel",
+    "LatencyModel",
     "LimitOrderPartialFillModel",
     "MakerTakerFeeModel",
     "MarketHoursFillModel",
@@ -179,6 +180,12 @@ class FixedFeeModel(FeeModel):
         fill_px: model.Price,
         instrument: typing.Any,
     ) -> model.Money: ...
+
+class LatencyModel:
+    def __new__(cls, *_args: typing.Any, **_kwargs: typing.Any) -> typing.Self: ...
+    def get_insert_latency(self, _command: typing.Any, _ts_now: int) -> int: ...
+    def get_update_latency(self, _command: typing.Any, _ts_now: int) -> int: ...
+    def get_delete_latency(self, _command: typing.Any, _ts_now: int) -> int: ...
 
 @typing.final
 class LimitOrderPartialFillModel:

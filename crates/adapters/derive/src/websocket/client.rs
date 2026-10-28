@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! `tokio-tungstenite`-backed WebSocket client for the Derive JSON-RPC stream.
+//! WebSocket client for the Derive JSON-RPC stream.
 //!
 //! [`DeriveWebSocketClient`] orchestrates the connection lifecycle and exposes
 //! a typed surface for `public/login` + the initial `ticker` channel. The
@@ -67,9 +67,9 @@ use super::{
         ticker_subscribe_params, trades_subscribe_params,
     },
     messages::{
-        DeriveWsChannel, WsLoginParams, WsLoginResult, WsSubscribeParams, WsSubscribeResult,
-        WsUnsubscribeParams, WsUnsubscribeResult, methods, orderbook_channel, ticker_channel,
-        trades_channel,
+        DeriveWsChannel, WsLoginParams, WsLoginResult, WsSetCancelOnDisconnectParams,
+        WsSetCancelOnDisconnectResult, WsSubscribeParams, WsSubscribeResult, WsUnsubscribeParams,
+        WsUnsubscribeResult, methods, orderbook_channel, ticker_channel, trades_channel,
     },
 };
 use crate::{
@@ -429,22 +429,26 @@ impl DeriveWebSocketClient {
         let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
         let (out_tx, out_rx) = tokio::sync::mpsc::unbounded_channel::<DeriveWsMessage>();
 
-        *self.cmd_tx.write().await = cmd_tx.clone();
         self.out_rx = Some(out_rx);
         self.conn_id.store(Arc::new(UUID4::new().to_string()));
 
         let connection_mode = client.connection_mode_atomic();
         let connection_epoch = client.connection_epoch_atomic();
         let reconnect_handle = client.reconnect_handle();
-        self.connection_mode.store(Arc::clone(&connection_mode));
-        self.connection_epoch.store(Arc::clone(&connection_epoch));
-        log::debug!("Derive WebSocket connected: {}", self.url.origin());
-
         if let Err(e) = cmd_tx.send(HandlerCommand::SetClient(client)) {
             return Err(DeriveWsError::transport(format!(
                 "failed to send SetClient command: {e}",
             )));
         }
+
+        {
+            let mut command_sender = self.cmd_tx.write().await;
+            *command_sender = cmd_tx.clone();
+            self.connection_epoch.store(Arc::clone(&connection_epoch));
+            self.connection_mode.store(Arc::clone(&connection_mode));
+        }
+
+        log::debug!("Derive WebSocket connected: {}", self.url.origin());
 
         let recovery = SessionRecovery {
             subscription: self.subscription_handle(),
@@ -775,6 +779,56 @@ impl DeriveWebSocketClient {
             request_timeout: self.request_timeout,
             rate_limiter: Arc::clone(&self.rate_limiter),
         }
+    }
+
+    /// Enables or disables Derive's persisted, wallet-wide cancel-on-disconnect setting.
+    ///
+    /// Requires `Trade(All)` scope across all subaccounts. The venue only cancels the dropped
+    /// connection's `mmp: true` orders and RFQ quotes; trigger and algo orders are excluded.
+    /// The stored setting applies to each connection at login and persists until disabled.
+    /// This client never toggles it automatically. Before relying on a change, wait for an
+    /// acknowledgement and a matching account read, then disconnect and reconnect affected
+    /// clients. Do not assume a change affects existing connections.
+    /// See <https://docs.derive.xyz/trading/cancel-on-disconnect>.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - Authentication fails.
+    /// - The response is rejected or malformed.
+    /// - The transport fails or the request times out.
+    ///
+    /// A timeout, lost response, or malformed response leaves the setting uncertain; coordinate
+    /// other clients and reassert the intended value before relying on it. Account reads can
+    /// lag an acknowledged WebSocket change.
+    pub async fn set_cancel_on_disconnect(&self, enabled: bool) -> Result<()> {
+        let creds = self
+            .credentials
+            .as_ref()
+            .ok_or_else(|| DeriveWsError::MissingCredentials {
+                operation: methods::PRIVATE_SET_CANCEL_ON_DISCONNECT.to_string(),
+            })?;
+
+        self.execution_handle()
+            .require_authenticated(methods::PRIVATE_SET_CANCEL_ON_DISCONNECT)
+            .await?;
+
+        let params = WsSetCancelOnDisconnectParams {
+            wallet: creds.wallet_address.clone(),
+            enabled,
+        };
+
+        let cmd_tx = self.cmd_tx.read().await.clone();
+        let _: WsSetCancelOnDisconnectResult = send_request_typed(
+            &self.rate_limiter,
+            &cmd_tx,
+            methods::PRIVATE_SET_CANCEL_ON_DISCONNECT,
+            &params,
+            self.request_timeout,
+        )
+        .await?;
+        Ok(())
     }
 
     /// Returns a cloneable handle for issuing signed `private/*` trading
@@ -2299,8 +2353,10 @@ mod tests {
     use std::{env, time::SystemTime};
 
     use axum::{Json, Router, routing::post};
+    use futures_util::StreamExt;
     use nautilus_common::live::dst::time::Instant;
     use nautilus_model::identifiers::InstrumentId;
+    use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
     use serde_json::Value;
 
@@ -2313,6 +2369,79 @@ mod tests {
         },
         http::{DeriveHttpClient, client::DeriveCredentials},
     };
+
+    #[tokio::test]
+    async fn command_during_sender_publication_reaches_initialized_handler() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (received_tx, mut received_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(message)) = socket.next().await {
+                if let tokio_tungstenite::tungstenite::Message::Text(text) = message {
+                    let payload: serde_json::Value = serde_json::from_str(text.as_str()).unwrap();
+                    let _ = received_tx.send(payload);
+                }
+            }
+        });
+
+        let url = format!("ws://{addr}");
+
+        let mut ws_client = DeriveWebSocketClient::new(
+            Some(url),
+            DeriveEnvironment::Testnet,
+            TransportBackend::default(),
+            None,
+        );
+        let mode = Arc::clone(&ws_client.connection_mode);
+        let (response_tx, _response_rx) = tokio::sync::oneshot::channel();
+
+        let command = HandlerCommand::Request {
+            method: "public/subscribe",
+            params: SecretString::from(
+                serde_json::json!({
+                    "channels": [
+                        "trades.ETH-USDC"
+                    ]
+                })
+                .to_string(),
+            ),
+            connection_epoch: None,
+            cancellation: None,
+            response_tx,
+        };
+
+        race_command_with_publication(
+            Arc::clone(&ws_client.cmd_tx),
+            ws_client.connect(),
+            move || command,
+            || ConnectionMode::from_atomic(&mode.load()).is_active(),
+        )
+        .await
+        .expect("connect failed");
+        let received = tokio::time::timeout(Duration::from_secs(2), received_rx.recv()).await;
+        ws_client.disconnect().await.expect("disconnect failed");
+        server.abort();
+
+        let payload = received
+            .expect("startup command must reach server")
+            .unwrap();
+        assert_eq!(
+            payload,
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "public/subscribe",
+                "params": {
+                    "channels": [
+                        "trades.ETH-USDC"
+                    ]
+                }
+            })
+        );
+    }
 
     #[rstest]
     #[case("wss://stream.example.com/feed", "wss://stream.example.com")]

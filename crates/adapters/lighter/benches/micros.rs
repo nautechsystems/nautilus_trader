@@ -201,7 +201,10 @@ fn bench_compute_tx_hash_create_order(c: &mut Criterion) {
     let tx = create_order_tx();
     let mut group = c.benchmark_group("signing");
     group.bench_function("compute_tx_hash_create_order", |b| {
-        b.iter(|| compute_tx_hash(black_box(&tx), black_box(CHAIN_ID)));
+        b.iter(|| {
+            compute_tx_hash(black_box(&tx), black_box(CHAIN_ID))
+                .expect("benchmark transaction attributes are valid")
+        });
     });
     group.finish();
 }
@@ -210,7 +213,10 @@ fn bench_compute_tx_hash_cancel_order(c: &mut Criterion) {
     let tx = cancel_order_tx();
     let mut group = c.benchmark_group("signing");
     group.bench_function("compute_tx_hash_cancel_order", |b| {
-        b.iter(|| compute_tx_hash(black_box(&tx), black_box(CHAIN_ID)));
+        b.iter(|| {
+            compute_tx_hash(black_box(&tx), black_box(CHAIN_ID))
+                .expect("benchmark transaction attributes are valid")
+        });
     });
     group.finish();
 }
@@ -255,7 +261,10 @@ fn bench_sign_tx_create_order(c: &mut Criterion) {
     let tx = create_order_tx();
     let mut group = c.benchmark_group("signing");
     group.bench_function("sign_tx_create_order", |b| {
-        b.iter(|| sign_tx(black_box(&tx), CHAIN_ID, &sk, k));
+        b.iter(|| {
+            sign_tx(black_box(&tx), CHAIN_ID, &sk, k)
+                .expect("benchmark transaction attributes are valid")
+        });
     });
     group.finish();
 }
@@ -266,7 +275,8 @@ fn bench_render_create_order_json(c: &mut Criterion) {
     let sk = fixed_sk();
     let k = fixed_k();
     let tx = create_order_tx();
-    let signed = sign_tx(&tx, CHAIN_ID, &sk, k);
+    let signed =
+        sign_tx(&tx, CHAIN_ID, &sk, k).expect("benchmark transaction attributes are valid");
     let mut group = c.benchmark_group("signing");
     group.bench_function("render_create_order_json", |b| {
         b.iter(|| TxInfoJson::create_order(black_box(&tx), black_box(&signed)));
@@ -282,7 +292,8 @@ fn bench_wire_wrap_create_order_value(c: &mut Criterion) {
     let sk = fixed_sk();
     let k = fixed_k();
     let tx = create_order_tx();
-    let signed = sign_tx(&tx, CHAIN_ID, &sk, k);
+    let signed =
+        sign_tx(&tx, CHAIN_ID, &sk, k).expect("benchmark transaction attributes are valid");
     let json = TxInfoJson::create_order(&tx, &signed);
     let mut group = c.benchmark_group("signing");
     group.bench_function("wire_wrap_value", |b| {
@@ -298,7 +309,8 @@ fn bench_wire_wrap_create_order_raw(c: &mut Criterion) {
     let sk = fixed_sk();
     let k = fixed_k();
     let tx = create_order_tx();
-    let signed = sign_tx(&tx, CHAIN_ID, &sk, k);
+    let signed =
+        sign_tx(&tx, CHAIN_ID, &sk, k).expect("benchmark transaction attributes are valid");
     let mut group = c.benchmark_group("signing");
     group.bench_function("wire_wrap_raw", |b| {
         b.iter(|| {

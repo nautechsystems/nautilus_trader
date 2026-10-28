@@ -16,8 +16,10 @@
 Test accounts behavior.
 """
 
+import re
 import subprocess
 import sys
+from collections.abc import Callable
 from decimal import Decimal
 
 import pytest
@@ -277,6 +279,154 @@ def test_account_from_events_rejects_malformed_event(
         factory(*args)
 
 
+@pytest.fixture(
+    params=[
+        (None, AccountType.CASH),
+        (cash_account_from_account_events, AccountType.CASH),
+        (betting_account_from_account_events, AccountType.BETTING),
+        (wallet_account_from_account_events, AccountType.WALLET),
+        (margin_account_from_account_events, AccountType.MARGIN),
+    ],
+    ids=["state", "cash", "betting", "wallet", "margin"],
+)
+def account_reconstruction(
+    request: pytest.FixtureRequest,
+) -> tuple[Callable[[dict[str, object]], object], dict[str, object]]:
+    """
+    Return an account parser and a valid state dictionary for each reconstruction path.
+    """
+    factory, account_type = request.param
+    state = AccountState(
+        account_id=AccountId("SIM-123"),
+        account_type=account_type,
+        balances=[],
+        margins=[],
+        is_reported=True,
+        event_id=UUID4(),
+        ts_event=11,
+        ts_init=22,
+    )
+    parser = AccountState.from_dict if factory is None else lambda values: factory([values], True)
+    return parser, state.to_dict()
+
+
+@pytest.mark.parametrize(
+    ("account_id", "message"),
+    [
+        ("", "invalid string for 'value', was empty"),
+        ("   ", "invalid string for 'value', was all whitespace"),
+        ("SIM", "invalid string for 'value' did not contain '-', was 'SIM'"),
+        ("-123", "`value` issuer part (before '-') cannot be empty"),
+        ("SIM-", "`value` account part (after '-') cannot be empty"),
+        ("SIM-\u00e9", "invalid string for 'value' contained a non-ASCII char, was 'SIM-\u00e9'"),
+    ],
+)
+def test_account_reconstruction_rejects_invalid_account_id(
+    account_reconstruction: tuple[Callable[[dict[str, object]], object], dict[str, object]],
+    account_id: str,
+    message: str,
+) -> None:
+    """
+    Test invalid account identifiers raise the checked constructor's ValueError.
+    """
+    parser, values = account_reconstruction
+    values["account_id"] = account_id
+
+    with pytest.raises(ValueError, match=f"^{re.escape(message)}$"):
+        parser(values)
+
+
+@pytest.mark.parametrize("instrument_id", ["INVALID", ".SIM", "AUD/USD."])
+def test_account_reconstruction_rejects_invalid_margin_instrument_id(
+    account_reconstruction: tuple[Callable[[dict[str, object]], object], dict[str, object]],
+    instrument_id: str,
+) -> None:
+    """
+    Propagate malformed nested margin identifiers through every account parser.
+    """
+    parser, values = account_reconstruction
+    values["margins"] = [
+        {
+            "currency": "USD",
+            "initial": "1.0001",
+            "maintenance": "0.000001",
+            "instrument_id": instrument_id,
+        },
+    ]
+
+    with pytest.raises(ValueError, match="invalid `InstrumentId`") as parser_exc_info:
+        InstrumentId.from_str(instrument_id)
+    with pytest.raises(ValueError, match="Failed to parse 'instrument_id'") as exc_info:
+        parser(values)
+
+    assert str(exc_info.value) == f"Failed to parse 'instrument_id': {parser_exc_info.value}"
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        "account_type",
+        "base_currency",
+        "balances",
+        "margins",
+        "reported",
+        "event_id",
+        "ts_event",
+        "ts_init",
+    ],
+)
+def test_account_reconstruction_preserves_missing_field_error(
+    account_reconstruction: tuple[Callable[[dict[str, object]], object], dict[str, object]],
+    field: str,
+) -> None:
+    """
+    Test missing fields retain precedence over invalid account identifiers.
+    """
+    parser, values = account_reconstruction
+    values["account_id"] = "INVALID"
+    del values[field]
+
+    with pytest.raises(KeyError) as exc_info:
+        parser(values)
+
+    assert exc_info.value.args == (f"Missing required key: {field}",)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("account_type", None),
+        ("base_currency", None),
+        ("balances", None),
+        ("margins", None),
+        ("reported", None),
+        ("event_id", None),
+        ("ts_event", None),
+        ("ts_init", None),
+        ("info", []),
+    ],
+)
+def test_account_reconstruction_preserves_field_type_error(
+    account_reconstruction: tuple[Callable[[dict[str, object]], object], dict[str, object]],
+    field: str,
+    value: object,
+) -> None:
+    """
+    Test field type errors keep their messages and precede invalid account IDs.
+    """
+    parser, values = account_reconstruction
+    values[field] = value
+
+    with pytest.raises(TypeError) as exc_info:
+        parser(values)
+
+    values["account_id"] = "INVALID"
+    with pytest.raises(TypeError) as invalid_id_exc_info:
+        parser(values)
+
+    assert str(invalid_id_exc_info.value) == str(exc_info.value)
+
+
 def test_margin_model_exports() -> None:
     """
     Test margin model exports.
@@ -534,7 +684,11 @@ def test_cash_account_multi_currency_from_account_events_round_trip() -> None:
     assert account.balance_free(btc) == Money.from_str("1.25000000 BTC")
 
 
-def test_cash_account_calculate_balance_locked_buy() -> None:
+@pytest.mark.parametrize(
+    ("qty", "price", "expected"),
+    [("10000", "0.80000", "8000 USD"), ("0.01", "0.1234", "0.001234 USD")],
+)
+def test_cash_account_calculate_balance_locked_buy(qty: str, price: str, expected: str) -> None:
     """
     Test cash account calculate balance locked buy.
     """
@@ -563,11 +717,11 @@ def test_cash_account_calculate_balance_locked_buy() -> None:
     locked = account.calculate_balance_locked(
         instrument=instrument,
         side=OrderSide.BUY,
-        quantity=Quantity.from_int(10_000),
-        price=Price.from_str("0.80000"),
+        quantity=Quantity.from_str(qty),
+        price=Price.from_str(price),
     )
 
-    assert isinstance(locked, Money)
+    assert locked == Money.from_str_exact(expected)
 
 
 def test_cash_account_calculate_balance_locked_sell() -> None:
@@ -644,7 +798,20 @@ def test_cash_account_calculate_commission() -> None:
     assert isinstance(commission, Money)
 
 
-def test_cash_account_calculate_pnls() -> None:
+@pytest.mark.parametrize(
+    ("side", "qty", "price", "expected"),
+    [
+        (OrderSide.BUY, "10000", "0.80000", "-8000 USD"),
+        (OrderSide.BUY, "0.01", "0.1234", "-0.001234 USD"),
+        (OrderSide.SELL, "0.01", "0.1235", "0.001235 USD"),
+    ],
+)
+def test_cash_account_calculate_pnls(
+    side: OrderSide,
+    qty: str,
+    price: str,
+    expected: str,
+) -> None:
     """
     Test cash account calculate pnls.
     """
@@ -678,10 +845,10 @@ def test_cash_account_calculate_pnls() -> None:
         venue_order_id=VenueOrderId("V-001"),
         account_id=AccountId("SIM-001"),
         trade_id=TradeId("T-001"),
-        order_side=OrderSide.BUY,
+        order_side=side,
         order_type=OrderType.MARKET,
-        last_qty=Quantity.from_int(10_000),
-        last_px=Price.from_str("0.80000"),
+        last_qty=Quantity.from_str(qty),
+        last_px=Price.from_str(price),
         currency=Currency.from_str("USD"),
         liquidity_side=LiquiditySide.TAKER,
         event_id=UUID4(),
@@ -692,8 +859,7 @@ def test_cash_account_calculate_pnls() -> None:
 
     pnls = account.calculate_pnls(instrument=instrument, fill=fill)
 
-    assert isinstance(pnls, list)
-    assert all(isinstance(m, Money) for m in pnls)
+    assert pnls == [Money.from_str_exact(expected)]
 
 
 def test_cash_account_last_event_and_events() -> None:

@@ -150,6 +150,7 @@ fn build_place_algo_stop() -> OKXPlaceAlgoOrderRequest {
         callback_ratio: None,
         callback_spread: None,
         active_px: None,
+        ccy: None,
     }
 }
 

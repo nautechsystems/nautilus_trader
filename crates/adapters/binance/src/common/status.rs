@@ -19,7 +19,9 @@ use ahash::AHashMap;
 use nautilus_common::{live::sender::EventSender, messages::DataEvent};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
-    data::InstrumentStatus, enums::MarketStatusAction, identifiers::InstrumentId,
+    data::{Data, InstrumentStatus},
+    enums::MarketStatusAction,
+    identifiers::InstrumentId,
 };
 
 use crate::spot::sbe::generated::symbol_status::SymbolStatus;
@@ -99,7 +101,7 @@ fn emit_status(
         None,
     );
 
-    if let Err(e) = sender.send(DataEvent::InstrumentStatus(status)) {
+    if let Err(e) = sender.send(DataEvent::Data(Data::InstrumentStatus(status))) {
         log::error!("Failed to emit instrument status event: {e}");
     }
 }
@@ -209,7 +211,7 @@ mod tests {
 
         let event = rx.try_recv().expect("expected status event");
         match event {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(status.instrument_id, id);
                 assert_eq!(status.action, MarketStatusAction::Halt);
                 assert_eq!(status.is_trading, Some(false));
@@ -261,7 +263,7 @@ mod tests {
 
         let event = rx.try_recv().expect("expected status event for new symbol");
         match event {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(status.instrument_id, id);
                 assert_eq!(status.action, MarketStatusAction::Trading);
                 assert_eq!(status.is_trading, Some(true));
@@ -291,8 +293,9 @@ mod tests {
         let event = rx
             .try_recv()
             .expect("expected status event for removed symbol");
+
         match event {
-            DataEvent::InstrumentStatus(status) => {
+            DataEvent::Data(Data::InstrumentStatus(status)) => {
                 assert_eq!(status.instrument_id, id);
                 assert_eq!(status.action, MarketStatusAction::NotAvailableForTrading);
                 assert_eq!(status.is_trading, Some(false));

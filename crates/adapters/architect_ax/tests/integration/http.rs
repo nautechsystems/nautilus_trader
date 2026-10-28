@@ -1176,6 +1176,10 @@ async fn test_domain_http_report_fetches_and_caches_uncached_instrument(
 ) {
     let (addr, state) = start_common_test_server().await.unwrap();
     set_report_payload(&state, family, "GBPUSD-PERP").await;
+    if matches!(family, ReportFamily::HistoricalOrders) {
+        set_report_payload(&state, ReportFamily::Fills, "GBPUSD-PERP").await;
+    }
+
     let base_url = format!("http://{addr}");
     let client =
         AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
@@ -1205,6 +1209,97 @@ async fn test_domain_http_report_fetches_and_caches_uncached_instrument(
     let queries = state.instrument_queries.lock().await;
     assert_eq!(queries.len(), 1);
     assert_eq!(queries[0].symbol, symbol);
+}
+
+#[rstest]
+#[case::with_fills(
+    100,
+    false,
+    1_704_067_200_508_000_123,
+    1_704_067_199_500_000_000,
+    1_704_067_199_500_000_000
+)]
+#[case::unfilled(
+    0,
+    true,
+    1_704_067_200_500_000_000,
+    1_704_067_199_500_000_000,
+    1_704_067_199_500_000_000
+)]
+#[case::no_known_fills(
+    100,
+    true,
+    1_704_067_200_500_000_000,
+    1_704_067_199_500_000_000,
+    1_704_067_199_500_000_000
+)]
+#[case::capped_window(
+    100,
+    false,
+    1_704_067_200_508_000_123,
+    1_703_376_001_000_000_000,
+    1_703_462_401_000_000_000
+)]
+#[tokio::test]
+async fn test_domain_http_historical_report_uses_latest_fill_timestamp(
+    #[case] filled: u64,
+    #[case] empty_fills: bool,
+    #[case] expected_last: u64,
+    #[case] start: u64,
+    #[case] expected_fill_start: i64,
+) {
+    let (addr, state) = start_common_test_server().await.unwrap();
+    let mut orders = load_test_data("http_get_orders_partial_canceled.json");
+    orders["orders"][0]["xq"] = json!(filled);
+    *state.orders_payload.lock().await = Some(orders);
+
+    let fills = if empty_fills {
+        json!({ "fills": [] })
+    } else {
+        load_test_data("http_get_fills_partial_canceled.json")
+    };
+
+    *state.fills_payload.lock().await = Some(fills);
+    let base_url = format!("http://{addr}");
+    let client =
+        AxHttpClient::new(Some(base_url.clone()), Some(base_url), 60, 0, 1, 1, None).unwrap();
+    client.set_session_token("test_session_token".into());
+
+    let start = UnixNanos::from(start);
+    let end = UnixNanos::from(1_704_067_201_000_000_000_u64);
+
+    let reports = client
+        .request_historical_order_status_reports(
+            AccountId::from("AX-001"),
+            Some(start),
+            Some(end),
+            None::<fn(u64) -> Option<ClientOrderId>>,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(reports.len(), 1);
+    let report = &reports[0];
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(
+        report.ts_accepted,
+        UnixNanos::from(1_704_067_200_500_000_000_u64)
+    );
+    assert_eq!(report.ts_last, UnixNanos::from(expected_last));
+    assert_eq!(report.quantity.as_decimal(), dec!(200));
+    assert_eq!(report.filled_qty.as_decimal(), Decimal::from(filled));
+    let queries = state.fills_queries.lock().await;
+    assert_eq!(queries.len(), usize::from(filled > 0));
+
+    if let Some(query) = queries.first() {
+        assert_eq!(query.start_timestamp_ns, expected_fill_start);
+        assert_eq!(query.end_timestamp_ns, end.as_i64());
+        assert_eq!(query.account_id, None);
+        assert_eq!(query.symbol, None);
+        assert_eq!(query.cursor, None);
+        assert_eq!(query.limit, Some(100));
+        assert_eq!(query.sort_ts.as_deref(), Some("desc"));
+    }
 }
 
 #[rstest]
@@ -1444,4 +1539,147 @@ async fn test_unknown_order_classification_aborts_complete_snapshot(
 
     assert_eq!(error.to_string(), "failed to parse AX order OID-UNCACHED-2");
     assert_eq!(error.root_cause().to_string(), expected);
+}
+
+#[rstest]
+#[case::negative_total(Some(-1), Some(100), None, 1, "AX orders total_count must be non-negative, was -1")]
+#[case::truncated(
+    Some(2),
+    Some(100),
+    None,
+    1,
+    "AX orders pagination returned 1 unique rows, expected 2"
+)]
+#[case::excess_rows(
+    Some(0),
+    Some(100),
+    None,
+    1,
+    "AX orders pagination returned more unique rows (1) than total_count 0"
+)]
+#[case::negative_limit(Some(1), Some(-1), None, 1, "AX orders applied limit must be between 0 and 100, was -1")]
+#[case::excess_limit(
+    Some(1),
+    Some(101),
+    None,
+    1,
+    "AX orders applied limit must be between 0 and 100, was 101"
+)]
+#[case::small_limit(
+    Some(1),
+    Some(0),
+    None,
+    1,
+    "AX orders page length 1 exceeds applied limit 0"
+)]
+#[case::empty_cursor(
+    Some(1),
+    Some(100),
+    Some(""),
+    1,
+    "AX orders returned an empty next_cursor"
+)]
+#[case::empty_page(
+    Some(1),
+    Some(100),
+    Some("next"),
+    0,
+    "AX orders returned an empty page with a next_cursor"
+)]
+#[tokio::test]
+async fn test_order_history_rejects_invalid_page_metadata(
+    #[case] total: Option<i64>,
+    #[case] limit: Option<i32>,
+    #[case] cursor: Option<&str>,
+    #[case] rows: usize,
+    #[case] expected: &str,
+) {
+    let mut payload = load_test_data("http_get_orders.json");
+    payload["orders"].as_array_mut().unwrap().truncate(rows);
+    payload["total_count"] = json!(total);
+    payload["limit"] = json!(limit);
+    payload["next_cursor"] = json!(cursor);
+    let app = Router::new().route(
+        "/orders",
+        get(move || {
+            let payload = payload.clone();
+            async move { Json(payload) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = AxHttpClient::new(
+        Some(format!("http://{addr}")),
+        Some(format!("http://{addr}")),
+        5,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    client.set_session_token("test-token".into());
+    let error = client
+        .request_historical_order_status_reports(
+            AccountId::from("AX-001"),
+            None,
+            None,
+            None::<fn(u64) -> Option<ClientOrderId>>,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), expected);
+    server.abort();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_order_history_rejects_changed_total() {
+    let payload = load_test_data("http_get_orders.json");
+    let first = json!({"orders": [payload["orders"][0]], "total_count": 2, "limit": 100, "next_cursor": "next"});
+    let second = json!({"orders": [payload["orders"][1]], "total_count": 3, "limit": 100});
+
+    let app = Router::new().route(
+        "/orders",
+        get(move |Query(query): Query<HashMap<String, String>>| {
+            let response = if query.contains_key("cursor") {
+                second.clone()
+            } else {
+                first.clone()
+            };
+
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = AxHttpClient::new(
+        Some(format!("http://{addr}")),
+        Some(format!("http://{addr}")),
+        5,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    client.set_session_token("test-token".into());
+    let error = client
+        .request_historical_order_status_reports(
+            AccountId::from("AX-001"),
+            None,
+            None,
+            None::<fn(u64) -> Option<ClientOrderId>>,
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "AX orders total_count changed during pagination: expected 2, was 3"
+    );
+    server.abort();
 }

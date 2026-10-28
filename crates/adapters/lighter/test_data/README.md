@@ -8,6 +8,10 @@
 - `http_order_book_depth.json` and `http_orders.json` are schema fixtures for REST models whose
   exact public endpoint response was not available without auth or was blocked for unauthenticated
   access during fixture collection.
+- `http_rate_limit_synthetic.json` is a constructed rate-limit response for retry-delay tests.
+- `signing_cancel_all_tx_oracle.json` records immediate, scheduled, and abort-scheduled cancellation
+  outputs from the official `lighter-go` v1.0.12 compiled signer. Regenerate it with
+  [`generate_oracle.py --cancel-all-out`](../../../../scripts/oracle-py/lighter/README.md).
 - Unless noted below, `ws_*.json` fixtures follow the official Lighter WebSocket documentation
   examples and message field definitions.
 - `ws_order_book_subscribe_failed.json` is a constructed error fixture for subscription-failure

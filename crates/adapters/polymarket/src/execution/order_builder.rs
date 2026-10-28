@@ -241,9 +241,7 @@ impl PolymarketOrderBuilder {
         }
 
         if order.is_quote_quantity() && order.order_side() == OrderSide::Sell {
-            return Err(validation_failed(
-                "Limit SELL orders require quote_quantity=false (amount in shares)",
-            ));
+            return Err(OrderDeniedReason::unsupported_quote_quantity());
         }
 
         let quantity = signed_limit_order_quantity(order.quantity().as_decimal());
@@ -271,9 +269,7 @@ impl PolymarketOrderBuilder {
         if order.is_post_only()
             && !matches!(order.time_in_force(), TimeInForce::Gtc | TimeInForce::Gtd)
         {
-            return Err(validation_failed(
-                "Post-only orders require GTC or GTD time in force",
-            ));
+            return Err(OrderDeniedReason::unsupported_post_only());
         }
 
         if !order.is_quote_quantity()
@@ -367,9 +363,7 @@ impl PolymarketOrderBuilder {
             }
             OrderSide::Sell => {
                 if order.is_quote_quantity() {
-                    return Err(validation_failed(
-                        "Market SELL orders require quote_quantity=false (amount in shares)",
-                    ));
+                    return Err(OrderDeniedReason::unsupported_quote_quantity());
                 }
             }
         }
@@ -1004,10 +998,7 @@ mod tests {
             Price::from("0.50"),
         );
         let err = PolymarketOrderBuilder::validate_limit_order(&order).unwrap_err();
-        assert_eq!(
-            err,
-            validation_failed("Limit SELL orders require quote_quantity=false (amount in shares)")
-        );
+        assert_eq!(err, OrderDeniedReason::unsupported_quote_quantity());
     }
 
     #[rstest]
@@ -1041,7 +1032,7 @@ mod tests {
     fn test_validate_limit_order_post_only_ioc_denied() {
         let order = make_limit(false, false, true, TimeInForce::Ioc);
         let err = PolymarketOrderBuilder::validate_limit_order(&order).unwrap_err();
-        assert!(err.to_string().contains("Post-only"));
+        assert_eq!(err, OrderDeniedReason::unsupported_post_only());
     }
 
     #[rstest]
@@ -1073,7 +1064,7 @@ mod tests {
     fn test_validate_market_order_sell_with_quote_qty_denied() {
         let order = make_market(OrderSide::Sell, true);
         let err = PolymarketOrderBuilder::validate_market_order(&order).unwrap_err();
-        assert!(err.to_string().contains("quote_quantity=false"));
+        assert_eq!(err, OrderDeniedReason::unsupported_quote_quantity());
     }
 
     #[rstest]

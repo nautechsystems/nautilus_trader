@@ -78,26 +78,38 @@ async fn test_instruments_info_list_response() {
 }
 
 #[rstest]
+#[case::small(0)]
+#[case::above_shared_limit(100 * 1024 * 1024)]
 #[tokio::test]
-async fn test_instruments_info_gzip_response() {
+async fn test_instruments_info_gzip_response(#[case] padding_bytes: usize) {
+    let body = {
+        let mut payload = format!("[{SPOT_FIXTURE},{PERPETUAL_FIXTURE}]").into_bytes();
+        payload.resize(payload.len() + padding_bytes, b' ');
+        gzip(&payload)
+    };
+
     let app = Router::new().route(
         "/instruments/{exchange}",
-        get(|headers: HeaderMap| async move {
-            if headers
-                .get(ACCEPT_ENCODING)
-                .and_then(|value| value.to_str().ok())
-                != Some("gzip")
-            {
-                return StatusCode::NOT_ACCEPTABLE.into_response();
-            }
+        get(move |headers: HeaderMap| {
+            let body = body.clone();
+            async move {
+                if headers
+                    .get(ACCEPT_ENCODING)
+                    .and_then(|value| value.to_str().ok())
+                    != Some("gzip")
+                {
+                    return StatusCode::NOT_ACCEPTABLE.into_response();
+                }
 
-            let body = gzip(format!("[{SPOT_FIXTURE},{PERPETUAL_FIXTURE}]").as_bytes());
-            ([(CONTENT_ENCODING, "gzip")], body).into_response()
+                ([(CONTENT_ENCODING, "gzip")], body).into_response()
+            }
         }),
     );
 
     let (addr, _handle) = start_mock_server(app).await;
-    let client = create_client(addr);
+    let base_url = format!("http://{addr}");
+    let client =
+        TardisHttpClient::new(Some("test_key"), Some(&base_url), Some(60), true, None).unwrap();
 
     let result = client
         .instruments_info(TardisExchange::Deribit, None, None)

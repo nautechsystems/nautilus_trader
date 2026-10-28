@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verify that external GitHub Actions identify their source and pin the expected release tag:
+# Verify external GitHub Action pins and a 14-day release publication cooldown:
 # Expected format:
 #   # https://github.com/owner/repo
 #   uses: owner/repo/path@<sha> # <tag>
@@ -101,6 +101,19 @@ if [[ ! -s "$USES_LINES" ]]; then
   exit "$FAILED"
 fi
 
+for required in curl jq; do
+  if ! command -v "$required" > /dev/null; then
+    printf 'Required command not on PATH: %s (install it before checking Action releases)\n' "$required" >&2
+    exit 2
+  fi
+done
+
+if ! CURRENT_EPOCH=$(date -u +%s) || ! [[ "$CURRENT_EPOCH" =~ ^[0-9]+$ ]]; then
+  echo "Could not read the current UTC timestamp" >&2
+  exit 2
+fi
+COOLDOWN_SECONDS=$((14 * 24 * 60 * 60))
+
 while IFS= read -r line; do
   REPO_WITH_PATH=$(printf '%s\n' "$line" | cut -d'@' -f1)
   REPO=$(printf '%s\n' "$REPO_WITH_PATH" | cut -d'/' -f1,2)
@@ -116,9 +129,8 @@ while IFS= read -r line; do
   printf 'Checking %s (%s): ' "$REPO_WITH_PATH" "$TAG"
 
   URL="https://github.com/$REPO.git"
-  REMOTE_OUT=$(git ls-remote "$URL" "refs/tags/$TAG" "refs/tags/$TAG^{}" 2> /dev/null)
-
-  if [[ -z "$REMOTE_OUT" ]]; then
+  if ! REMOTE_OUT=$(git ls-remote "$URL" "refs/tags/$TAG" "refs/tags/$TAG^{}" 2> /dev/null) ||
+    [[ -z "$REMOTE_OUT" ]]; then
     echo "FAILED (tag not found or repository inaccessible)"
     FAILED=1
     continue
@@ -129,12 +141,52 @@ while IFS= read -r line; do
     COMMIT_SHA=$(printf '%s\n' "$REMOTE_OUT" | awk '{print $1}')
   fi
 
-  if [[ "$COMMIT_SHA" == "$EXPECTED_SHA" ]]; then
-    echo "OK ($EXPECTED_SHA)"
-  else
+  if [[ "$COMMIT_SHA" != "$EXPECTED_SHA" ]]; then
     echo "MISMATCH (expected: $EXPECTED_SHA, got: $COMMIT_SHA)"
     FAILED=1
+    continue
   fi
+
+  if ! ENCODED_TAG=$(jq -nr --arg tag "$TAG" '$tag | @uri'); then
+    echo "FAILED (could not encode the release tag)"
+    FAILED=1
+    continue
+  fi
+
+  # Read the token through stdin so it never appears in curl's process arguments
+  if ! RELEASE_JSON=$(
+    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+      printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN"
+    fi | curl -fsSL --connect-timeout 10 --max-time 30 \
+      --header @- \
+      --header 'Accept: application/vnd.github+json' \
+      --header 'X-GitHub-Api-Version: 2022-11-28' \
+      "https://api.github.com/repos/$REPO/releases/tags/$ENCODED_TAG"
+  ); then
+    echo "FAILED (release lookup failed)"
+    FAILED=1
+    continue
+  fi
+
+  if ! RELEASE_EPOCH=$(printf '%s\n' "$RELEASE_JSON" | jq -er --arg tag "$TAG" '
+    select(.tag_name == $tag and .draft == false)
+    | .published_at
+    | . as $published
+    | fromdateiso8601
+    | select(todateiso8601 == $published)
+  ' 2> /dev/null) || ! [[ "$RELEASE_EPOCH" =~ ^[0-9]+$ ]]; then
+    echo "FAILED (missing or invalid release published_at metadata)"
+    FAILED=1
+    continue
+  fi
+
+  if ((CURRENT_EPOCH - RELEASE_EPOCH < COOLDOWN_SECONDS)); then
+    echo "FAILED (release is less than 14 complete days old)"
+    FAILED=1
+    continue
+  fi
+
+  printf 'OK (%s; release published at least 14 complete days ago)\n' "$EXPECTED_SHA"
 done < "$USES_LINES"
 
 if [[ "$FAILED" -eq 1 ]]; then

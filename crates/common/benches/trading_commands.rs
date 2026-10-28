@@ -39,6 +39,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::UUID4;
+use nautilus_model::identifiers::InstrumentId;
 
 fn bench_trading_commands(c: &mut Criterion) {
     let mut group = c.benchmark_group("trading_commands");
@@ -173,7 +174,7 @@ fn trading_command() -> TradingCommandMessage {
 
 fn data_command() -> DataCommand {
     DataCommand::Subscribe(SubscribeCommand::Quotes(SubscribeQuotes::new(
-        "AUD/USD.SIM".into(),
+        InstrumentId::from("AUD/USD.SIM"),
         Some("SIM".into()),
         None,
         UUID4::from("00000000-0000-4000-8000-000000000002"),

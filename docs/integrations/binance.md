@@ -444,6 +444,11 @@ Spot is unaffected. See the Binance
 | Bracket orders     | -    | -            | -            | *Planned*. Currently denied at submission.   |
 | Conditional orders | ✓    | ✓            | ✓            | Stop and market-if-touched orders.           |
 
+For Binance Global Spot, SBE list-status events supply a missing `OrderAccepted` with the venue order ID
+for tracked children when a list starts executing. A list rejection with a venue reason supplies
+`OrderRejected` for children that have not been accepted or filled. Child execution reports drive fills,
+cancellations, expirations, and other terminal states.
+
 ### Order parameters
 
 Customize individual orders by supplying a `params` dictionary when calling
@@ -542,8 +547,7 @@ that meet its trading rules.
 ```rust tab="Rust"
 use nautilus_core::params::Params;
 
-let mut params = Params::new();
-params.insert("rpi".to_string(), true.into());
+let params = Params::new([("rpi".to_string(), true.into())].into());
 self.submit_order(order, None, None, Some(params))?;
 ```
 
@@ -702,11 +706,11 @@ web UI, or raw venue payloads.
 Order books can be maintained at full or partial depths. The diff-depth stream and its update
 rate differ by product and Spot transport:
 
-| Product / transport | Diff-depth stream    | Update rate      |
-| ------------------- | -------------------- | ---------------- |
-| Spot SBE            | `<symbol>@depth`     | 25ms             |
-| Spot JSON           | `<symbol>@depth`     | 1000ms (default) |
-| Futures             | `<symbol>@depth@0ms` | Unthrottled      |
+| Product / transport | Diff-depth stream                          | Update rate               |
+| ------------------- | ------------------------------------------ | ------------------------- |
+| Spot SBE            | `<symbol>@depth`                           | 20ms                      |
+| Spot JSON           | `<symbol>@depth` or `<symbol>@depth@100ms` | 100ms (default) or 1000ms |
+| Futures             | `<symbol>@depth@0ms`                       | 0ms (default)             |
 
 Book subscriptions emit snapshots, whether seeded from REST or received as partial-depth frames,
 with these flags:
@@ -747,10 +751,13 @@ depend on the [Spot market data mode](#spot-market-data-mode):
 | None (diff depth)                       | `<symbol>@depth`         | `<symbol>@depth`   |
 | Any other, including 50, 100, 500, 1000 | Rejected                 | Rejected           |
 
+JSON streams add `@100ms` to these stream names by default. Use `params={"update_speed": 1000}`
+to select 1000ms updates without the suffix (see [Spot market data mode](#spot-market-data-mode)).
+
 - Rejected depths fail before subscription. In JSON mode the error lists the valid depths.
 - Diff-depth subscriptions are seeded by a 5000-level REST snapshot.
-- Unsubscribe before changing an instrument's subscription depth. A new partial-depth subscription does not
-  remove the previous stream.
+- Unsubscribe before changing an instrument's subscription depth or update speed. Conflicting subscriptions
+  are rejected until you unsubscribe.
 
 ### L1 top-of-book subscriptions
 
@@ -897,8 +904,8 @@ Spot.
 
 Historical trade requests without bounds use the recent-trades endpoint. A request with time bounds uses
 aggregate trades and accepts at most 1000 records, so the source follows the request rather than a config
-option. Spot passes the supplied bounds to `/api/v3/aggTrades`. Futures accepts either bound within the last
-24 hours. When both are supplied, the range must be shorter than one hour.
+option. Spot passes the supplied bounds to `/api/v3/aggTrades`. Futures requires each supplied bound to be
+within the last 48 hours. When both are supplied, the range must be shorter than one hour.
 
 Historical core bar requests accept externally aggregated time bars and use the corresponding venue kline
 endpoint. Internally aggregated bars are built by the `DataEngine` from raw trade, quote, or source-bar
@@ -1120,11 +1127,14 @@ info (e.g. after delisting or contract expiry), the adapter emits
 
 Status polling does not reload instrument definitions. The separate `instrument_refresh_interval_secs` task
 performs a complete filtered catalog load. It atomically replaces the data-client and WebSocket lookup maps.
-Then it sends the refreshed instruments to the data engine and updates the status snapshot. It also refreshes
+Then it updates the status snapshot and sends the refreshed instruments to the data engine. It also refreshes
 the execution client precision cache.
 
 The default full refresh interval is 3,600 seconds. Set it to `0` to disable it. Disconnect cancels the task,
 and reconnect starts one replacement task with a new cancellation token.
+
+Catalog refreshes and status polls serialize their requests and snapshot updates so overlapping responses
+cannot overwrite newer statuses or duplicate `InstrumentStatus` events. Each task keeps its own polling interval.
 
 ### Status mapping
 
@@ -1365,6 +1375,25 @@ credentials.
 Full Spot `BookDeltas` subscriptions use the `<symbol>@depth` diff-depth stream on the selected
 transport, with REST snapshot synchronization. Explicit depth subscriptions use partial-book snapshots
 (see [Order books](#order-books)).
+
+For Spot JSON partial and diff depth streams, the `update_speed` subscription parameter accepts
+`100` (default) or `1000` milliseconds. SBE and Futures ignore this parameter.
+
+With the data client configured for JSON market data, subscribe to top-20 snapshots at 100ms:
+
+```python
+from nautilus_trader.model import BookType
+
+self.subscribe_book_deltas(
+    instrument_id,
+    book_type=BookType.L2_MBP,
+    depth=20,
+    params={"update_speed": 100},
+)
+```
+
+Unsubscribe before changing the depth or update speed for an instrument. Unsubscribe uses the
+active stream, so it does not require the original params.
 
 :::note
 Exposed to Python as `BinanceSpotMarketDataMode` on

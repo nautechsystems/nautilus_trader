@@ -26,7 +26,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{dst::time::Instant, runner::get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -135,10 +135,12 @@ pub(crate) fn custom_data_with_instrument(
     value: Arc<dyn CustomDataTrait>,
     instrument_id: InstrumentId,
 ) -> CustomData {
-    let mut metadata = Params::new();
-    metadata.insert(
-        "instrument_id".to_string(),
-        serde_json::Value::String(instrument_id.to_string()),
+    let metadata = Params::new(
+        [(
+            "instrument_id".to_string(),
+            serde_json::Value::String(instrument_id.to_string()),
+        )]
+        .into(),
     );
     let data_type = DataType::new(
         value.type_name(),
@@ -150,7 +152,10 @@ pub(crate) fn custom_data_with_instrument(
 
 impl BetfairDataClient {
     /// Creates a new [`BetfairDataClient`] instance.
-    #[must_use]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the client or stream configuration is invalid.
     #[expect(clippy::too_many_arguments)]
     pub fn new(
         client_id: ClientId,
@@ -161,7 +166,10 @@ impl BetfairDataClient {
         nav_filter: NavigationFilter,
         currency: Currency,
         min_notional: Option<Money>,
-    ) -> Self {
+    ) -> anyhow::Result<Self> {
+        config.validate()?;
+        stream_config.validate()?;
+
         let data_sender = get_data_event_sender();
         let http_client = Arc::new(http_client);
         let socket_control = Some(SocketControl::new(
@@ -193,7 +201,7 @@ impl BetfairDataClient {
         let session_tasks = TaskGroup::new();
         let command_tasks = TaskGroup::new();
 
-        Self {
+        Ok(Self {
             clock: get_atomic_clock_realtime(),
             client_id,
             http_client,
@@ -217,7 +225,7 @@ impl BetfairDataClient {
             command_tasks,
             stream_shutdowns: Arc::new(Mutex::new(Vec::new())),
             shutdown_errors: Vec::new(),
-        }
+        })
     }
 
     async fn finish_tasks(&self) -> anyhow::Result<()> {
@@ -372,7 +380,7 @@ impl BetfairDataClient {
 
                                     for inst in new_instruments {
                                         if let Err(e) =
-                                            data_sender.send(DataEvent::Instrument(inst))
+                                            data_sender.send(DataEvent::Data(inst.into()))
                                         {
                                             log::warn!("Failed to send instrument: {e}");
                                         }
@@ -392,8 +400,8 @@ impl BetfairDataClient {
                                 for event in
                                     parse_instrument_statuses(&mc.id, def, ts_event, ts_init)
                                 {
-                                    if let Err(e) =
-                                        data_sender.send(DataEvent::InstrumentStatus(event))
+                                    if let Err(e) = data_sender
+                                        .send(DataEvent::Data(Data::InstrumentStatus(event)))
                                     {
                                         log::warn!("Failed to send instrument status: {e}");
                                     }
@@ -613,10 +621,13 @@ impl BetfairDataClient {
                                         race_id, market_id, rrc, ts_event, ts_init,
                                     ) {
                                         let selection_id = rrc.id.unwrap_or(0);
-                                        let mut metadata = Params::new();
-                                        metadata.insert(
-                                            "selection_id".to_string(),
-                                            serde_json::Value::Number(selection_id.into()),
+
+                                        let metadata = Params::new(
+                                            [(
+                                                "selection_id".to_string(),
+                                                serde_json::Value::Number(selection_id.into()),
+                                            )]
+                                            .into(),
                                         );
                                         let value: Arc<dyn CustomDataTrait> = Arc::new(runner);
                                         let data_type =
@@ -638,10 +649,13 @@ impl BetfairDataClient {
 
                                 let progress =
                                     parse_race_progress(race_id, market_id, rpc, ts_event, ts_init);
-                                let mut metadata = Params::new();
-                                metadata.insert(
-                                    "race_id".to_string(),
-                                    serde_json::Value::String(race_id.to_string()),
+
+                                let metadata = Params::new(
+                                    [(
+                                        "race_id".to_string(),
+                                        serde_json::Value::String(race_id.to_string()),
+                                    )]
+                                    .into(),
                                 );
                                 let value: Arc<dyn CustomDataTrait> = Arc::new(progress);
                                 let data_type =
@@ -665,10 +679,12 @@ impl BetfairDataClient {
                             if let Some(cricket) =
                                 parse_cricket_match(cricket_change, ts_event, ts_init)
                             {
-                                let mut metadata = Params::new();
-                                metadata.insert(
-                                    "event_id".to_string(),
-                                    serde_json::Value::String(cricket.event_id.clone()),
+                                let metadata = Params::new(
+                                    [(
+                                        "event_id".to_string(),
+                                        serde_json::Value::String(cricket.event_id.clone()),
+                                    )]
+                                    .into(),
                                 );
                                 let value: Arc<dyn CustomDataTrait> = Arc::new(cricket);
                                 let data_type =
@@ -789,7 +805,7 @@ impl DataClient for BetfairDataClient {
         });
 
         for inst in &loaded {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(inst.clone())) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(inst.clone().into())) {
                 log::warn!("Failed to send instrument: {e}");
             }
         }
@@ -1152,78 +1168,78 @@ impl DataClient for BetfairDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let market_id = extract_market_id(&instrument_id)?;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let market_id = extract_market_id(&instrument_id)?;
 
-        if self.subscribed_market_ids.contains(&market_id) {
-            log::debug!("Book deltas already subscribed for market {market_id}");
-            return Ok(());
-        }
-
-        let stream_client = Arc::clone(
-            self.stream_client
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("Stream client not connected"))?,
-        );
-
-        let tasks = match self.command_tasks.spawner() {
-            Ok(tasks) => tasks,
-            Err(e) => {
-                log::warn!("Skipping Betfair data command after shutdown began: {e}");
+            if self.subscribed_market_ids.contains(&market_id) {
+                log::debug!("Book deltas already subscribed for market {market_id}");
                 return Ok(());
             }
-        };
 
-        self.subscribed_market_ids.insert(market_id.clone());
+            let stream_client = Arc::clone(
+                self.stream_client
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("Stream client not connected"))?,
+            );
 
-        // Betfair keeps one market subscription per connection, so each write carries every
-        // subscribed market, and writing at once keeps the latest write last
-        let market_filter = market_subscription_filter(&self.subscribed_market_ids);
-        let conflate_ms = self.config.stream_conflate_ms;
+            let tasks = match self.command_tasks.spawner() {
+                Ok(tasks) => tasks,
+                Err(e) => {
+                    log::warn!("Skipping Betfair data command after shutdown began: {e}");
+                    return Ok(());
+                }
+            };
 
-        let subscribe = |gate: &SnapshotGate| {
-            stream_client.write_market_subscription(
-                market_filter,
-                market_data_filter(),
-                None,
-                conflate_ms,
-                gate,
-            )
-        };
+            self.subscribed_market_ids.insert(market_id.clone());
 
-        spawn_subscription_task(
-            market_id,
-            subscribe,
-            self.book_sync.clone(),
-            Arc::clone(&stream_client),
-            Duration::from_secs(self.config.book_snapshot_timeout_secs),
-            &tasks,
-        );
+            // Betfair keeps one market subscription per connection, so each write carries every
+            // subscribed market, and writing at once keeps the latest write last
+            let market_filter = market_subscription_filter(&self.subscribed_market_ids);
+            let conflate_ms = self.config.stream_conflate_ms;
 
-        Ok(())
+            let subscribe = |gate: &SnapshotGate| {
+                stream_client.write_market_subscription(
+                    market_filter,
+                    market_data_filter(),
+                    None,
+                    conflate_ms,
+                    gate,
+                )
+            };
+
+            spawn_subscription_task(
+                market_id,
+                subscribe,
+                self.book_sync.clone(),
+                Arc::clone(&stream_client),
+                Duration::from_secs(self.config.book_snapshot_timeout_secs),
+                &tasks,
+            );
+
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        log::debug!(
-            "Skipping unsubscribe book deltas for Betfair: {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Skipping unsubscribe book deltas for Betfair: {instrument_id}");
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
         // Trades are included in market subscription via EX_TRADED
         log::debug!(
-            "Trade data included in book subscription for {}",
-            cmd.instrument_id
+            "Trade data included in book subscription for {:?}",
+            cmd.instrument_ids
         );
         Ok(())
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
         log::debug!(
-            "Skipping unsubscribe trades for Betfair: {}",
-            cmd.instrument_id
+            "Skipping unsubscribe trades for Betfair: {:?}",
+            cmd.instrument_ids
         );
         Ok(())
     }
@@ -1232,44 +1248,40 @@ impl DataClient for BetfairDataClient {
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        // Instrument status is included in market subscription via EX_MARKET_DEF
-        log::debug!(
-            "Instrument status included in book subscription for {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            // Instrument status is included in market subscription via EX_MARKET_DEF
+            log::debug!("Instrument status included in book subscription for {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
         &mut self,
         cmd: &UnsubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Skipping unsubscribe instrument status for Betfair: {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Skipping unsubscribe instrument status for Betfair: {instrument_id}");
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_close(&mut self, cmd: SubscribeInstrumentClose) -> anyhow::Result<()> {
-        // Close transitions arrive via marketDefinition.status="CLOSED" on the
-        // existing market subscription; no separate venue subscription exists.
-        log::debug!(
-            "Instrument close included in book subscription for {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            // Close transitions arrive via marketDefinition.status="CLOSED" on the
+            // existing market subscription; no separate venue subscription exists.
+            log::debug!("Instrument close included in book subscription for {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_close(
         &mut self,
         cmd: &UnsubscribeInstrumentClose,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "Skipping unsubscribe instrument close for Betfair: {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Skipping unsubscribe instrument close for Betfair: {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe(&mut self, _cmd: &UnsubscribeCustomData) -> anyhow::Result<()> {
@@ -1278,11 +1290,10 @@ impl DataClient for BetfairDataClient {
     }
 
     fn unsubscribe_instrument(&mut self, cmd: &UnsubscribeInstrument) -> anyhow::Result<()> {
-        log::debug!(
-            "Skipping unsubscribe instrument for Betfair: {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!("Skipping unsubscribe instrument for Betfair: {instrument_id}");
+            Ok(())
+        })
     }
 
     fn unsubscribe_instruments(&mut self, _cmd: &UnsubscribeInstruments) -> anyhow::Result<()> {
@@ -1292,15 +1303,17 @@ impl DataClient for BetfairDataClient {
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
         log::debug!(
-            "Skipping unsubscribe quotes for Betfair: {}",
-            cmd.instrument_id
+            "Skipping unsubscribe quotes for Betfair: {:?}",
+            cmd.instrument_ids
         );
         Ok(())
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        log::debug!("Skipping unsubscribe bars for Betfair: {}", cmd.bar_type);
-        Ok(())
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            log::debug!("Skipping unsubscribe bars for Betfair: {bar_type}");
+            Ok(())
+        })
     }
 }
 

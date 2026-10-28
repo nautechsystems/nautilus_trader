@@ -16,6 +16,7 @@
 use std::time::Duration;
 
 use anyhow::Context;
+use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
 use nautilus_core::{string::secret::SecretString, time::AtomicTime};
 use nautilus_live::execution::{context::OrderContext, failure::CommandFailure};
@@ -45,7 +46,7 @@ use super::{
     },
     reports::{fetch_collateral_balance_pusd, get_pusd_currency},
     responses::{
-        check_fok_status, confirm_modify_replacement, emit_market_order_submitted,
+        check_fok_status, confirm_modify_replacement, emit_market_order_quantity_update,
         emit_signed_base_quantity_update, fok_check_order_id, handle_batch_order_responses,
         handle_order_response, handle_single_order_response, handle_unknown_submit_result,
         reject_submit_order,
@@ -58,8 +59,9 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE},
+        consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE, MARKET_VERSION_KEY},
         enums::{PolymarketOrderSide, PolymarketOrderType},
+        parse::validate_market_version,
     },
     http::{
         error::{Error as HttpError, sanitize_error_text},
@@ -332,8 +334,8 @@ impl PolymarketExecutionClient {
                 None
             };
 
-            match submitter
-                .submit_market_order(MarketOrderSubmitRequest {
+            let submission = match submitter
+                .prepare_market_order_submission(MarketOrderSubmitRequest {
                     token_id,
                     side,
                     amount,
@@ -345,9 +347,26 @@ impl PolymarketExecutionClient {
                 })
                 .await
             {
+                Ok(submission) => submission,
+                Err(e) => {
+                    let detail = e
+                        .downcast_ref::<InvalidMarketPriceError>()
+                        .map_or_else(|| e.to_string(), ToString::to_string);
+                    let detail = sanitize_error_text(&detail);
+                    emitter.emit_order_denied(
+                        &order,
+                        &OrderDeniedReason::ValidationFailed { detail }.to_string(),
+                    );
+                    return Ok(());
+                }
+            };
+
+            emitter.emit_order_submitted(&order);
+
+            match submitter.post_market_order_submission(submission).await {
                 Ok(result) => {
                     let mut order = order;
-                    emit_market_order_submitted(
+                    emit_market_order_quantity_update(
                         &mut order,
                         is_quote_qty,
                         side,
@@ -420,7 +439,7 @@ impl PolymarketExecutionClient {
                 Err(e) => {
                     if let Some(unknown) = e.downcast_ref::<UnknownSubmitError>() {
                         let mut order = order;
-                        emit_market_order_submitted(
+                        emit_market_order_quantity_update(
                             &mut order,
                             is_quote_qty,
                             side,
@@ -466,15 +485,6 @@ impl PolymarketExecutionClient {
                             )
                             .await;
                         }
-                    } else if let Some(invalid_price) = e.downcast_ref::<InvalidMarketPriceError>()
-                    {
-                        emitter.emit_order_denied(
-                            &order,
-                            &OrderDeniedReason::ValidationFailed {
-                                detail: invalid_price.to_string(),
-                            }
-                            .to_string(),
-                        );
                     } else {
                         let failure = e.downcast_ref::<HttpError>().map_or_else(
                             || CommandFailure::not_sent(e.to_string()),
@@ -514,7 +524,15 @@ impl PolymarketExecutionClient {
             .cloned();
 
         match instrument {
-            Some(i) => Some(i),
+            Some(i) => {
+                let version = i.info().and_then(|info| info.get_str(MARKET_VERSION_KEY));
+                if let Err(e) = validate_market_version(version) {
+                    self.emitter.emit_order_denied(order, &e.to_string());
+                    return None;
+                }
+
+                Some(i)
+            }
             None => {
                 self.emitter.emit_order_denied(
                     order,
@@ -724,6 +742,8 @@ impl PolymarketExecutionClient {
 
             let total = submissions.len();
             let mut offset = 0;
+            let mut follow_ups: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();
+
             while offset < total {
                 let end = (offset + BATCH_ORDER_LIMIT).min(total);
                 let mut submissions_chunk = submissions[offset..end].to_vec();
@@ -733,8 +753,14 @@ impl PolymarketExecutionClient {
                     let submission = submissions_chunk.pop().expect("len 1");
                     let expected_venue_order_id = submission.expected_venue_order_id;
                     let batch_order = orders_chunk.pop().expect("len 1");
-                    handle_single_order_response(
-                        submitter.post_limit_order_submission(submission).await,
+                    let result = Box::pin(complete_with_follow_ups(
+                        submitter.post_limit_order_submission(submission),
+                        &mut follow_ups,
+                    ))
+                    .await;
+
+                    let response = handle_single_order_response(
+                        result,
                         batch_order,
                         expected_venue_order_id,
                         &submitter,
@@ -747,20 +773,23 @@ impl PolymarketExecutionClient {
                         &pending_submits,
                         &pending_cancels,
                         account_id,
-                    )
-                    .await;
+                    );
+                    Box::pin(complete_with_follow_ups(response, &mut follow_ups)).await;
                 } else {
                     let expected_venue_order_ids: Vec<VenueOrderId> = submissions_chunk
                         .iter()
                         .map(|submission| submission.expected_venue_order_id)
                         .collect();
 
-                    match submitter
-                        .post_limit_order_submissions(submissions_chunk)
-                        .await
-                    {
+                    let result = complete_with_follow_ups(
+                        submitter.post_limit_order_submissions(submissions_chunk),
+                        &mut follow_ups,
+                    )
+                    .await;
+
+                    match result {
                         Ok(responses) => {
-                            handle_batch_order_responses(
+                            let follow_up = handle_batch_order_responses(
                                 responses,
                                 orders_chunk,
                                 expected_venue_order_ids,
@@ -774,8 +803,9 @@ impl PolymarketExecutionClient {
                                 &pending_submits,
                                 &pending_cancels,
                                 account_id,
-                            )
-                            .await;
+                            );
+
+                            follow_ups.push(follow_up.boxed());
                         }
                         Err(e) => match classify_http_command_failure(&e) {
                             CommandFailure::Ambiguous(reason) => {
@@ -800,16 +830,25 @@ impl PolymarketExecutionClient {
                                             batch_order.price_precision,
                                         )
                                     {
-                                        execute_deferred_cancel(
-                                            &submitter,
-                                            &batch_order.order,
-                                            &order_id_str,
-                                            venue_order_id,
-                                            &emitter,
-                                            &pending_cancels,
-                                            clock,
-                                        )
-                                        .await;
+                                        let submitter = submitter.clone();
+                                        let emitter = emitter.clone();
+                                        let pending_cancels = pending_cancels.clone();
+
+                                        follow_ups.push(
+                                            async move {
+                                                execute_deferred_cancel(
+                                                    &submitter,
+                                                    &batch_order.order,
+                                                    &order_id_str,
+                                                    venue_order_id,
+                                                    &emitter,
+                                                    &pending_cancels,
+                                                    clock,
+                                                )
+                                                .await;
+                                            }
+                                            .boxed(),
+                                        );
                                     }
                                 }
                             }
@@ -831,6 +870,8 @@ impl PolymarketExecutionClient {
 
                 offset = end;
             }
+
+            follow_ups.for_each(|()| async {}).await;
 
             Ok(())
         });
@@ -912,17 +953,26 @@ impl PolymarketExecutionClient {
             return;
         };
 
-        let price = cmd.price.or_else(|| order.price()).unwrap();
-        if let Err(reason) =
-            PolymarketOrderBuilder::validate_limit_price_value(price, instrument.price_increment())
-        {
-            reject(&reason.to_string());
-            return;
-        }
+        let version = instrument
+            .info()
+            .and_then(|info| info.get_str(MARKET_VERSION_KEY));
 
-        if let Err(reason) =
-            PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
-        {
+        let price = cmd.price.or_else(|| order.price()).unwrap();
+
+        let validation = validate_market_version(version)
+            .and_then(|()| {
+                PolymarketOrderBuilder::validate_limit_price_value(
+                    price,
+                    instrument.price_increment(),
+                )
+                .map_err(anyhow::Error::from)
+            })
+            .and_then(|()| {
+                PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
+                    .map_err(anyhow::Error::from)
+            });
+
+        if let Err(reason) = validation {
             reject(&reason.to_string());
             return;
         }
@@ -1539,6 +1589,23 @@ impl PolymarketExecutionClient {
     }
 }
 
+async fn complete_with_follow_ups<F>(
+    operation: F,
+    follow_ups: &mut FuturesUnordered<BoxFuture<'_, ()>>,
+) -> F::Output
+where
+    F: Future,
+{
+    tokio::pin!(operation);
+
+    loop {
+        tokio::select! {
+            result = &mut operation => return result,
+            _ = follow_ups.next(), if !follow_ups.is_empty() => {}
+        }
+    }
+}
+
 fn market_minimum_order_size(instrument: &InstrumentAny) -> Result<Option<Decimal>, String> {
     let Some(value) = instrument
         .info()
@@ -1761,10 +1828,13 @@ mod tests {
     ) {
         let mut binary = binary_option();
         binary.currency = Currency::pUSD();
-        let mut info = nautilus_core::Params::new();
-        info.insert(
-            "fee_schedule".into(),
-            serde_json::json!({"rate": "0.07", "exponent": exponent}),
+
+        let info = nautilus_core::Params::new(
+            [(
+                "fee_schedule".into(),
+                serde_json::json!({"rate": "0.07", "exponent": exponent}),
+            )]
+            .into(),
         );
         binary.info = Some(info);
         let instrument = InstrumentAny::BinaryOption(binary);
@@ -1784,8 +1854,7 @@ mod tests {
         let mut binary = binary_option();
 
         if let Some(value) = value {
-            let mut info = nautilus_core::Params::new();
-            info.insert("min_order_size".into(), value);
+            let info = nautilus_core::Params::new([("min_order_size".into(), value)].into());
             binary.info = Some(info);
         }
         InstrumentAny::BinaryOption(binary)

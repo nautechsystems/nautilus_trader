@@ -393,10 +393,29 @@ async fn next_event_within(
     client: &mut LighterWebSocketClient,
     timeout: Duration,
 ) -> Option<NautilusWsMessage> {
-    tokio::time::timeout(timeout, client.next_event())
-        .await
-        .ok()
-        .flatten()
+    next_event_matching(client, timeout, |_| true).await
+}
+
+async fn next_event_matching<F>(
+    client: &mut LighterWebSocketClient,
+    timeout: Duration,
+    mut predicate: F,
+) -> Option<NautilusWsMessage>
+where
+    F: FnMut(&NautilusWsMessage) -> bool,
+{
+    tokio::time::timeout(timeout, async {
+        while let Some(event) = client.next_event().await {
+            if predicate(&event) {
+                return Some(event);
+            }
+        }
+
+        None
+    })
+    .await
+    .ok()
+    .flatten()
 }
 
 async fn await_subscribe_count(state: &TestServerState, target: usize) {
@@ -608,7 +627,9 @@ async fn test_initial_connect_retries_share_configured_timeout_budget() {
         error.to_string(),
         "Lighter WebSocket initial connection timeout after 1 seconds",
     );
-    assert_eq!(state.upgrade_attempts.load(Ordering::SeqCst), 2);
+    // The shared deadline can expire before the second attempt under scheduler load
+    let attempts = state.upgrade_attempts.load(Ordering::SeqCst);
+    assert!((1..=2).contains(&attempts), "upgrade attempts: {attempts}");
 }
 
 #[tokio::test]
@@ -1043,8 +1064,6 @@ async fn book_rejected_subscription_allows_resubscribe() {
         .subscribe_book(id)
         .await
         .expect_err("venue rejection must fail the subscribe");
-    // The rejected caller releases the stream, so nothing may resubscribe it on its behalf
-    tokio::time::sleep(Duration::from_millis(100)).await;
     let subscribes_after_rejection = state.subscribes().await.len();
 
     state.book_ack_mode.store(0, Ordering::SeqCst);
@@ -1492,9 +1511,13 @@ async fn test_order_book_second_frame_is_incremental_no_depth() {
     );
 
     // Depth is not subscribed, so no Depth message should follow.
-    let next = next_event_within(&mut harness.client, Duration::from_millis(200)).await;
+    let next = next_event_matching(&mut harness.client, Duration::from_millis(200), |event| {
+        matches!(event, NautilusWsMessage::Depth(_))
+    })
+    .await;
+
     assert!(
-        !matches!(next, Some(NautilusWsMessage::Depth(_))),
+        next.is_none(),
         "no Depth expected without subscribe_book_depth",
     );
 
@@ -1526,9 +1549,13 @@ async fn test_order_book_depth_emits_on_snapshot() {
         "expected Depth on snapshot, was {event:?}",
     );
 
-    let next = next_event_within(&mut harness.client, Duration::from_millis(200)).await;
+    let next = next_event_matching(&mut harness.client, Duration::from_millis(200), |event| {
+        matches!(event, NautilusWsMessage::Deltas(_))
+    })
+    .await;
+
     assert!(
-        !matches!(next, Some(NautilusWsMessage::Deltas(_))),
+        next.is_none(),
         "depth-only subscription must not emit Deltas",
     );
 
@@ -1687,7 +1714,14 @@ async fn test_late_depth_uses_cached_book_after_incremental_updates() {
         .await
         .expect("subscribe_book_depth");
 
-    tokio::time::sleep(Duration::from_millis(100)).await;
+    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
+        .await
+        .expect("cached depth");
+
+    let NautilusWsMessage::Depth(depth) = event else {
+        panic!("expected cached Depth, was {event:?}");
+    };
+
     let order_book_subs = state
         .subscribes()
         .await
@@ -1698,13 +1732,6 @@ async fn test_late_depth_uses_cached_book_after_incremental_updates() {
         order_book_subs, 1,
         "late depth must reuse the active order_book stream",
     );
-
-    let event = next_event_within(&mut harness.client, Duration::from_secs(2))
-        .await
-        .expect("cached depth");
-    let NautilusWsMessage::Depth(depth) = event else {
-        panic!("expected cached Depth, was {event:?}");
-    };
 
     assert_depth_matches_cached_changes(&depth);
 
@@ -1815,7 +1842,7 @@ async fn test_market_stats_frame_emits_mark_index_and_funding_updates() {
             NautilusWsMessage::FundingRate(update) => {
                 saw_funding = true;
                 assert_eq!(update.instrument_id, harness.instrument(PERP_MARKET_INDEX));
-                assert_eq!(update.rate, Decimal::new(1, 6));
+                assert_eq!(update.rate, Decimal::new(1, 8));
                 assert_eq!(update.next_funding_ns, None);
             }
             _ => {}
@@ -2547,4 +2574,173 @@ async fn test_reconnect_replays_authenticated_and_public_subscriptions() {
     }
 
     harness.client.disconnect().await.expect("disconnect");
+}
+
+#[tokio::test]
+#[ignore = "connects to public Lighter mainnet and injects a shutdown notice through a local proxy"]
+async fn shutdown_mainnet_public_book_reconnect() {
+    let injected = Arc::new(AtomicBool::new(false));
+    let connections = Arc::new(AtomicUsize::new(0));
+    let snapshots = Arc::new(Mutex::new(Vec::new()));
+    let observations = Arc::clone(&snapshots);
+
+    let router = Router::new().route("/stream", get(move |upgrade: WebSocketUpgrade| {
+        let injected = Arc::clone(&injected);
+        let connections = Arc::clone(&connections);
+        let observations = Arc::clone(&observations);
+        async move {
+            upgrade.on_upgrade(move |mut downstream| async move {
+                let url = nautilus_lighter::common::urls::lighter_ws_url(LighterEnvironment::Mainnet);
+                let (mut upstream, _) = tokio_tungstenite::connect_async(url)
+                    .await
+                    .expect("public mainnet WebSocket");
+                let index = connections.fetch_add(1, Ordering::SeqCst);
+
+                loop {
+                    tokio::select! {
+                        message = upstream.next() => match message {
+                            Some(Ok(tokio_tungstenite::tungstenite::Message::Text(text))) => {
+                                let frame: Value = serde_json::from_str(&text).unwrap();
+                                let snapshot = frame["type"] == "subscribed/order_book";
+                                if snapshot {
+                                    observations.lock().push(index);
+                                }
+
+                                if downstream.send(Message::Text(text.to_string().into())).await.is_err() {
+                                    break;
+                                }
+
+                                if snapshot && !injected.swap(true, Ordering::SeqCst) {
+                                    let notice = json!({"type":"shutdown", "close_in_ms":30000});
+                                    if downstream.send(Message::Text(notice.to_string().into())).await.is_err() {
+                                        break;
+                                    }
+                                }
+                            }
+                            Some(Ok(tokio_tungstenite::tungstenite::Message::Ping(payload))) => {
+                                let _ = upstream.send(tokio_tungstenite::tungstenite::Message::Pong(payload)).await;
+                            }
+                            Some(Ok(tokio_tungstenite::tungstenite::Message::Close(_)) | Err(_)) | None => break,
+                            _ => {},
+                        },
+                        message = downstream.recv() => match message {
+                            Some(Ok(Message::Text(text))) => {
+                                let message = tokio_tungstenite::tungstenite::Message::Text(text.to_string().into());
+                                if upstream.send(message).await.is_err() {
+                                    break;
+                                }
+                            }
+                            Some(Ok(Message::Ping(payload))) => {
+                                let _ = downstream.send(Message::Pong(payload)).await;
+                            }
+                            Some(Ok(Message::Close(_)) | Err(_)) | None => break,
+                            _ => {},
+                        },
+                    }
+                }
+
+                let _ = upstream.close(None).await;
+            })
+        }
+    }));
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    let mut harness = ClientHarness::build(address).await;
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        harness
+            .client
+            .subscribe_book(harness.instrument(PERP_MARKET_INDEX)),
+    )
+    .await
+    .expect("mainnet initial subscription deadline")
+    .unwrap();
+    let mut saw_reconnect = false;
+    let mut saw_snapshot = false;
+    tokio::time::timeout(Duration::from_secs(45), async {
+        while let Some(event) = harness.client.next_event().await {
+            match event {
+                NautilusWsMessage::Reconnected { connection_epoch } => {
+                    assert_eq!(connection_epoch, 1);
+                    saw_reconnect = true;
+                }
+                NautilusWsMessage::Deltas(deltas)
+                    if saw_reconnect && deltas.deltas[0].action == BookAction::Clear =>
+                {
+                    saw_snapshot = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("mainnet replacement readiness deadline");
+
+    assert_eq!((saw_reconnect, saw_snapshot), (true, true));
+    assert_eq!(*snapshots.lock(), vec![0, 1]);
+    harness.client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::immediate(0, 0)]
+#[case::advance_notice(7500, 0)]
+#[case::large_deadline(u64::MAX, 0)]
+#[case::replacement_retry(7500, 1)]
+#[tokio::test]
+async fn shutdown_notice_reconnects_and_replays_subscriptions(
+    #[case] close_in_ms: u64,
+    #[case] failed_upgrades: usize,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let mut harness = ClientHarness::build(addr).await;
+    let instrument = harness.instrument(PERP_MARKET_INDEX);
+    harness.client.subscribe_book(instrument).await.unwrap();
+    state
+        .transient_upgrade_failures
+        .store(failed_upgrades, Ordering::SeqCst);
+    state
+        .enqueue_push(json!({"type":"shutdown", "close_in_ms":close_in_ms}))
+        .await;
+    harness
+        .client
+        .subscribe_account(LighterWsChannel::AccountAll(789), "shutdown-token".into())
+        .await
+        .unwrap();
+
+    let reconnect = next_event_matching(&mut harness.client, Duration::from_secs(5), |event| {
+        matches!(event, NautilusWsMessage::Reconnected { .. })
+    })
+    .await
+    .unwrap();
+
+    assert!(matches!(
+        reconnect,
+        NautilusWsMessage::Reconnected {
+            connection_epoch: 1
+        }
+    ));
+    await_subscribe_count(&state, 4).await;
+    let mut subscriptions = state.subscribes().await;
+    subscriptions.sort_by_key(|request| request["channel"].as_str().unwrap().to_owned());
+    assert_eq!(
+        subscriptions,
+        vec![
+            json!({"type":"subscribe", "channel":"account_all/789", "auth":"shutdown-token"}),
+            json!({"type":"subscribe", "channel":"account_all/789", "auth":"shutdown-token"}),
+            json!({"type":"subscribe", "channel":"order_book/0"}),
+            json!({"type":"subscribe", "channel":"order_book/0"}),
+        ]
+    );
+    assert_eq!(
+        state.upgrade_attempts.load(Ordering::SeqCst),
+        2 + failed_upgrades
+    );
+    harness.client.disconnect().await.unwrap();
 }

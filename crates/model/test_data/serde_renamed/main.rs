@@ -17,18 +17,19 @@ use std::{fmt::Display, str::FromStr};
 
 use nautilus_model::enum_strum_serde;
 
+// Keep this name to catch collisions with the macro's local input type
 #[derive(Debug)]
-enum ConsumerEnum {
+enum StringInput {
     Value,
 }
 
-impl Display for ConsumerEnum {
+impl Display for StringInput {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str("VALUE")
     }
 }
 
-impl FromStr for ConsumerEnum {
+impl FromStr for StringInput {
     type Err = &'static str;
 
     fn from_str(value: &str) -> Result<Self, Self::Err> {
@@ -39,7 +40,7 @@ impl FromStr for ConsumerEnum {
     }
 }
 
-enum_strum_serde!(ConsumerEnum);
+enum_strum_serde!(StringInput);
 
 fn assert_serde<T>()
 where
@@ -48,5 +49,5 @@ where
 }
 
 fn main() {
-    assert_serde::<ConsumerEnum>();
+    assert_serde::<StringInput>();
 }

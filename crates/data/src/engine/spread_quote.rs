@@ -22,26 +22,12 @@ use super::{
 };
 
 impl DataEngine {
-    pub(super) fn is_spread_quote_command(
-        &self,
-        instrument_id: InstrumentId,
-        params: Option<&Params>,
-    ) -> bool {
-        if !params
-            .and_then(|params| params.get_bool("aggregate_spread_quotes"))
-            .unwrap_or(false)
-        {
-            return false;
-        }
-
-        self.cache
-            .borrow()
-            .instrument(&instrument_id)
-            .is_some_and(InstrumentAny::is_spread)
-    }
-
     pub(super) fn subscribe_spread_quotes(&mut self, cmd: &SubscribeQuotes) {
-        if let Some(state) = self.spread_quote_states.get_mut(&cmd.instrument_id) {
+        let instrument_id = cmd
+            .single_instrument_id()
+            .expect("spread quote routing has one instrument per member");
+
+        if let Some(state) = self.spread_quote_states.get_mut(&instrument_id) {
             state.owners += 1;
             let sources = state.sources.clone();
             for source in sources {
@@ -51,26 +37,23 @@ impl DataEngine {
             return;
         }
 
-        let Some(instrument) = self.cache.borrow().instrument(&cmd.instrument_id).cloned() else {
+        let Some(instrument) = self.cache.borrow().instrument(&instrument_id).cloned() else {
             log::error!(
-                "Cannot create spread quote aggregator: no instrument found for {}",
-                cmd.instrument_id,
+                "Cannot create spread quote aggregator: no instrument found for {instrument_id}",
             );
             return;
         };
 
         let Some(legs) = spread_instrument_legs(&instrument) else {
             log::error!(
-                "Cannot create spread quote aggregator: invalid spread legs for {}",
-                cmd.instrument_id,
+                "Cannot create spread quote aggregator: invalid spread legs for {instrument_id}",
             );
             return;
         };
 
         if legs.len() <= 1 {
             log::error!(
-                "Cannot create spread quote aggregator: spread instrument {} should have more than one leg",
-                cmd.instrument_id,
+                "Cannot create spread quote aggregator: spread instrument {instrument_id} should have more than one leg",
             );
             return;
         }
@@ -96,7 +79,7 @@ impl DataEngine {
         });
 
         let aggregator = Rc::new(RefCell::new(SpreadQuoteAggregator::new(
-            cmd.instrument_id,
+            instrument_id,
             &legs,
             matches!(
                 instrument,
@@ -128,11 +111,8 @@ impl DataEngine {
         for (leg_id, _) in &legs {
             let topic = switchboard::get_quotes_topic(*leg_id);
 
-            let handler = TypedHandler::new(SpreadQuoteHandler::new(
-                &aggregator,
-                cmd.instrument_id,
-                *leg_id,
-            ));
+            let handler =
+                TypedHandler::new(SpreadQuoteHandler::new(&aggregator, instrument_id, *leg_id));
             msgbus::subscribe_quotes(topic.into(), handler.clone(), Some(BAR_AGGREGATOR_PRIORITY));
             handlers.push((*leg_id, handler));
         }
@@ -158,7 +138,7 @@ impl DataEngine {
             .collect::<Vec<_>>();
 
         self.spread_quote_states.insert(
-            cmd.instrument_id,
+            instrument_id,
             SpreadQuoteState {
                 aggregator,
                 handlers,
@@ -174,11 +154,12 @@ impl DataEngine {
     }
 
     pub(super) fn unsubscribe_spread_quotes(&mut self, cmd: &UnsubscribeQuotes) {
-        let Some(state) = self.spread_quote_states.get_mut(&cmd.instrument_id) else {
-            log::warn!(
-                "Cannot unsubscribe spread quotes for {}: not subscribed",
-                cmd.instrument_id,
-            );
+        let instrument_id = cmd
+            .single_instrument_id()
+            .expect("spread quote routing has one instrument per member");
+
+        let Some(state) = self.spread_quote_states.get_mut(&instrument_id) else {
+            log::warn!("Cannot unsubscribe spread quotes for {instrument_id}: not subscribed");
             return;
         };
 
@@ -187,8 +168,7 @@ impl DataEngine {
             return;
         }
 
-        let Some((subscribe, leg_ids)) = self.stop_spread_quote_aggregation(cmd.instrument_id)
-        else {
+        let Some((subscribe, leg_ids)) = self.stop_spread_quote_aggregation(instrument_id) else {
             return;
         };
 

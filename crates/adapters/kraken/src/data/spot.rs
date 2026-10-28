@@ -29,7 +29,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::StreamExt;
 use nautilus_common::{
-    clients::DataClient,
+    clients::{DataClient, execute_bar_subscriptions, execute_instrument_subscriptions},
     live::{get_data_event_sender, sender::EventSender},
     messages::{
         DataEvent,
@@ -107,7 +107,13 @@ pub struct KrakenSpotDataClient {
 
 impl KrakenSpotDataClient {
     /// Creates a new [`KrakenSpotDataClient`] instance.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if configuration validation or client initialization fails.
     pub fn new(client_id: ClientId, config: KrakenDataClientConfig) -> anyhow::Result<Self> {
+        config.validate()?;
+
         let session_tasks = TaskGroup::new();
         let cancellation_token = session_tasks.cancellation_token();
         let command_tasks = TaskGroup::new();
@@ -146,7 +152,7 @@ impl KrakenSpotDataClient {
         };
 
         let ws =
-            KrakenSpotWebSocketClient::new(config.clone(), cancellation_token.clone(), proxy_url)
+            KrakenSpotWebSocketClient::new(config.clone(), cancellation_token.clone(), proxy_url)?
                 .with_socket_control(socket_factory.control("kraken-spot-data-streams"));
 
         Ok(Self {
@@ -271,7 +277,7 @@ impl KrakenSpotDataClient {
                     .proxy_url
                     .as_ref()
                     .map(|value| value.expose_secret().to_owned()),
-            )
+            )?
             .with_socket_control(self.socket_factory.control("kraken-spot-data-streams"));
         }
         Ok(())
@@ -299,7 +305,7 @@ impl KrakenSpotDataClient {
     }
 
     fn subscribe_l3_book(&mut self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        let instrument_id = cmd.single_instrument_id()?;
         let symbol_ustr = instrument_id.symbol.inner();
         let depth = cmd.depth.map_or(1000, |d| d.get() as u32);
 
@@ -326,7 +332,7 @@ impl KrakenSpotDataClient {
                     .proxy_url
                     .as_ref()
                     .map(|value| value.expose_secret().to_owned()),
-            )
+            )?
             .with_socket_control(self.socket_factory.control("kraken-spot-l3-data-streams"));
 
             self.l3_handler_task = self.spawn_l3_handler_task(ws_l3.clone(), false);
@@ -1039,7 +1045,7 @@ impl DataClient for KrakenSpotDataClient {
         }
 
         for instrument in instruments {
-            if let Err(e) = self.data_sender.send(DataEvent::Instrument(instrument)) {
+            if let Err(e) = self.data_sender.send(DataEvent::Data(instrument.into())) {
                 log::error!("Failed to send instrument: {e}");
             }
         }
@@ -1068,190 +1074,197 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let depth = cmd.depth;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            let depth = cmd.depth;
 
-        match cmd.book_type {
-            BookType::L2_MBP => {}
-            BookType::L3_MBO => return self.subscribe_l3_book(&cmd),
-            other => {
-                log::warn!("Unsupported BookType {other:?} for Kraken Spot, skipping");
-                return Ok(());
+            match cmd.book_type {
+                BookType::L2_MBP => {}
+                BookType::L3_MBO => return self.subscribe_l3_book(&cmd),
+                other => {
+                    log::warn!("Unsupported BookType {other:?} for Kraken Spot, skipping");
+                    return Ok(());
+                }
             }
-        }
 
-        if let Some(d) = depth {
-            let d_val = d.get();
-            if !matches!(d_val, 10 | 25 | 100 | 500 | 1000) {
-                log::warn!("Invalid depth {d_val} for Kraken Spot, valid: 10, 25, 100, 500, 1000");
-                return Ok(());
+            if let Some(d) = depth {
+                let d_val = d.get();
+
+                if !matches!(d_val, 10 | 25 | 100 | 500 | 1000) {
+                    log::warn!(
+                        "Invalid depth {d_val} for Kraken Spot, valid: 10, 25, 100, 500, 1000"
+                    );
+                    return Ok(());
+                }
             }
-        }
 
-        let ws = self.ws.clone();
-        self.spawn_ws(
-            async move {
-                ws.subscribe_book(instrument_id, depth.map(|d| d.get() as u32))
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe book",
-        );
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_book(instrument_id, depth.map(|d| d.get() as u32))
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe book",
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_quotes(&mut self, cmd: SubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_quotes(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe quotes",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_quotes(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe quotes",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_trades(&mut self, cmd: SubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_trades(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe trades",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.subscribe_trades(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe trades",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_mark_prices(&mut self, cmd: SubscribeMarkPrices) -> anyhow::Result<()> {
-        log::warn!(
-            "Mark price subscription not supported for Spot instrument {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::warn!("Mark price subscription not supported for Spot instrument {instrument_id}");
+            Ok(())
+        })
     }
 
     fn subscribe_index_prices(&mut self, cmd: SubscribeIndexPrices) -> anyhow::Result<()> {
-        log::warn!(
-            "Index price subscription not supported for Spot instrument {}",
-            cmd.instrument_id
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::warn!(
+                "Index price subscription not supported for Spot instrument {instrument_id}"
+            );
+            Ok(())
+        })
     }
 
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            if bar_type.aggregation_source() != AggregationSource::External {
+                log::warn!("Cannot subscribe to {bar_type} bars: only EXTERNAL bars supported");
+                return Ok(());
+            }
 
-        if bar_type.aggregation_source() != AggregationSource::External {
-            log::warn!("Cannot subscribe to {bar_type} bars: only EXTERNAL bars supported");
-            return Ok(());
-        }
+            if !bar_type.spec().is_time_aggregated() {
+                log::warn!("Cannot subscribe to {bar_type} bars: only time-based bars supported");
+                return Ok(());
+            }
 
-        if !bar_type.spec().is_time_aggregated() {
-            log::warn!("Cannot subscribe to {bar_type} bars: only time-based bars supported");
-            return Ok(());
-        }
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.subscribe_bars(bar_type)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "subscribe bars",
+            );
 
-        let ws = self.ws.clone();
-        self.spawn_ws(
-            async move {
-                ws.subscribe_bars(bar_type)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "subscribe bars",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn subscribe_instrument_status(
         &mut self,
         cmd: SubscribeInstrumentStatus,
     ) -> anyhow::Result<()> {
-        log::debug!(
-            "subscribe_instrument_status: {} (status changes detected via periodic instrument polling)",
-            cmd.instrument_id,
-        );
-        Ok(())
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            log::debug!(
+                "subscribe_instrument_status: {instrument_id} (status changes detected via periodic instrument polling)",
+            );
+            Ok(())
+        })
     }
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if self.ws_l3.as_ref().is_some_and(|ws| {
+                ws.subscriptions_contains(&format!("level3:{}", instrument_id.symbol))
+            }) {
+                let symbol_ustr = instrument_id.symbol.inner();
 
-        if self.ws_l3.as_ref().is_some_and(|ws| {
-            ws.subscriptions_contains(&format!("level3:{}", instrument_id.symbol))
-        }) {
-            let symbol_ustr = instrument_id.symbol.inner();
+                if let Some(ws_l3) = self.ws_l3.clone() {
+                    self.spawn_ws(
+                        async move {
+                            ws_l3
+                                .unsubscribe_book_l3(symbol_ustr)
+                                .await
+                                .map_err(|e| anyhow::anyhow!("{e}"))?;
+                            Ok(())
+                        },
+                        "unsubscribe l3 book",
+                    );
+                }
 
-            if let Some(ws_l3) = self.ws_l3.clone() {
-                self.spawn_ws(
-                    async move {
-                        ws_l3
-                            .unsubscribe_book_l3(symbol_ustr)
-                            .await
-                            .map_err(|e| anyhow::anyhow!("{e}"))?;
-                        Ok(())
-                    },
-                    "unsubscribe l3 book",
-                );
+                return Ok(());
             }
-            return Ok(());
-        }
 
-        let ws = self.ws.clone();
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_book(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe book",
-        );
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_book(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe book",
+            );
 
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_quotes(&mut self, cmd: &UnsubscribeQuotes) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_quotes(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe quotes",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_quotes(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe quotes",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_trades(&mut self, cmd: &UnsubscribeTrades) -> anyhow::Result<()> {
-        let instrument_id = cmd.instrument_id;
-        let ws = self.ws.clone();
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_trades(instrument_id)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe trades",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_trades(instrument_id)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe trades",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_mark_prices(&mut self, _cmd: &UnsubscribeMarkPrices) -> anyhow::Result<()> {
@@ -1263,19 +1276,19 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn unsubscribe_bars(&mut self, cmd: &UnsubscribeBars) -> anyhow::Result<()> {
-        let bar_type = cmd.bar_type;
-        let ws = self.ws.clone();
+        execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
+            let ws = self.ws.clone();
+            self.spawn_ws(
+                async move {
+                    ws.unsubscribe_bars(bar_type)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{e}"))
+                },
+                "unsubscribe bars",
+            );
 
-        self.spawn_ws(
-            async move {
-                ws.unsubscribe_bars(bar_type)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{e}"))
-            },
-            "unsubscribe bars",
-        );
-
-        Ok(())
+            Ok(())
+        })
     }
 
     fn unsubscribe_instrument_status(
@@ -1330,10 +1343,11 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn request_instrument(&self, request: RequestInstrument) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http.clone();
         let sender = self.data_sender.clone();
         let instruments = self.instruments.clone();
-        let instrument_id = request.instrument_id;
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
         let start_nanos = datetime_to_unix_nanos(request.start);
@@ -1381,9 +1395,10 @@ impl DataClient for KrakenSpotDataClient {
         Ok(())
     }
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u64);
@@ -1420,9 +1435,10 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
+        let bar_type = request.single_bar_type()?;
+
         let http = self.http.clone();
         let sender = self.data_sender.clone();
-        let bar_type = request.bar_type;
         let start = request.start;
         let end = request.end;
         let limit = request.limit.map(|n| n.get() as u64);
@@ -1459,9 +1475,10 @@ impl DataClient for KrakenSpotDataClient {
     }
 
     fn request_book_snapshot(&self, request: RequestBookSnapshot) -> anyhow::Result<()> {
+        let instrument_id = request.single_instrument_id()?;
+
         let http = self.http.clone();
         let sender = self.data_sender.clone();
-        let instrument_id = request.instrument_id;
         let depth = request.depth.map(|n| n.get() as u32);
         let request_id = request.request_id;
         let client_id = request.client_id.unwrap_or(self.client_id);
@@ -1602,11 +1619,9 @@ mod tests {
             })
             .unwrap();
         client.l3_handler_task = Some(task.clone());
-        client.ws_l3 = Some(KrakenSpotWebSocketClient::l3(
-            config,
-            client.cancellation_token.clone(),
-            None,
-        ));
+        client.ws_l3 = Some(
+            KrakenSpotWebSocketClient::l3(config, client.cancellation_token.clone(), None).unwrap(),
+        );
 
         client.teardown_partial_connect().await.unwrap();
 

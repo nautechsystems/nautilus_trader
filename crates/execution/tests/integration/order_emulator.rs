@@ -26,8 +26,7 @@ use nautilus_common::{
 };
 use nautilus_core::UUID4;
 use nautilus_execution::{
-    engine::ExecutionEngine, matching_core::OrderMatchingCore,
-    order_emulator::emulator::OrderEmulator,
+    engine::ExecutionEngine, matching::OrderMatchingCore, order_emulator::emulator::OrderEmulator,
 };
 use nautilus_model::{
     data::QuoteTick,
@@ -270,11 +269,11 @@ fn test_release_continues_after_transformed_order_persistence_fails(
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let emulator = Rc::new(RefCell::new(OrderEmulator::new(clock, cache.clone())));
     OrderEmulator::register_msgbus_handlers(&emulator);
-    let (exec_handler, exec_commands) =
+    let (risk_command_handler, risk_commands) =
         get_typed_into_message_saving_handler::<TradingCommand>(None);
     msgbus::register_trading_command_endpoint(
-        MessagingSwitchboard::exec_engine_queue_execute(),
-        exec_handler,
+        MessagingSwitchboard::risk_engine_queue_execute(),
+        risk_command_handler,
     );
     let (risk_handler, risk_events) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
     msgbus::register_order_event_endpoint(
@@ -320,7 +319,7 @@ fn test_release_continues_after_transformed_order_persistence_fails(
     let cached_order = cache.order(&client_order_id).unwrap();
     let events = cached_order.events();
     let released = cached_order.last_event().clone();
-    let commands = exec_commands.get_messages();
+    let commands = risk_commands.get_messages();
 
     let [TradingCommand::SubmitOrder(command)] = commands.as_slice() else {
         panic!("Expected one released SubmitOrder, was {commands:?}");

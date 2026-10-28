@@ -15,6 +15,7 @@
 
 //! Python bindings for Bybit configuration.
 
+use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
 use nautilus_model::identifiers::AccountId;
 use nautilus_network::websocket::TransportBackend;
@@ -75,9 +76,10 @@ impl BybitDataClientConfig {
         transport_backend: Option<TransportBackend>,
         book_snapshot_timeout_secs: Option<u64>,
         bars_timestamp_on_close: Option<bool>,
-    ) -> Self {
+    ) -> PyResult<Self> {
         let defaults = Self::default();
-        Self {
+
+        let config = Self {
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
@@ -103,7 +105,10 @@ impl BybitDataClientConfig {
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
             bars_timestamp_on_close: bars_timestamp_on_close
                 .unwrap_or(defaults.bars_timestamp_on_close),
-        }
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -179,7 +184,8 @@ impl BybitExecutionClientConfig {
             .map_err(to_pyvalue_err)?;
 
         let defaults = Self::default();
-        Ok(Self {
+
+        let config = Self {
             api_key: api_key.map(SecretString::from),
             api_secret: api_secret.map(SecretString::from),
             product_types: product_types.unwrap_or(defaults.product_types),
@@ -207,7 +213,10 @@ impl BybitExecutionClientConfig {
             margin_mode,
             smp_type,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
-        })
+        };
+
+        config.validate().map_err(config_error_to_pyvalue_err)?;
+        Ok(config)
     }
 
     #[getter]
@@ -223,5 +232,76 @@ impl BybitExecutionClientConfig {
 
     fn __repr__(&self) -> String {
         stringify!(BybitExecutionClientConfig).to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{
+        Python,
+        exceptions::PyValueError,
+        prelude::*,
+        types::{PyDict, PyList},
+    };
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::data(false)]
+    #[case::execution(true)]
+    fn test_python_config_duplicate_types(
+        #[case] execution: bool,
+        #[values(false, true)] duplicate: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let values = if duplicate {
+                vec![
+                    BybitProductType::Linear,
+                    BybitProductType::Spot,
+                    BybitProductType::Linear,
+                ]
+            } else {
+                vec![BybitProductType::Linear, BybitProductType::Spot]
+            };
+
+            let objects: Vec<_> = values
+                .iter()
+                .map(|value| Py::new(py, *value).unwrap())
+                .collect();
+            let list = PyList::new(py, objects).unwrap();
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("product_types", list).unwrap();
+            if execution {
+                kwargs
+                    .set_item(
+                        "account_id",
+                        Py::new(py, AccountId::from("BYBIT-001")).unwrap(),
+                    )
+                    .unwrap();
+            }
+
+            let config_type = if execution {
+                py.get_type::<BybitExecutionClientConfig>()
+            } else {
+                py.get_type::<BybitDataClientConfig>()
+            };
+
+            let result = config_type.call((), Some(&kwargs));
+            if duplicate {
+                let error = result.unwrap_err();
+                assert!(error.is_instance_of::<PyValueError>(py));
+                assert_eq!(
+                    error.value(py).str().unwrap().to_str().unwrap(),
+                    "duplicate product_types"
+                );
+            } else {
+                let config = result.unwrap();
+                let actual: Vec<BybitProductType> =
+                    config.getattr("product_types").unwrap().extract().unwrap();
+                assert_eq!(actual, values);
+            }
+        });
     }
 }

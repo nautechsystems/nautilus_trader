@@ -18,7 +18,10 @@ use nautilus_model::identifiers::InstrumentId;
 use rust_decimal::Decimal;
 
 use crate::{
-    common::{consts::POLYMARKET_VENUE, parse::decimal_from_json},
+    common::{
+        consts::POLYMARKET_VENUE,
+        parse::{decimal_from_json, validate_market_version},
+    },
     http::models::{ClobMarketResponse, GammaMarket},
     providers::extract_condition_id,
 };
@@ -99,6 +102,14 @@ fn strict_winner_index(prices: &[Decimal]) -> Option<usize> {
 }
 
 pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<StrictResolvedMarket> {
+    if let Err(e) = validate_market_version(market.version.as_deref()) {
+        log::warn!(
+            "Skipping Polymarket resolution for condition {}: {e}",
+            market.condition_id
+        );
+        return None;
+    }
+
     if market.closed != Some(true) {
         return None;
     }
@@ -132,6 +143,14 @@ pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<Stric
 pub(crate) fn build_resolved_market_from_clob_market(
     market: &ClobMarketResponse,
 ) -> Option<StrictResolvedMarket> {
+    if let Err(e) = validate_market_version(market.version.as_deref()) {
+        log::warn!(
+            "Skipping Polymarket resolution for condition {}: {e}",
+            market.condition_id
+        );
+        return None;
+    }
+
     if !market.closed {
         return None;
     }
@@ -259,6 +278,7 @@ mod tests {
             "id": "1557558",
             "conditionId": condition_id,
             "questionID": "0xquestion",
+            "version": "v1",
             "clobTokenIds": clob_token_ids,
             "outcomes": "[\"Yes\",\"No\"]",
             "question": "Will test pass?",
@@ -491,11 +511,15 @@ mod tests {
 
     #[rstest]
     fn parse_condition_ids_supports_single_multi_and_dedup() {
-        let mut params = Params::new();
-        params.insert("condition_id".to_string(), serde_json::json!("0xCOND-A"));
-        params.insert(
-            "condition_ids".to_string(),
-            serde_json::json!(["0xCOND-B", "0xCOND-A", "0xCOND-B"]),
+        let params = Params::new(
+            [
+                ("condition_id".to_string(), serde_json::json!("0xCOND-A")),
+                (
+                    "condition_ids".to_string(),
+                    serde_json::json!(["0xCOND-B", "0xCOND-A", "0xCOND-B"]),
+                ),
+            ]
+            .into(),
         );
 
         let parsed = parse_condition_ids_from_request_params(&Some(params));
@@ -504,8 +528,8 @@ mod tests {
 
     #[rstest]
     fn parse_condition_ids_accepts_single_condition_ids_string() {
-        let mut params = Params::new();
-        params.insert("condition_ids".to_string(), serde_json::json!("0xCOND-A"));
+        let params =
+            Params::new([("condition_ids".to_string(), serde_json::json!("0xCOND-A"))].into());
 
         let parsed = parse_condition_ids_from_request_params(&Some(params));
         assert_eq!(parsed, vec!["0xCOND-A".to_string()]);
@@ -513,14 +537,16 @@ mod tests {
 
     #[rstest]
     fn parse_condition_ids_ignores_non_polymarket_instrument_ids() {
-        let mut params = Params::new();
-        params.insert(
-            "instrument_ids".to_string(),
-            serde_json::json!([
-                "0xCOND-A-0xTOKENA.POLYMARKET",
-                "BTCUSDT-PERP.BINANCE",
-                "ETHUSDT-PERP.BINANCE"
-            ]),
+        let params = Params::new(
+            [(
+                "instrument_ids".to_string(),
+                serde_json::json!([
+                    "0xCOND-A-0xTOKENA.POLYMARKET",
+                    "BTCUSDT-PERP.BINANCE",
+                    "ETHUSDT-PERP.BINANCE"
+                ]),
+            )]
+            .into(),
         );
 
         let parsed = parse_condition_ids_from_request_params(&Some(params));
