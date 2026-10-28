@@ -921,6 +921,11 @@ impl ExecutionClient for BinanceSpotExecutionClient {
         self.core.oms_type
     }
 
+    // Spot position reports are empty, so an absent report is not evidence of a flat position
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        false
+    }
+
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
     }
