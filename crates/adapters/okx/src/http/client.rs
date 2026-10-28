@@ -600,8 +600,13 @@ mod tests {
     }
 
     #[rstest]
+    #[case::no_limit(None, OKXHistoryCoverage::Truncated)]
+    #[case::limit_met_on_the_last_page(Some(300), OKXHistoryCoverage::Unverified)]
     #[tokio::test]
-    async fn test_request_trades_paged_is_truncated_at_the_page_cap() {
+    async fn test_request_trades_paged_at_the_page_cap(
+        #[case] limit: Option<u32>,
+        #[case] expected: OKXHistoryCoverage,
+    ) {
         // One trade a millisecond: three pages reach 300 ms back, the start is a day back
         let now_ms = Timestamp::now().as_millisecond();
         let router = axum::Router::new().route(
@@ -654,15 +659,16 @@ mod tests {
                 InstrumentId::from("BTC-USD.OKX"),
                 Some(Timestamp::now() - jiff::SignedDuration::from_hours(24)),
                 None,
-                None,
+                limit,
                 3,
             )
             .await
             .unwrap();
 
-        assert_eq!(coverage, OKXHistoryCoverage::Truncated);
+        assert_eq!(coverage, expected);
         assert_eq!(trades.len(), 300);
     }
+
     #[rstest]
     #[tokio::test]
     async fn test_request_bars_paged_is_truncated_at_the_page_cap() {
@@ -3782,14 +3788,15 @@ impl OKXHttpClient {
             );
 
             loop {
-                if pages >= max_pages {
-                    log::warn!("Hit page limit of {max_pages}");
-                    coverage = OKXHistoryCoverage::Truncated;
+                // A limit met on the last allowed page is a complete answer, not a cut one
+                if effective_limit < u32::MAX && unique_count >= effective_limit as usize {
+                    log::debug!("Reached effective limit: unique_count={unique_count}");
                     break;
                 }
 
-                if effective_limit < u32::MAX && unique_count >= effective_limit as usize {
-                    log::debug!("Reached effective limit: unique_count={unique_count}");
+                if pages >= max_pages {
+                    log::warn!("Hit page limit of {max_pages}");
+                    coverage = OKXHistoryCoverage::Truncated;
                     break;
                 }
 
