@@ -9547,6 +9547,23 @@ async fn test_request_trades_coverage_is_complete_when_the_walk_crosses_the_star
 
 #[rstest]
 #[tokio::test]
+async fn test_request_trades_without_bounds_keep_their_own_time_as_ts_init() {
+    let client = history_trades_client(history_trades_router(60_000, 0)).await;
+
+    let (trades, coverage) = client
+        .request_trades_with_coverage(InstrumentId::from("BTC-USD.OKX"), None, None, Some(50))
+        .await
+        .unwrap();
+
+    assert_eq!(trades.len(), 50);
+    assert_eq!(coverage, OKXHistoryCoverage::Unverified);
+    for trade in &trades {
+        assert_eq!(trade.ts_init, trade.ts_event);
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_trades_in_a_past_window_keep_their_own_time_as_ts_init() {
     // The data engine trims responses on ts_init, so it must fall inside the window
     let client = history_trades_client(history_trades_router(60_000, 0)).await;
@@ -9682,6 +9699,51 @@ async fn test_request_bars_window_follows_the_bar_close_time(
     assert_eq!(bars.first().unwrap().ts_init, to_nanos(first_close));
     assert_eq!(bars.last().unwrap().ts_init, to_nanos(end));
     assert_eq!(bars.len(), expected_len);
+    assert_eq!(coverage, OKXHistoryCoverage::Complete);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_bars_day_window_keeps_the_bar_that_opened_the_day_before() {
+    // OKX day candles open at 16:00 UTC (midnight UTC+8) and close a day later
+    let template = load_test_data("http_get_candlesticks.json")["data"][0].clone();
+    let first: Timestamp = "2026-09-01T16:00:00Z".parse().unwrap();
+    let candles: Vec<Value> = (0..30)
+        .map(|index| {
+            let mut candle = template.clone();
+            candle[0] = json!((first.as_millisecond() + index * 86_400_000).to_string());
+            candle[8] = json!("1");
+            candle
+        })
+        .collect();
+    let addr = start_candlestick_server(candles).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+    let bar_type = BarType::from("BTC-USD.OKX-1-DAY-LAST-EXTERNAL");
+    let start: Timestamp = "2026-09-10T00:00:00Z".parse().unwrap();
+    let end: Timestamp = "2026-09-20T00:00:00Z".parse().unwrap();
+
+    let (bars, coverage) = client
+        .request_bars_with_coverage(bar_type, Some(start), Some(end), None)
+        .await
+        .unwrap();
+
+    let to_nanos = |ts: Timestamp| UnixNanos::from(u64::try_from(ts.as_nanosecond()).unwrap());
+    let first_open: Timestamp = "2026-09-09T16:00:00Z".parse().unwrap();
+    assert_eq!(bars.first().unwrap().ts_event, to_nanos(first_open));
+    assert_eq!(bars.len(), 10);
     assert_eq!(coverage, OKXHistoryCoverage::Complete);
 }
 
