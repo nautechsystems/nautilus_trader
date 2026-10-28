@@ -103,7 +103,7 @@ pub use view::CacheView; // Re-export
 
 use crate::xrate::get_exchange_rate;
 
-/// The live data source selected by the data engine to maintain an order book.
+/// The live book source selected by the data engine for automatic consumers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrderBookSource {
     /// Incremental order book deltas.
@@ -466,38 +466,23 @@ impl Cache {
         self.external_exec_clients.insert(client_id);
     }
 
-    /// Returns the managed live source selected for an instrument, if any.
+    /// Returns the live book source selected for an instrument, if any.
     ///
     /// This runtime metadata is maintained by the data engine and is not persisted.
-    /// Registrations survive [`Self::reset`] until the data engine releases its book updaters.
+    /// Registrations survive [`Self::reset`] until the data engine releases its book subscriptions.
     #[must_use]
     pub fn order_book_source(&self, instrument_id: &InstrumentId) -> Option<OrderBookSource> {
         self.book_sources.get(instrument_id).copied()
     }
 
-    /// Records the data engine's managed live source for an instrument.
+    /// Records or replaces the data engine's selected live book source for an instrument.
     ///
-    /// # Errors
-    ///
-    /// Returns an error if a different source is already selected.
-    pub fn set_order_book_source(
-        &mut self,
-        instrument_id: InstrumentId,
-        source: OrderBookSource,
-    ) -> anyhow::Result<()> {
-        if let Some(active) = self.book_sources.get(&instrument_id)
-            && *active != source
-        {
-            anyhow::bail!(
-                "Conflicting managed book source for {instrument_id}: {active:?} is already selected"
-            );
-        }
-
+    /// Subscription ownership and conflicts are validated by the data engine.
+    pub fn set_order_book_source(&mut self, instrument_id: InstrumentId, source: OrderBookSource) {
         self.book_sources.insert(instrument_id, source);
-        Ok(())
     }
 
-    /// Releases the managed live source when the data engine removes its book updater.
+    /// Releases the selected live book source when the data engine removes its subscriptions.
     pub fn clear_order_book_source(&mut self, instrument_id: &InstrumentId) {
         self.book_sources.remove(instrument_id);
     }
@@ -2138,7 +2123,7 @@ impl Cache {
     /// and execution client account, route, and external client registrations are retained so
     /// registered strategy and client routing remain configured across resets.
     ///
-    /// Managed order-book source registrations are retained until the data engine releases them.
+    /// Order-book source registrations are retained until the data engine releases them.
     pub fn reset(&mut self) {
         log::debug!("Resetting cache");
 

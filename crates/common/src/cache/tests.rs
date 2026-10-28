@@ -14521,39 +14521,26 @@ fn test_cache_api_infallible_borrow_conflict_panics_with_context() {
 }
 
 #[rstest]
-fn test_order_book_source_preserves_selection_and_isolates_instruments(mut cache: Cache) {
+fn test_order_book_source_updates_selection_and_isolates_instruments(mut cache: Cache) {
     let first = InstrumentId::from("ETHUSDT.BINANCE");
     let second = InstrumentId::from("BTCUSDT.BINANCE");
     assert_eq!(cache.order_book_source(&first), None);
-    cache
-        .set_order_book_source(first, OrderBookSource::Deltas)
-        .unwrap();
-    cache
-        .set_order_book_source(first, OrderBookSource::Deltas)
-        .unwrap();
-    cache
-        .set_order_book_source(second, OrderBookSource::Depth)
-        .unwrap();
-    assert!(
-        cache
-            .set_order_book_source(first, OrderBookSource::Depth)
-            .is_err()
-    );
+    cache.set_order_book_source(first, OrderBookSource::Deltas);
+    cache.set_order_book_source(first, OrderBookSource::Deltas);
+    cache.set_order_book_source(second, OrderBookSource::Depth);
     assert_eq!(
         cache.order_book_source(&first),
         Some(OrderBookSource::Deltas)
+    );
+    cache.set_order_book_source(first, OrderBookSource::Depth);
+    assert_eq!(
+        cache.order_book_source(&first),
+        Some(OrderBookSource::Depth)
     );
     cache.clear_order_book_source(&first);
     assert_eq!(cache.order_book_source(&first), None);
     assert_eq!(
         cache.order_book_source(&second),
-        Some(OrderBookSource::Depth)
-    );
-    cache
-        .set_order_book_source(first, OrderBookSource::Depth)
-        .unwrap();
-    assert_eq!(
-        cache.order_book_source(&first),
         Some(OrderBookSource::Depth)
     );
 }
@@ -14566,7 +14553,7 @@ fn test_reset_preserves_order_book_source_registrations(
     #[case] source: OrderBookSource,
 ) {
     let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
-    cache.set_order_book_source(instrument_id, source).unwrap();
+    cache.set_order_book_source(instrument_id, source);
     cache.reset();
     assert_eq!(cache.order_book_source(&instrument_id), Some(source));
     cache.clear_order_book_source(&instrument_id);

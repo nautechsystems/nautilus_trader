@@ -363,6 +363,7 @@ impl DataEngine {
                 .or_default()
                 .owners
                 .push(Rc::clone(&subscription));
+            self.update_book_source(*target_id);
         }
 
         self.book_subscription_owners
@@ -422,6 +423,8 @@ impl DataEngine {
                 self.book_subscriptions.remove(&target_id);
             }
 
+            self.update_book_source(target_id);
+
             if managed {
                 continue;
             }
@@ -430,7 +433,6 @@ impl DataEngine {
                 continue;
             };
 
-            self.cache.borrow_mut().clear_order_book_source(&target_id);
             let deltas_handler: TypedHandler<OrderBookDeltas> =
                 TypedHandler::new(Rc::clone(&updater));
             let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
@@ -747,12 +749,6 @@ impl DataEngine {
         book_type: BookType,
         depth: bool,
     ) -> anyhow::Result<()> {
-        let source = if depth {
-            OrderBookSource::Depth
-        } else {
-            OrderBookSource::Deltas
-        };
-
         {
             let mut cache = self.cache.borrow_mut();
 
@@ -760,10 +756,6 @@ impl DataEngine {
                 if !cache.has_order_book(target_id) {
                     cache.add_order_book(OrderBook::new(*target_id, book_type))?;
                 }
-            }
-
-            for &target_id in target_ids {
-                cache.set_order_book_source(target_id, source)?;
             }
         }
 
@@ -794,13 +786,17 @@ impl DataEngine {
         Ok(())
     }
 
+    pub(super) fn clear_book_sources(&self) {
+        let mut cache = self.cache.borrow_mut();
+        for instrument_id in self.book_subscriptions.keys() {
+            cache.clear_order_book_source(instrument_id);
+        }
+    }
+
     pub(super) fn clear_book_updaters(&mut self) {
         let updaters: Vec<_> = self.book_updaters.drain().collect();
 
         for (instrument_id, updater) in updaters {
-            self.cache
-                .borrow_mut()
-                .clear_order_book_source(&instrument_id);
             let deltas_handler: TypedHandler<OrderBookDeltas> =
                 TypedHandler::new(Rc::clone(&updater));
             let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
@@ -812,6 +808,30 @@ impl DataEngine {
                 switchboard::get_book_depth_topic(instrument_id).into(),
                 &depth_handler,
             );
+        }
+    }
+
+    fn update_book_source(&self, instrument_id: InstrumentId) {
+        let selected = self
+            .book_subscriptions
+            .get(&instrument_id)
+            .and_then(|book| {
+                book.owners
+                    .iter()
+                    .find(|owner| owner.managed())
+                    .or_else(|| book.owners.first())
+            });
+        let mut cache = self.cache.borrow_mut();
+
+        if let Some(owner) = selected {
+            let source = if owner.is_depth() {
+                OrderBookSource::Depth
+            } else {
+                OrderBookSource::Deltas
+            };
+            cache.set_order_book_source(instrument_id, source);
+        } else {
+            cache.clear_order_book_source(&instrument_id);
         }
     }
 }

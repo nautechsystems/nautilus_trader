@@ -2463,6 +2463,17 @@ mod tests {
 
     const CACHE_MUTATION_COVERAGE: &[CacheMutationCoverage] = &[
         cache_mutation(
+            // Runtime subscription changes are not restored by cache replay
+            "set_order_book_source",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
+            "clear_order_book_source",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             // Startup configuration is reapplied during strategy registration, but runtime claim
             // changes are not captured or persisted for recovery.
             "set_external_order_claims",

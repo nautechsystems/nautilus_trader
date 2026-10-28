@@ -18,8 +18,9 @@ paper trading and strategy testing in real-time without actual order execution o
 - Direct matching against standard `OrderBookDepth` snapshots, including full L2 depth.
   Subscribe through the data client and set `book_type` to `L2_MBP` for multi-level matching;
   `L1_MBP` uses only the top of book.
-  When a managed book source is selected by `DataEngine`, the sandbox's message-bus handlers
-  use that source for matching. Unmanaged data remains available to subscribers.
+  The message-bus handlers use `DataEngine`'s selected source: a managed source takes priority;
+  otherwise, the first active book subscription selects the source. Other book data remains
+  available to subscribers.
   Direct Rust processing methods accept caller-supplied input independently of live source selection.
 - Full order matching simulation using the production-grade `OrderMatchingEngine`.
 - Support for all order types (market, limit, stop, etc.).

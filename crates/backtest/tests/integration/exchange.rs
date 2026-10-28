@@ -7532,8 +7532,7 @@ fn test_exchange_book_processing_uses_explicit_input(
     };
     cache
         .borrow_mut()
-        .set_order_book_source(instrument_id, selected)
-        .unwrap();
+        .set_order_book_source(instrument_id, selected);
     let exchange = get_exchange(
         instrument_id.venue,
         AccountType::Margin,

@@ -553,6 +553,7 @@ impl DataEngine {
         self.cancel_pending_option_chain_requests(None);
         self.clear_option_chain_greeks_bootstraps();
 
+        self.clear_book_sources();
         self.clear_book_updaters();
 
         self.book_subscriptions.clear();
@@ -594,6 +595,7 @@ impl DataEngine {
             }
         }
 
+        self.clear_book_sources();
         self.clear_book_updaters();
         self.clear_option_chain_greeks_bootstraps();
 

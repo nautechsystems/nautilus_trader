@@ -11275,7 +11275,8 @@ fn test_book_depth_orders_share_available_liquidity(
 fn test_book_source_filters_unmanaged_updates(
     trader_id: TraderId,
     instrument: InstrumentAny,
-    #[case] managed_depth: bool,
+    #[case] depth_source: bool,
+    #[values(false, true)] managed: bool,
     #[values(false, true)] unmanaged_first: bool,
 ) {
     let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
@@ -11289,14 +11290,14 @@ fn test_book_source_filters_unmanaged_updates(
     data_engine
         .execute_subscribe(book_source_subscription(
             instrument.id(),
-            managed_depth,
-            true,
+            depth_source,
+            managed,
         ))
         .unwrap();
     data_engine
         .execute_subscribe(book_source_subscription(
             instrument.id(),
-            !managed_depth,
+            !depth_source,
             false,
         ))
         .unwrap();
@@ -11320,14 +11321,14 @@ fn test_book_source_filters_unmanaged_updates(
         &[("999.00", "1.000")],
         &[("1000.00", "1.000")],
     );
-    let (selected, unmanaged) = if managed_depth {
+    let (selected, unmanaged) = if depth_source {
         (&shallow, &full)
     } else {
         (&full, &shallow)
     };
 
     if unmanaged_first {
-        data_engine.process_data(book_source_data(unmanaged, !managed_depth));
+        data_engine.process_data(book_source_data(unmanaged, !depth_source));
         let early =
             submit_through_engine(&harness, trader_id, &instrument, "SOURCE-EARLY", "1002.00");
         assert!(
@@ -11339,9 +11340,9 @@ fn test_book_source_filters_unmanaged_updates(
         assert_eq!(cached_status(&harness.cache, &early), OrderStatus::Accepted);
     }
 
-    data_engine.process_data(book_source_data(selected, managed_depth));
+    data_engine.process_data(book_source_data(selected, depth_source));
     harness.settle();
-    data_engine.process_data(book_source_data(unmanaged, !managed_depth));
+    data_engine.process_data(book_source_data(unmanaged, !depth_source));
     harness.settle();
     let order = OrderTestBuilder::new(OrderType::Limit)
         .instrument_id(instrument.id())
@@ -11365,19 +11366,23 @@ fn test_book_source_filters_unmanaged_updates(
     let expected: Vec<_> = selected.asks.iter().map(|o| (o.price, o.size)).collect();
     assert_eq!(fills, expected);
     let cache = harness.cache.borrow();
-    let book = cache.order_book(&instrument.id()).unwrap();
-    let mut expected_book = OrderBook::new(instrument.id(), BookType::L2_MBP);
-    expected_book.apply_depth(selected).unwrap();
-    assert_eq!(book.bids_as_map(None), expected_book.bids_as_map(None));
-    assert_eq!(book.asks_as_map(None), expected_book.asks_as_map(None));
+    if managed {
+        let book = cache.order_book(&instrument.id()).unwrap();
+        let mut expected_book = OrderBook::new(instrument.id(), BookType::L2_MBP);
+        expected_book.apply_depth(selected).unwrap();
+        assert_eq!(book.bids_as_map(None), expected_book.bids_as_map(None));
+        assert_eq!(book.asks_as_map(None), expected_book.asks_as_map(None));
+    } else {
+        assert!(cache.order_book(&instrument.id()).is_none());
+    }
     let unmanaged_count = 1 + usize::from(unmanaged_first);
     assert_eq!(
         depths.get_messages().len(),
-        if managed_depth { 1 } else { unmanaged_count }
+        if depth_source { 1 } else { unmanaged_count }
     );
     assert_eq!(
         deltas.get_messages().len(),
-        if managed_depth { unmanaged_count } else { 1 }
+        if depth_source { unmanaged_count } else { 1 }
     );
     assert_eq!(
         harness

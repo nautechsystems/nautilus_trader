@@ -2032,7 +2032,7 @@ fn test_managed_book_owners_release_independently(
     assert_eq!(subscribers(), 0);
     assert_eq!(
         engine.cache().borrow().order_book_source(&audusd_sim.id),
-        None
+        if unmanaged_first { None } else { Some(source) }
     );
     let replacement = book_source_command(audusd_sim.id, client_id, !depth_source, true);
     engine.execute_subscribe(replacement).unwrap();
@@ -2537,6 +2537,7 @@ fn test_book_source_selection_clears_on_teardown(
     #[case] dispose: bool,
     #[values(false, true)] depth_source: bool,
     #[values(false, true)] cache_reset: bool,
+    #[values(false, true)] managed: bool,
 ) {
     let mut engine = managed_book_engine.borrow_mut();
     engine
@@ -2544,7 +2545,7 @@ fn test_book_source_selection_clears_on_teardown(
             audusd_sim.id,
             client_id,
             depth_source,
-            true,
+            managed,
         ))
         .unwrap();
     let source = if depth_source {
@@ -2565,11 +2566,11 @@ fn test_book_source_selection_clears_on_teardown(
         );
         assert_eq!(
             msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id)),
-            usize::from(!depth_source)
+            usize::from(managed && !depth_source)
         );
         assert_eq!(
             msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(audusd_sim.id)),
-            usize::from(depth_source)
+            usize::from(managed && depth_source)
         );
     }
 
@@ -2590,5 +2591,72 @@ fn test_book_source_selection_clears_on_teardown(
     assert_eq!(
         msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(audusd_sim.id)),
         0
+    );
+}
+
+#[rstest]
+#[case::deltas_first(false)]
+#[case::depth_first(true)]
+fn test_book_source_selection_uses_existing_owners(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] depth_first: bool,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let first = book_source_command(audusd_sim.id, client_id, depth_first, false);
+    let duplicate = book_source_command(audusd_sim.id, client_id, depth_first, false);
+    let other = book_source_command(audusd_sim.id, client_id, !depth_first, false);
+    let managed = book_source_command(audusd_sim.id, client_id, !depth_first, true);
+    let source = |depth| {
+        Some(if depth {
+            OrderBookSource::Depth
+        } else {
+            OrderBookSource::Deltas
+        })
+    };
+    let release = |engine: &mut DataEngine, command: &SubscribeCommand| {
+        engine
+            .execute_unsubscribe(&command.clone().into_unsubscribe(
+                UUID4::new(),
+                UnixNanos::from(103),
+                Some(command.command_id()),
+            ))
+            .unwrap();
+    };
+
+    for command in [&first, &duplicate, &other] {
+        engine.execute_subscribe(command.clone()).unwrap();
+    }
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        source(depth_first)
+    );
+    assert!(!engine.cache().borrow().has_order_book(&audusd_sim.id));
+    engine.execute_subscribe(managed.clone()).unwrap();
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        source(!depth_first)
+    );
+    release(&mut engine, &managed);
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        source(depth_first)
+    );
+    release(&mut engine, &first);
+    release(&mut engine, &first);
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        source(depth_first)
+    );
+    release(&mut engine, &duplicate);
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        source(!depth_first)
+    );
+    release(&mut engine, &other);
+    assert_eq!(
+        engine.cache().borrow().order_book_source(&audusd_sim.id),
+        None
     );
 }
