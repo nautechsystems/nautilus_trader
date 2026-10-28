@@ -1542,6 +1542,20 @@ impl BacktestEngine {
         venues.sort_by_key(ToString::to_string);
         summary.insert("venues.total".to_string(), venues.len().to_string());
 
+        // Surface skipped execution data so a zero-fill run from precision
+        // mismatches is visible in the result instead of only in the logs.
+        let precision_mismatches_skipped: u64 = self
+            .venues
+            .values()
+            .map(|exchange| exchange.borrow().precision_mismatch_total())
+            .sum();
+        if precision_mismatches_skipped > 0 {
+            summary.insert(
+                "market_data.precision_mismatches_skipped".to_string(),
+                precision_mismatches_skipped.to_string(),
+            );
+        }
+
         for venue in venues {
             let Some(account) = cache.account_for_venue(&venue) else {
                 continue;
@@ -4760,5 +4774,48 @@ mod tests {
             .unwrap()
             .market_status;
         assert_eq!(market_status, MarketStatus::Closed);
+    }
+
+    #[rstest]
+    fn test_result_summary_reports_precision_mismatches_skipped(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+    ) {
+        let clean = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
+        assert!(
+            !clean
+                .get_result()
+                .summary
+                .contains_key("market_data.precision_mismatches_skipped")
+        );
+
+        let mut engine = create_immediate_engine(&crypto_perpetual_ethusdt);
+        let instrument_id = crypto_perpetual_ethusdt.id;
+        // Price precision 3 mismatches the instrument's precision 2: the
+        // matching engine skips the event, which must surface in the summary.
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1000.000"),
+            Price::from("1001.000"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        BacktestEngine::route_data_to_exchange(
+            &engine.venues,
+            &mut engine.has_book_processed,
+            &engine.kernel.clock,
+            DataRef::Quote(&quote),
+        )
+        .unwrap();
+
+        let result = engine.get_result();
+        assert_eq!(
+            result
+                .summary
+                .get("market_data.precision_mismatches_skipped")
+                .map(String::as_str),
+            Some("1")
+        );
     }
 }

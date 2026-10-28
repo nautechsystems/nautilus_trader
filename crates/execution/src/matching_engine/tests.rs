@@ -7476,3 +7476,38 @@ fn test_mark_price_limit_if_touched_rests_as_maker(
     assert_eq!(order.filled_qty(), Quantity::from("1.000"));
     assert_eq!(order.avg_px(), Some(Price::from(limit).as_decimal()));
 }
+
+#[rstest]
+fn test_precision_mismatch_total_counts_skipped_quote_events() {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let (mut engine, _cache) = get_queue_engine(instrument, BookType::L1_MBP);
+    let instrument_id = engine.instrument.id();
+    assert_eq!(engine.precision_mismatch_total(), 0);
+
+    // Price precision 3 mismatches the instrument's precision 2: event skipped.
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("1499.000"),
+        Price::from("1501.000"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        1.into(),
+        1.into(),
+    ));
+    assert_eq!(engine.precision_mismatch_total(), 1);
+
+    // A conforming event processes without resetting the cumulative total.
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("1499.00"),
+        Price::from("1501.00"),
+        Quantity::from("10.000"),
+        Quantity::from("10.000"),
+        2.into(),
+        2.into(),
+    ));
+    assert_eq!(engine.precision_mismatch_total(), 1);
+
+    engine.reset();
+    assert_eq!(engine.precision_mismatch_total(), 0);
+}

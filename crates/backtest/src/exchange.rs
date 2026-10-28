@@ -602,6 +602,15 @@ impl SimulatedExchange {
         &self.matching_engines
     }
 
+    /// Total market data events skipped for precision mismatches across matching engines.
+    #[must_use]
+    pub fn precision_mismatch_total(&self) -> u64 {
+        self.matching_engines
+            .values()
+            .map(OrderMatchingEngine::precision_mismatch_total)
+            .sum()
+    }
+
     /// Returns all order books keyed by instrument ID.
     #[must_use]
     pub fn get_books(&self) -> AHashMap<InstrumentId, OrderBook> {

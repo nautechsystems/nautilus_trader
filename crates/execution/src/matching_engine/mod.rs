@@ -157,6 +157,7 @@ pub struct OrderMatchingEngine {
     last_quote_bid: Option<Price>,
     last_quote_ask: Option<Price>,
     precision_mismatch_streak: u32,
+    precision_mismatch_total: u64,
     instrument_close: Option<InstrumentClose>,
     pending_resolution: bool,
     expiration_processed: bool,
@@ -254,6 +255,7 @@ impl OrderMatchingEngine {
             last_quote_bid: None,
             last_quote_ask: None,
             precision_mismatch_streak: 0,
+            precision_mismatch_total: 0,
             instrument_close: None,
             pending_resolution: false,
             expiration_processed: false,
@@ -335,6 +337,7 @@ impl OrderMatchingEngine {
         self.last_bar_bid = None;
         self.last_bar_ask = None;
         self.precision_mismatch_streak = 0;
+        self.precision_mismatch_total = 0;
         self.instrument_close = None;
         self.market_status = MarketStatus::Open;
         self.pending_resolution = false;
@@ -1565,6 +1568,12 @@ impl OrderMatchingEngine {
         Ok(())
     }
 
+    /// Total market data events skipped for precision mismatches since the last reset.
+    #[must_use]
+    pub const fn precision_mismatch_total(&self) -> u64 {
+        self.precision_mismatch_total
+    }
+
     fn log_precision_mismatch(
         &mut self,
         data_type: &str,
@@ -1572,6 +1581,7 @@ impl OrderMatchingEngine {
         err: &anyhow::Error,
     ) {
         self.precision_mismatch_streak = self.precision_mismatch_streak.saturating_add(1);
+        self.precision_mismatch_total = self.precision_mismatch_total.saturating_add(1);
         let streak = self.precision_mismatch_streak;
 
         if streak <= 3 || streak.is_multiple_of(100) {
