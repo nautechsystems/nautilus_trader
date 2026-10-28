@@ -3678,6 +3678,9 @@ impl OKXHttpClient {
 
     /// Requests trades for the `instrument_id` and `start` -> `end` time range.
     ///
+    /// Each trade uses its own time as `ts_init`, since the data engine trims responses to the
+    /// requested window on `ts_init`.
+    ///
     /// # Errors
     ///
     /// Returns an error if the HTTP request fails or trade parsing fails.
@@ -4047,7 +4050,8 @@ impl OKXHttpClient {
     /// Returns bars sorted oldest to newest.
     /// Each bar uses the candle open time as `ts_event` and its close time as `ts_init`.
     /// Requests without an end may include an unconfirmed candle with a future `ts_init`.
-    /// With bounds, candle open times are at or after `start` and close times are at or before `end`.
+    /// With bounds, candle close times (`ts_init`) are within `[start, end]`, the window the data
+    /// engine trims responses to, so the first candle may open before `start`.
     ///
     /// # Errors
     ///
@@ -4076,8 +4080,8 @@ impl OKXHttpClient {
     ///
     /// # Pagination
     ///
-    /// - Range requests use exclusive `after` and `before` cursors, adjusting `before` to include
-    ///   the floored start boundary
+    /// - Range requests use exclusive `after` and `before` cursors, setting `before` one bar before
+    ///   the floored start (two for months) so the candle that closes at the start is included
     /// - Pages backwards from end time (or now) to start time
     /// - Stops when: limit reached, time window covered, or API returns empty
     /// - Rate limit safety: ≥ 50ms between requests
@@ -4099,8 +4103,9 @@ impl OKXHttpClient {
     }
 
     /// Requests bars like [`Self::request_bars`] and reports whether the pagination
-    /// covered the window down to `start`: the oldest bar returned falls in the first
-    /// bar slot at or after `start`.
+    /// covered the window down to `start`: the oldest bar returned closes in the first
+    /// bar slot at or after `start`. Month windows are never reported as covered, since
+    /// month lengths vary.
     ///
     /// # Errors
     ///
