@@ -9467,6 +9467,16 @@ const NEWEST_TRADE_ID: i64 = 1_000_000;
 /// History trades where trade `id` is `spacing_ms` older than trade `id + 1`, the newest one second
 /// ago; ids at or below `oldest_id` do not exist, so the history ends there.
 fn history_trades_router(spacing_ms: i64, oldest_id: i64) -> Router {
+    history_trades_router_with_bad_trade(spacing_ms, oldest_id, None)
+}
+
+/// Like `history_trades_router`, with the trade `bad_id` (if any) carrying a price that does
+/// not parse.
+fn history_trades_router_with_bad_trade(
+    spacing_ms: i64,
+    oldest_id: i64,
+    bad_id: Option<i64>,
+) -> Router {
     let now_ms = Timestamp::now().as_millisecond();
     Router::new()
         .route(
@@ -9492,7 +9502,7 @@ fn history_trades_router(spacing_ms: i64, oldest_id: i64) -> Router {
                             "instId": "BTC-USD",
                             "side": "buy",
                             "sz": "0.01",
-                            "px": "100000.0",
+                            "px": if Some(id) == bad_id { "not-a-price" } else { "100000.0" },
                             "tradeId": id.to_string(),
                             "ts": (now_ms - 1_000 - (NEWEST_TRADE_ID - id) * spacing_ms).to_string(),
                         })
@@ -9543,6 +9553,23 @@ async fn test_request_trades_coverage_is_complete_when_the_walk_crosses_the_star
 
     assert_eq!(coverage, OKXHistoryCoverage::Complete);
     assert!((179..=181).contains(&trades.len()), "{}", trades.len());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_coverage_is_unverified_when_a_trade_does_not_parse() {
+    // The walk crosses the start, but one trade inside the window was dropped
+    let router = history_trades_router_with_bad_trade(60_000, 0, Some(NEWEST_TRADE_ID - 10));
+    let client = history_trades_client(router).await;
+    let start = Timestamp::now() - SignedDuration::from_hours(3);
+
+    let (trades, coverage) = client
+        .request_trades_with_coverage(InstrumentId::from("BTC-USD.OKX"), Some(start), None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(coverage, OKXHistoryCoverage::Unverified);
+    assert!((178..=180).contains(&trades.len()), "{}", trades.len());
 }
 
 #[rstest]

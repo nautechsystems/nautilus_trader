@@ -3777,6 +3777,7 @@ impl OKXHttpClient {
             let mut unique_count = 0usize;
             let mut consecutive_empty_pages = 0usize;
             let mut coverage = OKXHistoryCoverage::Unverified;
+            let mut parse_failures = 0usize;
 
             // Only apply default limit when there's no start boundary
             // (start provides a natural stopping point, end alone allows infinite backward pagination)
@@ -3890,7 +3891,10 @@ impl OKXHttpClient {
                                 duplicates += 1;
                             }
                         }
-                        Err(e) => log::error!("{e}"),
+                        Err(e) => {
+                            parse_failures += 1;
+                            log::error!("{e}");
+                        }
                     }
                 }
 
@@ -3995,6 +3999,11 @@ impl OKXHttpClient {
                 let excess = out.len() - lim as usize;
                 log::debug!("Trimming {excess} oldest trades to respect limit={lim}");
                 out.drain(0..excess);
+            }
+
+            // A trade dropped on a parse error leaves a gap the window cannot vouch for
+            if parse_failures > 0 && coverage == OKXHistoryCoverage::Complete {
+                coverage = OKXHistoryCoverage::Unverified;
             }
 
             log::debug!("Returning {} trades, coverage={coverage:?}", out.len());
