@@ -3756,7 +3756,6 @@ impl OKXHttpClient {
         let start_ms = start.map(jiff::Timestamp::as_millisecond);
         let end_ms = end.map(jiff::Timestamp::as_millisecond);
 
-        let ts_init = self.generate_ts_init();
         let inst = self.instrument_from_cache_by_id(instrument_id)?;
 
         // Historical pagination walks backwards using trade IDs, OKX does not honor timestamps for
@@ -3846,12 +3845,14 @@ impl OKXHttpClient {
                 let mut duplicates = 0usize;
 
                 for r in &raw {
+                    // Historical trades use their own time as ts_init: the data engine trims
+                    // responses to the requested window on ts_init
                     match parse_trade_tick(
                         r,
                         instrument_id,
                         inst.price_precision(),
                         inst.size_precision(),
-                        ts_init,
+                        parse_millisecond_timestamp(r.ts),
                     ) {
                         Ok(trade) => {
                             let ts_ms = trade.ts_event.as_i64() / 1_000_000;
@@ -4013,7 +4014,7 @@ impl OKXHttpClient {
                 instrument_id,
                 inst.price_precision(),
                 inst.size_precision(),
-                ts_init,
+                parse_millisecond_timestamp(r.ts),
             ) {
                 Ok(trade) => trades.push(trade),
                 Err(e) => log::error!("{e}"),

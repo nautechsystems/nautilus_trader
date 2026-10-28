@@ -9547,6 +9547,33 @@ async fn test_request_trades_coverage_is_complete_when_the_walk_crosses_the_star
 
 #[rstest]
 #[tokio::test]
+async fn test_request_trades_in_a_past_window_keep_their_own_time_as_ts_init() {
+    // The data engine trims responses on ts_init, so it must fall inside the window
+    let client = history_trades_client(history_trades_router(60_000, 0)).await;
+    let start = Timestamp::now() - SignedDuration::from_hours(3);
+    let end = Timestamp::now() - SignedDuration::from_mins(30);
+
+    let (trades, _) = client
+        .request_trades_with_coverage(
+            InstrumentId::from("BTC-USD.OKX"),
+            Some(start),
+            Some(end),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let start_ns = UnixNanos::from(u64::try_from(start.as_nanosecond()).unwrap());
+    let end_ns = UnixNanos::from(u64::try_from(end.as_nanosecond()).unwrap());
+    assert!(!trades.is_empty());
+    for trade in &trades {
+        assert_eq!(trade.ts_init, trade.ts_event);
+        assert!(trade.ts_init >= start_ns && trade.ts_init <= end_ns);
+    }
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_trades_coverage_is_unverified_when_history_ends_before_the_start() {
     // Only 50 trades exist, the last 50 minutes: OKX has nothing older to give
     let client = history_trades_client(history_trades_router(60_000, NEWEST_TRADE_ID - 50)).await;
