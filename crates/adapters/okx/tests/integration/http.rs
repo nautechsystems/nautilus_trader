@@ -9862,6 +9862,57 @@ async fn test_request_bars_month_window_keeps_the_bar_that_closes_after_a_31_day
     assert_eq!(coverage, OKXHistoryCoverage::Unverified);
 }
 
+#[rstest]
+#[tokio::test]
+async fn test_request_bars_month_window_does_not_stop_on_a_short_february() {
+    // A full history page ends with February 2018, whose bar closes 28 days after January's
+    let template = load_test_data("http_get_candlesticks.json")["data"][0].clone();
+    let utc8 = jiff::tz::TimeZone::fixed(jiff::tz::offset(8));
+    let candles: Vec<Value> = (0..103)
+        .map(|index| {
+            let open = jiff::civil::date(2017, 11, 1)
+                .checked_add(jiff::Span::new().months(index))
+                .unwrap()
+                .at(0, 0, 0, 0)
+                .to_zoned(utc8.clone())
+                .unwrap()
+                .timestamp();
+            let mut candle = template.clone();
+            candle[0] = json!(open.as_millisecond().to_string());
+            candle[8] = json!("1");
+            candle
+        })
+        .collect();
+    let addr = start_candlestick_server(candles).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+    let bar_type = BarType::from("BTC-USD.OKX-1-MONTH-LAST-EXTERNAL");
+    let start: Timestamp = "2018-01-31T12:00:00Z".parse().unwrap();
+    let end: Timestamp = "2026-05-31T16:00:00Z".parse().unwrap();
+
+    let (bars, _) = client
+        .request_bars_with_coverage(bar_type, Some(start), Some(end), None)
+        .await
+        .unwrap();
+
+    let january_close: Timestamp = "2018-01-31T16:00:00Z".parse().unwrap();
+    let to_nanos = |ts: Timestamp| UnixNanos::from(u64::try_from(ts.as_nanosecond()).unwrap());
+    assert_eq!(bars.first().unwrap().ts_init, to_nanos(january_close));
+    assert_eq!(bars.len(), 101);
+}
+
 /// Funding records every eight hours for the last `days`, answered as OKX does: newest first,
 /// `before` and `after` as exclusive bounds, at most 100 a page.
 async fn start_funding_rate_server(days: i64) -> SocketAddr {

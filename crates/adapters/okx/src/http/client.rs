@@ -4090,7 +4090,8 @@ impl OKXHttpClient {
     /// # Pagination
     ///
     /// - Range requests use exclusive `after` and `before` cursors, setting `before` one bar before
-    ///   the floored start (two for months) so the candle that closes at the start is included
+    ///   the floored start (two for months) so the first candle that closes at or after the start
+    ///   is included
     /// - Pages backwards from end time (or now) to start time
     /// - Stops when: limit reached, time window covered, or API returns empty
     /// - Rate limit safety: ≥ 50ms between requests
@@ -4113,8 +4114,9 @@ impl OKXHttpClient {
 
     /// Requests bars like [`Self::request_bars`] and reports whether the pagination
     /// covered the window down to `start`: the oldest bar returned closes in the first
-    /// bar slot at or after `start`. Month windows are never reported as covered, since
-    /// month lengths vary.
+    /// bar slot at or after `start`. A window is never reported as covered when a limit ended
+    /// the request, when it holds a candle OKX has not confirmed, or for months, since month
+    /// lengths vary.
     ///
     /// # Errors
     ///
@@ -4213,6 +4215,12 @@ impl OKXHttpClient {
         // an approximate 30 days, so months step back two slots to cover 31-day months
         let is_month = spec.aggregation == BarAggregation::Month;
         let lookback_ms = if is_month { 2 * slot_ms } else { slot_ms };
+        // The shortest bar length: the earliest bar in the window closes within it of the start
+        let min_slot_ns = if is_month {
+            (step as i64) * 28 * 86_400_000 * 1_000_000
+        } else {
+            slot_ns
+        };
         let start_ms = start.map(|s| {
             let ms = s.as_millisecond();
 
@@ -4568,7 +4576,7 @@ impl OKXHttpClient {
             if let Some(sns) = start_ns
                 && let Some(first) = out.first()
                 && (matches!(mode, Mode::Backward) || forward_prepend_mode)
-                && first.ts_init.as_i64() < sns.saturating_add(slot_ns)
+                && first.ts_init.as_i64() < sns.saturating_add(min_slot_ns)
             {
                 break;
             }

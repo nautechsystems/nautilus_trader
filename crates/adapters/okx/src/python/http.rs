@@ -625,7 +625,8 @@ impl OKXHttpClient {
     /// # Pagination
     ///
     /// - Range requests use exclusive `after` and `before` cursors, setting `before` one bar before
-    ///   the floored start (two for months) so the candle that closes at the start is included
+    ///   the floored start (two for months) so the first candle that closes at or after the start
+    ///   is included
     /// - Pages backwards from end time (or now) to start time
     /// - Stops when: limit reached, time window covered, or API returns empty
     /// - Rate limit safety: ≥ 50ms between requests
