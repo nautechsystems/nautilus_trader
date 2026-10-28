@@ -9707,3 +9707,46 @@ async fn test_request_funding_rates_coverage(
     assert_eq!(coverage, expected);
     assert!(!rates.is_empty());
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_keeps_records_on_the_window_bounds() {
+    let addr = start_funding_rate_server(10).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    // Both bounds land exactly on funding times, which OKX treats as exclusive
+    let interval_ms = 8 * 3_600_000;
+    let now_ms = Timestamp::now().as_millisecond();
+    let newest_ms = now_ms - now_ms % interval_ms;
+    let start = Timestamp::from_millisecond(newest_ms - 10 * interval_ms).unwrap();
+    let end = Timestamp::from_millisecond(newest_ms - 2 * interval_ms).unwrap();
+
+    let (rates, coverage) = client
+        .request_funding_rates_with_coverage(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            Some(start),
+            Some(end),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let to_nanos = |ts: Timestamp| UnixNanos::from(u64::try_from(ts.as_nanosecond()).unwrap());
+    assert_eq!(rates.first().unwrap().ts_event, to_nanos(start));
+    assert_eq!(rates.last().unwrap().ts_event, to_nanos(end));
+    assert_eq!(rates.len(), 9);
+    assert_eq!(coverage, OKXHistoryCoverage::Complete);
+}

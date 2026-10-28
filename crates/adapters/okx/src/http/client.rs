@@ -3603,13 +3603,14 @@ impl OKXHttpClient {
             ..Default::default()
         };
 
-        // OKX uses "before" for newer-than and "after" for older-than
+        // OKX uses "before" for newer-than and "after" for older-than, both exclusive, so widen
+        // each bound by 1 ms to keep records that fall exactly on the window bounds
         if let Some(start) = start {
-            params.before = Some(start.as_millisecond().to_string());
+            params.before = Some(start.as_millisecond().saturating_sub(1).to_string());
         }
 
         if let Some(end) = end {
-            params.after = Some(end.as_millisecond().to_string());
+            params.after = Some(end.as_millisecond().saturating_add(1).to_string());
         }
 
         params.limit = limit;
