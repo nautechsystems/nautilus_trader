@@ -3622,9 +3622,9 @@ async fn test_request_trades_range_mode_pagination() {
 #[case::zero_limit(Some(0), 1_440, 0, 86_400)]
 #[case::limited(Some(150), 150, 0, 86_400)]
 #[case::single(Some(1), 1, 0, 86_400)]
-#[case::no_closed_candles(None, 0, 85_800, 85_830)]
-#[case::unaligned_start_single_page(None, 9, 85_830, 86_400)]
-#[case::unaligned_start_multiple_pages(None, 119, 30, 7_200)]
+#[case::one_candle_closes_at_the_start(None, 1, 85_800, 85_830)]
+#[case::unaligned_start_single_page(None, 10, 85_830, 86_400)]
+#[case::unaligned_start_multiple_pages(None, 120, 30, 7_200)]
 #[tokio::test]
 async fn test_request_bars_range_mode_pagination(
     #[case] limit: Option<u32>,
@@ -9639,6 +9639,50 @@ async fn test_request_bars_coverage(
 
     assert_eq!(coverage, expected);
     assert!(!bars.is_empty());
+}
+
+#[rstest]
+#[case::aligned_start(1_800, 1_800, 91)]
+#[case::unaligned_start(1_830, 1_860, 90)]
+#[tokio::test]
+async fn test_request_bars_window_follows_the_bar_close_time(
+    #[case] start_secs: i64,
+    #[case] first_close_secs: i64,
+    #[case] expected_len: usize,
+) {
+    // The data engine trims bars to the window on ts_init (the close), so the bar that
+    // closes at the start of the window opens before it and must still be returned
+    let first: Timestamp = "2026-09-01T00:00:00Z".parse().unwrap();
+    let addr = start_candlestick_server(minute_candles(first, 1_440)).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+    let bar_type = BarType::from("BTC-USD.OKX-1-MINUTE-LAST-EXTERNAL");
+    let start = first + SignedDuration::from_secs(start_secs);
+    let end = first + SignedDuration::from_hours(2);
+
+    let (bars, coverage) = client
+        .request_bars_with_coverage(bar_type, Some(start), Some(end), None)
+        .await
+        .unwrap();
+
+    let to_nanos = |ts: Timestamp| UnixNanos::from(u64::try_from(ts.as_nanosecond()).unwrap());
+    let first_close = first + SignedDuration::from_secs(first_close_secs);
+    assert_eq!(bars.first().unwrap().ts_init, to_nanos(first_close));
+    assert_eq!(bars.last().unwrap().ts_init, to_nanos(end));
+    assert_eq!(bars.len(), expected_len);
+    assert_eq!(coverage, OKXHistoryCoverage::Complete);
 }
 
 /// Funding records every eight hours for the last `days`, answered as OKX does: newest first,

@@ -4186,12 +4186,14 @@ impl OKXHttpClient {
         let start_ns = start.and_then(|s| i64::try_from(s.as_nanosecond()).ok());
         let end_ns = end.and_then(|e| i64::try_from(e.as_nanosecond()).ok());
 
-        // Floor start to bar boundaries for cleaner API requests
+        // Floor start to bar boundaries for cleaner API requests, then step back one bar: OKX
+        // filters candles by open time, while the window is defined on the close (`ts_init`),
+        // so the bar that closes at or just after the start opens before it
         let start_ms = start.map(|s| {
             let ms = s.as_millisecond();
 
             if slot_ms > 0 {
-                (ms / slot_ms) * slot_ms // Floor to nearest bar boundary
+                ((ms / slot_ms) * slot_ms).saturating_sub(slot_ms)
             } else {
                 ms
             }
@@ -4403,9 +4405,9 @@ impl OKXHttpClient {
                 .clone()
                 .into_iter()
                 .filter(|b| {
-                    let ts = b.ts_event.as_i64();
+                    let ts = b.ts_init.as_i64();
                     let ok_after = start_ns.is_none_or(|sns| ts >= sns);
-                    let ok_before = end_ns.is_none_or(|ens| b.ts_init.as_i64() <= ens);
+                    let ok_before = end_ns.is_none_or(|ens| ts <= ens);
                     ok_after && ok_before
                 })
                 .collect();
@@ -4529,10 +4531,11 @@ impl OKXHttpClient {
                 break;
             }
 
+            // The earliest bar in the window closes within one bar of the start
             if let Some(sns) = start_ns
                 && let Some(first) = out.first()
                 && (matches!(mode, Mode::Backward) || forward_prepend_mode)
-                && first.ts_event.as_i64() <= sns
+                && first.ts_init.as_i64() < sns.saturating_add(slot_ns)
             {
                 break;
             }
@@ -4571,9 +4574,9 @@ impl OKXHttpClient {
                 out = page
                     .into_iter()
                     .filter(|b| {
-                        let ts = b.ts_event.as_i64();
+                        let ts = b.ts_init.as_i64();
                         let ok_after = start_ns.is_none_or(|sns| ts >= sns);
-                        let ok_before = end_ns.is_none_or(|ens| b.ts_init.as_i64() <= ens);
+                        let ok_before = end_ns.is_none_or(|ens| ts <= ens);
                         ok_after && ok_before
                     })
                     .collect();
@@ -4612,7 +4615,7 @@ impl OKXHttpClient {
             OKXHistoryCoverage::Truncated
         } else if !limited
             && let (Some(sns), Some(first)) = (start_ns, out.first())
-            && first.ts_event.as_i64() < sns.saturating_add(slot_ns)
+            && first.ts_init.as_i64() < sns.saturating_add(slot_ns)
         {
             OKXHistoryCoverage::Complete
         } else {
