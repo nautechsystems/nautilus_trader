@@ -3612,7 +3612,7 @@ impl OKXHttpClient {
         // OKX uses "before" for newer-than and "after" for older-than, both exclusive, so widen
         // each bound by 1 ms to keep records that fall exactly on the window bounds
         if let Some(start) = start {
-            params.before = Some(start.as_millisecond().saturating_sub(1).to_string());
+            params.before = Some(start.as_millisecond().saturating_sub(1).max(0).to_string());
         }
 
         if let Some(end) = end {
@@ -3663,7 +3663,7 @@ impl OKXHttpClient {
                 if resp.len() >= OKX_FUNDING_PAGE_SIZE && oldest_ns > start_ns {
                     OKXHistoryCoverage::Truncated
                 } else if let Some(interval_mins) = rates.get(1).and_then(|rate| rate.interval)
-                    && oldest_ns <= start_ns + i128::from(interval_mins) * 60_000_000_000
+                    && oldest_ns < start_ns + i128::from(interval_mins) * 60_000_000_000
                 {
                     OKXHistoryCoverage::Complete
                 } else {

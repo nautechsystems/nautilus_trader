@@ -9821,3 +9821,42 @@ async fn test_request_funding_rates_keeps_records_on_the_window_bounds() {
     assert_eq!(rates.len(), 9);
     assert_eq!(coverage, OKXHistoryCoverage::Complete);
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_request_funding_rates_is_unverified_when_the_record_at_the_start_is_missing() {
+    let addr = start_funding_rate_server(10).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    // History ends one interval after the start, which falls on a funding time
+    let interval_ms = 8 * 3_600_000;
+    let now_ms = Timestamp::now().as_millisecond();
+    let oldest_ms = now_ms - now_ms % interval_ms - 29 * interval_ms;
+    let start = Timestamp::from_millisecond(oldest_ms - interval_ms).unwrap();
+
+    let (rates, coverage) = client
+        .request_funding_rates_with_coverage(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            Some(start),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(rates.len(), 30);
+    assert_eq!(coverage, OKXHistoryCoverage::Unverified);
+}
