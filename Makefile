@@ -934,6 +934,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/test-check-cargo-cooldown.bash
 	$Q bash scripts/test-cargo-ci-benches.bash
 	$Q bash scripts/test-clippy-strict-audit.bash
+	$Q python3 -B scripts/test-security-audit.py
 	$Q python3 -B scripts/ci/test_clippy_allowances.py
 	$Q bash scripts/test-update-cargo-dependencies.bash
 	$Q python3 -B scripts/ci/test_check_commit_message.py
