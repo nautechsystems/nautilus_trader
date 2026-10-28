@@ -70,7 +70,7 @@ pub struct OKXCandlestick(
     pub String,
     /// Base volume.
     pub String,
-    /// Record count.
+    /// Confirmation flag: `1` for a completed candle, `0` for one still forming.
     pub String,
 );
 

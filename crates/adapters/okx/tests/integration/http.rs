@@ -9687,6 +9687,41 @@ async fn test_request_bars_window_follows_the_bar_close_time(
 
 #[rstest]
 #[tokio::test]
+async fn test_request_bars_window_with_an_unconfirmed_candle_is_not_covered() {
+    // The newest candle in the window is still forming at OKX (confirm = 0)
+    let first: Timestamp = "2026-09-01T00:00:00Z".parse().unwrap();
+    let mut candles = minute_candles(first, 1_440);
+    candles[119][8] = json!("0");
+    let addr = start_candlestick_server(candles).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+    let bar_type = BarType::from("BTC-USD.OKX-1-MINUTE-LAST-EXTERNAL");
+    let start = first + SignedDuration::from_mins(30);
+    let end = first + SignedDuration::from_hours(2);
+
+    let (bars, coverage) = client
+        .request_bars_with_coverage(bar_type, Some(start), Some(end), None)
+        .await
+        .unwrap();
+
+    assert_eq!(bars.len(), 91);
+    assert_eq!(coverage, OKXHistoryCoverage::Unverified);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_bars_month_window_keeps_the_bar_that_closes_after_a_31_day_month() {
     // OKX month candles open at midnight UTC+8 on the 1st; August 2021 has 31 days
     let template = load_test_data("http_get_candlesticks.json")["data"][0].clone();

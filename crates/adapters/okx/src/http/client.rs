@@ -4262,6 +4262,8 @@ impl OKXHttpClient {
         let mut have_latest_first_page = false;
         let mut progressless_loops = 0u8;
         let mut truncated = false;
+        // Open times of candles OKX has not confirmed yet; they rule out a covered window
+        let mut unconfirmed: Vec<UnixNanos> = Vec::new();
 
         loop {
             if let Some(lim) = limit
@@ -4406,12 +4408,17 @@ impl OKXHttpClient {
             // Parse, oldest → newest
             let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
             for r in &raw {
-                page.push(parse_historical_candlestick(
+                let bar = parse_historical_candlestick(
                     r,
                     bar_type,
                     inst.price_precision(),
                     inst.size_precision(),
-                )?);
+                )?;
+
+                if r.8 != "1" {
+                    unconfirmed.push(bar.ts_event);
+                }
+                page.push(bar);
             }
             page.reverse();
 
@@ -4580,12 +4587,17 @@ impl OKXHttpClient {
             if !raw.is_empty() {
                 let mut page: Vec<Bar> = Vec::with_capacity(raw.len());
                 for r in &raw {
-                    page.push(parse_historical_candlestick(
+                    let bar = parse_historical_candlestick(
                         r,
                         bar_type,
                         inst.price_precision(),
                         inst.size_precision(),
-                    )?);
+                    )?;
+
+                    if r.8 != "1" {
+                        unconfirmed.push(bar.ts_event);
+                    }
+                    page.push(bar);
                 }
                 page.reverse();
                 out = page
@@ -4632,6 +4644,7 @@ impl OKXHttpClient {
             OKXHistoryCoverage::Truncated
         } else if !limited
             && !is_month
+            && !out.iter().any(|bar| unconfirmed.contains(&bar.ts_event))
             && let (Some(sns), Some(first)) = (start_ns, out.first())
             && first.ts_init.as_i64() < sns.saturating_add(slot_ns)
         {
