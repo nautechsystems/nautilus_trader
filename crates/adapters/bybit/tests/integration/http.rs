@@ -5479,6 +5479,38 @@ async fn test_withdraw_retry_resends_same_request_id() {
 
 #[rstest]
 #[tokio::test]
+async fn test_withdraw_without_request_id_does_not_retry() {
+    let (addr, state) = start_withdraw_server(1).await;
+    let client = BybitRawHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        60,
+        1,
+        1,
+        1,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("USDT".to_string())
+        .chain("ETH".to_string())
+        .address("0x99ced129603abc771c0dabe935c326ff6c86645d".to_string())
+        .amount("24".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::Fund)
+        .build()
+        .unwrap();
+    let result = client.withdraw(&params).await;
+
+    assert!(result.is_err());
+    assert_eq!(state.bodies.lock().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_get_withdrawal_records_walks_cursor() {
     let (addr, state) = start_withdraw_server(0).await;
     let client = user_raw_test_client(format!("http://{addr}"));

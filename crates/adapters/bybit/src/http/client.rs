@@ -539,6 +539,31 @@ impl BybitRawHttpClient {
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> Result<T, BybitHttpError> {
+        self.dispatch(method, endpoint, params, body, authenticate, true)
+            .await
+    }
+
+    async fn send_request_once<T: DeserializeOwned + BybitResponseCheck, P: Serialize>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        params: Option<&P>,
+        body: Option<Vec<u8>>,
+        authenticate: bool,
+    ) -> Result<T, BybitHttpError> {
+        self.dispatch(method, endpoint, params, body, authenticate, false)
+            .await
+    }
+
+    async fn dispatch<T: DeserializeOwned + BybitResponseCheck, P: Serialize>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        params: Option<&P>,
+        body: Option<Vec<u8>>,
+        authenticate: bool,
+        retry: bool,
+    ) -> Result<T, BybitHttpError> {
         let endpoint = endpoint.to_string();
         let url = format!("{}{endpoint}", self.base_url);
         let method_clone = method.clone();
@@ -653,6 +678,10 @@ impl BybitRawHttpClient {
                 }
             }
         };
+
+        if !retry {
+            return operation().await;
+        }
 
         let create_error = |error: RetryError| -> BybitHttpError {
             match error {
@@ -1557,6 +1586,8 @@ impl BybitRawHttpClient {
 
     /// Withdraws coins from the account.
     ///
+    /// Retries only when `request_id` is set.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
@@ -1573,14 +1604,15 @@ impl BybitRawHttpClient {
         params: &BybitWithdrawParams,
     ) -> Result<BybitWithdrawResponse, BybitHttpError> {
         let body = serde_json::to_vec(params)?;
-        self.send_request::<_, ()>(
-            Method::POST,
-            "/v5/asset/withdraw/create",
-            None,
-            Some(body),
-            true,
-        )
-        .await
+        let endpoint = "/v5/asset/withdraw/create";
+
+        if params.request_id.is_some() {
+            self.send_request::<_, ()>(Method::POST, endpoint, None, Some(body), true)
+                .await
+        } else {
+            self.send_request_once::<_, ()>(Method::POST, endpoint, None, Some(body), true)
+                .await
+        }
     }
 
     /// Fetches withdrawal records.
