@@ -1839,7 +1839,15 @@ async fn test_position_check_preserves_spot_position_without_reports(#[case] us:
     let cache = cache.borrow();
     assert!(cache.orders_refs(None, None, None, None, None).is_empty());
     assert_eq!(cache.positions_open(None, None, None, None, None).len(), 1);
-    assert_eq!(cache.position(&position_id).as_deref(), Some(&position));
+    let cached_position = cache.position(&position_id).unwrap();
+    assert_eq!(cached_position.quantity, position.quantity);
+    assert_eq!(
+        cached_position.signed_decimal_qty(),
+        position.signed_decimal_qty()
+    );
+    assert_eq!(cached_position.side, position.side);
+    assert_eq!(cached_position.avg_px_open, position.avg_px_open);
+    assert_eq!(cached_position.event_count(), position.event_count());
 }
 
 #[rstest]
