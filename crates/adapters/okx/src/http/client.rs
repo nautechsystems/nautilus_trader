@@ -301,10 +301,12 @@ fn retry_after(headers: &HashMap<String, String>, now: Timestamp) -> Option<Dura
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
+    use std::{collections::HashMap, time::Duration};
 
     use anyhow::Context;
+    use nautilus_core::UnixNanos;
     use nautilus_model::{
+        data::BarType,
         identifiers::{InstrumentId, Symbol},
         instruments::{
             CryptoFuture, CryptoFuturesSpread, InstrumentAny,
@@ -317,9 +319,10 @@ mod tests {
     use serde::{Serialize, Serializer, ser::Error as _};
 
     use super::{
-        Method, OKX_GLOBAL_RATE_KEY, OKXEnvironment, OKXHttpClient, OKXHttpError,
-        OKXInstrumentDefinitionError, OKXRawHttpClient, Timestamp, deserialize_okx_response,
-        parse_retry_after, resolve_okx_error_code, resolve_okx_error_message,
+        Method, OKX_GLOBAL_RATE_KEY, OKXEnvironment, OKXHistoryCoverage, OKXHttpClient,
+        OKXHttpError, OKXInstrumentDefinitionError, OKXRawHttpClient, Timestamp,
+        deserialize_okx_response, parse_retry_after, resolve_okx_error_code,
+        resolve_okx_error_message,
     };
     use crate::http::models::OKXFeeRate;
 
@@ -577,6 +580,166 @@ mod tests {
         let result =
             super::OKXHttpClient::option_summary_exp_time("BTC-USD-241217-92000-C").unwrap();
         assert_eq!(result, Some("241217".to_string()));
+    }
+
+    fn spot_instruments() -> Vec<InstrumentAny> {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("test_data")
+            .join("http_get_instruments_spot.json");
+        let response: super::OKXResponse<crate::common::models::OKXInstrument> =
+            serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        response
+            .data
+            .iter()
+            .filter_map(|raw| {
+                crate::common::parse::parse_instrument_any(raw, None, None, UnixNanos::default())
+                    .ok()
+                    .flatten()
+            })
+            .collect()
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_trades_paged_is_truncated_at_the_page_cap() {
+        // One trade a millisecond: three pages reach 300 ms back, the start is a day back
+        let now_ms = Timestamp::now().as_millisecond();
+        let router = axum::Router::new().route(
+            "/api/v5/market/history-trades",
+            axum::routing::get(
+                move |axum::extract::Query(params): axum::extract::Query<
+                    HashMap<String, String>,
+                >| async move {
+                    let below = params
+                        .get("after")
+                        .and_then(|s| s.parse::<i64>().ok())
+                        .unwrap_or(1_000_001);
+                    let data: Vec<serde_json::Value> = (1..=100)
+                        .map(|i| below - i)
+                        .map(|id| {
+                            serde_json::json!({
+                                "instId": "BTC-USD",
+                                "side": "buy",
+                                "sz": "0.01",
+                                "px": "100000.0",
+                                "tradeId": id.to_string(),
+                                "ts": (now_ms - (1_000_001 - id)).to_string(),
+                            })
+                        })
+                        .collect();
+                    axum::Json(serde_json::json!({"code": "0", "msg": "", "data": data}))
+                },
+            ),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = OKXHttpClient::new(
+            Some(format!("http://{addr}")),
+            60,
+            3,
+            1000,
+            10_000,
+            OKXEnvironment::Live,
+            None,
+        )
+        .unwrap();
+
+        for instrument in spot_instruments() {
+            client.cache_instrument(instrument);
+        }
+
+        let (trades, coverage) = client
+            .request_trades_paged(
+                InstrumentId::from("BTC-USD.OKX"),
+                Some(Timestamp::now() - jiff::SignedDuration::from_hours(24)),
+                None,
+                None,
+                3,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(coverage, OKXHistoryCoverage::Truncated);
+        assert_eq!(trades.len(), 300);
+    }
+    #[rstest]
+    #[tokio::test]
+    async fn test_request_bars_paged_is_truncated_at_the_page_cap() {
+        // A day of minute candles, a window ten days long: two history pages of 100 cannot reach the start
+        let first: Timestamp = "2026-09-01T00:00:00Z".parse().unwrap();
+        let candles: Vec<serde_json::Value> = (0..1_440i64)
+            .rev()
+            .map(|index| {
+                let ts = first.as_millisecond() + index * 60_000;
+                serde_json::json!([
+                    ts.to_string(),
+                    "33528.6",
+                    "33870.0",
+                    "33500.1",
+                    "33783.9",
+                    "778.838",
+                    "26291398.9",
+                    "26291398.9",
+                    "1"
+                ])
+            })
+            .collect();
+        let route = axum::routing::get(
+            move |axum::extract::Query(params): axum::extract::Query<HashMap<String, String>>| {
+                let candles = candles.clone();
+                async move {
+                    let after = params.get("after").map(|v| v.parse::<i64>().unwrap());
+                    let before = params.get("before").map(|v| v.parse::<i64>().unwrap());
+                    let limit = params
+                        .get("limit")
+                        .map_or(100, |v| v.parse::<usize>().unwrap());
+                    let data: Vec<serde_json::Value> = candles
+                        .into_iter()
+                        .filter(|c| {
+                            let ts = c[0].as_str().unwrap().parse::<i64>().unwrap();
+                            after.is_none_or(|a| ts < a) && before.is_none_or(|b| ts > b)
+                        })
+                        .take(limit)
+                        .collect();
+                    axum::Json(serde_json::json!({"code": "0", "msg": "", "data": data}))
+                }
+            },
+        );
+        let router = axum::Router::new()
+            .route("/api/v5/market/candles", route.clone())
+            .route("/api/v5/market/history-candles", route);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let client = OKXHttpClient::new(
+            Some(format!("http://{addr}")),
+            60,
+            3,
+            1000,
+            10_000,
+            OKXEnvironment::Live,
+            None,
+        )
+        .unwrap();
+
+        for instrument in spot_instruments() {
+            client.cache_instrument(instrument);
+        }
+
+        let (bars, coverage) = client
+            .request_bars_paged(
+                BarType::from("BTC-USD.OKX-1-MINUTE-LAST-EXTERNAL"),
+                Some(first - jiff::SignedDuration::from_hours(216)),
+                Some(first + jiff::SignedDuration::from_hours(24)),
+                None,
+                2,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(coverage, OKXHistoryCoverage::Truncated);
+        assert_eq!(bars.len(), 200);
     }
 }
 
@@ -2255,6 +2418,21 @@ impl OKXRawHttpClient {
     }
 }
 
+/// Whether a paginated history request covered its whole window.
+///
+/// The data client reports a [`Complete`](Self::Complete) request as a completed response
+/// envelope, which lets the data engine write the window back to a catalog.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OKXHistoryCoverage {
+    /// The pagination reached the start of the requested window.
+    Complete,
+    /// The page cap stopped the pagination before the start of the window.
+    Truncated,
+    /// The window cannot be confirmed: no start was given, a limit ended the request,
+    /// or OKX returned nothing older before the start.
+    Unverified,
+}
+
 /// Provides a higher-level HTTP client for the [OKX](https://okx.com) REST API.
 ///
 /// This client wraps the underlying `OKXHttpInnerClient` to handle conversions
@@ -3398,6 +3576,28 @@ impl OKXHttpClient {
         end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<FundingRateUpdate>> {
+        self.request_funding_rates_with_coverage(instrument_id, start, end, limit)
+            .await
+            .map(|(rates, _)| rates)
+    }
+
+    /// Requests funding rates like [`Self::request_funding_rates`] and reports whether the
+    /// single page covered the window down to `start`: the page is not full and its oldest
+    /// record is within one funding interval of `start`. A full page that ends after `start`
+    /// is truncated.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or parsing fails.
+    pub async fn request_funding_rates_with_coverage(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<(Vec<FundingRateUpdate>, OKXHistoryCoverage)> {
+        const OKX_FUNDING_PAGE_SIZE: usize = 100;
+
         let mut params = GetFundingRateHistoryParams {
             inst_id: instrument_id.symbol.to_string(),
             ..Default::default()
@@ -3448,7 +3648,25 @@ impl OKXHttpClient {
             instrument_id,
         );
 
-        Ok(rates)
+        let coverage = match (start, rates.first()) {
+            (Some(start), Some(oldest)) if limit.is_none() => {
+                let start_ns = start.as_nanosecond();
+                let oldest_ns = i128::from(oldest.ts_event.as_u64());
+
+                if resp.len() >= OKX_FUNDING_PAGE_SIZE && oldest_ns > start_ns {
+                    OKXHistoryCoverage::Truncated
+                } else if let Some(interval_mins) = rates.get(1).and_then(|rate| rate.interval)
+                    && oldest_ns <= start_ns + i128::from(interval_mins) * 60_000_000_000
+                {
+                    OKXHistoryCoverage::Complete
+                } else {
+                    OKXHistoryCoverage::Unverified
+                }
+            }
+            _ => OKXHistoryCoverage::Unverified,
+        };
+
+        Ok((rates, coverage))
     }
 
     /// Requests trades for the `instrument_id` and `start` -> `end` time range.
@@ -3463,8 +3681,39 @@ impl OKXHttpClient {
         end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        const OKX_TRADES_MAX_LIMIT: u32 = 100;
+        self.request_trades_with_coverage(instrument_id, start, end, limit)
+            .await
+            .map(|(trades, _)| trades)
+    }
+
+    /// Requests trades like [`Self::request_trades`] and reports whether the backward
+    /// pagination covered the window down to `start`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the HTTP request fails or trade parsing fails.
+    pub async fn request_trades_with_coverage(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<(Vec<TradeTick>, OKXHistoryCoverage)> {
         const MAX_PAGES: usize = 500;
+
+        self.request_trades_paged(instrument_id, start, end, limit, MAX_PAGES)
+            .await
+    }
+
+    async fn request_trades_paged(
+        &self,
+        instrument_id: InstrumentId,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        limit: Option<u32>,
+        max_pages: usize,
+    ) -> anyhow::Result<(Vec<TradeTick>, OKXHistoryCoverage)> {
+        const OKX_TRADES_MAX_LIMIT: u32 = 100;
         const MAX_CONSECUTIVE_EMPTY: usize = 3;
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -3485,7 +3734,7 @@ impl OKXHttpClient {
         if let Some(s) = start
             && s > now
         {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), OKXHistoryCoverage::Unverified));
         }
 
         let end = if let Some(e) = end
@@ -3518,6 +3767,7 @@ impl OKXHttpClient {
             let mut seen_trades: AHashSet<(String, i64)> = AHashSet::new();
             let mut unique_count = 0usize;
             let mut consecutive_empty_pages = 0usize;
+            let mut coverage = OKXHistoryCoverage::Unverified;
 
             // Only apply default limit when there's no start boundary
             // (start provides a natural stopping point, end alone allows infinite backward pagination)
@@ -3532,8 +3782,9 @@ impl OKXHttpClient {
             );
 
             loop {
-                if pages >= MAX_PAGES {
-                    log::warn!("Hit MAX_PAGES limit of {MAX_PAGES}");
+                if pages >= max_pages {
+                    log::warn!("Hit page limit of {max_pages}");
+                    coverage = OKXHistoryCoverage::Truncated;
                     break;
                 }
 
@@ -3640,6 +3891,10 @@ impl OKXHttpClient {
                     hit_start_boundary
                 );
 
+                if hit_start_boundary {
+                    coverage = OKXHistoryCoverage::Complete;
+                }
+
                 // Extract oldest unique trade ID for next page cursor
                 let oldest_trade_id = if page_trades.is_empty() {
                     // Only apply consecutive empty guard if we've already collected some trades
@@ -3730,8 +3985,8 @@ impl OKXHttpClient {
                 out.drain(0..excess);
             }
 
-            log::debug!("Returning {} trades", out.len());
-            return Ok(out);
+            log::debug!("Returning {} trades, coverage={coverage:?}", out.len());
+            return Ok((out, coverage));
         }
 
         let req_limit = limit
@@ -3774,7 +4029,7 @@ impl OKXHttpClient {
             trades.drain(0..trades.len() - lim as usize);
         }
 
-        Ok(trades)
+        Ok((trades, OKXHistoryCoverage::Unverified))
     }
 
     /// Requests historical bars for the given bar type and time range.
@@ -3826,11 +4081,43 @@ impl OKXHttpClient {
         &self,
         bar_type: BarType,
         start: Option<Timestamp>,
-        mut end: Option<Timestamp>,
+        end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<Vec<Bar>> {
-        const HISTORY_SPLIT_DAYS: i64 = 100;
+        self.request_bars_with_coverage(bar_type, start, end, limit)
+            .await
+            .map(|(bars, _)| bars)
+    }
+
+    /// Requests bars like [`Self::request_bars`] and reports whether the pagination
+    /// covered the window down to `start`: the oldest bar returned falls in the first
+    /// bar slot at or after `start`.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails.
+    pub async fn request_bars_with_coverage(
+        &self,
+        bar_type: BarType,
+        start: Option<Timestamp>,
+        end: Option<Timestamp>,
+        limit: Option<u32>,
+    ) -> anyhow::Result<(Vec<Bar>, OKXHistoryCoverage)> {
         const MAX_PAGES_SOFT: usize = 500;
+
+        self.request_bars_paged(bar_type, start, end, limit, MAX_PAGES_SOFT)
+            .await
+    }
+
+    async fn request_bars_paged(
+        &self,
+        bar_type: BarType,
+        start: Option<Timestamp>,
+        mut end: Option<Timestamp>,
+        limit: Option<u32>,
+        max_pages: usize,
+    ) -> anyhow::Result<(Vec<Bar>, OKXHistoryCoverage)> {
+        const HISTORY_SPLIT_DAYS: i64 = 100;
 
         #[derive(Clone, Copy, Debug, PartialEq, Eq)]
         enum Mode {
@@ -3855,7 +4142,7 @@ impl OKXHttpClient {
         if let Some(s) = start
             && s > now
         {
-            return Ok(Vec::new());
+            return Ok((Vec::new(), OKXHistoryCoverage::Unverified));
         }
 
         if let Some(e) = end
@@ -3953,6 +4240,7 @@ impl OKXHttpClient {
 
         let mut have_latest_first_page = false;
         let mut progressless_loops = 0u8;
+        let mut truncated = false;
 
         loop {
             if let Some(lim) = limit
@@ -3962,7 +4250,9 @@ impl OKXHttpClient {
                 break;
             }
 
-            if pages >= MAX_PAGES_SOFT {
+            if pages >= max_pages {
+                log::warn!("Hit page limit of {max_pages}");
+                truncated = true;
                 break;
             }
 
@@ -4315,7 +4605,19 @@ impl OKXHttpClient {
             out.drain(..start);
         }
 
-        Ok(out)
+        let limited = limit.is_some_and(|lim| lim > 0 && out.len() >= lim as usize);
+        let coverage = if truncated {
+            OKXHistoryCoverage::Truncated
+        } else if !limited
+            && let (Some(sns), Some(first)) = (start_ns, out.first())
+            && first.ts_event.as_i64() < sns.saturating_add(slot_ns)
+        {
+            OKXHistoryCoverage::Complete
+        } else {
+            OKXHistoryCoverage::Unverified
+        };
+
+        Ok((out, coverage))
     }
 
     /// Requests historical order status reports for the given parameters.

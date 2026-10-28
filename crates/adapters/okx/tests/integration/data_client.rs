@@ -46,7 +46,7 @@ use nautilus_common::{
         data::{
             BookResponse, InstrumentResponse, InstrumentsResponse,
             OptionChainReferencePriceResponse, RequestBookSnapshot, RequestInstrument,
-            RequestInstruments, RequestOptionChainReferencePrice,
+            RequestInstruments, RequestOptionChainReferencePrice, RequestTrades,
         },
     },
     testing::wait_until_async,
@@ -634,4 +634,49 @@ async fn test_rpi_request_book_snapshot_routes_to_rpi_endpoint() {
         Some("BTC-USD")
     );
     assert_eq!(queries[0].get("sz").map(String::as_str), Some("2"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_http_failure_completes_the_request() {
+    let addr = start_test_server(TestServerState::default()).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let request = request_instruments();
+    let instruments_request_id = request.request_id;
+    client
+        .request_instruments(request)
+        .expect("request_instruments");
+    collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
+        .await;
+
+    // The test server has no trades route, so the history fetch fails with HTTP 404
+    let request_id = UUID4::new();
+    client
+        .request_trades(RequestTrades::new(
+            InstrumentId::from("BTC-USD.OKX"),
+            Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1)),
+            None,
+            None,
+            Some(*OKX_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("request_trades");
+
+    let failure = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.recv().await.expect("data event channel closed") {
+                DataEvent::RequestFailed(failure) if failure.request_id == request_id => {
+                    break failure;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("the failed trades request was never completed");
+
+    assert!(failure.response.is_none());
+    assert!(!failure.reason.is_empty());
 }
