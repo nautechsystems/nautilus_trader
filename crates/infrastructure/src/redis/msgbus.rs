@@ -614,7 +614,7 @@ impl StreamWriter {
                     self.con = Some(con);
                     self.write_error_count = 0;
                 }
-                Err(e) if is_retryable_stream_error(&e) => {
+                Err(e) if is_retryable_write_error(&e) => {
                     log::error!("Error publishing to stream: {e:?}");
                     return Ok(Some(self.next_retry_delay()));
                 }
@@ -688,7 +688,7 @@ async fn write_buffer(
             if let Err(e) = result {
                 // A dropped connection fails the batch here, before the connection manager's
                 // own reconnect can hold up the pipeline below.
-                if is_retryable_stream_error(&e) {
+                if is_retryable_write_error(&e) {
                     return Err(e);
                 }
                 log::error!("Error trimming stream '{stream_key}': {e}");
@@ -871,6 +871,21 @@ fn is_retryable_stream_error(error: &redis::RedisError) -> bool {
     )
 }
 
+// A transaction aborted with `EXECABORT` carries the errors its commands were queued with,
+// so it is retryable when all of them are, such as `LOADING` while Redis restarts.
+fn is_retryable_write_error(error: &redis::RedisError) -> bool {
+    if is_retryable_stream_error(error) {
+        return true;
+    }
+
+    error.clone().into_server_errors().is_some_and(|errors| {
+        !errors.is_empty()
+            && errors.iter().all(|(_, server_error)| {
+                is_retryable_stream_error(&redis::RedisError::from(server_error.clone()))
+            })
+    })
+}
+
 async fn wait_for_retry_delay(retry_delay: Duration, stream_signal: &Arc<AtomicBool>) -> bool {
     let retry_timer = tokio::time::sleep(retry_delay);
     let terminate = wait_for_stream_signal(stream_signal);
@@ -1045,10 +1060,13 @@ fn create_heartbeat_msg() -> BusMessage {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicUsize;
+
     use nautilus_common::{msgbus::external_io_from_backing, testing::wait_until_async};
     use redis::Value;
     use rstest::*;
     use serde_json::json;
+    use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
     use super::*;
 
@@ -1531,6 +1549,91 @@ mod tests {
     }
 
     #[rstest]
+    #[case::loading("LOADING Redis is loading the dataset in memory")]
+    #[case::master_down(
+        "MASTERDOWN Link with MASTER is down and replica-serve-stale-data is set to 'no'."
+    )]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_messages_retries_transaction_aborted_by_retryable_error(
+        #[case] queued_error: &'static str,
+    ) {
+        let fake = FakeRedis::start(queued_error).await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
+        let backing = fake.config();
+
+        let handle = tokio::spawn(async move {
+            publish_messages(
+                rx,
+                TraderId::from("tester-001"),
+                UUID4::new(),
+                MessageBusConfig::default(),
+                backing,
+            )
+            .await
+        });
+
+        tx.send(fake_bus_message()).unwrap();
+        wait_until_async(
+            || {
+                let aborted = Arc::clone(&fake.aborted);
+                async move { aborted.load(Ordering::SeqCst) > 0 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+        assert!(!handle.is_finished());
+
+        fake.accept_writes.store(true, Ordering::SeqCst);
+        wait_until_async(
+            || {
+                let committed = Arc::clone(&fake.committed);
+                async move { committed.load(Ordering::SeqCst) > 0 }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        tx.send(BusMessage::new_close()).unwrap();
+        let result = handle.await.unwrap();
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread")]
+    async fn test_publish_messages_returns_transaction_aborted_by_unrecoverable_error() {
+        let fake = FakeRedis::start("ERR syntax error").await;
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<BusMessage>();
+        let backing = fake.config();
+
+        let handle = tokio::spawn(async move {
+            publish_messages(
+                rx,
+                TraderId::from("tester-001"),
+                UUID4::new(),
+                MessageBusConfig::default(),
+                backing,
+            )
+            .await
+        });
+
+        tx.send(fake_bus_message()).unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(5), handle)
+            .await
+            .expect("an unrecoverable aborted transaction should end the task")
+            .unwrap();
+
+        assert_eq!(fake.aborted.load(Ordering::SeqCst), 1);
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("Error publishing to stream")
+        );
+    }
+
+    #[rstest]
     fn test_external_io_from_backing_takes_stream_receiver() {
         let (stream_tx, stream_rx) = tokio::sync::mpsc::channel::<BusMessage>(1);
         let backing = backing_with_stream_receiver(stream_rx);
@@ -1566,6 +1669,126 @@ mod tests {
             heartbeat_handle: None,
             heartbeat_signal: Arc::new(AtomicBool::new(false)),
         }
+    }
+
+    fn fake_bus_message() -> BusMessage {
+        BusMessage::with_str_topic(
+            "test_topic",
+            BusPayloadType::QuoteTick,
+            Bytes::from("test_payload"),
+            SerializationEncoding::Json,
+        )
+    }
+
+    /// A loopback RESP server standing in for Redis, which answers every queued `XADD` with
+    /// `queued_error` until `accept_writes` is set, so each `EXEC` aborts with `EXECABORT`.
+    struct FakeRedis {
+        port: u16,
+        accept_writes: Arc<AtomicBool>,
+        aborted: Arc<AtomicUsize>,
+        committed: Arc<AtomicUsize>,
+    }
+
+    impl FakeRedis {
+        async fn start(queued_error: &'static str) -> Self {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let port = listener.local_addr().unwrap().port();
+            let accept_writes = Arc::new(AtomicBool::new(false));
+            let aborted = Arc::new(AtomicUsize::new(0));
+            let committed = Arc::new(AtomicUsize::new(0));
+
+            let accept_writes_clone = Arc::clone(&accept_writes);
+            let aborted_clone = Arc::clone(&aborted);
+            let committed_clone = Arc::clone(&committed);
+
+            tokio::spawn(async move {
+                while let Ok((socket, _)) = listener.accept().await {
+                    let accept_writes = Arc::clone(&accept_writes_clone);
+                    let aborted = Arc::clone(&aborted_clone);
+                    let committed = Arc::clone(&committed_clone);
+
+                    tokio::spawn(async move {
+                        let (read, mut write) = socket.into_split();
+                        let mut reader = tokio::io::BufReader::new(read);
+                        let mut queued = 0;
+                        let mut queue_failed = false;
+
+                        while let Some(command) = read_resp_command(&mut reader).await {
+                            let reply = match command[0].to_ascii_uppercase().as_slice() {
+                                b"INFO" => {
+                                    let info = "redis_version:8.0.0\r\n";
+                                    format!("${}\r\n{info}\r\n", info.len())
+                                }
+                                b"MULTI" => {
+                                    queued = 0;
+                                    queue_failed = false;
+                                    "+OK\r\n".to_string()
+                                }
+                                b"XADD" if accept_writes.load(Ordering::SeqCst) => {
+                                    queued += 1;
+                                    "+QUEUED\r\n".to_string()
+                                }
+                                b"XADD" => {
+                                    queue_failed = true;
+                                    format!("-{queued_error}\r\n")
+                                }
+                                b"EXEC" if queue_failed => {
+                                    aborted.fetch_add(1, Ordering::SeqCst);
+                                    "-EXECABORT Transaction discarded because of previous errors.\r\n"
+                                        .to_string()
+                                }
+                                b"EXEC" => {
+                                    committed.fetch_add(1, Ordering::SeqCst);
+                                    format!("*{queued}\r\n{}", "$3\r\n0-1\r\n".repeat(queued))
+                                }
+                                _ => "+OK\r\n".to_string(),
+                            };
+
+                            if write.write_all(reply.as_bytes()).await.is_err() {
+                                break;
+                            }
+                        }
+                    });
+                }
+            });
+
+            Self {
+                port,
+                accept_writes,
+                aborted,
+                committed,
+            }
+        }
+
+        fn config(&self) -> RedisMessageBusConfig {
+            RedisMessageBusConfig {
+                port: Some(self.port),
+                ..Default::default()
+            }
+        }
+    }
+
+    async fn read_resp_command(
+        reader: &mut tokio::io::BufReader<tokio::net::tcp::OwnedReadHalf>,
+    ) -> Option<Vec<Vec<u8>>> {
+        let mut line = String::new();
+        if reader.read_line(&mut line).await.ok()? == 0 {
+            return None;
+        }
+        let count: usize = line.trim_end().strip_prefix('*')?.parse().ok()?;
+        let mut command = Vec::with_capacity(count);
+
+        for _ in 0..count {
+            line.clear();
+            reader.read_line(&mut line).await.ok()?;
+            let len: usize = line.trim_end().strip_prefix('$')?.parse().ok()?;
+            let mut arg = vec![0; len + 2];
+            reader.read_exact(&mut arg).await.ok()?;
+            arg.truncate(len);
+            command.push(arg);
+        }
+
+        Some(command)
     }
 }
 
@@ -2108,16 +2331,21 @@ mod serial_tests {
         assert!(!handle.is_finished());
 
         proxy.resume();
-        wait_for_stream_len(&con, &stream_key, backlog.len() + 1).await;
+        wait_for_last_topic(&con, &stream_key, backlog.last().unwrap()).await;
         tx.send(test_bus_message("last")).unwrap();
-        wait_for_stream_len(&con, &stream_key, backlog.len() + 2).await;
+        wait_for_last_topic(&con, &stream_key, "last").await;
 
         let topics = read_stream_topics(&mut con, &stream_key).await;
         tx.send(BusMessage::new_close()).unwrap();
         let result = handle.await.unwrap();
         let _: usize = con.del(&stream_key).await.unwrap();
 
+        // Seeing `first` on the stream does not show that its acknowledgement reached the
+        // publisher before the interruption, and if it did not, `first` is written again.
         let mut expected = vec!["first".to_string()];
+        if topics.get(1).is_some_and(|topic| topic == "first") {
+            expected.push("first".to_string());
+        }
         expected.extend(backlog);
         expected.push("last".to_string());
         assert_eq!(topics, expected);
@@ -2168,11 +2396,14 @@ mod serial_tests {
         let second_len: usize = con.xlen(&second_key).await.unwrap();
         let _: usize = con.del(&[&first_key, &second_key]).await.unwrap();
 
+        // Seeing `first` on the stream does not show that its acknowledgement reached the
+        // publisher before the interruption, and if it did not, `first` is still buffered.
+        let error = result.unwrap_err().to_string();
+        let unpublished = ["1", "2"].map(|count| {
+            format!("Failed to publish buffered messages before closing ({count} unpublished)")
+        });
         assert_eq!(second_len, 0);
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Failed to publish buffered messages before closing (1 unpublished)"
-        );
+        assert!(unpublished.contains(&error), "{error}");
     }
 
     #[rstest]
@@ -2620,6 +2851,21 @@ mod serial_tests {
                 async move {
                     let stream_len: usize = con.xlen(&stream_key).await.unwrap();
                     stream_len >= len
+                }
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+    }
+
+    async fn wait_for_last_topic(con: &ConnectionManager, stream_key: &str, topic: &str) {
+        wait_until_async(
+            || {
+                let mut con = con.clone();
+                let stream_key = stream_key.to_string();
+                let topic = topic.to_string();
+                async move {
+                    read_stream_topics(&mut con, &stream_key).await.last() == Some(&topic)
                 }
             },
             Duration::from_secs(5),
