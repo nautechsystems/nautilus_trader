@@ -255,6 +255,11 @@ gh attestation verify nautilus_trader-*.tar.gz \
   --cert-oidc-issuer "$ISSUER"
 ```
 
+If a release finishes publication using retained build artifacts, its release notes include an additional
+verification command with `--predicate-type` for the publication recovery attestation. Use that command
+for recovered artifacts. The signed predicate records the original build commit and run separately from
+the later publication commit and run; it does not claim the later commit built the package.
+
 ### Docker images
 
 Resolve the mutable tag to an immutable digest first so every check, the

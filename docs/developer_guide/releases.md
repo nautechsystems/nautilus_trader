@@ -152,6 +152,26 @@ Use the `recover-release` workflow when packages already exist on PyPI and crate
 verification or final GitHub publication fails. It verifies existing packages without rebuilding or
 republishing them. It also verifies a release that a maintainer has already published manually.
 
+If PyPI signing or publication fails before the Python packages are uploaded, first dispatch the `build`
+workflow on `master` with the existing `tag` and original `source-run`. Manual dispatch runs only the
+`recover-pypi` job. It retrieves the original distributions, requires every file to match the retained
+source-run artifacts and existing draft assets, signs with isolated Python, and uploads only missing PyPI
+files. Existing PyPI files must have the expected hashes. It does not rebuild distributions or publish the
+GitHub release.
+
+After that job succeeds, use its run ID as `publication-run` when dispatching `recover-release` in `recover`
+mode with the same original tag and source run. The finalizer retrieves the publication run's attestation
+artifact. Recovery attestations record the original source run and commit separately from the recovery run
+and commit. Verification requires the exact original artifact digest and a successful manual `build.yml`
+publication job on `master` in this repository. Normal build provenance remains valid without a publication
+recovery run.
+
+The `release-recovery/v1` predicate contains `repository`, `tag`, `source`, `recovery`, and `artifacts`.
+Both identity objects contain a 40-character commit `sha`, a positive workflow `run` ID, and a positive
+`attempt` number. Each artifact contains its distribution `name` and SHA256 digest as `sha256`.
+Verification checks the original attempt's metadata, so a later source-run attempt does not change the
+recorded identity.
+
 The source must be a completed `build` workflow run from a push to `master` in this repository, with a
 successful `tag-release` job. The release tag must resolve to that run's commit, and the tag version must
 match `python/pyproject.toml` at that commit. Recovery checks out that source and requires the release's
@@ -169,15 +189,18 @@ releases with a different matrix fail verification.
 1. Review the recovery artifact even when the workflow fails. After correcting the cause, rerun with
    the same tag and source run ID.
 
-Recovery verifies package attestations and their sibling bundles against the original build workflow and
-source commit, checks each envelope against its verified bundle, then verifies registry contents. It compares
+Recovery verifies normal package provenance against the original build workflow and source commit, or
+verifies the explicit publication recovery record described above. It checks each envelope against its
+verified bundle, then verifies registry contents. It compares
 existing GitHub assets by content, uploads only missing assets, and stops on a mismatch. Existing
 `dist-manifest.json` and `crates-manifest.json` assets keep their bytes when their JSON content matches apart
 from `generated_at`. Recovery updates checksum notes only when needed, verifies the complete draft asset
 set, checks Rekor readiness, publishes the draft, and verifies GitHub's release attestation.
 
-Recovery restores missing packages or provenance only from unexpired artifacts belonging to the selected
-source run. If required evidence is unavailable, recovery stops. A fully populated published release does
+Recovery restores missing distributions and original provenance only from unexpired artifacts belonging to
+the selected source run.
+New recovery provenance comes from the explicitly selected successful publication run. If required evidence
+is unavailable, recovery stops. A fully populated published release does
 not require retained source-run artifacts. After a failure that follows publication, rerun either mode to
 check the release again without republishing it.
 
@@ -192,6 +215,23 @@ Recovery checks both capabilities before changing the release. The workflow reta
 tool versions, the last step checkpoint, per-step and retry logs, exit status, registry responses,
 downloaded verification inputs, and the isolated verifier cache for 30 days. The normal build's integrity and final publication
 jobs also retain diagnostic artifacts on failure. A later successful rerun preserves those artifacts.
+
+### Landing a release tooling repair
+
+For an urgent repair that must reach `master` without rebuilding the wheel matrix, a maintainer can set the
+repository variable `CI_RELEASE_REPAIR_TREE` to the reviewed repair commit's Git tree:
+
+```bash
+git rev-parse 'HEAD^{tree}'
+```
+
+Set the variable before pushing the repair to `develop`. The exemption applies only to pushes to `develop`
+and `master` whose complete tree matches and whose changes contain only the explicit release tooling paths
+in `scripts/ci/check-release-repair.bash`. A merge with the same tree remains eligible; any additional change
+or an unavailable base falls back to normal CI. Pre-commit, script tests, action-pin checks, and security
+audits still run. Wheel builds, broad Rust tests, automatic release preflights, and Docker builds skip this
+repair. Dispatch publication recovery after merging, then remove the variable. Remove the temporary selector
+and its workflow wiring with a later change that runs normal CI.
 
 ## Versioning
 

@@ -46,8 +46,9 @@ for attempt in $(seq 1 "$attempts"); do
   done
 
   set +e
-  uv run --no-project --no-build --with "pypi-attestations==${pypi_attestations_version}" -- \
-    python -m pypi_attestations sign "${artifacts[@]}"
+  uv run --isolated --no-project --no-build --managed-python --python 3.13 \
+    --with "pypi-attestations==${pypi_attestations_version}" -- \
+    python -I -m pypi_attestations sign "${artifacts[@]}"
   status=$?
   set -e
 

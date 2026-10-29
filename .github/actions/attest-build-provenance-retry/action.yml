@@ -5,6 +5,12 @@ inputs:
   subject-path:
     description: Artifact path or glob to attest.
     required: true
+  predicate-type:
+    description: Predicate type for an explicit custom attestation.
+    required: false
+  predicate-path:
+    description: Predicate file for an explicit custom attestation.
+    required: false
 
 outputs:
   bundle-path:
@@ -21,6 +27,8 @@ runs:
       uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
         subject-path: ${{ inputs.subject-path }}
+        predicate-type: ${{ inputs.predicate-type }}
+        predicate-path: ${{ inputs.predicate-path }}
 
     - name: Backoff before retry 2
       if: steps.attest-1.outcome == 'failure'
@@ -37,6 +45,8 @@ runs:
       uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
         subject-path: ${{ inputs.subject-path }}
+        predicate-type: ${{ inputs.predicate-type }}
+        predicate-path: ${{ inputs.predicate-path }}
 
     - name: Backoff before retry 3
       if: steps.attest-1.outcome == 'failure' && steps.attest-2.outcome == 'failure'
@@ -52,6 +62,8 @@ runs:
       uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
       with:
         subject-path: ${{ inputs.subject-path }}
+        predicate-type: ${{ inputs.predicate-type }}
+        predicate-path: ${{ inputs.predicate-path }}
 
     - name: Select bundle path
       id: select-bundle
