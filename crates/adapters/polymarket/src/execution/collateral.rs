@@ -166,11 +166,21 @@ impl CollateralLocks {
             (anchor.as_decimal() - total.as_decimal()).max(Decimal::ZERO)
         });
 
+        // A total above the anchor means a credit (for example a settlement redemption)
+        // landed before any pending buy spend drained. The spend can then never be
+        // observed as a decrease against this anchor, so treat the fresh total as the new
+        // baseline and release: otherwise the pending spend accumulates on every fill and
+        // free decays to zero while the venue collateral is fully funded.
+        let credited = self
+            .unsettled
+            .anchor
+            .is_some_and(|anchor| total.as_decimal() > anchor.as_decimal());
+
         let covered = self.unsettled.anchor.is_some()
             && !pending.as_decimal().is_zero()
             && decrease >= pending.as_decimal();
         let void_only = open_spend.as_decimal().is_zero() && !pending.as_decimal().is_zero();
-        let release = covered || void_only;
+        let release = covered || void_only || credited;
         let open_after = if release || self.unsettled.anchor.is_none() {
             if release {
                 Money::zero(total.currency)
@@ -650,5 +660,47 @@ mod tests {
         assert_eq!(error.to_string(), "invalid Polymarket unsettled buy spend");
         assert!(locks.unsettled.open.contains_key(&TradeId::from("BUY-1")));
         assert!(locks.unsettled.open.contains_key(&TradeId::from("BUY-2")));
+    }
+
+    #[rstest]
+    fn credit_releases_pending_spend_and_rebases_the_anchor() {
+        let mut locks = CollateralLocks::default();
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("BUY-1"), pusd("5"), UnixNanos::from(2), false);
+
+        // A settlement redemption lands before the buy spend is reflected in the total.
+        let credited = apply(&mut locks, "107", 3);
+        // The masked buy spend then drains against the new baseline.
+        let drained = apply(&mut locks, "102", 4);
+
+        assert_eq!(
+            credited,
+            AccountBalance::new(pusd("107"), pusd("0"), pusd("107"))
+        );
+        assert_eq!(
+            drained,
+            AccountBalance::new(pusd("102"), pusd("0"), pusd("102"))
+        );
+    }
+
+    #[rstest]
+    fn fills_after_a_credit_lock_against_the_new_baseline() {
+        let mut locks = CollateralLocks::default();
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("BUY-1"), pusd("5"), UnixNanos::from(2), false);
+        apply(&mut locks, "107", 3);
+        locks.note_buy_spend(TradeId::from("BUY-2"), pusd("4"), UnixNanos::from(4), false);
+
+        let held = apply(&mut locks, "107", 5);
+        let drained = apply(&mut locks, "103", 6);
+
+        assert_eq!(
+            held,
+            AccountBalance::new(pusd("107"), pusd("4"), pusd("103"))
+        );
+        assert_eq!(
+            drained,
+            AccountBalance::new(pusd("103"), pusd("0"), pusd("103"))
+        );
     }
 }
