@@ -19,7 +19,7 @@ use nautilus_common::{actor::DataActorConfig, python::config_error_to_pyvalue_er
 use nautilus_core::from_pydict;
 use nautilus_model::{
     data::BarType,
-    enums::{BookType, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
+    enums::{BookType, ContingencyType, OrderType, TimeInForce, TrailingOffsetType, TriggerType},
     identifiers::{ActorId, ClientId, InstrumentId, StrategyId},
     types::Quantity,
 };
@@ -437,6 +437,8 @@ impl ExecTesterConfig {
         clamp_to_instrument_price_range = None,
         log_events = None,
         log_commands = None,
+        bracket_contingency_type = None,
+        bracket_tp_order_type = None,
     ))]
     fn py_new(
         py: Python<'_>,
@@ -503,6 +505,8 @@ impl ExecTesterConfig {
         clamp_to_instrument_price_range: Option<bool>,
         log_events: Option<bool>,
         log_commands: Option<bool>,
+        bracket_contingency_type: Option<ContingencyType>,
+        bracket_tp_order_type: Option<OrderType>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
         let order_params = match order_params {
@@ -594,6 +598,9 @@ impl ExecTesterConfig {
             can_unsubscribe: can_unsubscribe.unwrap_or(defaults.can_unsubscribe),
             clamp_to_instrument_price_range: clamp_to_instrument_price_range
                 .unwrap_or(defaults.clamp_to_instrument_price_range),
+            bracket_contingency_type: bracket_contingency_type
+                .unwrap_or(defaults.bracket_contingency_type),
+            bracket_tp_order_type: bracket_tp_order_type.unwrap_or(defaults.bracket_tp_order_type),
         };
         config.validate().map_err(config_error_to_pyvalue_err)?;
         Ok(config)
@@ -822,6 +829,18 @@ impl ExecTesterConfig {
     #[pyo3(name = "bracket_entry_order_type")]
     const fn py_bracket_entry_order_type(&self) -> OrderType {
         self.bracket_entry_order_type
+    }
+
+    #[getter]
+    #[pyo3(name = "bracket_contingency_type")]
+    const fn py_bracket_contingency_type(&self) -> ContingencyType {
+        self.bracket_contingency_type
+    }
+
+    #[getter]
+    #[pyo3(name = "bracket_tp_order_type")]
+    const fn py_bracket_tp_order_type(&self) -> OrderType {
+        self.bracket_tp_order_type
     }
 
     #[getter]

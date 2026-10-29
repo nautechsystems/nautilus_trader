@@ -1525,6 +1525,159 @@ fn test_submit_bracket_order_creates_order_list(
 }
 
 #[rstest]
+fn test_config_bracket_defaults(config: ExecTesterConfig) {
+    let legacy: ExecTesterConfig = serde_json::from_str("{}").unwrap();
+
+    for config in [config, ExecTesterConfig::default(), legacy] {
+        assert_eq!(config.bracket_contingency_type, ContingencyType::Ouo);
+        assert_eq!(config.bracket_tp_order_type, OrderType::Limit);
+    }
+}
+
+#[rstest]
+#[case::buy_limit(OrderSide::Buy, OrderType::Limit, "3036.25", "3033.75")]
+#[case::sell_limit(OrderSide::Sell, OrderType::Limit, "3033.75", "3036.25")]
+#[case::buy_market_if_touched(OrderSide::Buy, OrderType::MarketIfTouched, "3036.25", "3033.75")]
+#[case::sell_market_if_touched(OrderSide::Sell, OrderType::MarketIfTouched, "3033.75", "3036.25")]
+#[case::buy_limit_if_touched(OrderSide::Buy, OrderType::LimitIfTouched, "3036.25", "3033.75")]
+#[case::sell_limit_if_touched(OrderSide::Sell, OrderType::LimitIfTouched, "3033.75", "3036.25")]
+fn test_submit_bracket_order_exit_shape(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] tp_type: OrderType,
+    #[case] tp_price: &str,
+    #[case] sl_trigger: &str,
+) {
+    config.enable_brackets = true;
+    config.bracket_contingency_type = ContingencyType::Oco;
+    config.bracket_tp_order_type = tp_type;
+    config.bracket_offset_ticks = 125;
+    config.order_qty = Quantity::from("0.017");
+    config.limit_time_in_force = Some(TimeInForce::Day);
+    config.stop_time_in_force = Some(TimeInForce::Gtc);
+    config.stop_trigger_type = TriggerType::MarkPrice;
+    config.use_post_only = true;
+    let instrument_id = instrument.id();
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+
+    tester
+        .submit_bracket_order(side, Price::from("3035.00"))
+        .expect("bracket submission");
+
+    let cache = cache.borrow();
+    let orders = cache.orders(None, Some(&instrument_id), None, None, None);
+    let entry = orders
+        .iter()
+        .find(|order| order.parent_order_id().is_none())
+        .unwrap();
+    let tp = orders
+        .iter()
+        .find(|order| order.parent_order_id().is_some() && order.order_type() == tp_type)
+        .unwrap();
+    let sl = orders
+        .iter()
+        .find(|order| order.order_type() == OrderType::StopMarket)
+        .unwrap();
+
+    let exit_side = match side {
+        OrderSide::Buy => OrderSide::Sell,
+        OrderSide::Sell => OrderSide::Buy,
+    };
+
+    let tp_price = Price::from(tp_price);
+
+    assert_eq!(orders.len(), 3);
+    assert_eq!(entry.order_side(), side);
+    assert_eq!(entry.order_type(), OrderType::Limit);
+    assert_eq!(entry.price(), Some(Price::from("3035.00")));
+    assert_eq!(entry.quantity(), Quantity::from("0.017"));
+    assert_eq!(entry.time_in_force(), TimeInForce::Day);
+    assert_eq!(entry.contingency_type(), Some(ContingencyType::Oto));
+    assert!(entry.is_post_only());
+    assert!(!entry.is_reduce_only());
+    assert_eq!(
+        entry.linked_order_ids(),
+        Some([sl.client_order_id(), tp.client_order_id()].as_slice())
+    );
+
+    for order in [tp, sl] {
+        assert_eq!(order.instrument_id(), instrument_id);
+        assert_eq!(order.order_side(), exit_side);
+        assert_eq!(order.quantity(), Quantity::from("0.017"));
+        assert_eq!(order.contingency_type(), Some(ContingencyType::Oco));
+        assert_eq!(order.parent_order_id(), Some(entry.client_order_id()));
+        assert_eq!(order.order_list_id(), entry.order_list_id());
+        assert!(order.is_reduce_only());
+    }
+
+    assert_eq!(
+        tp.price(),
+        (tp_type != OrderType::MarketIfTouched).then_some(tp_price)
+    );
+    assert_eq!(
+        tp.trigger_price(),
+        (tp_type != OrderType::Limit).then_some(tp_price)
+    );
+    assert_eq!(
+        tp.trigger_type(),
+        (tp_type != OrderType::Limit).then_some(TriggerType::Default)
+    );
+    assert_eq!(tp.time_in_force(), TimeInForce::Day);
+    assert_eq!(tp.is_post_only(), tp_type != OrderType::MarketIfTouched);
+    assert_eq!(
+        tp.linked_order_ids(),
+        Some([sl.client_order_id()].as_slice())
+    );
+    assert_eq!(sl.price(), None);
+    assert_eq!(sl.trigger_price(), Some(Price::from(sl_trigger)));
+    assert_eq!(sl.trigger_type(), Some(TriggerType::MarkPrice));
+    assert_eq!(sl.time_in_force(), TimeInForce::Gtc);
+    assert!(!sl.is_post_only());
+    assert_eq!(
+        sl.linked_order_ids(),
+        Some([tp.client_order_id()].as_slice())
+    );
+}
+
+#[rstest]
+#[case::contingency(
+    ContingencyType::Oto,
+    OrderType::Limit,
+    "Bracket exits require OCO or OUO contingency, was Oto"
+)]
+#[case::take_profit(
+    ContingencyType::Ouo,
+    OrderType::Market,
+    "Bracket take-profit requires LIMIT, MARKET_IF_TOUCHED, or LIMIT_IF_TOUCHED, was Market"
+)]
+fn test_submit_bracket_order_rejects_unsupported_exit_shape(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] contingency: ContingencyType,
+    #[case] tp_type: OrderType,
+    #[case] reason: &str,
+) {
+    config.enable_brackets = true;
+    config.bracket_contingency_type = contingency;
+    config.bracket_tp_order_type = tp_type;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+
+    let error = tester
+        .submit_bracket_order(OrderSide::Buy, Price::from("3035.00"))
+        .unwrap_err();
+
+    assert_eq!(error.to_string(), reason);
+    assert_eq!(cache.borrow().orders(None, None, None, None, None).len(), 0);
+}
+
+#[rstest]
 fn test_submit_bracket_order_sell_creates_order_list(
     mut config: ExecTesterConfig,
     instrument: InstrumentAny,
@@ -3171,6 +3324,9 @@ fn test_submit_bracket_order_buy_tp_sl_prices(
 
     // Entry 3000.0 +/- 100 ticks at 0.01 increment: TP = 3001.0, SL trigger = 2999.0.
     assert_eq!(tp.price(), Some(Price::from("3001.0")));
+    assert_eq!(tp.trigger_price(), None);
+    assert_eq!(tp.contingency_type(), Some(ContingencyType::Ouo));
+    assert_eq!(sl.contingency_type(), Some(ContingencyType::Ouo));
     assert_eq!(sl.trigger_price(), Some(Price::from("2999.0")));
 }
 
@@ -3206,6 +3362,9 @@ fn test_submit_bracket_order_sell_tp_sl_prices(
 
     // Entry 3000.0 +/- 100 ticks at 0.01 increment: TP = 2999.0, SL trigger = 3001.0.
     assert_eq!(tp.price(), Some(Price::from("2999.0")));
+    assert_eq!(tp.trigger_price(), None);
+    assert_eq!(tp.contingency_type(), Some(ContingencyType::Ouo));
+    assert_eq!(sl.contingency_type(), Some(ContingencyType::Ouo));
     assert_eq!(sl.trigger_price(), Some(Price::from("3001.0")));
 }
 
