@@ -177,7 +177,9 @@ elif tool == "gh":
         ), args
         if "--bundle" in args:
             bundle = Path(option("--bundle"))
-            assert bundle.suffix == ".sigstore"
+            assert bundle.suffix in (".json", ".jsonl"), "Unsupported GitHub CLI bundle extension"
+            package = Path(args[2])
+            assert bundle.read_bytes() == package.with_name(package.name + ".sigstore").read_bytes()
             if os.environ.get("PUBLICATION_RECOVERY"):
                 if "--predicate-type" not in args:
                     sys.exit(43)
@@ -534,9 +536,16 @@ def _check_recovery(root: Path) -> None:  # noqa: PLR0915
             assert route == prefix + "/jobs?per_page=100", route
             return {"total_count": 1, "jobs": [{"name": "recover-pypi", "conclusion": "success"}]}
 
+        def verify_bundle(args: list[str], *, check: bool) -> subprocess.CompletedProcess:
+            assert check is True
+            bundle_json = Path(args[args.index("--bundle") + 1])
+            assert bundle_json.suffix == ".json"
+            assert bundle_json.read_bytes() == bundle.read_bytes()
+            return subprocess.CompletedProcess(args, 0)
+
         with (
             patch.dict(GLOBALS, {"_github_json": github_json}),
-            patch("subprocess.run", return_value=subprocess.CompletedProcess([], 0)) as verify,
+            patch("subprocess.run", side_effect=verify_bundle) as verify,
         ):
             RECOVERY["_verify"](package, source_path)
             command = verify.call_args.args[0]

@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from http import HTTPStatus
@@ -244,29 +245,32 @@ def _verify(package: Path, source_path: Path) -> None:
     selected = os.environ.get("PYPI_RECOVERY_RUN_ID", "")
     if selected and _positive_integer(selected) != run_id:
         raise ValueError("Attestation does not belong to the selected publication recovery")
-    subprocess.run(
-        [
-            "gh",
-            "attestation",
-            "verify",
-            str(package),
-            "--bundle",
-            str(bundle),
-            "--repo",
-            repository,
-            "--source-digest",
-            recovery["sha"],
-            "--source-ref",
-            "refs/heads/master",
-            "--cert-identity",
-            f"https://github.com/{repository}/.github/workflows/build.yml@refs/heads/master",
-            "--cert-oidc-issuer",
-            "https://token.actions.githubusercontent.com",
-            "--predicate-type",
-            PREDICATE_TYPE,
-        ],
-        check=True,
-    )
+    with tempfile.TemporaryDirectory() as directory:
+        bundle_json = Path(directory) / "bundle.json"
+        shutil.copyfile(bundle, bundle_json)
+        subprocess.run(
+            [
+                "gh",
+                "attestation",
+                "verify",
+                str(package),
+                "--bundle",
+                str(bundle_json),
+                "--repo",
+                repository,
+                "--source-digest",
+                recovery["sha"],
+                "--source-ref",
+                "refs/heads/master",
+                "--cert-identity",
+                f"https://github.com/{repository}/.github/workflows/build.yml@refs/heads/master",
+                "--cert-oidc-issuer",
+                "https://token.actions.githubusercontent.com",
+                "--predicate-type",
+                PREDICATE_TYPE,
+            ],
+            check=True,
+        )
     original = _github_json(
         f"repos/{repository}/actions/runs/{source['id']}/attempts/{source_attempt}",
     )
