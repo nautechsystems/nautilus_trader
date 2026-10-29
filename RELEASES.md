@@ -32,6 +32,7 @@ Released on TBD (UTC).
 - Improved Docker publishing with temporary digest directories isolated per job
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Upgraded `socket-cli` tool to v1.10.1
+- Upgraded `hypersync-client` crate to v2.0.0
 - Upgraded `ty` package (dev) to v0.0.90
 
 ### Documentation Updates

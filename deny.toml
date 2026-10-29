@@ -193,10 +193,6 @@ skip = [
   # Case conversion - version fragmentation via derive_more
   { crate = "convert_case:<0.10" },
 
-  # Arrow/Parquet compatibility facades - hypersync requires the 57.x package IDs
-  { crate = "arrow:<59" },
-  { crate = "parquet:<59" },
-
   # Common utility crates with version fragmentation across ecosystem
   # base64 0.23 is used directly; upstream dependencies still require 0.22
   { crate = "base64:<0.23" },

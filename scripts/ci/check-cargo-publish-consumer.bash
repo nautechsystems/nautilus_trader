@@ -64,11 +64,16 @@ main() {
 
   reject_local_package "$metadata_file" arrow
   reject_local_package "$metadata_file" parquet
-  require_registry_package "$metadata_file" arrow 57
   require_registry_package "$metadata_file" arrow 59
-  require_registry_package "$metadata_file" parquet 57
   require_registry_package "$metadata_file" parquet 59
-  require_registry_package "$metadata_file" thrift 0
+
+  if jq -e '.packages | any(
+    .name == "thrift"
+    or ((.name == "arrow" or .name == "parquet") and (.version | startswith("57.")))
+  )' "$metadata_file" > /dev/null; then
+    echo "::error::Published consumer graph resolved Arrow/Parquet 57 or thrift" >&2
+    exit 1
+  fi
 
   CARGO_BUILD_JOBS="${CARGO_BUILD_JOBS:-2}" CARGO_TARGET_DIR="$target_dir" \
     cargo check --locked --manifest-path "${consumer_work_dir}/Cargo.toml"

@@ -1512,9 +1512,9 @@
       "published": "2024-07-22T14:45:39.742466Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "hypersync-client@1.4.1": {
-      "published": "2026-09-08T14:14:03.433814Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "hypersync-client@2.0.0": {
+      "published": "2026-10-29T14:44:48.466357Z",
+      "verified_at": "2026-10-29T20:47:03Z"
     },
     "hypersync-format@0.7.1": {
       "published": "2026-08-20T07:59:03.298166Z",
@@ -1524,9 +1524,9 @@
       "published": "2025-12-10T13:51:35.455862Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "hypersync-schema@0.4.0": {
-      "published": "2025-12-10T13:49:29.963624Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "hypersync-schema@0.5.0": {
+      "published": "2026-10-29T14:18:02.175742Z",
+      "verified_at": "2026-10-29T20:47:03Z"
     },
     "iai@0.1.1": {
       "published": "2021-01-24T15:48:17.577031Z",
