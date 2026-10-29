@@ -23,6 +23,8 @@ Released on TBD (UTC).
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
+- Fixed OKX order commands rejected before being written during WebSocket reconnects
+- Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects
 - Fixed Polymarket accepting invalid funders, malformed `load_ids`, and unsafe retry delays
 - Fixed Polymarket explicit event slugs being ignored when an event-slug builder is configured
 - Fixed Polymarket data-client builder defaults disabling the 60-minute instrument refresh
