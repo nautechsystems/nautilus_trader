@@ -1,3 +1,15 @@
+# NautilusTrader 2.0.0rc9
+
+Released on TBD (UTC).
+
+### Internal Improvements
+
+- Removed temporary release repair CI exemption
+- Upgraded `socket-cli` tool to v1.10.1
+- Upgraded `ty` package (dev) to v0.0.90
+
+---
+
 # NautilusTrader 2.0.0rc8
 
 Released on 28th October 2026 (UTC).

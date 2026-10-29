@@ -1958,6 +1958,12 @@ delta = "0.4.4 -> 0.4.5"
 importable = false
 notes = "Reviewed published constant-time comparison, borrow, carry, and zero-count primitives. New arithmetic uses wrapping operations and optimization barriers with target-specific software fallbacks; no unsafe code or ambient capability was added."
 
+[[audits.ctutils]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.5 -> 0.4.6"
+notes = "Reviewed the checksum-verified published delta. Word-sized borrow masks share the existing wrapping subtraction and black_box barrier; Choice behavior is preserved. New property tests cover arbitrary borrow masks and chained limbs. Runtime dependencies and MSRV are unchanged; unsafe remains forbidden and no ambient capability is added."
+
 [[audits.cucumber]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-run"
