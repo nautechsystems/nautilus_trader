@@ -8,6 +8,7 @@ Released on TBD (UTC).
 - Changed `Cache::cache_all` to replace preloaded Greeks and yield curves; add transient values after loading
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
+- Changed Bybit HTTP `modify_order` to take `trigger_price`; pass `None` when unchanged
 - Changed Derive endpoint overrides to `SecretString`; pass strings to builders or use `.into()` in struct literals
 - Changed Polymarket data/execution credentials and funders to reject blanks; omit them for environment fallback
 - Changed Polymarket execution examples to dry run by default; disable `DRY_RUN` for live orders
@@ -21,6 +22,7 @@ Released on TBD (UTC).
 
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
+- Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
 - Fixed Polymarket accepting invalid funders, malformed `load_ids`, and unsafe retry delays
 - Fixed Polymarket explicit event slugs being ignored when an event-slug builder is configured
 - Fixed Polymarket data-client builder defaults disabling the 60-minute instrument refresh

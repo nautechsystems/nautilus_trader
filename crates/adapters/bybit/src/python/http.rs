@@ -775,7 +775,8 @@ impl BybitHttpClient {
         client_order_id=None,
         venue_order_id=None,
         quantity=None,
-        price=None
+        price=None,
+        trigger_price=None
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_modify_order<'py>(
@@ -788,6 +789,7 @@ impl BybitHttpClient {
         venue_order_id: Option<VenueOrderId>,
         quantity: Option<Quantity>,
         price: Option<Price>,
+        trigger_price: Option<Price>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let client = self.clone();
 
@@ -801,6 +803,7 @@ impl BybitHttpClient {
                     venue_order_id,
                     quantity,
                     price,
+                    trigger_price,
                 )
                 .await
                 .map_err(to_pyvalue_err)?;

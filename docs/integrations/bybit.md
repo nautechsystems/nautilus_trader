@@ -350,6 +350,8 @@ post-only orders. An unsupported TIF in an order list denies every leg before su
 | Bracket/OCO Orders | -    | -      | -       | -      | Not implemented; submit legs yourself. |
 | Iceberg Orders     | -    | -      | -       | -      | Not implemented.                       |
 
+Conditional orders also support trigger-price amendments.
+
 ### Batch operations
 
 | Operation    | Spot | Linear | Inverse | Option | Notes                                     |

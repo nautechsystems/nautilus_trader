@@ -3004,6 +3004,7 @@ impl BybitHttpClient {
         venue_order_id: Option<VenueOrderId>,
         quantity: Option<Quantity>,
         price: Option<Price>,
+        trigger_price: Option<Price>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -3025,6 +3026,10 @@ impl BybitHttpClient {
 
         if let Some(price) = price {
             amend_entry.price(Some(price.to_string()));
+        }
+
+        if let Some(trigger_price) = trigger_price {
+            amend_entry.trigger_price(Some(trigger_price.to_string()));
         }
 
         let amend_entry = amend_entry.build().build_anyhow()?;
