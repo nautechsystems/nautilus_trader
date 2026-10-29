@@ -2,12 +2,17 @@
 
 Released on TBD (UTC).
 
+### Security
+
+- Improved R2 publishing credential handling to avoid writing keys to disk
+
 ### Fixes
 
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 
 ### Internal Improvements
 
+- Improved Docker publishing with temporary digest directories isolated per job
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Upgraded `socket-cli` tool to v1.10.1
 - Upgraded `ty` package (dev) to v0.0.90
