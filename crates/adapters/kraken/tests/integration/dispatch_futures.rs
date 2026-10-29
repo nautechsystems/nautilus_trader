@@ -1012,14 +1012,10 @@ fn test_truncated_id_map_resolves_full_client_order_id() {
 }
 
 #[rstest]
-fn test_futures_converted_hold_cancel_emits_canceled_with_reason() {
-    // Maker Protection: the REST cancel of a held order was acknowledged by
-    // the gateway (no dispatch event), and the converted order could not
-    // trade at release. The terminal cancel delta must converge the order
-    // with the venue reason preserved.
+fn test_futures_held_order_cancel_without_fills_emits_canceled_with_reason() {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
-    let cid = ClientOrderId::new("uuid-mp-converted");
+    let cid = ClientOrderId::new("uuid-mp-unfilled");
     state.register_identity(
         cid,
         make_identity(FUTURES_INSTRUMENT_ID, OrderSide::Buy, OrderType::Limit),
@@ -1027,11 +1023,11 @@ fn test_futures_converted_hold_cancel_emits_canceled_with_reason() {
 
     let delta = make_open_orders_delta(
         true,
-        Some("IOC_WOULD_ENTER_BOOK"),
+        Some("cancelled_by_user"),
         dec!(0.0001),
         dec!(0.0),
-        Some("uuid-mp-converted"),
-        "v-mp-converted",
+        Some("uuid-mp-unfilled"),
+        "v-mp-unfilled",
     );
     dispatch::futures::open_orders_delta(
         &delta,
@@ -1057,16 +1053,13 @@ fn test_futures_converted_hold_cancel_emits_canceled_with_reason() {
         panic!("expected OrderCanceled, was {:?}", events[1]);
     };
 
-    assert_eq!(canceled.reason, Some(Ustr::from("IOC_WOULD_ENTER_BOOK")));
+    assert_eq!(canceled.reason, Some(Ustr::from("cancelled_by_user")));
     assert!(state.lookup_identity(&cid).is_none());
 }
 
 #[rstest]
-fn test_futures_converted_hold_fill_after_cancel_ack_converges() {
-    // Maker Protection core trap: the cancel was already acknowledged over
-    // REST, then the held order fills at release. The fill must still be
-    // processed, and the subsequent fill-driven removal must not emit a
-    // spurious cancel.
+fn test_futures_held_order_full_fill_before_cancel_response_converges() {
+    // A held order can fill before its cancel answers notFound
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("uuid-mp-filled");
@@ -1128,11 +1121,8 @@ fn test_futures_converted_hold_fill_after_cancel_ack_converges() {
 }
 
 #[rstest]
-fn test_futures_held_amend_cancel_absorbed_then_amend_outcome_drives_state() {
-    // Maker Protection: a cancel sent while an amend is held is absorbed by
-    // the gateway and never reaches the book, so dispatch never sees it. At
-    // release the amendment reprices the same order (modify ack), then it
-    // trades. The amend outcome alone must drive the order state.
+fn test_futures_held_amend_full_fill_leaves_nothing_to_cancel() {
+    // A held amend trades before cancellation can remove its remainder
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = ClientOrderId::new("uuid-mp-amend");
@@ -1352,7 +1342,10 @@ fn register_tracked_identity(
 }
 
 #[rstest]
-fn test_futures_partial_removal_after_fills_emits_canceled() {
+#[case("partial_fill")]
+#[case("cancelled_by_user")]
+#[case("dead_man_switch")]
+fn test_futures_cancel_after_fills_emits_canceled(#[case] reason: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = register_tracked_identity(&state, "uuid-mp-part-fill-first", "0.001");
@@ -1377,7 +1370,7 @@ fn test_futures_partial_removal_after_fills_emits_canceled() {
 
     let removal = make_open_orders_delta(
         true,
-        Some("partial_fill"),
+        Some(reason),
         dec!(0.001),
         dec!(0.0004),
         Some("uuid-mp-part-fill-first"),
@@ -1415,13 +1408,16 @@ fn test_futures_partial_removal_after_fills_emits_canceled() {
         panic!("expected OrderCanceled, was {:?}", events[2]);
     };
 
-    assert_eq!(canceled.reason, Some(Ustr::from("partial_fill")));
+    assert_eq!(canceled.reason, Some(Ustr::from(reason)));
     assert!(state.lookup_identity(&cid).is_none());
     assert!(state.pending_removal(&cid).is_none());
 }
 
 #[rstest]
-fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
+#[case("partial_fill")]
+#[case("cancelled_by_user")]
+#[case("dead_man_switch")]
+fn test_futures_cancel_before_fills_defers_cancel_until_fill(#[case] reason: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = register_tracked_identity(&state, "uuid-mp-part-removal-first", "0.001");
@@ -1429,7 +1425,7 @@ fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
 
     let removal = make_open_orders_delta(
         true,
-        Some("partial_fill"),
+        Some(reason),
         dec!(0.001),
         dec!(0.0004),
         Some("uuid-mp-part-removal-first"),
@@ -1454,7 +1450,7 @@ fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
     );
     let pending = state.pending_removal(&cid).expect("removal parked");
     assert_eq!(pending.venue_filled, Quantity::from("0.0004"));
-    assert_eq!(pending.reason.as_deref(), Some("partial_fill"));
+    assert_eq!(pending.reason.as_deref(), Some(reason));
 
     let fills = make_fills_delta_with_qty(
         Some("uuid-mp-part-removal-first"),
@@ -1496,7 +1492,10 @@ fn test_futures_partial_removal_before_fills_defers_cancel_until_fill() {
 }
 
 #[rstest]
-fn test_futures_partial_removal_deferred_across_multiple_fills() {
+#[case("partial_fill")]
+#[case("cancelled_by_user")]
+#[case("dead_man_switch")]
+fn test_futures_cancel_deferred_across_multiple_fills(#[case] reason: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = register_tracked_identity(&state, "uuid-mp-part-multi", "0.001");
@@ -1504,7 +1503,7 @@ fn test_futures_partial_removal_deferred_across_multiple_fills() {
 
     let removal = make_open_orders_delta(
         true,
-        Some("partial_fill"),
+        Some(reason),
         dec!(0.001),
         dec!(0.0006),
         Some("uuid-mp-part-multi"),
@@ -1592,7 +1591,10 @@ fn test_futures_partial_removal_deferred_across_multiple_fills() {
 }
 
 #[rstest]
-fn test_futures_pending_removal_superseded_by_full_fill() {
+#[case("partial_fill")]
+#[case("cancelled_by_user")]
+#[case("dead_man_switch")]
+fn test_futures_pending_removal_superseded_by_full_fill(#[case] reason: &str) {
     let (emitter, mut rx) = test_emitter();
     let state = Arc::new(WsDispatchState::new());
     let cid = register_tracked_identity(&state, "uuid-mp-part-full", "0.0001");
@@ -1600,7 +1602,7 @@ fn test_futures_pending_removal_superseded_by_full_fill() {
 
     let removal = make_open_orders_delta(
         true,
-        Some("partial_fill"),
+        Some(reason),
         dec!(0.0001),
         dec!(0.0001),
         Some("uuid-mp-part-full"),
