@@ -146,6 +146,11 @@ impl Cache {
     /// As with [`Self::purge_position`], the durable `cache://position-snapshots/...` entries
     /// stay in general cache state.
     ///
+    /// The settled frame drops the fills it copies from `position`, which belong to the current
+    /// cycle rather than the settled ones, since consumers match frames to cycles by their fills.
+    /// Its other fields still describe `position`, including the `trade_ids` the matching engine
+    /// checks archived trades against.
+    ///
     /// Requires `closed_cycles_pnl` to account for every frame held, since this removes all of
     /// them. The position's replay log must therefore span every archived cycle for the ID. Any
     /// future retention cap on the log has to preserve that at trim time, either by folding the
@@ -168,6 +173,7 @@ impl Cache {
         if let Some(closed_cycles_pnl) = closed_cycles_pnl {
             let (_, mut settled) = self.build_position_snapshot(position);
             settled.realized_pnl = Some(closed_cycles_pnl);
+            settled.events.clear();
             self.store_position_snapshot(position.id, settled, None);
         }
     }

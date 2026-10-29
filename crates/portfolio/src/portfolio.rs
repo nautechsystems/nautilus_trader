@@ -65,7 +65,7 @@ struct PortfolioState {
     realized_pnls: IndexMap<InstrumentId, Money>,
     recorded_closed_position_cycles: AHashSet<(PositionId, UnixNanos, Option<[u8; 16]>)>,
     snapshot_sum_per_position: AHashMap<PositionId, Money>,
-    snapshot_last_per_position: AHashMap<PositionId, Money>,
+    snapshot_last_per_position: AHashMap<PositionId, LastSnapshotFrame>,
     snapshot_currency_mismatches: AHashSet<PositionId>,
     snapshot_aggregation_overflows: AHashSet<PositionId>,
     snapshot_processed_counts: AHashMap<PositionId, usize>,
@@ -89,6 +89,34 @@ struct PortfolioState {
     portfolio_snapshots: AHashMap<AccountId, VecDeque<PortfolioSnapshot>>,
     pre_position_fill_events: AHashSet<UUID4>,
     balance_error: Option<String>,
+}
+
+/// The realized PnL of a position's last NETTING snapshot frame, with the fills it archived.
+struct LastSnapshotFrame {
+    realized_pnl: Money,
+    fill_ids: Vec<UUID4>,
+}
+
+impl LastSnapshotFrame {
+    fn new(snapshot: &Position, realized_pnl: Money) -> Self {
+        Self {
+            realized_pnl,
+            fill_ids: snapshot.events.iter().map(|fill| fill.event_id).collect(),
+        }
+    }
+
+    /// Returns whether this frame holds the same fills as the cycle `position` closed with.
+    ///
+    /// A frame archived from a cycle holds that cycle's fills, which no other cycle shares, while
+    /// a settled frame holds none. Fills cannot tell a settled frame from a position left with no
+    /// fills, so such a position matches any frame without fills and the PnL decides.
+    fn archives_cycle_of(&self, position: &Position) -> bool {
+        position
+            .events
+            .iter()
+            .map(|fill| fill.event_id)
+            .eq(self.fill_ids.iter().copied())
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -2613,12 +2641,12 @@ impl Portfolio {
                     .position_snapshots(Some(position_id), None);
 
                 let mut sum_pnl: Option<Money> = None;
-                let mut last_pnl: Option<Money> = None;
+                let mut last_frame: Option<(&Position, Money)> = None;
                 let mut snapshot_account_id: Option<AccountId> = None;
                 let mut currency_mismatch = false;
                 let mut aggregation_overflow = false;
 
-                for snapshot in snapshots {
+                for snapshot in &snapshots {
                     snapshot_account_id.get_or_insert(snapshot.account_id);
                     if let Some(realized_pnl) = snapshot.realized_pnl {
                         if let Some(sum) = sum_pnl {
@@ -2634,7 +2662,7 @@ impl Portfolio {
                         } else {
                             sum_pnl = Some(realized_pnl);
                         }
-                        last_pnl = Some(realized_pnl);
+                        last_frame = Some((snapshot, realized_pnl));
                     }
                 }
 
@@ -2643,8 +2671,10 @@ impl Portfolio {
                 if !aggregation_overflow && let Some(sum) = sum_pnl {
                     inner.snapshot_sum_per_position.insert(*position_id, sum);
 
-                    if let Some(last) = last_pnl {
-                        inner.snapshot_last_per_position.insert(*position_id, last);
+                    if let Some((snapshot, last_pnl)) = last_frame {
+                        inner
+                            .snapshot_last_per_position
+                            .insert(*position_id, LastSnapshotFrame::new(snapshot, last_pnl));
                     }
                 } else {
                     inner.snapshot_sum_per_position.remove(position_id);
@@ -2707,12 +2737,7 @@ impl Portfolio {
                     .snapshot_sum_per_position
                     .get(position_id)
                     .copied();
-                let mut last_pnl = self
-                    .inner
-                    .borrow()
-                    .snapshot_last_per_position
-                    .get(position_id)
-                    .copied();
+                let mut last_frame: Option<(&Position, Money)> = None;
                 let mut snapshot_account_id: Option<AccountId> = None;
                 let mut currency_mismatch = self
                     .inner
@@ -2730,7 +2755,7 @@ impl Portfolio {
                     .borrow()
                     .position_snapshots_from(position_id, prev_count);
 
-                for snapshot in new_snapshots {
+                for snapshot in &new_snapshots {
                     snapshot_account_id.get_or_insert(snapshot.account_id);
                     if let Some(realized_pnl) = snapshot.realized_pnl {
                         if let Some(sum) = sum_pnl {
@@ -2746,7 +2771,7 @@ impl Portfolio {
                         } else {
                             sum_pnl = Some(realized_pnl);
                         }
-                        last_pnl = Some(realized_pnl);
+                        last_frame = Some((snapshot, realized_pnl));
                     }
                 }
 
@@ -2755,8 +2780,10 @@ impl Portfolio {
                 if !aggregation_overflow && let Some(sum) = sum_pnl {
                     inner.snapshot_sum_per_position.insert(*position_id, sum);
 
-                    if let Some(last) = last_pnl {
-                        inner.snapshot_last_per_position.insert(*position_id, last);
+                    if let Some((snapshot, last_pnl)) = last_frame {
+                        inner
+                            .snapshot_last_per_position
+                            .insert(*position_id, LastSnapshotFrame::new(snapshot, last_pnl));
                     }
                 }
 
@@ -2880,7 +2907,12 @@ impl Portfolio {
                     inner
                         .snapshot_sum_per_position
                         .get(position_id)
-                        .or_else(|| inner.snapshot_last_per_position.get(position_id))
+                        .or_else(|| {
+                            inner
+                                .snapshot_last_per_position
+                                .get(position_id)
+                                .map(|last| &last.realized_pnl)
+                        })
                         .map(|pnl| pnl.currency)
                 })
             })
@@ -2912,17 +2944,20 @@ impl Portfolio {
 
                 // A closed position whose final cycle was snapshotted carries that cycle both in
                 // its last frame and in its own realized PnL, which the loop below adds; drop
-                // the frame here so the cycle lands once.
+                // the frame here so the cycle lands once, matching fills as well as PnL since an
+                // earlier cycle can realize the same amount.
                 let sum_pnl = if let Some(sum_pnl) = sum_pnl {
-                    let closed_position_pnl = position
-                        .filter(|position| !position.is_open())
-                        .and_then(|position| position.realized_pnl);
-                    let last_pnl = self
-                        .inner
-                        .borrow()
-                        .snapshot_last_per_position
-                        .get(position_id)
-                        .copied();
+                    let closed_position = position.filter(|position| !position.is_open());
+                    let closed_position_pnl =
+                        closed_position.and_then(|position| position.realized_pnl);
+                    let last_pnl = closed_position.and_then(|position| {
+                        self.inner
+                            .borrow()
+                            .snapshot_last_per_position
+                            .get(position_id)
+                            .filter(|last| last.archives_cycle_of(position))
+                            .map(|last| last.realized_pnl)
+                    });
 
                     Some(match (closed_position_pnl, last_pnl) {
                         (Some(realized_pnl), Some(last_pnl)) if last_pnl == realized_pnl => {
