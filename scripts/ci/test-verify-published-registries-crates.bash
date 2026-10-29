@@ -77,7 +77,7 @@ runs_pypi_attestations=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    pypi-attestations)
+    pypi_attestations)
       runs_pypi_attestations=1
       shift
       ;;

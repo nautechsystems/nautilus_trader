@@ -11,6 +11,10 @@ on:
         description: Original completed master build run ID
         required: true
         type: string
+      publication-run:
+        description: Successful build.yml publication recovery run, if needed
+        required: false
+        type: string
       mode:
         description: Recover a draft or verify a published release
         required: true
@@ -92,6 +96,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG_NAME: ${{ inputs.tag }}
           SOURCE_RUN_ID: ${{ inputs.source-run }}
+          PYPI_RECOVERY_RUN_ID: ${{ inputs.publication-run }}
           RECOVERY_MODE: ${{ inputs.mode }}
           CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS: ${{ vars.CRATES_IO_MANUAL_PUBLISH_EXCEPTIONS }}
         run: >-
@@ -101,11 +106,15 @@ jobs:
 
       - name: Retain recovery diagnostics
         if: always()
+        continue-on-error: true
         # https://github.com/actions/upload-artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-recovery-${{ github.run_id }}-${{ github.run_attempt }}
-          path: ${{ runner.temp }}/release-recovery
+          path: |
+            ${{ runner.temp }}/release-recovery
+            !${{ runner.temp }}/release-recovery/**/*.whl
+            !${{ runner.temp }}/release-recovery/**/*.tar.gz
           include-hidden-files: true
           if-no-files-found: warn
           retention-days: 30

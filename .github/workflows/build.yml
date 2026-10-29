@@ -8,6 +8,16 @@ permissions:
   actions: read
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing draft release tag to finish publishing
+        required: true
+        type: string
+      source-run:
+        description: Original completed master build run ID
+        required: true
+        type: string
   push:
     branches:
       - test-ci
@@ -44,10 +54,12 @@ env:
 
 jobs:
   plan:
+    if: github.event_name != 'workflow_dispatch'
     name: plan
     runs-on: ubuntu-latest
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
+      recovery-only: ${{ steps.plan.outputs.recovery_only }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
       github-changed: ${{ steps.plan.outputs.github_changed }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
@@ -87,6 +99,8 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BEFORE_SHA: ${{ github.event.before }}
+          REF_NAME: ${{ github.ref_name }}
+          CI_RELEASE_REPAIR_TREE: ${{ vars.CI_RELEASE_REPAIR_TREE }}
         run: bash scripts/ci/plan.sh
 
       - name: Plan wheel publication
@@ -104,6 +118,7 @@ jobs:
           echo "tag_name=$tag_name" >> "$GITHUB_OUTPUT"
 
   security-audit:
+    if: github.event_name != 'workflow_dispatch'
     name: security audit
     permissions:
       contents: read
@@ -298,12 +313,7 @@ jobs:
       - plan
       - pre-commit
       - test-scripts
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - "3.13"
-    name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
+    name: build - python 3.13 (ubuntu-22.04)
     runs-on: &python-build-runner >-
       ${{ github.event_name == 'pull_request'
       && needs.plan.outputs.untrusted_pr != 'false'
@@ -329,12 +339,6 @@ jobs:
         || 'release' }}
       NAUTILUS_TEST_INFRASTRUCTURE: "1"
       RUST_BACKTRACE: 1
-      # Self-hosted keeps Rust artifacts outside the workspace
-      CARGO_TARGET_DIR: >-
-        ${{ github.event_name == 'pull_request'
-        && needs.plan.outputs.untrusted_pr != 'false'
-        && format('{0}/target', github.workspace)
-        || format('/home/runner/.cache/cargo-target/py{0}', matrix.python-version) }}
     # yamllint disable rule:line-length
     services: &python-build-services
       redis:
@@ -385,10 +389,22 @@ jobs:
       - name: Verify immutable CI inputs (post-checkout)
         run: bash scripts/ci/verify-ci-inputs.sh post-checkout
 
+      - name: Select Python build environment
+        env:
+          PYTHON_VERSION: ${{ github.job == 'build-python314' && '3.14' || '3.13' }}
+          BUILD_ENVIRONMENT: ${{ runner.environment }}
+        run: |
+          echo "PYTHON_VERSION=$PYTHON_VERSION" >> "$GITHUB_ENV"
+          if [[ "$BUILD_ENVIRONMENT" == github-hosted ]]; then
+            echo "CARGO_TARGET_DIR=$GITHUB_WORKSPACE/target" >> "$GITHUB_ENV"
+          else
+            echo "CARGO_TARGET_DIR=/home/runner/.cache/cargo-target/py$PYTHON_VERSION" >> "$GITHUB_ENV"
+          fi
+
       - name: Common setup
         uses: $/.github/actions/common-setup
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: ${{ env.PYTHON_VERSION }}
           # free-disk-space auto-skips on the nautilus-ci-runner-* pool.
           free-disk-space: "true"
           free-disk-space-max-build: ${{ runner.environment == 'github-hosted' && 'true' || 'false' }}
@@ -435,8 +451,7 @@ jobs:
         run: bash ../scripts/ci/test-wheel.bash
 
       - name: Check generated file drift
-        # Keep this 3.13 condition in sync with the matrix so drift is checked once per run.
-        if: matrix.python-version == '3.13'
+        if: env.PYTHON_VERSION == '3.13'
         env:
           TARGET_DIR: >-
             ${{ github.event_name == 'pull_request'
@@ -455,12 +470,7 @@ jobs:
   build-python314:
     if: *python-build-condition
     needs: *python-build-needs
-    strategy:
-      fail-fast: false
-      matrix:
-        python-version:
-          - "3.14"
-    name: build - python ${{ matrix.python-version }} (ubuntu-22.04)
+    name: build - python 3.14 (ubuntu-22.04)
     runs-on: *python-build-runner
     permissions: *python-build-permissions
     defaults: *python-build-defaults
@@ -470,7 +480,7 @@ jobs:
 
   python-checks:
     name: python checks
-    if: always() && github.ref != 'refs/heads/test-pre-commit'
+    if: always() && github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/test-pre-commit'
     needs:
       - plan
       - pre-commit
@@ -1058,7 +1068,7 @@ jobs:
           bash ./scripts/ci/publish-wheels-delete-artifacts.sh
 
   cargo-deny:
-    if: github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
@@ -1088,7 +1098,7 @@ jobs:
             advisories licenses sources bans
 
   cargo-vet:
-    if: github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     runs-on: ubuntu-22.04
     steps:
       # https://github.com/step-security/harden-runner
@@ -1123,9 +1133,12 @@ jobs:
     name: release cargo publish preflight
     runs-on: ubuntu-latest
     needs:
+      - plan
       - cargo-deny
       - cargo-vet
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
+      needs.plan.outputs.recovery-only != 'true'
     permissions:
       contents: read
     steps:
@@ -1166,8 +1179,11 @@ jobs:
 
   release-docs-features-preflight:
     name: release docs/features preflight
+    needs: plan
     runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: >-
+      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
+      needs.plan.outputs.recovery-only != 'true'
     permissions:
       contents: read
     env:
@@ -1952,5 +1968,141 @@ jobs:
           name: release-publication-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/release-publication
           include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 30
+
+  recover-pypi:
+    name: recover-pypi
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    environment: release
+    concurrency:
+      group: release-publication-${{ inputs.tag }}
+      cancel-in-progress: false
+    permissions:
+      actions: read
+      contents: write # Required to read the draft release and its assets
+      id-token: write
+      attestations: write
+    steps:
+      # https://github.com/step-security/harden-runner
+      - uses: step-security/harden-runner@e14015d583714f6e62063499dc959a02595150a1 # v2.21.1
+        with:
+          egress-policy: ${{ vars.STEP_SECURITY_EGRESS_POLICY || 'block' }}
+          allowed-endpoints: >-
+            ${{ vars.COMMON_ALLOWED_ENDPOINTS }}
+            ${{ vars.CI_ALLOWED_ENDPOINTS }}
+            pypi.org:443
+            files.pythonhosted.org:443
+            upload.pypi.org:443
+            tuf-repo-cdn.sigstore.dev:443
+            rekor.sigstore.dev:443
+
+      - name: Checkout recovery implementation
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Checkout release source
+        # https://github.com/actions/checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          path: release-source
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      # https://github.com/actions/setup-python
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.13"
+
+      - name: Resolve publication tool versions
+        run: |
+          echo "UV_VERSION=$(bash scripts/uv-version.sh)" >> "$GITHUB_ENV"
+          echo "PYPI_ATTESTATIONS_VERSION=$(bash scripts/tool-version.sh pypi-attestations)" >> "$GITHUB_ENV"
+
+      # https://github.com/astral-sh/setup-uv
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          version: ${{ env.UV_VERSION }}
+          enable-cache: false
+
+      - name: Validate and retrieve original distributions
+        id: prepare
+        working-directory: release-source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ inputs.tag }}
+          SOURCE_RUN_ID: ${{ inputs.source-run }}
+        run: >-
+          bash ../scripts/ci/recover-release.bash
+          "$TAG_NAME" "$SOURCE_RUN_ID" prepare-pypi
+          "${{ runner.temp }}/release-pypi-recovery"
+
+      - name: Generate PyPI publish attestations
+        env:
+          PACKAGES_DIR: ${{ steps.prepare.outputs.packages-dir }}
+        run: bash scripts/ci/sign-pypi-attestations.bash "$PACKAGES_DIR"/*.whl "$PACKAGES_DIR"/*.tar.gz
+
+      - name: Attest recovered distribution provenance
+        id: attest
+        uses: $/.github/actions/attest-build-provenance-retry
+        with:
+          subject-path: |
+            ${{ steps.prepare.outputs.packages-dir }}/*.whl
+            ${{ steps.prepare.outputs.packages-dir }}/*.tar.gz
+          predicate-type: ${{ steps.prepare.outputs.predicate-type }}
+          predicate-path: ${{ steps.prepare.outputs.predicate-path }}
+
+      - name: Verify recovery signature
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PACKAGES_DIR: ${{ steps.prepare.outputs.packages-dir }}
+          ATTESTATION_PREDICATE_TYPE: ${{ steps.prepare.outputs.predicate-type }}
+        run: bash scripts/ci/verify-gh-attestations.bash "$PACKAGES_DIR"/*.whl "$PACKAGES_DIR"/*.tar.gz
+
+      - name: Stage missing PyPI distributions
+        id: stage
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORK_DIR: ${{ steps.prepare.outputs.work-dir }}
+        run: python -I scripts/ci/release-recovery.py stage "$WORK_DIR"
+
+      - name: Publish missing distributions to PyPI
+        if: steps.stage.outputs.missing == 'true'
+        working-directory: ${{ steps.prepare.outputs.work-dir }}/publish
+        run: bash "$GITHUB_WORKSPACE/scripts/ci/publish-pypi-trusted.bash" distributions
+
+      - name: Prepare recovery attestation siblings
+        env:
+          BUNDLE_PATH: ${{ steps.attest.outputs.bundle-path }}
+          PACKAGES_DIR: ${{ steps.prepare.outputs.packages-dir }}
+        run: >-
+          bash scripts/ci/prepare-release-attestation-siblings.bash
+          "$PACKAGES_DIR"/*.whl "$PACKAGES_DIR"/*.tar.gz
+
+      - name: Retain recovery attestations
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-recovery-attestations-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.prepare.outputs.packages-dir }}/*.sigstore
+            ${{ steps.prepare.outputs.packages-dir }}/*.intoto.jsonl
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Retain publication recovery diagnostics
+        if: always()
+        continue-on-error: true
+        # https://github.com/actions/upload-artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-pypi-recovery-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/release-pypi-recovery
+            !${{ runner.temp }}/release-pypi-recovery/**/*.whl
+            !${{ runner.temp }}/release-pypi-recovery/**/*.tar.gz
           if-no-files-found: warn
           retention-days: 30

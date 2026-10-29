@@ -376,8 +376,9 @@ verify_pypi_attestation() {
 
   check_pypi_provenance "$filename" "$provenance_file" || return $?
 
-  uv run --no-project --no-build --with "pypi-attestations==${pypi_attestations_version}" -- \
-    pypi-attestations verify pypi \
+  uv run --isolated --no-project --no-build --managed-python --python 3.13 \
+    --with "pypi-attestations==${pypi_attestations_version}" -- \
+    python -I -m pypi_attestations verify pypi \
     --repository "https://github.com/${pypi_publisher_repository}" \
     --provenance-file "$provenance_file" \
     "$remote_url"
