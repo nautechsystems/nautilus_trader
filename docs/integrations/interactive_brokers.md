@@ -518,7 +518,23 @@ report carries the replayed entry price only when both conditions hold:
 For this check, the expected average cost is the entry price plus opening commissions per unit for a long. For
 a short, it is the entry price minus those commissions. A lot opened by a flip carries no commission.
 
-Otherwise the report keeps IB's average cost, which the engine's reconciliation fill uses.
+Otherwise the report keeps IB's average cost, rounded to the instrument's price precision. The report
+sets `avg_px_open_precision` to that precision, so average-price comparisons allow one unit at that
+precision in addition to the default 0.01% relative tolerance. For price precision 2, the extra allowance
+is 0.01. This lets a cached fill-price average reconcile with IB's commission-inclusive average cost
+even after the entry fills leave the lookback window. Larger differences remain unresolved if recovery
+cannot restore the reported average.
+
+When the report carries this precision and the cached average matches within that allowance, same-side
+quantity increases and reductions use the cached average as the reconciliation fill price. This
+preserves the cached entry average instead of inferring a price from the small average-cost difference.
+Opening from flat or flipping the position uses the reported average cost. Outside the allowance,
+same-side increases use a price calculated to reach the reported average, while reductions use the
+reported average cost and leave the remaining entry average unchanged.
+
+When replayed fills replace IB's average cost, the adapter clears `avg_px_open_precision`. Comparisons
+then use the relative tolerance without the extra rounding allowance. The same-side preservation rule
+above no longer applies.
 
 On connect, the execution client resolves the instrument of every open position in the account. It publishes
 any instrument absent from the cache. Thus, a position in a contract outside the provider's `load_ids` still

@@ -171,7 +171,7 @@ impl FillEvidence {
 /// IB's average cost, within the rounding of the average cost and of each commission. Otherwise
 /// the position keeps IB's average cost, which position recovery prices from, with the
 /// one-tick precision the report was built with. A replaced average is the fills' own,
-/// unrounded, so its precision is cleared and reconciliation compares it exactly.
+/// unrounded, so its precision is cleared and reconciliation uses only the relative tolerance.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
     evidence: &FillEvidence,
