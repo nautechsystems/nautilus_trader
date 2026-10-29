@@ -277,6 +277,7 @@ class TestInstrumentProvider:
             size_increment=Quantity.from_str("0.001"),
             ts_event=0,
             ts_init=0,
+            lot_size=Quantity.from_str("0.001"),
             max_quantity=Quantity.from_str("1000.000"),
             min_quantity=Quantity.from_str("0.001"),
             min_notional=Money(10.00, Currency.from_str("USDT")),
