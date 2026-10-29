@@ -125,13 +125,11 @@ pub mod runner;
 pub mod socket;
 pub mod task;
 
-#[cfg(feature = "fuzz")]
-#[doc(hidden)]
-pub mod fuzz;
+mod dispatch;
 
 #[cfg(feature = "fuzz")]
 #[doc(hidden)]
-pub use fuzz::Corpus;
+pub mod fuzz;
 
 #[cfg(feature = "node")]
 pub mod node;
@@ -142,10 +140,11 @@ pub mod python;
 #[cfg(feature = "test-support")]
 pub mod testing;
 
-mod dispatch;
-
 // Re-exports for adapters
 pub use execution::{emitter, emitter::ExecutionEventEmitter, manager};
+#[cfg(feature = "fuzz")]
+#[doc(hidden)]
+pub use fuzz::Corpus;
 pub use nautilus_common::factories::OrderEventFactory;
 pub use nautilus_execution::client::core::ExecutionClientCore;
 #[cfg(feature = "plugin")]

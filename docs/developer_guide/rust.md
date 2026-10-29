@@ -78,18 +78,19 @@ implementation details.
 
 ### Module roots and declarations
 
-Preserve the surrounding module-root style when adding child modules. In each contiguous
-declaration block in a `mod.rs` file, order out-of-line module declarations by these sections:
+Preserve the surrounding module-root style when adding child modules.
+
+In each contiguous declaration block in a hand-written Rust file, order top-level out-of-line module
+declarations by these sections:
 
 1. `#[macro_use]` modules.
-1. Public modules.
-1. Restricted modules such as `pub(crate)`.
-1. Non-test `#[cfg(...)]`-gated modules.
-1. Private modules.
+1. Unconditional modules: public, restricted (such as `pub(crate)`), then private.
+1. Non-test `#[cfg(...)]`-gated modules: public, restricted, then private.
 1. Test-only modules.
 
-Alphabetize declarations within each section and leave one blank line between sections. The
-formatting hook enforces this order in `mod.rs` files.
+Alphabetize declarations in each visibility group, the `#[macro_use]` section, and the test-only section.
+Leave one blank line between groups and sections. The formatting hook enforces this order in all
+hand-written Rust files, including `lib.rs` and `mod.rs`.
 
 Use the narrowest visibility that serves the caller. The workspace denies unreachable `pub` items.
 

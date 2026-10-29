@@ -127,7 +127,7 @@ pub struct Cache {
     instrument_closes: AHashMap<InstrumentId, InstrumentClose>,
     synthetics: AHashMap<InstrumentId, SyntheticInstrument>,
     books: AHashMap<InstrumentId, OrderBook>,
-    book_sources: AHashMap<InstrumentId, OrderBookSource>,
+    book_sources: AHashMap<InstrumentId, BookSourceState>,
     own_books: AHashMap<InstrumentId, OwnOrderBook>,
     quotes: AHashMap<InstrumentId, BoundedVecDeque<QuoteTick>>,
     trades: AHashMap<InstrumentId, BoundedVecDeque<TradeTick>>,
@@ -472,14 +472,42 @@ impl Cache {
     /// Registrations survive [`Self::reset`] until the data engine releases its book subscriptions.
     #[must_use]
     pub fn order_book_source(&self, instrument_id: &InstrumentId) -> Option<OrderBookSource> {
-        self.book_sources.get(instrument_id).copied()
+        self.book_sources
+            .get(instrument_id)
+            .map(|state| state.selected)
+    }
+
+    /// Returns whether the data engine has owners for the given live book source.
+    ///
+    /// This reports subscription ownership, independently of the selected source.
+    #[must_use]
+    pub fn has_order_book_source_subscription(
+        &self,
+        instrument_id: &InstrumentId,
+        source: OrderBookSource,
+    ) -> bool {
+        self.book_sources
+            .get(instrument_id)
+            .is_some_and(|state| state.both_sources || state.selected == source)
     }
 
     /// Records or replaces the data engine's selected live book source for an instrument.
     ///
     /// Subscription ownership and conflicts are validated by the data engine.
-    pub fn set_order_book_source(&mut self, instrument_id: InstrumentId, source: OrderBookSource) {
-        self.book_sources.insert(instrument_id, source);
+    /// `both_sources` records whether both delta and depth subscription owners exist.
+    pub fn set_order_book_source(
+        &mut self,
+        instrument_id: InstrumentId,
+        source: OrderBookSource,
+        both_sources: bool,
+    ) {
+        self.book_sources.insert(
+            instrument_id,
+            BookSourceState {
+                selected: source,
+                both_sources,
+            },
+        );
     }
 
     /// Releases the selected live book source when the data engine removes its subscriptions.
@@ -7208,4 +7236,10 @@ fn insert_bar_historical(bars: &mut BoundedVecDeque<Bar>, bar: Bar) {
     } else {
         bars.insert(index, bar);
     }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct BookSourceState {
+    selected: OrderBookSource,
+    both_sources: bool,
 }

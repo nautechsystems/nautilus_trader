@@ -444,12 +444,11 @@ impl DeribitWebSocketClient {
         });
         log::debug!("Cached {} instruments", self.instruments_cache.len());
 
-        // Send per-instrument updates to the live handler rather than
-        // a full snapshot, avoiding out-of-order snapshot races.
-        if self.is_active() {
-            for inst in instruments {
-                let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst.clone())));
-            }
+        // Send per-instrument updates to the live handler rather than a full snapshot, avoiding
+        // out-of-order snapshot races, in every mode since the handler outlives a reconnect and
+        // connect() replays the cache via InitializeInstruments when no handler is running.
+        for inst in instruments {
+            let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst.clone())));
         }
     }
 
@@ -459,13 +458,9 @@ impl DeribitWebSocketClient {
         let symbol = instrument.raw_symbol().inner();
         self.instruments_cache.insert(symbol, instrument);
 
-        // If connected, send update to handler
-        if self.is_active() {
-            let inst = self.instruments_cache.get_cloned(&symbol);
-
-            if let Some(inst) = inst {
-                let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst)));
-            }
+        // Send in every mode, see `cache_instruments`
+        if let Some(inst) = self.instruments_cache.get_cloned(&symbol) {
+            let _ = tx.send(HandlerCommand::UpdateInstrument(Box::new(inst)));
         }
     }
 
@@ -1838,9 +1833,17 @@ fn grouped_book_channel(
 #[cfg(test)]
 mod tests {
     use futures_util::StreamExt;
+    use nautilus_core::UnixNanos;
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        common::{
+            parse::parse_deribit_instrument_any, rpc::DeribitJsonRpcResponse,
+            testing::load_test_json,
+        },
+        http::models::DeribitInstrument,
+    };
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn active_state_waits_for_sender_publication() {
@@ -2166,5 +2169,35 @@ mod tests {
                 .pending_unsubscribe_topics()
                 .is_empty()
         );
+    }
+
+    #[rstest]
+    #[case::active(ConnectionMode::Active)]
+    #[case::reconnect(ConnectionMode::Reconnect)]
+    fn test_cache_instruments_updates_handler(#[case] mode: ConnectionMode) {
+        let client = DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write() = tx;
+        client
+            .connection_mode
+            .store(Arc::new(AtomicU8::new(mode.as_u8())));
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(&load_test_json("http_get_instruments.json")).unwrap();
+        let definition = response.result.unwrap().remove(0);
+        let ts_init = UnixNanos::default();
+        let instrument = parse_deribit_instrument_any(&definition, ts_init, ts_init)
+            .unwrap()
+            .unwrap();
+
+        client.cache_instruments(std::slice::from_ref(&instrument));
+        client.cache_instrument(instrument.clone());
+
+        for _ in 0..2 {
+            let HandlerCommand::UpdateInstrument(update) = rx.try_recv().unwrap() else {
+                panic!("expected instrument update");
+            };
+            assert_eq!(update.id(), instrument.id());
+        }
+        assert!(rx.try_recv().is_err());
     }
 }

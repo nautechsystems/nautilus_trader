@@ -2,8 +2,8 @@
 set -euo pipefail
 
 main() {
-  if [[ $# -ne 4 || ("$3" != "recover" && "$3" != "verify") ]]; then
-    echo "Usage: $0 <tag> <source-run-id> <recover|verify> <diagnostics-dir>" >&2
+  if [[ $# -ne 4 || ("$3" != "recover" && "$3" != "verify" && "$3" != "prepare-pypi") ]]; then
+    echo "Usage: $0 <tag> <source-run-id> <recover|verify|prepare-pypi> <diagnostics-dir>" >&2
     exit 1
   fi
   export TAG_NAME=$1
@@ -25,6 +25,7 @@ main() {
     echo "Error: Run recovery from a checkout of the validated release commit" >&2
     exit 1
   fi
+  export RELEASE_RECOVERY_SHA="${GITHUB_SHA:-}"
   export GITHUB_SHA="$source_sha"
   export PACKAGE_VERSION="${TAG_NAME#v}"
   source_version="$(python3 -c 'import tomllib; print(tomllib.load(open("python/pyproject.toml", "rb"))["project"]["version"])')"
@@ -64,6 +65,10 @@ main() {
     exit 1
   }
   if jq -e '.isDraft == false' "${work_dir}/release.json" > /dev/null; then
+    if [[ "$mode" == "prepare-pypi" ]]; then
+      echo "Error: Publication recovery requires a draft release" >&2
+      exit 1
+    fi
     mode=verify
   elif [[ "$mode" == "verify" ]]; then
     echo "Error: Verification mode requires an already published release" >&2
@@ -72,7 +77,7 @@ main() {
   if [[ "$(jq '.assets | length' "${work_dir}/release.json")" -gt 0 ]]; then
     run_step download-release gh release download "$TAG_NAME" --repo "$repository" --dir "$remote"
   fi
-  if [[ "$mode" == "recover" ]]; then
+  if [[ "$mode" != "verify" ]]; then
     restore_source_artifacts
   fi
   for asset in "$remote"/*; do
@@ -88,6 +93,15 @@ main() {
     fi
   done
   validate_packages
+  if [[ "$mode" == "prepare-pypi" ]]; then
+    run_step prepare-pypi python3 "${script_dir}/release-recovery.py" prepare "$work_dir"
+    recheck_source
+    return
+  fi
+  if [[ "$mode" == "recover" && -n "${PYPI_RECOVERY_RUN_ID:-}" ]]; then
+    run_step publication-evidence python3 "${script_dir}/release-recovery.py" \
+      download "$work_dir" "$PYPI_RECOVERY_RUN_ID"
+  fi
   run_step generate-checksums bash "${script_dir}/publish-release-checksums.sh" --generate-local "$assets"
   preserve_manifest dist-manifest.json
   for package in "$assets"/*.whl "$assets"/*.tar.gz; do
@@ -98,9 +112,16 @@ main() {
         exit 1
       }
     done
-    run_step "bundle-${package##*/}" gh attestation verify "$package" --bundle "${package}.sigstore" \
+    cp "${package}.sigstore" "${work_dir}/bundle.json"
+    if ! run_step "bundle-${package##*/}" gh attestation verify "$package" --bundle "${work_dir}/bundle.json" \
       --repo "$repository" --source-digest "$source_sha" --source-ref refs/heads/master \
-      --cert-identity "$ATTESTATION_IDENTITY" --cert-oidc-issuer "$ATTESTATION_ISSUER"
+      --cert-identity "$ATTESTATION_IDENTITY" --cert-oidc-issuer "$ATTESTATION_ISSUER"; then
+      run_step "recovery-bundle-${package##*/}" python3 "${script_dir}/release-recovery.py" \
+        verify "$package" "${work_dir}/source/source-run.json"
+      ATTESTATION_PREDICATE_TYPE="$(jq -r '.dsseEnvelope.payload | @base64d | fromjson | .predicateType' \
+        "${package}.sigstore")"
+      export ATTESTATION_PREDICATE_TYPE
+    fi
     jq -eSc '.dsseEnvelope // empty' "${package}.sigstore" > "${work_dir}/expected-envelope.json"
     jq -eSc '.' "${package}.intoto.jsonl" > "${work_dir}/existing-envelope.json"
     cmp -s "${work_dir}/expected-envelope.json" "${work_dir}/existing-envelope.json" || {
@@ -184,7 +205,8 @@ validate_source() {
     echo "Error: Release tag and source run identify different commits" >&2
     exit 1
   fi
-  jq -e 'any(.[]; .name == "tag-release" and .conclusion == "success")' \
+  jq -e 'group_by(.name) | map(max_by(.run_attempt // 0))
+    | any(.[]; .name == "tag-release" and .conclusion == "success")' \
     "${diagnostics}/source-jobs.json" > /dev/null || {
     echo "Error: Source run did not pass its tag-release prerequisite gates" >&2
     exit 1

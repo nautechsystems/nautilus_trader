@@ -14525,20 +14525,24 @@ fn test_order_book_source_updates_selection_and_isolates_instruments(mut cache: 
     let first = InstrumentId::from("ETHUSDT.BINANCE");
     let second = InstrumentId::from("BTCUSDT.BINANCE");
     assert_eq!(cache.order_book_source(&first), None);
-    cache.set_order_book_source(first, OrderBookSource::Deltas);
-    cache.set_order_book_source(first, OrderBookSource::Deltas);
-    cache.set_order_book_source(second, OrderBookSource::Depth);
+    cache.set_order_book_source(first, OrderBookSource::Deltas, false);
+    cache.set_order_book_source(first, OrderBookSource::Deltas, false);
+    cache.set_order_book_source(second, OrderBookSource::Depth, false);
     assert_eq!(
         cache.order_book_source(&first),
         Some(OrderBookSource::Deltas)
     );
-    cache.set_order_book_source(first, OrderBookSource::Depth);
+    cache.set_order_book_source(first, OrderBookSource::Depth, true);
+    assert!(cache.has_order_book_source_subscription(&first, OrderBookSource::Deltas));
+    assert!(cache.has_order_book_source_subscription(&first, OrderBookSource::Depth));
     assert_eq!(
         cache.order_book_source(&first),
         Some(OrderBookSource::Depth)
     );
     cache.clear_order_book_source(&first);
     assert_eq!(cache.order_book_source(&first), None);
+    assert!(!cache.has_order_book_source_subscription(&first, OrderBookSource::Deltas));
+    assert!(!cache.has_order_book_source_subscription(&first, OrderBookSource::Depth));
     assert_eq!(
         cache.order_book_source(&second),
         Some(OrderBookSource::Depth)
@@ -14553,9 +14557,11 @@ fn test_reset_preserves_order_book_source_registrations(
     #[case] source: OrderBookSource,
 ) {
     let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
-    cache.set_order_book_source(instrument_id, source);
+    cache.set_order_book_source(instrument_id, source, true);
     cache.reset();
     assert_eq!(cache.order_book_source(&instrument_id), Some(source));
+    assert!(cache.has_order_book_source_subscription(&instrument_id, OrderBookSource::Deltas));
+    assert!(cache.has_order_book_source_subscription(&instrument_id, OrderBookSource::Depth));
     cache.clear_order_book_source(&instrument_id);
     assert_eq!(cache.order_book_source(&instrument_id), None);
 }

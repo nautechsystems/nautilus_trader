@@ -42,7 +42,7 @@ use nautilus_common::{
         },
     },
     msgbus::{
-        self, MessageBus, MessagingSwitchboard, TypedHandler,
+        self, MessageBus, MessagingSwitchboard, ShareableMessageHandler, TypedHandler,
         stubs::{get_typed_into_message_saving_handler, get_typed_message_saving_handler},
         switchboard,
         typed_handler::TypedIntoHandler,
@@ -77,13 +77,13 @@ use nautilus_model::{
         margin_model::{LeveragedMarginModel, MarginModel, MarginModelAny, StandardMarginModel},
     },
     data::{
-        Bar, BarType, BookOrder, Data, InstrumentClose, InstrumentStatus, OrderBookDeltas,
-        OrderBookDepth, QuoteTick, TradeTick,
+        Bar, BarType, BookOrder, Data, InstrumentClose, InstrumentStatus, OrderBookDelta,
+        OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType, LiquiditySide,
-        MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag,
-        TimeInForce,
+        AccountType, AggressorSide, BookAction, BookType, ContingencyType, InstrumentCloseType,
+        LiquiditySide, MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType,
+        PositionSide, RecordFlag, TimeInForce,
     },
     events::{
         AccountState, OrderDenied, OrderEventAny, OrderEventType, OrderFilled, OrderPendingCancel,
@@ -11701,6 +11701,1552 @@ fn test_book_source_after_cache_reset(
         vec![(Price::from("1001.00"), Quantity::from("1.000"))]
     );
     context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::plain(false, false)]
+#[case::queue(true, false)]
+#[case::consumption(false, true)]
+#[case::queue_and_consumption(true, true)]
+fn test_book_source_handoff_restores_running_deltas(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] queue_position: bool,
+    #[case] liquidity_consumption: bool,
+    #[values(false, true)] managed_depth: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+        config.queue_position = queue_position;
+        config.liquidity_consumption = liquidity_consumption;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), true, managed_depth);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    let depth = book_depth(instrument.id(), &[], &[("1004.00", "1.000")]);
+    let deltas = book_depth(
+        instrument.id(),
+        &[],
+        &[
+            ("1000.00", "1.000"),
+            ("1001.00", "2.000"),
+            ("1002.00", "3.000"),
+        ],
+    );
+    engine.process_data(book_source_data(&depth, true));
+    engine.process_data(book_source_data(&deltas, false));
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Update,
+        "1001.00",
+        "4.000",
+        2,
+    ))));
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Delete,
+        "1000.00",
+        "0.000",
+        3,
+    ))));
+    harness.test_clock.borrow_mut().set_time(4.into());
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("HANDOFF-RESTING".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1002.00"))
+        .quantity(Quantity::from("5.000"))
+        .ts_init(4.into())
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+    let before = harness.settle();
+    assert!(
+        !before
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_)))
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+
+    harness.test_clock.borrow_mut().set_time(5.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 5.into(), None))
+        .unwrap();
+    let mut events = harness.settle();
+    assert_eq!(
+        harness.cache.borrow().order_book_source(&instrument.id()),
+        Some(OrderBookSource::Deltas),
+    );
+    harness.test_clock.borrow_mut().set_time(6.into());
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Add,
+        "1003.00",
+        "5.000",
+        6,
+    ))));
+    events.extend(harness.settle());
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == order.client_order_id() => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![
+            (Price::from("1002.00"), Quantity::from("4.000")),
+            (Price::from("1002.00"), Quantity::from("1.000")),
+        ],
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+#[case::inline(0, false)]
+#[case::timer(10, false)]
+#[case::data_callback(10, true)]
+fn test_book_source_handoff_command_before_next_delta(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] latency: u64,
+    #[case] data_callback: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(latency, 0, 0)),
+        |config| config.book_type = BookType::L2_MBP,
+    );
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), true, true);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1004.00", "1.000")]),
+        true,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "2.000")]),
+        false,
+    ));
+    harness.test_clock.borrow_mut().set_time(3.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 3.into(), None))
+        .unwrap();
+    harness.settle();
+    harness.test_clock.borrow_mut().set_time(4.into());
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "HANDOFF-COMMAND",
+        "1002.00",
+    );
+
+    if latency > 0 {
+        harness.settle();
+        assert_eq!(
+            cached_status(&harness.cache, &order),
+            OrderStatus::Submitted
+        );
+        let due = UnixNanos::new(4 + latency);
+        if data_callback {
+            harness.test_clock.borrow_mut().set_time(due);
+            engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+                instrument.id(),
+                BookAction::Add,
+                "1003.00",
+                "1.000",
+                4 + latency,
+            ))));
+        } else {
+            assert_eq!(advance_and_fire(&harness.test_clock, due), 1);
+        }
+    }
+
+    let fills: Vec<_> = harness
+        .settle()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == order.client_order_id() => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+#[case::plain(false, false)]
+#[case::queue(true, false)]
+#[case::consumption(false, true)]
+#[case::queue_and_consumption(true, true)]
+fn test_book_source_handoff_complete_snapshot_control(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] queue_position: bool,
+    #[case] liquidity_consumption: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+        config.queue_position = queue_position;
+        config.liquidity_consumption = liquidity_consumption;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), true, true);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1004.00", "1.000")]),
+        true,
+    ));
+    let full = book_depth(
+        instrument.id(),
+        &[],
+        &[
+            ("1000.00", "1.000"),
+            ("1001.00", "2.000"),
+            ("1002.00", "3.000"),
+        ],
+    );
+    let mut retained = OrderBook::new(instrument.id(), BookType::L2_MBP);
+    retained.apply_depth(&full).unwrap();
+    engine.process_data(book_source_data(&full, false));
+
+    for increment in [
+        handoff_delta(instrument.id(), BookAction::Update, "1001.00", "4.000", 2),
+        handoff_delta(instrument.id(), BookAction::Delete, "1000.00", "0.000", 3),
+    ] {
+        retained.apply_deltas(&increment).unwrap();
+        engine.process_data(Data::BookDeltas(Box::new(increment)));
+    }
+    harness.test_clock.borrow_mut().set_time(4.into());
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("HANDOFF-CONTROL".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1002.00"))
+        .quantity(Quantity::from("5.000"))
+        .ts_init(4.into())
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+    let before = harness.settle();
+    assert!(
+        !before
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_)))
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    harness.test_clock.borrow_mut().set_time(5.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 5.into(), None))
+        .unwrap();
+
+    // This control supplies a complete baseline explicitly; the automatic handoff
+    // regression above must recover without this extra feed message.
+    engine.process_data(Data::BookDeltas(Box::new(
+        retained.to_deltas(5.into(), 5.into()),
+    )));
+    let fills: Vec<_> = harness
+        .settle()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == order.client_order_id() => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![
+            (Price::from("1002.00"), Quantity::from("4.000")),
+            (Price::from("1002.00"), Quantity::from("1.000")),
+        ]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+
+    let probe = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("HANDOFF-CONSUMPTION".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1002.00"))
+        .quantity(Quantity::from("3.000"))
+        .ts_init(5.into())
+        .build();
+    let probe = send_through_engine(&harness, trader_id, probe);
+    let fills: Vec<_> = harness
+        .settle()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == probe.client_order_id() => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    if liquidity_consumption {
+        assert_eq!(
+            fills,
+            vec![(Price::from("1002.00"), Quantity::from("2.000"))]
+        );
+        assert_eq!(
+            cached_status(&harness.cache, &probe),
+            OrderStatus::PartiallyFilled
+        );
+    } else {
+        assert_eq!(
+            fills,
+            vec![(Price::from("1001.00"), Quantity::from("3.000"))]
+        );
+        assert_eq!(cached_status(&harness.cache, &probe), OrderStatus::Filled);
+    }
+}
+
+#[rstest]
+fn test_book_source_handoff_notifications_follow_subscription_view(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    let harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let observed = Rc::new(RefCell::new(Vec::new()));
+    let handler = {
+        let observed = observed.clone();
+        let cache = harness.cache;
+        ShareableMessageHandler::from_typed(move |id: &InstrumentId| {
+            let cache = cache.borrow_mut();
+            observed.borrow_mut().push((
+                cache.order_book_source(id),
+                cache.has_order_book_source_subscription(id, OrderBookSource::Deltas),
+                cache.has_order_book_source_subscription(id, OrderBookSource::Depth),
+            ));
+        })
+    };
+    let topic = switchboard::get_book_source_topic(instrument.id());
+    msgbus::subscribe_any(topic.into(), handler.clone(), None);
+    let first = book_source_subscription(instrument.id(), true, true);
+    let second = book_source_subscription(instrument.id(), true, true);
+    engine.execute_subscribe(first.clone()).unwrap();
+    engine.execute_subscribe(second.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    assert_eq!(
+        *observed.borrow(),
+        vec![
+            (Some(OrderBookSource::Depth), false, true),
+            (Some(OrderBookSource::Depth), true, true)
+        ]
+    );
+    engine
+        .execute_unsubscribe(&first.into_unsubscribe(UUID4::new(), 2.into(), None))
+        .unwrap();
+    assert_eq!(
+        *observed.borrow(),
+        vec![
+            (Some(OrderBookSource::Depth), false, true),
+            (Some(OrderBookSource::Depth), true, true)
+        ]
+    );
+    engine
+        .execute_unsubscribe(&second.into_unsubscribe(UUID4::new(), 3.into(), None))
+        .unwrap();
+    assert_eq!(
+        *observed.borrow(),
+        vec![
+            (Some(OrderBookSource::Depth), false, true),
+            (Some(OrderBookSource::Depth), true, true),
+            (Some(OrderBookSource::Deltas), true, false)
+        ]
+    );
+    engine.reset();
+    assert_eq!(
+        *observed.borrow(),
+        vec![
+            (Some(OrderBookSource::Depth), false, true),
+            (Some(OrderBookSource::Depth), true, true),
+            (Some(OrderBookSource::Deltas), true, false),
+            (None, false, false)
+        ]
+    );
+    msgbus::unsubscribe_any(topic.into(), &handler);
+}
+
+#[rstest]
+fn test_book_source_handoff_handler_lifecycle(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    let topic = switchboard::get_book_source_topic(instrument.id());
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 0);
+    context.client.start().unwrap();
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 1);
+    context.client.start().unwrap();
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 1);
+    context.client.stop().unwrap();
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 0);
+    context.client.start().unwrap();
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 1);
+    context.client.stop().unwrap();
+    assert_eq!(msgbus::subscriptions_count_any(topic).unwrap(), 0);
+}
+
+#[rstest]
+fn test_book_source_handoff_restores_running_depth(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] managed_deltas: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+        config.liquidity_consumption = true;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), false, managed_deltas);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), true, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1004.00", "1.000")]),
+        false,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1000.00", "5.000")]),
+        true,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "2.000")]),
+        true,
+    ));
+    harness.test_clock.borrow_mut().set_time(2.into());
+    let order = submit_through_engine(&harness, trader_id, &instrument, "HANDOFF-DEPTH", "1002.00");
+    let before = harness.settle();
+    assert!(
+        !before
+            .iter()
+            .any(|event| matches!(event, OrderEventAny::Filled(_)))
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    harness.test_clock.borrow_mut().set_time(3.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 3.into(), None))
+        .unwrap();
+    let fills: Vec<_> = harness
+        .settle()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == order.client_order_id() => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1002.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+    let probe = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("HANDOFF-DEPTH-PROBE".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1005.00"))
+        .quantity(Quantity::from("3.000"))
+        .ts_init(3.into())
+        .build();
+    let probe = send_through_engine(&harness, trader_id, probe);
+    let fills: Vec<_> = harness
+        .settle()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == probe.client_order_id() => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &probe),
+        OrderStatus::PartiallyFilled
+    );
+}
+
+#[rstest]
+fn test_book_source_handoff_drains_commands_due_before_selection(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    let mut harness = setup_engine_harness_with_config(
+        trader_id,
+        &instrument,
+        Some(static_latency_model(2, 0, 0)),
+        |config| config.book_type = BookType::L2_MBP,
+    );
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), true, true);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1004.00", "1.000")]),
+        true,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "2.000")]),
+        false,
+    ));
+    harness.test_clock.borrow_mut().set_time(1.into());
+    let order = submit_through_engine(&harness, trader_id, &instrument, "HANDOFF-DUE", "1002.00");
+    harness.settle();
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::Submitted
+    );
+
+    // Leave the command due at 3 ns in the queue, as with the existing market-data drain tests
+    harness.test_clock.borrow_mut().set_time(4.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 4.into(), None))
+        .unwrap();
+    let events = harness.settle();
+    assert_eq!(
+        events.iter().map(order_event_kind).collect::<Vec<_>>(),
+        vec!["accepted", "filled"]
+    );
+    let fills: Vec<_> = events
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some((fill.last_px, fill.last_qty, fill.liquidity_side)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        fills,
+        vec![(
+            Price::from("1002.00"),
+            Quantity::from("1.000"),
+            LiquiditySide::Maker
+        )]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+fn test_book_source_handoff_repeated_round_trips(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] depth_first: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            depth_first,
+            false,
+        ))
+        .unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            !depth_first,
+            false,
+        ))
+        .unwrap();
+
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("2000.00", "2.000")]),
+        false,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1000.00", "2.000")]),
+        true,
+    ));
+
+    for cycle in 0_u64..3 {
+        let ts = 10 + cycle * 10;
+        let previous_delta_price = format!("{}.00", 2000 + cycle.saturating_sub(1) * 10);
+        let delta_price = format!("{}.00", 2000 + cycle * 10);
+        let depth_price = format!("{}.00", 1001 + cycle * 10);
+        harness.test_clock.borrow_mut().set_time(ts.into());
+        engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+            instrument.id(),
+            BookAction::Delete,
+            &previous_delta_price,
+            "0.000",
+            ts,
+        ))));
+        harness.test_clock.borrow_mut().set_time((ts + 1).into());
+        engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+            instrument.id(),
+            BookAction::Add,
+            &delta_price,
+            "2.000",
+            ts + 1,
+        ))));
+        let overriding = book_source_subscription(instrument.id(), !depth_first, true);
+        engine.execute_subscribe(overriding.clone()).unwrap();
+        harness.test_clock.borrow_mut().set_time((ts + 2).into());
+        engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+            instrument.id(),
+            BookAction::Update,
+            &delta_price,
+            "3.000",
+            ts + 2,
+        ))));
+        let mut depth = book_depth(instrument.id(), &[], &[(&depth_price, "3.000")]);
+        depth.ts_event = (ts + 2).into();
+        depth.ts_init = (ts + 2).into();
+        engine.process_data(book_source_data(&depth, true));
+        harness.settle();
+        let id = format!("ROUND-OVERRIDE-{cycle}");
+        let order = submit_through_engine(&harness, trader_id, &instrument, &id, "3000.00");
+        let expected = if depth_first {
+            &delta_price
+        } else {
+            &depth_price
+        };
+        assert_eq!(
+            handoff_fills(harness.settle(), order.client_order_id()),
+            vec![(Price::from(expected.as_str()), Quantity::from("1.000"))]
+        );
+        harness.test_clock.borrow_mut().set_time((ts + 3).into());
+
+        // Release the overriding owner, keeping the original unmanaged owner active
+        let correlation_id = overriding.command_id();
+        engine
+            .execute_unsubscribe(&overriding.into_unsubscribe(
+                UUID4::new(),
+                (ts + 3).into(),
+                Some(correlation_id),
+            ))
+            .unwrap();
+        harness.settle();
+        assert_eq!(
+            harness.cache.borrow().order_book_source(&instrument.id()),
+            Some(if depth_first {
+                OrderBookSource::Depth
+            } else {
+                OrderBookSource::Deltas
+            })
+        );
+        let id = format!("ROUND-FALLBACK-{cycle}");
+        let order = submit_through_engine(&harness, trader_id, &instrument, &id, "3000.00");
+        let expected = if depth_first {
+            &depth_price
+        } else {
+            &delta_price
+        };
+        assert_eq!(
+            handoff_fills(harness.settle(), order.client_order_id()),
+            vec![(Price::from(expected.as_str()), Quantity::from("1.000"))]
+        );
+    }
+}
+
+#[rstest]
+fn test_book_source_handoff_does_not_restore_retired_source(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] retired_depth: bool,
+    #[values(false, true)] late_message: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            !retired_depth,
+            false,
+        ))
+        .unwrap();
+    let retired = book_source_subscription(instrument.id(), retired_depth, false);
+    engine.execute_subscribe(retired.clone()).unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("2001.00", "1.000")]),
+        !retired_depth,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "1.000")]),
+        retired_depth,
+    ));
+    engine
+        .execute_unsubscribe(&retired.into_unsubscribe(UUID4::new(), 2.into(), None))
+        .unwrap();
+
+    if late_message {
+        engine.process_data(book_source_data(
+            &book_depth(instrument.id(), &[], &[("1002.00", "1.000")]),
+            retired_depth,
+        ));
+    }
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "RETIRED-SOURCE",
+        "1500.00",
+    );
+    harness.settle();
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    harness.test_clock.borrow_mut().set_time(3.into());
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            retired_depth,
+            true,
+        ))
+        .unwrap();
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1801.00", "1.000")]),
+        retired_depth,
+    ));
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1401.00", "1.000")]),
+        retired_depth,
+    ));
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1500.00"), Quantity::from("1.000"))]
+    );
+}
+
+#[rstest]
+fn test_book_source_handoff_all_owners_removed_then_resubscribed(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] fresh_depth: bool,
+    #[values(false, true)] last_depth: bool,
+    #[values(false, true)] data_without_owners: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let deltas = book_source_subscription(instrument.id(), false, false);
+    let depth = book_source_subscription(instrument.id(), true, false);
+    engine.execute_subscribe(deltas.clone()).unwrap();
+    engine.execute_subscribe(depth.clone()).unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "1.000")]),
+        false,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1002.00", "1.000")]),
+        true,
+    ));
+    let (first, last) = if last_depth {
+        (deltas, depth)
+    } else {
+        (depth, deltas)
+    };
+    engine
+        .execute_unsubscribe(&first.into_unsubscribe(UUID4::new(), 2.into(), None))
+        .unwrap();
+    engine
+        .execute_unsubscribe(&last.into_unsubscribe(UUID4::new(), 3.into(), None))
+        .unwrap();
+    assert_eq!(
+        harness.cache.borrow().order_book_source(&instrument.id()),
+        None
+    );
+
+    if data_without_owners {
+        engine.process_data(book_source_data(
+            &book_depth(instrument.id(), &[], &[("2001.00", "1.000")]),
+            false,
+        ));
+        engine.process_data(book_source_data(
+            &book_depth(instrument.id(), &[], &[("2002.00", "1.000")]),
+            true,
+        ));
+    }
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            fresh_depth,
+            false,
+        ))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1801.00", "1.000")]),
+        fresh_depth,
+    ));
+    let order = submit_through_engine(&harness, trader_id, &instrument, "FRESH-SOURCE", "1500.00");
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1401.00", "1.000")]),
+        fresh_depth,
+    ));
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1500.00"), Quantity::from("1.000"))]
+    );
+}
+
+#[rstest]
+fn test_book_source_handoff_empty_book_is_a_valid_baseline(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] empty_depth: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            !empty_depth,
+            false,
+        ))
+        .unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            empty_depth,
+            false,
+        ))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "1.000")]),
+        !empty_depth,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[]),
+        empty_depth,
+    ));
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), empty_depth, true))
+        .unwrap();
+    let order = submit_through_engine(&harness, trader_id, &instrument, "EMPTY-SOURCE", "1500.00");
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1401.00", "1.000")]),
+        empty_depth,
+    ));
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1500.00"), Quantity::from("1.000"))]
+    );
+}
+
+#[rstest]
+fn test_book_source_handoff_standby_owner_changes_do_not_match_orders(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] selected_depth: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            selected_depth,
+            false,
+        ))
+        .unwrap();
+    let snapshot = book_depth(instrument.id(), &[], &[("1001.00", "1.000")]);
+    engine.process_data(book_source_data(&snapshot, selected_depth));
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("OWNER-METADATA".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1001.00"))
+        .quantity(Quantity::from("2.000"))
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::PartiallyFilled
+    );
+    let standby = book_source_subscription(instrument.id(), !selected_depth, false);
+    engine.execute_subscribe(standby.clone()).unwrap();
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            selected_depth,
+            false,
+        ))
+        .unwrap();
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    engine
+        .execute_unsubscribe(&standby.into_unsubscribe(UUID4::new(), 2.into(), None))
+        .unwrap();
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::PartiallyFilled
+    );
+    engine.process_data(book_source_data(&snapshot, selected_depth));
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+#[case::deltas_control(false, None)]
+#[case::deltas_price(false, Some(true))]
+#[case::deltas_size(false, Some(false))]
+#[case::depth_control(true, None)]
+#[case::depth_price(true, Some(true))]
+#[case::depth_size(true, Some(false))]
+fn test_book_source_handoff_preserves_baseline_after_invalid_precision(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] target_depth: bool,
+    #[case] invalid_price: Option<bool>,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    harness.test_clock.borrow_mut().set_time(1.into());
+    let selected = book_source_subscription(instrument.id(), !target_depth, true);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            target_depth,
+            false,
+        ))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("2001.00", "1.000")]),
+        !target_depth,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "2.000")]),
+        target_depth,
+    ));
+
+    if let Some(price) = invalid_price {
+        harness.test_clock.borrow_mut().set_time(3.into());
+
+        if target_depth {
+            let mut invalid = book_depth(instrument.id(), &[], &[("1400.00", "1.000")]);
+            invalid.ts_event = 3.into();
+            invalid.ts_init = 3.into();
+            if price {
+                invalid.asks[0].price = Price::from("1400.001");
+            } else {
+                invalid.asks[0].size = Quantity::from("1.0001");
+            }
+            engine.process_data(Data::BookDepth(Box::new(invalid)));
+        } else {
+            let mut invalid =
+                handoff_delta(instrument.id(), BookAction::Add, "1400.00", "1.000", 3);
+
+            if price {
+                invalid.deltas[0].order.price = Price::from("1400.001");
+            } else {
+                invalid.deltas[0].order.size = Quantity::from("1.0001");
+            }
+            engine.process_data(Data::BookDeltas(Box::new(invalid)));
+        }
+    }
+
+    harness.test_clock.borrow_mut().set_time(5.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 5.into(), None))
+        .unwrap();
+    harness.settle();
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "PRECISION-HANDOFF",
+        "1500.00",
+    );
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+}
+
+#[rstest]
+#[case::subscription_notification(false, false)]
+#[case::next_delta(true, false)]
+#[case::next_delta_after_old_precision(true, true)]
+fn test_book_source_handoff_retries_after_failed_recovery(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] next_delta: bool,
+    #[case] old_precision: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let mut engine = book_data_engine(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), true, true);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("2001.00", "1.000")]),
+        true,
+    ));
+
+    // Cache and matching engine receive updated definitions through separate paths
+    let updated = updated_instrument_with_price_precision_3(instrument);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(updated.clone())
+        .unwrap();
+    context.test_clock.borrow_mut().set_time(3.into());
+    engine.process_data(book_source_data(
+        &book_depth(updated.id(), &[], &[("1001.000", "2.000")]),
+        false,
+    ));
+    context.test_clock.borrow_mut().set_time(4.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 4.into(), None))
+        .unwrap();
+
+    if old_precision {
+        context.test_clock.borrow_mut().set_time(5.into());
+        engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+            updated.id(),
+            BookAction::Add,
+            "1400.00",
+            "1.000",
+            5,
+        ))));
+    }
+
+    // Recovery fails against the engine's previous precision, then becomes valid
+    context.client.on_instrument(updated.clone());
+    context.test_clock.borrow_mut().set_time(6.into());
+
+    if next_delta {
+        engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+            updated.id(),
+            BookAction::Add,
+            "1400.000",
+            "1.000",
+            6,
+        ))));
+    } else {
+        engine
+            .execute_subscribe(book_source_subscription(updated.id(), true, false))
+            .unwrap();
+    }
+    let order = resting_limit(&updated, "RETRY-HANDOFF", "1500.000", 6.into());
+    submit_to_client(&context, trader_id, &order);
+    assert_eq!(
+        handoff_fills(drain_order_events(&mut rx), order.client_order_id()),
+        vec![(Price::from("1001.000"), Quantity::from("1.000"))],
+    );
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::zero_size(false)]
+#[case::no_side(true)]
+fn test_book_source_handoff_accepts_depth_padding(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] no_side: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), false, true);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), true, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("2001.00", "1.000")]),
+        false,
+    ));
+    let mut depth = book_depth(instrument.id(), &[], &[("1001.00", "1.000")]);
+    let mut padding = BookOrder::new(
+        OrderSide::Sell,
+        Price::from("0.000"),
+        if no_side {
+            Quantity::from("9.0000")
+        } else {
+            Quantity::from("0.0000")
+        },
+        0,
+    );
+
+    if no_side {
+        padding.side = None;
+    }
+    depth.asks.push(padding);
+    depth.ask_counts.push(0);
+    engine.process_data(Data::BookDepth(Box::new(depth)));
+    harness.test_clock.borrow_mut().set_time(5.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 5.into(), None))
+        .unwrap();
+    harness.settle();
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "PADDING-HANDOFF",
+        "1500.00",
+    );
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))],
+    );
+}
+
+#[rstest]
+fn test_book_source_handoff_accepts_delete_payload_precision(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), true, true);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("2001.00", "1.000")]),
+        true,
+    ));
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[],
+            &[("1001.00", "1.000"), ("1002.00", "1.000")],
+        ),
+        false,
+    ));
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Delete,
+        "1002.000",
+        "0.0000",
+        3,
+    ))));
+    harness.test_clock.borrow_mut().set_time(5.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 5.into(), None))
+        .unwrap();
+    harness.settle();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("DELETE-HANDOFF"))
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2.000"))
+        .price(Price::from("1500.00"))
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))],
+    );
+    assert_eq!(
+        cached_status(&harness.cache, &order),
+        OrderStatus::PartiallyFilled
+    );
+}
+
+#[rstest]
+#[case::increment(true, false)]
+#[case::snapshot_control(true, true)]
+#[case::before_first_application(false, false)]
+fn test_book_source_handoff_retries_after_cache_reset(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] selected_depth_observed: bool,
+    #[case] snapshot_control: bool,
+) {
+    let (mut context, mut engine, mut rx) = setup_book_source_handoff_after_cache_reset(
+        trader_id,
+        account_id,
+        &instrument,
+        &[("1001.00", "2.000")],
+        selected_depth_observed,
+    );
+    context.test_clock.borrow_mut().set_time(6.into());
+
+    if snapshot_control {
+        engine.process_data(book_source_data(
+            &book_depth(instrument.id(), &[], &[("1001.00", "2.000")]),
+            false,
+        ));
+    } else {
+        engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+            instrument.id(),
+            BookAction::Add,
+            "1400.00",
+            "1.000",
+            6,
+        ))));
+    }
+    let order = resting_limit(&instrument, "RETRY-HANDOFF", "1500.00", 6.into());
+    submit_to_client(&context, trader_id, &order);
+    assert_eq!(
+        handoff_fills(drain_order_events(&mut rx), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))],
+    );
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_book_source_handoff_applies_delete_before_retry_matching(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    let (mut context, mut engine, mut rx) = setup_book_source_handoff_after_cache_reset(
+        trader_id,
+        account_id,
+        &instrument,
+        &[("1001.00", "1.000"), ("1002.00", "1.000")],
+        true,
+    );
+    context.test_clock.borrow_mut().set_time(6.into());
+
+    let resting = resting_limit(&instrument, "DELETE-RESTING", "1001.00", 6.into());
+    submit_to_client(&context, trader_id, &resting);
+    assert!(handoff_fills(drain_order_events(&mut rx), resting.client_order_id()).is_empty());
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Delete,
+        "1001.00",
+        "0.000",
+        6,
+    ))));
+    assert!(handoff_fills(drain_order_events(&mut rx), resting.client_order_id()).is_empty());
+    let probe = resting_limit(&instrument, "DELETE-PROBE", "1500.00", 6.into());
+    submit_to_client(&context, trader_id, &probe);
+    assert_eq!(
+        handoff_fills(drain_order_events(&mut rx), probe.client_order_id()),
+        vec![(Price::from("1002.00"), Quantity::from("1.000"))],
+    );
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_book_source_handoff_matches_once_on_retry(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    let (mut context, mut engine, mut rx) = setup_book_source_handoff_after_cache_reset(
+        trader_id,
+        account_id,
+        &instrument,
+        &[("1001.00", "1.000")],
+        true,
+    );
+    context.test_clock.borrow_mut().set_time(6.into());
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("SINGLE-RETRY".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1500.00"))
+        .quantity(Quantity::from("2.000"))
+        .ts_init(6.into())
+        .build();
+    submit_to_client(&context, trader_id, &order);
+    assert!(handoff_fills(drain_order_events(&mut rx), order.client_order_id()).is_empty());
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Add,
+        "1800.00",
+        "1.000",
+        6,
+    ))));
+    assert_eq!(
+        handoff_fills(drain_order_events(&mut rx), order.client_order_id()),
+        vec![(Price::from("1500.00"), Quantity::from("1.000"))],
+    );
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+fn test_book_source_first_delta_preserves_explicit_baseline(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let mut engine = book_data_engine(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    let Data::BookDeltas(deltas) = book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "1.000")]),
+        false,
+    ) else {
+        unreachable!()
+    };
+    context.client.process_order_book_deltas(&deltas).unwrap();
+    context.test_clock.borrow_mut().set_time(3.into());
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Add,
+        "1400.00",
+        "1.000",
+        3,
+    ))));
+    let order = resting_limit(&instrument, "FIRST-DELTA", "1500.00", 3.into());
+    submit_to_client(&context, trader_id, &order);
+    assert_eq!(
+        handoff_fills(drain_order_events(&mut rx), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))],
+    );
+    context.client.stop().unwrap();
+}
+
+fn setup_book_source_handoff_after_cache_reset(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: &InstrumentAny,
+    asks: &[(&str, &str)],
+    selected_depth_observed: bool,
+) -> (
+    TestContext,
+    DataEngine,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = BookType::L2_MBP;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let mut engine = book_data_engine(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        instrument.id().venue,
+    );
+    let selected = book_source_subscription(instrument.id(), true, true);
+    engine.execute_subscribe(selected.clone()).unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+
+    if selected_depth_observed {
+        engine.process_data(book_source_data(
+            &book_depth(instrument.id(), &[], &[("2001.00", "1.000")]),
+            true,
+        ));
+    }
+
+    context.test_clock.borrow_mut().set_time(3.into());
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], asks),
+        false,
+    ));
+    context.cache.borrow_mut().reset();
+    assert!(
+        context
+            .cache
+            .borrow()
+            .instrument(&instrument.id())
+            .is_none()
+    );
+    context.test_clock.borrow_mut().set_time(4.into());
+    engine
+        .execute_unsubscribe(&selected.into_unsubscribe(UUID4::new(), 4.into(), None))
+        .unwrap();
+
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    (context, engine, rx)
+}
+
+fn handoff_fills(
+    events: Vec<OrderEventAny>,
+    client_order_id: ClientOrderId,
+) -> Vec<(Price, Quantity)> {
+    events
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) if fill.client_order_id == client_order_id => {
+                Some((fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn handoff_delta(
+    instrument_id: InstrumentId,
+    action: BookAction,
+    price: &str,
+    size: &str,
+    sequence: u64,
+) -> OrderBookDeltas {
+    OrderBookDeltas::new(
+        instrument_id,
+        vec![OrderBookDelta::new(
+            instrument_id,
+            action,
+            BookOrder::new(OrderSide::Sell, Price::from(price), Quantity::from(size), 0),
+            RecordFlag::F_LAST as u8,
+            sequence,
+            sequence.into(),
+            sequence.into(),
+        )],
+    )
 }
 
 #[derive(Clone, Copy)]

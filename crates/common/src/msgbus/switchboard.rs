@@ -420,6 +420,10 @@ define_switchboard! {
     get_book_depth_topic(instrument_id: InstrumentId) -> instrument_id,
     "data.book.depth.{}.{}", instrument_id.venue, instrument_id.symbol;
 
+    book_source_topics: InstrumentId,
+    get_book_source_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.book_source.{}.{}", instrument_id.venue, instrument_id.symbol;
+
     book_snapshots_topics: (InstrumentId, NonZeroUsize),
     get_book_snapshots_topic(instrument_id: InstrumentId, interval_ms: NonZeroUsize) -> (instrument_id, interval_ms),
     "data.book.snapshots.{}.{}.{}", instrument_id.venue, instrument_id.symbol, interval_ms;
@@ -690,6 +694,7 @@ define_wrappers! {
     get_instrument_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_book_deltas_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_book_depth_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_book_source_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_book_snapshots_topic(instrument_id: InstrumentId, interval_ms: NonZeroUsize) -> MStr<Topic>,
     get_quotes_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_trades_topic(instrument_id: InstrumentId) -> MStr<Topic>,

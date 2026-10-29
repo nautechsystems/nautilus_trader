@@ -139,7 +139,7 @@ pub struct BinanceSpotDataClient {
     status_cache: Arc<AtomicMap<InstrumentId, MarketStatusAction>>,
     instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     book_sync: BookSyncTracker,
-    book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
+    book_subscriptions: Arc<AtomicMap<InstrumentId, String>>,
     l1_book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
     quote_refs: Arc<AtomicMap<InstrumentId, u32>>,
     ticker_refs: Arc<AtomicMap<InstrumentId, u32>>,
@@ -1304,6 +1304,19 @@ impl DataClient for BinanceSpotDataClient {
 
             let ws = self.ws_client.clone();
             let symbol_lower = instrument_id.symbol.as_str().to_lowercase();
+            let stream = self.depth_stream(
+                &symbol_lower,
+                cmd.depth.map(|d| d.get()),
+                cmd.params.as_ref(),
+            )?;
+
+            if let Some(existing) = self.book_subscriptions.load().get(&instrument_id) {
+                anyhow::ensure!(
+                    existing == &stream,
+                    "unsubscribe before changing Binance Spot book depth or update_speed"
+                );
+                return Ok(());
+            }
 
             if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json
                 && let Some(depth) = cmd.depth
@@ -1319,10 +1332,8 @@ impl DataClient for BinanceSpotDataClient {
                     );
                 }
 
-                let depth_level = depth as u32;
-                self.book_subscriptions.insert(instrument_id, depth_level);
-
-                let stream = format!("{symbol_lower}@depth{depth_level}");
+                self.book_subscriptions
+                    .insert(instrument_id, stream.clone());
                 self.spawn_ws(
                     chain_command(&self.book_command_tail, async move {
                         ws.subscribe(vec![stream])
@@ -1342,10 +1353,8 @@ impl DataClient for BinanceSpotDataClient {
                         depth == 20,
                         "Binance Spot SBE partial books support depth 20 only; use JSON market data for other depths"
                     );
-                    let depth_level = depth as u32;
-                    self.book_subscriptions.insert(instrument_id, depth_level);
-
-                    let stream = format!("{symbol_lower}@depth{depth_level}");
+                    self.book_subscriptions
+                        .insert(instrument_id, stream.clone());
                     self.spawn_ws(
                         chain_command(&self.book_command_tail, async move {
                             ws.subscribe(vec![stream])
@@ -1357,12 +1366,12 @@ impl DataClient for BinanceSpotDataClient {
                 }
                 // Full book diffs are seeded by a REST snapshot and replayed.
                 None => {
-                    self.book_subscriptions.insert(instrument_id, 0);
+                    self.book_subscriptions
+                        .insert(instrument_id, stream.clone());
 
                     // Resync from the next diff, cancelling any recovery from a prior subscription
                     self.book_sync.subscribe(instrument_id);
 
-                    let stream = format!("{symbol_lower}@depth");
                     self.spawn_ws(
                         chain_command(&self.book_command_tail, async move {
                             ws.subscribe(vec![stream])
@@ -1469,20 +1478,17 @@ impl DataClient for BinanceSpotDataClient {
             let ws = self.ws_client.clone();
 
             // Stop book sync so an in-flight snapshot cannot emit after unsubscribe
+            let stream = self.book_subscriptions.load().get(&instrument_id).cloned();
             self.book_subscriptions.remove(&instrument_id);
             self.book_sync.remove(instrument_id);
 
-            let symbol_lower = instrument_id.symbol.as_str().to_lowercase();
-            let streams = vec![
-                format!("{symbol_lower}@depth"),
-                format!("{symbol_lower}@depth5"),
-                format!("{symbol_lower}@depth10"),
-                format!("{symbol_lower}@depth20"),
-            ];
+            let Some(stream) = stream else {
+                return Ok(());
+            };
 
             self.spawn_ws(
                 chain_command(&self.book_command_tail, async move {
-                    ws.unsubscribe(streams)
+                    ws.unsubscribe(vec![stream])
                         .await
                         .context("book deltas unsubscribe")
                 }),
@@ -1899,6 +1905,34 @@ impl DataClient for BinanceSpotDataClient {
 }
 
 impl BinanceSpotDataClient {
+    fn depth_stream(
+        &self,
+        symbol: &str,
+        depth: Option<usize>,
+        params: Option<&Params>,
+    ) -> anyhow::Result<String> {
+        let mut stream = match depth {
+            Some(depth) => format!("{symbol}@depth{depth}"),
+            None => format!("{symbol}@depth"),
+        };
+
+        if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json {
+            let speed = params.and_then(|p| p.get("update_speed"));
+            if let Some(speed) = speed {
+                anyhow::ensure!(
+                    matches!(speed.as_u64(), Some(100 | 1000)),
+                    "Binance Spot JSON update_speed must be 100 or 1000, was {speed}"
+                );
+            }
+
+            if speed.is_none_or(|speed| speed.as_u64() == Some(100)) {
+                stream.push_str("@100ms");
+            }
+        }
+
+        Ok(stream)
+    }
+
     fn subscribe_top_of_book(&self, instrument_id: InstrumentId) {
         let should_subscribe = {
             let previous = self

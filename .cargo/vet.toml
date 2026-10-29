@@ -1,0 +1,8 @@
+version = 1
+
+[[cargo.vet]]
+manifest = "Cargo.toml"
+
+[[cargo.vet]]
+manifest = "crates/adapters/lighter/fuzz/pornin/Cargo.toml"
+store = ".supply-chain"

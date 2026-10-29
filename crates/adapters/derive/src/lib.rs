@@ -65,10 +65,10 @@ pub mod providers;
 pub mod signing;
 pub mod websocket;
 
+mod book;
+
 #[cfg(feature = "python")]
 pub mod python;
-
-mod book;
 
 pub use crate::{
     config::{DeriveDataClientConfig, DeriveExecutionClientConfig},

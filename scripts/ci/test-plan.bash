@@ -223,4 +223,18 @@ expect_status 0
 expect_text "$RUN_OUTPUT" $'run_tests=false\nrun_rust_tests=false\ngithub_changed=true'
 expect_text "$RUN_STDOUT" "Docs-only changes: skipping build and test jobs"
 
+# A retired repair variable must not suppress checks for release tooling changes
+for branch in develop master; do
+  signing_repo=$(create_repo "signing-${branch}")
+  signing_base=$(git -C "$signing_repo" rev-parse HEAD)
+  mkdir -p "$signing_repo/scripts/ci"
+  printf '%s\n' '# Signing change' > "$signing_repo/scripts/ci/sign-pypi-attestations.bash"
+  commit_changes "$signing_repo" "Change release signing"
+  CI_RELEASE_REPAIR_TREE=$(git -C "$signing_repo" rev-parse 'HEAD^{tree}') \
+  REF_NAME=$branch run_plan "$signing_repo" push "" "$signing_base"
+  expect_status 0
+  expect_text "$RUN_OUTPUT" $'run_tests=true\nrun_rust_tests=false\ngithub_changed=false'
+  expect_text "$RUN_STDOUT" "Python-only changes: skipping Rust tests"
+done
+
 echo "CI plan script tests passed"

@@ -64,10 +64,12 @@
     reason = "`assert!(x.is_empty())` is clearer than comparing against an empty value"
 )]
 
+pub mod opt;
+
+mod database;
+
 #[cfg(feature = "defi")]
 mod blockchain;
-mod database;
-pub mod opt;
 
 use nautilus_persistence::backend::parquet::migration::{
     ParquetMigrationConfig, migrate_parquet_catalog,

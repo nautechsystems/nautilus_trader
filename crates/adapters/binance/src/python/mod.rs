@@ -20,11 +20,11 @@ pub mod enums;
 pub mod factories;
 pub mod types;
 
-#[cfg(feature = "arrow")]
-pub mod arrow;
-
 mod data;
 mod instruments;
+
+#[cfg(feature = "arrow")]
+pub mod arrow;
 
 use nautilus_common::factories::{ClientConfig, DataClientFactory, ExecutionClientFactory};
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};

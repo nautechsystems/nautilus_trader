@@ -152,6 +152,11 @@ gh attestation verify "$ARTIFACT" \
   --cert-oidc-issuer "$ISSUER"
 ```
 
+For artifacts with publication recovery attestations, use the release notes' verification command with
+`--predicate-type`. These attestations record the original build and later publication separately.
+See [partial release recovery](releases.md#recovering-a-partial-release) for the recorded identities and
+verification requirements.
+
 ### PyPI publish provenance
 
 Verify:

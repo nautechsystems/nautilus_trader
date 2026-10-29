@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "80bf50eee134222e978fadfbfc5d7a3b3d30ebcf"
+revision = "1cd46d15183c8ce9a1dc1c327038e73d930f8e17"
 manifest_sha256 = "e2e91502b0682520f8a8cc302ce87b33687cef8421f4c4244103022cfb4ff866"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -104,7 +104,7 @@ executable = true
 [[file]]
 artifact = "github-action-pin-check"
 path = "scripts/ci/check-github-action-shas.sh"
-sha256 = "c65a312d41472d58898f0ec6617a03510e116fc1957875ffc0464df8e5102601"
+sha256 = "1bb731e945822869fcb3d9a835e56e067cf6f5a241ebfe3d7cd262d59367e676"
 executable = true
 
 [[file]]

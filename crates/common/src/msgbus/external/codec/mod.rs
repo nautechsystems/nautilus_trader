@@ -29,14 +29,14 @@ use serde::de::DeserializeOwned;
 use super::super::BusPayloadType;
 use crate::enums::SerializationEncoding;
 
+mod json;
+mod msgpack;
+
 #[cfg(feature = "sbe")]
 mod sbe;
 #[cfg(not(feature = "sbe"))]
 #[path = "sbe_unavailable.rs"]
 mod sbe;
-
-mod json;
-mod msgpack;
 
 #[derive(Debug)]
 pub(super) enum PayloadCodecError {

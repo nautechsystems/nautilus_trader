@@ -363,13 +363,15 @@ impl DataEngine {
                 .or_default()
                 .owners
                 .push(Rc::clone(&subscription));
-            self.update_book_source(*target_id);
         }
 
         self.book_subscription_owners
             .entry(instrument_id)
             .or_default()
-            .push(subscription);
+            .push(Rc::clone(&subscription));
+        for target_id in &subscription.targets {
+            self.update_book_source(*target_id);
+        }
         Ok(())
     }
 
@@ -423,27 +425,20 @@ impl DataEngine {
                 self.book_subscriptions.remove(&target_id);
             }
 
-            self.update_book_source(target_id);
-
-            if managed {
-                continue;
+            if !managed && let Some(updater) = self.book_updaters.remove(&target_id) {
+                let deltas_handler: TypedHandler<OrderBookDeltas> =
+                    TypedHandler::new(Rc::clone(&updater));
+                let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
+                msgbus::unsubscribe_book_deltas(
+                    switchboard::get_book_deltas_topic(target_id).into(),
+                    &deltas_handler,
+                );
+                msgbus::unsubscribe_book_depth(
+                    switchboard::get_book_depth_topic(target_id).into(),
+                    &depth_handler,
+                );
             }
-
-            let Some(updater) = self.book_updaters.remove(&target_id) else {
-                continue;
-            };
-
-            let deltas_handler: TypedHandler<OrderBookDeltas> =
-                TypedHandler::new(Rc::clone(&updater));
-            let depth_handler: TypedHandler<OrderBookDepth> = TypedHandler::new(updater);
-            msgbus::unsubscribe_book_deltas(
-                switchboard::get_book_deltas_topic(target_id).into(),
-                &deltas_handler,
-            );
-            msgbus::unsubscribe_book_depth(
-                switchboard::get_book_depth_topic(target_id).into(),
-                &depth_handler,
-            );
+            self.update_book_source(target_id);
         }
 
         true
@@ -787,9 +782,24 @@ impl DataEngine {
     }
 
     pub(super) fn clear_book_sources(&self) {
-        let mut cache = self.cache.borrow_mut();
-        for instrument_id in self.book_subscriptions.keys() {
-            cache.clear_order_book_source(instrument_id);
+        let changed = {
+            let mut cache = self.cache.borrow_mut();
+            let mut changed = Vec::new();
+
+            for instrument_id in self.book_subscriptions.keys() {
+                if cache.order_book_source(instrument_id).is_some() {
+                    changed.push(*instrument_id);
+                }
+                cache.clear_order_book_source(instrument_id);
+            }
+            changed
+        };
+
+        for instrument_id in changed {
+            msgbus::publish_any(
+                switchboard::get_book_source_topic(instrument_id),
+                &instrument_id,
+            );
         }
     }
 
@@ -821,17 +831,39 @@ impl DataEngine {
                     .find(|owner| owner.managed())
                     .or_else(|| book.owners.first())
             });
-        let mut cache = self.cache.borrow_mut();
-
-        if let Some(owner) = selected {
-            let source = if owner.is_depth() {
+        let both_sources = self
+            .book_subscriptions
+            .get(&instrument_id)
+            .is_some_and(|book| {
+                book.owners.iter().any(|owner| owner.is_depth())
+                    && book.owners.iter().any(|owner| !owner.is_depth())
+            });
+        let selected = selected.map(|owner| {
+            if owner.is_depth() {
                 OrderBookSource::Depth
             } else {
                 OrderBookSource::Deltas
-            };
-            cache.set_order_book_source(instrument_id, source);
-        } else {
-            cache.clear_order_book_source(&instrument_id);
+            }
+        });
+        let changed = {
+            let mut cache = self.cache.borrow_mut();
+            let previous = cache.order_book_source(&instrument_id);
+            let previously_both = cache
+                .has_order_book_source_subscription(&instrument_id, OrderBookSource::Deltas)
+                && cache.has_order_book_source_subscription(&instrument_id, OrderBookSource::Depth);
+            if let Some(source) = selected {
+                cache.set_order_book_source(instrument_id, source, both_sources);
+            } else {
+                cache.clear_order_book_source(&instrument_id);
+            }
+            previous != selected || previously_both != both_sources
+        };
+
+        if changed {
+            msgbus::publish_any(
+                switchboard::get_book_source_topic(instrument_id),
+                &instrument_id,
+            );
         }
     }
 }

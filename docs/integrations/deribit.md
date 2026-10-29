@@ -57,9 +57,11 @@ Read the Deribit documentation with this NautilusTrader integration guide.
 
 ## Product support
 
-Each client loads only the product families listed in its `product_types` configuration, once on connect.
-Neither client refreshes the instrument set afterwards, so restart the node to pick up newly listed
-instruments. On the data client, `auto_load_missing_instruments` instead fetches an uncached instrument on
+Each client loads only the product families listed in its `product_types` configuration on connect.
+The data client then refreshes them every `update_instruments_interval_mins` and publishes the definitions,
+including new listings. A failed refresh keeps the cached definitions and retries at the next interval.
+The execution client does not refresh its instrument caches, so restart the node to trade newly listed
+instruments. On the data client, `auto_load_missing_instruments` also fetches an uncached instrument on
 first subscribe. See [Lazy-load on subscribe](#lazy-load-on-subscribe).
 
 | Product type      | Data feed | Trading | Notes                                          |
@@ -959,7 +961,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay in milliseconds between retries.                     |
 | `heartbeat_interval_secs`          | `30`       | WebSocket heartbeat interval.                                      |
 | `auth_timeout_secs`                | `None`     | Seconds to await the WebSocket auth result; unset means 30.        |
-| `update_instruments_interval_mins` | `60`       | Accepted but not yet acted on; instruments load once on connect.   |
+| `update_instruments_interval_mins` | `60`       | Instrument refresh interval in minutes; `0` disables it.           |
 | `auto_load_missing_instruments`    | `False`    | Lazy-load uncached instruments on subscribe.                       |
 | `transport_backend`                | `Sockudo`  | WebSocket transport backend.                                       |
 

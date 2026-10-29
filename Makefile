@@ -260,6 +260,12 @@ NEXTEST_ENV_TARGETS := cargo-test cargo-test-extras cargo-test-postgres-ci cargo
 
 ifneq ($(strip $(CARGO_BUILD_JOBS_FOR_RUST)),)
 $(CARGO_BUILD_JOB_TARGETS): export CARGO_BUILD_JOBS=$(CARGO_BUILD_JOBS_FOR_RUST)
+ifeq ($(origin CARGO_BUILD_JOBS),undefined)
+check-features check-features-defi: export CARGO_BUILD_JOBS := $(shell \
+	n='$(CARGO_BUILD_JOBS_FOR_RUST)'; \
+	[ "$$n" -gt 16 ] && n=16; \
+	printf '%s' "$$n")
+endif
 endif
 
 ifneq ($(strip $(NEXTEST_TEST_THREADS_FOR_RUST)),)
@@ -928,6 +934,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash scripts/test-check-cargo-cooldown.bash
 	$Q bash scripts/test-cargo-ci-benches.bash
 	$Q bash scripts/test-clippy-strict-audit.bash
+	$Q python3 -B scripts/test-security-audit.py
 	$Q python3 -B scripts/ci/test_clippy_allowances.py
 	$Q bash scripts/test-update-cargo-dependencies.bash
 	$Q python3 -B scripts/ci/test_check_commit_message.py

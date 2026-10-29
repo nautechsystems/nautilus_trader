@@ -239,40 +239,96 @@ write_rs "$valid_control_flow_case/crates/common/src/lib.rs" \
   '}'
 expect_success "$valid_control_flow_case"
 
-valid_modules_case="$CASE_ROOT/allow-valid-module-sections"
-create_case "$valid_modules_case"
-write_rs "$valid_modules_case/crates/common/src/mod.rs" \
-  '#[macro_use]' \
-  'mod macros;' \
-  '' \
-  'pub mod alpha;' \
-  '#[path = "zeta.rs"]' \
-  'pub mod zeta;' \
-  '' \
-  'pub(crate) mod crate_api;' \
-  'pub(super) mod parent_api;' \
-  'pub(in crate::common) mod scoped_api;' \
-  '' \
-  '#[cfg(all(feature = "python", any(test, feature = "test-support")))]' \
-  'mod cfg_nested;' \
-  '#[cfg(feature = "python")]' \
-  'pub mod cfg_public;' \
-  '#[cfg(any(test, feature = "test-support"))]' \
-  'mod cfg_stubs;' \
-  '' \
-  'mod internal;' \
-  '' \
-  '#[cfg(all(test, feature = "python"))]' \
-  'mod python_tests;' \
-  '#[cfg(all(feature = "python", test))]' \
-  'mod reversed_tests;' \
-  '#[cfg(test)]' \
-  'mod tests;' \
-  '' \
-  'mod inline {' \
-  '    pub fn run() {}' \
-  '}'
-expect_success "$valid_modules_case"
+for module_file in mod.rs lib.rs component.rs; do
+  valid_modules_case="$CASE_ROOT/allow-valid-module-sections-$module_file"
+  create_case "$valid_modules_case"
+  write_rs "$valid_modules_case/crates/common/src/$module_file" \
+    '#[macro_use]' \
+    'mod macros;' \
+    '' \
+    'pub mod alpha;' \
+    '#[path = "zeta.rs"]' \
+    'pub mod zeta;' \
+    '' \
+    'pub(crate) mod crate_api;' \
+    'pub(super) mod parent_api;' \
+    'pub(in crate::common) mod scoped_api;' \
+    '' \
+    'mod internal;' \
+    '' \
+    '#[cfg(feature = "python")]' \
+    'pub mod cfg_public;' \
+    '' \
+    '#[cfg(feature = "python")]' \
+    'pub(crate) mod cfg_crate;' \
+    '#[cfg(feature = "python")]' \
+    'pub(super) mod cfg_parent;' \
+    '' \
+    '#[cfg(all(feature = "python", any(test, feature = "test-support")))]' \
+    'mod cfg_nested;' \
+    '#[cfg(any(test, feature = "test-support"))]' \
+    'mod cfg_stubs;' \
+    '' \
+    '#[cfg(all(test, feature = "python"))]' \
+    'mod python_tests;' \
+    '#[cfg(all(feature = "python", test))]' \
+    'mod reversed_tests;' \
+    '#[cfg(test)]' \
+    'mod tests;' \
+    '' \
+    'mod inline {' \
+    '    pub fn run() {}' \
+    '}'
+  expect_success "$valid_modules_case"
+
+  gated_first_case="$CASE_ROOT/reject-gated-before-unconditional-$module_file"
+  create_case "$gated_first_case"
+  write_rs "$gated_first_case/crates/common/src/$module_file" \
+    '#[cfg(feature = "python")]' \
+    'pub mod optional;' \
+    '' \
+    'mod internal;'
+  expect_failure "$gated_first_case" 'Module .*internal.* is in the wrong section'
+done
+
+for visibility in public restricted private; do
+  unconditional_case="$CASE_ROOT/reject-unconditional-after-gated-$visibility"
+  create_case "$unconditional_case"
+  case "$visibility" in
+    public) declaration='pub mod unconditional;' ;;
+    restricted) declaration='pub(crate) mod unconditional;' ;;
+    private) declaration='mod unconditional;' ;;
+  esac
+  write_rs "$unconditional_case/crates/common/src/mod.rs" \
+    '#[cfg(feature = "python")]' \
+    'mod optional;' \
+    '' \
+    "$declaration"
+  expect_failure "$unconditional_case" 'Module .*unconditional.* is in the wrong section'
+done
+
+for declaration in 'pub mod public;' 'pub(crate) mod restricted;'; do
+  gated_visibility_case="$CASE_ROOT/reject-gated-visibility-$declaration"
+  create_case "$gated_visibility_case"
+  write_rs "$gated_visibility_case/crates/common/src/mod.rs" \
+    '#[cfg(feature = "python")]' \
+    'mod internal;' \
+    '' \
+    '#[cfg(feature = "python")]' \
+    "$declaration"
+  expect_failure "$gated_visibility_case" 'Module .* is in the wrong section'
+done
+
+for declaration in 'pub mod beta;' 'pub(crate) mod beta;' 'mod beta;'; do
+  gated_alphabetical_case="$CASE_ROOT/reject-gated-alphabetical-$declaration"
+  create_case "$gated_alphabetical_case"
+  write_rs "$gated_alphabetical_case/crates/common/src/mod.rs" \
+    '#[cfg(feature = "python")]' \
+    "${declaration/beta/zeta}" \
+    '#[cfg(feature = "python")]' \
+    "$declaration"
+  expect_failure "$gated_alphabetical_case" 'Module .*beta.* is not alphabetized'
+done
 
 wrong_section_case="$CASE_ROOT/reject-module-section-order"
 create_case "$wrong_section_case"

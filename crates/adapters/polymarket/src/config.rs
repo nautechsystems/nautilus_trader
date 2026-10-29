@@ -19,9 +19,10 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use ahash::AHashSet;
 use nautilus_common::config::{ConfigError, ConfigResult, check_range, check_unique_values};
 use nautilus_core::{datetime::SECONDS_IN_MINUTE, string::secret::SecretString};
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
@@ -34,12 +35,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
-        credential::{Credential, credential_env_vars},
+        credential::{Credential, credential_env_vars, validate_env_override},
         enums::{PolymarketSignatureType, PolymarketSignerType},
+        retry::AUTO_LOAD_RETRY_JITTER_FRACTION,
         urls,
     },
     filters::InstrumentFilter,
-    providers::build_gamma_params_from_hashmap,
+    providers::{build_gamma_params_from_hashmap, validated_condition_id},
 };
 
 const DEFAULT_UPDOWN_INTERVAL_MINS: u64 = 5;
@@ -251,14 +253,18 @@ impl PolymarketInstrumentProviderConfig {
         Self::default()
     }
 
-    /// Validates that configured selections contain no duplicates.
+    /// Validates instrument IDs, selections, and Gamma filters.
     ///
     /// # Errors
     ///
-    /// Returns an error if selections contain duplicates or Gamma filters are invalid.
+    /// Returns an error if instrument IDs are invalid, selections contain duplicates, or Gamma
+    /// filters are invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
         if let Some(values) = &self.load_ids {
             check_unique_values("load_ids", values)?;
+            for instrument_id in values {
+                validated_condition_id(instrument_id)?;
+            }
         }
 
         if let Some(values) = &self.event_slugs {
@@ -335,6 +341,17 @@ impl PolymarketInstrumentProviderConfig {
     pub fn has_load_ids(&self) -> bool {
         self.load_ids.as_ref().is_some_and(|ids| !ids.is_empty())
     }
+
+    pub(crate) fn resolve_event_slugs(&self) -> anyhow::Result<Vec<String>> {
+        let mut slugs = self.event_slugs.clone().unwrap_or_default();
+        if let Some(builder) = &self.event_slug_builder {
+            slugs.extend(builder.build_event_slugs()?);
+        }
+
+        let mut seen = AHashSet::new();
+        slugs.retain(|slug| !slug.trim().is_empty() && seen.insert(slug.clone()));
+        Ok(slugs)
+    }
 }
 
 /// Configuration for the Polymarket data client.
@@ -383,7 +400,8 @@ pub struct PolymarketDataClientConfig {
     pub ws_timeout_secs: u64,
     #[builder(default = crate::common::consts::WS_DEFAULT_SUBSCRIPTIONS)]
     pub ws_max_subscriptions: usize,
-    /// Instrument reload interval in minutes.
+    /// Instrument reload interval in minutes; `None` disables refresh.
+    #[builder(required, default = Some(60), into)]
     pub update_instruments_interval_mins: Option<u64>,
     /// Whether to subscribe to new-market discovery, resolution, and best-bid/ask events.
     #[builder(default)]
@@ -490,10 +508,7 @@ nautilus_core::impl_pyo3_config_getters!(PolymarketDataClientConfig {
 
 impl Default for PolymarketDataClientConfig {
     fn default() -> Self {
-        Self {
-            update_instruments_interval_mins: Some(60),
-            ..Self::builder().build()
-        }
+        Self::builder().build()
     }
 }
 
@@ -503,17 +518,46 @@ impl PolymarketDataClientConfig {
         Self::default()
     }
 
-    /// Validates the WebSocket timeout and instrument selections.
+    /// Validates credential overrides, the WebSocket timeout, retry delays, and instrument selections.
     ///
     /// # Errors
     ///
-    /// Returns an error if the WebSocket timeout is zero, nested instrument selections contain
-    /// duplicates, or Gamma filters are invalid.
+    /// Returns an error if credential overrides are blank, retry delays are invalid, the WebSocket
+    /// timeout is zero, or nested instrument configuration is invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
+        validate_clob_overrides(&self.api_key, &self.api_secret, &self.passphrase)?;
         check_range(
             "ws_timeout_secs",
             self.ws_timeout_secs > 0,
             "must be positive",
+        )?;
+
+        for (field, seconds) in [
+            (
+                "auto_load_retry_delay_initial_secs",
+                self.auto_load_retry_delay_initial_secs,
+            ),
+            (
+                "auto_load_retry_delay_max_secs",
+                self.auto_load_retry_delay_max_secs,
+            ),
+        ] {
+            check_range(
+                field,
+                seconds.is_finite()
+                    && seconds >= 0.0
+                    && Duration::try_from_secs_f64(
+                        seconds + seconds * AUTO_LOAD_RETRY_JITTER_FRACTION,
+                    )
+                    .is_ok(),
+                "must be finite, nonnegative, and fit in a duration including 25% jitter",
+            )?;
+        }
+
+        check_range(
+            "auto_load_retry_delay_max_secs",
+            self.auto_load_retry_delay_max_secs >= self.auto_load_retry_delay_initial_secs,
+            "must be at least auto_load_retry_delay_initial_secs",
         )?;
 
         if let Some(config) = &self.instrument_config {
@@ -570,6 +614,7 @@ impl PolymarketDataClientConfig {
     /// Returns an error if an explicitly configured credential is incomplete or malformed,
     /// or if a complete environment credential is malformed.
     pub fn polybolt_credential(&self) -> anyhow::Result<Option<Credential>> {
+        validate_clob_overrides(&self.api_key, &self.api_secret, &self.passphrase)?;
         let explicit =
             self.api_key.is_some() || self.api_secret.is_some() || self.passphrase.is_some();
 
@@ -704,13 +749,22 @@ impl PolymarketExecutionClientConfig {
         Self::default()
     }
 
-    /// Validates the configured instrument selections.
+    /// Validates credential overrides and instrument selections.
     ///
     /// # Errors
     ///
-    /// Returns an error if nested instrument selections contain duplicates or Gamma filters
-    /// are invalid.
+    /// Returns an error if credential overrides are blank or nested instrument configuration
+    /// is invalid.
     pub fn validate(&self) -> anyhow::Result<()> {
+        let (_, _, _, private_key_var, funder_var) = credential_env_vars();
+        validate_clob_overrides(&self.api_key, &self.api_secret, &self.passphrase)?;
+        validate_env_override(
+            self.private_key.as_ref().map(SecretString::expose_secret),
+            "private_key",
+            private_key_var,
+        )?;
+        validate_env_override(self.funder.as_deref(), "funder", funder_var)?;
+
         if let Some(config) = &self.instrument_config {
             config.validate()?;
         }
@@ -803,6 +857,28 @@ impl PolymarketExecutionClientConfig {
             .clone()
             .unwrap_or_else(|| urls::data_api_url().to_string())
     }
+}
+
+fn validate_clob_overrides(
+    api_key: &Option<SecretString>,
+    api_secret: &Option<SecretString>,
+    passphrase: &Option<SecretString>,
+) -> anyhow::Result<()> {
+    let (key_var, secret_var, passphrase_var, _, _) = credential_env_vars();
+
+    for (field, value, env_var) in [
+        ("api_key", api_key, key_var),
+        ("api_secret", api_secret, secret_var),
+        ("passphrase", passphrase, passphrase_var),
+    ] {
+        validate_env_override(
+            value.as_ref().map(SecretString::expose_secret),
+            field,
+            env_var,
+        )?;
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1181,7 +1257,7 @@ load_ids = ["0xabc-123.POLYMARKET"]
     }
 
     #[rstest]
-    #[case("load_ids", serde_json::json!(["token-one.POLYMARKET", "token-two.POLYMARKET"]))]
+    #[case("load_ids", serde_json::json!([format!("0x{}-1.POLYMARKET", "a".repeat(64)), format!("0x{}-2.POLYMARKET", "b".repeat(64))]))]
     #[case("event_slugs", serde_json::json!(["event-one", "event-two"]))]
     #[case("market_slugs", serde_json::json!(["market-one", "market-two"]))]
     #[case("series_ids", serde_json::json!([1, 2]))]
@@ -1302,5 +1378,141 @@ load_ids = ["0xabc-123.POLYMARKET"]
         };
 
         assert_eq!(config.validate(), expected);
+    }
+
+    #[rstest]
+    fn data_config_refresh_defaults_match() {
+        let from_json: PolymarketDataClientConfig = serde_json::from_str("{}").unwrap();
+        let from_toml: PolymarketDataClientConfig = toml::from_str("").unwrap();
+
+        for config in [
+            PolymarketDataClientConfig::default(),
+            PolymarketDataClientConfig::builder().build(),
+            from_json,
+            from_toml,
+        ] {
+            assert_eq!(config.update_instruments_interval_mins, Some(60));
+        }
+
+        let disabled = PolymarketDataClientConfig::builder()
+            .update_instruments_interval_mins(None)
+            .build();
+        assert_eq!(disabled.update_instruments_interval_mins, None);
+        let explicit = PolymarketDataClientConfig::builder()
+            .update_instruments_interval_mins(7)
+            .build();
+        assert_eq!(explicit.update_instruments_interval_mins, Some(7));
+    }
+
+    #[rstest]
+    #[case(f64::NAN, 15.0)]
+    #[case(f64::INFINITY, 15.0)]
+    #[case(5.0, f64::INFINITY)]
+    #[case(-1.0, 15.0)]
+    #[case(5.0, -1.0)]
+    #[case(20.0, 15.0)]
+    #[case(1e30, 1e30)]
+    fn data_config_rejects_invalid_retry_delays(#[case] initial: f64, #[case] maximum: f64) {
+        let config = PolymarketDataClientConfig {
+            auto_load_retry_delay_initial_secs: initial,
+            auto_load_retry_delay_max_secs: maximum,
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err();
+        assert!(error.to_string().contains("auto_load_retry_delay_"));
+    }
+
+    #[rstest]
+    #[case(0.0, 0.0)]
+    #[case(5.0, 15.0)]
+    fn data_config_accepts_valid_retry_delays(#[case] initial: f64, #[case] maximum: f64) {
+        let config = PolymarketDataClientConfig {
+            auto_load_retry_delay_initial_secs: initial,
+            auto_load_retry_delay_max_secs: maximum,
+            ..Default::default()
+        };
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[rstest]
+    #[case("12345.POLYMARKET")]
+    #[case("0xabc-123.POLYMARKET")]
+    #[case("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-x.POLYMARKET")]
+    #[case("0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1.OTHER")]
+    fn provider_config_rejects_invalid_load_ids(#[case] value: &str) {
+        let config = PolymarketInstrumentProviderConfig {
+            load_ids: Some(vec![InstrumentId::from(value)]),
+            ..Default::default()
+        };
+
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.contains(value));
+        assert!(error.contains("expected <0x-prefixed 32-byte condition ID>"));
+    }
+
+    #[rstest]
+    fn provider_config_combines_event_slugs_and_builder() {
+        let builder = PolymarketUpDownEventSlugConfig {
+            periods: 1,
+            ..Default::default()
+        };
+
+        let config = PolymarketInstrumentProviderConfig {
+            event_slugs: Some(vec!["explicit-event".to_string()]),
+            event_slug_builder: Some(builder),
+            ..Default::default()
+        };
+
+        let slugs = config.resolve_event_slugs().unwrap();
+        assert_eq!(slugs.len(), 2);
+        assert_eq!(slugs[0], "explicit-event");
+        assert!(slugs[1].starts_with("btc-updown-5m-"));
+
+        // Keep the generated period at the Unix epoch to avoid clock-boundary races
+        let interval_mins = u64::MAX / SECONDS_IN_MINUTE;
+        let shared_slug = format!("btc-updown-{interval_mins}m-0");
+
+        let overlapping = PolymarketInstrumentProviderConfig {
+            event_slugs: Some(vec![shared_slug.clone()]),
+            event_slug_builder: Some(PolymarketUpDownEventSlugConfig {
+                interval_mins,
+                periods: 1,
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        overlapping.validate().unwrap();
+        assert_eq!(
+            overlapping.resolve_event_slugs().unwrap(),
+            vec![shared_slug]
+        );
+    }
+
+    #[rstest]
+    #[case("api_key")]
+    #[case("api_secret")]
+    #[case("passphrase")]
+    #[case("private_key")]
+    #[case("funder")]
+    fn execution_config_rejects_blank_overrides(
+        #[case] field: &str,
+        #[values("", " \t")] blank: &str,
+    ) {
+        let mut config = PolymarketExecutionClientConfig::default();
+        match field {
+            "api_key" => config.api_key = Some(blank.into()),
+            "api_secret" => config.api_secret = Some(blank.into()),
+            "passphrase" => config.passphrase = Some(blank.into()),
+            "private_key" => config.private_key = Some(blank.into()),
+            "funder" => config.funder = Some(blank.to_string()),
+            _ => unreachable!(),
+        }
+
+        let error = config.validate().unwrap_err().to_string();
+        assert!(error.starts_with(&format!("bad request: {field} must not be blank;")));
+        assert!(error.contains("omit it or pass None"));
     }
 }

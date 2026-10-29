@@ -15,10 +15,10 @@
 
 #![warn(clippy::clone_on_ref_ptr)]
 
-#[cfg(all(target_os = "linux", any(feature = "redis", feature = "postgres")))]
-mod position_flip;
-
 mod test_cache_database_postgres;
 mod test_cache_postgres;
 mod test_cache_redis;
 mod test_redis_queries;
+
+#[cfg(all(target_os = "linux", any(feature = "redis", feature = "postgres")))]
+mod position_flip;

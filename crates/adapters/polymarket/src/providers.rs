@@ -18,6 +18,7 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
+use alloy_primitives::{B256, U256};
 use async_trait::async_trait;
 use nautilus_common::providers::{InstrumentProvider, InstrumentStore};
 use nautilus_model::{
@@ -28,7 +29,10 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 
 use crate::{
-    common::{consts::GAMMA_CONDITION_IDS_BATCH_SIZE, parse::parse_decimal_exact},
+    common::{
+        consts::{GAMMA_CONDITION_IDS_BATCH_SIZE, POLYMARKET_VENUE},
+        parse::parse_decimal_exact,
+    },
     config::PolymarketInstrumentProviderConfig,
     filters::InstrumentFilter,
     http::{
@@ -285,7 +289,7 @@ impl PolymarketInstrumentProvider {
     }
 
     async fn load_scoped_all(&mut self) -> anyhow::Result<()> {
-        let event_slugs = self.resolve_event_slugs()?;
+        let event_slugs = self.config.resolve_event_slugs()?;
         let market_slugs = self
             .config
             .market_slugs
@@ -331,21 +335,6 @@ impl PolymarketInstrumentProvider {
         }
 
         Ok(())
-    }
-
-    fn resolve_event_slugs(&self) -> anyhow::Result<Vec<String>> {
-        if let Some(builder) = self.config.event_slug_builder.as_ref() {
-            return builder.build_event_slugs();
-        }
-
-        Ok(self
-            .config
-            .event_slugs
-            .clone()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|slug| !slug.trim().is_empty())
-            .collect())
     }
 
     /// Loads instruments using all configured filters, combining results from
@@ -462,17 +451,7 @@ pub async fn fetch_configured_instruments(
 
     if has_bootstrap_scope(config, filters) {
         let has_explicit_scope = config.has_explicit_scope();
-        let event_slugs = if let Some(builder) = config.event_slug_builder.as_ref() {
-            builder.build_event_slugs()?
-        } else {
-            config
-                .event_slugs
-                .clone()
-                .unwrap_or_default()
-                .into_iter()
-                .filter(|slug| !slug.trim().is_empty())
-                .collect::<Vec<_>>()
-        };
+        let event_slugs = config.resolve_event_slugs()?;
 
         let market_slugs = config
             .market_slugs
@@ -533,8 +512,8 @@ pub async fn fetch_configured_instruments(
             .clone()
             .unwrap_or_default()
             .into_iter()
-            .filter_map(|id| extract_condition_id(&id).ok())
-            .collect::<AHashSet<_>>()
+            .map(|id| validated_condition_id(&id))
+            .collect::<anyhow::Result<AHashSet<_>>>()?
             .into_iter()
             .collect::<Vec<_>>();
 
@@ -592,6 +571,22 @@ pub fn extract_condition_id(instrument_id: &InstrumentId) -> anyhow::Result<Stri
         .ok_or_else(|| {
             anyhow::anyhow!("Cannot extract condition_id from symbol '{symbol}': no '-' separator")
         })
+}
+
+pub(crate) fn validated_condition_id(instrument_id: &InstrumentId) -> anyhow::Result<String> {
+    let parts = instrument_id.symbol.as_str().rsplit_once('-');
+    anyhow::ensure!(
+        instrument_id.venue == *POLYMARKET_VENUE
+            && parts.is_some_and(|(condition_id, token_id)| {
+                condition_id.starts_with("0x")
+                    && condition_id.parse::<B256>().is_ok()
+                    && !token_id.is_empty()
+                    && token_id.bytes().all(|byte| byte.is_ascii_digit())
+                    && token_id.parse::<U256>().is_ok()
+            }),
+        "Invalid Polymarket instrument ID {instrument_id}; expected <0x-prefixed 32-byte condition ID>-<decimal uint256 token ID>.POLYMARKET"
+    );
+    extract_condition_id(instrument_id)
 }
 
 /// Extracts the token ID from an instrument symbol.
@@ -1072,6 +1067,10 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
         instrument_ids: &[InstrumentId],
         filters: Option<&HashMap<String, String>>,
     ) -> anyhow::Result<()> {
+        for instrument_id in instrument_ids {
+            validated_condition_id(instrument_id)?;
+        }
+
         let missing: Vec<_> = instrument_ids
             .iter()
             .filter(|id| !self.store.contains(id))
@@ -1085,8 +1084,8 @@ impl InstrumentProvider for PolymarketInstrumentProvider {
         // Symbol format: "{condition_id}-{token_id}"
         let mut condition_ids: Vec<String> = missing
             .iter()
-            .filter_map(|id| extract_condition_id(id).ok())
-            .collect();
+            .map(|id| extract_condition_id(id))
+            .collect::<anyhow::Result<_>>()?;
         condition_ids.sort();
         condition_ids.dedup();
 
