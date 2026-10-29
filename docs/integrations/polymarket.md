@@ -38,6 +38,27 @@ make build-debug
 For development wheels and source-build prerequisites, see the
 [installation guide](../getting_started/installation.md).
 
+## Setup
+
+For public market data, start with the [data tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/polymarket/data_tester.py).
+CLOB trading credentials are required only for execution and PolyBolt reference prices.
+
+Before enabling execution:
+
+1. Identify your [wallet type](#signature-types). Set `signature_type` explicitly for a smart wallet
+   and use its address as `funder`. For EOA trading, the funder must equal the signing address.
+1. Create [CLOB credentials](#clob-credentials) for the signing key. Relayer and Builder keys serve
+   different APIs and do not replace the CLOB key, secret, and passphrase.
+1. Check the funding wallet's pUSD balance and [trading approvals](#wallets-and-accounts).
+1. Put the intended instrument IDs in `load_ids` and share the provider config between data and
+   execution clients. Discovery slugs alone do not [scope reconciliation](#instrument-provider-options).
+1. Set both the disconnection timeout and post-stop delay at [30 seconds](#orders-capability).
+   Leave [order-safety heartbeats](#order-safety-heartbeats) disabled unless the process owns all
+   orders under dedicated CLOB credentials.
+1. Run an execution tester in dry run first. The maintained execution examples default to dry run
+   and retain risk checks. Set `DRY_RUN` to `False` in Python or `false` in Rust only when you intend
+   to place real orders.
+
 ## Examples
 
 The maintained examples are available in
@@ -123,8 +144,8 @@ types and setup flows.
 :::
 
 NautilusTrader defaults to signature type 0 (EOA). Set `signature_type` to use another supported
-wallet type. Proxy signature clients fail during construction unless `funder` is present and differs
-from the signing address.
+wallet type. Client construction rejects malformed funder addresses, EOA funders that differ from
+the signing address, and smart-wallet funders that are absent or equal to the signing address.
 
 Environment variables supply a single wallet address per trader instance. To use multiple wallets,
 configure separate execution client instances.
@@ -632,7 +653,9 @@ Configure signing and authentication through these parameters or their environme
 | `api_secret`  | `POLYMARKET_API_SECRET` | CLOB L2 API secret                                           |
 | `passphrase`  | `POLYMARKET_PASSPHRASE` | CLOB L2 API passphrase                                       |
 
-In owner mode, when a parameter is not supplied explicitly, the client reads its environment variable. Session
+In owner mode, omit a parameter or pass `None` to read its environment variable. An explicitly supplied
+empty or whitespace-only value fails configuration validation; it never selects an environment fallback.
+Nonblank overrides apply per field, so keep the private key and CLOB credentials matched. Session
 mode requires explicit credentials and a funder. CLOB L2 credentials authenticate the private-key signer. For
 `POLY_1271`, the Deposit Wallet remains the `funder`. It is not the L2 authentication address.
 
@@ -647,6 +670,19 @@ Instrument loading also has two common controls:
   returns an error. See [Runtime instrument loading](#runtime-instrument-loading).
 - `auto_load_debounce_ms` (default `100`): Window in milliseconds for coalescing concurrent auto-load
   requests into a single batched Gamma call.
+
+### Troubleshooting setup
+
+| Symptom                        | Check                                      | Action                                                                                                   |
+| ------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Blank-override error           | Explicit config value                      | Omit the field or pass `None` for environment fallback.                                                  |
+| Authentication rejection       | CLOB key, secret, passphrase, and signer   | Use the three credentials created for the signing key.                                                   |
+| Signature rejection            | Wallet type and funder                     | Match `signature_type` to the funding wallet; use the signer address for EOA mode.                       |
+| Balance or allowance rejection | Funding wallet and approvals               | Check pUSD, outcome-token balances for sells, and the required spender approvals.                        |
+| Empty discovery                | Instrument IDs, slugs, and market protocol | Check that IDs and slugs identify existing protocol `v1` CTF markets.                                    |
+| Unmapped reconciliation record | Execution provider scope                   | Set `load_ids` for the instruments this node should reconcile and share the config with the data client. |
+
+See Polymarket's [error reference](https://docs.polymarket.com/resources/error-codes) for venue errors.
 
 ## Data capability
 
@@ -2920,6 +2956,14 @@ Class/struct: `PolymarketDataClientConfig`.
 | `book_stale_check_interval_secs`      | `5`       | Book feed staleness check interval in seconds.                                                |
 | `book_stale_threshold_secs`           | `0`       | Maximum book feed silence in seconds before reporting stale; `0` disables the monitor.        |
 
+Retry delays must be finite and nonnegative, and the maximum must be at least the initial delay.
+Both must fit in a Rust duration after adding up to 25% jitter. A zero delay permits an immediate retry;
+use `auto_load_max_retries=0` to disable retries.
+
+Rust builders, `Default`, deserialization, and Python constructors all default to a 60-minute instrument
+refresh interval. To disable refresh in a Rust builder, use `.update_instruments_interval_mins(None)`;
+Python callers pass `update_instruments_interval_mins=None`.
+
 `ws_timeout_secs` applies to market and PolyBolt WebSockets. It also bounds sends waiting for
 reconnection. Use a value above the 5-second maximum reconnect backoff. Each connection attempt
 starts a new timeout, so the total connection time can exceed this value.
@@ -2933,7 +2977,7 @@ Class/struct: `PolymarketExecutionClientConfig`.
 | `account_id`                                        | `POLYMARKET-001`      | Account identifier for this execution client.                                                                         |
 | `private_key`                                       | `POLYMARKET_PK`       | EIP-712 signing key.                                                                                                  |
 | `api_key`, `api_secret`, `passphrase`               | environment variables | CLOB L2 authentication credentials.                                                                                   |
-| `funder`                                            | `POLYMARKET_FUNDER`   | Funding wallet; proxy and deposit-wallet signatures require it to differ from the signing address.                    |
+| `funder`                                            | `POLYMARKET_FUNDER`   | Funding wallet; must equal the signer for EOA mode and differ from it for smart-wallet modes.                         |
 | `signature_type`                                    | `Eoa`                 | `Eoa`, `PolyProxy`, `PolyGnosisSafe`, or `Poly1271`.                                                                  |
 | `signer_type`                                       | `Owner`               | `Owner` or `Session`; sessions require explicit credentials and `Poly1271`.                                           |
 | `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint.                                                                          |
@@ -2989,6 +3033,11 @@ only `has_proxy_url`. Configuration `Debug` output and transport diagnostics red
 
 Pass the same `PolymarketInstrumentProviderConfig` as `instrument_config` on the data client
 config and the execution client config.
+
+Each `load_ids` entry has the form `<condition_id>-<token_id>.POLYMARKET`: the condition ID is a
+`0x`-prefixed 32-byte hex value, and the token ID is a decimal unsigned 256-bit integer. A raw token ID,
+condition ID, slug, or instrument ID for another venue fails validation. Copy `instrument.id` from
+loaded market metadata rather than constructing it from a display name.
 
 `load_ids` is the only reconciliation scope. When that set is non-empty, unmapped records
 outside it are expected absences. When `load_ids` is unset or empty, every open order and position
@@ -3104,6 +3153,9 @@ instrument_config = PolymarketInstrumentProviderConfig(
     ),
 )
 ```
+
+Explicit `event_slugs` and builder-generated slugs load together. Duplicate slugs are requested once
+per load. The combined list keeps explicit slugs first.
 
 For custom event patterns, pass explicit `event_slugs`, pass direct `market_slugs`, scope by
 `series_ids`, or add a Rust filter or builder. The adapter rejects Python callable

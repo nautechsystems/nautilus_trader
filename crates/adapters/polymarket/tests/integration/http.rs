@@ -2793,7 +2793,7 @@ async fn test_provider_initialize_composes_filters_with_load_ids() {
         // Deliberately outside the filtered result so `load_ids` cannot short-circuit
         // on an instrument the filter query already placed in the store.
         load_ids: Some(vec![InstrumentId::from(
-            "0xcondition_ids_only-69000000000000000009.POLYMARKET",
+            "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-69000000000000000009.POLYMARKET",
         )]),
         ..PolymarketInstrumentProviderConfig::default()
     };
@@ -3043,7 +3043,7 @@ async fn test_fetch_configured_instruments_composes_load_ids_with_series_scope()
     // No bulk scope is configured, so `/markets` only serves the condition ID lookup.
     let load_id_market = gamma_market_with_slug(
         "fetch-ids-market",
-        "0xcondition_fetch_ids",
+        "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         ["64200000000000000001", "64200000000000000002"],
     );
     *state.gamma_response.lock().await = Some(json!([load_id_market]));
@@ -3061,7 +3061,7 @@ async fn test_fetch_configured_instruments_composes_load_ids_with_series_scope()
     let config = PolymarketInstrumentProviderConfig {
         series_ids: Some(vec![11312]),
         load_ids: Some(vec![InstrumentId::from(
-            "0xcondition_fetch_ids-64200000000000000001.POLYMARKET",
+            "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-64200000000000000001.POLYMARKET",
         )]),
         ..PolymarketInstrumentProviderConfig::default()
     };
@@ -3076,7 +3076,7 @@ async fn test_fetch_configured_instruments_composes_load_ids_with_series_scope()
         instruments.iter().any(|instrument| instrument
             .id()
             .to_string()
-            .contains("0xcondition_fetch_ids")),
+            .contains("0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")),
         "load_ids market should load alongside the series scope"
     );
     assert!(instruments.iter().any(|instrument| {
@@ -3102,7 +3102,7 @@ async fn test_fetch_configured_instruments_load_ids_are_not_intersected_with_fil
 
     let load_id_market = gamma_market_with_slug(
         "ids-outside-filter",
-        "0xcondition_outside_filter",
+        "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
         ["68000000000000000001", "68000000000000000002"],
     );
     *state.gamma_response.lock().await = Some(json!([load_id_market]));
@@ -3112,7 +3112,7 @@ async fn test_fetch_configured_instruments_load_ids_are_not_intersected_with_fil
     let config = PolymarketInstrumentProviderConfig {
         filters: Some(HashMap::from([("tag_id".to_string(), "84".to_string())])),
         load_ids: Some(vec![InstrumentId::from(
-            "0xcondition_outside_filter-68000000000000000001.POLYMARKET",
+            "0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc-68000000000000000001.POLYMARKET",
         )]),
         ..PolymarketInstrumentProviderConfig::default()
     };
@@ -3126,7 +3126,7 @@ async fn test_fetch_configured_instruments_load_ids_are_not_intersected_with_fil
         instruments.iter().any(|instrument| instrument
             .id()
             .to_string()
-            .contains("0xcondition_outside_filter")),
+            .contains("0xcccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc")),
         "an explicitly named instrument must load even when it falls outside the filters"
     );
 
@@ -3749,10 +3749,11 @@ async fn test_request_tags() {
 #[tokio::test]
 async fn test_load_ids_fetches_missing_instruments() {
     let state = TestServerState::default();
+    let condition_id = "0x1111111111111111111111111111111111111111111111111111111111111111";
 
     let market = gamma_market_with_slug(
         "ids-market",
-        "0xcondition_ids",
+        condition_id,
         ["93000000000000000001", "93000000000000000002"],
     );
     // Use generic gamma response - condition_ids query hits /markets
@@ -3763,7 +3764,8 @@ async fn test_load_ids_fetches_missing_instruments() {
     let mut provider = PolymarketInstrumentProvider::new(http_client, None).unwrap();
 
     // InstrumentId format: "{condition_id}-{token_id}.POLYMARKET"
-    let instrument_id = InstrumentId::from("0xcondition_ids-93000000000000000001.POLYMARKET");
+    let instrument_id =
+        InstrumentId::from(format!("{condition_id}-93000000000000000001.POLYMARKET"));
     provider.load_ids(&[instrument_id], None).await.unwrap();
 
     assert_eq!(provider.store().count(), 2);
@@ -3773,10 +3775,11 @@ async fn test_load_ids_fetches_missing_instruments() {
 #[tokio::test]
 async fn test_load_ids_skips_already_loaded() {
     let state = TestServerState::default();
+    let condition_id = "0x2222222222222222222222222222222222222222222222222222222222222222";
 
     let market = gamma_market_with_slug(
         "preloaded-market",
-        "0xcondition_preloaded",
+        condition_id,
         ["94000000000000000001", "94000000000000000002"],
     );
     state
@@ -3797,7 +3800,7 @@ async fn test_load_ids_skips_already_loaded() {
     assert_eq!(provider.store().count(), 2);
 
     // load_ids with already-loaded ID should be a no-op
-    let existing_id = InstrumentId::from("0xcondition_preloaded-94000000000000000001.POLYMARKET");
+    let existing_id = InstrumentId::from(format!("{condition_id}-94000000000000000001.POLYMARKET"));
     provider.load_ids(&[existing_id], None).await.unwrap();
 
     // Count should still be 2 (no additional fetch)
@@ -3818,7 +3821,7 @@ async fn test_load_ids_chunks_at_100_condition_ids() {
     let mut expected: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
 
     for i in 0..250 {
-        let condition_id = format!("0xcond{i:060x}");
+        let condition_id = format!("0x{i:064x}");
         expected.insert(condition_id.clone());
         let token_id =
             format!("100000000000000000000000000000000000000000000000000000000000{i:04}");
@@ -3871,7 +3874,7 @@ async fn test_load_ids_preserves_caller_filters_in_each_chunk() {
     let mut instrument_ids = Vec::with_capacity(150);
 
     for i in 0..150 {
-        let condition_id = format!("0xcond{i:060x}");
+        let condition_id = format!("0x{i:064x}");
         let token_id =
             format!("200000000000000000000000000000000000000000000000000000000000{i:04}");
         instrument_ids.push(InstrumentId::from(
@@ -5757,4 +5760,104 @@ async fn test_configured_fetch_rejects_duplicate_config_before_request() {
         error.downcast_ref::<ConfigError>(),
         Some(&ConfigError::duplicate("series_ids", None))
     );
+}
+
+#[rstest]
+#[tokio::test]
+async fn provider_combines_explicit_and_generated_event_slugs(
+    #[values(false, true)] refresh: bool,
+) {
+    let state = TestServerState::default();
+    let explicit_market = gamma_market_with_slug(
+        "explicit-market",
+        "0xcondition_explicit",
+        ["71000000000000000001", "71000000000000000002"],
+    );
+    let generated_market = gamma_market_with_slug(
+        "generated-market",
+        "0xcondition_generated",
+        ["72000000000000000001", "72000000000000000002"],
+    );
+    let explicit_event = gamma_event_with_markets("explicit-event", &[explicit_market]);
+    let generated_event = gamma_event_with_markets("generated-event", &[generated_market]);
+    state
+        .gamma_event_slug_responses
+        .lock()
+        .await
+        .insert("explicit-event".to_string(), json!([explicit_event]));
+    *state.gamma_events_response.lock().await = Some(json!([generated_event]));
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+
+    let config = PolymarketInstrumentProviderConfig {
+        event_slugs: Some(vec!["explicit-event".to_string()]),
+        event_slug_builder: Some(PolymarketUpDownEventSlugConfig {
+            periods: 1,
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+
+    let instruments = if refresh {
+        nautilus_polymarket::providers::fetch_configured_instruments(&http_client, &config, &[])
+            .await
+            .unwrap()
+    } else {
+        let mut provider = PolymarketInstrumentProvider::new(http_client, Some(config)).unwrap();
+        provider.initialize(false).await.unwrap();
+        provider.store().list_all().into_iter().cloned().collect()
+    };
+
+    let mut token_ids: Vec<_> = instruments
+        .iter()
+        .map(|instrument| instrument.raw_symbol().to_string())
+        .collect();
+    token_ids.sort();
+    assert_eq!(
+        token_ids,
+        [
+            "71000000000000000001",
+            "71000000000000000002",
+            "72000000000000000001",
+            "72000000000000000002"
+        ]
+    );
+    let queries = state.gamma_events_query_pair_log.lock().await;
+    assert_eq!(queries.len(), 2);
+    assert_eq!(
+        queries
+            .iter()
+            .filter(|pairs| pairs
+                .iter()
+                .any(|(key, value)| key == "slug" && value == "explicit-event"))
+            .count(),
+        1
+    );
+    assert_eq!(
+        queries
+            .iter()
+            .filter(|pairs| pairs
+                .iter()
+                .any(|(key, value)| key == "slug" && value.starts_with("btc-updown-5m-")))
+            .count(),
+        1
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn provider_load_ids_rejects_invalid_id_before_http() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let http_client = create_gamma_domain_client(&addr);
+    let mut provider = PolymarketInstrumentProvider::new(http_client, None).unwrap();
+    let invalid = InstrumentId::from("12345.POLYMARKET");
+    let error = provider
+        .load_ids(&[invalid], None)
+        .await
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("Invalid Polymarket instrument ID 12345.POLYMARKET"));
+    assert_eq!(provider.store().count(), 0);
+    assert!(state.gamma_markets_query_log.lock().await.is_empty());
 }

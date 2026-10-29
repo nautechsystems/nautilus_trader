@@ -267,7 +267,7 @@ fn assert_data_factory_extracts_from_python_object(py: Python<'_>) {
 fn assert_exec_factory_extracts_from_python_object(py: Python<'_>) {
     let trader_id = TraderId::from("TRADER-001");
     let account_id = AccountId::from("POLYMARKET-001");
-    let scoped = InstrumentId::from("0xabc-123.POLYMARKET");
+    let scoped = InstrumentId::from(format!("0x{}-123.POLYMARKET", "a".repeat(64)));
     let factory = Py::new(py, PolymarketExecutionClientFactory)
         .expect("factory should convert to Python object")
         .into_any();

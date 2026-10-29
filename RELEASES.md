@@ -2,6 +2,11 @@
 
 Released on TBD (UTC).
 
+### Breaking Changes
+
+- Changed Polymarket data/execution credentials and funders to reject blanks; omit them for environment fallback
+- Changed Polymarket execution examples to dry run by default; disable `DRY_RUN` for live orders
+
 ### Security
 
 - Improved R2 publishing credential handling to avoid writing keys to disk
@@ -9,6 +14,9 @@ Released on TBD (UTC).
 ### Fixes
 
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
+- Fixed Polymarket accepting invalid funders, malformed `load_ids`, and unsafe retry delays
+- Fixed Polymarket explicit event slugs being ignored when an event-slug builder is configured
+- Fixed Polymarket data-client builder defaults disabling the 60-minute instrument refresh
 
 ### Internal Improvements
 
@@ -16,6 +24,11 @@ Released on TBD (UTC).
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Upgraded `socket-cli` tool to v1.10.1
 - Upgraded `ty` package (dev) to v0.0.90
+
+### Documentation Updates
+
+- Improved Polymarket setup and configuration troubleshooting guidance
+- Updated Python Polymarket examples with scoped reconciliation, risk checks, and 30-second shutdown waits
 
 ---
 

@@ -97,6 +97,8 @@ use crate::mock_venue::{
     start_mock_server,
 };
 
+const OTHER_INSTRUMENT_ID: &str =
+    "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa-1.POLYMARKET";
 const TEST_CHUNK_PRIVATE_KEY: &str =
     "0x2234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef";
 const TEST_CHUNK_FAILURE_PRIVATE_KEY: &str =
@@ -1200,7 +1202,7 @@ async fn test_generate_order_status_reports_explicit_target_ignores_load_ids_sco
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
-        load_ids: Some(vec![InstrumentId::from("OTHER-TOKEN.POLYMARKET")]),
+        load_ids: Some(vec![InstrumentId::from(OTHER_INSTRUMENT_ID)]),
         ..Default::default()
     });
     let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
@@ -1240,7 +1242,7 @@ async fn test_generate_fill_reports_explicit_target_ignores_load_ids_scope() {
     let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
-        load_ids: Some(vec![InstrumentId::from("OTHER-TOKEN.POLYMARKET")]),
+        load_ids: Some(vec![InstrumentId::from(OTHER_INSTRUMENT_ID)]),
         ..Default::default()
     });
     let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
@@ -1607,7 +1609,8 @@ async fn test_generate_order_status_reports_ignores_unselected_duplicate_order_i
         "next_cursor": "LTE=",
     }));
     let addr = start_mock_server(state.clone()).await;
-    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let instrument_id =
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET"));
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
         load_ids: Some(vec![instrument_id]),
@@ -3948,7 +3951,8 @@ async fn test_cached_order_does_not_conceal_unmapped_in_scope_history() {
         "next_cursor": "LTE=",
     }));
     let addr = start_mock_server(state).await;
-    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let instrument_id =
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET"));
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
         load_ids: Some(vec![instrument_id, unmapped_instrument_id]),
@@ -4036,7 +4040,8 @@ async fn test_generate_mass_status_validates_owned_binding_before_lookback_time(
         "next_cursor": "LTE=",
     }));
     let addr = start_mock_server(state).await;
-    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let instrument_id =
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET"));
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
         load_ids: Some(vec![instrument_id]),
@@ -4073,7 +4078,8 @@ async fn test_generate_mass_status_validates_owned_maker_binding_before_lookback
         "next_cursor": "LTE=",
     }));
     let addr = start_mock_server(state).await;
-    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let instrument_id =
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET"));
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
         load_ids: Some(vec![instrument_id]),
@@ -4142,7 +4148,8 @@ async fn test_generate_mass_status_ignores_out_of_scope_unparsable_maker_trade()
         "next_cursor": "LTE=",
     }));
     let addr = start_mock_server(state).await;
-    let instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
+    let instrument_id =
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET"));
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
         load_ids: Some(vec![instrument_id]),
@@ -4197,7 +4204,7 @@ async fn test_generate_mass_status_ignores_loaded_out_of_scope_trade_before_vali
     let loaded_instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
-        load_ids: Some(vec![InstrumentId::from("OTHER-TOKEN.POLYMARKET")]),
+        load_ids: Some(vec![InstrumentId::from(OTHER_INSTRUMENT_ID)]),
         ..Default::default()
     });
     let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
@@ -4254,7 +4261,7 @@ async fn test_generate_mass_status_applies_load_ids_to_all_report_types() {
     let loaded_instrument_id = InstrumentId::from("TEST-TOKEN.POLYMARKET");
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
-        load_ids: Some(vec![InstrumentId::from("OTHER-TOKEN.POLYMARKET")]),
+        load_ids: Some(vec![InstrumentId::from(OTHER_INSTRUMENT_ID)]),
         ..Default::default()
     });
     let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
@@ -6034,7 +6041,7 @@ async fn test_generate_fill_reports_drops_out_of_scope_unmapped_history() {
     let addr = start_mock_server(state).await;
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
-        load_ids: Some(vec![InstrumentId::from("OTHER.POLYMARKET")]),
+        load_ids: Some(vec![InstrumentId::from(OTHER_INSTRUMENT_ID)]),
         ..Default::default()
     });
     let (client, _rx, _cache) = create_test_execution_client_from_config(config);
@@ -6425,7 +6432,7 @@ async fn test_generate_position_status_reports_explicit_target_ignores_load_ids_
         InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET").as_str());
     let mut config = create_test_exec_config(addr);
     config.instrument_config = Some(PolymarketInstrumentProviderConfig {
-        load_ids: Some(vec![InstrumentId::from("OTHER-TOKEN.POLYMARKET")]),
+        load_ids: Some(vec![InstrumentId::from(OTHER_INSTRUMENT_ID)]),
         ..Default::default()
     });
     let (mut client, _rx, cache) = create_test_execution_client_from_config(config);

@@ -18,6 +18,7 @@ Test polymarket factories behavior.
 
 import base64
 from decimal import Decimal
+from types import ModuleType
 
 import pytest
 from unit.adapters.example_modules import capture_data_tester_main
@@ -29,6 +30,7 @@ from nautilus_trader.adapters.polymarket import PolymarketDataClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientConfig
 from nautilus_trader.adapters.polymarket import PolymarketExecutionClientFactory
 from nautilus_trader.adapters.polymarket import PolymarketInstrumentProviderConfig
+from nautilus_trader.adapters.polymarket import PolymarketPositionClient
 from nautilus_trader.adapters.polymarket import PolymarketSignatureType
 from nautilus_trader.common import Environment
 from nautilus_trader.live import LiveNode
@@ -146,9 +148,9 @@ def test_polymarket_data_tester_runs(monkeypatch: pytest.MonkeyPatch) -> None:
     assert captured["run_called"] is True
 
 
-def test_polymarket_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_polymarket_exec_tester_defaults_to_dry_run(monkeypatch: pytest.MonkeyPatch) -> None:
     """
-    Test polymarket exec tester runs live orders.
+    Test polymarket exec tester defaults to dry run.
     """
     captured = capture_exec_tester_main(monkeypatch, polymarket_exec_tester)
     kwargs = captured["exec_tester_kwargs"]
@@ -166,7 +168,8 @@ def test_polymarket_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch
     assert captured["timeout_disconnection_secs"] == 30
     assert captured["delay_post_stop_secs"] == 30
     assert kwargs["use_uuid_client_order_ids"] is True
-    assert kwargs["dry_run"] is False
+    assert kwargs["dry_run"] is True
+    assert "risk_engine_config" not in captured
     assert kwargs["enable_limit_buys"] is False
     assert kwargs["enable_limit_sells"] is False
     assert kwargs["use_post_only"] is False
@@ -181,11 +184,11 @@ def test_polymarket_exec_tester_runs_live_orders(monkeypatch: pytest.MonkeyPatch
     assert captured["run_called"] is True
 
 
-def test_polymarket_updown_smoke_tester_runs_live_orders(
+def test_polymarket_updown_smoke_tester_defaults_to_dry_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """
-    Test polymarket updown smoke tester runs live orders.
+    Test polymarket updown smoke tester defaults to dry run.
     """
     monkeypatch.setattr(
         polymarket_updown_smoke_tester,
@@ -199,7 +202,15 @@ def test_polymarket_updown_smoke_tester_runs_live_orders(
     assert "event_slug_builder: Some" in repr(data_client_config)
     assert 'assets: ["btc"]' in repr(data_client_config)
     assert exec_kwargs["instrument_id"] == InstrumentId.from_str(UPDOWN_FIXTURE_INSTRUMENT)
-    assert exec_kwargs["dry_run"] is False
+    assert exec_kwargs["dry_run"] is True
+    assert "risk_engine_config" not in captured
+    assert captured["timeout_disconnection_secs"] == 30
+    assert captured["delay_post_stop_secs"] == 30
+    exec_client_config = captured["exec_client_args"][2]
+    assert data_client_config.instrument_config.load_ids == [
+        InstrumentId.from_str(UPDOWN_FIXTURE_INSTRUMENT),
+    ]
+    assert repr(exec_client_config.instrument_config) == repr(data_client_config.instrument_config)
     assert exec_kwargs["enable_limit_buys"] is True
     assert exec_kwargs["enable_limit_sells"] is False
     assert exec_kwargs["open_position_on_start_qty"] == Decimal(5)
@@ -257,3 +268,67 @@ def test_polymarket_updown_smoke_tester_finds_outcome_token() -> None:
         str(instrument_id)
         == "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b-222.POLYMARKET"
     )
+
+
+@pytest.mark.parametrize("explicit_private_key", [False, True])
+def test_execution_client_uses_environment_credentials(
+    monkeypatch: pytest.MonkeyPatch,
+    explicit_private_key: bool,
+) -> None:
+    """
+    Test omitted credentials use the environment and explicit fields take precedence.
+    """
+    monkeypatch.setenv("POLYMARKET_PK", "invalid" if explicit_private_key else SMOKE_PRIVATE_KEY)
+    monkeypatch.setenv("POLYMARKET_API_KEY", SMOKE_API_KEY)
+    monkeypatch.setenv("POLYMARKET_API_SECRET", SMOKE_API_SECRET)
+    monkeypatch.setenv("POLYMARKET_PASSPHRASE", SMOKE_PASSPHRASE)
+    monkeypatch.delenv("POLYMARKET_FUNDER", raising=False)
+    trader_id = TraderId.from_str("ENV-001")
+    config = PolymarketExecutionClientConfig(
+        private_key=SMOKE_PRIVATE_KEY if explicit_private_key else None,
+    )
+    node = (
+        LiveNode.builder("POLYMARKET-ENV-PYTEST", trader_id, Environment.LIVE)
+        .add_exec_client(None, PolymarketExecutionClientFactory(), config)
+        .build()
+    )
+    assert node.trader_id == trader_id
+    assert node.environment == Environment.LIVE
+
+
+@pytest.mark.parametrize("module", [polymarket_exec_tester, polymarket_updown_smoke_tester])
+def test_execution_examples_require_explicit_live_order_opt_in(
+    monkeypatch: pytest.MonkeyPatch,
+    module: ModuleType,
+) -> None:
+    """
+    Test a deliberate live-order opt-in reaches the strategy configuration.
+    """
+    if module is polymarket_updown_smoke_tester:
+        monkeypatch.setattr(
+            module,
+            "resolve_updown_instrument_id",
+            lambda **_: InstrumentId.from_str(UPDOWN_FIXTURE_INSTRUMENT),
+        )
+    monkeypatch.setattr(module, "DRY_RUN", False)
+    captured = capture_exec_tester_main(monkeypatch, module)
+    assert captured["exec_tester_kwargs"]["dry_run"] is False
+    assert "risk_engine_config" not in captured
+
+
+@pytest.mark.parametrize("relayer_api_key", [None, "", " \t"])
+def test_position_client_preserves_relayer_environment_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+    relayer_api_key: str | None,
+) -> None:
+    """
+    Test omitted and blank position-client Relayer keys retain environment fallback.
+    """
+    monkeypatch.setenv("POLYMARKET_RELAYER_API_KEY", "test-relayer-key")
+    client = PolymarketPositionClient(
+        private_key=SMOKE_PRIVATE_KEY,
+        funder=SMOKE_FUNDER,
+        relayer_api_key=relayer_api_key,
+        relayer_api_key_address=SMOKE_FUNDER,
+    )
+    assert type(client) is PolymarketPositionClient
