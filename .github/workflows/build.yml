@@ -59,7 +59,6 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       run-tests: ${{ steps.plan.outputs.run_tests }}
-      recovery-only: ${{ steps.plan.outputs.recovery_only }}
       run-rust-tests: ${{ steps.plan.outputs.run_rust_tests }}
       github-changed: ${{ steps.plan.outputs.github_changed }}
       untrusted_pr: ${{ steps.policy.outputs.untrusted_pr }}
@@ -99,8 +98,6 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           BASE_REF: ${{ github.event.pull_request.base.ref }}
           BEFORE_SHA: ${{ github.event.before }}
-          REF_NAME: ${{ github.ref_name }}
-          CI_RELEASE_REPAIR_TREE: ${{ vars.CI_RELEASE_REPAIR_TREE }}
         run: bash scripts/ci/plan.sh
 
       - name: Plan wheel publication
@@ -1133,12 +1130,9 @@ jobs:
     name: release cargo publish preflight
     runs-on: ubuntu-latest
     needs:
-      - plan
       - cargo-deny
       - cargo-vet
-    if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-      needs.plan.outputs.recovery-only != 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read
     steps:
@@ -1179,11 +1173,8 @@ jobs:
 
   release-docs-features-preflight:
     name: release docs/features preflight
-    needs: plan
     runs-on: [self-hosted, Linux, X64, self-hosted-linux-x86]
-    if: >-
-      github.event_name == 'push' && github.ref == 'refs/heads/master' &&
-      needs.plan.outputs.recovery-only != 'true'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
     permissions:
       contents: read
     env:

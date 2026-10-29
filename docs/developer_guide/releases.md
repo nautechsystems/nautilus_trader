@@ -216,23 +216,6 @@ tool versions, the last step checkpoint, per-step and retry logs, exit status, r
 downloaded verification inputs, and the isolated verifier cache for 30 days. The normal build's integrity and final publication
 jobs also retain diagnostic artifacts on failure. A later successful rerun preserves those artifacts.
 
-### Landing a release tooling repair
-
-For an urgent repair that must reach `master` without rebuilding the wheel matrix, a maintainer can set the
-repository variable `CI_RELEASE_REPAIR_TREE` to the reviewed repair commit's Git tree:
-
-```bash
-git rev-parse 'HEAD^{tree}'
-```
-
-Set the variable before pushing the repair to `develop`. The exemption applies only to pushes to `develop`
-and `master` whose complete tree matches and whose changes contain only the explicit release tooling paths
-in `scripts/ci/check-release-repair.bash`. A merge with the same tree remains eligible; any additional change
-or an unavailable base falls back to normal CI. Pre-commit, script tests, action-pin checks, and security
-audits still run. Wheel builds, broad Rust tests, automatic release preflights, and Docker builds skip this
-repair. Dispatch publication recovery after merging, then remove the variable. Remove the temporary selector
-and its workflow wiring with a later change that runs normal CI.
-
 ## Versioning
 
 The project maintains two version numbers:

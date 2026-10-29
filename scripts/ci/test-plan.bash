@@ -48,8 +48,6 @@ run_plan() {
   (
     cd "$repo"
     EVENT_NAME="$event_name" \
-      REF_NAME="${TEST_REF_NAME:-develop}" \
-      CI_RELEASE_REPAIR_TREE="${TEST_REPAIR_TREE:-}" \
       BASE_REF="$base_ref" \
       BEFORE_SHA="$before_sha" \
       GITHUB_OUTPUT="$RUN_OUTPUT" \
@@ -225,57 +223,18 @@ expect_status 0
 expect_text "$RUN_OUTPUT" $'run_tests=false\nrun_rust_tests=false\ngithub_changed=true'
 expect_text "$RUN_STDOUT" "Docs-only changes: skipping build and test jobs"
 
-for repair_branch in develop master; do
-  repair_repo=$(create_repo "repair-${repair_branch}")
-  repair_base=$(git -C "$repair_repo" rev-parse HEAD)
-  mkdir -p "$repair_repo/scripts/ci"
-  printf '%s\n' '# Signing repair' > "$repair_repo/scripts/ci/sign-pypi-attestations.bash"
-  commit_changes "$repair_repo" "Repair release signing"
-  TEST_REPAIR_TREE=$(git -C "$repair_repo" rev-parse 'HEAD^{tree}')
-  TEST_REF_NAME=$repair_branch
-  run_plan "$repair_repo" push "" "$repair_base"
+# A retired repair variable must not suppress checks for release tooling changes
+for branch in develop master; do
+  signing_repo=$(create_repo "signing-${branch}")
+  signing_base=$(git -C "$signing_repo" rev-parse HEAD)
+  mkdir -p "$signing_repo/scripts/ci"
+  printf '%s\n' '# Signing change' > "$signing_repo/scripts/ci/sign-pypi-attestations.bash"
+  commit_changes "$signing_repo" "Change release signing"
+  CI_RELEASE_REPAIR_TREE=$(git -C "$signing_repo" rev-parse 'HEAD^{tree}') \
+  REF_NAME=$branch run_plan "$signing_repo" push "" "$signing_base"
   expect_status 0
-  expect_text "$RUN_OUTPUT" $'run_tests=false\nrun_rust_tests=false\ngithub_changed=true\nrecovery_only=true'
-  unset TEST_REPAIR_TREE TEST_REF_NAME
+  expect_text "$RUN_OUTPUT" $'run_tests=true\nrun_rust_tests=false\ngithub_changed=false'
+  expect_text "$RUN_STDOUT" "Python-only changes: skipping Rust tests"
 done
-
-changed_repair=$(create_repo "changed-repair")
-changed_base=$(git -C "$changed_repair" rev-parse HEAD)
-mkdir -p "$changed_repair/scripts/ci"
-printf '%s\n' '# Approved signing repair' > "$changed_repair/scripts/ci/sign-pypi-attestations.bash"
-commit_changes "$changed_repair" "Approve repair"
-TEST_REPAIR_TREE=$(git -C "$changed_repair" rev-parse 'HEAD^{tree}')
-printf '%s\n' '# Later signing change' >> "$changed_repair/scripts/ci/sign-pypi-attestations.bash"
-commit_changes "$changed_repair" "Change repair"
-run_plan "$changed_repair" push "" "$changed_base"
-expect_status 0
-expect_text "$RUN_OUTPUT" $'run_tests=true\nrun_rust_tests=false\ngithub_changed=false'
-unset TEST_REPAIR_TREE
-
-out_of_scope=$(create_repo "repair-with-rust")
-out_of_scope_base=$(git -C "$out_of_scope" rev-parse HEAD)
-mkdir -p "$out_of_scope/crates/core/src"
-printf '%s\n' 'pub fn changed() {}' > "$out_of_scope/crates/core/src/lib.rs"
-commit_changes "$out_of_scope" "Change runtime code"
-TEST_REPAIR_TREE=$(git -C "$out_of_scope" rev-parse 'HEAD^{tree}')
-run_plan "$out_of_scope" push "" "$out_of_scope_base"
-expect_status 0
-expect_text "$RUN_OUTPUT" $'run_tests=true\nrun_rust_tests=true\ngithub_changed=false'
-unset TEST_REPAIR_TREE
-
-merged_repair=$(create_repo "merged-repair")
-merged_base=$(git -C "$merged_repair" rev-parse HEAD)
-git -C "$merged_repair" branch master "$merged_base"
-mkdir -p "$merged_repair/scripts/ci"
-printf '%s\n' '# Signing repair' > "$merged_repair/scripts/ci/sign-pypi-attestations.bash"
-commit_changes "$merged_repair" "Repair signing"
-TEST_REPAIR_TREE=$(git -C "$merged_repair" rev-parse 'HEAD^{tree}')
-git -C "$merged_repair" checkout -q master
-git -C "$merged_repair" merge -q --no-ff develop -m "Merge release repair"
-TEST_REF_NAME=master
-run_plan "$merged_repair" push "" "$merged_base"
-expect_status 0
-expect_text "$RUN_OUTPUT" $'run_tests=false\nrun_rust_tests=false\ngithub_changed=true\nrecovery_only=true'
-unset TEST_REPAIR_TREE TEST_REF_NAME
 
 echo "CI plan script tests passed"
