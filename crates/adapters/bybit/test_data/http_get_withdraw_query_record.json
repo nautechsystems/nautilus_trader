@@ -1,0 +1,47 @@
+{
+  "retCode": 0,
+  "retMsg": "success",
+  "result": {
+    "rows": [
+      {
+        "coin": "USDC",
+        "chain": "ETH",
+        "amount": "41.43008",
+        "txID": "0x3d7bddb797f0e86420c982c0723653b8b728fd0ec9953b6b354445848d83a185",
+        "status": "success",
+        "toAddress": "0xE3De6d711e0951d34777b5Cd93c827F822ee8514",
+        "tag": "",
+        "withdrawFee": "5",
+        "createTime": "1742738305000",
+        "updateTime": "1742738340000",
+        "withdrawId": "131629076",
+        "withdrawType": 0,
+        "fee": "",
+        "tax": "",
+        "taxRate": "",
+        "taxType": ""
+      },
+      {
+        "coin": "USDT",
+        "chain": "SOL",
+        "amount": "951",
+        "txID": "",
+        "status": "CancelByUser",
+        "toAddress": "DhTEGye1vq2PPr8DPWit4HTDprnvnDiqpVHnHSY1Y82p",
+        "tag": "",
+        "withdrawFee": "1",
+        "createTime": "1742729329000",
+        "updateTime": "1742729437000",
+        "withdrawId": "131603458",
+        "withdrawType": 1,
+        "fee": "",
+        "tax": "",
+        "taxRate": "",
+        "taxType": ""
+      }
+    ],
+    "nextPageCursor": "eyJtaW5JRCI6MTMxNjAzNDU4LCJtYXhJRCI6MTMxNjI5MDc2fQ=="
+  },
+  "retExtInfo": {},
+  "time": 1750777316807
+}

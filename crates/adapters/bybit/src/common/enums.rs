@@ -1173,6 +1173,85 @@ pub enum BybitRepayStatus {
     Failed,
 }
 
+/// Wallet a withdrawal is drawn from.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum BybitWithdrawAccountType {
+    /// Funding wallet.
+    Fund,
+    /// Unified trading account, moved to the funding wallet by the venue before withdrawal.
+    Uta,
+    /// Earn account, which some coins cannot be withdrawn from.
+    Earn,
+    /// Funding wallet first, then the unified trading account and Earn account.
+    #[serde(rename = "FUND,UTA,EARN")]
+    All,
+}
+
+/// How the withdrawal fee is applied to the requested amount.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[repr(i32)]
+pub enum BybitWithdrawFeeType {
+    /// The amount is what the recipient receives; the fee is charged on top.
+    #[default]
+    Net = 0,
+    /// The fee is deducted from the amount.
+    Gross = 1,
+}
+
+/// Routing for a withdrawal.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[repr(i32)]
+pub enum BybitWithdrawForceChain {
+    /// Internal transfer when the address belongs to a Bybit main account, otherwise on-chain.
+    #[default]
+    Auto = 0,
+    /// Always on-chain.
+    OnChain = 1,
+    /// Internal transfer to a Bybit main account UID given as the address.
+    Uid = 2,
+}
+
+/// Withdrawal type reported on a withdrawal record, or filtered by when querying records.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Hash, Serialize_repr, Deserialize_repr)]
+#[repr(i32)]
+pub enum BybitWithdrawType {
+    /// On-chain withdrawal.
+    #[default]
+    OnChain = 0,
+    /// Internal transfer between Bybit accounts (off-chain).
+    Internal = 1,
+    /// Both types; query filter only.
+    All = 2,
+}
+
+/// Withdrawal status reported on a withdrawal record.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum BybitWithdrawStatus {
+    SecurityCheck,
+    Pending,
+    #[serde(rename = "success")]
+    Success,
+    CancelByUser,
+    Reject,
+    Fail,
+    BlockchainConfirmed,
+    MoreInformationRequired,
+    Unknown,
+
+    // Bybit Turkey only
+    HighValueReviewPending,
+    #[serde(rename = "HighValueReviewEDDSubmission")]
+    HighValueReviewEddSubmission,
+    HighValueReviewRejected,
+    // Spelling as documented by Bybit
+    #[serde(rename = "HighValueReviewRejectedRfunding")]
+    HighValueReviewRejectedRefunding,
+    HighValueReviewRejectedRefunded,
+    #[serde(other)]
+    Other,
+}
+
 /// Position status enumeration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
@@ -1485,5 +1564,70 @@ mod tests {
             status
         );
         assert_eq!(serde_json::to_value(status).unwrap(), value);
+    }
+
+    #[rstest]
+    #[case(BybitWithdrawAccountType::Fund, "FUND")]
+    #[case(BybitWithdrawAccountType::Uta, "UTA")]
+    #[case(BybitWithdrawAccountType::Earn, "EARN")]
+    #[case(BybitWithdrawAccountType::All, "FUND,UTA,EARN")]
+    fn test_withdraw_account_type_wire_values(
+        #[case] account_type: BybitWithdrawAccountType,
+        #[case] wire_value: &str,
+    ) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(serde_json::to_value(account_type).unwrap(), value);
+    }
+
+    #[rstest]
+    #[case(serde_json::to_value(BybitWithdrawFeeType::Net).unwrap(), 0)]
+    #[case(serde_json::to_value(BybitWithdrawFeeType::Gross).unwrap(), 1)]
+    #[case(serde_json::to_value(BybitWithdrawForceChain::Auto).unwrap(), 0)]
+    #[case(serde_json::to_value(BybitWithdrawForceChain::OnChain).unwrap(), 1)]
+    #[case(serde_json::to_value(BybitWithdrawForceChain::Uid).unwrap(), 2)]
+    #[case(serde_json::to_value(BybitWithdrawType::OnChain).unwrap(), 0)]
+    #[case(serde_json::to_value(BybitWithdrawType::Internal).unwrap(), 1)]
+    #[case(serde_json::to_value(BybitWithdrawType::All).unwrap(), 2)]
+    fn test_withdraw_int_enum_wire_values(
+        #[case] serialized: serde_json::Value,
+        #[case] expected: i32,
+    ) {
+        assert_eq!(serialized, serde_json::json!(expected));
+    }
+
+    #[rstest]
+    #[case("SecurityCheck", BybitWithdrawStatus::SecurityCheck)]
+    #[case("success", BybitWithdrawStatus::Success)]
+    #[case("CancelByUser", BybitWithdrawStatus::CancelByUser)]
+    #[case(
+        "HighValueReviewEDDSubmission",
+        BybitWithdrawStatus::HighValueReviewEddSubmission
+    )]
+    #[case(
+        "HighValueReviewRejectedRfunding",
+        BybitWithdrawStatus::HighValueReviewRejectedRefunding
+    )]
+    fn test_withdraw_status_wire_values(
+        #[case] wire_value: &str,
+        #[case] expected: BybitWithdrawStatus,
+    ) {
+        let value = serde_json::Value::String(wire_value.to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitWithdrawStatus>(value.clone()).unwrap(),
+            expected
+        );
+        assert_eq!(serde_json::to_value(expected).unwrap(), value);
+    }
+
+    #[rstest]
+    fn test_unknown_withdraw_status_deserializes_to_other() {
+        let value = serde_json::Value::String("SomeFutureStatus".to_string());
+
+        assert_eq!(
+            serde_json::from_value::<BybitWithdrawStatus>(value).unwrap(),
+            BybitWithdrawStatus::Other
+        );
     }
 }
