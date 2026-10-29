@@ -71,6 +71,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     common::{
+        capabilities,
         consts::{
             DERIBIT_BOOK_DEFAULT_DEPTH, DERIBIT_BOOK_DEFAULT_GROUP, DERIBIT_BOOK_VALID_DEPTHS,
             DERIBIT_VENUE,
@@ -525,6 +526,14 @@ impl DeribitDataClient {
             );
         }
         Ok(true)
+    }
+
+    fn validate_public_trades(&self, instrument_id: InstrumentId) -> anyhow::Result<()> {
+        if let Some(instrument) = self.instruments.get_cloned(&instrument_id) {
+            capabilities::validate_public_trades(&instrument)?;
+        }
+
+        Ok(())
     }
 
     // Fetches an instrument over HTTP and seeds the local, HTTP, and WebSocket caches.
@@ -1224,6 +1233,7 @@ impl DataClient for DeribitDataClient {
     fn subscribe_bars(&mut self, cmd: SubscribeBars) -> anyhow::Result<()> {
         execute_bar_subscriptions(&cmd.bar_types, |bar_type| {
             let instrument_id = bar_type.instrument_id();
+            self.validate_public_trades(instrument_id)?;
             let needs_load = self.prepare_subscribe(instrument_id)?;
 
             let ws = self
@@ -2015,6 +2025,7 @@ impl DataClient for DeribitDataClient {
 
     fn request_trades(&self, request: RequestTrades) -> anyhow::Result<()> {
         let instrument_id = request.single_instrument_id()?;
+        self.validate_public_trades(instrument_id)?;
 
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -2059,6 +2070,7 @@ impl DataClient for DeribitDataClient {
 
     fn request_bars(&self, request: RequestBars) -> anyhow::Result<()> {
         let bar_type = request.single_bar_type()?;
+        self.validate_public_trades(bar_type.instrument_id())?;
 
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
@@ -2297,6 +2309,7 @@ impl DeribitDataClient {
         instrument_id: InstrumentId,
         cmd: &SubscribeTrades,
     ) -> anyhow::Result<()> {
+        self.validate_public_trades(instrument_id)?;
         let command_id = cmd.command_id;
         let needs_load = self.prepare_subscribe(instrument_id)?;
         let subscribe_combo_legs = Self::subscribe_combo_legs(&cmd.params);

@@ -2,6 +2,10 @@
 
 Released on TBD (UTC).
 
+### Enhancements
+
+- Added Deribit routed spot metadata and local order and market data capability checks
+
 ### Breaking Changes
 
 - Changed `CacheDatabaseAdapter` Greek and yield-curve defaults to errors; override supported reads and writes
@@ -9,6 +13,9 @@ Released on TBD (UTC).
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
 - Changed Bybit HTTP `modify_order` to take `trigger_price`; pass `None` when unchanged
+- Changed Deribit orders to require cached instruments; include traded product types in execution `product_types`
+- Changed Deribit spot orders to reject `GTD`; use `GTC`, `IOC`, or `FOK`
+- Changed `DeribitInstrument` literals; add `is_cbe_routed: None` and `is_csr: None`
 - Changed Derive endpoint overrides to `SecretString`; pass strings to builders or use `.into()` in struct literals
 - Changed Polymarket data/execution credentials and funders to reject blanks; omit them for environment fallback
 - Changed Polymarket execution examples to dry run by default; disable `DRY_RUN` for live orders
@@ -23,6 +30,7 @@ Released on TBD (UTC).
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
+- Fixed Deribit instrument loading panicking on invalid spot definitions
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive

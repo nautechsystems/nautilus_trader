@@ -66,6 +66,7 @@ use super::{
     },
 };
 use crate::common::{
+    capabilities,
     consts::{
         DERIBIT_BOOK_DEFAULT_DEPTH, DERIBIT_TESTNET_WS_URL, DERIBIT_WS_HEARTBEAT_SECS,
         DERIBIT_WS_ORDER_KEY, DERIBIT_WS_ORDER_QUOTA, DERIBIT_WS_SUBSCRIPTION_KEY,
@@ -1112,6 +1113,7 @@ impl DeribitWebSocketClient {
         instrument_id: InstrumentId,
         interval: Option<DeribitUpdateInterval>,
     ) -> DeribitWsResult<()> {
+        self.validate_public_trades(instrument_id)?;
         let interval = interval.unwrap_or_default();
         self.check_auth_requirement(interval)?;
         let channel =
@@ -1412,9 +1414,22 @@ impl DeribitWebSocketClient {
         instrument_id: InstrumentId,
         resolution: &str,
     ) -> DeribitWsResult<()> {
+        self.validate_public_trades(instrument_id)?;
         // Chart channel format: chart.trades.{instrument}.{resolution}
         let channel = format!("chart.trades.{}.{}", instrument_id.symbol, resolution);
         self.send_subscribe(vec![channel]).await
+    }
+
+    fn validate_public_trades(&self, instrument_id: InstrumentId) -> DeribitWsResult<()> {
+        if let Some(instrument) = self
+            .instruments_cache
+            .get_cloned(&instrument_id.symbol.inner())
+        {
+            capabilities::validate_public_trades(&instrument)
+                .map_err(|e| DeribitWsError::Subscribe(e.to_string()))?;
+        }
+
+        Ok(())
     }
 
     /// Unsubscribes from chart/OHLC bar updates.
@@ -1839,11 +1854,60 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            parse::parse_deribit_instrument_any, rpc::DeribitJsonRpcResponse,
-            testing::load_test_json,
+            parse::parse_deribit_instrument_any,
+            rpc::DeribitJsonRpcResponse,
+            testing::{load_test_json, routed_spot_instrument},
         },
         http::models::DeribitInstrument,
     };
+
+    #[tokio::test]
+    async fn routed_spot_rejects_trades_and_charts_but_subscribes_books() {
+        let ws_client =
+            DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        *ws_client.cmd_tx.write() = tx;
+        let instrument = routed_spot_instrument();
+        let instrument_id = instrument.id();
+        ws_client.cache_instruments(std::slice::from_ref(&instrument));
+
+        let HandlerCommand::UpdateInstrument(updated) = rx.try_recv().unwrap() else {
+            panic!("expected instrument update");
+        };
+
+        let trades_error = ws_client
+            .subscribe_trades(instrument_id, None)
+            .await
+            .unwrap_err();
+        let chart_error = ws_client
+            .subscribe_chart(instrument_id, "1")
+            .await
+            .unwrap_err();
+        let bars_error = ws_client
+            .subscribe_bars("BTC_USDC.DERIBIT-1-MINUTE-LAST-EXTERNAL".parse().unwrap())
+            .await
+            .unwrap_err();
+        ws_client.subscribe_book(instrument_id, None).await.unwrap();
+        let command = rx.try_recv().unwrap();
+
+        assert_eq!(updated.id(), instrument_id);
+        assert_eq!(updated.info(), instrument.info());
+
+        for error in [trades_error, chart_error, bars_error] {
+            assert_eq!(
+                error.to_string(),
+                "Subscribe error: Deribit routed spot does not support public trades or charts for BTC_USDC.DERIBIT"
+            );
+        }
+
+        assert!(
+            matches!(command, HandlerCommand::Subscribe { channels } if channels == vec!["book.BTC_USDC.100ms"])
+        );
+        assert!(matches!(
+            rx.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn active_state_waits_for_sender_publication() {

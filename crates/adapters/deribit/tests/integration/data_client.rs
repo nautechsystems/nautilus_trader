@@ -45,11 +45,11 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse, SystemEvent,
         data::{
-            InstrumentResponse, RequestBookSnapshot, RequestCustomData, RequestInstrument,
-            RequestOptionChainReferencePrice, SubscribeBars, SubscribeBookDeltas,
-            SubscribeBookDepth, SubscribeFundingRates, SubscribeIndexPrices, SubscribeMarkPrices,
-            SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades, SubscriptionError,
-            UnsubscribeTrades,
+            InstrumentResponse, RequestBars, RequestBookSnapshot, RequestCustomData,
+            RequestInstrument, RequestOptionChainReferencePrice, RequestTrades, SubscribeBars,
+            SubscribeBookDeltas, SubscribeBookDepth, SubscribeFundingRates, SubscribeIndexPrices,
+            SubscribeMarkPrices, SubscribeOptionGreeks, SubscribeQuotes, SubscribeTrades,
+            SubscriptionError, UnsubscribeTrades,
         },
         system::SocketState,
     },
@@ -340,6 +340,16 @@ async fn handle_jsonrpc_request(
                 return handle_get_combo_instrument(id).await;
             }
 
+            if instrument_name == "BTC_USDC" {
+                return Json(json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": load_json("http_get_instrument_routed_spot.json"),
+                    "usOut": 1_787_011_200_000_000_u64,
+                }))
+                .into_response();
+            }
+
             let fixture =
                 if instrument_name.contains('-') && instrument_name.matches('-').count() >= 3 {
                     "http_get_instrument_option.json"
@@ -451,6 +461,28 @@ async fn handle_get_instruments(
         let _permit = gate.acquire().await.unwrap();
     }
 
+    let kind = params
+        .as_ref()
+        .and_then(|p| p.get("kind"))
+        .and_then(Value::as_str);
+
+    let response = match (response, kind) {
+        (None, Some("spot")) => {
+            let routed = load_json("http_get_instrument_routed_spot.json");
+            let mut invalid = routed.clone();
+            invalid["instrument_name"] = json!("HBAR_USDC");
+            invalid["base_currency"] = json!("HBAR");
+            invalid["tick_size"] = json!("-0.5999");
+            Some(json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": [invalid, routed],
+                "usOut": 1_787_011_200_000_000_u64,
+            }))
+        }
+        (response, _) => response,
+    };
+
     let currency = params
         .as_ref()
         .and_then(|p| p.get("currency"))
@@ -473,10 +505,7 @@ async fn handle_get_instruments(
                 }
             }
 
-            if let Some(kind) = params
-                .as_ref()
-                .and_then(|p| p.get("kind"))
-                .and_then(|k| k.as_str())
+            if let Some(kind) = kind
                 && let Some(result) = data.get_mut("result")
                 && let Some(instruments) = result.as_array_mut()
             {
@@ -985,6 +1014,87 @@ async fn test_data_client_connect_disconnect() {
     client.disconnect().await.unwrap();
     assert!(!client.is_connected());
     assert!(registry.handle(*DERIBIT_CLIENT_ID, endpoint).is_none());
+}
+
+#[tokio::test]
+async fn test_routed_spot_data_client_rejects_trades_and_charts_locally() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.product_types = vec![DeribitProductType::Spot];
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("BTC_USDC.DERIBIT");
+
+    let trades_error =
+        dispatch_subscribe(&mut client, SubscribeKind::Trades, instrument_id).unwrap_err();
+    let bars_error =
+        dispatch_subscribe(&mut client, SubscribeKind::Bars, instrument_id).unwrap_err();
+    let trade_history_error = client
+        .request_trades(RequestTrades::new(
+            instrument_id,
+            None,
+            None,
+            None,
+            Some(*DERIBIT_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap_err();
+    let bar_type = BarType::from("BTC_USDC.DERIBIT-1-MINUTE-LAST-EXTERNAL");
+    let bar_history_error = client
+        .request_bars(RequestBars::new(
+            bar_type,
+            None,
+            None,
+            None,
+            Some(*DERIBIT_CLIENT_ID),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+        ))
+        .unwrap_err();
+    let book_channel = "book.BTC_USDC.none.10.100ms";
+    dispatch_subscribe(&mut client, SubscribeKind::BookDeltas, instrument_id).unwrap();
+    wait_until_async(
+        || async {
+            state
+                .subscription_events
+                .lock()
+                .await
+                .iter()
+                .any(|(channel, subscribe)| *subscribe && channel == book_channel)
+        },
+        TEST_TIMEOUT,
+    )
+    .await;
+
+    let channels = state.subscription_events.lock().await.clone();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(
+        trades_error.to_string(),
+        "Deribit routed spot does not support public trades or charts for BTC_USDC.DERIBIT"
+    );
+    assert_eq!(bars_error.to_string(), trades_error.to_string());
+    assert_eq!(trade_history_error.to_string(), trades_error.to_string());
+    assert_eq!(bar_history_error.to_string(), trades_error.to_string());
+    assert_eq!(
+        channels
+            .iter()
+            .filter(|(channel, _)| channel.starts_with("trades.") || channel.starts_with("chart."))
+            .count(),
+        0
+    );
+    assert_eq!(
+        channels
+            .iter()
+            .filter(|(channel, subscribe)| *subscribe && channel == book_channel)
+            .count(),
+        1
+    );
 }
 
 #[rstest]
@@ -1664,6 +1774,47 @@ async fn test_subscribe_quotes_uncached_instrument_fails_fast() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case(SubscribeKind::Trades, "trades")]
+#[case(SubscribeKind::Bars, "bars")]
+#[tokio::test]
+async fn test_routed_spot_lazy_load_rejects_public_trades(
+    #[case] kind: SubscribeKind,
+    #[case] description: &str,
+) {
+    let _capture_guard = lock_log_capture().await;
+    let logger = install_capturing_debug_logger();
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.auto_load_missing_instruments = true;
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("BTC_USDC.DERIBIT");
+    let expected_error = format!(
+        "Failed to subscribe to {description} for {instrument_id}: Subscribe error: \
+         Deribit routed spot does not support public trades or charts for {instrument_id}"
+    );
+
+    dispatch_subscribe(&mut client, kind, instrument_id).unwrap();
+    wait_until_async(|| async { logger.contains(&expected_error) }, TEST_TIMEOUT).await;
+    let channels = state.subscription_events.lock().await.clone();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(
+        state.get_instrument_request_count.load(Ordering::Relaxed),
+        1
+    );
+    assert_eq!(
+        channels
+            .iter()
+            .filter(|(channel, _)| channel.starts_with("trades.") || channel.starts_with("chart."))
+            .count(),
+        0
+    );
 }
 
 #[rstest]
