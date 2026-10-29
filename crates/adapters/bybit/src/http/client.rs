@@ -679,9 +679,7 @@ impl BybitRawHttpClient {
             }
         };
 
-        if !retry {
-            return operation().await;
-        }
+        let should_retry = |e: &BybitHttpError| retry && should_retry_http(e);
 
         let create_error = |error: RetryError| -> BybitHttpError {
             match error {
@@ -695,12 +693,7 @@ impl BybitRawHttpClient {
         let token = self.cancellation_token();
 
         self.retry_manager
-            .invocation(
-                endpoint.as_str(),
-                operation,
-                should_retry_http,
-                create_error,
-            )
+            .invocation(endpoint.as_str(), operation, should_retry, create_error)
             .cancellation_token(&token)
             .execute()
             .await
@@ -1653,11 +1646,18 @@ impl BybitRawHttpClient {
     ) -> Result<Vec<BybitWithdrawalRecord>, BybitHttpError> {
         let mut params = params.clone();
         let mut records = Vec::new();
+        let mut cursor_walk = CursorWalk::default();
 
         loop {
             let mut page = self.get_withdrawal_records(&params).await?;
-            let next = page.result.continuation_cursor().map(str::to_owned);
             records.append(&mut page.result.rows);
+
+            let next = cursor_walk
+                .advance(
+                    "/v5/asset/withdraw/query-record",
+                    page.result.next_page_cursor.take(),
+                )
+                .map_err(|e| BybitHttpError::ValidationError(e.to_string()))?;
 
             match next {
                 Some(c) => params.cursor = Some(c),

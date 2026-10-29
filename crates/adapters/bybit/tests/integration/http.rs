@@ -40,6 +40,7 @@ use nautilus_bybit::{
     },
     http::{
         client::{BybitHttpClient, BybitRawHttpClient},
+        error::BybitHttpError,
         models::BybitInstrumentLinearResponse,
         query::{
             BybitFeeRateParams, BybitInstrumentsInfoParamsBuilder, BybitNativeTpSlParams,
@@ -5280,6 +5281,8 @@ struct WithdrawServerState {
     bodies: Arc<tokio::sync::Mutex<Vec<Value>>>,
     failures_remaining: Arc<tokio::sync::Mutex<usize>>,
     record_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
+    exhaust_quota: Arc<tokio::sync::Mutex<bool>>,
+    repeat_cursor: Arc<tokio::sync::Mutex<bool>>,
 }
 
 async fn handle_withdraw_create(
@@ -5302,14 +5305,27 @@ async fn handle_withdraw_create(
         return StatusCode::INTERNAL_SERVER_ERROR.into_response();
     }
 
-    Json(json!({
+    let mut response = Json(json!({
         "retCode": 0,
         "retMsg": "success",
         "result": {"id": "10195"},
         "retExtInfo": {},
         "time": 1672196571239i64
     }))
-    .into_response()
+    .into_response();
+
+    if *state.exhaust_quota.lock().await {
+        let reset_ms = Timestamp::now().as_millisecond() + 60_000;
+        let headers = response.headers_mut();
+        headers.insert("X-Bapi-Limit", "5".parse().unwrap());
+        headers.insert("X-Bapi-Limit-Status", "0".parse().unwrap());
+        headers.insert(
+            "X-Bapi-Limit-Reset-Timestamp",
+            reset_ms.to_string().parse().unwrap(),
+        );
+    }
+
+    response
 }
 
 async fn handle_withdraw_query_record(
@@ -5323,7 +5339,7 @@ async fn handle_withdraw_query_record(
     let query = uri.query().unwrap_or_default().to_string();
     state.record_queries.lock().await.push(query.clone());
 
-    if !query.contains("cursor=") {
+    if !query.contains("cursor=") || *state.repeat_cursor.lock().await {
         return Json(load_test_data("http_get_withdraw_query_record.json")).into_response();
     }
 
@@ -5507,6 +5523,67 @@ async fn test_withdraw_without_request_id_does_not_retry() {
 
     assert!(result.is_err());
     assert_eq!(state.bodies.lock().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_withdraw_without_request_id_cancels_while_waiting_for_quota() {
+    let (addr, state) = start_withdraw_server(0).await;
+    *state.exhaust_quota.lock().await = true;
+    let client = Arc::new(user_raw_test_client(format!("http://{addr}")));
+
+    let params = BybitWithdrawParamsBuilder::default()
+        .coin("USDT".to_string())
+        .chain("ETH".to_string())
+        .address("0x99ced129603abc771c0dabe935c326ff6c86645d".to_string())
+        .amount("24".to_string())
+        .timestamp(1_700_000_000_000)
+        .account_type(BybitWithdrawAccountType::Fund)
+        .build()
+        .unwrap();
+
+    // First response reports the quota exhausted for 60s
+    client.withdraw(&params).await.unwrap();
+
+    let handle = tokio::spawn({
+        let client = Arc::clone(&client);
+        let params = params.clone();
+        async move { client.withdraw(&params).await }
+    });
+    tokio::time::sleep(Duration::from_millis(100)).await;
+    client.cancel_all_requests();
+
+    let result = tokio::time::timeout(Duration::from_secs(5), handle)
+        .await
+        .expect("withdraw did not observe cancellation")
+        .unwrap();
+
+    assert!(matches!(result, Err(BybitHttpError::Canceled(_))));
+    assert_eq!(state.bodies.lock().await.len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_get_withdrawal_records_rejects_repeated_cursor() {
+    let (addr, state) = start_withdraw_server(0).await;
+    *state.repeat_cursor.lock().await = true;
+    let client = user_raw_test_client(format!("http://{addr}"));
+
+    let params = BybitWithdrawalRecordsParamsBuilder::default()
+        .withdraw_type(BybitWithdrawType::All)
+        .limit(2)
+        .build()
+        .unwrap();
+    let result = tokio::time::timeout(
+        Duration::from_secs(5),
+        client.fetch_all_withdrawal_records(&params),
+    )
+    .await
+    .expect("pagination did not stop on a repeated cursor");
+
+    let err = result.unwrap_err();
+    assert!(err.to_string().contains("did not advance"), "{err}");
+    assert_eq!(state.record_queries.lock().await.len(), 2);
 }
 
 #[rstest]
