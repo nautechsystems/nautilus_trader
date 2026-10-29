@@ -860,9 +860,19 @@ strategy and keys a netting position by instrument and strategy. Unless the cach
 second, opposite position. It does not close the cached one. Net exposure reaches zero, but the stale position
 and its realized PnL remain.
 
-Until this is addressed, reconcile a margin position closed during downtime manually, or run
-`spot_account_type=AccountType.CASH` with `use_spot_position_reports=True`, where the wallet read enumerates
-every holding it covers and an absent report is genuine evidence of flat.
+Until this is addressed, reconcile a margin position closed during downtime manually. Cash mode does not avoid
+it:
+
+- With `use_spot_position_reports=False`, the default, or for an instrument outside
+  `spot_positions_quote_currency`, the client declares no bulk position coverage. The closing fill is
+  projected order-only and the periodic check skips the instrument, as in margin mode.
+- For a covered instrument, a sale that leaves a zero wallet balance gets no wallet report, so startup still
+  projects the closing fill order-only: that projection keys on the report, not on coverage. A periodic
+  position check, when enabled, does not apply the fill either. With `generate_missing_orders` enabled (the
+  default), it falls back to a synthetic order at the cached average entry price, attributed as above, so it
+  opens an offsetting `EXTERNAL` position under the same conditions.
+
+Either way the closing PnL and fees are not recorded.
 :::
 
 ### Futures reconciliation
