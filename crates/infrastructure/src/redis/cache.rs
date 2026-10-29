@@ -48,9 +48,7 @@ use bytes::Bytes;
 use nautilus_common::{
     cache::{
         CacheConfig,
-        database::{
-            CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap, register_loaded_currencies,
-        },
+        database::{CacheDatabaseAdapter, CacheDatabaseFactory, CacheMap},
     },
     enums::SerializationEncoding,
     live::get_runtime,
@@ -1336,43 +1334,12 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         log::debug!("Loading all data");
 
-        // Currencies must be registered before the dependent payloads decode, because a `Money`
-        // or a `Currency` in them resolves its code through the global registry.
-        let mut currencies = self.load_currencies().await?;
-        register_loaded_currencies(&mut currencies)?;
-
-        let (
-            instruments,
-            instrument_closes,
-            synthetics,
-            accounts,
-            orders,
-            positions,
-            greeks,
-            yield_curves,
-        ) = tokio::try_join!(
-            self.load_instruments(),
-            self.load_instrument_closes(),
-            self.load_synthetics(),
-            self.load_accounts(),
-            self.load_orders(),
-            self.load_positions(),
-            self.load_greeks(),
-            self.load_yield_curves()
+        DatabaseQueries::load_all(
+            &self.database.con,
+            self.encoding(),
+            &self.database.trader_key,
         )
-        .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
-
-        Ok(CacheMap {
-            currencies,
-            instruments,
-            instrument_closes,
-            synthetics,
-            accounts,
-            orders,
-            positions,
-            greeks,
-            yield_curves,
-        })
+        .await
     }
 
     fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {

@@ -32,7 +32,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
-        greeks::{OptionGreekValues, YieldCurve},
+        greeks::{GreeksData, OptionGreekValues, YieldCurve},
         option_chain::OptionGreeks,
     },
     enums::{
@@ -2206,6 +2206,204 @@ fn test_add_instrument_close_persists_replacement() {
         restored.instrument_close(&instrument_id),
         Some(&replacement)
     );
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_greeks_and_yield_curves_survive_cache_restart(#[case] with_memory: bool) {
+    let database = SnapshotBlobTestDatabase::default();
+    let greeks = Arc::clone(&database.greeks);
+    let curves = Arc::clone(&database.yield_curves);
+
+    let config = CacheConfig {
+        save_market_data: true,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+    let expected_greeks = [
+        persisted_greeks("SPY240315C00500000.OPRA", 1.0),
+        persisted_greeks("SPY240315P00510000.OPRA", 2.0),
+    ];
+    let expected_curves = [
+        YieldCurve::new(
+            "USD".into(),
+            vec![0.25, 0.5, 1.0],
+            vec![0.03, 0.04, 0.05],
+            101.into(),
+            102.into(),
+        ),
+        YieldCurve::new(
+            "EUR".into(),
+            vec![0.75],
+            vec![0.025],
+            103.into(),
+            104.into(),
+        ),
+    ];
+
+    for value in &expected_greeks {
+        cache.add_greeks(value.clone()).unwrap();
+    }
+
+    for value in &expected_curves {
+        cache.add_yield_curve(value.clone()).unwrap();
+    }
+
+    drop(cache);
+
+    let database = SnapshotBlobTestDatabase {
+        greeks,
+        yield_curves: curves,
+        ..Default::default()
+    };
+
+    let mut restored = Cache::new(None, Some(Box::new(database)));
+
+    if with_memory {
+        let stale = persisted_greeks("STALE.OPRA", 4.0);
+        restored.greeks.insert(stale.instrument_id, stale);
+        restored.yield_curves.insert(
+            "STALE".into(),
+            YieldCurve::new("STALE".into(), vec![1.0], vec![0.09], 91.into(), 92.into()),
+        );
+    }
+
+    futures::executor::block_on(restored.cache_all()).unwrap();
+
+    assert_eq!(restored.greeks.len(), 2);
+    assert_eq!(restored.yield_curves.len(), 2);
+
+    for value in expected_greeks {
+        assert_eq!(restored.greeks(&value.instrument_id), Some(value));
+    }
+
+    for value in expected_curves {
+        assert_eq!(restored.yield_curves.get(&value.curve_name), Some(&value));
+    }
+
+    assert_eq!(restored.yield_curve("USD").unwrap()(0.5), 0.04);
+    assert_eq!(restored.yield_curve("EUR").unwrap()(0.5), 0.025);
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_greeks_and_yield_curve_write_failure_preserves_memory(#[case] replace: bool) {
+    let database = SnapshotBlobTestDatabase {
+        fail_market_data: true,
+        ..Default::default()
+    };
+
+    let greeks = Arc::clone(&database.greeks);
+    let curves = Arc::clone(&database.yield_curves);
+
+    let config = CacheConfig {
+        save_market_data: true,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+    let first = persisted_greeks("SPY240315C00500000.OPRA", 1.0);
+    let curve = YieldCurve::new("USD".into(), vec![1.0], vec![0.04], 11.into(), 12.into());
+
+    if replace {
+        cache.greeks.insert(first.instrument_id, first);
+        cache.yield_curves.insert(curve.curve_name.clone(), curve);
+    }
+
+    let expected_greeks = cache.greeks.clone();
+    let expected_curves = cache.yield_curves.clone();
+
+    let greek_error = cache
+        .add_greeks(persisted_greeks("SPY240315C00500000.OPRA", 2.0))
+        .unwrap_err();
+    let curve_error = cache
+        .add_yield_curve(YieldCurve::new(
+            "USD".into(),
+            vec![2.0],
+            vec![0.06],
+            21.into(),
+            22.into(),
+        ))
+        .unwrap_err();
+
+    assert_eq!(greek_error.to_string(), "add greeks failed");
+    assert_eq!(curve_error.to_string(), "add yield curve failed");
+    assert_eq!(cache.greeks, expected_greeks);
+    assert_eq!(cache.yield_curves, expected_curves);
+    assert!(greeks.lock().is_empty());
+    assert!(curves.lock().is_empty());
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_greeks_and_yield_curves_remain_memory_only(#[case] with_database: bool) {
+    let database = SnapshotBlobTestDatabase {
+        fail_market_data: true,
+        ..Default::default()
+    };
+
+    let database = with_database.then(|| Box::new(database) as Box<dyn CacheDatabaseAdapter>);
+    let mut cache = Cache::new(None, database);
+    let greeks = persisted_greeks("SPY240315C00500000.OPRA", 3.0);
+    let curve = YieldCurve::new("GBP".into(), vec![1.0], vec![0.035], 31.into(), 32.into());
+
+    cache.add_greeks(greeks.clone()).unwrap();
+    cache.add_yield_curve(curve.clone()).unwrap();
+
+    assert_eq!(cache.greeks(&greeks.instrument_id), Some(greeks));
+    assert_eq!(cache.yield_curves.get("GBP"), Some(&curve));
+}
+
+#[rstest]
+fn test_cache_all_rejects_invalid_persisted_yield_curve() {
+    let curve = YieldCurve::new("USD".into(), vec![], vec![], 41.into(), 42.into());
+
+    let database = SnapshotBlobTestDatabase {
+        yield_curves: Arc::new(Mutex::new(AHashMap::from([("USD".into(), curve)]))),
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let error = futures::executor::block_on(cache.cache_all()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("one rate or at least three points")
+    );
+    assert!(cache.yield_curves.is_empty());
+}
+
+fn persisted_greeks(instrument: &str, scale: f64) -> GreeksData {
+    GreeksData::new(
+        InstrumentId::from(instrument),
+        scale == 1.0,
+        500.0 * scale,
+        20270315,
+        40,
+        0.125 * scale,
+        100.0,
+        2.0 * scale,
+        510.0 * scale,
+        0.035 * scale,
+        0.015 * scale,
+        0.25 * scale,
+        12.5 * scale,
+        18.75 * scale,
+        OptionGreekValues {
+            delta: 0.625 * scale,
+            gamma: 0.0125 * scale,
+            vega: 2.5 * scale,
+            theta: -0.125 * scale,
+            rho: 0.375 * scale,
+        },
+        0.75 / scale,
+        1_800_000_000_123_456_789_u64.into(),
+        1_800_000_000_987_654_321_u64.into(),
+    )
 }
 
 #[rstest]
@@ -10585,6 +10783,8 @@ struct SnapshotBlobTestDatabase {
     general: AHashMap<String, Bytes>,
     currencies: AHashMap<Ustr, Currency>,
     instrument_closes: Arc<Mutex<AHashMap<InstrumentId, InstrumentClose>>>,
+    greeks: Arc<Mutex<AHashMap<InstrumentId, GreeksData>>>,
+    yield_curves: Arc<Mutex<AHashMap<String, YieldCurve>>>,
     accounts: AHashMap<AccountId, AccountAny>,
     orders: AHashMap<ClientOrderId, OrderAny>,
     positions: AHashMap<PositionId, Position>,
@@ -10598,6 +10798,7 @@ struct SnapshotBlobTestDatabase {
     fail_add_currency: bool,
     fail_flush: bool,
     fail_add_instrument_close: bool,
+    fail_market_data: bool,
     fail_add_order: bool,
     fail_add_position: bool,
     fail_index_order_clients: bool,
@@ -10737,6 +10938,8 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(CacheMap {
             currencies: self.currencies.clone(),
             instrument_closes: self.instrument_closes.lock().clone(),
+            greeks: self.greeks.lock().clone(),
+            yield_curves: self.yield_curves.lock().clone(),
             accounts: self.accounts.clone(),
             orders: self.orders.clone(),
             positions: self.positions.clone(),
@@ -10962,6 +11165,28 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_bar(&self, _bar: &Bar) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_greeks(&self, greeks: &GreeksData) -> anyhow::Result<()> {
+        if self.fail_market_data {
+            anyhow::bail!("add greeks failed");
+        }
+
+        self.greeks
+            .lock()
+            .insert(greeks.instrument_id, greeks.clone());
+        Ok(())
+    }
+
+    fn add_yield_curve(&self, curve: &YieldCurve) -> anyhow::Result<()> {
+        if self.fail_market_data {
+            anyhow::bail!("add yield curve failed");
+        }
+
+        self.yield_curves
+            .lock()
+            .insert(curve.curve_name.clone(), curve.clone());
         Ok(())
     }
 

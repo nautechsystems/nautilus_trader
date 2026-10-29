@@ -219,18 +219,18 @@ pub trait CacheDatabaseAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if loading greeks data fails.
+    /// Returns an error if loading greeks data fails or the adapter does not support it.
     async fn load_greeks(&self) -> anyhow::Result<AHashMap<InstrumentId, GreeksData>> {
-        Ok(AHashMap::new())
+        anyhow::bail!("Loading greeks for cache adapter not supported")
     }
 
     /// Loads all [`YieldCurve`] from the cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading yield curve data fails.
+    /// Returns an error if loading yield curve data fails or the adapter does not support it.
     async fn load_yield_curves(&self) -> anyhow::Result<AHashMap<String, YieldCurve>> {
-        Ok(AHashMap::new())
+        anyhow::bail!("Loading yield curves for cache adapter not supported")
     }
 
     /// Loads mapping from order IDs to position IDs.
@@ -500,18 +500,18 @@ pub trait CacheDatabaseAdapter {
     ///
     /// # Errors
     ///
-    /// Returns an error if adding greeks data fails.
+    /// Returns an error if adding greeks data fails or the adapter does not support it.
     fn add_greeks(&self, _greeks: &GreeksData) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("Saving greeks for cache adapter not supported")
     }
 
     /// Adds yield curve data to the cache.
     ///
     /// # Errors
     ///
-    /// Returns an error if adding yield curve data fails.
+    /// Returns an error if adding yield curve data fails or the adapter does not support it.
     fn add_yield_curve(&self, _yield_curve: &YieldCurve) -> anyhow::Result<()> {
-        Ok(())
+        anyhow::bail!("Saving yield curves for cache adapter not supported")
     }
 
     /// Deletes actor state from the cache.
