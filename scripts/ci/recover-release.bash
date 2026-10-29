@@ -112,7 +112,8 @@ main() {
         exit 1
       }
     done
-    if ! run_step "bundle-${package##*/}" gh attestation verify "$package" --bundle "${package}.sigstore" \
+    cp "${package}.sigstore" "${work_dir}/bundle.json"
+    if ! run_step "bundle-${package##*/}" gh attestation verify "$package" --bundle "${work_dir}/bundle.json" \
       --repo "$repository" --source-digest "$source_sha" --source-ref refs/heads/master \
       --cert-identity "$ATTESTATION_IDENTITY" --cert-oidc-issuer "$ATTESTATION_ISSUER"; then
       run_step "recovery-bundle-${package##*/}" python3 "${script_dir}/release-recovery.py" \
