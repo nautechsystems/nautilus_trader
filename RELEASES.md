@@ -2,9 +2,12 @@
 
 Released on TBD (UTC).
 
+### Fixes
+
+- Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
+
 ### Internal Improvements
 
-- Removed temporary release repair CI exemption
 - Upgraded `socket-cli` tool to v1.10.1
 - Upgraded `ty` package (dev) to v0.0.90
 

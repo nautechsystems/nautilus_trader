@@ -2137,7 +2137,7 @@ impl BinanceFuturesHttpClient {
         let _guard = self.instruments_load_lock.lock().await;
         let selector = BinanceInstrumentSelector::new(config, self.product_type)
             .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?;
-        let ts_init = UnixNanos::default();
+        let ts_init = self.clock.get_time_ns();
         let mut cache = Vec::new();
         let mut reconciliation = AHashMap::new();
 
