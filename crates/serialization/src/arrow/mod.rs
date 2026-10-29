@@ -38,11 +38,11 @@ pub mod report;
 pub mod snapshot;
 pub mod trade;
 
-#[cfg(feature = "arrow-display")]
-pub mod display;
-
 mod depth_display;
 mod display_conversion;
+
+#[cfg(feature = "arrow-display")]
+pub mod display;
 
 #[cfg(test)]
 pub(crate) mod test_support;

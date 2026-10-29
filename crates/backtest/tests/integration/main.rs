@@ -16,8 +16,6 @@
 mod backtest_engine;
 mod backtest_node;
 mod backtest_node_itch;
-#[cfg(feature = "streaming")]
-mod backtest_node_workload;
 mod book_imbalance;
 mod canonical_backtest_workloads;
 mod ema_cross;
@@ -28,3 +26,6 @@ mod grid_mm_itch;
 mod netting_fill_void;
 mod option_chain_backtest;
 mod option_chain_data_client;
+
+#[cfg(feature = "streaming")]
+mod backtest_node_workload;

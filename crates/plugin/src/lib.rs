@@ -58,14 +58,15 @@ pub const PLUGIN_BUILD_ID_VERSION: u32 = 1;
 pub const NAUTILUS_PLUGIN_INIT_SYMBOL: &[u8] = b"nautilus_plugin_init";
 
 pub mod boundary;
-#[cfg(feature = "component-binding")]
-#[doc(hidden)]
-pub mod component;
 pub mod host;
 pub mod manifest;
 pub mod panic;
 
 mod macros;
+
+#[cfg(feature = "component-binding")]
+#[doc(hidden)]
+pub mod component;
 
 pub use boundary::{BorrowedStr, OwnedBytes, PluginError, PluginErrorCode, PluginResult, Slice};
 pub use host::{HostContext, HostVTable};

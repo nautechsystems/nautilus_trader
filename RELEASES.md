@@ -8,6 +8,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Upgraded `socket-cli` tool to v1.10.1
 - Upgraded `ty` package (dev) to v0.0.90
 

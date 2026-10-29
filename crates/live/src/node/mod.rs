@@ -142,13 +142,13 @@ use crate::{
 pub mod builder;
 pub mod config;
 
-#[cfg(feature = "plugin")]
-pub mod plugin;
-
 mod metrics;
 mod queue;
 mod reconciliation;
 mod state;
+
+#[cfg(feature = "plugin")]
+pub mod plugin;
 
 use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;

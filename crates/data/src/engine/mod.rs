@@ -32,12 +32,6 @@ pub mod bar;
 pub mod book;
 pub mod config;
 
-#[cfg(feature = "defi")]
-pub mod pool;
-
-#[cfg(feature = "streaming")]
-mod streaming;
-
 mod commands;
 mod dispatch;
 mod futures;
@@ -49,6 +43,12 @@ mod responses;
 mod spread_quote;
 mod synthetic;
 mod time_range;
+
+#[cfg(feature = "defi")]
+pub mod pool;
+
+#[cfg(feature = "streaming")]
+mod streaming;
 
 use std::{
     any::{Any, type_name},

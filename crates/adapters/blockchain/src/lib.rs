@@ -68,13 +68,13 @@ pub mod rpc;
 pub mod cache;
 
 #[cfg(feature = "hypersync")]
-pub mod execution;
-
-#[cfg(feature = "hypersync")]
 pub mod data;
 
 #[cfg(feature = "hypersync")]
 pub mod exchanges;
+
+#[cfg(feature = "hypersync")]
+pub mod execution;
 
 #[cfg(feature = "hypersync")]
 pub mod factories;
@@ -82,8 +82,8 @@ pub mod factories;
 #[cfg(feature = "hypersync")]
 pub mod hypersync;
 
-#[cfg(feature = "hypersync")]
-pub mod services;
-
 #[cfg(feature = "python")]
 pub mod python;
+
+#[cfg(feature = "hypersync")]
+pub mod services;

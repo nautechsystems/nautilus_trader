@@ -138,6 +138,11 @@ pub mod venues;
 
 pub(crate) mod expressions;
 
+mod deserialization;
+
+#[cfg(feature = "defi")]
+pub mod defi;
+
 #[cfg(feature = "ffi")]
 pub mod ffi;
 
@@ -146,11 +151,6 @@ pub mod python;
 
 #[cfg(any(test, feature = "test-support"))]
 pub mod stubs;
-
-#[cfg(feature = "defi")]
-pub mod defi;
-
-mod deserialization;
 
 /// Generates custom-data model behavior.
 pub use nautilus_macros::custom_data;
