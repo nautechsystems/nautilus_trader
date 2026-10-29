@@ -121,6 +121,33 @@ const CYCLE_2_SHORT_CLOSE: FillSpec = FillSpec {
     last_px: "0.80010",
 };
 
+/// The rest of cycle 1's close after [`CYCLE_1_CLOSE_PARTIAL`], then a cycle 2 that buys 100,000
+/// and sells 60,000 back, so the history ends long 40,000.
+const CYCLE_1_CLOSE_REST: FillSpec = FillSpec {
+    client_order_id: "O-7",
+    venue_order_id: "V-7",
+    trade_id: "T-7",
+    side: OrderSide::Sell,
+    quantity: 40_000,
+    last_px: "0.80050",
+};
+const CYCLE_2_LONG_OPEN: FillSpec = FillSpec {
+    client_order_id: "O-8",
+    venue_order_id: "V-8",
+    trade_id: "T-8",
+    side: OrderSide::Buy,
+    quantity: 100_000,
+    last_px: "0.80040",
+};
+const CYCLE_2_LONG_REDUCE: FillSpec = FillSpec {
+    client_order_id: "O-9",
+    venue_order_id: "V-9",
+    trade_id: "T-9",
+    side: OrderSide::Sell,
+    quantity: 60_000,
+    last_px: "0.80058",
+};
+
 /// An execution engine and portfolio sharing one cache, driven through a NETTING open, close,
 /// and reopen of 100,000 on a single position ID with the replay log carried across the
 /// boundary, so a prior-cycle fill stays correctable.
@@ -826,6 +853,51 @@ fn test_prior_cycle_fill_void_settles_cycles_the_rebuild_reshaped() {
     assert_eq!(
         portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
         Some(Money::from("14.80 USD")),
+    );
+}
+
+#[rstest]
+fn test_prior_cycle_fill_void_settling_at_current_cycle_pnl_counts_both() {
+    let NettingReopen {
+        mut execution_engine,
+        mut portfolio,
+        cache,
+        instrument_id,
+        position_id,
+        account_id,
+    } = run_netting_scenario(&[
+        CYCLE_1_OPEN,
+        CYCLE_1_CLOSE_PARTIAL,
+        CYCLE_1_CLOSE_REST,
+        CYCLE_2_LONG_OPEN,
+        CYCLE_2_LONG_REDUCE,
+    ]);
+
+    let realized_before =
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None);
+
+    // Void 40,000 of cycle 1's opening fill. The corrected history is buy 60,000, sell 60,000,
+    // sell 40,000, buy 100,000, sell 60,000: flat after the second fill, then a reopened cycle
+    // that also ends flat, so the position closes with the settled frame behind it.
+    let voided = build_fill_void_from_cached_fill(&execution_engine, CYCLE_1_OPEN);
+    execution_engine.process(&voided);
+
+    let cache = cache.borrow();
+    let position = cache.position(&position_id).expect("position stays cached");
+    let settled = cache.position_snapshots(Some(&position_id), None);
+
+    // Cycle 1 realized 32.00 less 6.00 commission; cycle 2 so far 10.80 less 4.00
+    assert_eq!(realized_before, Some(Money::from("32.80 USD")));
+    assert_eq!(settled.len(), 1);
+    // The corrected first cycle: 12.00 on 60,000, less 1.20 and 2.00 commission
+    assert_eq!(settled[0].realized_pnl, Some(Money::from("8.80 USD")));
+    assert!(position.is_closed());
+    // 4.00 on the short 40,000 and 10.80 on the long 60,000, less 6.00 commission
+    assert_eq!(position.realized_pnl, Some(Money::from("8.80 USD")));
+    // Equal PnL does not make the settled frame the closed cycle: 8.80 + 8.80
+    assert_eq!(
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
+        Some(Money::from("17.60 USD")),
     );
 }
 

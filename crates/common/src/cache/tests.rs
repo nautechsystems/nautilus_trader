@@ -13858,6 +13858,10 @@ fn test_settle_position_snapshots_replaces_frames_and_keeps_durable_blobs(mut ca
     assert_eq!(cache.position_snapshot_count(&position_id), 1);
     assert_eq!(settled.len(), 1);
     assert_eq!(settled[0].realized_pnl, Some(Money::from("7.00 USD")));
+    // The settled frame holds none of the current cycle's fills but keeps the trades known
+    // under the ID.
+    assert!(settled[0].events.is_empty());
+    assert_eq!(settled[0].trade_ids, position.trade_ids);
     assert_eq!(cache.position_snapshot_count(&other_position.id), 1);
     // Durable blobs are untouched, matching `purge_position`, so an anchor still resolves
     assert_eq!(
