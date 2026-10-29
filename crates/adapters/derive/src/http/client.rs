@@ -34,6 +34,7 @@ use ahash::AHashMap;
 use alloy::signers::local::PrivateKeySigner;
 use nautilus_core::string::secret::{REDACTED, SecretString, zeroize_json_value};
 use nautilus_network::{
+    ConnectionUrl,
     http::{
         HttpClient, HttpClientError, HttpRedirectPolicy, HttpResponse, Method, RETRY_AFTER,
         create_standard_nautilus_headers, parse_retry_after,
@@ -122,7 +123,7 @@ impl Debug for DeriveCredentials {
 #[derive(Debug, Clone)]
 pub struct DeriveHttpClient {
     client: HttpClient,
-    base_url: String,
+    base_url: ConnectionUrl,
     credentials: Option<DeriveCredentials>,
     next_id: Arc<AtomicU64>,
     timeout_secs: u64,
@@ -160,7 +161,7 @@ impl DeriveHttpClient {
 
         Ok(Self {
             client,
-            base_url,
+            base_url: base_url.into(),
             credentials: None,
             next_id: Arc::new(AtomicU64::new(1)),
             timeout_secs,
@@ -184,7 +185,7 @@ impl DeriveHttpClient {
         let mut client = Self::new(base_url, timeout_secs, proxy_url, retry_config)?;
 
         client.rate_limiter = Arc::new(DeriveRateLimiter::shared(
-            &client.base_url,
+            client.base_url.expose(),
             Some(&credentials.wallet_address),
             None,
             None,
@@ -196,7 +197,7 @@ impl DeriveHttpClient {
     /// Returns the configured base URL (no trailing slash).
     #[must_use]
     pub fn base_url(&self) -> &str {
-        &self.base_url
+        self.base_url.expose()
     }
 
     /// Returns `true` when credentials are installed.
@@ -761,7 +762,11 @@ impl DeriveHttpClient {
         P: Serialize + ?Sized,
         R: DeserializeOwned,
     {
-        let url = format!("{}/{}", self.base_url, method.trim_start_matches('/'));
+        let url = format!(
+            "{}/{}",
+            self.base_url.expose(),
+            method.trim_start_matches('/')
+        );
         let mut body_value = serde_json::to_value(params).map_err(DeriveHttpError::from)?;
         let body = serde_json::to_string(&body_value).map_err(DeriveHttpError::from);
 
@@ -1044,6 +1049,43 @@ mod tests {
     const SESSION_KEY_HEX: &str =
         "0x2ae8be44db8a590d20bffbe3b6872df9b569147d3bf6801a35a28281a4816bbd";
     const TEST_WALLET: &str = "0x000000000000000000000000000000000000aaaa";
+
+    #[rstest]
+    #[case::credentials(
+        "https://URL_USER:URL_PASSWORD@public.example:8443/URL_PATH?token=URL_QUERY#URL_FRAGMENT",
+        "https://public.example:8443"
+    )]
+    #[case::invalid("URL_PATH", REDACTED)]
+    #[case::unsupported("file:///URL_PATH", REDACTED)]
+    fn test_client_debug_redacts_endpoint(#[case] url: &str, #[case] origin: &str) {
+        let credentials = DeriveCredentials::new(TEST_WALLET, SESSION_KEY_HEX).unwrap();
+        let client = DeriveHttpClient::with_credentials(
+            url,
+            credentials,
+            None,
+            Some("http://PROXY_USER:PROXY_PASSWORD@proxy.example:8080".to_string()),
+            None,
+        )
+        .unwrap();
+
+        assert_eq!(client.base_url(), url);
+        assert!(format!("{client:?}").contains(&format!("base_url: {origin:?}")));
+
+        for debug in [format!("{client:?}"), format!("{client:#?}")] {
+            for marker in [
+                "URL_USER",
+                "URL_PASSWORD",
+                "URL_PATH",
+                "URL_QUERY",
+                "URL_FRAGMENT",
+                "PROXY_USER",
+                "PROXY_PASSWORD",
+                SESSION_KEY_HEX,
+            ] {
+                assert!(!debug.contains(marker), "Debug disclosed {marker}");
+            }
+        }
+    }
 
     fn test_client() -> DeriveHttpClient {
         DeriveHttpClient::new("https://api.example/", None, None, None).expect("client builds")

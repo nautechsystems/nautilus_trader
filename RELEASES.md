@@ -4,12 +4,14 @@ Released on TBD (UTC).
 
 ### Breaking Changes
 
+- Changed Derive endpoint overrides to `SecretString`; pass strings to builders or use `.into()` in struct literals
 - Changed Polymarket data/execution credentials and funders to reject blanks; omit them for environment fallback
 - Changed Polymarket execution examples to dry run by default; disable `DRY_RUN` for live orders
 
 ### Security
 
 - Improved R2 publishing credential handling to avoid writing keys to disk
+- Fixed Derive configs and HTTP client exposing endpoint credentials in `Debug` output
 
 ### Fixes
 

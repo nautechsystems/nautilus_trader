@@ -34,6 +34,7 @@ use crate::{
 
 /// Configuration for the Derive data client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[builder(on(SecretString, into))]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -48,9 +49,9 @@ pub struct DeriveDataClientConfig {
     #[builder(default)]
     pub environment: DeriveEnvironment,
     /// Override for the REST API base URL.
-    pub base_url_rest: Option<String>,
+    pub base_url_rest: Option<SecretString>,
     /// Override for the WebSocket URL.
-    pub base_url_ws: Option<String>,
+    pub base_url_ws: Option<SecretString>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
@@ -90,8 +91,6 @@ pub struct DeriveDataClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(DeriveDataClientConfig {
     environment: DeriveEnvironment,
-    base_url_rest: Option<String>,
-    base_url_ws: Option<String>,
     http_timeout_secs: u64,
     ws_timeout_secs: Option<u64>,
     book_snapshot_timeout_secs: u64,
@@ -135,22 +134,25 @@ impl DeriveDataClientConfig {
     /// Returns the REST API base URL, respecting environment and overrides.
     #[must_use]
     pub fn rest_url(&self) -> String {
-        self.base_url_rest
-            .clone()
-            .unwrap_or_else(|| urls::rest_url(self.environment).to_string())
+        self.base_url_rest.as_ref().map_or_else(
+            || urls::rest_url(self.environment).to_string(),
+            |url| url.expose_secret().to_string(),
+        )
     }
 
     /// Returns the WebSocket URL, respecting environment and overrides.
     #[must_use]
     pub fn ws_url(&self) -> String {
-        self.base_url_ws
-            .clone()
-            .unwrap_or_else(|| urls::ws_url(self.environment).to_string())
+        self.base_url_ws.as_ref().map_or_else(
+            || urls::ws_url(self.environment).to_string(),
+            |url| url.expose_secret().to_string(),
+        )
     }
 }
 
 /// Configuration for the Derive execution client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
+#[builder(on(SecretString, into))]
 #[serde(default, deny_unknown_fields)]
 #[cfg_attr(
     feature = "python",
@@ -179,9 +181,9 @@ pub struct DeriveExecutionClientConfig {
     #[builder(default)]
     pub environment: DeriveEnvironment,
     /// Override for the REST API base URL.
-    pub base_url_rest: Option<String>,
+    pub base_url_rest: Option<SecretString>,
     /// Override for the WebSocket URL.
-    pub base_url_ws: Option<String>,
+    pub base_url_ws: Option<SecretString>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
     /// HTTP timeout in seconds.
@@ -250,8 +252,6 @@ nautilus_core::impl_pyo3_config_getters!(DeriveExecutionClientConfig {
     wallet_address: Option<String>,
     subaccount_id: Option<u64>,
     environment: DeriveEnvironment,
-    base_url_rest: Option<String>,
-    base_url_ws: Option<String>,
     http_timeout_secs: u64,
     max_retries: u32,
     retry_delay_initial_ms: u64,
@@ -327,26 +327,167 @@ impl DeriveExecutionClientConfig {
     /// Returns the REST API base URL, respecting environment and overrides.
     #[must_use]
     pub fn rest_url(&self) -> String {
-        self.base_url_rest
-            .clone()
-            .unwrap_or_else(|| urls::rest_url(self.environment).to_string())
+        self.base_url_rest.as_ref().map_or_else(
+            || urls::rest_url(self.environment).to_string(),
+            |url| url.expose_secret().to_string(),
+        )
     }
 
     /// Returns the WebSocket URL, respecting environment and overrides.
     #[must_use]
     pub fn ws_url(&self) -> String {
-        self.base_url_ws
-            .clone()
-            .unwrap_or_else(|| urls::ws_url(self.environment).to_string())
+        self.base_url_ws.as_ref().map_or_else(
+            || urls::ws_url(self.environment).to_string(),
+            |url| url.expose_secret().to_string(),
+        )
     }
 }
 
 #[cfg(test)]
 mod tests {
     use nautilus_common::config::ConfigError;
+    use nautilus_core::string::secret::REDACTED;
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_config_builders_accept_plain_strings() {
+        let data = DeriveDataClientConfig::builder()
+            .base_url_rest("https://literal-rest.example/data")
+            .base_url_ws("wss://literal-ws.example/data")
+            .proxy_url("http://literal-proxy.example")
+            .build();
+
+        let execution = DeriveExecutionClientConfig::builder()
+            .base_url_rest("https://owned-rest.example/execution".to_string())
+            .base_url_ws("wss://owned-ws.example/execution".to_string())
+            .proxy_url("http://owned-proxy.example".to_string())
+            .session_key("SESSION_KEY_SENTINEL".to_string())
+            .build();
+
+        assert_eq!(data.rest_url(), "https://literal-rest.example/data");
+        assert_eq!(data.ws_url(), "wss://literal-ws.example/data");
+        assert_eq!(
+            data.proxy_url.as_ref().map(SecretString::expose_secret),
+            Some("http://literal-proxy.example")
+        );
+        assert_eq!(execution.rest_url(), "https://owned-rest.example/execution");
+        assert_eq!(execution.ws_url(), "wss://owned-ws.example/execution");
+        assert_eq!(
+            execution
+                .proxy_url
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("http://owned-proxy.example")
+        );
+        assert_eq!(
+            execution
+                .session_key
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some("SESSION_KEY_SENTINEL")
+        );
+    }
+
+    #[rstest]
+    #[case::credentials(
+        "https://REST_USER:REST_PASSWORD@rest.example:8443/REST_PATH?token=REST_QUERY#REST_FRAGMENT",
+        "wss://WS_USER:WS_PASSWORD@stream.example:9443/WS_PATH?token=WS_QUERY#WS_FRAGMENT"
+    )]
+    #[case::invalid("REST_PATH", "WS_PATH")]
+    #[case::unsupported("file:///REST_PATH", "file:///WS_PATH")]
+    fn test_config_debug_redacts_endpoint_overrides(#[case] rest: &str, #[case] ws: &str) {
+        let proxy = "http://PROXY_USER:PROXY_PASSWORD@proxy.example:8080";
+        let session_key = "SESSION_KEY_SENTINEL";
+
+        let data = DeriveDataClientConfig {
+            base_url_rest: Some(rest.into()),
+            base_url_ws: Some(ws.into()),
+            proxy_url: Some(proxy.into()),
+            ..Default::default()
+        };
+
+        let execution = DeriveExecutionClientConfig {
+            base_url_rest: Some(rest.into()),
+            base_url_ws: Some(ws.into()),
+            proxy_url: Some(proxy.into()),
+            session_key: Some(session_key.into()),
+            ..Default::default()
+        };
+
+        let data_roundtrip: DeriveDataClientConfig =
+            serde_json::from_value(serde_json::to_value(&data).unwrap()).unwrap();
+        let execution_roundtrip: DeriveExecutionClientConfig =
+            serde_json::from_value(serde_json::to_value(&execution).unwrap()).unwrap();
+
+        assert_eq!(data.rest_url(), rest);
+        assert_eq!(data.ws_url(), ws);
+        assert_eq!(execution.rest_url(), rest);
+        assert_eq!(execution.ws_url(), ws);
+        assert_eq!(
+            data_roundtrip
+                .base_url_rest
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some(rest)
+        );
+        assert_eq!(
+            data_roundtrip
+                .base_url_ws
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some(ws)
+        );
+        assert_eq!(
+            execution_roundtrip
+                .base_url_rest
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some(rest)
+        );
+        assert_eq!(
+            execution_roundtrip
+                .base_url_ws
+                .as_ref()
+                .map(SecretString::expose_secret),
+            Some(ws)
+        );
+
+        for debug in [format!("{data:?}"), format!("{execution:?}")] {
+            assert!(debug.contains(&format!("base_url_rest: Some({REDACTED})")));
+            assert!(debug.contains(&format!("base_url_ws: Some({REDACTED})")));
+            assert!(debug.contains(&format!("proxy_url: Some({REDACTED})")));
+        }
+
+        for debug in [
+            format!("{data:?}"),
+            format!("{data:#?}"),
+            format!("{execution:?}"),
+            format!("{execution:#?}"),
+        ] {
+            for marker in [
+                "rest.example",
+                "stream.example",
+                "REST_USER",
+                "REST_PASSWORD",
+                "REST_PATH",
+                "REST_QUERY",
+                "REST_FRAGMENT",
+                "WS_USER",
+                "WS_PASSWORD",
+                "WS_PATH",
+                "WS_QUERY",
+                "WS_FRAGMENT",
+                "PROXY_USER",
+                "PROXY_PASSWORD",
+                "proxy.example",
+                session_key,
+            ] {
+                assert!(!debug.contains(marker), "Debug disclosed {marker}");
+            }
+        }
+    }
 
     #[rstest]
     #[case("currencies")]
@@ -425,15 +566,15 @@ mod tests {
 
         let data = DeriveDataClientConfig {
             environment,
-            base_url_rest: Some(rest.to_string()),
-            base_url_ws: Some(ws.to_string()),
+            base_url_rest: Some(rest.into()),
+            base_url_ws: Some(ws.into()),
             ..DeriveDataClientConfig::default()
         };
 
         let execution = DeriveExecutionClientConfig {
             environment,
-            base_url_rest: Some(rest.to_string()),
-            base_url_ws: Some(ws.to_string()),
+            base_url_rest: Some(rest.into()),
+            base_url_ws: Some(ws.into()),
             ..DeriveExecutionClientConfig::default()
         };
 

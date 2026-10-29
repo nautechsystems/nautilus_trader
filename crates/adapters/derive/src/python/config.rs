@@ -66,8 +66,8 @@ impl DeriveDataClientConfig {
         let defaults = Self::default();
 
         let config = Self {
-            base_url_rest,
-            base_url_ws,
+            base_url_rest: base_url_rest.map(SecretString::from),
+            base_url_ws: base_url_ws.map(SecretString::from),
             proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
@@ -87,6 +87,20 @@ impl DeriveDataClientConfig {
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
         Ok(config)
+    }
+
+    #[getter]
+    fn base_url_rest(&self) -> Option<String> {
+        self.base_url_rest
+            .as_ref()
+            .map(|url| url.expose_secret().to_string())
+    }
+
+    #[getter]
+    fn base_url_ws(&self) -> Option<String> {
+        self.base_url_ws
+            .as_ref()
+            .map(|url| url.expose_secret().to_string())
     }
 
     #[getter]
@@ -162,8 +176,8 @@ impl DeriveExecutionClientConfig {
             wallet_address,
             session_key: session_key.map(SecretString::from),
             subaccount_id,
-            base_url_rest,
-            base_url_ws,
+            base_url_rest: base_url_rest.map(SecretString::from),
+            base_url_ws: base_url_ws.map(SecretString::from),
             proxy_url: proxy_url.map(SecretString::from),
             environment: environment.unwrap_or(defaults.environment),
             http_timeout_secs: http_timeout_secs.unwrap_or(defaults.http_timeout_secs),
@@ -187,6 +201,20 @@ impl DeriveExecutionClientConfig {
     }
 
     #[getter]
+    fn base_url_rest(&self) -> Option<String> {
+        self.base_url_rest
+            .as_ref()
+            .map(|url| url.expose_secret().to_string())
+    }
+
+    #[getter]
+    fn base_url_ws(&self) -> Option<String> {
+        self.base_url_ws
+            .as_ref()
+            .map(|url| url.expose_secret().to_string())
+    }
+
+    #[getter]
     const fn has_proxy_url(&self) -> bool {
         self.proxy_url.is_some()
     }
@@ -202,6 +230,69 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    fn test_python_endpoint_overrides(
+        #[values(false, true)] execution: bool,
+        #[values(false, true)] overrides: bool,
+    ) {
+        Python::initialize();
+        Python::attach(|py| {
+            let rest = "https://REST_USER:REST_PASSWORD@rest.example/REST_PATH?token=REST_QUERY#REST_FRAGMENT";
+            let ws = "wss://WS_USER:WS_PASSWORD@stream.example/WS_PATH?token=WS_QUERY#WS_FRAGMENT";
+            let kwargs = PyDict::new(py);
+            kwargs
+                .set_item("base_url_rest", overrides.then_some(rest))
+                .unwrap();
+            kwargs
+                .set_item("base_url_ws", overrides.then_some(ws))
+                .unwrap();
+            kwargs
+                .set_item(
+                    "proxy_url",
+                    "http://PROXY_USER:PROXY_PASSWORD@proxy.example",
+                )
+                .unwrap();
+
+            let (class, name) = if execution {
+                kwargs
+                    .set_item("session_key", "SESSION_KEY_SENTINEL")
+                    .unwrap();
+                (
+                    py.get_type::<DeriveExecutionClientConfig>(),
+                    "DeriveExecutionClientConfig",
+                )
+            } else {
+                (
+                    py.get_type::<DeriveDataClientConfig>(),
+                    "DeriveDataClientConfig",
+                )
+            };
+
+            let config = class.call((), Some(&kwargs)).unwrap();
+            let rest_getter = config
+                .getattr("base_url_rest")
+                .unwrap()
+                .extract::<Option<String>>()
+                .unwrap();
+            let ws_getter = config
+                .getattr("base_url_ws")
+                .unwrap()
+                .extract::<Option<String>>()
+                .unwrap();
+            let has_proxy = config
+                .getattr("has_proxy_url")
+                .unwrap()
+                .extract::<bool>()
+                .unwrap();
+
+            assert_eq!(rest_getter.as_deref(), overrides.then_some(rest));
+            assert_eq!(ws_getter.as_deref(), overrides.then_some(ws));
+            assert!(has_proxy);
+            assert_eq!(config.repr().unwrap().to_str().unwrap(), name);
+            assert_eq!(config.str().unwrap().to_str().unwrap(), name);
+        });
+    }
 
     #[rstest]
     #[case::default(None, false)]

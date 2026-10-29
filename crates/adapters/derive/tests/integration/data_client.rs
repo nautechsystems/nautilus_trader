@@ -681,8 +681,8 @@ async fn book_notification(
 
 fn config(rest_addr: SocketAddr, ws_addr: SocketAddr) -> DeriveDataClientConfig {
     DeriveDataClientConfig {
-        base_url_rest: Some(rest_url(rest_addr)),
-        base_url_ws: Some(ws_url(ws_addr)),
+        base_url_rest: Some(rest_url(rest_addr).into()),
+        base_url_ws: Some(ws_url(ws_addr).into()),
         proxy_url: None,
         environment: DeriveEnvironment::Mainnet,
         http_timeout_secs: 5,
