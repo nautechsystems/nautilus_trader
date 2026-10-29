@@ -888,10 +888,12 @@ async fn handle_order_submit(
 async fn handle_order_cancel(
     State(state): State<CommandResponseState>,
     headers: HeaderMap,
+    Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     if !has_auth_headers(&headers) {
         return unauthorized_response();
     }
+    record_query(&state, "orderCancel", query);
     state.request_count.fetch_add(1, Ordering::Relaxed);
     let mut response = load_fixture("order_response.json");
     response["status"] = json!("CANCELED");
@@ -3933,6 +3935,178 @@ async fn test_sided_cancel_all_routes_algo_orders_individually() {
         matches!(event, OrderEventAny::CancelRejected(_))
     })
     .await;
+}
+
+#[rstest]
+#[case::regular_buy(OrderType::Limit, OrderSide::Buy)]
+#[case::regular_sell(OrderType::Limit, OrderSide::Sell)]
+#[case::algo_buy(OrderType::StopMarket, OrderSide::Buy)]
+#[case::algo_sell(OrderType::StopMarket, OrderSide::Sell)]
+#[tokio::test]
+async fn test_sided_cancel_all_scopes_requests_and_events_to_account(
+    #[case] order_type: OrderType,
+    #[case] side: OrderSide,
+) {
+    let (addr, captured_queries) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses {
+            batch_cancel: CommandResponse::BatchPerOrderReject {
+                code: -2011,
+                msg: "Unknown order sent",
+            },
+            algo_cancel: CommandResponse::VenueReject {
+                code: -2011,
+                msg: "Unknown algo order sent",
+            },
+            cancel: CommandResponse::VenueReject {
+                code: -2011,
+                msg: "Unknown order sent",
+            },
+            ..Default::default()
+        },
+        ReportFixtureMode::Empty,
+    )
+    .await;
+    let (mut client, mut rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    let account_id = AccountId::from("BINANCE-001");
+    let foreign_account_id = AccountId::from("BINANCE-002");
+    add_test_account_to_cache(&cache, account_id);
+    add_test_account_to_cache(&cache, foreign_account_id);
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
+    let mut expected_events = Vec::new();
+    let mut expected_order_ids = Vec::new();
+    let mut expected_algo_ids = Vec::new();
+
+    for (index, (account, owner, client_id)) in [
+        (account_id, "S-001", Some(*BINANCE_CLIENT_ID)),
+        (account_id, "S-002", Some(*BINANCE_CLIENT_ID)),
+        (account_id, "EXTERNAL", None),
+        (account_id, "RECOVERED-001", None),
+        (account_id, "S-003", Some("BINANCE-OTHER".into())),
+        (foreign_account_id, "S-001", Some("BINANCE-FOREIGN".into())),
+        (foreign_account_id, "EXTERNAL", None),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let order = OrderTestBuilder::new(order_type)
+            .trader_id(test_trader_id())
+            .strategy_id(StrategyId::from(owner))
+            .instrument_id(test_instrument_id())
+            .client_order_id(ClientOrderId::from(format!("O-FUT-ACCOUNT-{index}")))
+            .side(side)
+            .quantity(Quantity::from("0.001"))
+            .price(Price::from("50000.00"))
+            .trigger_price(Price::from("45000.00"))
+            .build();
+        let order_id = 6000 + i64::try_from(index).unwrap();
+        let venue_order_id = VenueOrderId::from(order_id.to_string());
+        let OrderEventAny::Accepted(mut accepted) =
+            TestOrderEventStubs::accepted(&order, account, venue_order_id)
+        else {
+            unreachable!()
+        };
+        // Restored venue orders may have no persisted execution-client origin
+        accepted.reconciliation = client_id.is_none();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, client_id, false)
+            .unwrap();
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Accepted(accepted))
+            .unwrap();
+
+        if account == account_id {
+            expected_events.push((order.client_order_id(), order.strategy_id(), Some(account)));
+            expected_order_ids.push(order_id);
+            expected_algo_ids.push(encode_broker_id(
+                &order.client_order_id(),
+                BINANCE_NAUTILUS_FUTURES_BROKER_ID,
+            ));
+        }
+    }
+
+    client
+        .cancel_all_orders(CancelAllOrders::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            StrategyId::from("S-001"),
+            test_instrument_id(),
+            Some(side),
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let mut actual_events = Vec::new();
+
+    for _ in &expected_events {
+        let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) =
+            recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await
+        else {
+            unreachable!()
+        };
+        actual_events.push((
+            rejected.client_order_id,
+            rejected.strategy_id,
+            rejected.account_id,
+        ));
+    }
+
+    actual_events.sort();
+    expected_events.sort();
+    assert_eq!(actual_events, expected_events);
+    assert_no_order_event_matching(&mut rx, |_| true).await;
+
+    let queries = captured_queries.lock().clone();
+    let batches: Vec<_> = queries
+        .iter()
+        .filter(|entry| entry.path == "batchOrders")
+        .collect();
+    let mut algo_ids: Vec<_> = queries
+        .iter()
+        .filter(|entry| entry.path == "algoOrderCancel")
+        .map(|entry| entry.query["clientAlgoId"].clone())
+        .collect();
+    let regular_cancels: Vec<_> = queries
+        .iter()
+        .filter(|entry| entry.path == "orderCancel")
+        .collect();
+
+    if order_type == OrderType::Limit {
+        assert_eq!(batches.len(), 1);
+        let mut order_ids: Vec<i64> =
+            serde_json::from_str(&batches[0].query["orderIdList"]).unwrap();
+        order_ids.sort_unstable();
+        assert_eq!(order_ids, expected_order_ids);
+        assert!(algo_ids.is_empty());
+        assert!(regular_cancels.is_empty());
+    } else {
+        assert!(batches.is_empty());
+        algo_ids.sort();
+        expected_algo_ids.sort();
+        assert_eq!(algo_ids, expected_algo_ids);
+        let mut fallback_ids: Vec<_> = regular_cancels
+            .iter()
+            .map(|entry| entry.query["origClientOrderId"].clone())
+            .collect();
+        fallback_ids.sort();
+        assert_eq!(fallback_ids, expected_algo_ids);
+        assert!(
+            regular_cancels
+                .iter()
+                .all(|entry| !entry.query.contains_key("orderId"))
+        );
+    }
+
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

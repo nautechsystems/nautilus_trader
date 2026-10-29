@@ -1008,9 +1008,13 @@ impl BinanceFuturesExecutionClient {
             let mut regular = Vec::new();
             let mut algo = Vec::new();
 
-            for order in
-                cache.orders_open(None, Some(&cmd.instrument_id), None, None, cmd.order_side)
-            {
+            for order in cache.orders_open(
+                None,
+                Some(&cmd.instrument_id),
+                None,
+                Some(&self.core.account_id),
+                cmd.order_side,
+            ) {
                 let cancel = CancelOrder {
                     trader_id: order.trader_id(),
                     client_id: cmd.client_id,
