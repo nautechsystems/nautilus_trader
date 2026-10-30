@@ -642,10 +642,12 @@ reconciliation to recover canonical state in that case.
 
 ### Position reconciliation
 
-For Cash (spot) accounts the client returns no position reports because
-Coinbase spot has no positions. For Margin accounts position reports come
-from the REST `cfm/positions` (list) and `cfm/positions/{product_id}`
-(single) endpoints and are post-filtered to the bootstrap instrument cache.
+For Cash (spot) accounts the client returns no position reports. Periodic position checks retain
+cached spot positions when reports omit them. For Margin accounts position reports come
+from the REST `cfm/positions` (list) and `cfm/positions/{product_id}` (single) endpoints.
+Periodic position checks treat an absent report as flat only for instruments in the Margin client's
+bootstrapped futures scope.
+
 Open orders and historical fills are reconciled from REST via
 `generate_order_status_report(s)` and `generate_fill_reports` on connect
 and on the standard reconciliation interval set by `LiveExecutionEngineConfig`.

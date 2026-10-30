@@ -1633,6 +1633,18 @@ impl ExecutionClient for OKXExecutionClient {
         self.core.oms_type
     }
 
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        if self.http_client.is_spread(instrument_id) {
+            return false;
+        }
+
+        let instrument_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
+        !matches!(
+            instrument_type,
+            OKXInstrumentType::Spot | OKXInstrumentType::Margin
+        ) && self.config.instrument_types.contains(&instrument_type)
+    }
+
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
     }

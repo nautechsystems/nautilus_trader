@@ -1528,6 +1528,10 @@ Values above 7 days are clamped to the longest complete window across the regula
 and spread trade history endpoints used for reconciliation. This is not a limit on all archived data
 available from OKX.
 
+Periodic position checks treat an absent report as flat only for configured derivative instrument types.
+Spot, margin, and spread instruments do not have complete bulk position coverage, so an absent report
+does not close their cached positions. Spot-margin positions that OKX reports still reconcile normally.
+
 OKX reports no size for a live algo order placed with `close_fraction`, because the order closes
 the whole position when it triggers. REST order status reports use the size of the position that
 OKX links to the order through `closeOrderAlgo`. Without a linked position, the report keeps a zero
