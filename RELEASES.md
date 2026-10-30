@@ -70,9 +70,13 @@ Released on TBD (UTC).
 - Improved Docker publishing with temporary digest directories isolated per job
 - Refined Polymarket limit submit responses and venue order ID lookup
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
-- Upgraded `socket-cli` tool to v1.10.1
+- Upgraded `cargo-codspeed` tool to v6.0.0
+- Upgraded `cargo-nextest` tool to v0.9.150
+- Upgraded `socket-cli` tool to v1.11.1
+- Upgraded `arrow` and `parquet` crates to v59.3.2
 - Upgraded `hypersync-client` crate to v2.0.0
-- Upgraded `ty` package (dev) to v0.0.90
+- Upgraded `ruff` package (dev) to v0.17.3
+- Upgraded `ty` package (dev) to v0.0.91
 
 ### Documentation Updates
 

@@ -153,7 +153,7 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.15.0", "ruff>=0.17.2", "ty>=0.0.90"]
+dev = ["maturin==1.15.0", "ruff>=0.17.3", "ty>=0.0.91"]
 test = [
   "pyarrow>=26.0.0",
   "polars",

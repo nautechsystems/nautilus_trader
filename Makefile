@@ -834,7 +834,7 @@ check-hawk-installed:  #-- Verify the pinned cargo-hawk version is installed
 	fi
 	@INSTALLED=$$(cargo hawk --version | awk '{print $$3}'); \
 	if [ "$$INSTALLED" != "$(CARGO_HAWK_VERSION)" ]; then \
-		printf "$(RED)cargo-hawk version mismatch: installed %s, expected %s (from Cargo.toml)$(RESET)\n" \
+		printf "$(RED)cargo-hawk version mismatch: installed %s, expected %s (from the shared tool catalog)$(RESET)\n" \
 			"$$INSTALLED" "$(CARGO_HAWK_VERSION)"; \
 		exit 1; \
 	fi

@@ -102,10 +102,9 @@ make install-tools
 This installs:
 
 - **Shared Cargo CLIs** pinned in `.nautilus-engineering/tools.toml`: `cargo-audit`, `cargo-deny`,
-  `cargo-edit`, `cargo-llvm-cov`, `cargo-nextest`, and `cargo-vet`.
+  `cargo-edit`, `cargo-hawk`, `cargo-llvm-cov`, `cargo-nextest`, and `cargo-vet`.
 - **NautilusTrader Cargo CLIs** pinned in `Cargo.toml` under `[workspace.metadata.tools]`:
-  `cargo-codspeed`, `cargo-fuzz`, `cargo-hawk`, `cargo-machete`, `cbindgen`, `flamegraph`, and
-  `lychee`.
+  `cargo-codspeed`, `cargo-fuzz`, `cargo-machete`, `cbindgen`, `flamegraph`, and `lychee`.
 - **NautilusTrader Cargo CLI** pinned in `tools.toml`: `tokei` (line counter).
 - **Prebuilt binaries** pinned in `.nautilus-engineering/tools.toml`: `prek` (pre-commit runner) and
   `osv-scanner` (vulnerability scanner).

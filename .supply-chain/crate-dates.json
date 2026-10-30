@@ -100,13 +100,13 @@
       "published": "2026-09-23T09:31:13.319904Z",
       "verified_at": "2026-09-29T01:12:23Z"
     },
-    "alloy-rlp-derive@0.3.16": {
-      "published": "2026-07-03T21:43:09.058105Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "alloy-rlp-derive@0.3.17": {
+      "published": "2026-10-27T21:49:41.330867Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "alloy-rlp@0.3.16": {
-      "published": "2026-07-03T21:43:19.958504Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "alloy-rlp@0.3.17": {
+      "published": "2026-10-27T21:49:43.933295Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "alloy-rpc-client@2.5.0": {
       "published": "2026-09-23T09:26:46.908754Z",
@@ -160,9 +160,9 @@
       "published": "2026-09-23T09:24:01.592699Z",
       "verified_at": "2026-09-29T01:12:23Z"
     },
-    "alloy-trie@0.9.8": {
-      "published": "2026-09-29T12:39:32.779006Z",
-      "verified_at": "2026-10-05T03:27:26Z"
+    "alloy-trie@0.9.9": {
+      "published": "2026-10-27T20:36:59.048227Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "alloy-tx-macros@2.5.0": {
       "published": "2026-09-23T09:19:02.773143Z",
@@ -312,61 +312,61 @@
       "published": "2026-07-02T12:44:35.487269Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "arrow-arith@59.3.1": {
-      "published": "2026-10-15T05:06:18.565549Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-arith@59.3.2": {
+      "published": "2026-10-26T09:26:26.268404Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-array@59.3.1": {
-      "published": "2026-10-15T05:02:22.693257Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-array@59.3.2": {
+      "published": "2026-10-26T09:25:16.805502Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-buffer@59.3.1": {
-      "published": "2026-10-15T05:01:01.237722Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-buffer@59.3.2": {
+      "published": "2026-10-26T09:24:12.724221Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-cast@59.3.1": {
-      "published": "2026-10-15T05:03:17.044037Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-cast@59.3.2": {
+      "published": "2026-10-26T09:25:44.735605Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-csv@59.3.1": {
-      "published": "2026-10-15T05:03:39.654705Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-csv@59.3.2": {
+      "published": "2026-10-26T09:26:07.526891Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-data@59.3.1": {
-      "published": "2026-10-15T05:02:01.403784Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-data@59.3.2": {
+      "published": "2026-10-26T09:25:08.007382Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-ipc@59.3.1": {
-      "published": "2026-10-15T05:03:28.090920Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-ipc@59.3.2": {
+      "published": "2026-10-26T09:25:53.989511Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-json@59.3.1": {
-      "published": "2026-10-15T05:03:49.567315Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-json@59.3.2": {
+      "published": "2026-10-26T09:26:16.723896Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-ord@59.3.1": {
-      "published": "2026-10-15T05:02:58.883080Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-ord@59.3.2": {
+      "published": "2026-10-26T09:25:32.296766Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-row@59.3.1": {
-      "published": "2026-10-15T05:06:43.565589Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-row@59.3.2": {
+      "published": "2026-10-26T09:26:42.045551Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-schema@59.3.1": {
-      "published": "2026-10-15T05:01:49.519891Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-schema@59.3.2": {
+      "published": "2026-10-26T09:25:02.134513Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-select@59.3.1": {
-      "published": "2026-10-15T05:02:37.351459Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-select@59.3.2": {
+      "published": "2026-10-26T09:25:24.701937Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow-string@59.3.1": {
-      "published": "2026-10-15T05:06:30.538294Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow-string@59.3.2": {
+      "published": "2026-10-26T09:26:33.221912Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
-    "arrow@59.3.1": {
-      "published": "2026-10-15T05:07:08.171777Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "arrow@59.3.2": {
+      "published": "2026-10-26T09:26:59.277217Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "asn1-rs-derive@0.6.0": {
       "published": "2025-01-16T16:52:21.067659Z",
@@ -1384,9 +1384,9 @@
       "published": "2026-07-21T14:53:49.688341Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "globset@0.4.20": {
-      "published": "2026-08-04T13:59:29.810360Z",
-      "verified_at": "2026-10-25T07:20:59Z"
+    "globset@0.4.21": {
+      "published": "2026-10-27T18:31:16.117885Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "globwalk@0.9.1": {
       "published": "2024-01-06T20:53:34.390377Z",
@@ -1600,9 +1600,9 @@
       "published": "2026-04-27T17:45:54.838641Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "ignore@0.4.33": {
-      "published": "2026-08-04T13:59:40.311767Z",
-      "verified_at": "2026-10-25T07:20:59Z"
+    "ignore@0.4.34": {
+      "published": "2026-10-27T18:31:27.318008Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "impl-codec@0.6.0": {
       "published": "2022-02-04T11:00:37.224093Z",
@@ -1968,9 +1968,9 @@
       "published": "2026-10-17T09:36:01.034409Z",
       "verified_at": "2026-10-23T22:31:19Z"
     },
-    "nybbles@0.4.8": {
-      "published": "2026-02-03T15:15:35.480580Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "nybbles@0.4.9": {
+      "published": "2026-10-27T14:21:48.287568Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "objc2-core-foundation@0.3.2": {
       "published": "2025-10-04T15:46:51.264986Z",
@@ -2004,9 +2004,9 @@
       "published": "2024-03-01T12:08:32.543535Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "openssl-probe@0.2.1": {
-      "published": "2026-01-20T19:53:29.225766Z",
-      "verified_at": "2026-09-13T06:09:27Z"
+    "openssl-probe@0.2.2": {
+      "published": "2026-10-26T16:29:20.254627Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "panic-message@0.3.0": {
       "published": "2021-08-27T00:02:29.523953Z",
@@ -2044,9 +2044,9 @@
       "published": "2025-10-03T23:33:43.164426Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "parquet@59.3.1": {
-      "published": "2026-10-15T05:09:37.930100Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "parquet@59.3.2": {
+      "published": "2026-10-26T09:28:23.886977Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "parse-zoneinfo@0.3.1": {
       "published": "2024-05-02T15:53:25.884665Z",
@@ -2076,9 +2076,13 @@
       "published": "2025-08-21T08:46:50.131801Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "pest@2.9.4": {
-      "published": "2026-10-16T03:45:24.297052Z",
-      "verified_at": "2026-10-19T22:11:10Z"
+    "pest@2.9.5": {
+      "published": "2026-10-26T12:54:02.866699Z",
+      "verified_at": "2026-10-30T21:56:58Z"
+    },
+    "pest_stack_guard@1.0.0": {
+      "published": "2026-10-26T00:34:06.189328Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "petgraph@0.7.1": {
       "published": "2025-01-08T02:06:14.522371Z",
@@ -2484,9 +2488,9 @@
       "published": "2022-02-07T10:59:17.467859Z",
       "verified_at": "2026-09-13T06:09:27Z"
     },
-    "rustix@1.1.5": {
-      "published": "2026-09-16T23:05:02.319690Z",
-      "verified_at": "2026-09-24T00:16:49Z"
+    "rustix@1.1.6": {
+      "published": "2026-10-27T00:49:03.146056Z",
+      "verified_at": "2026-10-30T21:56:58Z"
     },
     "rustls-native-certs@0.8.5": {
       "published": "2026-10-13T09:30:35.776742Z",
