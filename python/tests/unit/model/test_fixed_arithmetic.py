@@ -791,17 +791,18 @@ def test_addition_subtraction_dunder_compatible_standard_scales_succeeds(
         name=TST.name,
         currency_type=CurrencyType.CRYPTO,
     )
+    scale = 10**FIXED_PRECISION
     receiver = make_raw_value(
         type_,
-        receiver_raw,
+        receiver_raw * scale,
         precision=0,
         currency=zero_precision_currency,
     )
-    operand = make_raw_value(type_, operand_raw)
+    operand = make_raw_value(type_, operand_raw * scale)
 
     result = getattr(receiver, dunder)(operand)
 
-    expected_raw = 3 if "add" in dunder else 1
+    expected_raw = (3 if "add" in dunder else 1) * scale
     assert type(result) is type_
     assert result.raw == expected_raw
 

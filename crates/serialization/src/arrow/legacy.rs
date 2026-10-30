@@ -1435,13 +1435,61 @@ mod tests {
     use nautilus_model::{
         data::{FundingRateUpdate, InstrumentClose},
         enums::{InstrumentCloseType, MarketStatusAction},
+        types::fixed::{FIXED_PRECISION, FIXED_PRECISION_STANDARD},
     };
     use rstest::rstest;
 
     use super::*;
     use crate::arrow::{
         DecodeFromRecordBatch, DecodeTypedFromRecordBatch, EncodeToRecordBatch, StringColumnRef,
+        decode_decimal_price, decode_decimal_quantity,
     };
+
+    #[rstest]
+    #[case("price", false)]
+    #[case("size", true)]
+    fn legacy_fixed_conversion_preserves_spurious_digits_for_checked_rejection(
+        #[case] field: &'static str,
+        #[case] quantity: bool,
+        #[values(8, 16)] width: i32,
+    ) {
+        let bytes = if width == 8 {
+            1_i64.to_le_bytes().to_vec()
+        } else {
+            STANDARD_TO_DECIMAL_SCALE.to_le_bytes().to_vec()
+        };
+
+        let array = FixedSizeBinaryArray::try_from_sparse_iter_with_size(
+            [Some(bytes.as_slice())].into_iter(),
+            width,
+        )
+        .unwrap();
+        let normalized = normalize_legacy_fixed_array(field, &array, width).unwrap();
+        let error = if quantity {
+            decode_decimal_quantity(&normalized, 0, field, 0).unwrap_err()
+        } else {
+            decode_decimal_price(&normalized, 0, field, 0).unwrap_err()
+        };
+
+        let raw = if FIXED_PRECISION == FIXED_PRECISION_STANDARD {
+            1
+        } else {
+            STANDARD_TO_DECIMAL_SCALE
+        };
+
+        let scale = 10_i128.pow(u32::from(FIXED_PRECISION));
+
+        assert_eq!(normalized.value(0), STANDARD_TO_DECIMAL_SCALE);
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Error parsing `{field}`: row 0: Invalid fixed-point raw value {raw} for precision 0: \
+             remainder {raw} when divided by scale {scale}. \
+             Raw value should be a multiple of {scale}. \
+             This indicates data corruption or incorrect precision/scaling upstream"
+            )
+        );
+    }
 
     #[rstest]
     #[case("size", true)]

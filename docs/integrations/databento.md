@@ -636,51 +636,75 @@ versus PM-settled SPXW). Set the time that matches the contracts you are loading
 
 ### Price precision
 
-Databento raw prices are fixed-point integers scaled by 1e-9. The adapter derives
-price precision from the instrument's tick size in the definition message.
+Databento raw prices are fixed-point integers scaled by 1e-9. Instrument definitions supply tick-size
+precision, which can be insufficient for reported prices.
 
-For live feeds, the feed handler maintains a per-instrument precision map populated
-from `InstrumentDefMsg` records as they arrive. Market data handlers resolve
-precision in this order:
+- **Market prices**: Must be exactly representable at the resolved precision; decoding never promotes precision.
+- **Statistics**: Use at least the native nine-decimal wire precision to preserve VWAP, volatility, and delta.
+  Higher resolved precision remains in effect.
+- **Option strikes**: Use the precision needed for the wire value, with a floor at the strike currency's
+  minor-unit precision. Ordinary USD strikes keep two decimal places; adjusted strikes retain finer digits.
 
+Insufficient market precision causes a decoding error. Historical requests and file loading stop at the first
+rejected record. Live feeds log and skip affected market and imbalance records.
+Precision errors name the instrument, field, value, and required precision. Select sufficient `price_precision`
+explicitly to decode finer prices without rounding.
+
+:::warning[Sub-penny equity prices]
+An equity definition at precision 2 does not guarantee two-decimal prices. Strict decoding rejects finer
+trade prices and OHLCV values, including valid sub-penny prices.
+
+- **Combined records**: When trade decoding is enabled, an unrepresentable trade price rejects the whole
+  quote/trade record. Historical and loader MBP-1/CMBP-1 quote-only paths omit trade decoding, so their quotes
+  are unaffected by trade prices.
+- **Live overrides**: An explicit precision takes precedence over definitions and remains effective after they arrive.
+  It controls decoding; published instrument definitions retain their exchange tick metadata.
+- **Historical requests and files**: Set sufficient `price_precision`, such as 4 for four-decimal equity prices.
+- **Backtests**: Match the instrument's precision to the decoded data. At precision 4, use `0.0100` for a cent tick.
+  Higher decode precision alone does not change the instrument.
+
+:::
+
+#### Live feeds
+
+The feed handler populates a per-instrument precision map from `InstrumentDefMsg` records as they arrive.
+Market data handlers resolve precision in this order:
+
+1. Subscription-supplied precision matched to the record `instrument_id` through a symbol mapping message.
+1. Subscription-supplied precision matched directly on the native Databento symbol.
 1. Precision from an `InstrumentDefMsg` already seen for the Databento record `instrument_id`.
-2. Subscription-supplied precision matched to the record `instrument_id` through a symbol mapping message.
-3. Subscription-supplied precision matched directly on the native Databento symbol.
-4. The USD default precision of 2.
+1. The USD default precision of 2.
 
-Supply precision with the `price_precision` parameter on `subscribe_quotes()` or
-`subscribe_trades()`, or with `price_precisions` on the direct live client. No other subscription
-method reads the parameter. Steps 2 and 3 key the same override two ways: matching the record
-`instrument_id` after symbol mapping lets parent, continuous, and other non-raw symbology
-subscriptions apply the override before definition metadata arrives.
+Pass `price_precision` to `subscribe_quotes()` or `subscribe_trades()`; other subscription methods ignore it.
+The direct live client accepts `price_precisions`. Steps 1 and 2 let parent, continuous, and other non-raw
+symbology subscriptions apply the same override before and after definitions arrive.
 
-**Instrument definitions must arrive before market data** for correct precision on
-instruments with non-standard tick sizes (e.g., treasury futures with fractional
-ticks like 1/256). Subscribe to instrument definitions (the Databento `definition`
-schema) before or alongside market data subscriptions.
+**Definition timing**: Without an explicit override, definitions must arrive before market data for instruments
+with non-standard tick sizes, such as treasury futures with 1/256 ticks. Subscribe to the `definition` schema
+before or alongside market data subscriptions.
 
-For historical requests and file-based loading, precision is resolved per
-record in this order:
+:::tip
+At strategy start, call `subscribe_instrument()` for each instrument to populate the live precision map.
+A symbol's `price_precision` override lasts for the dataset session. An override on a quote or trade
+subscription also covers its order book deltas, depth, bars, statistics, and imbalance. Statistics keep their
+nine-decimal minimum; `InstrumentStatus` has no prices and needs no precision.
+:::
+
+#### Historical requests and file loading
+
+Precision is resolved per record in this order:
 
 1. An explicit `price_precision` argument on the call.
-2. A per-symbol cache populated by loading definitions (`load_instruments`
+1. A per-symbol cache populated by loading definitions (`load_instruments`
    on the file loader, `get_range_instruments` on the historical client) or
    by an explicit `set_price_precision(symbol, precision)` call using the Nautilus symbol, such as `ESZ26`.
 
-The data client fetches the requested instrument's definition when neither
-source supplies precision. The lookup starts at UTC midnight on the request's
-start date to include Databento's midnight definition snapshots. The market data
-request keeps its original time range.
+If neither source supplies precision, the data client fetches the instrument's definition from UTC midnight
+on the request's start date to include midnight definition snapshots. The market data request keeps its
+original time range.
 
-Unresolved precision never defaults to USD precision. Historical client and loader calls return an error. Data
-client requests log the error and return an empty response.
-
-:::tip
-Call `subscribe_instrument()` for each instrument at strategy start so definition messages populate the live
-precision map. The feed handler keeps a `price_precision` override per symbol for the whole dataset session.
-An override on one quote or trade subscription also covers that symbol's order book deltas, depth, bars,
-statistics, and imbalance. `InstrumentStatus` carries no prices and needs no precision.
-:::
+Unresolved precision never defaults to USD precision. Historical client and loader calls return an error;
+data client requests log it and return an empty response.
 
 ### MBO (market by order)
 
@@ -689,12 +713,14 @@ depth. Some messages include trade data. The decoder produces an `OrderBookDelta
 and optionally a `TradeTick`. The live client emits a `TradeTick` only after the
 instrument has received its first delta.
 
-The live client buffers MBO messages until a record carries the `F_LAST` flag closing the match event, then
-passes one `OrderBookDeltas` container to the handler. Records that decode to no delta (a fill attribution, a
-status action, or a trade) can still carry `F_LAST`. Thus, the client honors the raw flag independently of the
-decoded payload. Otherwise, a partial event would be stranded and merged into the next event. When MBO carries
-the instrument's trades (see [Real-time client architecture](#real-time-client-architecture)), a trade that
-closes the event follows the flushed container.
+The live client buffers MBO messages until a record's `F_LAST` flag closes the match event, then passes one
+`OrderBookDeltas` container to the handler. It honors the raw flag even on records that produce no delta
+(fill attribution, status actions, or trades) or fail decoding. This prevents partial events from being
+stranded and merged into the next event.
+
+When MBO carries the instrument's trades (see
+[Real-time client architecture](#real-time-client-architecture)), a trade that closes the event follows the
+flushed container.
 
 Snapshot records (`F_SNAPSHOT`) accumulate into the same buffer and flush with the first non-snapshot event
 boundary. Thus, a snapshot reaches the handler as one `OrderBookDeltas` container rather than individual
@@ -776,10 +802,12 @@ statistics = await client.get_range_statistics(
 )
 ```
 
-A fresh historical client holds no cached precision. Thus, the request needs `price_precision` or a preceding
-`get_range_instruments` call for the same range. Otherwise, the first decoded record aborts the request. A
-parent symbol such as `ES.FUT` cannot be seeded with `set_price_precision`, because records resolve to the
-individual contract symbols behind the parent.
+The example uses `price_precision=2` for lookup; returned statistic prices have nine decimal places.
+A fresh historical client has no cached precision:
+
+- **Required setup**: Supply `price_precision` or first call `get_range_instruments` for the same range.
+  Otherwise, the first decoded record aborts the request.
+- **Parent symbols**: `set_price_precision` cannot seed `ES.FUT`; records resolve to individual contract symbols.
 
 ### Arrow encoding for imbalance and statistics
 
@@ -802,6 +830,12 @@ The `statistics` module follows the same pattern with
 `decode_statistics_batch` and `statistics_to_arrow_record_batch`. Call
 `get_databento_arrow_schema_map(DatabentoImbalance)` from Python to inspect the
 Arrow field map for either type.
+
+- **Batch consistency**: `statistics_to_arrow_record_batch` and registered custom-data encoding reject mixed
+  instruments, price precisions, or quantity precisions. Null fields do not constrain precision. Align
+  precisions explicitly before batching.
+- **Explicit metadata**: In Rust, supply `DatabentoStatistics::encode_batch` with sufficient precision metadata.
+  It must name the same instrument for every row and represent every value exactly. Decoded values use that precision.
 
 :::info
 Neither type is registered with the `ParquetDataCatalog` custom data encoders. Thus, `write_custom_data` and

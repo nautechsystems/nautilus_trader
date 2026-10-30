@@ -35,6 +35,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     types::{
         Currency, Price, Quantity,
+        fixed::{FIXED_PRECISION, FIXED_PRECISION_STANDARD, check_fixed_precision},
         price::{PRICE_UNDEF, decode_raw_price_i64},
     },
 };
@@ -296,6 +297,120 @@ fn test_decode_price_undefined_errors() {
 }
 
 #[rstest]
+#[case(96_062_500_000, "96.0625", 4)]
+#[case(1_083_450_000, "1.08345", 5)]
+#[case(-1_083_450_000, "-1.08345", 5)]
+fn test_price_decoders_reject_insufficient_precision(
+    #[case] raw: i64,
+    #[case] value: &str,
+    #[case] required_precision: u8,
+) {
+    let expected = format!(
+        "Price {value} requires at least {required_precision} decimal places, \
+         but resolved precision is 2; increase `price_precision` explicitly"
+    );
+    let required = decode_price(raw, 2, "price").unwrap_err();
+    let optional = decode_optional_price(raw, 2).unwrap_err();
+    let sentinel = decode_price_or_undef(raw, 2).unwrap_err();
+
+    assert_eq!(
+        required.to_string(),
+        format!("Invalid price for `price`: {expected}")
+    );
+    assert_eq!(optional.to_string(), expected);
+    assert_eq!(sentinel.to_string(), expected);
+}
+
+#[rstest]
+#[case(17)]
+#[case(18)]
+#[case(19)]
+fn test_price_decoder_preserves_value_at_extended_precision(#[case] precision: u8) {
+    let result = decode_price_or_undef(1_083_450_000, precision);
+
+    if let Err(expected) = check_fixed_precision(precision) {
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            format!("Invalid price raw 1083450000 at precision {precision}: {expected}")
+        );
+    } else {
+        let price = result.unwrap();
+        assert_eq!(price.as_decimal(), "1.08345".parse().unwrap());
+        assert_eq!(price.precision, precision);
+    }
+}
+
+#[rstest]
+fn test_price_decoding_distinguishes_range_and_precision_errors() {
+    let raw = i64::MAX - 1;
+    let error = decode_price_or_undef(raw, 2).unwrap_err();
+    let expected = if FIXED_PRECISION == FIXED_PRECISION_STANDARD {
+        let expected = Price::from_raw_checked(decode_raw_price_i64(raw), 2).unwrap_err();
+        format!("Invalid price raw {raw} at precision 2: {expected}")
+    } else {
+        "Price 9223372036.854775806 requires at least 9 decimal places, \
+         but resolved precision is 2; increase `price_precision` explicitly"
+            .to_string()
+    };
+
+    assert_eq!(error.to_string(), expected);
+}
+
+#[rstest]
+fn test_mbo_rejects_insufficient_precision() {
+    let path = test_data_path().join("test_data.mbo.dbn.zst");
+    let mut decoder = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::MboMsg>();
+    let mut msg = decoder.next().unwrap().unwrap().clone();
+    msg.action = b'A' as c_char;
+    msg.side = b'B' as c_char;
+    msg.price = 1_083_450_000;
+    msg.size = 7;
+    let instrument_id = InstrumentId::from("6EH6.GLBX");
+
+    let error = decode_mbo_msg(&msg, instrument_id, 2, None, false).unwrap_err();
+    let (delta, trade) = decode_mbo_msg(&msg, instrument_id, 5, None, false).unwrap();
+    let price = delta.unwrap().order.price;
+
+    assert_eq!(
+        error.to_string(),
+        "Invalid `price` for 6EH6.GLBX: Price 1.08345 requires at least 5 decimal places, \
+         but resolved precision is 2; increase `price_precision` explicitly"
+    );
+    assert_eq!(price.raw(), Price::from("1.08345").raw());
+    assert_eq!(price.precision, 5);
+    assert_eq!(trade, None);
+}
+
+#[rstest]
+fn test_mbp1_rejects_insufficient_precision_without_promoting_prices() {
+    let path = test_data_path().join("test_data.mbp-1.dbn.zst");
+    let mut decoder = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::Mbp1Msg>();
+    let mut msg = decoder.next().unwrap().unwrap().clone();
+    msg.levels[0].bid_px = 1_083_400_000;
+    msg.levels[0].ask_px = 1_083_450_000;
+    let instrument_id = InstrumentId::from("6EH6.GLBX");
+
+    let error = decode_mbp1_msg(&msg, instrument_id, 2, None, false).unwrap_err();
+    let (quote, trade) = decode_mbp1_msg(&msg, instrument_id, 5, None, false).unwrap();
+    let quote = quote.unwrap();
+
+    assert_eq!(
+        error.to_string(),
+        "Invalid `bid_px` for 6EH6.GLBX: Price 1.0834 requires at least 4 decimal places, \
+         but resolved precision is 2; increase `price_precision` explicitly"
+    );
+    assert_eq!(quote.bid_price.raw(), Price::from("1.08340").raw());
+    assert_eq!(quote.ask_price.raw(), Price::from("1.08345").raw());
+    assert_eq!(quote.bid_price.precision, 5);
+    assert_eq!(quote.ask_price.precision, 5);
+    assert_eq!(trade, None);
+}
+
+#[rstest]
 #[case(0, 0)]
 #[case(1, 9)] // 0.000000001 needs 9 decimal places
 #[case(10, 8)] // 0.00000001 needs 8
@@ -344,7 +459,7 @@ fn test_decode_optional_price(
     #[case] precision: u8,
     #[case] expected: Option<Price>,
 ) {
-    let actual = decode_optional_price(value, precision);
+    let actual = decode_optional_price(value, precision).unwrap();
     assert_eq!(actual, expected);
 }
 
@@ -357,7 +472,7 @@ fn test_decode_optional_price(
 )]
 #[case(i64::MAX, 2, Price::from_raw(PRICE_UNDEF, 0))] // Sentinel becomes PRICE_UNDEF
 fn test_decode_price_or_undef(#[case] value: i64, #[case] precision: u8, #[case] expected: Price) {
-    let actual = decode_price_or_undef(value, precision);
+    let actual = decode_price_or_undef(value, precision).unwrap();
     assert_eq!(actual, expected);
 }
 
@@ -1283,6 +1398,36 @@ fn test_decode_option_underlying_uses_definition(
 }
 
 #[rstest]
+#[case(100_000_000_000, "100.00", "USD", 2)]
+#[case(100_000_000_000, "100", "JPY", 0)]
+#[case(100_125_000_000, "100.125", "JPY", 3)]
+#[case(96_062_500_000, "96.0625", "USD", 4)]
+#[case(1_085_000_000, "1.085", "USD", 3)]
+#[case(1, "0.000000001", "USD", 9)]
+fn test_option_strikes_use_sufficient_precision(
+    #[case] raw: i64,
+    #[case] expected: &str,
+    #[case] strike_currency: &str,
+    #[case] precision: u8,
+) {
+    let path = test_data_path().join("test_data.definition.option.dbn.zst");
+    let mut decoder = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::InstrumentDefMsg>();
+    let mut msg = decoder.next().unwrap().unwrap().clone();
+    msg.strike_price = raw;
+    msg.strike_price_currency = cstr(strike_currency);
+
+    let option =
+        decode_option_contract(&msg, InstrumentId::from("ESU6 C9600.GLBX"), None, None).unwrap();
+
+    assert_eq!(option.strike_price.raw(), Price::from(expected).raw());
+    assert_eq!(option.strike_price.precision, precision);
+    assert_eq!(option.strike_price.as_decimal(), expected.parse().unwrap());
+    assert_eq!(option.currency, Currency::USD());
+}
+
+#[rstest]
 fn test_decode_definition_msg_option_spread() {
     let path = test_data_path().join("test_data.definition.option_spread.dbn.zst");
     let mut dbn_stream = Decoder::from_zstd_file(path)
@@ -1643,6 +1788,45 @@ fn test_decode_statistics_msg_unknown_stat_type_returns_none(#[case] stat_type_r
     let result = decode_statistics_msg(&msg, instrument_id, 2, Some(0.into()))
         .expect("decoder should not bail on unknown stat type");
     assert!(result.is_none());
+}
+
+#[rstest]
+#[case(13, 100_125_000_000, "100.125", 2, 9)]
+#[case(14, 12_345_678, "0.012345678", 2, 9)]
+#[case(15, 123_456_789, "0.123456789", 2, 9)]
+#[case(10, 100_000_000_000, "100.00", 2, 9)]
+#[case(13, 100_125_000_000, "100.125", FIXED_PRECISION, FIXED_PRECISION)]
+fn test_decode_statistics_preserves_finer_price_precision(
+    #[case] stat_type: u16,
+    #[case] raw: i64,
+    #[case] expected: &str,
+    #[case] configured_precision: u8,
+    #[case] precision: u8,
+) {
+    let msg = dbn::StatMsg {
+        hd: dbn::RecordHeader::new::<dbn::StatMsg>(
+            dbn::enums::rtype::STATISTICS,
+            1,
+            1,
+            1_000_000_000,
+        ),
+        ts_recv: 1_000_000_001,
+        ts_ref: 1_000_000_002,
+        stat_type,
+        update_action: 1,
+        price: raw,
+        ..Default::default()
+    };
+
+    let instrument_id = InstrumentId::from("ESM4.GLBX");
+    let statistics =
+        decode_statistics_msg(&msg, instrument_id, configured_precision, Some(0.into()))
+            .unwrap()
+            .unwrap();
+    let price = statistics.price.unwrap();
+
+    assert_eq!(price.raw(), Price::from(expected).raw());
+    assert_eq!(price.precision, precision);
 }
 
 #[rstest]

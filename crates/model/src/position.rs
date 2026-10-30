@@ -10700,7 +10700,11 @@ mod tests {
 
     #[rstest]
     fn test_domain_operations_preserve_fractional_raw_units() {
-        let value = Quantity::from_raw(1, 2);
+        let value = Quantity {
+            raw: 1,
+            precision: 2,
+        };
+
         let zero = Quantity::zero(2);
         let sum = quantity_add(value, zero, 2).unwrap();
         let difference = quantity_sub(value, zero, 2).unwrap();

@@ -5883,9 +5883,10 @@ fn test_price_mid_matches_decimal(
     let ceiling = FIXED_PRECISION;
 
     for precision in [FIXED_PRECISION - 1, FIXED_PRECISION, ceiling] {
-        let bid = Price::from_raw(bid_raw, precision);
-        let ask = Price::from_raw(ask_raw, precision);
-
+        let mut bid = Price::from_raw(bid_raw, precision.max(FIXED_PRECISION));
+        let mut ask = Price::from_raw(ask_raw, precision.max(FIXED_PRECISION));
+        bid.precision = precision;
+        ask.precision = precision;
         let expected_precision = if precision < ceiling && precision != MAX_FLOAT_PRECISION {
             precision + 1
         } else {
@@ -5912,10 +5913,15 @@ fn assert_mid_raw(
     precision: u8,
     expected: Option<(PriceRaw, u8)>,
 ) {
+    let mut bid = Price::from_raw(bid_raw, precision.max(FIXED_PRECISION));
+    let mut ask = Price::from_raw(ask_raw, precision.max(FIXED_PRECISION));
+    bid.precision = precision;
+    ask.precision = precision;
+
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(bid_raw, precision),
-        Price::from_raw(ask_raw, precision),
+        bid,
+        ask,
         Quantity::from(1),
         Quantity::from(1),
         UnixNanos::from(5),

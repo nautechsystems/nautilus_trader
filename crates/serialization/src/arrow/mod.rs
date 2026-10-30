@@ -2288,16 +2288,20 @@ mod schema_invariant_tests {
             perpetual_contract::PerpetualContract, tokenized_asset::TokenizedAsset,
         },
         reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-        types::{PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity},
+        types::{
+            PRICE_ERROR, PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity,
+            fixed::{FIXED_PRECISION, FIXED_PRECISION_STANDARD},
+        },
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::{
         ArrowSchemaProvider, DecodeFromRecordBatch, EncodeToRecordBatch, FIXED_DECIMAL_PRECISION,
-        FIXED_DECIMAL_SCALE, KEY_IDENTIFIER, QUANTITY_RAW_MAX, decimal_to_arrow, decode_decimal,
-        decode_decimal_price, fixed_decimal_data_type, is_timestamp_field, price_decimal_array,
-        quantity_decimal_array, timestamp_data_type,
+        FIXED_DECIMAL_SCALE, KEY_IDENTIFIER, QUANTITY_RAW_MAX, STANDARD_TO_DECIMAL_SCALE,
+        decimal_to_arrow, decode_decimal, decode_decimal_price, decode_decimal_quantity,
+        fixed_decimal_data_type, is_timestamp_field, price_decimal_array, quantity_decimal_array,
+        timestamp_data_type,
     };
 
     #[derive(Clone, Copy, Debug)]
@@ -2448,6 +2452,42 @@ mod schema_invariant_tests {
         assert_eq!(
             decode_decimal_price(&array, price.precision, "price", 0).unwrap(),
             price,
+        );
+    }
+
+    #[rstest]
+    #[case("price", false)]
+    #[case("size", true)]
+    fn decimal_decode_rejects_spurious_digits_with_row_context(
+        #[case] field: &'static str,
+        #[case] quantity: bool,
+    ) {
+        let array = Decimal128Array::from(vec![0, STANDARD_TO_DECIMAL_SCALE])
+            .with_precision_and_scale(FIXED_DECIMAL_PRECISION, FIXED_DECIMAL_SCALE)
+            .unwrap();
+
+        let error = if quantity {
+            decode_decimal_quantity(&array, 0, field, 1).unwrap_err()
+        } else {
+            decode_decimal_price(&array, 0, field, 1).unwrap_err()
+        };
+
+        let raw = if FIXED_PRECISION == FIXED_PRECISION_STANDARD {
+            1
+        } else {
+            STANDARD_TO_DECIMAL_SCALE
+        };
+
+        let scale = 10_i128.pow(u32::from(FIXED_PRECISION));
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Error parsing `{field}`: row 1: Invalid fixed-point raw value {raw} for precision 0: \
+             remainder {raw} when divided by scale {scale}. \
+             Raw value should be a multiple of {scale}. \
+             This indicates data corruption or incorrect precision/scaling upstream"
+            )
         );
     }
 
