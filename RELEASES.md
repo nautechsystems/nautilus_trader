@@ -27,6 +27,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed `Cache` indexing closed positions as open and excluding them from purging after insertion
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments

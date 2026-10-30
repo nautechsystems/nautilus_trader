@@ -2205,13 +2205,6 @@ pub(crate) mod serial_tests {
     }
 
     #[rstest]
-    fn test_exec_manager_access() {
-        let node = LiveNode::build("TestNode".to_string(), None).unwrap();
-
-        let _manager = node.exec_manager();
-    }
-
-    #[rstest]
     #[tokio::test]
     async fn test_stop_when_not_running_returns_error() {
         let mut node = LiveNode::build("TestNode".to_string(), None).unwrap();
@@ -3877,50 +3870,80 @@ pub(crate) mod serial_tests {
         assert!(!state.connected.load(Ordering::Relaxed));
     }
 
-    // The maintenance dispatcher is a single `select!` arm in `LiveNode::run`
-    // that fires up to six periodic tasks. With reconciliation disabled, the
-    // only sub-second-cadenced task that can fire in a short test window is
-    // the own-books audit (interval is `Option<f64>` seconds). Configuring it
-    // at 0.1s and holding the node Running for ~250ms guarantees the
-    // maintenance arm is polled multiple times and dispatches at least one
-    // body. If the dispatcher panics, deadlocks the cache `borrow_mut()`, or
-    // otherwise breaks the loop, `run()` will not return cleanly.
     #[rstest]
     #[tokio::test(flavor = "current_thread")]
-    async fn test_maintenance_dispatcher_runs_while_running() {
+    async fn test_maintenance_dispatcher_audits_stale_own_book_orders() {
         let config = LiveNodeConfig {
             exec_engine: LiveExecutionEngineConfig {
                 reconciliation: false,
                 own_books_audit_interval_secs: Some(0.1),
                 ..Default::default()
             },
-            delay_post_stop: Duration::from_millis(50),
+            delay_post_stop: Duration::ZERO,
             ..Default::default()
         };
 
         let mut node = LiveNode::build("MaintenanceTestNode".to_string(), Some(config)).unwrap();
         let handle = node.handle();
+        let cache = node.kernel().cache();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let instrument_id = instrument.id();
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("O-STALE-OWN-BOOK"))
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("3000.00"))
+            .build();
+        let client_order_id = order.client_order_id();
 
-        let stop_handle = handle.clone();
+        let driver = async {
+            wait_until_async(|| async { handle.is_running() }, Duration::from_secs(2)).await;
+            {
+                let mut cache = cache.borrow_mut();
+                cache.add_instrument(instrument).unwrap();
+                // No cached order owns this entry, so the next audit must remove it
+                cache.update_own_order_book(&order);
+                assert!(
+                    cache
+                        .own_order_book(&instrument_id)
+                        .unwrap()
+                        .is_order_in_book(&client_order_id)
+                );
+            }
 
-        tokio::spawn(async move {
             wait_until_async(
-                || async { stop_handle.is_running() },
-                Duration::from_secs(5),
+                || async {
+                    !cache
+                        .borrow()
+                        .own_order_book(&instrument_id)
+                        .unwrap()
+                        .is_order_in_book(&client_order_id)
+                },
+                Duration::from_secs(2),
             )
             .await;
-            tokio::time::sleep(Duration::from_millis(250)).await;
-            stop_handle.stop();
-        });
 
-        let result = tokio::time::timeout(Duration::from_secs(5), node.run()).await;
+            handle.stop();
+        };
 
-        assert!(result.is_ok(), "run() should complete within timeout");
-        assert!(
-            result.unwrap().is_ok(),
-            "run() should succeed after maintenance dispatcher fires"
-        );
+        let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+            tokio::join!(node.run(), driver)
+        })
+        .await
+        .expect("maintenance removes the stale entry before shutdown");
+
+        result.unwrap();
+
         assert_eq!(handle.state(), NodeState::Stopped);
+        assert_eq!(
+            cache
+                .borrow()
+                .own_order_book(&instrument_id)
+                .unwrap()
+                .bids()
+                .count(),
+            0
+        );
     }
 
     #[rstest]

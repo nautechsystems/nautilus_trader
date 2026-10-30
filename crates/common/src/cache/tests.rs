@@ -10506,6 +10506,48 @@ fn test_update_own_order_book_reinserts_missing_levels(mut cache: Cache) {
 }
 
 #[rstest]
+#[case::indexed(Cache::add_position, false)]
+#[case::orderless(Cache::add_position_without_order, false)]
+#[case::replacement(
+    |cache: &mut Cache, position: &Position, oms_type: OmsType| {
+        cache.replace_position(position, oms_type, true, false)
+    },
+    true
+)]
+fn test_closed_position_insertion_indexes_and_purges(
+    #[case] insert: fn(&mut Cache, &Position, OmsType) -> anyhow::Result<()>,
+    #[case] replace_open: bool,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let mut source = Cache::default();
+    let position_id = closed_position_in_cache(&mut source, &instrument, "P-CLOSED-INSERT");
+    let closed = source.position(&position_id).unwrap().clone();
+    let mut cache = Cache::default();
+
+    if replace_open {
+        let opened = Position::new(&instrument, closed.events[0].clone());
+        cache.add_position(&opened, OmsType::Netting).unwrap();
+    }
+
+    insert(&mut cache, &closed, OmsType::Netting).unwrap();
+
+    let state = (
+        cache.position(&position_id).unwrap().is_closed(),
+        cache.is_position_open(&position_id),
+        cache.is_position_closed(&position_id),
+    );
+    let open_ids = cache.position_open_ids(None, None, None, None);
+    let closed_ids = cache.position_closed_ids(None, None, None, None);
+
+    cache.purge_closed_positions(UnixNanos::from(3_000_000_000), 0);
+
+    assert_eq!(state, (true, false, true));
+    assert!(open_ids.is_empty());
+    assert_eq!(closed_ids, AHashSet::from([position_id]));
+    assert!(!cache.position_exists(&position_id));
+}
+
+#[rstest]
 fn test_position_flip_netting_mode_cleans_up_closed_index() {
     // Regression test for NETTING position flip index corruption (issue #3081)
     // Verifies that when a position ID is reused in NETTING mode,
@@ -14071,10 +14113,6 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
     cache.add_position(&pos_a_long, OmsType::Netting).unwrap();
     cache.add_position(&pos_b_short, OmsType::Netting).unwrap();
     cache.add_position(&pos_a_closed, OmsType::Netting).unwrap();
-    // `add_position` always inserts into `positions_open`; the closed flag is honored
-    // only when state is reconciled via `update_position`.
-    cache.update_position(&pos_a_closed).unwrap();
-
     // Open ids: filter by venue
     assert_eq!(
         cache.position_open_ids(Some(&venue_a), None, None, None),

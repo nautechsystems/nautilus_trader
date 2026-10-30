@@ -664,7 +664,10 @@ mod tests {
         reports: Rc<Cell<u8>>,
         instruments: Rc<RefCell<Vec<InstrumentId>>>,
         report_release: Option<Rc<tokio::sync::Notify>>,
+        commission_args: Rc<RefCell<Option<CommissionArgs>>>,
     }
+
+    type CommissionArgs = (InstrumentId, Quantity, Price, LiquiditySide);
 
     impl ReportExecutionClient {
         fn report_result<T>(&self, value: T, report: u8) -> anyhow::Result<T> {
@@ -802,6 +805,23 @@ mod tests {
             self.instruments.borrow_mut().push(instrument.id());
         }
 
+        fn calculate_commission(
+            &self,
+            instrument: &InstrumentAny,
+            last_qty: Quantity,
+            last_px: Price,
+            liquidity_side: LiquiditySide,
+        ) -> anyhow::Result<Option<Money>> {
+            *self.commission_args.borrow_mut() =
+                Some((instrument.id(), last_qty, last_px, liquidity_side));
+
+            if self.fail {
+                anyhow::bail!("venue commission unavailable");
+            }
+
+            Ok(Some(Money::from("0.37 USDT")))
+        }
+
         async fn generate_mass_status(
             &self,
             _lookback_mins: Option<u64>,
@@ -817,6 +837,38 @@ mod tests {
             _info: Option<Params>,
         ) -> anyhow::Result<()> {
             Ok(())
+        }
+    }
+
+    #[rstest]
+    #[case::fee(false)]
+    #[case::error(true)]
+    fn facade_forwards_commission_arguments_and_result(#[case] fail: bool) {
+        let adapter = ReportExecutionClient {
+            fail,
+            ..Default::default()
+        };
+
+        let args = adapter.commission_args.clone();
+        let client = LiveExecutionClient::new(Box::new(adapter));
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let qty = Quantity::from("2.345");
+        let price = Price::from("2345.67");
+
+        let result = client.calculate_commission(&instrument, qty, price, LiquiditySide::Taker);
+
+        assert_eq!(
+            *args.borrow(),
+            Some((instrument.id(), qty, price, LiquiditySide::Taker))
+        );
+
+        if fail {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "venue commission unavailable"
+            );
+        } else {
+            assert_eq!(result.unwrap(), Some(Money::from("0.37 USDT")));
         }
     }
 

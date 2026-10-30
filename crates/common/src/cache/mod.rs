@@ -3281,8 +3281,7 @@ impl Cache {
 
         self.index.position_oms.insert(position_id, oms_type);
         self.index.positions.insert(position_id);
-        self.index.positions_open.insert(position_id);
-        self.index.positions_closed.remove(&position_id); // Cleanup for NETTING reopen
+        self.refresh_position_indexes(&position_cell.borrow());
         self.index.strategies.insert(strategy_id);
         self.index.strategy_orders.entry(strategy_id).or_default();
 
