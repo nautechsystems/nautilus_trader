@@ -5,6 +5,7 @@ Released on TBD (UTC).
 ### Enhancements
 
 - Added `HttpClient` certificate support through `certs_dir`
+- Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`
 - Added Deribit routed spot metadata and local order and market data capability checks
 
