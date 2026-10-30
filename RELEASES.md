@@ -62,6 +62,7 @@ Released on TBD (UTC).
 - Fixed Databento option strikes rejecting values finer than the strike currency precision
 - Fixed Databento price scaling at explicitly selected 17- and 18-decimal precision
 - Fixed Deribit instrument loading panicking on invalid spot definitions
+- Fixed Deribit single-order recovery treating failed lookups as missing orders
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects

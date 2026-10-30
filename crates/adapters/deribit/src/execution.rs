@@ -44,7 +44,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType, TimeInForce},
     events::OrderEventAny,
-    identifiers::{AccountId, ClientId, Venue},
+    identifiers::{AccountId, ClientId, InstrumentId, Venue},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
@@ -58,7 +58,10 @@ use crate::{
         enums::resolve_trigger_type,
     },
     config::DeribitExecutionClientConfig,
-    http::{client::DeribitHttpClient, models::DeribitCurrency, query::GetOrderStateParams},
+    http::{
+        client::DeribitHttpClient, error::DeribitHttpError, models::DeribitCurrency,
+        query::GetOrderStateParams,
+    },
     websocket::{
         auth::DERIBIT_EXECUTION_SESSION_NAME,
         client::DeribitWebSocketClient,
@@ -609,43 +612,29 @@ impl ExecutionClient for DeribitExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        // If venue_order_id is provided, fetch the specific order by ID
-        if let Some(venue_order_id) = &cmd.venue_order_id {
+        let report = if let Some(venue_order_id) = &cmd.venue_order_id {
             let params = GetOrderStateParams {
                 order_id: venue_order_id.to_string(),
             };
             let ts_init = self.clock.get_time_ns();
 
-            match self.http_client.inner.get_order_state(params).await {
-                Ok(response) => {
-                    if let Some(order) = response.result {
-                        let symbol = order.instrument_name;
-                        if let Some(instrument) = self.http_client.get_instrument(&symbol) {
-                            let report = parse_user_order_msg(
-                                &order,
-                                &instrument,
-                                self.core.account_id,
-                                ts_init,
-                            )?;
-                            return Ok(Some(report));
-                        } else {
-                            log::warn!(
-                                "Instrument {} not in cache for order {}",
-                                order.instrument_name,
-                                order.order_id
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to get order state: {e}");
-                }
-            }
-            return Ok(None);
-        }
+            let response = match self.http_client.inner.get_order_state(params).await {
+                Ok(response) => response,
+                Err(DeribitHttpError::DeribitError {
+                    error_code: 10004, ..
+                }) => return Ok(None),
+                Err(e) => return Err(e.into()),
+            };
 
-        // If client_order_id is provided, search open then closed orders
-        if let Some(client_order_id) = &cmd.client_order_id {
+            let order = response.result.context("missing order state result")?;
+            let instrument_id = InstrumentId::new(order.instrument_name.into(), *DERIBIT_VENUE);
+            let instrument = self
+                .http_client
+                .get_instrument(&order.instrument_name)
+                .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+
+            parse_user_order_msg(&order, &instrument, self.core.account_id, ts_init)?
+        } else if let Some(client_order_id) = &cmd.client_order_id {
             let reports = self
                 .http_client
                 .request_order_status_reports(
@@ -653,19 +642,37 @@ impl ExecutionClient for DeribitExecutionClient {
                     cmd.instrument_id,
                     None,
                     None,
-                    false, // search all orders, not just open
+                    false, // Search all orders, not just open
                 )
                 .await?;
 
-            // Filter by client_order_id
-            for report in reports {
-                if report.client_order_id == Some(*client_order_id) {
-                    return Ok(Some(report));
-                }
-            }
-        }
+            // Bulk reports can omit orders outside the cached products or venue history window
+            reports
+                .into_iter()
+                .find(|report| report.client_order_id == Some(*client_order_id))
+                .context("order lookup by client order ID was inconclusive")?
+        } else {
+            anyhow::bail!("Order lookup requires a client order ID or venue order ID");
+        };
 
-        Ok(None)
+        // External orders can lack a venue label after Nautilus assigns a client order ID
+        anyhow::ensure!(
+            cmd.instrument_id
+                .is_none_or(|id| report.instrument_id == id)
+                && report
+                    .client_order_id
+                    .zip(cmd.client_order_id)
+                    .is_none_or(|(reported, queried)| reported == queried)
+                && cmd
+                    .venue_order_id
+                    .is_none_or(|id| report.venue_order_id == id),
+            "Order status report identity does not match query: instrument_id={}, client_order_id={:?}, venue_order_id={}",
+            report.instrument_id,
+            report.client_order_id,
+            report.venue_order_id,
+        );
+
+        Ok(Some(report))
     }
 
     async fn generate_order_status_reports(
