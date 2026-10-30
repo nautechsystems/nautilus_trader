@@ -88,7 +88,7 @@ macro_rules! impl_account_base_members {
         }
 
         fn events(&self) -> Vec<$crate::events::AccountState> {
-            self.events.clone()
+            self.events.to_vec()
         }
 
         fn event_count(&self) -> usize {

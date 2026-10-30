@@ -18,6 +18,8 @@
 //! Concrete account types (`CashAccount`, `MarginAccount`, etc.) build on the abstractions defined
 //! in this file.
 
+use std::sync::Arc;
+
 use ahash::AHashMap;
 use indexmap::IndexMap;
 use nautilus_core::{
@@ -54,7 +56,9 @@ pub struct BaseAccount {
     /// (as opposed to taken from venue reports).
     pub calculate_account_state: bool,
     /// The account state events, oldest first.
-    pub events: Vec<AccountState>,
+    ///
+    /// Clones share this history until one of them is modified.
+    pub events: Arc<Vec<AccountState>>,
     /// The commissions charged so far, keyed by currency.
     pub commissions: AHashMap<Currency, Money>,
     /// The current balances in the account, keyed by currency.
@@ -78,7 +82,7 @@ impl BaseAccount {
             account_type: event.account_type,
             base_currency: event.base_currency,
             calculate_account_state,
-            events: vec![event],
+            events: Arc::new(vec![event]),
             commissions: AHashMap::new(),
             balances,
             balances_starting,
@@ -92,7 +96,7 @@ impl BaseAccount {
             account_type: self.account_type,
             base_currency: self.base_currency,
             calculate_account_state: self.calculate_account_state,
-            events: Vec::new(),
+            events: Arc::default(),
             commissions: self.commissions.clone(),
             balances: self.balances.clone(),
             balances_starting: self.balances_starting.clone(),
@@ -253,7 +257,7 @@ impl BaseAccount {
     pub fn base_apply(&mut self, event: AccountState) {
         check_equal(&event.account_id, &self.id, "event.account_id", "self.id").expect(FAILED);
         self.update_balances(&event.balances);
-        self.events.push(event);
+        Arc::make_mut(&mut self.events).push(event);
     }
 
     /// Purges all account state events which are outside the lookback window.
@@ -274,7 +278,7 @@ impl BaseAccount {
 
         let mut retained_events = Vec::new();
 
-        for event in &self.events {
+        for event in self.events.iter() {
             if purge_cutoff.is_none_or(|cutoff| event.ts_event > cutoff) {
                 retained_events.push(event.clone());
             }
@@ -285,7 +289,7 @@ impl BaseAccount {
             retained_events.push(self.events.last().expect("events not empty").clone());
         }
 
-        self.events = retained_events;
+        self.events = Arc::new(retained_events);
     }
 
     /// Calculates the amount of balance to lock for a new order based on the given side, quantity, and price.
@@ -714,6 +718,44 @@ mod tests {
         account.base_purge_account_events(UnixNanos::from(u64::MAX), 60);
 
         assert_eq!(account.events.len(), 1);
+    }
+
+    #[rstest]
+    fn test_base_clone_shares_events() {
+        let account = BaseAccount::new(cash_account_state(), true);
+
+        let cloned = account.clone();
+
+        assert!(Arc::ptr_eq(&account.events, &cloned.events));
+    }
+
+    #[rstest]
+    fn test_base_apply_after_clone() {
+        let initial = cash_account_state();
+        let mut later = cash_account_state();
+        later.ts_event = UnixNanos::from(200_000_000_000);
+        let mut account = BaseAccount::new(initial.clone(), true);
+        let cloned = account.clone();
+
+        account.base_apply(later.clone());
+
+        assert_eq!(*account.events, vec![initial.clone(), later]);
+        assert_eq!(*cloned.events, vec![initial]);
+    }
+
+    #[rstest]
+    fn test_base_purge_account_events_after_clone() {
+        let initial = cash_account_state();
+        let mut later = cash_account_state();
+        later.ts_event = UnixNanos::from(200_000_000_000);
+        let mut account = BaseAccount::new(initial.clone(), true);
+        account.base_apply(later.clone());
+        let cloned = account.clone();
+
+        account.base_purge_account_events(UnixNanos::from(300_000_000_000), 150);
+
+        assert_eq!(*account.events, vec![later.clone()]);
+        assert_eq!(*cloned.events, vec![initial, later]);
     }
 
     #[rstest]
