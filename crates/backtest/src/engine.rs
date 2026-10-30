@@ -376,12 +376,7 @@ impl BacktestEngine {
             }
             exchange.borrow_mut().add_instrument(instrument.clone())?;
             if let Some(expiration_ns) = instrument.expiration_ns() {
-                Self::set_instrument_expiration_timer(
-                    &self.kernel.clock,
-                    exchange,
-                    instrument_id,
-                    expiration_ns,
-                )?;
+                self.set_instrument_expiration_timer(exchange, instrument_id, expiration_ns)?;
             }
         } else {
             anyhow::bail!(
@@ -926,7 +921,7 @@ impl BacktestEngine {
             }
 
             let settlement_scope = {
-                let Some(data) = self.data_iterator.peek() else {
+                let Some(mut data) = self.data_iterator.peek() else {
                     continue;
                 };
                 let settlement_scope = Self::settlement_scope(data);
@@ -934,9 +929,10 @@ impl BacktestEngine {
                 if let DataRef::Instrument(instrument) = data
                     && let Some(exchange) = self.venues.get(&instrument.id().venue)
                 {
+                    let instrument_id = instrument.id();
                     let mut exchange_ref = exchange.borrow_mut();
                     let previous_expiration = exchange_ref
-                        .get_matching_engine(&instrument.id())
+                        .get_matching_engine(&instrument_id)
                         .and_then(|engine| engine.instrument.expiration_ns());
                     exchange_ref.set_clock_time(ts_init);
                     exchange_ref.update_instrument(instrument)?;
@@ -949,23 +945,25 @@ impl BacktestEngine {
                             .any(|(_, ns)| *ns == previous)
                     {
                         let name =
-                            Self::instrument_expiration_timer_name(instrument.id().venue, previous);
+                            Self::instrument_expiration_timer_name(instrument_id.venue, previous);
                         self.kernel.clock.borrow_mut().cancel_timer(&name);
                         self.accumulator.cancel_timer(&name);
                     }
 
                     if let Some(expiration_ns) = instrument.expiration_ns()
                         && expiration_ns >= ts_init
-                        && let Some(engine) = exchange_ref.get_matching_engine(&instrument.id())
+                        && let Some(engine) = exchange_ref.get_matching_engine(&instrument_id)
                         && !engine.is_expiration_processed()
                     {
-                        Self::set_instrument_expiration_timer(
-                            &self.kernel.clock,
+                        self.set_instrument_expiration_timer(
                             exchange,
-                            instrument.id(),
+                            instrument_id,
                             expiration_ns,
                         )?;
                     }
+
+                    // End the iterator borrow while scheduling, then reborrow the same row
+                    data = self.data_iterator.peek().expect("replay row exists");
                 }
 
                 Self::route_data_to_exchange(
@@ -1998,12 +1996,7 @@ impl BacktestEngine {
         for exchange in self.venues.values() {
             let expirations = exchange.borrow().instrument_expirations();
             for (instrument_id, expiration_ns) in expirations {
-                Self::set_instrument_expiration_timer(
-                    &self.kernel.clock,
-                    exchange,
-                    instrument_id,
-                    expiration_ns,
-                )?;
+                self.set_instrument_expiration_timer(exchange, instrument_id, expiration_ns)?;
             }
         }
 
@@ -2011,7 +2004,7 @@ impl BacktestEngine {
     }
 
     fn set_instrument_expiration_timer(
-        clock: &Rc<RefCell<dyn Clock>>,
+        &self,
         exchange: &Rc<RefCell<SimulatedExchange>>,
         instrument_id: InstrumentId,
         expiration_ns: UnixNanos,
@@ -2022,7 +2015,7 @@ impl BacktestEngine {
 
         let timer_name = Self::instrument_expiration_timer_name(instrument_id.venue, expiration_ns);
         let timer_key = ustr::Ustr::from(timer_name.as_str());
-        if clock.borrow().timer_exists(&timer_key) {
+        if self.kernel.clock.borrow().timer_exists(&timer_key) {
             return Ok(());
         }
 
@@ -2034,7 +2027,7 @@ impl BacktestEngine {
                     .process_instrument_expirations(event.ts_event);
             }
         });
-        let mut clock = clock.borrow_mut();
+        let mut clock = self.kernel.clock.borrow_mut();
 
         clock.set_time_alert_ns(
             &timer_name,
