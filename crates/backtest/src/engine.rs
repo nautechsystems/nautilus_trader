@@ -4103,16 +4103,11 @@ mod tests {
 
     #[rstest]
     fn test_replay_expiration_timer_preserves_latency(
-        mut binary_option: BinaryOption,
         #[values(2, 5)] revision_ns: u64,
         #[values(false, true)] shared: bool,
         #[values(false, true)] settled: bool,
     ) {
-        binary_option.currency = Currency::USDT();
-        binary_option.activation_ns = UnixNanos::default();
-        binary_option.expiration_ns = UnixNanos::from(5);
-        binary_option.price_precision = 2;
-        binary_option.size_precision = 3;
+        let mut binary_option = replay_binary_option(5, "0.01");
         let original = InstrumentAny::BinaryOption(binary_option.clone());
         let id = original.id();
         let mut engine = engine_with_quoted_instrument(&original);
@@ -4239,7 +4234,6 @@ mod tests {
     #[case::due_now("0.01", "0.01", 10, 2)]
     #[case::no_expiration("0.01", "0.01", 1, 0)]
     fn test_replay_instrument_updates(
-        mut binary_option: BinaryOption,
         #[case] initial_tick: &str,
         #[case] revised_tick: &str,
         #[case] initial_expiration: u64,
@@ -4247,12 +4241,7 @@ mod tests {
         #[values(None, Some(MarketStatusAction::Close), Some(MarketStatusAction::Pause))]
         status: Option<MarketStatusAction>,
     ) {
-        binary_option.currency = Currency::USDT();
-        binary_option.activation_ns = UnixNanos::default();
-        binary_option.expiration_ns = UnixNanos::from(initial_expiration);
-        binary_option.price_precision = 2;
-        binary_option.size_precision = 3;
-        binary_option.price_increment = Price::from(initial_tick);
+        let mut binary_option = replay_binary_option(initial_expiration, initial_tick);
         let original = InstrumentAny::BinaryOption(binary_option.clone());
         let id = original.id();
         let mut engine = engine_with_quoted_instrument(&original);
@@ -4438,6 +4427,17 @@ mod tests {
             matching.instrument.expiration_ns(),
             original.expiration_ns()
         );
+    }
+
+    fn replay_binary_option(expiration_ns: u64, price_increment: &str) -> BinaryOption {
+        let mut option = binary_option();
+        option.currency = Currency::USDT();
+        option.activation_ns = UnixNanos::default();
+        option.expiration_ns = UnixNanos::from(expiration_ns);
+        option.price_increment = Price::from(price_increment);
+        option.price_precision = option.price_increment.precision;
+        option.size_precision = 3;
+        option
     }
 
     #[rstest]
