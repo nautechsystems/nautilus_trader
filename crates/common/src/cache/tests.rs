@@ -6479,6 +6479,39 @@ fn test_add_quotes_enforces_tick_capacity() {
 }
 
 #[rstest]
+fn test_add_quotes_indexes_each_instrument() {
+    let mut cache = cache_with_data_capacity(2, 10);
+    let a = InstrumentId::from("AUDUSD.SIM");
+    let b = InstrumentId::from("EURUSD.SIM");
+
+    let quotes = [
+        QuoteTick {
+            instrument_id: a,
+            ..quote_tick_with_ts(1)
+        },
+        QuoteTick {
+            instrument_id: b,
+            ..quote_tick_with_ts(2)
+        },
+        QuoteTick {
+            instrument_id: a,
+            ..quote_tick_with_ts(3)
+        },
+        QuoteTick {
+            instrument_id: a,
+            ..quote_tick_with_ts(4)
+        },
+    ];
+
+    cache.add_quotes(&quotes).unwrap();
+
+    assert_eq!(cache.quotes(&a), Some(vec![quotes[3], quotes[2]]));
+    assert_eq!(cache.quotes(&b), Some(vec![quotes[1]]));
+    assert_eq!(cache.quote(&a), Some(&quotes[3]));
+    assert_eq!(cache.quote(&b), Some(&quotes[1]));
+}
+
+#[rstest]
 fn test_add_trades_enforces_tick_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = TradeTick::default().instrument_id;
@@ -6497,6 +6530,39 @@ fn test_add_trades_enforces_tick_capacity() {
 }
 
 #[rstest]
+fn test_add_trades_indexes_each_instrument() {
+    let mut cache = cache_with_data_capacity(2, 10);
+    let a = InstrumentId::from("AUDUSD.SIM");
+    let b = InstrumentId::from("EURUSD.SIM");
+
+    let trades = [
+        TradeTick {
+            instrument_id: a,
+            ..trade_tick_with_ts(1)
+        },
+        TradeTick {
+            instrument_id: b,
+            ..trade_tick_with_ts(2)
+        },
+        TradeTick {
+            instrument_id: a,
+            ..trade_tick_with_ts(3)
+        },
+        TradeTick {
+            instrument_id: a,
+            ..trade_tick_with_ts(4)
+        },
+    ];
+
+    cache.add_trades(&trades).unwrap();
+
+    assert_eq!(cache.trades(&a), Some(vec![trades[3], trades[2]]));
+    assert_eq!(cache.trades(&b), Some(vec![trades[1]]));
+    assert_eq!(cache.trade(&a), Some(&trades[3]));
+    assert_eq!(cache.trade(&b), Some(&trades[1]));
+}
+
+#[rstest]
 fn test_add_bars_enforces_bar_capacity() {
     let mut cache = cache_with_data_capacity(10, 3);
     let bar_type = Bar::default().bar_type;
@@ -6512,6 +6578,37 @@ fn test_add_bars_enforces_bar_capacity() {
 
     assert_eq!(cache.bar_count(&bar_type), 3);
     assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_bars_indexes_each_bar_type() {
+    let mut cache = cache_with_data_capacity(10, 2);
+    let a = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let b = BarType::from("EURUSD.SIM-1-MINUTE-LAST-EXTERNAL");
+
+    let bars = [
+        Bar {
+            bar_type: a,
+            ..bar_with_ts(1)
+        },
+        Bar {
+            bar_type: b,
+            ..bar_with_ts(5)
+        },
+        Bar {
+            bar_type: a,
+            ..bar_with_ts(3)
+        },
+        Bar {
+            bar_type: a,
+            ..bar_with_ts(4)
+        },
+    ];
+
+    cache.add_bars(&bars).unwrap();
+
+    assert_eq!(cache.bars(&a), Some(vec![bars[3], bars[2]]));
+    assert_eq!(cache.bars(&b), Some(vec![bars[1]]));
 }
 
 #[rstest]
@@ -6580,6 +6677,40 @@ fn test_add_funding_rates_enforces_tick_capacity() {
     assert_eq!(cache.funding_rate_count(&instrument_id), 3);
     assert!(cache.has_funding_rates(&instrument_id));
     assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_funding_rates_indexes_each_instrument() {
+    let mut cache = cache_with_data_capacity(2, 10);
+    let a = InstrumentId::from("AUDUSD.SIM");
+    let b = InstrumentId::from("EURUSD.SIM");
+    let rates = [
+        funding_rate_with_ts(a, 1),
+        funding_rate_with_ts(b, 2),
+        funding_rate_with_ts(a, 3),
+        funding_rate_with_ts(a, 4),
+    ];
+
+    cache.add_funding_rates(&rates).unwrap();
+
+    let cached_a = cache.funding_rates(&a).unwrap();
+    let cached_b = cache.funding_rates(&b).unwrap();
+    assert_eq!(cached_a, vec![rates[3], rates[2]]);
+    assert_eq!(cached_b, vec![rates[1]]);
+    assert_eq!(
+        cached_a
+            .iter()
+            .map(|rate| (rate.ts_event.as_u64(), rate.ts_init.as_u64()))
+            .collect::<Vec<_>>(),
+        vec![(4, 4), (3, 3)]
+    );
+    assert_eq!(
+        cached_b
+            .iter()
+            .map(|rate| (rate.ts_event.as_u64(), rate.ts_init.as_u64()))
+            .collect::<Vec<_>>(),
+        vec![(2, 2)]
+    );
 }
 
 #[rstest]

@@ -3723,7 +3723,7 @@ fn test_quote_schema_request_bypasses_canonical_catalog(
     let recorder = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         Rc::new(RefCell::new(VirtualClock::new())),
-        cache,
+        Rc::clone(&cache),
         client_id,
         ids[0].venue,
         None,
@@ -3815,6 +3815,10 @@ fn test_quote_schema_request_bypasses_canonical_catalog(
     assert_eq!(response.start, Some(UnixNanos::from(1000)));
     assert_eq!(response.end, Some(UnixNanos::from(2000)));
     assert_eq!(engine.request_pipeline_count(), 0);
+
+    for (id, row) in ids.iter().zip(expected) {
+        assert_eq!(cache.borrow().quotes(id), Some(vec![row]));
+    }
 }
 
 #[cfg(feature = "streaming")]

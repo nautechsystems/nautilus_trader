@@ -2291,11 +2291,7 @@ impl Cache {
     pub fn add_funding_rates(&mut self, funding_rates: &[FundingRateUpdate]) -> anyhow::Result<()> {
         check_slice_not_empty(funding_rates, stringify!(funding_rates))?;
 
-        let instrument_id = funding_rates[0].instrument_id;
-        log::debug!(
-            "Adding `FundingRateUpdate`[{}] {instrument_id}",
-            funding_rates.len()
-        );
+        log::debug!("Adding `FundingRateUpdate`[{}]", funding_rates.len());
 
         if self.config.save_market_data
             && let Some(database) = &mut self.database
@@ -2305,12 +2301,11 @@ impl Cache {
             }
         }
 
-        let funding_rate_deque = self
-            .funding_rates
-            .entry(instrument_id)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
-
         for funding_rate in funding_rates {
+            let funding_rate_deque = self
+                .funding_rates
+                .entry(funding_rate.instrument_id)
+                .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
             funding_rate_deque.push_front(*funding_rate);
         }
         Ok(())
@@ -2386,8 +2381,7 @@ impl Cache {
     pub fn add_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         check_slice_not_empty(quotes, stringify!(quotes))?;
 
-        let instrument_id = quotes[0].instrument_id;
-        log::debug!("Adding `QuoteTick`[{}] {instrument_id}", quotes.len());
+        log::debug!("Adding `QuoteTick`[{}]", quotes.len());
 
         if self.config.save_market_data
             && let Some(database) = &mut self.database
@@ -2397,12 +2391,11 @@ impl Cache {
             }
         }
 
-        let quotes_deque = self
-            .quotes
-            .entry(instrument_id)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
-
         for quote in quotes {
+            let quotes_deque = self
+                .quotes
+                .entry(quote.instrument_id)
+                .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
             quotes_deque.push_front(*quote);
         }
         Ok(())
@@ -2438,8 +2431,7 @@ impl Cache {
     pub fn add_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         check_slice_not_empty(trades, stringify!(trades))?;
 
-        let instrument_id = trades[0].instrument_id;
-        log::debug!("Adding `TradeTick`[{}] {instrument_id}", trades.len());
+        log::debug!("Adding `TradeTick`[{}]", trades.len());
 
         if self.config.save_market_data
             && let Some(database) = &mut self.database
@@ -2449,12 +2441,11 @@ impl Cache {
             }
         }
 
-        let trades_deque = self
-            .trades
-            .entry(instrument_id)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
-
         for trade in trades {
+            let trades_deque = self
+                .trades
+                .entry(trade.instrument_id)
+                .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
             trades_deque.push_front(*trade);
         }
         Ok(())
@@ -2493,8 +2484,7 @@ impl Cache {
     pub fn add_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         check_slice_not_empty(bars, stringify!(bars))?;
 
-        let bar_type = bars[0].bar_type;
-        log::debug!("Adding `Bar`[{}] {bar_type}", bars.len());
+        log::debug!("Adding `Bar`[{}]", bars.len());
 
         if self.config.save_market_data
             && let Some(database) = &mut self.database
@@ -2504,12 +2494,11 @@ impl Cache {
             }
         }
 
-        let bars_deque = self
-            .bars
-            .entry(bar_type)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
-
         for bar in bars {
+            let bars_deque = self
+                .bars
+                .entry(bar.bar_type)
+                .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
             insert_bar(bars_deque, *bar);
         }
         Ok(())
