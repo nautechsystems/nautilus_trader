@@ -41,6 +41,7 @@ Released on TBD (UTC).
 ### Internal Improvements
 
 - Improved Docker publishing with temporary digest directories isolated per job
+- Refined Polymarket limit submit responses and venue order ID lookup
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Upgraded `socket-cli` tool to v1.10.1
 - Upgraded `hypersync-client` crate to v2.0.0

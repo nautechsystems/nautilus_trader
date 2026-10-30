@@ -30,11 +30,8 @@ use super::{
     PolymarketExecutionClient, pending::PendingCancelTracker, submitter::CancelOrdersError,
 };
 use crate::{
-    common::enums::PolymarketSignerType,
-    execution::{
-        context::OrderContextRegistry,
-        types::{CancelOutcome, classify_http_command_failure},
-    },
+    common::{consts::CANCEL_ALREADY_DONE, enums::PolymarketSignerType},
+    execution::{context::OrderContextRegistry, types::classify_http_command_failure},
     http::{error::sanitize_error_text, query::CancelResponse},
     websocket::dispatch::WsDispatchState,
 };
@@ -142,7 +139,7 @@ impl PolymarketExecutionClient {
                 self.pending_cancels.remove(&cmd.client_order_id);
                 self.emitter.emit_order_cancel_rejected(
                     order_ref,
-                    self.cancel_venue_order_id(order_ref),
+                    self.current_venue_order_id(order_ref),
                     "Polymarket execution client is shutting down",
                     self.clock.get_time_ns(),
                 );
@@ -159,7 +156,7 @@ impl PolymarketExecutionClient {
         ) else {
             self.emitter.emit_order_cancel_rejected(
                 order_ref,
-                self.cancel_venue_order_id(order_ref),
+                self.current_venue_order_id(order_ref),
                 "Polymarket modification or cancellation is in flight",
                 self.clock.get_time_ns(),
             );
@@ -169,7 +166,7 @@ impl PolymarketExecutionClient {
         let Some(venue_order_id) = self
             .pending_cancels
             .venue_order_id_or_defer(cmd.client_order_id, || {
-                self.cancel_venue_order_id(order_ref)
+                self.current_venue_order_id(order_ref)
             })
         else {
             log::debug!(
@@ -292,7 +289,7 @@ impl PolymarketExecutionClient {
             if let Some(venue_order_id) = self
                 .pending_cancels
                 .venue_order_id_or_defer(order.client_order_id(), || {
-                    self.cancel_venue_order_id(&order)
+                    self.current_venue_order_id(&order)
                 })
             {
                 orders.push((venue_order_id, order.clone()));
@@ -415,7 +412,7 @@ impl PolymarketExecutionClient {
             for order in &orders {
                 self.emitter.emit_order_cancel_rejected(
                     order,
-                    self.cancel_venue_order_id(order),
+                    self.current_venue_order_id(order),
                     "Polymarket modification or cancellation is in flight",
                     ts_now,
                 );
@@ -429,7 +426,7 @@ impl PolymarketExecutionClient {
             if let Some(venue_order_id) = self
                 .pending_cancels
                 .venue_order_id_or_defer(order.client_order_id(), || {
-                    self.cancel_venue_order_id(&order)
+                    self.current_venue_order_id(&order)
                 })
             {
                 venue_to_order.push((venue_order_id.to_string(), order));
@@ -487,7 +484,7 @@ impl PolymarketExecutionClient {
         });
     }
 
-    fn cancel_venue_order_id(&self, order: &OrderAny) -> Option<VenueOrderId> {
+    pub(super) fn current_venue_order_id(&self, order: &OrderAny) -> Option<VenueOrderId> {
         self.order_contexts
             .venue_order_id(&order.client_order_id())
             .or_else(|| order.venue_order_id())
@@ -673,17 +670,14 @@ pub(super) fn process_cancel_result(
     if let Some(reason_opt) = response.not_canceled.get(venue_order_id_str) {
         let reason = sanitize_error_text(reason_opt.as_deref().unwrap_or("unknown reason"));
 
-        match CancelOutcome::classify(&reason) {
-            CancelOutcome::AlreadyDone => {
-                log::debug!(
-                    "Cancel rejected for {}: {reason} - awaiting WS for terminal state",
-                    order.client_order_id()
-                );
-            }
-            CancelOutcome::Rejected(msg) => {
-                let ts_now = clock.get_time_ns();
-                emitter.emit_order_cancel_rejected(order, Some(venue_order_id), &msg, ts_now);
-            }
+        if reason.contains(CANCEL_ALREADY_DONE) {
+            log::debug!(
+                "Cancel rejected for {}: {reason} - awaiting WS for terminal state",
+                order.client_order_id()
+            );
+        } else {
+            let ts_now = clock.get_time_ns();
+            emitter.emit_order_cancel_rejected(order, Some(venue_order_id), &reason, ts_now);
         }
 
         return;
