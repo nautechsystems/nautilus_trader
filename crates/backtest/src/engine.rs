@@ -4418,6 +4418,7 @@ mod tests {
             }
             assert!(cache.borrow().position(&position.id).unwrap().is_open());
             engine.reset().unwrap();
+            assert!(engine.kernel.clock.borrow().timer_names().is_empty());
         }
         assert_eq!(
             cache.borrow().instrument(&id).unwrap().price_increment(),
