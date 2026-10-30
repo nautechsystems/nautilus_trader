@@ -930,6 +930,43 @@ impl BacktestEngine {
                     continue;
                 };
                 let settlement_scope = Self::settlement_scope(data);
+
+                if let DataRef::Instrument(instrument) = data
+                    && let Some(exchange) = self.venues.get(&instrument.id().venue)
+                {
+                    let mut exchange_ref = exchange.borrow_mut();
+                    let previous_expiration = exchange_ref
+                        .get_matching_engine(&instrument.id())
+                        .and_then(|engine| engine.instrument.expiration_ns());
+                    exchange_ref.set_clock_time(ts_init);
+                    exchange_ref.update_instrument(instrument)?;
+
+                    if let Some(previous) = previous_expiration
+                        && Some(previous) != instrument.expiration_ns()
+                        && !exchange_ref
+                            .instrument_expirations()
+                            .iter()
+                            .any(|(_, ns)| *ns == previous)
+                    {
+                        let name =
+                            Self::instrument_expiration_timer_name(instrument.id().venue, previous);
+                        self.kernel.clock.borrow_mut().cancel_timer(&name);
+                        self.accumulator.cancel_timer(&name);
+                    }
+                    drop(exchange_ref);
+
+                    if let Some(expiration_ns) = instrument.expiration_ns()
+                        && expiration_ns >= ts_init
+                    {
+                        Self::set_instrument_expiration_timer(
+                            &self.kernel.clock,
+                            exchange,
+                            instrument.id(),
+                            expiration_ns,
+                        )?;
+                    }
+                }
+
                 Self::route_data_to_exchange(
                     &self.venues,
                     &mut self.has_book_processed,
@@ -1592,7 +1629,10 @@ impl BacktestEngine {
     ) -> anyhow::Result<()> {
         if matches!(
             data,
-            DataRef::IndexPrice(_) | DataRef::OptionGreeks(_) | DataRef::Custom(_)
+            DataRef::Instrument(_)
+                | DataRef::IndexPrice(_)
+                | DataRef::OptionGreeks(_)
+                | DataRef::Custom(_)
         ) {
             return Ok(());
         }
@@ -1607,20 +1647,6 @@ impl BacktestEngine {
             let mut processed_book_data = false;
 
             match data {
-                DataRef::Instrument(instrument) => {
-                    exchange_ref.set_clock_time(data.ts_init());
-                    exchange_ref.update_instrument(instrument)?;
-
-                    // Old alerts may be shared; callbacks check the current expiration
-                    if let Some(expiration_ns) = instrument.expiration_ns() {
-                        Self::set_instrument_expiration_timer(
-                            clock,
-                            exchange,
-                            instrument.id(),
-                            expiration_ns,
-                        )?;
-                    }
-                }
                 DataRef::BookDelta(delta) => {
                     exchange_ref.process_order_book_delta(*delta)?;
                     processed_book_data = true;
@@ -1652,7 +1678,7 @@ impl BacktestEngine {
                 DataRef::InstrumentClose(close) => {
                     exchange_ref.process_instrument_close(*close)?;
                 }
-                DataRef::Custom(_) => {
+                DataRef::Instrument(_) | DataRef::Custom(_) => {
                     unreachable!("filtered before exchange routing")
                 }
                 #[cfg(feature = "defi")]
@@ -4072,6 +4098,98 @@ mod tests {
             "Instrument ETHUSDT-PERP.BINANCE is already registered with a different definition"
         );
         assert_original_registration_kept(&engine, &instrument);
+    }
+
+    #[rstest]
+    fn test_replay_expiration_timer_preserves_latency(
+        mut binary_option: BinaryOption,
+        #[values(2, 5)] revision_ns: u64,
+        #[values(false, true)] shared: bool,
+    ) {
+        binary_option.currency = Currency::USDT();
+        binary_option.activation_ns = UnixNanos::default();
+        binary_option.expiration_ns = UnixNanos::from(5);
+        binary_option.price_precision = 2;
+        binary_option.size_precision = 3;
+        let original = InstrumentAny::BinaryOption(binary_option.clone());
+        let id = original.id();
+        let mut engine = engine_with_quoted_instrument(&original);
+        let exchange = Rc::clone(&engine.venues[&id.venue]);
+        exchange
+            .borrow_mut()
+            .set_latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                DurationNanos::default(),
+                DurationNanos::new(5),
+                DurationNanos::default(),
+                DurationNanos::default(),
+            )));
+
+        if shared {
+            let mut sibling = binary_option.clone();
+            sibling.id = InstrumentId::from("SHARED.POLYMARKET");
+            engine
+                .add_instrument(&InstrumentAny::BinaryOption(sibling))
+                .unwrap();
+        }
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(engine.trader_id())
+            .instrument_id(id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let cache = engine.kernel.cache();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        send_execution_command(TradingCommand::SubmitOrder(create_submit_order_command(
+            &order,
+        )));
+        engine.drain_command_queues().unwrap();
+        binary_option.expiration_ns = UnixNanos::from(10);
+        binary_option.ts_init = UnixNanos::from(revision_ns);
+        let quote = |price: &str, ts: u64| {
+            Data::Quote(QuoteTick::new(
+                id,
+                Price::from(price),
+                Price::from(price),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                ts.into(),
+                ts.into(),
+            ))
+        };
+        engine
+            .add_data(
+                vec![
+                    quote("0.50", 1),
+                    Data::Instrument(Box::new(InstrumentAny::BinaryOption(binary_option))),
+                    quote("0.70", 6),
+                ],
+                None,
+                true,
+                true,
+            )
+            .unwrap();
+
+        engine.run(None, None, None, false).unwrap();
+
+        let cache = cache.borrow();
+        let order = cache.order(&order.client_order_id()).unwrap();
+        let filled = order
+            .events()
+            .into_iter()
+            .find_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            filled.last_px,
+            Price::from(if shared { "0.50" } else { "0.70" })
+        );
+        assert_eq!(filled.ts_event, UnixNanos::from(if shared { 5 } else { 6 }));
     }
 
     #[rstest]
