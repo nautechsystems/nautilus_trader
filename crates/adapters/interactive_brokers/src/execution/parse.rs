@@ -619,7 +619,8 @@ pub fn parse_order_status_to_report(
         None
     };
 
-    if order_status.filled > 0.0
+    if nautilus_status != NautilusOrderStatus::Canceled
+        && order_status.filled > 0.0
         && (order_status.remaining > 0.0
             || order.is_some_and(|order| order.total_quantity > order_status.filled))
     {
@@ -938,6 +939,10 @@ mod tests {
         contracts::Contract,
         orders::{Action, ExecutionSide, Liquidity, Order, OrderStatusKind},
     };
+    #[cfg(feature = "execution")]
+    use nautilus_execution::reconciliation::{
+        generate_external_order_status_events, generate_reconciliation_order_events,
+    };
     use nautilus_model::{
         enums::{AssetClass, PositionSide, TrailingOffsetType, TriggerType},
         identifiers::{Symbol, Venue},
@@ -945,6 +950,11 @@ mod tests {
             CurrencyPair, FuturesContract, InstrumentAny,
             stubs::{equity_aapl, equity_aapl_itch},
         },
+    };
+    #[cfg(feature = "execution")]
+    use nautilus_model::{
+        events::OrderEventAny,
+        orders::{Order as NautilusOrder, OrderTestBuilder},
     };
     use rust_decimal::Decimal;
     use ustr::Ustr;
@@ -1911,6 +1921,92 @@ mod tests {
     }
 
     #[rstest]
+    #[case::remaining_quantity(70.0, false)]
+    #[case::original_quantity(0.0, true)]
+    #[case::both_quantities(70.0, true)]
+    fn test_parse_order_status_to_report_preserves_partial_cancel(
+        #[values(OrderStatusKind::Cancelled, OrderStatusKind::ApiCancelled)]
+        status: OrderStatusKind,
+        #[case] remaining: f64,
+        #[case] with_order: bool,
+    ) {
+        let order_status = OrderStatus {
+            status,
+            filled: 30.0,
+            remaining,
+            average_fill_price: Some(150.25),
+            ..Default::default()
+        };
+
+        let order = Order {
+            total_quantity: 100.0,
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &order_status,
+            with_order.then_some(&order),
+            create_test_instrument_id(),
+            AccountId::from("IB-001"),
+            &create_test_instrument_provider(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, NautilusOrderStatus::Canceled);
+        assert_eq!(report.quantity, Quantity::from(100));
+        assert_eq!(report.filled_qty, Quantity::from(30));
+        assert_eq!(report.avg_px, Some(Decimal::from_str("150.25").unwrap()));
+    }
+
+    #[rstest]
+    #[case::submitted(OrderStatusKind::Submitted, 30.0, NautilusOrderStatus::PartiallyFilled)]
+    #[case::pre_submitted(
+        OrderStatusKind::PreSubmitted,
+        30.0,
+        NautilusOrderStatus::PartiallyFilled
+    )]
+    #[case::pending_cancel(
+        OrderStatusKind::PendingCancel,
+        30.0,
+        NautilusOrderStatus::PartiallyFilled
+    )]
+    #[case::inactive(OrderStatusKind::Inactive, 30.0, NautilusOrderStatus::PartiallyFilled)]
+    #[case::filled(OrderStatusKind::Filled, 100.0, NautilusOrderStatus::Filled)]
+    #[case::cancelled_unfilled(OrderStatusKind::Cancelled, 0.0, NautilusOrderStatus::Canceled)]
+    #[case::api_cancelled_unfilled(
+        OrderStatusKind::ApiCancelled,
+        0.0,
+        NautilusOrderStatus::Canceled
+    )]
+    fn test_parse_order_status_to_report_fill_status(
+        #[case] status: OrderStatusKind,
+        #[case] filled: f64,
+        #[case] expected_status: NautilusOrderStatus,
+    ) {
+        let order_status = OrderStatus {
+            status,
+            filled,
+            remaining: 100.0 - filled,
+            ..Default::default()
+        };
+
+        let report = parse_order_status_to_report(
+            &order_status,
+            None,
+            create_test_instrument_id(),
+            AccountId::from("IB-001"),
+            &create_test_instrument_provider(),
+            UnixNanos::default(),
+        )
+        .unwrap();
+
+        assert_eq!(report.order_status, expected_status);
+        assert_eq!(report.quantity, Quantity::from(100));
+        assert_eq!(report.filled_qty, Quantity::new(filled, 0));
+    }
+
+    #[rstest]
     fn test_parse_order_status_to_report_recovers_completed_order_quantity() {
         let instrument_provider = create_test_instrument_provider();
         let instrument_id = create_test_instrument_id();
@@ -2713,6 +2809,95 @@ mod tests {
         .unwrap();
 
         assert_eq!(report.ts_last, UnixNanos::from(expected_ts_last));
+    }
+
+    #[cfg(feature = "execution")]
+    #[rstest]
+    fn test_completed_partial_cancel_closes_reconciled_order(
+        #[values(OrderStatusKind::Cancelled, OrderStatusKind::ApiCancelled)]
+        status: OrderStatusKind,
+        #[values(false, true)] cached_partial_fill: bool,
+    ) {
+        let instrument = InstrumentAny::Equity(equity_aapl());
+        let account_id = AccountId::from("IB-DU001");
+        let ts_init = UnixNanos::new(1_790_251_325_000_000_000);
+
+        let mut data = OrderData {
+            order_id: -1,
+            order: Order {
+                action: Action::Buy,
+                total_quantity: 100.0,
+                filled_quantity: 30.0,
+                perm_id: 123_456,
+                order_type: "MKT".to_string(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        data.order_state.status = status;
+        data.order_state.completed_time = "20260924 12:02:04 UTC".to_string();
+
+        let report = parse_order_data_to_report(
+            &data,
+            instrument.id(),
+            account_id,
+            &create_test_avg_px_provider(),
+            ts_init,
+        )
+        .unwrap();
+        assert_eq!(report.venue_order_id, VenueOrderId::from("PERM-123456"));
+        assert_eq!(report.quantity, Quantity::from(100));
+        assert_eq!(report.filled_qty, Quantity::from(30));
+        assert_eq!(report.ts_last, UnixNanos::new(1_790_251_324_000_000_000));
+        assert_eq!(report.avg_px, None);
+
+        // Completed orders get their missing average price from executions at startup
+        let fill = create_test_entry_fill(OrderSide::Buy, "30", "150.25", "123456", 1);
+        let mut reports = [report];
+        fill_missing_avg_px(&mut reports, &[fill]);
+        let report = &reports[0];
+
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100))
+            .build();
+
+        let events = if cached_partial_fill {
+            let mut working_report = report.clone();
+            working_report.order_status = NautilusOrderStatus::PartiallyFilled;
+
+            for event in generate_external_order_status_events(
+                &order,
+                &working_report,
+                &account_id,
+                &instrument,
+                ts_init,
+            ) {
+                order.apply(event).unwrap();
+            }
+            assert_eq!(order.status(), NautilusOrderStatus::PartiallyFilled);
+
+            generate_reconciliation_order_events(&order, report, Some(&instrument), ts_init)
+        } else {
+            generate_external_order_status_events(&order, report, &account_id, &instrument, ts_init)
+        };
+
+        assert!(matches!(events.last(), Some(OrderEventAny::Canceled(_))));
+        for event in events {
+            order.apply(event).unwrap();
+        }
+
+        assert_eq!(order.status(), NautilusOrderStatus::Canceled);
+        assert!(order.is_closed());
+        assert!(!order.is_open());
+        assert_eq!(order.quantity(), Quantity::from(100));
+        assert_eq!(order.filled_qty(), Quantity::from(30));
+        assert_eq!(order.avg_px(), Some(Decimal::from_str("150.25").unwrap()));
+        assert!(
+            generate_reconciliation_order_events(&order, report, Some(&instrument), ts_init)
+                .is_empty()
+        );
     }
 
     // A 4-decimal instrument whose contract IB prices in a sub-unit 100 times the currency
