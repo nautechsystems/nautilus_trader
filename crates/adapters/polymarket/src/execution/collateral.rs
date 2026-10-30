@@ -22,6 +22,8 @@ use nautilus_model::{
 };
 use rust_decimal::Decimal;
 
+use super::settlement::SettlementRegistry;
+
 /// Reconciled BUY fills older than this before the anchor are treated as already drained.
 /// Live fills are not subject to the cutoff.
 const RECONCILE_HORIZON_NS: u64 = 15_000_000_000;
@@ -33,10 +35,11 @@ pub(super) struct CollateralLocks {
     unsettled: UnsettledBuySpend,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub(super) struct RefreshTicket {
     epoch: u64,
     session: u64,
+    pub(super) confirmed: AHashSet<TradeId>,
 }
 
 #[derive(Debug)]
@@ -59,12 +62,20 @@ struct UnsettledBuySpend {
 }
 
 impl CollateralLocks {
-    pub(super) fn begin_refresh(&mut self) -> RefreshTicket {
+    pub(super) fn begin_refresh(&mut self, settlement: &SettlementRegistry) -> RefreshTicket {
         self.unsettled.next_epoch = self.unsettled.next_epoch.saturating_add(1);
-
+        let confirmed = settlement.confirmed_fills();
         RefreshTicket {
             epoch: self.unsettled.next_epoch,
             session: self.unsettled.session,
+            confirmed: self
+                .unsettled
+                .open
+                .keys()
+                .chain(self.unsettled.absorbed.keys())
+                .filter(|trade_id| confirmed.contains(trade_id))
+                .copied()
+                .collect(),
         }
     }
 
@@ -159,11 +170,24 @@ impl CollateralLocks {
             return Ok(AppliedBalance::Stale);
         }
 
-        let pending = self.pending_drain(total)?;
-        let open_spend = self.open_spend(total)?;
+        let confirmed_spend = sum_money(
+            ticket.confirmed.iter().flat_map(|trade_id| {
+                self.unsettled
+                    .open
+                    .get(trade_id)
+                    .into_iter()
+                    .chain(self.unsettled.absorbed.get(trade_id))
+                    .copied()
+            }),
+            total,
+        )?;
+
+        let pending = self.pending_drain(total, &ticket.confirmed)?;
+        let open_spend = self.open_spend(total, &ticket.confirmed)?;
         let reserved = self.reservation_sum(total)?;
         let decrease = self.unsettled.anchor.map_or(Decimal::ZERO, |anchor| {
-            (anchor.as_decimal() - total.as_decimal()).max(Decimal::ZERO)
+            (anchor.as_decimal() - confirmed_spend.as_decimal() - total.as_decimal())
+                .max(Decimal::ZERO)
         });
 
         let covered = self.unsettled.anchor.is_some()
@@ -171,12 +195,9 @@ impl CollateralLocks {
             && decrease >= pending.as_decimal();
         let void_only = open_spend.as_decimal().is_zero() && !pending.as_decimal().is_zero();
         let release = covered || void_only;
-        let open_after = if release || self.unsettled.anchor.is_none() {
-            if release {
-                Money::zero(total.currency)
-            } else {
-                open_spend
-            }
+
+        let open_after = if release {
+            Money::zero(total.currency)
         } else {
             uncovered_open_spend(open_spend, pending, decrease)?
         };
@@ -184,21 +205,42 @@ impl CollateralLocks {
         let locked = reserved
             .checked_add(open_after)
             .context("invalid Polymarket unsettled buy spend")?;
-
-        self.unsettled.applied_epoch = ticket.epoch;
-
-        if release {
-            self.unsettled.release_all();
-            self.set_anchor(total, now);
-        } else if self.unsettled.anchor.is_none() || pending.as_decimal().is_zero() {
-            self.set_anchor(total, now);
-        }
-
         let balance = AccountBalance::from_total_and_locked(
             total.as_decimal(),
             locked.as_decimal(),
             total.currency,
         )?;
+
+        let confirmed_release = !confirmed_spend.as_decimal().is_zero();
+
+        let anchor_after = if release || pending.as_decimal().is_zero() {
+            total
+        } else {
+            Money::from_decimal(total.as_decimal() + decrease, total.currency)
+                .context("invalid Polymarket unsettled buy spend")?
+        };
+
+        self.unsettled.applied_epoch = ticket.epoch;
+
+        for trade_id in ticket.confirmed {
+            self.unsettled.open.remove(&trade_id);
+            self.unsettled.absorbed.remove(&trade_id);
+            self.unsettled.voided.remove(&trade_id);
+            self.unsettled.released.insert(trade_id);
+        }
+
+        if release {
+            self.unsettled.release_all();
+        }
+
+        if release
+            || confirmed_release
+            || self.unsettled.anchor.is_none()
+            || pending.as_decimal().is_zero()
+        {
+            self.set_anchor(anchor_after, now);
+        }
+
         Ok(AppliedBalance::Fresh(balance))
     }
 
@@ -231,15 +273,29 @@ impl CollateralLocks {
         }
     }
 
-    fn pending_drain(&self, total: Money) -> anyhow::Result<Money> {
-        let open = self.open_spend(total)?;
-        let absorbed = sum_money(self.unsettled.absorbed.values().copied(), total)?;
+    fn pending_drain(&self, total: Money, confirmed: &AHashSet<TradeId>) -> anyhow::Result<Money> {
+        let open = self.open_spend(total, confirmed)?;
+        let absorbed = sum_money(
+            self.unsettled
+                .absorbed
+                .iter()
+                .filter(|(trade_id, _)| !confirmed.contains(*trade_id))
+                .map(|(_, amount)| *amount),
+            total,
+        )?;
         open.checked_add(absorbed)
             .context("invalid Polymarket unsettled buy spend")
     }
 
-    fn open_spend(&self, total: Money) -> anyhow::Result<Money> {
-        sum_money(self.unsettled.open.values().copied(), total)
+    fn open_spend(&self, total: Money, confirmed: &AHashSet<TradeId>) -> anyhow::Result<Money> {
+        sum_money(
+            self.unsettled
+                .open
+                .iter()
+                .filter(|(trade_id, _)| !confirmed.contains(*trade_id))
+                .map(|(_, amount)| *amount),
+            total,
+        )
     }
 
     fn reservation_sum(&self, total: Money) -> anyhow::Result<Money> {
@@ -315,17 +371,25 @@ fn sum_money(mut amounts: impl Iterator<Item = Money>, total: Money) -> anyhow::
 
 #[cfg(test)]
 mod tests {
-    use nautilus_model::types::{Currency, money::MONEY_RAW_MAX};
+    use nautilus_model::{
+        enums::{LiquiditySide, OrderSide},
+        identifiers::{AccountId, InstrumentId, VenueOrderId},
+        types::{Currency, Price, Quantity, money::MONEY_RAW_MAX},
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        common::enums::PolymarketTradeStatus,
+        execution::settlement::{AdmittedLeg, AdmittedTrade},
+    };
 
     fn pusd(amount: &str) -> Money {
         Money::from(format!("{amount} pUSD").as_str())
     }
 
     fn apply(locks: &mut CollateralLocks, total: &str, now: u64) -> AccountBalance {
-        let ticket = locks.begin_refresh();
+        let ticket = begin_refresh(locks);
         match locks
             .apply_refresh(ticket, pusd(total), UnixNanos::from(now))
             .unwrap()
@@ -333,6 +397,307 @@ mod tests {
             AppliedBalance::Fresh(balance) => balance,
             AppliedBalance::Stale => panic!("refresh was stale"),
         }
+    }
+
+    fn begin_refresh(locks: &mut CollateralLocks) -> RefreshTicket {
+        locks.begin_refresh(&SettlementRegistry::new(AccountId::from("POLYMARKET-001")))
+    }
+
+    fn confirm(registry: &SettlementRegistry, trade_id: &str, spend: &str) {
+        registry.admit_rest_result(&AdmittedTrade {
+            venue_trade_id: format!("venue-{trade_id}"),
+            status: PolymarketTradeStatus::Confirmed,
+            legs: vec![AdmittedLeg {
+                venue_order_id: VenueOrderId::from(format!("order-{trade_id}").as_str()),
+                trade_id: TradeId::from(trade_id),
+                instrument_id: InstrumentId::from("TOKEN-A.POLYMARKET"),
+                order_side: OrderSide::Buy,
+                liquidity_side: LiquiditySide::Maker,
+                last_qty: Quantity::from(spend),
+                last_px: Price::from("1"),
+                commission: pusd("0"),
+                taker_fee_basis: None,
+                ts_event: UnixNanos::from(2),
+            }],
+        });
+    }
+
+    #[rstest]
+    #[case::net_credit("112")]
+    #[case::exact_offset("100")]
+    #[case::partial_offset("97")]
+    fn confirmed_buy_releases_despite_credit(#[case] total: &str) {
+        let mut locks = CollateralLocks::default();
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("BUY-1"), pusd("8"), UnixNanos::from(2), false);
+        confirm(&registry, "BUY-1", "8");
+        let ticket = locks.begin_refresh(&registry);
+
+        let AppliedBalance::Fresh(balance) = locks
+            .apply_refresh(ticket, pusd(total), UnixNanos::from(3))
+            .unwrap()
+        else {
+            panic!("refresh was stale");
+        };
+
+        assert_eq!(
+            balance,
+            AccountBalance::new(pusd(total), pusd("0"), pusd(total))
+        );
+        assert!(locks.unsettled.open.is_empty());
+        assert!(locks.unsettled.released.contains(&TradeId::from("BUY-1")));
+    }
+
+    #[rstest]
+    fn credit_preserves_unconfirmed_spend_and_later_buys() {
+        let mut locks = CollateralLocks::default();
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("BUY-1"), pusd("8"), UnixNanos::from(2), false);
+        let credited = apply(&mut locks, "112", 3);
+        confirm(&registry, "BUY-1", "8");
+        let ticket = locks.begin_refresh(&registry);
+        let released = locks
+            .apply_refresh(ticket, pusd("112"), UnixNanos::from(4))
+            .unwrap();
+        locks.note_buy_spend(
+            TradeId::from("BUY-2"),
+            pusd("3.75"),
+            UnixNanos::from(5),
+            false,
+        );
+        let later = apply(&mut locks, "112", 6);
+
+        assert_eq!(
+            credited,
+            AccountBalance::new(pusd("112"), pusd("8"), pusd("104"))
+        );
+
+        let AppliedBalance::Fresh(released) = released else {
+            panic!("refresh was stale");
+        };
+
+        assert_eq!(
+            released,
+            AccountBalance::new(pusd("112"), pusd("0"), pusd("112"))
+        );
+        assert_eq!(
+            later,
+            AccountBalance::new(pusd("112"), pusd("3.75"), pusd("108.25"))
+        );
+    }
+
+    #[rstest]
+    fn confirmed_release_preserves_other_spend_and_reservations() {
+        let mut locks = CollateralLocks::default();
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("A"), pusd("8"), UnixNanos::from(2), false);
+        locks.note_voided_spend(TradeId::from("A"), pusd("3"));
+        locks.note_buy_spend(TradeId::from("B"), pusd("6"), UnixNanos::from(3), false);
+        locks
+            .reservations
+            .insert(ClientOrderId::from("OPEN"), pusd("2.25"));
+        apply(&mut locks, "97", 4);
+        confirm(&registry, "A", "8");
+        let ticket = locks.begin_refresh(&registry);
+        let credited = locks
+            .apply_refresh(ticket, pusd("112"), UnixNanos::from(5))
+            .unwrap();
+        locks.note_buy_spend(TradeId::from("A"), pusd("8"), UnixNanos::from(2), false);
+        locks.note_voided_spend(TradeId::from("A"), pusd("4"));
+        let duplicate = apply(&mut locks, "112", 6);
+        let drained = apply(&mut locks, "106", 7);
+
+        let AppliedBalance::Fresh(credited) = credited else {
+            panic!("refresh was stale");
+        };
+
+        assert_eq!(
+            credited,
+            AccountBalance::new(pusd("112"), pusd("8.25"), pusd("103.75"))
+        );
+        assert_eq!(duplicate, credited);
+        assert_eq!(
+            drained,
+            AccountBalance::new(pusd("106"), pusd("2.25"), pusd("103.75"))
+        );
+        assert!(locks.unsettled.absorbed.is_empty());
+        assert!(locks.unsettled.voided.is_empty());
+        assert_eq!(
+            locks.reservations.get(&ClientOrderId::from("OPEN")),
+            Some(&pusd("2.25"))
+        );
+    }
+
+    #[rstest]
+    #[case::covered("92", "0", "92")]
+    #[case::partial("93", "1", "92")]
+    fn confirmed_release_preserves_remaining_observed_drain(
+        #[case] total: &str,
+        #[case] locked: &str,
+        #[case] free: &str,
+    ) {
+        let mut locks = CollateralLocks::default();
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("A"), pusd("5"), UnixNanos::from(2), false);
+        locks.note_buy_spend(TradeId::from("B"), pusd("3"), UnixNanos::from(3), false);
+        confirm(&registry, "A", "5");
+        let ticket = locks.begin_refresh(&registry);
+
+        let AppliedBalance::Fresh(balance) = locks
+            .apply_refresh(ticket, pusd(total), UnixNanos::from(4))
+            .unwrap()
+        else {
+            panic!("refresh was stale");
+        };
+
+        let unchanged = apply(&mut locks, total, 5);
+
+        assert_eq!(
+            balance,
+            AccountBalance::new(pusd(total), pusd(locked), pusd(free))
+        );
+        assert_eq!(unchanged, balance);
+    }
+
+    #[rstest]
+    fn confirmed_release_does_not_carry_excess_drain_to_later_fill() {
+        let mut locks = CollateralLocks::default();
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("A"), pusd("5"), UnixNanos::from(2), false);
+        confirm(&registry, "A", "5");
+        let ticket = locks.begin_refresh(&registry);
+        locks
+            .apply_refresh(ticket, pusd("92"), UnixNanos::from(3))
+            .unwrap();
+        locks.note_buy_spend(TradeId::from("B"), pusd("2"), UnixNanos::from(4), false);
+
+        assert_eq!(
+            apply(&mut locks, "92", 5),
+            AccountBalance::new(pusd("92"), pusd("2"), pusd("90"))
+        );
+    }
+
+    #[rstest]
+    fn refresh_only_releases_confirmations_known_at_request_start() {
+        let mut locks = CollateralLocks::default();
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("A"), pusd("5"), UnixNanos::from(2), false);
+        locks.note_buy_spend(TradeId::from("B"), pusd("3"), UnixNanos::from(3), false);
+        confirm(&registry, "A", "5");
+        let ticket = locks.begin_refresh(&registry);
+        confirm(&registry, "B", "3");
+        locks.note_buy_spend(TradeId::from("C"), pusd("1.25"), UnixNanos::from(4), false);
+        let during_request = locks
+            .apply_refresh(ticket, pusd("112"), UnixNanos::from(5))
+            .unwrap();
+        let next = locks.begin_refresh(&registry);
+        let next_refresh = locks
+            .apply_refresh(next, pusd("112"), UnixNanos::from(6))
+            .unwrap();
+
+        let AppliedBalance::Fresh(during_request) = during_request else {
+            panic!("refresh was stale");
+        };
+
+        let AppliedBalance::Fresh(next_refresh) = next_refresh else {
+            panic!("refresh was stale");
+        };
+
+        assert_eq!(
+            during_request,
+            AccountBalance::new(pusd("112"), pusd("4.25"), pusd("107.75"))
+        );
+        assert_eq!(
+            next_refresh,
+            AccountBalance::new(pusd("112"), pusd("1.25"), pusd("110.75"))
+        );
+        assert_eq!(
+            locks.unsettled.open.get(&TradeId::from("C")),
+            Some(&pusd("1.25"))
+        );
+    }
+
+    #[rstest]
+    #[case::superseded(false)]
+    #[case::session_discarded(true)]
+    fn stale_confirmation_ticket_keeps_pending_spend(#[case] discard_session: bool) {
+        let mut locks = CollateralLocks::default();
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("A"), pusd("5"), UnixNanos::from(2), false);
+        confirm(&registry, "A", "5");
+        let stale = locks.begin_refresh(&registry);
+        if discard_session {
+            locks.discard_inflight_refreshes();
+        } else {
+            apply(&mut locks, "110", 3);
+        }
+
+        let discarded = locks
+            .apply_refresh(stale, pusd("112"), UnixNanos::from(4))
+            .unwrap();
+        let balance = apply(&mut locks, "110", 5);
+
+        assert!(matches!(discarded, AppliedBalance::Stale));
+        assert_eq!(
+            balance,
+            AccountBalance::new(pusd("110"), pusd("5"), pusd("105"))
+        );
+        assert!(locks.unsettled.released.is_empty());
+    }
+
+    #[rstest]
+    fn failed_refresh_keeps_confirmed_spend_until_retry() {
+        let mut locks = CollateralLocks::default();
+        let registry = SettlementRegistry::new(AccountId::from("POLYMARKET-001"));
+        apply(&mut locks, "100", 1);
+        locks.note_buy_spend(TradeId::from("A"), pusd("5"), UnixNanos::from(2), false);
+        confirm(&registry, "A", "5");
+        let amount = Money::from_raw(MONEY_RAW_MAX, Currency::pUSD());
+        locks
+            .reservations
+            .insert(ClientOrderId::from("OPEN-1"), amount);
+        locks
+            .reservations
+            .insert(ClientOrderId::from("OPEN-2"), amount);
+        let failed = locks.begin_refresh(&registry);
+
+        let error = locks
+            .apply_refresh(failed, pusd("112"), UnixNanos::from(3))
+            .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "invalid Polymarket order reservation total"
+        );
+        assert_eq!(
+            locks.unsettled.open.get(&TradeId::from("A")),
+            Some(&pusd("5"))
+        );
+        assert!(locks.unsettled.released.is_empty());
+        assert_eq!(locks.unsettled.anchor, Some(pusd("100")));
+        assert_eq!(locks.unsettled.applied_epoch, 1);
+
+        locks.reservations.clear();
+        let retry = locks.begin_refresh(&registry);
+
+        let AppliedBalance::Fresh(balance) = locks
+            .apply_refresh(retry, pusd("112"), UnixNanos::from(4))
+            .unwrap()
+        else {
+            panic!("refresh was stale");
+        };
+
+        assert_eq!(
+            balance,
+            AccountBalance::new(pusd("112"), pusd("0"), pusd("112"))
+        );
     }
 
     #[rstest]
@@ -495,7 +860,7 @@ mod tests {
         let mut locks = CollateralLocks::default();
         apply(&mut locks, "100", 1);
         locks.note_buy_spend(TradeId::from("BUY-1"), pusd("5"), UnixNanos::from(2), false);
-        let stale = locks.begin_refresh();
+        let stale = begin_refresh(&mut locks);
         locks.discard_inflight_refreshes();
 
         let discarded = locks
@@ -540,8 +905,8 @@ mod tests {
         let mut locks = CollateralLocks::default();
         apply(&mut locks, "100", 1);
         locks.note_buy_spend(TradeId::from("BUY-1"), pusd("5"), UnixNanos::from(2), false);
-        let stale = locks.begin_refresh();
-        let current = locks.begin_refresh();
+        let stale = begin_refresh(&mut locks);
+        let current = begin_refresh(&mut locks);
         let applied = locks
             .apply_refresh(current, pusd("100"), UnixNanos::from(3))
             .unwrap();
@@ -560,7 +925,7 @@ mod tests {
     #[rstest]
     fn cleared_session_discards_an_in_flight_refresh() {
         let mut locks = CollateralLocks::default();
-        let ticket = locks.begin_refresh();
+        let ticket = begin_refresh(&mut locks);
         locks.clear_session();
         locks.note_buy_spend(TradeId::from("BUY-1"), pusd("5"), UnixNanos::from(2), false);
 
@@ -622,7 +987,7 @@ mod tests {
         locks
             .reservations
             .insert(ClientOrderId::from("BUY-2"), amount);
-        let ticket = locks.begin_refresh();
+        let ticket = begin_refresh(&mut locks);
 
         let error = locks
             .apply_refresh(ticket, pusd("100"), UnixNanos::from(1))
@@ -641,7 +1006,7 @@ mod tests {
         let amount = Money::from_raw(MONEY_RAW_MAX, Currency::pUSD());
         locks.note_buy_spend(TradeId::from("BUY-1"), amount, UnixNanos::from(2), false);
         locks.note_buy_spend(TradeId::from("BUY-2"), amount, UnixNanos::from(3), false);
-        let ticket = locks.begin_refresh();
+        let ticket = begin_refresh(&mut locks);
 
         let error = locks
             .apply_refresh(ticket, pusd("100"), UnixNanos::from(4))

@@ -23,7 +23,7 @@ use indexmap::IndexMap;
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
-    messages::execution::{GenerateOrderStatusReport, QueryOrder, TradingCommand},
+    messages::execution::{GenerateOrderStatusReport, QueryAccount, QueryOrder, TradingCommand},
     msgbus::{self, TypedHandler},
     testing::wait_until_async,
 };
@@ -41,7 +41,7 @@ use nautilus_model::{
     instruments::InstrumentAny,
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
     reports::{ExecutionMassStatus, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -364,6 +364,281 @@ async fn tracked_partial_then_full_fill_is_exact_and_deduplicated() {
         &order.client_order_id(),
         false,
     );
+}
+
+#[rstest]
+#[case::net_credit("1012000000", "50 pUSD")]
+#[case::exact_offset("1000000000", "50 pUSD")]
+#[case::partial_offset("990000000", "40 pUSD")]
+#[tokio::test]
+async fn confirmed_buy_releases_collateral_after_offsetting_credit(
+    #[case] raw_total: &str,
+    #[case] expected_locked: &str,
+    #[values(false, true)] rest_confirmation: bool,
+) {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-CREDIT");
+    submit_until_accepted(&mut h, &order).await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade.json", "MATCHED"))
+        .await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| order_reached(
+            cache,
+            &order,
+            OrderStatus::PartiallyFilled
+        ))
+        .await
+    );
+    *h.mock_state.balance_response.lock().await = json!({"balance": raw_total});
+    let total = Money::from_decimal(
+        raw_total.parse::<Decimal>().unwrap() / Decimal::from(1_000_000),
+        Currency::pUSD(),
+    )
+    .unwrap();
+    let locked = Money::from(expected_locked);
+    let held = AccountBalance::new(total, locked, total - locked);
+    query_collateral_account(&h);
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .account(&AccountId::from(harness::ACCOUNT_ID))
+            .and_then(|account| account.last_event())
+            .is_some_and(|event| event.balances == vec![held]))
+            .await
+    );
+    h.mock_state.startup_request_paths.lock().await.clear();
+    let confirmed = user_trade("ws_user_trade.json", "CONFIRMED");
+    let trade_id = confirmed["id"].as_str().unwrap().to_string();
+    let update = if rest_confirmation {
+        serve_rest_trades(&h, &[confirmed]).await;
+        user_trade("ws_user_trade.json", "FAILED")
+    } else {
+        confirmed
+    };
+
+    h.mock_state.send_user(update).await;
+
+    let expected = AccountBalance::new(
+        total,
+        Money::from("37.5 pUSD"),
+        total - Money::from("37.5 pUSD"),
+    );
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .account(&AccountId::from(harness::ACCOUNT_ID))
+            .and_then(|account| account.last_event())
+            .is_some_and(|event| event.balances == vec![expected]))
+            .await
+    );
+
+    let paths = h.mock_state.startup_request_paths.lock().await.clone();
+    assert_eq!(paths, ["/balance-allowance/update", "/balance-allowance"]);
+    assert_eq!(
+        h.mock_state
+            .trade_queries
+            .lock()
+            .await
+            .iter()
+            .any(|query| query.get("id") == Some(&trade_id)),
+        rest_confirmation
+    );
+    assert_eq!(cached_order(&h, &order).filled_qty(), Quantity::from("25"));
+    assert_eq!(
+        h.mock_state
+            .orders_get_count
+            .load(std::sync::atomic::Ordering::Acquire),
+        0
+    );
+}
+
+#[rstest]
+#[case::update_fails(true)]
+#[case::read_fails(false)]
+#[tokio::test]
+async fn failed_collateral_refresh_keeps_confirmed_buy_locked(#[case] update_fails: bool) {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-CREDIT-RETRY");
+    submit_until_accepted(&mut h, &order).await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade.json", "MATCHED"))
+        .await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| order_reached(
+            cache,
+            &order,
+            OrderStatus::PartiallyFilled
+        ))
+        .await
+    );
+    *h.mock_state.balance_response.lock().await = json!({"balance": "1012000000"});
+    query_collateral_account(&h);
+
+    let held = AccountBalance::new(
+        Money::from("1012 pUSD"),
+        Money::from("50 pUSD"),
+        Money::from("962 pUSD"),
+    );
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .account(&AccountId::from(harness::ACCOUNT_ID))
+            .and_then(|account| account.last_event())
+            .is_some_and(|event| event.balances == vec![held]))
+            .await
+    );
+    h.mock_state.startup_request_paths.lock().await.clear();
+    if update_fails {
+        *h.mock_state.balance_update_status.lock().await = StatusCode::BAD_REQUEST;
+    } else {
+        *h.mock_state.balance_response_status.lock().await = StatusCode::BAD_REQUEST;
+    }
+
+    h.mock_state
+        .send_user(user_trade("ws_user_trade.json", "CONFIRMED"))
+        .await;
+    wait_until_async(
+        || async {
+            h.mock_state
+                .startup_request_paths
+                .lock()
+                .await
+                .iter()
+                .any(|path| {
+                    path == if update_fails {
+                        "/balance-allowance/update"
+                    } else {
+                        "/balance-allowance"
+                    }
+                })
+        },
+        DEADLINE,
+    )
+    .await;
+
+    let failed_paths = h.mock_state.startup_request_paths.lock().await.clone();
+    assert_eq!(
+        failed_paths,
+        if update_fails {
+            vec!["/balance-allowance/update"]
+        } else {
+            vec!["/balance-allowance/update", "/balance-allowance"]
+        }
+    );
+    assert_eq!(
+        h.cache()
+            .borrow()
+            .account(&h.account_id())
+            .unwrap()
+            .last_event()
+            .unwrap()
+            .balances,
+        vec![held]
+    );
+    *h.mock_state.balance_update_status.lock().await = StatusCode::OK;
+    *h.mock_state.balance_response_status.lock().await = StatusCode::OK;
+    query_collateral_account(&h);
+
+    let expected = AccountBalance::new(
+        Money::from("1012 pUSD"),
+        Money::from("37.5 pUSD"),
+        Money::from("974.5 pUSD"),
+    );
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .account(&AccountId::from(harness::ACCOUNT_ID))
+            .and_then(|account| account.last_event())
+            .is_some_and(|event| event.balances == vec![expected]))
+            .await
+    );
+    let mut expected_paths = failed_paths;
+    expected_paths.extend([
+        "/balance-allowance/update".to_string(),
+        "/balance-allowance".to_string(),
+    ]);
+    assert_eq!(
+        *h.mock_state.startup_request_paths.lock().await,
+        expected_paths
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn collateral_refresh_rechecks_confirmation_after_balance_read() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-CREDIT-CONTRADICTION");
+    submit_until_accepted(&mut h, &order).await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade.json", "MATCHED"))
+        .await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| order_reached(
+            cache,
+            &order,
+            OrderStatus::PartiallyFilled
+        ))
+        .await
+    );
+    *h.mock_state.balance_response.lock().await = json!({"balance": "1012000000"});
+    query_collateral_account(&h);
+
+    let held = AccountBalance::new(
+        Money::from("1012 pUSD"),
+        Money::from("50 pUSD"),
+        Money::from("962 pUSD"),
+    );
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .account(&AccountId::from(harness::ACCOUNT_ID))
+            .and_then(|account| account.last_event())
+            .is_some_and(|event| event.balances == vec![held]))
+            .await
+    );
+    let events_before = h
+        .cache()
+        .borrow()
+        .account(&h.account_id())
+        .unwrap()
+        .events()
+        .len();
+    let gate = h.mock_state.balance_response_gate.clone();
+    gate.enable();
+    h.mock_state
+        .send_user(user_trade("ws_user_trade.json", "CONFIRMED"))
+        .await;
+    wait_until_async(|| async { gate.started() == 1 }, DEADLINE).await;
+    serve_rest_trades(&h, &[]).await;
+    h.mock_state.trade_queries.lock().await.clear();
+    h.mock_state
+        .send_user(user_trade("ws_user_trade.json", "FAILED"))
+        .await;
+    wait_until_async(
+        || async { !h.mock_state.trade_queries.lock().await.is_empty() },
+        DEADLINE,
+    )
+    .await;
+    gate.release();
+
+    assert!(
+        h.pump_until(DEADLINE, |cache| cache
+            .account(&AccountId::from(harness::ACCOUNT_ID))
+            .is_some_and(|account| account.events().len() > events_before
+                && account.last_event().unwrap().balances == vec![held]))
+            .await
+    );
+    assert_eq!(cached_order(&h, &order).filled_qty(), Quantity::from("25"));
+}
+
+fn query_collateral_account(h: &harness::Harness) {
+    h.exec_engine()
+        .borrow()
+        .execute(TradingCommand::QueryAccount(QueryAccount::new(
+            h.trader_id(),
+            Some(h.client_id()),
+            h.account_id(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )));
 }
 
 #[rstest]
