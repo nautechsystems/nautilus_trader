@@ -1370,6 +1370,16 @@ lifts the report gate.
 On connect, the adapter rebuilds applied fills and voids from the cached order events, so a replayed
 trade does not produce a second fill. Those rebuilt fills are not read again.
 
+#### Unbound fills
+
+Maker fills reconstructed from reconciliation reports can lack the original venue trade ID: their
+composite leg IDs are not reversible. The adapter retains their observed application state as unbound
+legs until a validated user WebSocket trade update or targeted terminal REST result matches the leg IDs.
+A missing venue trade ID alone does not fault or disconnect the client.
+
+Retaining an unbound leg does not establish venue settlement or authorize another fill or void. The
+normal settlement and fault rules apply when venue evidence arrives.
+
 #### Settlement faults
 
 A trade enters a hard fault when its venue outcome and the engine's state cannot be reconciled:
@@ -1386,6 +1396,8 @@ A hard-faulted trade admits no further fills or voids, except the one void owed 
 after REST reported `FAILED`. The adapter logs the fault at error level, refreshes the account, and
 blocks reconciliation for the trade (see [settlement precedence](#settlement-precedence)) until the
 client resets or the node restarts.
+
+The adapter publishes no dedicated quarantine or settlement-fault event or metric.
 
 ##### Submissions
 
@@ -1407,9 +1419,10 @@ expiry, or rejection that the venue reports still applies. One inferred from a `
 
 ##### Settlement records
 
-The adapter keeps settlement records for the lifetime of the execution client. If more than 100,000
-records accumulate after connect, the client faults closed: it reports disconnected and refuses new
-commands until restart. Records rebuilt from the cache on connect do not count toward this limit.
+The adapter keeps settlement records and unbound legs for the lifetime of the execution client. Adding
+an entry beyond the combined limit of 100,000 entries after connect faults the client closed: it reports
+disconnected and refuses new commands until restart. Entries rebuilt from the cache on connect do not
+count toward this limit.
 
 ### Trade ID derivation
 
