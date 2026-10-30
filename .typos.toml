@@ -4,10 +4,10 @@
 locale = "en-us"
 # Preserve accepted identifier spellings, external values, and file references
 extend-ignore-re = [
-    '"[^"\s]*\.(?:json|csv|txt|xml)"',
-    '`licence`',
-    # Complete quoted form fields containing valid percent escapes are verbatim wire values
-    '''(?x)
+  '"[^"\s]*\.(?:json|csv|txt|xml)"',
+  '`licence`',
+  # Complete quoted form fields containing valid percent escapes are verbatim wire values
+  '''(?x)
     "
     (?:
         [A-Za-z0-9_.*+-]*%[0-9A-Fa-f]{2}

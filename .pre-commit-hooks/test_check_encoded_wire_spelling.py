@@ -17,6 +17,7 @@
 Check the wire-literal spelling policy, optionally using the pinned spelling tools.
 
 The default configuration probe uses Python regexes, not either spelling tool.
+
 """
 
 from __future__ import annotations
@@ -177,10 +178,8 @@ def main() -> None:
     parser.add_argument("--integration", action="store_true")
     arguments = parser.parse_args()
     _test_configuration()
-    print("Wire-literal configuration probes passed (no spelling tools invoked)")
     if arguments.integration:
         _test_tools()
-        print("Pinned spelling-tool integration passed")
 
 
 if __name__ == "__main__":
