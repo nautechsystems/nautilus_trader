@@ -496,7 +496,7 @@ impl WalletAccount {
         )?;
         check_predicate_false(base.events.is_empty(), "Wallet account had no events")?;
 
-        for event in &base.events {
+        for event in base.events.iter() {
             Self::validate_event(event)?;
             Self::normalize_balances(&event.balances)?;
             check_predicate_true(
@@ -763,7 +763,7 @@ mod tests {
             Some(wallet_account_state_changed.clone())
         );
         assert_eq!(
-            wallet_account.events,
+            *wallet_account.events,
             vec![wallet_account_state, wallet_account_state_changed]
         );
         assert_eq!(wallet_account.event_count(), 2);

@@ -1507,7 +1507,7 @@ fn base_account_mut(account: &mut AccountAny) -> &mut BaseAccount {
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc};
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
 
     use nautilus_common::{cache::Cache, clock::VirtualClock};
     use nautilus_model::{
@@ -1764,7 +1764,7 @@ mod tests {
             .unwrap();
         let balances_before = cash.base.balances.clone();
         let locks_before = cash.balances_locked.clone();
-        let events_before = cash.base.events.clone();
+        let events_before = Arc::clone(&cash.base.events);
         instrument.quote_currency = Currency::new(
             "USD",
             usd.precision + 1,
@@ -1823,7 +1823,7 @@ mod tests {
         );
         let balances_before = cash.base.balances.clone();
         let locks_before = cash.balances_locked.clone();
-        let events_before = cash.base.events.clone();
+        let events_before = Arc::clone(&cash.base.events);
         let mut order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Buy)
@@ -1893,7 +1893,7 @@ mod tests {
         );
         let balances_before = betting_account.base.balances.clone();
         let locks_before = betting_account.balances_locked.clone();
-        let events_before = betting_account.base.events.clone();
+        let events_before = Arc::clone(&betting_account.base.events);
         let mut order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(instrument_id)
             .side(OrderSide::Sell)
@@ -2131,7 +2131,7 @@ mod tests {
             .unwrap();
         let balances_before = betting_account.base.balances.clone();
         let locks_before = betting_account.balances_locked.clone();
-        let events_before = betting_account.base.events.clone();
+        let events_before = Arc::clone(&betting_account.base.events);
         instrument.currency = Currency::new(
             "GBP",
             gbp.precision + 1,
@@ -2539,7 +2539,7 @@ mod tests {
         );
         let balances_before = wallet.base.balances.clone();
         let locks_before = wallet.balances_locked.clone();
-        let events_before = wallet.events.clone();
+        let events_before = Arc::clone(&wallet.events);
         let mut account = AccountAny::Wallet(wallet);
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::new(None, None)));
@@ -2844,7 +2844,7 @@ mod tests {
             .unwrap();
         let balances_before = wallet.base.balances.clone();
         let locks_before = wallet.balances_locked.clone();
-        let events_before = wallet.events.clone();
+        let events_before = Arc::clone(&wallet.events);
         let mut account = AccountAny::Wallet(wallet);
         #[allow(
             clippy::useless_conversion,
@@ -2899,7 +2899,7 @@ mod tests {
             .unwrap();
         let balances_before = wallet.base.balances.clone();
         let locks_before = wallet.balances_locked.clone();
-        let events_before = wallet.events.clone();
+        let events_before = Arc::clone(&wallet.events);
         let mut account = AccountAny::Wallet(wallet);
         let quantity_raw = MONEY_RAW_MAX.try_into().unwrap();
         let mut first = OrderTestBuilder::new(OrderType::Market)

@@ -502,7 +502,7 @@ mod tests {
             Some(cash_account_state_multi_changed_btc.clone())
         );
         assert_eq!(
-            cash_account_multi.events,
+            *cash_account_multi.events,
             vec![
                 cash_account_state_multi,
                 cash_account_state_multi_changed_btc
