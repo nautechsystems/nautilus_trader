@@ -80,27 +80,6 @@ use nautilus_common::{
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_execution::engine::ExecutionEngine;
-use nautilus_lighter::{
-    common::{
-        consts::{
-            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
-            LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_TESTNET_CHAIN_ID,
-            LIGHTER_VENUE,
-        },
-        credential::Credential,
-        enums::{LighterDeployment, LighterEnvironment},
-    },
-    config::LighterExecutionClientConfig,
-    execution::LighterExecutionClient,
-    signing::{
-        field::Fp5,
-        schnorr::Signature,
-        tx::{
-            CancelAllOrdersTxInfo, CancelOrderTxInfo, CreateGroupedOrdersTxInfo, CreateOrderTxInfo,
-            L2TxAttributes, ModifyOrderTxInfo, OrderInfo, TxContext, compute_tx_hash,
-        },
-    },
-};
 use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -118,10 +97,33 @@ use nautilus_model::{
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
+use nautilus_network::ratelimiter::{RateLimiter, quota::Quota};
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 use ustr::Ustr;
+
+use crate::{
+    common::{
+        consts::{
+            LIGHTER_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX,
+            LIGHTER_ROBINHOOD_NAUTILUS_INTEGRATOR_ACCOUNT_INDEX, LIGHTER_TESTNET_CHAIN_ID,
+            LIGHTER_VENUE, SCHEDULED_CANCEL_REQUEST_TIMEOUT,
+        },
+        credential::Credential,
+        enums::{LighterDeployment, LighterEnvironment},
+    },
+    config::LighterExecutionClientConfig,
+    execution::LighterExecutionClient,
+    signing::{
+        field::Fp5,
+        schnorr::Signature,
+        tx::{
+            CancelAllOrdersTxInfo, CancelOrderTxInfo, CreateGroupedOrdersTxInfo, CreateOrderTxInfo,
+            L2TxAttributes, ModifyOrderTxInfo, OrderInfo, TxContext, compute_tx_hash,
+        },
+    },
+};
 
 const PRIVATE_KEY_HEX: &str =
     "0b8e0f63c24d8baacd9d29ad4e9a4b73c4a8d2bb8b16dc4fa9d7c2e1d3a8b1f0e8d3a4c5b6e7f001";
@@ -2291,9 +2293,8 @@ async fn connect_clears_prior_position_cache_across_reconnect() {
     state.push_frame(&load_json("ws_account_all_positions_update.json"));
     wait_until_async(
         || {
-            let client_ptr = std::ptr::addr_of!(client);
+            let client = &client;
             async move {
-                let client = unsafe { &*client_ptr };
                 !client
                     .generate_position_status_reports(&GeneratePositionStatusReports::new(
                         UUID4::new(),
@@ -2347,12 +2348,14 @@ mod serial_tests {
     #[rstest]
     fn test_credentialless_paths_in_isolated_environment() {
         for test_name in [
-            "serial_tests::test_connect_without_credentials_fails_fast",
-            "serial_tests::test_submit_order_without_credentials_errors_synchronously",
+            "test_connect_without_credentials_fails_fast",
+            "test_submit_order_without_credentials_errors_synchronously",
         ] {
+            let module = module_path!().split_once("::").unwrap().1;
+            let test_name = format!("{module}::{test_name}");
             let mut command =
                 Command::new(std::env::current_exe().expect("test executable must exist"));
-            command.arg(test_name).arg("--exact").arg("--ignored");
+            command.arg(&test_name).arg("--exact").arg("--ignored");
             for name in LIGHTER_ENV_VARS {
                 command.env_remove(name);
             }
@@ -2360,6 +2363,10 @@ mod serial_tests {
             assert!(
                 output.status.success(),
                 "isolated credentialless case {test_name} failed",
+            );
+            assert!(
+                String::from_utf8_lossy(&output.stdout).contains("1 passed;"),
+                "isolated credentialless case {test_name} must execute one test",
             );
         }
     }
@@ -5935,10 +5942,8 @@ async fn test_generate_mass_status_fans_out_active_inactive_position_and_trades(
 
     wait_until_async(
         || {
-            let client_ptr = std::ptr::addr_of!(client);
+            let client = &client;
             async move {
-                // SAFETY: this test owns `client` exclusively.
-                let client = unsafe { &*client_ptr };
                 !client
                     .generate_position_status_reports(&GeneratePositionStatusReports::new(
                         UUID4::new(),
@@ -6548,10 +6553,8 @@ async fn test_generate_bounded_mass_status_keeps_active_orders_when_history_is_i
     state.push_frame(&load_json("ws_account_all_positions_update.json"));
     wait_until_async(
         || {
-            let client_ptr = std::ptr::addr_of!(client);
+            let client = &client;
             async move {
-                // SAFETY: this test owns `client` exclusively.
-                let client = unsafe { &*client_ptr };
                 client
                     .generate_position_status_reports(&GeneratePositionStatusReports::new(
                         UUID4::new(),
@@ -6617,10 +6620,8 @@ async fn test_generate_bounded_mass_status_keeps_active_orders_when_active_fetch
     state.push_frame(&load_json("ws_account_all_positions_update.json"));
     wait_until_async(
         || {
-            let client_ptr = std::ptr::addr_of!(client);
+            let client = &client;
             async move {
-                // SAFETY: this test owns `client` exclusively.
-                let client = unsafe { &*client_ptr };
                 client
                     .generate_position_status_reports(&GeneratePositionStatusReports::new(
                         UUID4::new(),
@@ -8112,9 +8113,8 @@ async fn test_account_all_positions_flat_snapshot_clears_cache_and_emits_flat_re
 
     wait_until_async(
         || {
-            let client_ptr = std::ptr::addr_of!(client);
+            let client = &client;
             async move {
-                let client = unsafe { &*client_ptr };
                 !generate_position_status_reports(
                     client,
                     &GeneratePositionStatusReports::new(
@@ -8262,10 +8262,8 @@ async fn test_account_all_positions_invalid_known_market_does_not_flatten_cached
 
     wait_until_async(
         || {
-            let client_ptr = std::ptr::addr_of!(client);
+            let client = &client;
             async move {
-                // SAFETY: this test owns `client` exclusively.
-                let client = unsafe { &*client_ptr };
                 generate_position_status_reports(
                     client,
                     &GeneratePositionStatusReports::new(
@@ -8324,10 +8322,8 @@ async fn test_bounded_mass_status_rejects_stale_position_coverage_after_reconnec
     state.push_frame(&load_json("ws_account_all_positions_update.json"));
     wait_until_async(
         || {
-            let client_ptr = std::ptr::addr_of!(client);
+            let client = &client;
             async move {
-                // SAFETY: this test owns `client` exclusively.
-                let client = unsafe { &*client_ptr };
                 client
                     .generate_position_status_reports(&GeneratePositionStatusReports::new(
                         UUID4::new(),
@@ -8426,9 +8422,8 @@ async fn test_account_all_positions_empty_snapshot_after_reconnect_flattens_prio
 
     wait_until_async(
         || {
-            let client_ptr = std::ptr::addr_of!(client);
+            let client = &client;
             async move {
-                let client = unsafe { &*client_ptr };
                 !generate_position_status_reports(
                     client,
                     &GeneratePositionStatusReports::new(
@@ -12220,9 +12215,16 @@ async fn test_scheduled_cancel_refresh_retries_and_reconnects() {
         TEST_NEXT_NONCE + 1,
         json!({"status":2,"event_info":r#"{"ae":"temporary failure"}"#}),
     );
+    client.scheduled_cancel_notify.notify_one();
+    wait_until_async(
+        || async { state.send_txs().await.len() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+    client.scheduled_cancel_notify.notify_one();
     wait_until_async(
         || async { state.send_txs().await.len() == 3 },
-        Duration::from_secs(85),
+        Duration::from_secs(5),
     )
     .await;
     let frames = state.send_txs().await;
@@ -12249,7 +12251,7 @@ async fn test_scheduled_cancel_refresh_retries_and_reconnects() {
     assert_eq!(send_tx_info(&state.send_txs().await[4])["Nonce"], 777);
     client.disconnect().await.unwrap();
     let retained = state.send_txs().await;
-    tokio::time::sleep(Duration::from_secs(42)).await;
+    assert!(client.scheduled_cancel_handle.is_none());
     assert_eq!(state.send_txs().await, retained);
     assert!(client.pending_tasks_all_finished());
     assert_eq!(state.rest_send_txs().await, Vec::<Value>::new());
@@ -12295,24 +12297,33 @@ async fn test_scheduled_cancel_shutdown_retains_deadline_and_restarts_once(#[cas
     );
 }
 
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test]
 async fn test_scheduled_cancel_timeout_preserves_order_nonce_on_wire() {
     let (addr, state) = start_server().await;
     let mut config = build_config(addr);
     config.scheduled_cancel_timeout_secs = Some(420);
-    config.sendtx_quota_per_min = Some(1);
     let (mut client, mut rx, cache) = build_client_with(config);
+
+    client.tx_rate_limiter = Arc::new(RateLimiter::new_with_quota(
+        None,
+        vec![(
+            Ustr::from(crate::common::rate_limit::LIGHTER_TX_BUCKET),
+            Quota::with_period(Duration::from_secs(5)).unwrap(),
+        )],
+    ));
     client.connect().await.unwrap();
     {
         let earlier = client.cancel_all_orders_account();
         tokio::pin!(earlier);
-        tokio::select! {
-            result = &mut earlier => panic!("cancellation must wait for quota: {result:?}"),
-            () = tokio::time::sleep(Duration::from_millis(20)) => {},
-        }
+        assert!(futures_util::poll!(&mut earlier).is_pending());
     }
 
-    tokio::time::sleep(Duration::from_secs(45)).await;
+    let context = client
+        .fanout_dispatch_context(client.credential.as_ref().unwrap())
+        .unwrap();
+    let renewal = context.refresh_scheduled_cancel(420);
+    tokio::pin!(renewal);
+    assert!(futures_util::poll!(&mut renewal).is_pending());
     let order = make_limit_order(
         "AFTER-RENEWAL",
         OrderSide::Buy,
@@ -12330,9 +12341,17 @@ async fn test_scheduled_cancel_timeout_preserves_order_nonce_on_wire() {
     assert!(
         matches!(event, OrderEventAny::Submitted(ref submitted) if submitted.client_order_id == order.client_order_id())
     );
+    assert_eq!(state.send_txs().await.len(), 1);
+    tokio::time::pause();
+    tokio::time::advance(SCHEDULED_CANCEL_REQUEST_TIMEOUT).await;
+    tokio::time::resume();
+    assert_eq!(
+        renewal.await.unwrap_err().to_string(),
+        "scheduled cancellation request timed out"
+    );
     wait_until_async(
         || async { state.send_txs().await.len() == 3 },
-        Duration::from_secs(85),
+        Duration::from_secs(15),
     )
     .await;
     let frames = state.send_txs().await;

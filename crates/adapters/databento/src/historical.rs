@@ -17,7 +17,7 @@
 
 use std::{fmt::Debug, fs, num::NonZeroU64, path::PathBuf, str::FromStr, sync::Arc};
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use databento::{
     dbn::{self, decode::DbnMetadata},
     historical::timeseries::GetRangeParams,
@@ -27,7 +27,7 @@ use nautilus_core::{AtomicMap, UnixNanos, consts::NAUTILUS_USER_AGENT, time::Ato
 use nautilus_model::{
     data::{Bar, Data, InstrumentStatus, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick},
     enums::BarAggregation,
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol, Venue, futures::FuturesYearDigits},
     instruments::{Instrument, InstrumentAny},
 };
 
@@ -40,7 +40,7 @@ use crate::{
     },
     symbology::{
         MetadataCache, check_consistent_symbology, decode_nautilus_instrument_id,
-        infer_symbology_type,
+        infer_symbology_type, raw_symbol,
     },
     types::{DatabentoImbalance, DatabentoPublisher, DatabentoStatistics, PublisherId},
 };
@@ -51,6 +51,7 @@ use crate::{
 /// various types of historical market data from Databento.
 #[derive(Clone)]
 pub struct DatabentoHistoricalClient {
+    futures_year_digits: FuturesYearDigits,
     credential: Credential,
     clock: &'static AtomicTime,
     inner: Arc<databento::HistoricalClient>,
@@ -58,6 +59,7 @@ pub struct DatabentoHistoricalClient {
     symbol_venue_map: Arc<AtomicMap<Symbol, Venue>>,
     price_precisions: Arc<AtomicMap<Symbol, u8>>,
     use_exchange_as_venue: bool,
+    futures_symbols: Arc<AtomicMap<(PublisherId, u32, time::Date), Symbol>>,
 }
 
 /// Parameters for range queries to Databento historical API.
@@ -120,6 +122,13 @@ impl DatabentoHistoricalClient {
         )
     }
 
+    /// Selects one- or two-digit years for futures instrument IDs.
+    #[must_use]
+    pub fn with_futures_year_digits(mut self, futures_year_digits: FuturesYearDigits) -> Self {
+        self.futures_year_digits = futures_year_digits;
+        self
+    }
+
     /// Creates a new [`DatabentoHistoricalClient`] instance with a custom API base URL.
     ///
     /// This is intended for tests, benchmarks, and controlled deployments that route
@@ -171,12 +180,14 @@ impl DatabentoHistoricalClient {
 
         Ok(Self {
             clock,
+            futures_year_digits: FuturesYearDigits::default(),
             inner: Arc::new(client),
             publisher_venue_map: Arc::new(publisher_venue_map),
             symbol_venue_map: Arc::new(AtomicMap::new()),
             price_precisions: Arc::new(AtomicMap::new()),
             credential,
             use_exchange_as_venue,
+            futures_symbols: Arc::new(AtomicMap::new()),
         })
     }
 
@@ -273,7 +284,8 @@ impl DatabentoHistoricalClient {
         &self,
         params: RangeQueryParams,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -303,6 +315,7 @@ impl DatabentoHistoricalClient {
         let metadata = decoder.metadata().clone();
         let mut metadata_cache = MetadataCache::new(metadata);
         let mut instruments = Vec::new();
+        let mut futures_symbols = Vec::new();
 
         while let Some(msg) = decoder.decode_record::<dbn::InstrumentDefMsg>().await? {
             let record = dbn::RecordRef::from(msg);
@@ -312,6 +325,9 @@ impl DatabentoHistoricalClient {
                 &mut metadata_cache,
                 &self.publisher_venue_map,
                 &sym_map,
+                self.futures_year_digits,
+                &self.futures_symbols.load(),
+                Some(&requested_symbols),
             )?;
 
             if self.use_exchange_as_venue && instrument_id.venue == Venue::GLBX() {
@@ -324,10 +340,28 @@ impl DatabentoHistoricalClient {
             }
 
             match decode_instrument_def_msg(msg, instrument_id, None, None) {
-                Ok(Some(instrument)) => instruments.push(instrument),
+                Ok(Some(instrument)) => {
+                    if instrument.raw_symbol() != instrument.id().symbol {
+                        let date = time::OffsetDateTime::from_unix_timestamp_nanos(i128::from(
+                            msg.ts_recv,
+                        ))?
+                        .date();
+                        futures_symbols.push((
+                            (msg.hd.publisher_id, msg.hd.instrument_id, date),
+                            instrument.id().symbol,
+                        ));
+                    }
+
+                    instruments.push(instrument);
+                }
                 Ok(None) => {} // Decoder logged a warning for the unsupported class
                 Err(e) => anyhow::bail!("Failed to decode instrument {instrument_id}: {e}"),
             }
+        }
+
+        if !futures_symbols.is_empty() {
+            self.futures_symbols
+                .rcu(|symbols| symbols.extend(futures_symbols.iter().copied()));
         }
 
         self.cache_price_precisions(&instruments);
@@ -357,7 +391,8 @@ impl DatabentoHistoricalClient {
         params: RangeQueryParams,
         schema: Option<String>,
     ) -> anyhow::Result<Vec<QuoteTick>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -408,13 +443,8 @@ impl DatabentoHistoricalClient {
         let mut result: Vec<QuoteTick> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
-            let sym_map = self.symbol_venue_map.load();
-            let instrument_id = decode_nautilus_instrument_id(
-                &record,
-                &mut metadata_cache,
-                &self.publisher_venue_map,
-                &sym_map,
-            )?;
+            let instrument_id =
+                self.instrument_id(&record, &mut metadata_cache, &requested_symbols)?;
             let price_precision = self.resolve_cached_price_precision(
                 &instrument_id,
                 price_precision_arg,
@@ -490,7 +520,8 @@ impl DatabentoHistoricalClient {
         params: RangeQueryParams,
         depth: Option<usize>,
     ) -> anyhow::Result<Vec<OrderBookDepth>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -531,13 +562,8 @@ impl DatabentoHistoricalClient {
         let mut result: Vec<OrderBookDepth> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
-            let sym_map = self.symbol_venue_map.load();
-            let instrument_id = decode_nautilus_instrument_id(
-                &record,
-                &mut metadata_cache,
-                &self.publisher_venue_map,
-                &sym_map,
-            )?;
+            let instrument_id =
+                self.instrument_id(&record, &mut metadata_cache, &requested_symbols)?;
             let price_precision = self.resolve_cached_price_precision(
                 &instrument_id,
                 price_precision_arg,
@@ -568,7 +594,8 @@ impl DatabentoHistoricalClient {
         &self,
         params: RangeQueryParams,
     ) -> anyhow::Result<Vec<OrderBookDelta>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -604,13 +631,8 @@ impl DatabentoHistoricalClient {
         let mut delta_buffer = MboDeltaBuffer::default();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
-            let sym_map = self.symbol_venue_map.load();
-            let instrument_id = decode_nautilus_instrument_id(
-                &record,
-                &mut metadata_cache,
-                &self.publisher_venue_map,
-                &sym_map,
-            )?;
+            let instrument_id =
+                self.instrument_id(&record, &mut metadata_cache, &requested_symbols)?;
             let price_precision = self.resolve_cached_price_precision(
                 &instrument_id,
                 price_precision_arg,
@@ -651,7 +673,8 @@ impl DatabentoHistoricalClient {
         params: RangeQueryParams,
         schema: Option<String>,
     ) -> anyhow::Result<Vec<TradeTick>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -699,13 +722,8 @@ impl DatabentoHistoricalClient {
         let mut result: Vec<TradeTick> = Vec::new();
 
         let mut process_record = |record: dbn::RecordRef| -> anyhow::Result<()> {
-            let sym_map = self.symbol_venue_map.load();
-            let instrument_id = decode_nautilus_instrument_id(
-                &record,
-                &mut metadata_cache,
-                &self.publisher_venue_map,
-                &sym_map,
-            )?;
+            let instrument_id =
+                self.instrument_id(&record, &mut metadata_cache, &requested_symbols)?;
             let price_precision = self.resolve_cached_price_precision(
                 &instrument_id,
                 price_precision_arg,
@@ -771,7 +789,8 @@ impl DatabentoHistoricalClient {
         aggregation: BarAggregation,
         timestamp_on_close: bool,
     ) -> anyhow::Result<Vec<Bar>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -809,13 +828,8 @@ impl DatabentoHistoricalClient {
 
         while let Some(msg) = decoder.decode_record::<dbn::OhlcvMsg>().await? {
             let record = dbn::RecordRef::from(msg);
-            let sym_map = self.symbol_venue_map.load();
-            let instrument_id = decode_nautilus_instrument_id(
-                &record,
-                &mut metadata_cache,
-                &self.publisher_venue_map,
-                &sym_map,
-            )?;
+            let instrument_id =
+                self.instrument_id(&record, &mut metadata_cache, &requested_symbols)?;
             let price_precision = self.resolve_cached_price_precision(
                 &instrument_id,
                 price_precision_arg,
@@ -851,7 +865,8 @@ impl DatabentoHistoricalClient {
         &self,
         params: RangeQueryParams,
     ) -> anyhow::Result<Vec<DatabentoImbalance>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -887,13 +902,8 @@ impl DatabentoHistoricalClient {
 
         while let Some(msg) = decoder.decode_record::<dbn::ImbalanceMsg>().await? {
             let record = dbn::RecordRef::from(msg);
-            let sym_map = self.symbol_venue_map.load();
-            let instrument_id = decode_nautilus_instrument_id(
-                &record,
-                &mut metadata_cache,
-                &self.publisher_venue_map,
-                &sym_map,
-            )?;
+            let instrument_id =
+                self.instrument_id(&record, &mut metadata_cache, &requested_symbols)?;
             let price_precision = self.resolve_cached_price_precision(
                 &instrument_id,
                 price_precision_arg,
@@ -916,7 +926,8 @@ impl DatabentoHistoricalClient {
         &self,
         params: RangeQueryParams,
     ) -> anyhow::Result<Vec<DatabentoStatistics>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -958,13 +969,8 @@ impl DatabentoHistoricalClient {
             }
 
             let record = dbn::RecordRef::from(msg);
-            let sym_map = self.symbol_venue_map.load();
-            let instrument_id = decode_nautilus_instrument_id(
-                &record,
-                &mut metadata_cache,
-                &self.publisher_venue_map,
-                &sym_map,
-            )?;
+            let instrument_id =
+                self.instrument_id(&record, &mut metadata_cache, &requested_symbols)?;
             let price_precision = self.resolve_cached_price_precision(
                 &instrument_id,
                 price_precision_arg,
@@ -990,7 +996,8 @@ impl DatabentoHistoricalClient {
         &self,
         params: RangeQueryParams,
     ) -> anyhow::Result<Vec<InstrumentStatus>> {
-        let symbols: Vec<&str> = params.symbols.iter().map(String::as_str).collect();
+        let (raw_symbols, requested_symbols) = self.prepare_symbols(&params);
+        let symbols: Vec<&str> = raw_symbols.iter().map(String::as_str).collect();
         check_consistent_symbology(&symbols)?;
 
         let first_symbol = params
@@ -1023,19 +1030,50 @@ impl DatabentoHistoricalClient {
 
         while let Some(msg) = decoder.decode_record::<dbn::StatusMsg>().await? {
             let record = dbn::RecordRef::from(msg);
-            let sym_map = self.symbol_venue_map.load();
-            let instrument_id = decode_nautilus_instrument_id(
-                &record,
-                &mut metadata_cache,
-                &self.publisher_venue_map,
-                &sym_map,
-            )?;
+            let instrument_id =
+                self.instrument_id(&record, &mut metadata_cache, &requested_symbols)?;
 
             let status = decode_status_msg(msg, instrument_id, None)?;
             result.push(status);
         }
 
         Ok(result)
+    }
+
+    fn instrument_id(
+        &self,
+        record: &dbn::RecordRef,
+        metadata: &mut MetadataCache,
+        requested_symbols: &AHashSet<Symbol>,
+    ) -> anyhow::Result<InstrumentId> {
+        decode_nautilus_instrument_id(
+            record,
+            metadata,
+            &self.publisher_venue_map,
+            &self.symbol_venue_map.load(),
+            self.futures_year_digits,
+            &self.futures_symbols.load(),
+            Some(requested_symbols),
+        )
+    }
+
+    fn prepare_symbols(&self, params: &RangeQueryParams) -> (Vec<String>, AHashSet<Symbol>) {
+        let mut requested_symbols = AHashSet::new();
+
+        let raw_symbols = params
+            .symbols
+            .iter()
+            .map(|symbol| {
+                let raw = raw_symbol(symbol, &params.dataset, self.futures_year_digits);
+                if raw != *symbol {
+                    requested_symbols.insert(Symbol::from(symbol.as_str()));
+                }
+
+                raw
+            })
+            .collect();
+
+        (raw_symbols, requested_symbols)
     }
 
     /// Prepares symbols from instrument IDs.
@@ -1060,8 +1098,11 @@ impl DatabentoHistoricalClient {
 mod tests {
     use std::ffi::c_char;
 
-    use databento::dbn::{MappingInterval, SymbolMapping, encode::EncodeRecord};
+    use databento::dbn::{
+        MappingInterval, SymbolMapping, decode::DecodeRecord, encode::EncodeRecord,
+    };
     use nautilus_core::time::get_atomic_clock_realtime;
+    use nautilus_model::types::{Price, Quantity};
     use rstest::{fixture, rstest};
     use time::macros::date;
     use tokio::{
@@ -1210,11 +1251,11 @@ mod tests {
         server.await.unwrap();
 
         assert_eq!(deltas.len(), 2);
-        assert_eq!(deltas[0].instrument_id, InstrumentId::from("ESM4.GLBX"));
+        assert_eq!(deltas[0].instrument_id, InstrumentId::from("ESM24.GLBX"));
         assert_eq!(deltas[0].order.order_id, 1);
         assert_eq!(deltas[0].flags, last);
         assert_eq!(deltas[0].sequence, 1);
-        assert_eq!(deltas[1].instrument_id, InstrumentId::from("ESM4.GLBX"));
+        assert_eq!(deltas[1].instrument_id, InstrumentId::from("ESM24.GLBX"));
         assert_eq!(deltas[1].order.order_id, 3);
         assert_eq!(deltas[1].flags, 0);
         assert_eq!(deltas[1].sequence, 3);
@@ -1305,6 +1346,313 @@ mod tests {
         assert!(
             err_msg.contains("ESM4.GLBX"),
             "error should name the instrument: {err_msg}",
+        );
+    }
+
+    #[rstest]
+    #[case(1_000)]
+    #[case(10_000)]
+    #[tokio::test]
+    async fn test_historical_definition_batch_preserves_all_symbols(#[case] count: u32) {
+        let path = publishers_path()
+            .parent()
+            .unwrap()
+            .join("test_data/test_data.definition.futures_contract.dbn.zst");
+        let mut decoder = dbn::decode::dbn::Decoder::from_zstd_file(path).unwrap();
+        let mut definition = decoder
+            .decode_record::<dbn::InstrumentDefMsg>()
+            .unwrap()
+            .unwrap()
+            .clone();
+        definition.ts_recv = "2026-01-01T00:00:00Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_nanosecond() as u64;
+        definition.maturity_year = 2026;
+        let mut definitions = Vec::new();
+        let mut mappings = Vec::new();
+
+        for id in 1..=count {
+            let raw = format!("T{id}U6");
+            definition.hd.instrument_id = id;
+            definition.raw_symbol.fill(0);
+
+            for (target, byte) in definition.raw_symbol.iter_mut().zip(raw.bytes()) {
+                *target = byte as c_char;
+            }
+
+            definitions.push(definition.clone());
+            mappings.push(SymbolMapping {
+                raw_symbol: raw,
+                intervals: vec![MappingInterval {
+                    start_date: date!(2026 - 01 - 01),
+                    end_date: date!(2026 - 01 - 02),
+                    symbol: id.to_string(),
+                }],
+            });
+        }
+
+        let mut replacement = definitions[0].clone();
+        replacement.maturity_year = 2036;
+        definitions.push(replacement);
+        let metadata = dbn::Metadata::builder()
+            .dataset("GLBX.MDP3")
+            .schema(Some(dbn::Schema::Definition))
+            .start(definition.ts_recv)
+            .stype_in(Some(dbn::SType::Parent))
+            .stype_out(dbn::SType::InstrumentId)
+            .mappings(mappings)
+            .build();
+        let mut body = Vec::new();
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut body, &metadata).unwrap();
+            encoder.encode_records(&definitions).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(serve_response(listener, body));
+        let client = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new(test_api_key()),
+            publishers_path(),
+            get_atomic_clock_realtime(),
+            false,
+            &base_url,
+        )
+        .unwrap();
+        let publisher = definition.hd.publisher_id;
+        let old_key = (publisher, 1, date!(2025 - 12 - 31));
+        client
+            .futures_symbols
+            .insert(old_key, Symbol::from("T1U16"));
+        let started = std::time::Instant::now();
+
+        let instruments = client
+            .get_range_instruments(RangeQueryParams {
+                dataset: "GLBX.MDP3".to_string(),
+                symbols: vec!["T.FUT".to_string()],
+                start: definition.ts_recv.into(),
+                end: Some((definition.ts_recv + 1).into()),
+                limit: None,
+                price_precision: None,
+            })
+            .await
+            .unwrap();
+
+        let elapsed = started.elapsed();
+        server.await.unwrap();
+        let symbols = client.futures_symbols.load();
+        let mut expected = AHashMap::new();
+        expected.insert(old_key, Symbol::from("T1U16"));
+
+        for id in 1..=count {
+            let symbol = Symbol::from(format!("T{id}U26").as_str());
+            expected.insert((publisher, id, date!(2026 - 01 - 01)), symbol);
+            assert_eq!(
+                instruments[(id - 1) as usize].id(),
+                InstrumentId::new(symbol, Venue::GLBX())
+            );
+            assert_eq!(
+                instruments[(id - 1) as usize].raw_symbol(),
+                Symbol::from(format!("T{id}U6").as_str())
+            );
+        }
+
+        expected.insert((publisher, 1, date!(2026 - 01 - 01)), Symbol::from("T1U36"));
+        assert_eq!(instruments.len(), count as usize + 1);
+        assert_eq!(
+            instruments.last().unwrap().id(),
+            InstrumentId::from("T1U36.GLBX")
+        );
+        assert_eq!(symbols.as_ref(), &expected);
+        eprintln!("Decoded {count} definitions plus replacement in {elapsed:?}");
+    }
+
+    #[tokio::test]
+    async fn test_historical_records_use_definition_year_for_the_same_date() {
+        let path = publishers_path()
+            .parent()
+            .unwrap()
+            .join("test_data/test_data.definition.futures_contract.dbn.zst");
+        let mut decoder = dbn::decode::dbn::Decoder::from_zstd_file(path).unwrap();
+        let mut definition = decoder
+            .decode_record::<dbn::InstrumentDefMsg>()
+            .unwrap()
+            .unwrap()
+            .clone();
+        definition.ts_recv = "2028-01-01T00:00:00Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_nanosecond() as u64;
+        let metadata = dbn::Metadata::builder()
+            .dataset("GLBX.MDP3")
+            .schema(Some(dbn::Schema::Definition))
+            .start(definition.ts_recv)
+            .stype_in(Some(dbn::SType::RawSymbol))
+            .stype_out(dbn::SType::InstrumentId)
+            .mappings(vec![SymbolMapping {
+                raw_symbol: "ESU6".to_string(),
+                intervals: vec![MappingInterval {
+                    start_date: date!(2028 - 01 - 01),
+                    end_date: date!(2028 - 01 - 02),
+                    symbol: definition.hd.instrument_id.to_string(),
+                }],
+            }])
+            .build();
+        let mut body = Vec::new();
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut body, &metadata).unwrap();
+            encoder.encode_record(&definition).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(serve_response(listener, body));
+        let client = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new(test_api_key()),
+            publishers_path(),
+            get_atomic_clock_realtime(),
+            false,
+            &base_url,
+        )
+        .unwrap();
+
+        let instruments = client
+            .get_range_instruments(RangeQueryParams {
+                dataset: "GLBX.MDP3".to_string(),
+                symbols: vec!["ESU26".to_string()],
+                start: definition.ts_recv.into(),
+                end: Some((definition.ts_recv + 1).into()),
+                limit: Some(1),
+                price_precision: None,
+            })
+            .await
+            .unwrap();
+
+        server.await.unwrap();
+        let mut record = dbn::BboMsg::default_for_schema(dbn::Schema::Bbo1S);
+        record.hd.publisher_id = definition.hd.publisher_id;
+        record.hd.instrument_id = definition.hd.instrument_id;
+        record.ts_recv = definition.ts_recv;
+        let id = client
+            .instrument_id(
+                &dbn::RecordRef::from(&record),
+                &mut MetadataCache::new(metadata),
+                &AHashSet::from_iter([Symbol::from("ESU36")]),
+            )
+            .unwrap();
+        assert_eq!(instruments.len(), 1);
+        assert_eq!(instruments[0].id(), InstrumentId::from("ESU26.GLBX"));
+        assert_eq!(instruments[0].raw_symbol(), Symbol::from("ESU6"));
+        assert_eq!(id, InstrumentId::from("ESU26.GLBX"));
+    }
+
+    #[rstest]
+    #[case(None, "SR3Z26.XCME", true)]
+    #[case(Some("SR3Z36.XNYM"), "SR3Z26.XCME", true)]
+    #[case(Some("SR3Z26.XNYM"), "SR3Z36.XCME", true)]
+    #[case(Some("SR3Z36.XNYM"), "SR3Z26.GLBX", false)]
+    #[tokio::test]
+    async fn test_requested_post_year_quotes_use_cached_precision_without_definitions(
+        #[case] previous: Option<&str>,
+        #[case] requested: &str,
+        #[case] register_venue: bool,
+    ) {
+        let ts = "2027-02-01T00:00:00Z"
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_nanosecond() as u64;
+        let mut msg = dbn::BboMsg::default_for_schema(dbn::Schema::Bbo1S);
+        msg.hd.publisher_id = 1;
+        msg.hd.instrument_id = 42;
+        msg.hd.ts_event = ts - 1;
+        msg.ts_recv = ts;
+        msg.levels[0].bid_px = 95_125_000_000;
+        msg.levels[0].ask_px = 95_250_000_000;
+        msg.levels[0].bid_sz = 7;
+        msg.levels[0].ask_sz = 11;
+        let metadata = dbn::Metadata::builder()
+            .dataset("GLBX.MDP3")
+            .schema(Some(dbn::Schema::Bbo1S))
+            .start(ts)
+            .stype_in(Some(dbn::SType::RawSymbol))
+            .stype_out(dbn::SType::InstrumentId)
+            .mappings(vec![SymbolMapping {
+                raw_symbol: "SR3Z6".to_string(),
+                intervals: vec![MappingInterval {
+                    start_date: date!(2027 - 02 - 01),
+                    end_date: date!(2027 - 02 - 02),
+                    symbol: "42".to_string(),
+                }],
+            }])
+            .build();
+        let mut body = Vec::new();
+        {
+            let mut encoder = dbn::encode::dbn::Encoder::with_zstd(&mut body, &metadata).unwrap();
+            encoder.encode_record(&msg).unwrap();
+            encoder.flush().unwrap();
+        }
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base_url = format!("http://{}/", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(serve_response(listener, body));
+        let client = DatabentoHistoricalClient::new_with_base_url(
+            Credential::new(test_api_key()),
+            publishers_path(),
+            get_atomic_clock_realtime(),
+            false,
+            &base_url,
+        )
+        .unwrap();
+
+        if let Some(previous) = previous {
+            let previous = InstrumentId::from(previous);
+            client.prepare_symbols_from_instrument_ids(&[previous]);
+            client.set_price_precision(previous.symbol, 3);
+        }
+
+        let id = InstrumentId::from(requested);
+        let symbols = if register_venue {
+            client.prepare_symbols_from_instrument_ids(&[id])
+        } else {
+            vec![id.symbol.to_string()]
+        };
+
+        client.set_price_precision(id.symbol, 3);
+
+        let quotes = client
+            .get_range_quotes(
+                RangeQueryParams {
+                    dataset: "GLBX.MDP3".to_string(),
+                    symbols,
+                    start: ts.into(),
+                    end: Some((ts + 1).into()),
+                    limit: Some(1),
+                    price_precision: None,
+                },
+                Some("bbo-1s".to_string()),
+            )
+            .await
+            .unwrap();
+
+        server.await.unwrap();
+
+        assert_eq!(
+            quotes,
+            vec![QuoteTick::new(
+                id,
+                Price::from("95.125"),
+                Price::from("95.250"),
+                Quantity::from(7),
+                Quantity::from(11),
+                ts.into(),
+                ts.into(),
+            )]
         );
     }
 }

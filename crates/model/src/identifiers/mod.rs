@@ -36,6 +36,7 @@ pub mod client_id;
 pub mod client_order_id;
 pub mod component_id;
 pub mod exec_algorithm_id;
+pub mod futures;
 pub mod instrument_id;
 pub mod option_instrument_id;
 pub mod option_series_id;

@@ -23,7 +23,11 @@
 //! - Publishing messages to subscribers.
 //! - Sending messages to endpoints.
 
-use std::{any::Any, cell::RefCell, thread::LocalKey};
+use std::{
+    any::Any,
+    cell::{Cell, RefCell},
+    thread::LocalKey,
+};
 
 use nautilus_core::UUID4;
 #[cfg(feature = "defi")]
@@ -1047,6 +1051,25 @@ pub fn publish_book(topic: MStr<Topic>, book: &OrderBook) {
 
 /// Publishes a quote tick to subscribers on a topic.
 pub fn publish_quote(topic: MStr<Topic>, quote: &QuoteTick) {
+    publish_quote_inner(topic, quote, false);
+}
+
+/// Publishes a quote derived from an order book source.
+pub fn publish_book_quote(topic: MStr<Topic>, quote: &QuoteTick) {
+    publish_quote_inner(topic, quote, true);
+}
+
+/// Returns whether the current synchronous quote publication was derived from a book.
+///
+/// Ordinary publications clear this context, including nested independent quotes.
+/// This context is local to this thread and is not serialized for external delivery.
+#[must_use]
+pub fn is_book_derived_quote() -> bool {
+    BOOK_DERIVED_QUOTE.get()
+}
+
+fn publish_quote_inner(topic: MStr<Topic>, quote: &QuoteTick, from_book: bool) {
+    let _source = BookQuoteSourceGuard::new(from_book);
     publish_typed(
         topic,
         &QUOTE_HANDLERS,
@@ -1577,6 +1600,24 @@ fn data_command_is_request(command: &DataCommand) -> bool {
     }
 }
 
+thread_local! {
+    static BOOK_DERIVED_QUOTE: Cell<bool> = const { Cell::new(false) };
+}
+
+struct BookQuoteSourceGuard(bool);
+
+impl BookQuoteSourceGuard {
+    fn new(from_book: bool) -> Self {
+        Self(BOOK_DERIVED_QUOTE.replace(from_book))
+    }
+}
+
+impl Drop for BookQuoteSourceGuard {
+    fn drop(&mut self) {
+        BOOK_DERIVED_QUOTE.set(self.0);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! Tests for the message bus API functions.
@@ -1789,11 +1830,16 @@ mod tests {
     #[case(SerializationEncoding::Json)]
     fn publish_quote_forwards_decodable_payload_to_external_egress(
         #[case] encoding: SerializationEncoding,
+        #[values(false, true)] from_book: bool,
     ) {
         let publications = install_capturing_external_egress(encoding);
         let quote = QuoteTick::default();
 
-        publish_quote("data.quotes.TEST".into(), &quote);
+        if from_book {
+            publish_book_quote("data.quotes.TEST".into(), &quote);
+        } else {
+            publish_quote("data.quotes.TEST".into(), &quote);
+        }
 
         let publications = publications.borrow();
         assert_eq!(publications.len(), 1);
@@ -3441,6 +3487,56 @@ mod tests {
             Some(42)
         );
         drop(publications);
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn test_book_quote_source_is_scoped_to_each_publication() {
+        reset_message_bus();
+        let sources = Rc::new(RefCell::new(Vec::new()));
+        let received = sources.clone();
+        subscribe_quotes(
+            "quotes.inner".into(),
+            TypedHandler::from(move |_: &QuoteTick| {
+                received.borrow_mut().push(is_book_derived_quote());
+            }),
+            None,
+        );
+        subscribe_quotes(
+            "quotes.outer".into(),
+            TypedHandler::from(move |quote: &QuoteTick| {
+                assert!(is_book_derived_quote());
+                publish_book_quote("quotes.inner".into(), quote);
+                assert!(is_book_derived_quote());
+                publish_quote("quotes.inner".into(), quote);
+                assert!(is_book_derived_quote());
+            }),
+            None,
+        );
+        publish_book_quote("quotes.outer".into(), &QuoteTick::default());
+        assert_eq!(*sources.borrow(), vec![true, false]);
+        assert!(!is_book_derived_quote());
+        publish_quote("quotes.inner".into(), &QuoteTick::default());
+        assert_eq!(*sources.borrow(), vec![true, false, false]);
+        reset_message_bus();
+    }
+
+    #[rstest]
+    fn test_book_quote_source_is_restored_after_handler_panic() {
+        reset_message_bus();
+        subscribe_quotes(
+            "quotes.panic".into(),
+            TypedHandler::from(|_: &QuoteTick| {
+                assert!(is_book_derived_quote());
+                panic!("handler failure");
+            }),
+            None,
+        );
+        let result = std::panic::catch_unwind(|| {
+            publish_book_quote("quotes.panic".into(), &QuoteTick::default());
+        });
+        assert!(result.is_err());
+        assert!(!is_book_derived_quote());
         reset_message_bus();
     }
 

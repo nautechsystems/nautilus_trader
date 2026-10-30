@@ -1827,6 +1827,10 @@ impl ExecTester {
     /// # Errors
     ///
     /// Returns an error if order creation or submission fails.
+    #[expect(
+        clippy::too_many_lines,
+        reason = "bracket validation and linked entry, stop-loss, and take-profit construction stay together"
+    )]
     pub(super) fn submit_bracket_order(
         &mut self,
         order_side: OrderSide,
@@ -1847,6 +1851,23 @@ impl ExecTester {
                 self.config.bracket_entry_order_type
             );
         }
+
+        anyhow::ensure!(
+            matches!(
+                self.config.bracket_contingency_type,
+                ContingencyType::Oco | ContingencyType::Ouo
+            ),
+            "Bracket exits require OCO or OUO contingency, was {:?}",
+            self.config.bracket_contingency_type
+        );
+        anyhow::ensure!(
+            matches!(
+                self.config.bracket_tp_order_type,
+                OrderType::Limit | OrderType::MarketIfTouched | OrderType::LimitIfTouched
+            ),
+            "Bracket take-profit requires LIMIT, MARKET_IF_TOUCHED, or LIMIT_IF_TOUCHED, was {:?}",
+            self.config.bracket_tp_order_type
+        );
 
         if order_side == OrderSide::Buy && !self.config.enable_limit_buys {
             log_warn!("BUY orders not enabled, skipping bracket");
@@ -1889,6 +1910,8 @@ impl ExecTester {
         let quote_quantity = self.config.use_quote_quantity;
         let emulation_trigger = self.config.emulation_trigger;
         let stop_trigger_type = self.config.stop_trigger_type;
+        let contingency_type = self.config.bracket_contingency_type;
+        let tp_order_type = self.config.bracket_tp_order_type;
         let orders = self
             .order_factory()
             .bracket()
@@ -1896,13 +1919,16 @@ impl ExecTester {
             .order_side(order_side)
             .quantity(quantity)
             .quote_quantity(quote_quantity)
+            .contingency_type(contingency_type)
             .entry_order_type(OrderType::Limit)
             .entry_price(entry_price)
             .time_in_force(time_in_force)
             .entry_post_only(entry_post_only)
             .maybe_emulation_trigger(emulation_trigger)
             .maybe_expire_time(expire_time)
+            .tp_order_type(tp_order_type)
             .tp_price(tp_price)
+            .tp_trigger_price(tp_price)
             .tp_post_only(entry_post_only)
             .tp_time_in_force(time_in_force)
             .sl_trigger_price(sl_trigger_price)
@@ -1910,14 +1936,14 @@ impl ExecTester {
             .sl_time_in_force(sl_time_in_force)
             .call();
 
-        if let Some(entry_order) = orders.first() {
-            if order_side == OrderSide::Buy {
-                self.buy_order = Some(entry_order.clone());
-            } else {
-                self.sell_order = Some(entry_order.clone());
-            }
-            self.arm_limit_order_maintenance(order_side, entry_order.client_order_id());
+        let entry_order = &orders[0];
+        if order_side == OrderSide::Buy {
+            self.buy_order = Some(entry_order.clone());
+        } else {
+            self.sell_order = Some(entry_order.clone());
         }
+
+        self.arm_limit_order_maintenance(order_side, entry_order.client_order_id());
 
         let client_id = self.config.client_id;
         if let Some(params) = &self.config.order_params {

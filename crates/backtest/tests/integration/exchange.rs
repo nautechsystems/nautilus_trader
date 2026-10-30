@@ -7530,9 +7530,12 @@ fn test_exchange_book_processing_uses_explicit_input(
     } else {
         OrderBookSource::Depth
     };
-    cache
-        .borrow_mut()
-        .set_order_book_source(instrument_id, selected, false);
+    cache.borrow_mut().set_order_book_source(
+        instrument_id,
+        selected,
+        false,
+        depth.then_some(BookType::L2_MBP),
+    );
     let exchange = get_exchange(
         instrument_id.venue,
         AccountType::Margin,

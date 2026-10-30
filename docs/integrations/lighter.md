@@ -507,6 +507,10 @@ For a native bracket, select `OCO` exits and a conditional take-profit. The defa
 uses `OUO` exits and a plain `LIMIT` take-profit, so the adapter rejects it. It does not replace quantity
 updates with cancellation or convert resting limits to triggered take-profits.
 
+For `ExecTester`, set `enable_brackets=True`, `bracket_contingency_type=ContingencyType.OCO`, and
+`bracket_tp_order_type=OrderType.MARKET_IF_TOUCHED`. The Lighter execution tester examples select
+these exit types; enable brackets to test them.
+
 #### Child activation and sizing
 
 Parent execution activates and sizes OTO/OTOCO children. Until then, their wire base amount is zero,

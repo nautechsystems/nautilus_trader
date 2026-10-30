@@ -1877,6 +1877,11 @@ impl BarAggregator for TimeBarAggregator {
 
     fn update(&mut self, price: Price, size: Quantity, ts_init: UnixNanos) {
         if self.historical_mode {
+            // Stale data is not applicable, and must not move the private clock backwards
+            if self.core.is_stale(ts_init) {
+                return;
+            }
+
             self.preprocess_historical_events(ts_init);
         }
 
@@ -1889,6 +1894,10 @@ impl BarAggregator for TimeBarAggregator {
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
         if self.historical_mode {
+            if self.core.is_stale(ts_init) {
+                return;
+            }
+
             self.preprocess_historical_events(ts_init);
         }
 

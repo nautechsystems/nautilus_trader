@@ -86,7 +86,10 @@ use nautilus_model::{
     },
     instruments::{
         Instrument, InstrumentAny,
-        stubs::{binary_option, btcusd_bybit, crypto_perpetual_ethusdt, currency_pair_btcusdt},
+        stubs::{
+            binary_option, btcusd_bybit, crypto_perpetual_ethusdt, currency_pair_btcusdt,
+            equity_aapl,
+        },
     },
     orders::{
         Order, OrderAny, OrderTestBuilder,
@@ -823,7 +826,6 @@ async fn test_observe_order_report_clears_inflight_tracking() {
     let order = create_submitted_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order(order);
 
-    // Register as inflight
     ctx.manager.register_inflight(client_order_id);
 
     // Simulate venue responding with an OrderStatusReport
@@ -949,8 +951,26 @@ fn test_observe_position_report_records_activity() {
     );
     let report = ExecutionReport::Position(Box::new(position_report));
 
-    // Should complete without panic - position activity is recorded internally
+    let key = (instrument_id, test_account_id());
+    let other_account = (instrument_id, AccountId::from("BINANCE-002"));
+    let other_instrument = (test_instrument_id2(), test_account_id());
+    for (instrument_id, account_id) in [key, other_account, other_instrument] {
+        ctx.manager
+            .record_position_activity(instrument_id, account_id);
+    }
+
+    let check = ctx.manager.prepare_position_report_check(UUID4::new(), &[]);
+    let before = [key, other_account, other_instrument]
+        .map(|key| ctx.manager.position_report_check_is_current(&check, &key));
+
     ctx.manager.observe_execution_report(&report);
+
+    assert_eq!(before, [true, true, true]);
+    assert_eq!(
+        [key, other_account, other_instrument]
+            .map(|key| ctx.manager.position_report_check_is_current(&check, &key)),
+        [false, true, true],
+    );
 }
 
 #[tokio::test]
@@ -1005,7 +1025,6 @@ async fn test_reconcile_mass_status_creates_external_order_accepted() {
     assert_eq!(result.events.len(), 1);
     assert!(matches!(result.events[0], OrderEventAny::Accepted(_)));
 
-    // Verify order was added to cache
     let client_order_id = ClientOrderId::from("V-EXT-001");
     let order = ctx.get_order(&client_order_id);
     assert!(order.is_some());
@@ -1553,7 +1572,6 @@ async fn test_external_order_canceled_with_partial_fill() {
     .with_avg_px(dec!(3000.00));
     mass_status.add_order_reports(vec![report]);
 
-    // Add fill report for the partial fill
     let fill = FillReport::new(
         test_account_id(),
         instrument_id,
@@ -1587,7 +1605,6 @@ async fn test_external_order_canceled_with_partial_fill() {
         assert_eq!(filled.trade_id, TradeId::from("T-PARTIAL-001"));
     }
 
-    // Verify order state in cache
     let cache = ctx.cache.borrow();
     let orders = cache.orders(None, None, None, None, None);
     assert_eq!(orders.len(), 1);
@@ -1690,7 +1707,6 @@ async fn test_cached_order_canceled_with_fills() {
 
     ctx.add_instrument(test_instrument());
 
-    // Create and cache an accepted order
     let mut order = create_submitted_order(
         "O-CANCEL-FILL",
         instrument_id,
@@ -1722,7 +1738,6 @@ async fn test_cached_order_canceled_with_fills() {
     .with_avg_px(dec!(3000.00));
     mass_status.add_order_reports(vec![report]);
 
-    // Add fill report
     let fill = FillReport::new(
         test_account_id(),
         instrument_id,
@@ -1750,7 +1765,6 @@ async fn test_cached_order_canceled_with_fills() {
     assert!(matches!(result.events[0], OrderEventAny::Filled(_)));
     assert!(matches!(result.events[1], OrderEventAny::Canceled(_)));
 
-    // Verify order state
     let cached_order = ctx.get_order(&client_order_id).unwrap();
     assert_eq!(cached_order.status(), OrderStatus::Canceled);
     assert_eq!(cached_order.filled_qty(), Quantity::from("1.0"));
@@ -2107,7 +2121,6 @@ async fn test_external_order_filled_uses_real_fills() {
         assert_eq!(filled2.last_px, Price::from("3001.00"));
     }
 
-    // Verify order state in cache
     {
         let cache = ctx.cache.borrow();
         let orders = cache.orders(None, None, None, None, None);
@@ -2356,7 +2369,6 @@ async fn test_external_order_filled_with_partial_fills_generates_inferred() {
         assert_eq!(filled2.last_qty, Quantity::from("1.000"));
     }
 
-    // Verify order is fully filled
     let cache = ctx.cache.borrow();
     let orders = cache.orders(None, None, None, None, None);
     assert_eq!(orders.len(), 1);
@@ -7066,20 +7078,125 @@ fn test_config_with_trader_id() {
     assert_eq!(config.trader_id, trader_id);
 }
 
+const PURGE_MINUTE_NS: u64 = 60_000_000_000;
+
 #[rstest]
-fn test_purge_operations_do_nothing_when_disabled() {
+#[case::disabled(None, None, None, PURGE_MINUTE_NS, [false; 3])]
+#[case::immediate(Some(0), Some(0), Some(0), PURGE_MINUTE_NS, [true; 3])]
+#[case::orders_before(Some(1), None, None, PURGE_MINUTE_NS - 1, [false; 3])]
+#[case::orders_at(Some(1), None, None, PURGE_MINUTE_NS, [true, false, false])]
+#[case::positions_before(None, Some(1), None, PURGE_MINUTE_NS - 1, [false; 3])]
+#[case::positions_at(None, Some(1), None, PURGE_MINUTE_NS, [false, true, false])]
+#[case::accounts_before(None, None, Some(1), PURGE_MINUTE_NS - 1, [false; 3])]
+#[case::accounts_at(None, None, Some(1), PURGE_MINUTE_NS, [false, false, true])]
+fn test_purge_operations_respect_retention_config(
+    #[case] orders_mins: Option<u32>,
+    #[case] positions_mins: Option<u32>,
+    #[case] accounts_mins: Option<u32>,
+    #[case] elapsed_ns: u64,
+    #[case] purged: [bool; 3],
+) {
     let config = ExecutionManagerConfig {
-        purge_closed_orders_buffer_mins: None,
-        purge_closed_positions_buffer_mins: None,
-        purge_account_events_lookback_mins: None,
+        purge_closed_orders_buffer_mins: orders_mins,
+        purge_closed_positions_buffer_mins: positions_mins,
+        purge_account_events_lookback_mins: accounts_mins,
         ..Default::default()
     };
 
     let mut ctx = TestContext::with_config(config);
+    let instrument = test_instrument();
+    ctx.add_instrument(instrument.clone());
+    let order = create_submitted_order(
+        "O-PURGE",
+        instrument.id(),
+        OrderSide::Buy,
+        "1.000",
+        "3000.00",
+    );
+    ctx.add_order(order.clone());
+    let accepted =
+        TestOrderEventStubs::accepted(&order, test_account_id(), VenueOrderId::from("V-PURGE"));
+    let canceled = TestOrderEventStubs::canceled(
+        &order,
+        test_account_id(),
+        Some(VenueOrderId::from("V-PURGE")),
+    );
+    ctx.cache.borrow_mut().update_order(&accepted).unwrap();
+    ctx.cache.borrow_mut().update_order(&canceled).unwrap();
+    let mut position = create_test_position(
+        &instrument,
+        PositionId::from("P-PURGE"),
+        OrderSide::Buy,
+        "2.000",
+        "3000.00",
+    );
+    ctx.add_position(&position);
+    let closing_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-PURGE-POSITION-CLOSE"))
+        .side(OrderSide::Sell)
+        .quantity(position.quantity)
+        .build();
+
+    let OrderEventAny::Filled(fill) = OrderFilledTestBuilder::new(&closing_order, &instrument)
+        .account_id(test_account_id())
+        .position_id(position.id)
+        .trade_id(TradeId::from("T-PURGE-CLOSE"))
+        .last_px(Price::from("3000.00"))
+        .build()
+    else {
+        panic!("expected a closing fill");
+    };
+
+    position.apply(&fill);
+    ctx.cache.borrow_mut().update_position(&position).unwrap();
+    let first = ctx
+        .cache
+        .borrow()
+        .account(&test_account_id())
+        .unwrap()
+        .last_event()
+        .unwrap();
+    let mut second = first.clone();
+    second.event_id = UUID4::new();
+    second.ts_event = UnixNanos::from(1);
+    second.ts_init = UnixNanos::from(2);
+    ctx.cache
+        .borrow_mut()
+        .update_account_state(&second)
+        .unwrap();
+    ctx.advance_time(elapsed_ns);
+    assert!(ctx.cache.borrow().is_order_closed(&order.client_order_id()));
+    assert!(ctx.cache.borrow().is_position_closed(&position.id));
 
     ctx.manager.purge_closed_orders();
     ctx.manager.purge_closed_positions();
     ctx.manager.purge_account_events();
+
+    let cache = ctx.cache.borrow();
+    assert_eq!(
+        cache
+            .order(&order.client_order_id())
+            .map(|order| order.status()),
+        (!purged[0]).then_some(OrderStatus::Canceled)
+    );
+    assert_eq!(
+        cache
+            .position(&position.id)
+            .map(|position| position.quantity),
+        (!purged[1]).then_some(Quantity::zero(3))
+    );
+
+    let expected_events = if purged[2] {
+        vec![second]
+    } else {
+        vec![first, second]
+    };
+
+    assert_eq!(
+        serde_json::to_value(cache.account(&test_account_id()).unwrap().events()).unwrap(),
+        serde_json::to_value(expected_events).unwrap()
+    );
 }
 
 #[tokio::test]
@@ -7095,7 +7212,6 @@ async fn test_reconcile_mass_status_accepted_order_canceled_at_venue() {
     let mut order =
         create_submitted_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
 
-    // Apply accepted event to put order in ACCEPTED state
     let accepted = TestOrderEventStubs::accepted(&order, test_account_id(), venue_order_id);
     order.apply(accepted).unwrap();
     ctx.add_order(order);
@@ -10077,6 +10193,67 @@ async fn test_mass_status_coarse_average_keeps_retained_position(
     );
 }
 
+// An equity held across the fill lookback: the cache keeps the fills' average (all at 40.66),
+// while the venue reports an average cost with commissions in it, rounded to the tick (40.67)
+#[rstest]
+#[case::marked(Some(2), false)]
+#[case::unmarked(None, true)]
+#[tokio::test]
+async fn test_mass_status_average_cost_with_commission_keeps_retained_position(
+    #[case] avg_px_open_precision: Option<u8>,
+    #[case] unresolved: bool,
+) {
+    let mut ctx = TestContext::new();
+    let instrument = InstrumentAny::Equity(equity_aapl());
+    let instrument_id = instrument.id();
+    let position = create_test_position(
+        &instrument,
+        PositionId::from("P-EQUITY"),
+        OrderSide::Buy,
+        "2342",
+        "40.66",
+    );
+    ctx.add_instrument(instrument);
+    ctx.cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    let mut report = PositionStatusReport::new(
+        test_account_id(),
+        instrument_id,
+        PositionSide::Long,
+        Quantity::from("2342"),
+        UnixNanos::from(1_000_000),
+        UnixNanos::from(1_000_000),
+        None,
+        None,
+        Some(dec!(40.67)),
+    );
+    report.avg_px_open_precision = avg_px_open_precision;
+    let mut mass_status = create_mass_status(vec![], vec![]);
+    mass_status.add_position_reports(vec![report]);
+
+    let result = ctx
+        .manager
+        .reconcile_execution_mass_status(&mass_status, &ctx.exec_engine);
+
+    let expected_unresolved = if unresolved {
+        vec![format!(
+            "account={}, instrument={instrument_id}, venue_position_id=None, venue_quantity=2342: position recovery did not restore the reported average entry price",
+            test_account_id(),
+        )]
+    } else {
+        Vec::new()
+    };
+
+    assert!(result.events.is_empty());
+    assert_eq!(result.unresolved_positions, expected_unresolved);
+    assert_eq!(
+        ctx.cache.borrow().position_owned(&position.id),
+        Some(position)
+    );
+}
+
 #[rstest]
 #[case::marked_keeps_cached_average(Some(4), "0.560")]
 #[case::unmarked_solves_weighted_average(None, "0.0599")]
@@ -10838,7 +11015,6 @@ async fn test_reconcile_mass_status_iterates_all_position_reports() {
     assert!(has_buy_fill, "Should have BUY fill for long position");
     assert!(has_sell_fill, "Should have SELL fill for short position");
 
-    // Verify both positions exist in cache
     let cache = ctx.cache.borrow();
     let positions = cache.positions(None, None, None, None, None);
     assert_eq!(positions.len(), 2, "Should have 2 positions in cache");
@@ -12911,7 +13087,6 @@ async fn test_expired_order_applies_fills_before_terminal_event() {
     );
     mass_status.add_order_reports(vec![report]);
 
-    // Add fill report for the partial fill
     let fill = FillReport::new(
         test_account_id(),
         instrument_id,
@@ -14936,7 +15111,6 @@ async fn test_filtered_client_order_ids_skips_orphan_fills_via_venue_order_id_lo
     let instrument_id = test_instrument_id();
     ctx.add_instrument(test_instrument());
 
-    // Add the order to cache
     let mut order = OrderTestBuilder::new(OrderType::Limit)
         .client_order_id(filtered_id)
         .instrument_id(instrument_id)

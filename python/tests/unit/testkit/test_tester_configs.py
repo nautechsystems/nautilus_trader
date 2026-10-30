@@ -20,7 +20,9 @@ from decimal import Decimal
 
 from nautilus_trader.model import ActorId
 from nautilus_trader.model import ClientId
+from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderType
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TimeInForce
@@ -131,6 +133,8 @@ def test_exec_tester_config_readback() -> None:
         enable_limit_sells=False,
         enable_stop_buys=True,
         enable_stop_sells=True,
+        bracket_contingency_type=ContingencyType.OCO,
+        bracket_tp_order_type=OrderType.MARKET_IF_TOUCHED,
         tob_offset_ticks=2,
         limit_time_in_force=TimeInForce.FOK,
         use_post_only=True,
@@ -168,6 +172,8 @@ def test_exec_tester_config_readback() -> None:
     assert config.enable_limit_sells is False
     assert config.enable_stop_buys is True
     assert config.enable_stop_sells is True
+    assert config.bracket_contingency_type == ContingencyType.OCO
+    assert config.bracket_tp_order_type == OrderType.MARKET_IF_TOUCHED
     assert config.tob_offset_ticks == 2
     assert config.limit_time_in_force == TimeInForce.FOK
     assert config.use_post_only is True
@@ -185,6 +191,32 @@ def test_exec_tester_config_readback() -> None:
     assert config.clamp_to_instrument_price_range is True
     assert config.log_events is False
     assert config.log_commands is False
+
+
+def test_exec_tester_config_bracket_defaults() -> None:
+    """
+    Test the existing bracket exit defaults.
+    """
+    config = ExecTesterConfig()
+
+    assert config.bracket_contingency_type == ContingencyType.OUO
+    assert config.bracket_tp_order_type == OrderType.LIMIT
+
+
+def test_exec_tester_config_legacy_positional_arguments() -> None:
+    """
+    Test that the original positional arguments retain their meanings.
+    """
+    # The original 63-argument constructor ends with clamp, log_events, and log_commands
+    legacy_args = [None] * 60 + [True, False, True]
+
+    config = ExecTesterConfig(*legacy_args)
+
+    assert config.clamp_to_instrument_price_range is True
+    assert config.log_events is False
+    assert config.log_commands is True
+    assert config.bracket_contingency_type == ContingencyType.OUO
+    assert config.bracket_tp_order_type == OrderType.LIMIT
 
 
 def test_exec_tester_config_defaults_to_hyphenated_client_order_ids() -> None:

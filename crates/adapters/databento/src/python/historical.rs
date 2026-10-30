@@ -23,7 +23,7 @@ use nautilus_core::{
 };
 use nautilus_model::{
     enums::BarAggregation,
-    identifiers::{InstrumentId, Symbol},
+    identifiers::{InstrumentId, Symbol, futures::FuturesYearDigits},
     python::instruments::instrument_any_to_pyobject,
 };
 use pyo3::{
@@ -66,18 +66,28 @@ impl DatabentoHistoricalClient {
     /// This client provides both synchronous and asynchronous interfaces for fetching
     /// various types of historical market data from Databento.
     #[new]
+    #[pyo3(signature = (key, publishers_filepath, use_exchange_as_venue, futures_year_digits=None))]
     fn py_new(
         key: String,
         publishers_filepath: PathBuf,
         use_exchange_as_venue: bool,
+        futures_year_digits: Option<u8>,
     ) -> PyResult<Self> {
+        let futures_year_digits = futures_year_digits
+            .map(FuturesYearDigits::try_from)
+            .transpose()
+            .map_err(to_pyvalue_err)?
+            .unwrap_or_default();
+
         let clock = get_atomic_clock_realtime();
+
         let inner = CoreDatabentoHistoricalClient::new(
             Credential::new(key),
             publishers_filepath,
             clock,
             use_exchange_as_venue,
         )
+        .map(|client| client.with_futures_year_digits(futures_year_digits))
         .map_err(to_pyvalue_err)?;
 
         Ok(Self { inner })

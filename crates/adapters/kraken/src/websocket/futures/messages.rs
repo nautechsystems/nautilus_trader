@@ -450,8 +450,8 @@ impl KrakenFuturesOpenOrdersDelta {
     }
 
     /// Returns whether this delta terminally removes a part-filled order whose
-    /// remainder the venue discarded (a converted Maker Protection hold or an
-    /// IOC-style order), as opposed to a resting order's partial-fill update
+    /// remainder the venue discarded, as for an IOC-style order, as opposed to
+    /// a resting order's partial-fill update
     /// which carries `is_cancel=false`.
     #[must_use]
     pub fn is_partial_fill_removal(&self) -> bool {
@@ -733,9 +733,6 @@ mod tests {
     #[case::full_fill(true, Some("full_fill"), true)]
     #[case::partial_fill(true, Some("partial_fill"), true)]
     #[case::cancel_no_reason(true, None, false)]
-    // Maker Protection outcomes are genuine terminal cancels, never
-    // fill-driven: a converted hold that cannot trade at release, and a
-    // resting maker cancelled by the account's own released aggressor.
     #[case::ioc_not_executed(
         true,
         Some("ioc_order_failed_because_it_would_not_be_executed"),

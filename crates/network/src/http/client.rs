@@ -89,7 +89,7 @@ pub enum HttpRedirectPolicy {
 /// The client uses Hyper for normal I/O and supports default and per-key quotas. Multiple
 /// clients can share the same rate limiter when their requests consume one quota budget.
 /// With `simulation` and `cfg(madsim)`, plaintext HTTP/1.1 uses simulated byte streams;
-/// HTTPS, explicit proxies, and redirect following are unsupported.
+/// HTTPS, client certificates, explicit proxies, and redirect following are unsupported.
 ///
 /// Request URLs in transport errors and response-stream diagnostics are limited to their origin
 /// (scheme, host, and port). Userinfo, paths, queries, and fragments are excluded. Set
@@ -117,6 +117,7 @@ impl HttpClient {
     /// - Shared rate limiters are combined with quota configuration.
     /// - The proxy URL is malformed.
     /// - `NAUTILUS_HTTP2_ADAPTIVE_WINDOW` is set to a value other than `true` or `false`.
+    /// - The certificate directory does not contain a matching client certificate and private key.
     /// - Building the underlying HTTP transport fails.
     #[allow(
         clippy::needless_pass_by_value,
@@ -149,6 +150,9 @@ impl HttpClient {
         /// response body limit either way.
         #[builder(default = DEFAULT_MAX_RESPONSE_BYTES)]
         max_decompressed_bytes: usize,
+        /// Directory containing a matching client certificate and private key.
+        /// Uses bundled roots plus certificates from this directory instead of system trust.
+        certs_dir: Option<String>,
     ) -> Result<Self, HttpClientError> {
         let rate_limiters = if let Some(rate_limiters) = rate_limiters {
             if default_quota.is_some() || !keyed_quotas.is_empty() {
@@ -179,6 +183,7 @@ impl HttpClient {
             use_system_proxy,
             redact_url,
             max_decompressed_bytes,
+            certs_dir.as_deref(),
         )
     }
 
@@ -196,6 +201,7 @@ impl HttpClient {
         use_system_proxy: bool,
         redact_url: bool,
         max_decompressed_bytes: usize,
+        certs_dir: Option<&str>,
     ) -> Result<Self, HttpClientError> {
         install_cryptographic_provider();
 
@@ -213,12 +219,13 @@ impl HttpClient {
         }
 
         #[cfg(all(feature = "simulation", madsim))]
-        let simulation = super::simulation::Client::new(redirect_policy, proxy_url)?;
+        let simulation = super::simulation::Client::new(redirect_policy, proxy_url, certs_dir)?;
 
         #[cfg(not(all(feature = "simulation", madsim)))]
         let client = super::transport::Client::new(
             proxy_url,
             use_system_proxy,
+            certs_dir,
             header_map.get(http::header::USER_AGENT).cloned(),
             super::transport::Settings {
                 pool_max_idle_per_host: DEFAULT_POOL_MAX_IDLE_PER_HOST,

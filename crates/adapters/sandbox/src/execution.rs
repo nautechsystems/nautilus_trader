@@ -53,10 +53,10 @@ use nautilus_execution::{
 use nautilus_model::{
     accounts::AccountAny,
     data::{
-        Bar, InstrumentClose, InstrumentStatus, OrderBookDeltas, OrderBookDepth, QuoteTick,
-        TradeTick,
+        Bar, BookOrder, InstrumentClose, InstrumentStatus, OrderBookDeltas, OrderBookDepth,
+        QuoteTick, TradeTick,
     },
-    enums::{BookAction, OmsType},
+    enums::{BookAction, BookType, OmsType, OrderSide, RecordFlag},
     events::{
         OrderCancelRejected, OrderEventAny, OrderModifyRejected, OrderRejected, PositionEvent,
     },
@@ -67,7 +67,7 @@ use nautilus_model::{
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance, Money},
+    types::{AccountBalance, MarginBalance, Money, Price, Quantity},
 };
 use ustr::Ustr;
 
@@ -707,11 +707,18 @@ impl ExecutionClient for SandboxExecutionClient {
 
     fn on_instrument(&mut self, instrument: InstrumentAny) {
         let instrument_id = instrument.id();
+        let definition = BookDefinition::from(&instrument);
         let mut inner = self.inner.borrow_mut();
         if let Some(engine) = inner.matching_engines.get_mut(&instrument_id)
             && let Err(e) = engine.update_instrument(instrument)
         {
             log::error!("Failed to update instrument {instrument_id} in sandbox engine: {e}");
+            inner.drain_oto_commands();
+            return;
+        }
+
+        if let Some(observed) = inner.observed_book_sources.get_mut(&instrument_id) {
+            observed.update_definition(definition);
         }
 
         inner.drain_oto_commands();
@@ -1133,7 +1140,7 @@ impl SandboxInner {
         }
     }
 
-    fn process_quote_tick(&mut self, quote: &QuoteTick) {
+    fn process_quote_tick(&mut self, quote: &QuoteTick, source: Option<OrderBookSource>) {
         let instrument_id = quote.instrument_id;
 
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
@@ -1145,7 +1152,15 @@ impl SandboxInner {
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                let update_count = engine.get_book().update_count;
                 engine.process_quote_tick(quote);
+                if engine.get_book().update_count != update_count
+                    && let Some(source) = source
+                    && let Some(observed) = self.observed_book_sources.get_mut(&instrument_id)
+                    && observed.definition == Some(BookDefinition::from(&engine.instrument))
+                {
+                    observed.applied_source = Some(source);
+                }
             }
         }
 
@@ -1198,7 +1213,7 @@ impl SandboxInner {
         self.drain_oto_commands();
     }
 
-    fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas) {
+    fn process_order_book_deltas(&mut self, deltas: &OrderBookDeltas, retained: bool) {
         let instrument_id = deltas.instrument_id;
 
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
@@ -1206,12 +1221,17 @@ impl SandboxInner {
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                let update_count = engine.get_book().update_count;
                 match engine.process_order_book_deltas(deltas) {
-                    Ok(()) => {
+                    Ok(()) if engine.get_book().update_count != update_count => {
                         if let Some(observed) = self.observed_book_sources.get_mut(&instrument_id) {
-                            observed.applied_source = Some(OrderBookSource::Deltas);
+                            observed.applied_source = (retained
+                                && observed.definition
+                                    == Some(BookDefinition::from(&engine.instrument)))
+                            .then_some(OrderBookSource::Deltas);
                         }
                     }
+                    Ok(()) => {}
                     Err(e) => log::error!("Error processing order book deltas: {e}"),
                 }
             }
@@ -1220,7 +1240,11 @@ impl SandboxInner {
         self.drain_oto_commands();
     }
 
-    fn process_order_book_depth(&mut self, depth: &OrderBookDepth) {
+    fn process_order_book_depth(
+        &mut self,
+        depth: &OrderBookDepth,
+        source: Option<OrderBookSource>,
+    ) {
         let instrument_id = depth.instrument_id;
 
         let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
@@ -1228,12 +1252,17 @@ impl SandboxInner {
             self.ensure_matching_engine(&instrument);
 
             if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+                let update_count = engine.get_book().update_count;
                 match engine.process_order_book_depth(depth) {
-                    Ok(()) => {
+                    Ok(()) if engine.get_book().update_count != update_count => {
                         if let Some(observed) = self.observed_book_sources.get_mut(&instrument_id) {
-                            observed.applied_source = Some(OrderBookSource::Depth);
+                            observed.applied_source = source.filter(|_| {
+                                observed.definition
+                                    == Some(BookDefinition::from(&engine.instrument))
+                            });
                         }
                     }
+                    Ok(()) => {}
                     Err(e) => log::error!("Error processing order book depth: {e}"),
                 }
             }
@@ -1712,7 +1741,7 @@ impl SandboxInner {
             return;
         };
 
-        // Cached ticks initialize an empty engine; replay would replenish consumed liquidity
+        // With consumption enabled, replaying cached ticks would replenish consumed liquidity
         if self.config.liquidity_consumption
             && (engine.get_book().update_count != 0 || engine.get_core().last.is_some())
         {
@@ -1722,12 +1751,25 @@ impl SandboxInner {
         let (quote, trade) = {
             let cache = self.cache.borrow();
             (
-                cache.quote(&instrument_id).copied(),
+                cache
+                    .quote(&instrument_id)
+                    .filter(|_| {
+                        cache
+                            .quote_book_source(&instrument_id)
+                            .is_none_or(|source| {
+                                cache
+                                    .order_book_source(&instrument_id)
+                                    .is_none_or(|selected| selected == source)
+                            })
+                    })
+                    .copied(),
                 cache.trade(&instrument_id).copied(),
             )
         };
 
+        // Cache history must not replace a current or explicitly cleared book
         if let Some(quote) = quote
+            && engine.get_book().update_count == 0
             && check_quote_or_drop("cached quote tick", &quote, &engine.instrument)
         {
             engine.process_quote_tick(&quote);
@@ -1879,8 +1921,12 @@ impl SandboxInner {
     }
 
     fn on_quote_tick(inner: &Rc<RefCell<Self>>, quote: &QuoteTick) {
+        if msgbus::is_book_derived_quote() {
+            return;
+        }
+
         Self::drain_inbound(inner);
-        inner.borrow_mut().process_quote_tick(quote);
+        inner.borrow_mut().process_quote_tick(quote, None);
     }
 
     fn on_trade_tick(inner: &Rc<RefCell<Self>>, trade: &TradeTick) {
@@ -1897,13 +1943,29 @@ impl SandboxInner {
         Self::drain_inbound(inner);
         let mut inner = inner.borrow_mut();
 
-        let retain = {
+        let (retain, definition) = {
             let cache = inner.cache.borrow();
-            cache.has_order_book_source_subscription(&deltas.instrument_id, OrderBookSource::Deltas)
-                && cache
-                    .instrument(&deltas.instrument_id)
-                    .is_some_and(|instrument| deltas_match_instrument_precision(deltas, instrument))
+            let instrument = cache.instrument(&deltas.instrument_id).filter(|_| {
+                cache.has_order_book_source_subscription(
+                    &deltas.instrument_id,
+                    OrderBookSource::Deltas,
+                )
+            });
+            (
+                instrument.is_some_and(|instrument| {
+                    deltas_match_instrument_precision(deltas, instrument)
+                }),
+                instrument.map(BookDefinition::from),
+            )
         };
+
+        if let Some(definition) = definition {
+            inner
+                .observed_book_sources
+                .entry(deltas.instrument_id)
+                .or_default()
+                .update_definition(definition);
+        }
 
         let needs_restore = inner
             .observed_book_sources
@@ -1913,7 +1975,15 @@ impl SandboxInner {
                     && observed.applied_source != Some(OrderBookSource::Deltas)
             });
         let retained = if retain {
-            let book_type = inner.config.book_type;
+            let book_type = if inner.config.book_type == BookType::L1_MBP {
+                inner
+                    .cache
+                    .borrow()
+                    .order_book_deltas_book_type(&deltas.instrument_id)
+                    .unwrap_or(BookType::L1_MBP)
+            } else {
+                inner.config.book_type
+            };
             let observed = inner
                 .observed_book_sources
                 .entry(deltas.instrument_id)
@@ -1922,7 +1992,15 @@ impl SandboxInner {
                 .deltas
                 .get_or_insert_with(|| OrderBook::new(deltas.instrument_id, book_type));
 
-            match book.apply_deltas(deltas) {
+            let update_count = book.update_count;
+            let result = book.apply_deltas(deltas);
+            if book.update_count != update_count
+                && observed.applied_source == Some(OrderBookSource::Deltas)
+            {
+                observed.applied_source = None;
+            }
+
+            match result {
                 Ok(()) => true,
                 Err(e) => {
                     log::error!("Error retaining order book deltas: {e}");
@@ -1937,6 +2015,26 @@ impl SandboxInner {
             return;
         }
 
+        if !inner.book_definition_matches(&deltas.instrument_id) {
+            inner.drain_oto_commands();
+            return;
+        }
+
+        if inner.config.book_type == BookType::L1_MBP {
+            if retained {
+                let snapshot = deltas.deltas.iter().any(|delta| {
+                    delta.action == BookAction::Clear || RecordFlag::F_SNAPSHOT.matches(delta.flags)
+                });
+                inner.process_l1_book_deltas(
+                    deltas.instrument_id,
+                    deltas.ts_event,
+                    deltas.ts_init,
+                    snapshot,
+                );
+            }
+            return;
+        }
+
         if needs_restore {
             if retained {
                 inner.on_book_source(deltas.instrument_id);
@@ -1946,31 +2044,52 @@ impl SandboxInner {
             return;
         }
 
-        inner.process_order_book_deltas(deltas);
+        inner.process_order_book_deltas(deltas, retained);
     }
 
     fn on_order_book_depth(inner: &Rc<RefCell<Self>>, depth: &OrderBookDepth) {
         Self::drain_inbound(inner);
         let mut inner = inner.borrow_mut();
 
-        let retain = {
+        let (retain, definition) = {
             let cache = inner.cache.borrow();
-            cache.has_order_book_source_subscription(&depth.instrument_id, OrderBookSource::Depth)
-                && cache
-                    .instrument(&depth.instrument_id)
-                    .is_some_and(|instrument| depth_matches_instrument_precision(depth, instrument))
+            let instrument = cache.instrument(&depth.instrument_id).filter(|_| {
+                cache.has_order_book_source_subscription(
+                    &depth.instrument_id,
+                    OrderBookSource::Depth,
+                )
+            });
+            (
+                instrument.is_some_and(|instrument| {
+                    depth_matches_instrument_precision(depth, instrument)
+                }),
+                instrument.map(BookDefinition::from),
+            )
         };
 
-        if retain {
+        if let Some(definition) = definition {
             inner
                 .observed_book_sources
                 .entry(depth.instrument_id)
                 .or_default()
-                .depth = Some(depth.clone());
+                .update_definition(definition);
         }
 
-        if inner.accepts_book_source(&depth.instrument_id, OrderBookSource::Depth) {
-            inner.process_order_book_depth(depth);
+        if retain {
+            let observed = inner
+                .observed_book_sources
+                .entry(depth.instrument_id)
+                .or_default();
+            observed.depth = Some(depth.clone());
+            if observed.applied_source == Some(OrderBookSource::Depth) {
+                observed.applied_source = None;
+            }
+        }
+
+        if inner.accepts_book_source(&depth.instrument_id, OrderBookSource::Depth)
+            && inner.book_definition_matches(&depth.instrument_id)
+        {
+            inner.process_order_book_depth(depth, retain.then_some(OrderBookSource::Depth));
         }
     }
 
@@ -2009,12 +2128,14 @@ impl SandboxInner {
     }
 
     fn on_book_source(&mut self, instrument_id: InstrumentId) {
-        let (selected, has_deltas, has_depth) = {
+        let (selected, has_deltas, has_depth, deltas_book_type, definition) = {
             let cache = self.cache.borrow();
             (
                 cache.order_book_source(&instrument_id),
                 cache.has_order_book_source_subscription(&instrument_id, OrderBookSource::Deltas),
                 cache.has_order_book_source_subscription(&instrument_id, OrderBookSource::Depth),
+                cache.order_book_deltas_book_type(&instrument_id),
+                cache.instrument(&instrument_id).map(BookDefinition::from),
             )
         };
         let Some(selected) = selected else {
@@ -2022,33 +2143,158 @@ impl SandboxInner {
             return;
         };
         let observed = self.observed_book_sources.entry(instrument_id).or_default();
-        if !has_deltas {
+        if let Some(definition) = definition {
+            observed.update_definition(definition);
+        }
+
+        if !has_deltas
+            || (self.config.book_type == BookType::L1_MBP
+                && observed
+                    .deltas
+                    .as_ref()
+                    .is_some_and(|book| Some(book.book_type) != deltas_book_type))
+        {
             observed.deltas = None;
+            if observed.applied_source == Some(OrderBookSource::Deltas) {
+                observed.applied_source = None;
+            }
         }
 
         if !has_depth {
             observed.depth = None;
         }
 
+        if self
+            .matching_engines
+            .get(&instrument_id)
+            .is_some_and(|engine| {
+                observed.definition.is_some_and(|definition| {
+                    definition != BookDefinition::from(&engine.instrument)
+                })
+            })
+        {
+            return;
+        }
+
         if observed.applied_source == Some(selected) {
+            return;
+        }
+        let ts_event = match selected {
+            OrderBookSource::Deltas => observed.deltas.as_ref().map(|book| book.ts_last),
+            OrderBookSource::Depth => observed.depth.as_ref().map(|depth| depth.ts_event),
+        };
+
+        // Ownership notifications must not rematch a stale retained view
+        if self.config.book_type == BookType::L1_MBP
+            && ts_event.is_some_and(|ts_event| {
+                self.matching_engines
+                    .get(&instrument_id)
+                    .is_some_and(|engine| ts_event < engine.get_book().ts_last)
+            })
+        {
             return;
         }
         let ts_now = self.clock.borrow().timestamp_ns();
 
         match selected {
             OrderBookSource::Deltas => {
-                if let Some(book) = &observed.deltas {
+                if self.config.book_type == BookType::L1_MBP {
+                    if let Some(ts_event) = ts_event {
+                        self.process_l1_book_deltas(instrument_id, ts_event, ts_now, true);
+                    }
+                } else if let Some(book) = &observed.deltas {
                     let snapshot = book.to_deltas(book.ts_last, ts_now);
-                    self.process_order_book_deltas(&snapshot);
+                    self.process_order_book_deltas(&snapshot, true);
                 }
             }
             OrderBookSource::Depth => {
                 if let Some(depth) = &observed.depth {
                     let mut snapshot = depth.clone();
                     snapshot.ts_init = ts_now;
-                    self.process_order_book_depth(&snapshot);
+                    self.process_order_book_depth(&snapshot, Some(OrderBookSource::Depth));
                 }
             }
+        }
+    }
+
+    fn process_l1_book_deltas(
+        &mut self,
+        instrument_id: InstrumentId,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+        snapshot: bool,
+    ) {
+        let Some(book) = self
+            .observed_book_sources
+            .get(&instrument_id)
+            .and_then(|observed| observed.deltas.as_ref())
+        else {
+            return;
+        };
+        let bid = book
+            .best_bid_price()
+            .zip(book.best_bid_size())
+            .map(|(price, size)| BookOrder::new(OrderSide::Buy, price, size, 0));
+        let ask = book
+            .best_ask_price()
+            .zip(book.best_ask_size())
+            .map(|(price, size)| BookOrder::new(OrderSide::Sell, price, size, 0));
+
+        // A withdrawal removes quantity without inventing a new quote price
+        let (last_bid, last_ask) = self
+            .matching_engines
+            .get(&instrument_id)
+            .map(|engine| (engine.get_core().bid, engine.get_core().ask))
+            .unwrap_or_default();
+        let (bid_price, ask_price) = match (
+            snapshot,
+            bid.map(|bid| bid.price).or(last_bid),
+            ask.map(|ask| ask.price).or(last_ask),
+        ) {
+            (false, Some(bid_price), Some(ask_price)) => (bid_price, ask_price),
+            _ => {
+                let depth = OrderBookDepth::new(
+                    instrument_id,
+                    bid,
+                    ask,
+                    bid.map(|_| 0),
+                    ask.map(|_| 0),
+                    RecordFlag::F_SNAPSHOT as u8,
+                    book.sequence,
+                    ts_event,
+                    ts_init,
+                );
+                self.process_order_book_depth(&depth, Some(OrderBookSource::Deltas));
+                return;
+            }
+        };
+
+        // Ordinary updates use quote semantics; depth processing would rebase the queues
+        let size_precision = self
+            .cache
+            .borrow()
+            .instrument(&instrument_id)
+            .map(|instrument| instrument.size_precision());
+        if let Some(size_precision) = size_precision {
+            let quote = match QuoteTick::new_checked(
+                instrument_id,
+                bid_price,
+                ask_price,
+                bid.map_or_else(|| Quantity::zero(size_precision), |bid| bid.size),
+                ask.map_or_else(|| Quantity::zero(size_precision), |ask| ask.size),
+                ts_event,
+                ts_init,
+            ) {
+                Ok(quote) => quote,
+                Err(e) => {
+                    log::error!("Error deriving L1 book quote: {e}");
+                    return;
+                }
+            };
+
+            self.process_quote_tick(&quote, Some(OrderBookSource::Deltas));
+        } else {
+            self.drain_oto_commands();
         }
     }
 
@@ -2057,6 +2303,19 @@ impl SandboxInner {
             .borrow()
             .order_book_source(instrument_id)
             .is_none_or(|selected| selected == source)
+    }
+
+    fn book_definition_matches(&self, instrument_id: &InstrumentId) -> bool {
+        let Some(definition) = self
+            .observed_book_sources
+            .get(instrument_id)
+            .and_then(|observed| observed.definition)
+        else {
+            return true;
+        };
+        self.matching_engines
+            .get(instrument_id)
+            .is_none_or(|engine| definition == BookDefinition::from(&engine.instrument))
     }
 
     /// Applies every inbound command whose latency has elapsed, in `(due_ns, seq)` order, then
@@ -2301,8 +2560,596 @@ fn depth_matches_instrument_precision(depth: &OrderBookDepth, instrument: &Instr
 
 #[derive(Default)]
 struct ObservedBookSources {
-    // Advance only after the matching engine accepts the automatic input
+    definition: Option<BookDefinition>,
+
+    // Confirm retained history only after the matching book actually advances
     applied_source: Option<OrderBookSource>,
     deltas: Option<OrderBook>,
     depth: Option<OrderBookDepth>,
+}
+
+impl ObservedBookSources {
+    fn update_definition(&mut self, definition: BookDefinition) {
+        if self.definition != Some(definition) {
+            *self = Self {
+                definition: Some(definition),
+                ..Self::default()
+            };
+        }
+    }
+}
+
+// Matches the market-state reset conditions in OrderMatchingEngine::update_instrument
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct BookDefinition {
+    price_increment: Price,
+    price_precision: u8,
+    size_precision: u8,
+}
+
+impl From<&InstrumentAny> for BookDefinition {
+    fn from(instrument: &InstrumentAny) -> Self {
+        Self {
+            price_increment: instrument.price_increment(),
+            price_precision: instrument.price_precision(),
+            size_precision: instrument.size_precision(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use nautilus_common::clock::VirtualClock;
+    use nautilus_execution::models::fee::{FeeModelAny, MakerTakerFeeModel};
+    use nautilus_model::{data::OrderBookDelta, instruments::stubs::crypto_perpetual_ethusdt};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case::deltas(OrderBookSource::Deltas)]
+    #[case::depth(OrderBookSource::Depth)]
+    fn test_l1_handoff_confirms_only_applied_history(#[case] target: OrderBookSource) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let id = instrument.id();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+        let config = SandboxExecutionClientConfig {
+            venue: id.venue,
+            fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
+            ..Default::default()
+        };
+        let core = ExecutionClientCore::new(
+            TraderId::from("TEST-001"),
+            ClientId::new("SANDBOX"),
+            id.venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            cache.clone(),
+        );
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let client = SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap();
+        let depth = |price: &str, ts: u64| {
+            OrderBookDepth::new(
+                id,
+                [],
+                [BookOrder::new(
+                    OrderSide::Sell,
+                    Price::from(price),
+                    Quantity::from("1.000"),
+                    0,
+                )],
+                [],
+                [1],
+                RecordFlag::F_SNAPSHOT as u8,
+                ts,
+                ts.into(),
+                ts.into(),
+            )
+        };
+        let other = if target == OrderBookSource::Deltas {
+            OrderBookSource::Depth
+        } else {
+            OrderBookSource::Deltas
+        };
+        cache
+            .borrow_mut()
+            .set_order_book_source(id, other, true, Some(BookType::L2_MBP));
+        let publish = |depth: &OrderBookDepth, source, snapshot| {
+            if source == OrderBookSource::Depth {
+                SandboxInner::on_order_book_depth(&client.inner, depth);
+            } else if snapshot {
+                let mut book = OrderBook::new(id, BookType::L2_MBP);
+                book.apply_depth(depth).unwrap();
+                SandboxInner::on_order_book_deltas(
+                    &client.inner,
+                    &book.to_deltas(depth.ts_event, depth.ts_init),
+                );
+            } else {
+                let delta = OrderBookDelta::new(
+                    id,
+                    BookAction::Update,
+                    depth.asks[0],
+                    RecordFlag::F_LAST as u8,
+                    depth.sequence,
+                    depth.ts_event,
+                    depth.ts_init,
+                );
+                SandboxInner::on_order_book_deltas(
+                    &client.inner,
+                    &OrderBookDeltas::new(id, vec![delta]),
+                );
+            }
+        };
+        publish(&depth("900.00", 10), other, true);
+        publish(&depth("1002.00", 2), target, true);
+        cache
+            .borrow_mut()
+            .set_order_book_source(id, target, true, Some(BookType::L2_MBP));
+        client.inner.borrow_mut().on_book_source(id);
+        assert_eq!(
+            client.inner.borrow().observed_book_sources[&id].applied_source,
+            Some(other)
+        );
+        assert_eq!(
+            client.inner.borrow().matching_engines[&id]
+                .get_book()
+                .best_ask_price(),
+            Some(Price::from("900.00"))
+        );
+        publish(&depth("1002.00", 3), target, false);
+        assert_ne!(
+            client.inner.borrow().observed_book_sources[&id].applied_source,
+            Some(target)
+        );
+        assert_eq!(
+            client.inner.borrow().matching_engines[&id]
+                .get_book()
+                .ts_last,
+            UnixNanos::from(10)
+        );
+        let current = depth("1002.00", 11);
+        publish(&current, target, false);
+        let inner = client.inner.borrow();
+        assert_eq!(
+            inner.observed_book_sources[&id].applied_source,
+            Some(target)
+        );
+        assert_eq!(
+            inner.matching_engines[&id].get_book().best_ask_price(),
+            Some(Price::from("1002.00"))
+        );
+        assert_eq!(
+            inner.matching_engines[&id].get_book().ts_last,
+            current.ts_event
+        );
+    }
+
+    #[rstest]
+    fn test_book_definition_reset_follows_native_instrument_update(
+        #[values(OrderBookSource::Deltas, OrderBookSource::Depth)] source: OrderBookSource,
+        #[values("price_precision", "price_increment", "size_precision", "metadata")] change: &str,
+    ) {
+        let (mut client, cache, instrument) = definition_context(BookType::L2_MBP, source);
+        let depth = definition_depth(&instrument, 1);
+        observe_definition_book(&client, &depth, OrderBookSource::Deltas);
+        observe_definition_book(&client, &depth, OrderBookSource::Depth);
+        let before = client.inner.borrow().matching_engines[&instrument.id()]
+            .get_book()
+            .update_count;
+        {
+            let inner = client.inner.borrow();
+            let observed = &inner.observed_book_sources[&instrument.id()];
+            assert!(observed.deltas.is_some());
+            assert!(observed.depth.is_some());
+            assert_eq!(observed.applied_source, Some(source));
+        }
+        let updated = change_definition(instrument, change);
+        cache.borrow_mut().add_instrument(updated.clone()).unwrap();
+        client.on_instrument(updated.clone());
+        let inner = client.inner.borrow();
+        let engine = &inner.matching_engines[&updated.id()];
+        let observed = &inner.observed_book_sources[&updated.id()];
+
+        if change == "metadata" {
+            assert_eq!(engine.get_book().update_count, before);
+            assert!(observed.deltas.is_some());
+            assert!(observed.depth.is_some());
+            assert_eq!(observed.applied_source, Some(source));
+        } else {
+            assert_eq!(engine.get_book().update_count, 0);
+            assert!(engine.get_core().bid.is_none());
+            assert!(engine.get_core().ask.is_none());
+            assert!(observed.deltas.is_none());
+            assert!(observed.depth.is_none());
+            assert_eq!(observed.applied_source, None);
+        }
+    }
+
+    #[rstest]
+    fn test_book_definition_preserves_data_before_instrument_callback(
+        #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+        #[values(OrderBookSource::Deltas, OrderBookSource::Depth)] source: OrderBookSource,
+        #[values("price_precision", "price_increment", "size_precision")] change: &str,
+    ) {
+        let (mut client, cache, instrument) = definition_context(book_type, source);
+        observe_definition_book(&client, &definition_depth(&instrument, 1), source);
+        let before = client.inner.borrow().matching_engines[&instrument.id()]
+            .get_book()
+            .update_count;
+        let updated = change_definition(instrument, change);
+        cache.borrow_mut().add_instrument(updated.clone()).unwrap();
+        let mut early = definition_depth(&updated, 2);
+        early.asks[0].price = Price::new(1001.0, updated.price_precision());
+        observe_definition_book(&client, &early, source);
+        if source == OrderBookSource::Deltas {
+            let delta = OrderBookDelta::new(
+                updated.id(),
+                BookAction::Add,
+                BookOrder::new(
+                    OrderSide::Sell,
+                    Price::new(1400.0, updated.price_precision()),
+                    Quantity::new(1.0, updated.size_precision()),
+                    0,
+                ),
+                RecordFlag::F_LAST as u8,
+                3,
+                3.into(),
+                3.into(),
+            );
+            SandboxInner::on_order_book_deltas(
+                &client.inner,
+                &OrderBookDeltas::new(updated.id(), vec![delta]),
+            );
+        } else {
+            early.asks[0].price = Price::new(1002.0, updated.price_precision());
+            early.ts_event = 3.into();
+            early.ts_init = 3.into();
+            observe_definition_book(&client, &early, source);
+        }
+
+        for _ in 0..2 {
+            client.inner.borrow_mut().on_book_source(updated.id());
+        }
+        {
+            let inner = client.inner.borrow();
+            assert_eq!(
+                inner.matching_engines[&updated.id()]
+                    .get_book()
+                    .update_count,
+                before
+            );
+            assert_eq!(
+                inner.observed_book_sources[&updated.id()].applied_source,
+                None
+            );
+        }
+        client.on_instrument(updated.clone());
+        {
+            let inner = client.inner.borrow();
+            assert_eq!(
+                inner.matching_engines[&updated.id()]
+                    .get_book()
+                    .update_count,
+                0
+            );
+            let observed = &inner.observed_book_sources[&updated.id()];
+            assert_eq!(observed.applied_source, None);
+            match source {
+                OrderBookSource::Deltas => assert!(observed.deltas.is_some()),
+                OrderBookSource::Depth => assert!(observed.depth.is_some()),
+            }
+        }
+        client.inner.borrow_mut().on_book_source(updated.id());
+        let expected = if source == OrderBookSource::Deltas {
+            1001.0
+        } else {
+            1002.0
+        };
+        let restored = {
+            let inner = client.inner.borrow();
+            let engine = &inner.matching_engines[&updated.id()];
+            assert_eq!(
+                engine.get_book().best_ask_price(),
+                Some(Price::new(expected, updated.price_precision()))
+            );
+            assert_eq!(
+                inner.observed_book_sources[&updated.id()].applied_source,
+                Some(source)
+            );
+            engine.get_book().update_count
+        };
+        let mut duplicate = updated;
+        if let InstrumentAny::CryptoPerpetual(ref mut instrument) = duplicate {
+            instrument.ts_event = 4.into();
+            instrument.ts_init = 4.into();
+        }
+        client.on_instrument(duplicate.clone());
+        client.inner.borrow_mut().on_book_source(duplicate.id());
+        assert_eq!(
+            client.inner.borrow().matching_engines[&duplicate.id()]
+                .get_book()
+                .update_count,
+            restored
+        );
+    }
+
+    #[rstest]
+    fn test_book_definition_change_before_matching_engine_exists(
+        #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+        #[values(OrderBookSource::Deltas, OrderBookSource::Depth)] source: OrderBookSource,
+        #[values(false, true)] empty: bool,
+    ) {
+        let other = if source == OrderBookSource::Deltas {
+            OrderBookSource::Depth
+        } else {
+            OrderBookSource::Deltas
+        };
+        let (mut client, cache, instrument) = definition_context(book_type, other);
+        observe_definition_book(&client, &definition_depth(&instrument, 1), source);
+        assert!(client.inner.borrow().matching_engines.is_empty());
+        let updated = change_definition(instrument, "price_increment");
+        cache.borrow_mut().add_instrument(updated.clone()).unwrap();
+        client.on_instrument(updated.clone());
+        cache.borrow_mut().set_order_book_source(
+            updated.id(),
+            source,
+            true,
+            Some(BookType::L2_MBP),
+        );
+        client.inner.borrow_mut().on_book_source(updated.id());
+        assert!(client.inner.borrow().matching_engines.is_empty());
+        let mut current = definition_depth(&updated, 2);
+        if empty {
+            current.bids.fill(BookOrder::default());
+            current.asks.fill(BookOrder::default());
+        } else {
+            current.asks[0].price = Price::from("1002.00");
+        }
+        observe_definition_book(&client, &current, source);
+        let inner = client.inner.borrow();
+        let engine = &inner.matching_engines[&updated.id()];
+        assert!(engine.get_book().update_count > 0);
+        assert_eq!(
+            engine.get_book().best_ask_price(),
+            if empty {
+                None
+            } else {
+                Some(Price::from("1002.00"))
+            }
+        );
+        assert_eq!(
+            inner.observed_book_sources[&updated.id()].applied_source,
+            Some(source)
+        );
+    }
+
+    #[rstest]
+    fn test_book_definition_round_trip_does_not_restore_first_definition(
+        #[values(OrderBookSource::Deltas, OrderBookSource::Depth)] source: OrderBookSource,
+    ) {
+        let (mut client, cache, instrument) = definition_context(BookType::L2_MBP, source);
+        observe_definition_book(&client, &definition_depth(&instrument, 1), source);
+        let updated = change_definition(instrument.clone(), "price_increment");
+        cache.borrow_mut().add_instrument(updated.clone()).unwrap();
+        client.on_instrument(updated);
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        client.on_instrument(instrument.clone());
+        client.inner.borrow_mut().on_book_source(instrument.id());
+        let inner = client.inner.borrow();
+        assert_eq!(
+            inner.matching_engines[&instrument.id()]
+                .get_book()
+                .update_count,
+            0
+        );
+        let observed = &inner.observed_book_sources[&instrument.id()];
+        assert!(observed.deltas.is_none());
+        assert!(observed.depth.is_none());
+        assert_eq!(observed.applied_source, None);
+    }
+
+    #[rstest]
+    fn test_book_definition_confirmation_requires_matching_instrument(
+        #[values("quote", "deltas", "depth")] input: &str,
+    ) {
+        let source = if input == "depth" {
+            OrderBookSource::Depth
+        } else {
+            OrderBookSource::Deltas
+        };
+        let book_type = if input == "deltas" {
+            BookType::L2_MBP
+        } else {
+            BookType::L1_MBP
+        };
+        let (client, cache, instrument) = definition_context(book_type, source);
+        observe_definition_book(&client, &definition_depth(&instrument, 1), source);
+        let updated = change_definition(instrument, "price_increment");
+        cache.borrow_mut().add_instrument(updated.clone()).unwrap();
+        let depth = definition_depth(&updated, 2);
+        observe_definition_book(&client, &depth, source);
+        let mut inner = client.inner.borrow_mut();
+        let before = inner.matching_engines[&updated.id()]
+            .get_book()
+            .update_count;
+
+        match input {
+            "quote" => inner.process_quote_tick(
+                &QuoteTick::new(
+                    updated.id(),
+                    depth.bids[0].price,
+                    depth.asks[0].price,
+                    depth.bids[0].size,
+                    depth.asks[0].size,
+                    depth.ts_event,
+                    depth.ts_init,
+                ),
+                Some(source),
+            ),
+            "deltas" => {
+                let mut book = OrderBook::new(updated.id(), BookType::L2_MBP);
+                book.apply_depth(&depth).unwrap();
+                inner.process_order_book_deltas(
+                    &book.to_deltas(depth.ts_event, depth.ts_init),
+                    true,
+                );
+            }
+            _ => inner.process_order_book_depth(&depth, Some(source)),
+        }
+        assert!(
+            inner.matching_engines[&updated.id()]
+                .get_book()
+                .update_count
+                > before
+        );
+        assert_eq!(
+            inner.observed_book_sources[&updated.id()].applied_source,
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_book_definition_old_precision_does_not_discard_current_data(
+        #[values(OrderBookSource::Deltas, OrderBookSource::Depth)] source: OrderBookSource,
+        #[values("price_precision", "size_precision")] change: &str,
+    ) {
+        let (mut client, cache, instrument) = definition_context(BookType::L2_MBP, source);
+        observe_definition_book(&client, &definition_depth(&instrument, 1), source);
+        let updated = change_definition(instrument.clone(), change);
+        cache.borrow_mut().add_instrument(updated.clone()).unwrap();
+        client.on_instrument(updated.clone());
+        let mut current = definition_depth(&updated, 2);
+        current.asks[0].price = Price::new(1002.0, updated.price_precision());
+        observe_definition_book(&client, &current, source);
+        let before = client.inner.borrow().matching_engines[&updated.id()]
+            .get_book()
+            .update_count;
+        observe_definition_book(&client, &definition_depth(&instrument, 3), source);
+        client.inner.borrow_mut().on_book_source(updated.id());
+        let inner = client.inner.borrow();
+        assert_eq!(
+            inner.matching_engines[&updated.id()]
+                .get_book()
+                .update_count,
+            before
+        );
+        assert_eq!(
+            inner.matching_engines[&updated.id()]
+                .get_book()
+                .best_ask_price(),
+            Some(current.asks[0].price)
+        );
+        assert_eq!(
+            inner.observed_book_sources[&updated.id()].applied_source,
+            Some(source)
+        );
+    }
+
+    fn definition_context(
+        book_type: BookType,
+        source: OrderBookSource,
+    ) -> (SandboxExecutionClient, Rc<RefCell<Cache>>, InstrumentAny) {
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+        let id = instrument.id();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache
+            .borrow_mut()
+            .add_instrument(instrument.clone())
+            .unwrap();
+        cache
+            .borrow_mut()
+            .set_order_book_source(id, source, true, Some(BookType::L2_MBP));
+        let config = SandboxExecutionClientConfig {
+            venue: id.venue,
+            book_type,
+            fee_model: Some(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero())),
+            ..Default::default()
+        };
+        let core = ExecutionClientCore::new(
+            TraderId::from("TEST-001"),
+            ClientId::new("SANDBOX"),
+            id.venue,
+            config.oms_type,
+            config.account_id,
+            config.account_type,
+            config.base_currency,
+            cache.clone(),
+        );
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        (
+            SandboxExecutionClient::new(core, config, clock, cache.clone()).unwrap(),
+            cache,
+            instrument,
+        )
+    }
+
+    fn definition_depth(instrument: &InstrumentAny, ts: u64) -> OrderBookDepth {
+        OrderBookDepth::new(
+            instrument.id(),
+            [BookOrder::new(
+                OrderSide::Buy,
+                Price::new(1000.0, instrument.price_precision()),
+                Quantity::new(1.0, instrument.size_precision()),
+                0,
+            )],
+            [BookOrder::new(
+                OrderSide::Sell,
+                Price::new(1004.0, instrument.price_precision()),
+                Quantity::new(1.0, instrument.size_precision()),
+                0,
+            )],
+            [1],
+            [1],
+            RecordFlag::F_SNAPSHOT as u8,
+            ts,
+            ts.into(),
+            ts.into(),
+        )
+    }
+
+    fn observe_definition_book(
+        client: &SandboxExecutionClient,
+        depth: &OrderBookDepth,
+        source: OrderBookSource,
+    ) {
+        if source == OrderBookSource::Depth {
+            SandboxInner::on_order_book_depth(&client.inner, depth);
+        } else {
+            let mut book = OrderBook::new(depth.instrument_id, BookType::L2_MBP);
+            book.apply_depth(depth).unwrap();
+            SandboxInner::on_order_book_deltas(
+                &client.inner,
+                &book.to_deltas(depth.ts_event, depth.ts_init),
+            );
+        }
+    }
+
+    fn change_definition(instrument: InstrumentAny, change: &str) -> InstrumentAny {
+        let InstrumentAny::CryptoPerpetual(mut instrument) = instrument else {
+            panic!("Expected perpetual")
+        };
+
+        match change {
+            "price_precision" => {
+                instrument.price_precision = 3;
+                instrument.price_increment = Price::from("0.001");
+            }
+            "price_increment" => instrument.price_increment = Price::from("0.05"),
+            "size_precision" => {
+                instrument.size_precision = 4;
+                instrument.size_increment = Quantity::from("0.0001");
+            }
+            _ => {
+                instrument.ts_event = 5.into();
+                instrument.ts_init = 5.into();
+            }
+        }
+        InstrumentAny::CryptoPerpetual(instrument)
+    }
 }

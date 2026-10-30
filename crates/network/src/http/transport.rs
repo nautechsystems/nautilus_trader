@@ -18,6 +18,7 @@
 use std::{
     error::Error,
     future::Future,
+    path::Path,
     pin::Pin,
     sync::Arc,
     task::{Context, Poll},
@@ -45,6 +46,7 @@ use tower_service::Service;
 use url::Url;
 
 use super::{HttpClientError, HttpRedirectPolicy, connector::Connector, error::transport_error};
+use crate::tls::create_tls_config_from_certs_dir;
 
 #[derive(Clone, Debug)]
 pub(super) struct Client {
@@ -56,22 +58,29 @@ impl Client {
     pub(super) fn new(
         proxy: Option<&str>,
         use_system_proxy: bool,
+        certs_dir: Option<&str>,
         user_agent: Option<HeaderValue>,
         settings: Settings,
     ) -> Result<Self, HttpClientError> {
-        let provider = rustls::crypto::CryptoProvider::get_default()
-            .cloned()
-            .ok_or_else(|| {
-                HttpClientError::ClientBuildError("TLS provider is unavailable".into())
-            })?;
+        let mut tls = if let Some(dir) = certs_dir {
+            create_tls_config_from_certs_dir(Path::new(dir), true)
+                .map_err(|e| HttpClientError::ClientBuildError(format!("{e:#}")))?
+        } else {
+            let provider = rustls::crypto::CryptoProvider::get_default()
+                .cloned()
+                .ok_or_else(|| {
+                    HttpClientError::ClientBuildError("TLS provider is unavailable".into())
+                })?;
 
-        let verifier = platform_verifier(&provider)?;
-        let mut tls = rustls::ClientConfig::builder_with_provider(provider)
-            .with_safe_default_protocol_versions()
-            .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?
-            .dangerous()
-            .with_custom_certificate_verifier(verifier)
-            .with_no_client_auth();
+            let verifier = platform_verifier(&provider)?;
+            rustls::ClientConfig::builder_with_provider(provider)
+                .with_safe_default_protocol_versions()
+                .map_err(|e| HttpClientError::ClientBuildError(e.to_string()))?
+                .dangerous()
+                .with_custom_certificate_verifier(verifier)
+                .with_no_client_auth()
+        };
+
         let connector = Connector::new(tls.clone(), proxy, use_system_proxy, user_agent)?;
         let proxies = Arc::clone(&connector.proxies);
         tls.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];

@@ -38,6 +38,7 @@ mod serial_tests {
         accounts::AccountAny,
         data::{
             DataType, InstrumentClose,
+            greeks::{GreeksData, YieldCurve},
             stubs::{ensure_stub_custom_data_registered, stub_custom_data},
         },
         enums::{
@@ -1058,6 +1059,33 @@ mod serial_tests {
             .expect("Failed to create adapter");
         clear_test_trader(&cleanup).await;
         cleanup.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_greeks_and_yield_curve_persistence_is_explicitly_unsupported() {
+        let mut adapter = connect_redis_cache_adapter().await.unwrap();
+        let greeks =
+            GreeksData::from_delta(InstrumentId::from("SPY.OPRA"), 0.625, 100.0, 123.into());
+        let curve = YieldCurve::new("USD".into(), vec![1.0], vec![0.04], 124.into(), 125.into());
+        let greek_error = adapter.add_greeks(&greeks).unwrap_err();
+        let curve_error = adapter.add_yield_curve(&curve).unwrap_err();
+        assert_eq!(
+            greek_error.to_string(),
+            "Saving greeks for cache adapter not supported"
+        );
+        assert_eq!(
+            curve_error.to_string(),
+            "Saving yield curves for cache adapter not supported"
+        );
+        assert_eq!(
+            adapter.load_greeks().await.unwrap_err().to_string(),
+            "Loading greeks for cache adapter not supported"
+        );
+        assert_eq!(
+            adapter.load_yield_curves().await.unwrap_err().to_string(),
+            "Loading yield curves for cache adapter not supported"
+        );
+        adapter.close().unwrap();
     }
 
     async fn clear_test_trader(adapter: &RedisCacheDatabaseAdapter) {

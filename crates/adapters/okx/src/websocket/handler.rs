@@ -33,10 +33,7 @@ use std::{
 };
 
 use nautilus_common::live::dst::time;
-use nautilus_core::{
-    AtomicTime,
-    string::secret::{REDACTED, SecretString},
-};
+use nautilus_core::{AtomicTime, string::secret::REDACTED};
 pub use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_model::identifiers::ClientOrderId;
 use nautilus_network::{
@@ -71,11 +68,9 @@ use crate::{
 /// Commands sent from the outer client to the inner message handler.
 pub enum HandlerCommand {
     /// Set the `WebSocketClient` for the handler to use.
-    SetClient(WebSocketClient),
+    SetClient(Arc<WebSocketClient>),
     /// Disconnect the WebSocket connection.
     Disconnect,
-    /// Send authentication payload to the WebSocket.
-    Authenticate { payload: SecretString },
     /// Subscribe to the given channels.
     Subscribe { args: Vec<OKXSubscriptionArg> },
     /// Subscribes to a book and reports completion of the transport send.
@@ -109,10 +104,6 @@ impl Debug for HandlerCommand {
         match self {
             Self::SetClient(_) => f.write_str("SetClient"),
             Self::Disconnect => f.write_str("Disconnect"),
-            Self::Authenticate { .. } => f
-                .debug_struct(stringify!(Authenticate))
-                .field("payload", &REDACTED)
-                .finish(),
             Self::Subscribe { args } => f
                 .debug_struct(stringify!(Subscribe))
                 .field("args", args)
@@ -148,24 +139,31 @@ impl Debug for HandlerCommand {
 pub(super) struct OKXWsFeedHandler {
     clock: &'static AtomicTime,
     signal: Arc<AtomicBool>,
-    inner: Option<WebSocketClient>,
+    inner: Option<Arc<WebSocketClient>>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
     raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
     out_tx: tokio::sync::mpsc::UnboundedSender<OKXWsMessage>,
     auth_tracker: AuthTracker,
+    requires_auth: bool,
     subscriptions_state: SubscriptionState,
     retry_manager: RetryManager<OKXWsError>,
     pending_messages: VecDeque<OKXWsMessage>,
+    pending_sends: VecDeque<PendingSend>,
 }
 
 impl OKXWsFeedHandler {
     /// Creates a new [`OKXWsFeedHandler`] instance.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the client supplies its authentication requirement alongside the shared tracker"
+    )]
     pub(super) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
         raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
         out_tx: tokio::sync::mpsc::UnboundedSender<OKXWsMessage>,
         auth_tracker: AuthTracker,
+        requires_auth: bool,
         subscriptions_state: SubscriptionState,
         clock: &'static AtomicTime,
     ) -> Self {
@@ -177,9 +175,11 @@ impl OKXWsFeedHandler {
             raw_rx,
             out_tx,
             auth_tracker,
+            requires_auth,
             subscriptions_state,
             retry_manager: create_websocket_retry_manager(),
             pending_messages: VecDeque::new(),
+            pending_sends: VecDeque::new(),
         }
     }
 
@@ -196,15 +196,6 @@ impl OKXWsFeedHandler {
         payload: String,
         rate_limit_keys: Option<&[Ustr]>,
     ) -> Result<(), OKXWsError> {
-        self.send_secret_with_retry(payload.into(), rate_limit_keys)
-            .await
-    }
-
-    async fn send_secret_with_retry(
-        &self,
-        payload: SecretString,
-        rate_limit_keys: Option<&[Ustr]>,
-    ) -> Result<(), OKXWsError> {
         if let Some(client) = &self.inner {
             let keys_owned: Option<Vec<Ustr>> = rate_limit_keys.map(<[Ustr]>::to_vec);
             self.retry_manager
@@ -215,7 +206,7 @@ impl OKXWsFeedHandler {
                         let keys = keys_owned.clone();
                         async move {
                             client
-                                .send_text(payload.expose_secret().to_owned(), keys.as_deref())
+                                .send_text(payload, keys.as_deref())
                                 .await
                                 .map_err(OKXWsError::TransportSend)
                         }
@@ -273,6 +264,10 @@ impl OKXWsFeedHandler {
 
             tokio::select! {
                 biased;
+                () = std::future::ready(()), if !poll_raw_next && self.can_send_pending() => {
+                    self.send_pending().await;
+                    poll_raw_next = true;
+                }
                 Some(cmd) = self.cmd_rx.recv(), if !poll_raw_next => {
                     match cmd {
                         HandlerCommand::SetClient(client) => {
@@ -283,16 +278,6 @@ impl OKXWsFeedHandler {
                             log::debug!("Handler disconnecting WebSocket client");
                             self.inner = None;
                             return None;
-                        }
-                        HandlerCommand::Authenticate { payload } => {
-                            if let Err(e) = self.send_secret_with_retry(
-                                payload,
-                                Some(OKX_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()),
-                            ).await {
-                                log::error!(
-                                    "Failed to send authentication message after retries: error={e}"
-                                );
-                            }
                         }
                         HandlerCommand::Subscribe { args } => {
                             if let Err(e) = self.handle_subscribe(args).await {
@@ -356,27 +341,27 @@ impl OKXWsFeedHandler {
                             client_order_ids,
                             op,
                         } => {
-                            if let Err(e) = self.send_on_connection(
+                            let pending = PendingSend {
                                 payload,
-                                rate_limit_keys.as_deref(),
-                            ).await {
-                                log::debug!("Failed to send message: error={e}");
+                                rate_limit_keys,
+                                request_id,
+                                client_order_ids,
+                                op,
+                                attempted: false,
+                            };
 
-                                if let Some(request_id) = request_id {
-                                    let message = OKXWsMessage::SendFailed {
-                                        request_id,
-                                        client_order_ids,
-                                        op,
-                                        error: e,
-                                    };
-
-                                    if self.send(message).is_err() {
-                                        if !self.is_stopped() {
-                                            log::error!("Failed to forward WebSocket send failure: receiver dropped");
-                                        }
-                                        return None;
-                                    }
-                                }
+                            if self.inner.is_none() {
+                                self.fail_send(pending, OKXWsError::NoActiveClient);
+                            } else if self.pending_sends.len() >= PENDING_SENDS_CAPACITY {
+                                self.fail_send(pending, OKXWsError::TransportSend(SendError::BufferFull));
+                            } else {
+                                log::debug!(
+                                    "Retained WebSocket command: request_id={:?}, op={:?}, mode={:?}",
+                                    pending.request_id,
+                                    pending.op,
+                                    self.inner.as_ref().map(|client| client.connection_mode()),
+                                );
+                                self.pending_sends.push_back(pending);
                             }
                         }
                     }
@@ -460,7 +445,6 @@ impl OKXWsFeedHandler {
                             return Some(OKXWsMessage::Error(error));
                         }
                         OKXWsFrame::Reconnected => {
-                            self.auth_tracker.invalidate();
                             return Some(OKXWsMessage::Reconnected);
                         }
                         OKXWsFrame::Subscription {
@@ -496,6 +480,65 @@ impl OKXWsFeedHandler {
                     log::debug!("Handler shutting down: stream ended or command channel closed");
                     return None;
                 }
+            }
+        }
+    }
+
+    fn can_send_pending(&self) -> bool {
+        !self.pending_sends.is_empty()
+            && (!self.requires_auth || self.auth_tracker.is_authenticated())
+            && self.inner.as_ref().is_some_and(|client| client.is_active())
+    }
+
+    async fn send_pending(&mut self) {
+        let client = self.inner.as_ref().expect("pending send requires a client");
+        let epoch = client.connection_epoch();
+
+        if self.requires_auth && !self.auth_tracker.is_authenticated() {
+            return;
+        }
+
+        let pending = self.pending_sends.front_mut().expect("pending send exists");
+        pending.attempted = true;
+        let result = client
+            .send_text_on_connection(
+                pending.payload.clone(),
+                pending.rate_limit_keys.as_deref(),
+                epoch,
+            )
+            .await;
+
+        if matches!(result, Err(SendError::ConnectionChanged)) {
+            pending.attempted = false;
+            self.auth_tracker.invalidate();
+            return;
+        }
+
+        if matches!(result, Err(SendError::Timeout)) {
+            self.auth_tracker.invalidate();
+        }
+
+        let pending = self.pending_sends.pop_front().expect("pending send exists");
+        if let Err(e) = result {
+            self.fail_send(pending, OKXWsError::TransportSend(e));
+        }
+    }
+
+    fn fail_send(&self, pending: PendingSend, error: OKXWsError) {
+        if let Some(request_id) = pending.request_id {
+            let message = OKXWsMessage::SendFailed {
+                request_id,
+                client_order_ids: pending.client_order_ids,
+                op: pending.op,
+                error,
+            };
+
+            if self.send(message).is_err() {
+                if !self.is_stopped() {
+                    log::error!("Failed to forward WebSocket send failure: receiver dropped");
+                }
+
+                self.signal.store(true, Ordering::Release);
             }
         }
     }
@@ -914,6 +957,58 @@ fn parse_array_items<T: serde::de::DeserializeOwned>(
     }
 }
 
+const PENDING_SENDS_CAPACITY: usize = 1_024;
+
+struct PendingSend {
+    payload: String,
+    rate_limit_keys: Option<Vec<Ustr>>,
+    request_id: Option<String>,
+    client_order_ids: Vec<ClientOrderId>,
+    op: Option<OKXWsOperation>,
+    attempted: bool,
+}
+
+impl Drop for OKXWsFeedHandler {
+    fn drop(&mut self) {
+        self.cmd_rx.close();
+
+        while let Some(pending) = self.pending_sends.pop_front() {
+            let error = if pending.attempted {
+                OKXWsError::SendFailed(
+                    "handler stopped before the write outcome was known".to_string(),
+                )
+            } else {
+                OKXWsError::TransportSend(SendError::Closed)
+            };
+
+            self.fail_send(pending, error);
+        }
+
+        while let Ok(command) = self.cmd_rx.try_recv() {
+            if let HandlerCommand::Send {
+                payload,
+                rate_limit_keys,
+                request_id,
+                client_order_ids,
+                op,
+            } = command
+            {
+                self.fail_send(
+                    PendingSend {
+                        payload,
+                        rate_limit_keys,
+                        request_id,
+                        client_order_ids,
+                        op,
+                        attempted: false,
+                    },
+                    OKXWsError::TransportSend(SendError::Closed),
+                );
+            }
+        }
+    }
+}
+
 fn should_retry_replay_safe_error(error: &OKXWsError) -> bool {
     match error {
         OKXWsError::OkxError { error_code, .. } => should_retry_error_code(error_code),
@@ -962,9 +1057,12 @@ mod tests {
     use nautilus_core::{collections::AtomicMap, time::get_atomic_clock_realtime};
     use nautilus_model::identifiers::InstrumentId;
     use nautilus_network::{
-        mode::ConnectionMode,
+        mode::{ConnectionMode, ReconnectRequestOutcome},
         ratelimiter::{RateLimiter, quota::Quota},
-        websocket::{AuthTracker, SubscriptionState, WebSocketConfig, channel_message_handler},
+        websocket::{
+            AuthTracker, SubscriptionState, TransportBackend, WebSocketConfig,
+            channel_message_handler,
+        },
     };
     use rstest::rstest;
     use serde_json::json;
@@ -991,6 +1089,7 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         )
@@ -999,9 +1098,7 @@ mod tests {
     #[rstest]
     fn test_command_debug_redacts_payloads() {
         let payload = "authentication-secret";
-        let authenticate = HandlerCommand::Authenticate {
-            payload: SecretString::from(payload.to_string()),
-        };
+
         let send = HandlerCommand::Send {
             payload: payload.to_string(),
             rate_limit_keys: None,
@@ -1010,7 +1107,7 @@ mod tests {
             op: None,
         };
 
-        let debug = format!("{authenticate:?} {send:?}");
+        let debug = format!("{send:?}");
 
         assert!(debug.contains(REDACTED));
         assert!(!debug.contains(payload));
@@ -1032,6 +1129,7 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         );
@@ -1083,6 +1181,7 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         );
@@ -1149,6 +1248,7 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         );
@@ -1202,10 +1302,11 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         );
-        handler.inner = Some(client);
+        handler.inner = Some(Arc::new(client));
         cmd_tx
             .send(HandlerCommand::Subscribe { args: Vec::new() })
             .unwrap();
@@ -1289,6 +1390,7 @@ mod tests {
                 wire_tx.send(frame).unwrap();
             }
         });
+
         let (message_handler, raw_rx) = channel_message_handler();
         let client = WebSocketClient::builder()
             .config(WebSocketConfig::builder().url(url).build().unwrap())
@@ -1305,10 +1407,12 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         );
-        handler.inner = Some(client);
+        handler.inner = Some(Arc::new(client));
+
         let result = handler
             .send_book_subscription(
                 OKXWsOperation::Subscribe,
@@ -1366,10 +1470,11 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         );
-        handler.inner = Some(client);
+        handler.inner = Some(Arc::new(client));
         let tracker = BookSyncTracker::default();
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
         tracker.record_subscription(instrument_id, time::Instant::now(), SnapshotGate::default());
@@ -1486,10 +1591,11 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         );
-        handler.inner = Some(client);
+        handler.inner = Some(Arc::new(client));
         let (messages_tx, mut messages_rx) = tokio::sync::mpsc::unbounded_channel();
 
         let running = tokio::spawn(async move {
@@ -1940,10 +2046,11 @@ mod tests {
             raw_rx,
             out_tx,
             AuthTracker::new(),
+            false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
             get_atomic_clock_realtime(),
         );
-        handler.inner = Some(client);
+        handler.inner = Some(Arc::new(client));
         handler
             .send_on_connection("active-control".to_string(), None)
             .await
@@ -1988,5 +2095,572 @@ mod tests {
             ),
             "expected rejection for a reconnecting epoch, received {result:?}"
         );
+    }
+
+    #[tokio::test]
+    async fn pending_sends_preserve_exact_bytes_and_fifo() {
+        let mut peer = handler_peer().await;
+        let payloads = [
+            serde_json::json!({"id":"17","op":"cancel-order","args":[{"clOrdId":"OQUEUED17","ordId":"70017","instIdCode":1_000_000_101}]}).to_string(),
+            serde_json::json!({"id":"29","op":"amend-order","args":[{"clOrdId":"OQUEUED29","newSz":"0.013","newPx":"49731.2","instIdCode":1_000_000_102}]}).to_string(),
+        ];
+        peer.handler.auth_tracker.invalidate();
+
+        for (payload, index, op) in [
+            (&payloads[0], 17, OKXWsOperation::CancelOrder),
+            (&payloads[1], 29, OKXWsOperation::AmendOrder),
+        ] {
+            let mut pending = order_send(payload.clone(), index);
+            pending.op = Some(op);
+            peer.handler.pending_sends.push_back(pending);
+        }
+
+        assert!(!peer.handler.can_send_pending());
+        assert!(peer.frames.try_recv().is_err());
+        tokio::time::pause();
+        let mut next = Box::pin(peer.handler.next());
+        assert!(futures_util::poll!(next.as_mut()).is_pending());
+        tokio::time::advance(Duration::from_secs(11)).await;
+        assert!(futures_util::poll!(next.as_mut()).is_pending());
+        drop(next);
+        tokio::time::resume();
+        assert_eq!(peer.handler.pending_sends.len(), payloads.len());
+        assert!(peer.messages.try_recv().is_err());
+
+        peer.handler.auth_tracker.succeed();
+        peer.handler.send_pending().await;
+        peer.handler.send_pending().await;
+        let frames = [
+            peer.frames.recv().await.unwrap(),
+            peer.frames.recv().await.unwrap(),
+        ];
+        assert_eq!(frames, payloads);
+        assert!(peer.handler.pending_sends.is_empty());
+        assert!(peer.messages.try_recv().is_err());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[tokio::test]
+    async fn pending_send_preserves_fifo_after_connection_change() {
+        let mut peer = handler_peer().await;
+        let keys = [Ustr::from(SEND_RATE_KEY)];
+        let ws_client = peer.handler.inner.as_ref().unwrap();
+        let reconnect = ws_client.reconnect_handle();
+        ws_client
+            .send_text_on_connection("consume-quota".to_string(), Some(&keys), 0)
+            .await
+            .unwrap();
+        assert_eq!(peer.frames.recv().await.unwrap(), "consume-quota");
+        let payloads = ["request-17", "request-29"];
+        for (payload, index) in [(payloads[0], 17), (payloads[1], 29)] {
+            let mut pending = order_send(payload.to_string(), index);
+            pending.rate_limit_keys = Some(keys.to_vec());
+            peer.handler.pending_sends.push_back(pending);
+        }
+
+        let mut send = Box::pin(peer.handler.send_pending());
+        assert!(futures_util::poll!(send.as_mut()).is_pending());
+        assert_eq!(
+            reconnect.request_reconnect(),
+            ReconnectRequestOutcome::Accepted
+        );
+        tokio::time::timeout(Duration::from_secs(5), send)
+            .await
+            .unwrap();
+
+        assert_eq!(peer.handler.pending_sends.len(), payloads.len());
+        assert!(!peer.handler.pending_sends.front().unwrap().attempted);
+        assert!(!peer.handler.auth_tracker.is_authenticated());
+        assert!(!peer.handler.can_send_pending());
+        assert!(peer.frames.try_recv().is_err());
+        assert!(peer.messages.try_recv().is_err());
+
+        peer.handler.auth_tracker.succeed();
+        peer.handler.send_pending().await;
+        peer.handler.send_pending().await;
+        let frames = [
+            peer.frames.recv().await.unwrap(),
+            peer.frames.recv().await.unwrap(),
+        ];
+        assert_eq!(frames, payloads);
+        assert!(peer.handler.pending_sends.is_empty());
+        assert!(peer.messages.try_recv().is_err());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[tokio::test]
+    async fn pending_send_rechecks_authentication_after_reconnect() {
+        let mut peer = handler_peer().await;
+        let payload = "queued-order";
+        peer.handler
+            .pending_sends
+            .push_back(order_send(payload.to_string(), 17));
+        assert!(peer.handler.can_send_pending());
+
+        let client = peer.handler.inner.as_ref().unwrap();
+        let epoch = client.connection_epoch();
+        assert_eq!(
+            client.reconnect_handle().request_reconnect(),
+            ReconnectRequestOutcome::Accepted
+        );
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while client.connection_epoch() == epoch || !client.is_active() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        assert!(!peer.handler.auth_tracker.is_authenticated());
+
+        peer.handler.send_pending().await;
+
+        assert_eq!(peer.handler.pending_sends.len(), 1);
+        assert!(!peer.handler.pending_sends.front().unwrap().attempted);
+        assert!(peer.frames.try_recv().is_err());
+        assert!(peer.messages.try_recv().is_err());
+
+        peer.handler.auth_tracker.succeed();
+        peer.handler.send_pending().await;
+
+        assert_eq!(peer.frames.recv().await.unwrap(), payload);
+        assert!(peer.handler.pending_sends.is_empty());
+        assert!(peer.messages.try_recv().is_err());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[tokio::test]
+    async fn pending_send_timeout_fails_only_head() {
+        let mut peer = handler_peer().await;
+        for index in [17, 29] {
+            peer.handler
+                .pending_sends
+                .push_back(order_send(format!("request-{index}"), index));
+        }
+
+        peer.server.abort();
+        peer.handler
+            .inner
+            .as_ref()
+            .unwrap()
+            .connection_mode_atomic()
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        tokio::time::pause();
+        let mut send = Box::pin(peer.handler.send_pending());
+        assert!(futures_util::poll!(send.as_mut()).is_pending());
+        tokio::time::advance(Duration::from_secs(11)).await;
+        send.await;
+        tokio::time::resume();
+
+        let failure = peer.messages.try_recv().unwrap();
+        assert!(matches!(failure, OKXWsMessage::SendFailed {
+            request_id, client_order_ids, op: Some(OKXWsOperation::CancelOrder),
+            error: OKXWsError::TransportSend(SendError::Timeout),
+        } if request_id == "17" && client_order_ids == vec![ClientOrderId::from("OQUEUED17")]));
+        assert_eq!(peer.handler.pending_sends.len(), 1);
+        assert_eq!(
+            peer.handler
+                .pending_sends
+                .front()
+                .unwrap()
+                .request_id
+                .as_deref(),
+            Some("29")
+        );
+        assert!(!peer.handler.auth_tracker.is_authenticated());
+        assert!(!peer.handler.can_send_pending());
+        assert!(peer.messages.try_recv().is_err());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+    }
+
+    #[tokio::test]
+    async fn pending_send_capacity_and_drop_report_each_command() {
+        let mut peer = handler_peer().await;
+        peer.handler.auth_tracker.invalidate();
+        for index in 0..PENDING_SENDS_CAPACITY {
+            peer.handler
+                .pending_sends
+                .push_back(order_send(format!("request-{index}"), index));
+        }
+
+        peer.commands
+            .send(HandlerCommand::Send {
+                payload: "overflow-request".to_string(),
+                rate_limit_keys: None,
+                request_id: Some("overflow".to_string()),
+                client_order_ids: vec![ClientOrderId::from("OOVERFLOW")],
+                op: Some(OKXWsOperation::AmendOrder),
+            })
+            .unwrap();
+
+        let mut next = Box::pin(peer.handler.next());
+        assert!(futures_util::poll!(next.as_mut()).is_pending());
+        drop(next);
+        let overflow = peer.messages.try_recv().unwrap();
+        assert!(
+            matches!(overflow, OKXWsMessage::SendFailed { request_id, client_order_ids, op: Some(OKXWsOperation::AmendOrder), error: OKXWsError::TransportSend(SendError::BufferFull) }
+            if request_id == "overflow" && client_order_ids == vec![ClientOrderId::from("OOVERFLOW")])
+        );
+        peer.handler
+            .inner
+            .as_ref()
+            .unwrap()
+            .connection_mode_atomic()
+            .store(ConnectionMode::Reconnect.as_u8(), Ordering::SeqCst);
+        peer.handler.auth_tracker.succeed();
+        let mut attempted = Box::pin(peer.handler.send_pending());
+        assert!(futures_util::poll!(attempted.as_mut()).is_pending());
+        drop(attempted);
+        peer.commands
+            .send(HandlerCommand::Send {
+                payload: "unread-request".to_string(),
+                rate_limit_keys: None,
+                request_id: Some("unread".to_string()),
+                client_order_ids: vec![ClientOrderId::from("OUNREAD")],
+                op: Some(OKXWsOperation::Order),
+            })
+            .unwrap();
+
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        drop(peer.handler);
+        for index in 0..PENDING_SENDS_CAPACITY {
+            let message = peer.messages.try_recv().unwrap();
+
+            let OKXWsMessage::SendFailed {
+                request_id,
+                client_order_ids,
+                op,
+                error,
+            } = message
+            else {
+                panic!("expected send failure")
+            };
+
+            assert_eq!(request_id, index.to_string());
+            assert_eq!(
+                client_order_ids,
+                vec![ClientOrderId::from(format!("OQUEUED{index}").as_str())]
+            );
+            assert_eq!(op, Some(OKXWsOperation::CancelOrder));
+
+            if index == 0 {
+                assert!(matches!(error, OKXWsError::SendFailed(_)));
+            } else {
+                assert!(matches!(
+                    error,
+                    OKXWsError::TransportSend(SendError::Closed)
+                ));
+            }
+        }
+
+        let unread = peer.messages.try_recv().unwrap();
+        assert!(
+            matches!(unread, OKXWsMessage::SendFailed { request_id, client_order_ids, op: Some(OKXWsOperation::Order), error: OKXWsError::TransportSend(SendError::Closed) }
+            if request_id == "unread" && client_order_ids == vec![ClientOrderId::from("OUNREAD")])
+        );
+        assert!(peer.messages.try_recv().is_err());
+        assert!(peer.frames.try_recv().is_err());
+        peer.server.abort();
+    }
+
+    #[tokio::test]
+    async fn reconnect_preserves_buffered_order_events() {
+        let mut peer = handler_peer().await;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        peer.handler.raw_rx = raw_rx;
+        let fixture: Value =
+            serde_json::from_str(&load_test_json("ws_reconnect_queued_frames.json")).unwrap();
+        let orders = load_test_json("ws_orders.json");
+        let orders_frame: Value = serde_json::from_str(&orders).unwrap();
+        let expected_orders: Vec<OKXOrderMsg> =
+            serde_json::from_value(orders_frame["data"].clone()).unwrap();
+
+        raw_tx.send(Message::Text(orders.into())).unwrap();
+        raw_tx
+            .send(Message::Text(fixture["response"].to_string().into()))
+            .unwrap();
+
+        let ws_client = peer.handler.inner.as_ref().unwrap();
+        assert!(ws_client.request_reconnect());
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while ws_client.connection_epoch() != 1 || !ws_client.is_active() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        let orders = tokio::time::timeout(Duration::from_secs(1), peer.handler.next())
+            .await
+            .unwrap();
+
+        let Some(OKXWsMessage::Orders(orders)) = orders else {
+            panic!("expected buffered order update, received {orders:?}");
+        };
+
+        let response = tokio::time::timeout(Duration::from_secs(1), peer.handler.next())
+            .await
+            .unwrap();
+
+        let Some(OKXWsMessage::OrderResponse {
+            id,
+            op,
+            code,
+            msg,
+            data,
+        }) = response
+        else {
+            panic!("expected buffered order response, received {response:?}");
+        };
+
+        assert_eq!(
+            serde_json::to_value(orders).unwrap(),
+            serde_json::to_value(expected_orders).unwrap()
+        );
+        assert_eq!(id.as_deref(), Some("queued-response-17"));
+        assert_eq!(op, OKXWsOperation::Order);
+        assert_eq!(code, "0");
+        assert_eq!(msg, "");
+        assert_eq!(data, *fixture["response"]["data"].as_array().unwrap());
+        assert!(peer.handler.pending_messages.is_empty());
+        assert!(peer.frames.try_recv().is_err());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[tokio::test]
+    async fn failed_login_stops_pending_sends() {
+        let mut peer = handler_peer().await;
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        peer.handler.raw_rx = raw_rx;
+        let fixture: Value =
+            serde_json::from_str(&load_test_json("ws_reconnect_queued_frames.json")).unwrap();
+        raw_tx
+            .send(Message::Text(fixture["login_failure"].to_string().into()))
+            .unwrap();
+        raw_tx
+            .send(Message::Text(load_test_json("ws_orders.json").into()))
+            .unwrap();
+        assert!(matches!(
+            peer.handler.next().await,
+            Some(OKXWsMessage::Orders(_))
+        ));
+        peer.handler
+            .pending_sends
+            .push_back(order_send("request-17".to_string(), 17));
+        let error = peer.handler.next().await;
+
+        assert!(
+            matches!(error, Some(OKXWsMessage::Error(error)) if error.code == "60009" && error.message == "Login failed")
+        );
+        assert!(!peer.handler.auth_tracker.is_authenticated());
+        assert!(!peer.handler.can_send_pending());
+        assert!(peer.frames.try_recv().is_err());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[tokio::test]
+    async fn uncertain_write_is_not_replayed_after_recovery() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", listener.local_addr().unwrap());
+        let (frame_tx, mut frames) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            let mut header = [0u8; 1];
+            tokio::io::AsyncReadExt::read_exact(socket.get_mut(), &mut header)
+                .await
+                .unwrap();
+            assert_eq!(header[0] & 0x0f, 1);
+            drop(socket);
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while let Some(Ok(frame)) = socket.next().await {
+                if let Message::Text(text) = frame {
+                    frame_tx.send(text.to_string()).unwrap();
+                }
+            }
+        });
+
+        let (message_handler, raw_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(
+                WebSocketConfig::builder()
+                    .url(url)
+                    .backend(TransportBackend::Tungstenite)
+                    .build()
+                    .unwrap(),
+            )
+            .message_handler(message_handler)
+            .connect()
+            .await
+            .unwrap();
+        let (_commands, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut messages) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            false,
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+        handler.inner = Some(Arc::new(client));
+        handler.auth_tracker.succeed();
+        handler
+            .pending_sends
+            .push_back(order_send("x".repeat(64 * 1024 * 1024), 17));
+        handler.send_pending().await;
+        let failure = messages.try_recv().unwrap();
+
+        let OKXWsMessage::SendFailed {
+            request_id,
+            client_order_ids,
+            op,
+            error,
+        } = failure
+        else {
+            panic!("expected send failure");
+        };
+
+        assert_eq!(request_id, "17");
+        assert_eq!(client_order_ids, vec![ClientOrderId::from("OQUEUED17")]);
+        assert_eq!(op, Some(OKXWsOperation::CancelOrder));
+        assert!(matches!(
+            error,
+            OKXWsError::TransportSend(SendError::BrokenPipe(_) | SendError::WriteTimeout)
+        ));
+        assert!(handler.pending_sends.is_empty());
+        let client = handler.inner.as_ref().unwrap();
+        tokio::time::timeout(Duration::from_secs(10), async {
+            while client.connection_epoch() == 0 || !client.is_active() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .unwrap();
+
+        handler
+            .send_on_connection("recovered-control".to_string(), None)
+            .await
+            .unwrap();
+        assert_eq!(frames.recv().await.unwrap(), "recovered-control");
+        assert!(frames.try_recv().is_err());
+        client.disconnect().await;
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn closed_output_stops_handler_without_inbound_frames() {
+        let mut peer = handler_peer().await;
+        peer.messages.close();
+        let client = peer.handler.inner.take().unwrap();
+        peer.commands
+            .send(HandlerCommand::Send {
+                payload: "unwritten-request-17".to_string(),
+                rate_limit_keys: None,
+                request_id: Some("17".to_string()),
+                client_order_ids: vec![ClientOrderId::from("OQUEUED17")],
+                op: Some(OKXWsOperation::CancelOrder),
+            })
+            .unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(1), peer.handler.next())
+            .await
+            .unwrap();
+        assert!(result.is_none());
+        assert!(peer.handler.is_stopped());
+        assert!(peer.frames.try_recv().is_err());
+        client.disconnect().await;
+        peer.server.abort();
+    }
+
+    const SEND_RATE_KEY: &str = "owned-send";
+
+    struct HandlerPeer {
+        handler: OKXWsFeedHandler,
+        commands: tokio::sync::mpsc::UnboundedSender<HandlerCommand>,
+        frames: tokio::sync::mpsc::UnboundedReceiver<String>,
+        messages: tokio::sync::mpsc::UnboundedReceiver<OKXWsMessage>,
+        server: tokio::task::JoinHandle<()>,
+    }
+
+    async fn handler_peer() -> HandlerPeer {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/", listener.local_addr().unwrap());
+        let (frame_tx, frames) = tokio::sync::mpsc::unbounded_channel();
+
+        let server = tokio::spawn(async move {
+            let mut connections = tokio::task::JoinSet::new();
+
+            loop {
+                let (socket, _) = listener.accept().await.unwrap();
+                let frame_tx = frame_tx.clone();
+
+                connections.spawn(async move {
+                    let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+                    while let Some(Ok(frame)) = socket.next().await {
+                        if let Message::Text(text) = frame {
+                            frame_tx.send(text.to_string()).unwrap();
+                        }
+                    }
+                });
+            }
+        });
+
+        let (message_handler, raw_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(WebSocketConfig::builder().url(url).build().unwrap())
+            .message_handler(message_handler)
+            .keyed_quotas(vec![(
+                SEND_RATE_KEY.to_string(),
+                Quota::per_second(NonZeroU32::new(1).unwrap()).unwrap(),
+            )])
+            .connect()
+            .await
+            .unwrap();
+        let (commands, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, messages) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = OKXWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            true,
+            SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            get_atomic_clock_realtime(),
+        );
+        client.set_auth_tracker(handler.auth_tracker.clone(), false);
+        handler.inner = Some(Arc::new(client));
+        handler.auth_tracker.succeed();
+
+        HandlerPeer {
+            handler,
+            commands,
+            frames,
+            messages,
+            server,
+        }
+    }
+
+    fn order_send(payload: String, index: usize) -> PendingSend {
+        PendingSend {
+            payload,
+            rate_limit_keys: None,
+            request_id: Some(index.to_string()),
+            client_order_ids: vec![ClientOrderId::from(format!("OQUEUED{index}").as_str())],
+            op: Some(OKXWsOperation::CancelOrder),
+            attempted: false,
+        }
     }
 }

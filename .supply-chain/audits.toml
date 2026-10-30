@@ -3199,11 +3199,25 @@ criteria = "safe-to-deploy"
 delta = "1.4.0 -> 1.4.1"
 notes = "Documentation clarifications for StreamConfig fields and validation that Arrow-only options are rejected by the simple-type functions. No new unsafe, network destination, or build behavior."
 
+[[audits.hypersync-client]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.4.1 -> 2.0.0"
+importable = false
+notes = "Verified published package checksums and compared all files. The complete src tree is byte-for-byte identical; manifests move Arrow and Parquet from 57 to 59 and hypersync-schema from 0.4.0 to 0.5.0. The workspace already uses Arrow and Parquet 59.3.1 through compatibility facades. No new unsafe, build script, network, filesystem, process, or credential behavior."
+
 [[audits.hypersync-format]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.7.0 -> 0.7.1"
 notes = "Adds a serde alias for Arbitrum Nitro's miscased L1BlockNumber receipt field plus regression fixtures. No new dependencies, unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
+
+[[audits.hypersync-schema]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.0 -> 0.5.0"
+importable = false
+notes = "Verified published package checksums and compared all files. The complete src tree is byte-for-byte identical; the manifest moves Arrow from 57 to 59. The workspace already uses Arrow 59.3.1 through its compatibility facade. No new unsafe, build script, network, filesystem, process, or credential behavior."
 
 [[audits.ibapi]]
 who = "Faysal Aberkane <faysal.aberkane@gmail.com>"

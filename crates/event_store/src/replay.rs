@@ -2660,6 +2660,12 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            // Quote values replay, but local book provenance is not captured in quote responses
+            "add_book_quote",
+            CacheMutationRecoveryClass::MissingLiveRecovery,
+            &[],
+        ),
+        cache_mutation(
             "add_quote",
             CacheMutationRecoveryClass::EventStoreCapturedAndReplayed,
             &[PAYLOAD_TYPE_QUOTES_RESPONSE],

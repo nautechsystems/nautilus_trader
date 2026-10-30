@@ -13,6 +13,8 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use nautilus_common::cache::OrderBookSource;
+
 use super::{
     Bar, Cache, CustomData, DataEngine, Display, FundingRateUpdate, IndexPriceUpdate, Instrument,
     InstrumentAny, InstrumentClose, InstrumentStatus, MarkPriceUpdate, MarketStatusAction,
@@ -96,7 +98,7 @@ impl DataEngine {
         if self.config.emit_quotes_from_book_depths
             && let Some(quote) = derive_quote_from_depth(depth)
         {
-            book::publish_quote_if_changed(&self.cache, quote);
+            book::publish_quote_if_changed(&self.cache, quote, OrderBookSource::Depth);
         }
     }
 

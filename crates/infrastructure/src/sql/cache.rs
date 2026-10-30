@@ -31,7 +31,10 @@ use nautilus_common::{
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick},
+    data::{
+        Bar, CustomData, DataType, FundingRateUpdate, InstrumentClose, QuoteTick, TradeTick,
+        greeks::{GreeksData, YieldCurve},
+    },
     events::{
         AccountState, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -225,6 +228,8 @@ pub enum DatabaseQuery {
     AddQuote(QuoteTick),
     AddTrade(TradeTick),
     AddBar(Bar),
+    AddGreeks(GreeksData),
+    AddYieldCurve(YieldCurve),
     UpdateOrder(OrderEventAny),
     UpdatePosition(OrderFilled),
     IndexOrderPosition(ClientOrderId, PositionId),
@@ -404,6 +409,10 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
     let missing: Vec<String> = sqlx::query_scalar(
         "SELECT required.table_name || '.' || required.column_name
         FROM (VALUES
+            ('greeks', 'instrument_id'),
+            ('greeks', 'value'),
+            ('yield_curve', 'curve_name'),
+            ('yield_curve', 'value'),
             ('instrument', 'info'),
             ('account_event', 'trader_id'),
             ('order_position_index', 'trader_id'),
@@ -616,20 +625,26 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         let mut currencies = self.load_currencies().await?;
         register_loaded_currencies(&mut currencies)?;
 
-        let (instruments, instrument_closes, synthetics, accounts, orders, positions) = try_join!(
+        let (
+            instruments,
+            instrument_closes,
+            synthetics,
+            accounts,
+            orders,
+            positions,
+            greeks,
+            yield_curves,
+        ) = try_join!(
             self.load_instruments(),
             self.load_instrument_closes(),
             self.load_synthetics(),
             self.load_accounts(),
             self.load_orders(),
-            self.load_positions()
+            self.load_positions(),
+            self.load_greeks(),
+            self.load_yield_curves()
         )
         .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
-
-        // For now, we don't load greeks and yield curves from the database
-        // This will be implemented in the future
-        let greeks = AHashMap::new();
-        let yield_curves = AHashMap::new();
 
         Ok(CacheMap {
             currencies,
@@ -820,6 +835,14 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
             }
         });
         rx.recv()?
+    }
+
+    async fn load_greeks(&self) -> anyhow::Result<AHashMap<InstrumentId, GreeksData>> {
+        DatabaseQueries::load_greeks(&self.pool).await
+    }
+
+    async fn load_yield_curves(&self) -> anyhow::Result<AHashMap<String, YieldCurve>> {
+        DatabaseQueries::load_yield_curves(&self.pool).await
     }
 
     fn load_index_order_position(&self) -> anyhow::Result<AHashMap<ClientOrderId, PositionId>> {
@@ -1225,6 +1248,48 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
         Ok(rx.recv()?)
     }
 
+    fn add_greeks(&self, greeks: &GreeksData) -> anyhow::Result<()> {
+        anyhow::ensure!(
+            [
+                greeks.strike,
+                greeks.expiry_in_years,
+                greeks.multiplier,
+                greeks.quantity,
+                greeks.underlying_price,
+                greeks.interest_rate,
+                greeks.cost_of_carry,
+                greeks.vol,
+                greeks.pnl,
+                greeks.price,
+                greeks.delta,
+                greeks.gamma,
+                greeks.vega,
+                greeks.theta,
+                greeks.rho,
+                greeks.itm_prob,
+            ]
+            .iter()
+            .all(|value| value.is_finite()),
+            "Cannot persist non-finite GreeksData"
+        );
+        self.tx
+            .send(DatabaseQuery::AddGreeks(greeks.clone()))
+            .map_err(|e| {
+                anyhow::anyhow!("Failed to send query add_greeks to database message handler: {e}")
+            })
+    }
+
+    fn add_yield_curve(&self, curve: &YieldCurve) -> anyhow::Result<()> {
+        curve.validate()?;
+        self.tx
+            .send(DatabaseQuery::AddYieldCurve(curve.clone()))
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to send query add_yield_curve to database message handler: {e}"
+                )
+            })
+    }
+
     fn add_signal(&self, signal: &Signal) -> anyhow::Result<()> {
         let query = DatabaseQuery::AddSignal(signal.to_owned());
         self.tx.send(query).map_err(|e| {
@@ -1584,6 +1649,10 @@ async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque
             DatabaseQuery::AddQuote(quote) => DatabaseQueries::add_quote(pool, &quote).await,
             DatabaseQuery::AddTrade(trade) => DatabaseQueries::add_trade(pool, &trade).await,
             DatabaseQuery::AddBar(bar) => DatabaseQueries::add_bar(pool, &bar).await,
+            DatabaseQuery::AddGreeks(greeks) => DatabaseQueries::add_greeks(pool, &greeks).await,
+            DatabaseQuery::AddYieldCurve(curve) => {
+                DatabaseQueries::add_yield_curve(pool, &curve).await
+            }
             DatabaseQuery::UpdateOrder(event) => {
                 DatabaseQueries::add_order_event(pool, event.into_boxed(), None).await
             }

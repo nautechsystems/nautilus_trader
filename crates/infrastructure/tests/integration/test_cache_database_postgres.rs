@@ -19,10 +19,11 @@
 mod serial_tests {
     use std::{collections::HashSet, str::FromStr, time::Duration};
 
+    use ahash::AHashMap;
     use bytes::Bytes;
     use indexmap::indexmap;
     use nautilus_common::{
-        cache::{Cache, database::CacheDatabaseAdapter},
+        cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
         signal::Signal,
         testing::{wait_until, wait_until_async},
     };
@@ -36,6 +37,7 @@ mod serial_tests {
         accounts::{AccountAny, CashAccount},
         data::{
             CustomData, DataType, InstrumentClose,
+            greeks::{GreeksData, OptionGreekValues, YieldCurve},
             stubs::{quote_ethusdt_binance, stub_bar, stub_trade_ethusdt_buy},
         },
         enums::{CurrencyType, InstrumentCloseType, OmsType, OrderSide, OrderStatus, OrderType},
@@ -111,6 +113,387 @@ mod serial_tests {
                  {e}"
             )),
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_greeks_and_yield_curves_survive_cache_restart() {
+        let database = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&database).await;
+
+        let config = CacheConfig {
+            save_market_data: true,
+            ..Default::default()
+        };
+
+        let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+        let first = persisted_greeks();
+
+        let second = GreeksData {
+            instrument_id: InstrumentId::from("SPY:PUT.OPRA"),
+            is_call: false,
+            quantity: -3.0,
+            ts_event: 1_800_000_000_123_456_790_u64.into(),
+            ts_init: 1_800_000_000_987_654_322_u64.into(),
+            ..first.clone()
+        };
+
+        let curves = [
+            YieldCurve::new(
+                "USD:DISCOUNT".into(),
+                vec![0.25, 0.5, 1.0],
+                vec![0.03, 0.04, 0.05],
+                101.into(),
+                102.into(),
+            ),
+            YieldCurve::new(
+                "EUR".into(),
+                vec![0.75],
+                vec![0.025],
+                103.into(),
+                104.into(),
+            ),
+        ];
+        cache
+            .add_greeks(GreeksData {
+                quantity: 9.0,
+                ..first.clone()
+            })
+            .unwrap();
+
+        cache.add_greeks(first.clone()).unwrap();
+        cache.add_greeks(second.clone()).unwrap();
+        cache
+            .add_yield_curve(YieldCurve::new(
+                "USD:DISCOUNT".into(),
+                vec![0.0],
+                vec![0.09],
+                91.into(),
+                92.into(),
+            ))
+            .unwrap();
+
+        for curve in &curves {
+            cache.add_yield_curve(curve.clone()).unwrap();
+        }
+
+        cache.dispose();
+        drop(cache);
+
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        let greek_values = adapter.load_greeks().await.unwrap();
+        let curve_values = adapter.load_yield_curves().await.unwrap();
+        adapter.flush().unwrap();
+        let greeks_after_flush = adapter.load_greeks().await.unwrap();
+        let curves_after_flush = adapter.load_yield_curves().await.unwrap();
+        adapter.close().unwrap();
+        let database = get_test_pg_cache_database().await.unwrap();
+        let mut restored = Cache::new(None, Some(Box::new(database)));
+        restored.cache_all().await.unwrap();
+        let restored_first = restored.greeks(&first.instrument_id);
+        let restored_second = restored.greeks(&second.instrument_id);
+        let usd_rate = restored.yield_curve("USD:DISCOUNT").unwrap()(0.5);
+        let eur_rate = restored.yield_curve("EUR").unwrap()(0.5);
+        restored.dispose();
+        let mut cleanup = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&cleanup).await;
+        cleanup.close().unwrap();
+
+        assert_eq!(
+            greek_values,
+            AHashMap::from([
+                (first.instrument_id, first.clone()),
+                (second.instrument_id, second.clone())
+            ])
+        );
+        assert_eq!(
+            curve_values,
+            AHashMap::from(curves.map(|curve| (curve.curve_name.clone(), curve)))
+        );
+        assert_eq!(greeks_after_flush, greek_values);
+        assert_eq!(curves_after_flush, curve_values);
+        assert_eq!(restored_first, Some(first));
+        assert_eq!(restored_second, Some(second));
+        assert_eq!(usd_rate, 0.04);
+        assert_eq!(eur_rate, 0.025);
+    }
+
+    #[rstest]
+    #[case::strike(|g: &mut GreeksData, value| g.strike = value)]
+    #[case::expiry_in_years(|g: &mut GreeksData, value| g.expiry_in_years = value)]
+    #[case::multiplier(|g: &mut GreeksData, value| g.multiplier = value)]
+    #[case::quantity(|g: &mut GreeksData, value| g.quantity = value)]
+    #[case::underlying_price(|g: &mut GreeksData, value| g.underlying_price = value)]
+    #[case::interest_rate(|g: &mut GreeksData, value| g.interest_rate = value)]
+    #[case::cost_of_carry(|g: &mut GreeksData, value| g.cost_of_carry = value)]
+    #[case::vol(|g: &mut GreeksData, value| g.vol = value)]
+    #[case::pnl(|g: &mut GreeksData, value| g.pnl = value)]
+    #[case::price(|g: &mut GreeksData, value| g.price = value)]
+    #[case::delta(|g: &mut GreeksData, value| g.greeks.delta = value)]
+    #[case::gamma(|g: &mut GreeksData, value| g.greeks.gamma = value)]
+    #[case::vega(|g: &mut GreeksData, value| g.greeks.vega = value)]
+    #[case::theta(|g: &mut GreeksData, value| g.greeks.theta = value)]
+    #[case::rho(|g: &mut GreeksData, value| g.greeks.rho = value)]
+    #[case::itm_prob(|g: &mut GreeksData, value| g.itm_prob = value)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_greeks_persistence_rejects_non_finite_values(
+        #[case] set_value: fn(&mut GreeksData, f64),
+        #[values(f64::NAN, f64::INFINITY, f64::NEG_INFINITY)] invalid: f64,
+    ) {
+        let database = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&database).await;
+
+        let config = CacheConfig {
+            save_market_data: true,
+            ..Default::default()
+        };
+
+        let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+        let expected = persisted_greeks();
+        cache.add_greeks(expected.clone()).unwrap();
+        let mut rejected = expected.clone();
+        set_value(&mut rejected, invalid);
+
+        let result = cache.add_greeks(rejected);
+        let cached = cache.greeks(&expected.instrument_id);
+        cache.dispose();
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        let recovered = adapter.load_greeks().await;
+        reset_test_database(&adapter).await;
+        adapter.close().unwrap();
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "Cannot persist non-finite GreeksData"
+        );
+        assert_eq!(cached, Some(expected.clone()));
+        assert_eq!(
+            recovered.unwrap(),
+            AHashMap::from([(expected.instrument_id, expected)])
+        );
+    }
+
+    #[rstest]
+    #[case::empty(vec![], vec![], "`interest_rates` must hold one rate or at least three points")]
+    #[case::non_finite(vec![1.0], vec![f64::NAN], "`tenors` and `interest_rates` must be finite")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_yield_curve_persistence_rejects_invalid_replacement(
+        #[case] tenors: Vec<f64>,
+        #[case] rates: Vec<f64>,
+        #[case] message: &str,
+    ) {
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&adapter).await;
+
+        let expected = YieldCurve::new(
+            "USD".into(),
+            vec![0.75],
+            vec![0.025],
+            101.into(),
+            102.into(),
+        );
+        adapter.add_yield_curve(&expected).unwrap();
+
+        let rejected = YieldCurve::new(
+            expected.curve_name.clone(),
+            tenors,
+            rates,
+            103.into(),
+            104.into(),
+        );
+        let result = adapter.add_yield_curve(&rejected);
+        adapter.close().unwrap();
+        let mut restored = get_test_pg_cache_database().await.unwrap();
+        let recovered = restored.load_yield_curves().await;
+        reset_test_database(&restored).await;
+        restored.close().unwrap();
+
+        assert_eq!(result.unwrap_err().to_string(), message);
+        assert_eq!(
+            recovered.unwrap(),
+            AHashMap::from([(expected.curve_name.clone(), expected)])
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_greeks_and_yield_curve_writes_reject_closed_writer() {
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        adapter.close().unwrap();
+        let greek_error = adapter.add_greeks(&persisted_greeks()).unwrap_err();
+        let curve = YieldCurve::new("USD".into(), vec![1.0], vec![0.04], 1.into(), 2.into());
+        let curve_error = adapter.add_yield_curve(&curve).unwrap_err();
+        assert!(
+            greek_error
+                .to_string()
+                .starts_with("Failed to send query add_greeks to database message handler:")
+        );
+        assert!(
+            curve_error
+                .to_string()
+                .starts_with("Failed to send query add_yield_curve to database message handler:")
+        );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_greeks_and_yield_curve_loads_reject_mismatched_keys(#[case] is_curve: bool) {
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&adapter).await;
+
+        let message = if is_curve {
+            let curve =
+                YieldCurve::new("USD".into(), vec![1.0], vec![0.04], 101.into(), 102.into());
+            sqlx::query("INSERT INTO yield_curve (curve_name, value) VALUES ('EUR', $1)")
+                .bind(serde_json::to_value(curve).unwrap())
+                .execute(&adapter.pool)
+                .await
+                .unwrap();
+            "Error loading cache data: Yield curve key EUR did not match payload name USD"
+        } else {
+            sqlx::query("INSERT INTO greeks (instrument_id, value) VALUES ('SPY:WRONG.OPRA', $1)")
+                .bind(serde_json::to_value(persisted_greeks()).unwrap())
+                .execute(&adapter.pool)
+                .await
+                .unwrap();
+            "Error loading cache data: Greeks key ID SPY:WRONG.OPRA did not match payload ID SPY:CALL.OPRA"
+        };
+
+        let result = adapter.load_all().await;
+        reset_test_database(&adapter).await;
+        adapter.close().unwrap();
+        assert_eq!(result.unwrap_err().to_string(), message);
+    }
+
+    #[rstest]
+    #[case("INSERT INTO greeks (instrument_id, value) VALUES ('SPY:CALL.OPRA', 'null'::jsonb)")]
+    #[case("INSERT INTO yield_curve (curve_name, value) VALUES ('USD', 'null'::jsonb)")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_greeks_and_yield_curve_loads_reject_corrupt_payload(#[case] statement: &str) {
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&adapter).await;
+        sqlx::query(AssertSqlSafe(statement))
+            .execute(&adapter.pool)
+            .await
+            .unwrap();
+        let result = adapter.load_all().await;
+        reset_test_database(&adapter).await;
+        adapter.close().unwrap();
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .starts_with("Error loading cache data: invalid type: null, expected struct")
+        );
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_yield_curve_load_rejects_invalid_stored_curve() {
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&adapter).await;
+        let curve = YieldCurve::new("USD".into(), vec![], vec![], 101.into(), 102.into());
+        sqlx::query("INSERT INTO yield_curve (curve_name, value) VALUES ('USD', $1)")
+            .bind(serde_json::to_value(curve).unwrap())
+            .execute(&adapter.pool)
+            .await
+            .unwrap();
+        let result = adapter.load_yield_curves().await;
+        reset_test_database(&adapter).await;
+        adapter.close().unwrap();
+        assert!(
+            result
+                .unwrap_err()
+                .to_string()
+                .contains("one rate or at least three points")
+        );
+    }
+
+    #[rstest]
+    #[case(
+        "ALTER TABLE greeks RENAME TO greeks_old",
+        "greeks.instrument_id, greeks.value",
+        "DROP TABLE greeks_old"
+    )]
+    #[case(
+        "ALTER TABLE yield_curve RENAME TO yield_curve_old",
+        "yield_curve.curve_name, yield_curve.value",
+        "DROP TABLE yield_curve_old"
+    )]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_connect_requires_greek_and_curve_schema_migration(
+        #[case] rename: &str,
+        #[case] missing: &str,
+        #[case] cleanup: &str,
+    ) {
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&adapter).await;
+        adapter.close().unwrap();
+        let options = get_postgres_connect_options(None, None, None, None, None);
+        let pg = connect_test_pg(options.clone().into()).await.unwrap();
+        sqlx::query(AssertSqlSafe(rename))
+            .execute(&pg)
+            .await
+            .unwrap();
+        let blocked = get_test_pg_cache_database().await;
+        let schema_dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../schema/sql").to_string();
+
+        for _ in 0..2 {
+            init_postgres(
+                &pg,
+                options.database.clone(),
+                options.password.clone(),
+                Some(schema_dir.clone()),
+            )
+            .await
+            .unwrap();
+        }
+
+        sqlx::query(AssertSqlSafe(cleanup))
+            .execute(&pg)
+            .await
+            .unwrap();
+        let mut restored = get_test_pg_cache_database().await.unwrap();
+        let greeks = restored.load_greeks().await.unwrap();
+        let curves = restored.load_yield_curves().await.unwrap();
+        restored.close().unwrap();
+        pg.close().await;
+        assert!(
+            blocked
+                .unwrap_err()
+                .to_string()
+                .contains(&format!("missing cache columns {missing}"))
+        );
+        assert!(greeks.is_empty());
+        assert!(curves.is_empty());
+    }
+
+    fn persisted_greeks() -> GreeksData {
+        GreeksData::new(
+            InstrumentId::from("SPY:CALL.OPRA"),
+            true,
+            500.0,
+            20270315,
+            40,
+            0.125,
+            100.0,
+            2.0,
+            510.0,
+            0.035,
+            0.015,
+            0.25,
+            12.5,
+            18.75,
+            OptionGreekValues {
+                delta: 0.625,
+                gamma: 0.0125,
+                vega: 2.5,
+                theta: -0.125,
+                rho: 1.0568268194997255,
+            },
+            0.75,
+            1_800_000_000_123_456_789_u64.into(),
+            1_800_000_000_987_654_321_u64.into(),
+        )
     }
 
     #[tokio::test(flavor = "multi_thread")]

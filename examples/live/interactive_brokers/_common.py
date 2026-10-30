@@ -130,7 +130,7 @@ def ib_account_id(raw_account_id: str) -> AccountId:
 
 
 def contract_month_code(year: int, month: int) -> str:
-    return f"{FUTURES_MONTH_CODES[month]}{year % 10}"
+    return f"{FUTURES_MONTH_CODES[month]}{year % 100:02d}"
 
 
 def third_friday(year: int, month: int) -> dt.date:
@@ -160,10 +160,10 @@ def active_quarterly_contract(
         for month in QUARTERLY_CONTRACT_MONTHS:
             expiry = third_friday(year, month)
             if expiry >= target_expiry:
-                local_symbol = f"{symbol}{contract_month_code(year, month)}"
+                local_symbol = f"{symbol}{FUTURES_MONTH_CODES[month]}{year % 10}"
                 return (
                     local_symbol,
-                    f"{local_symbol}.{venue}",
+                    f"{symbol}{contract_month_code(year, month)}.{venue}",
                     expiry.strftime("%Y%m%d"),
                 )
         year += 1
@@ -190,8 +190,8 @@ def active_monthly_contract(
             month = 1
             year += 1
 
-    local_symbol = f"{symbol}{contract_month_code(year, month)}"
-    return local_symbol, f"{local_symbol}.{venue}", f"{year}{month:02d}"
+    local_symbol = f"{symbol}{FUTURES_MONTH_CODES[month]}{year % 10}"
+    return local_symbol, f"{symbol}{contract_month_code(year, month)}.{venue}", f"{year}{month:02d}"
 
 
 def default_es_future() -> tuple[str, str, str]:

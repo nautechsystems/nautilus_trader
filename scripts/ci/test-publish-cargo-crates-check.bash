@@ -60,22 +60,27 @@ if [[ "${1:-}" == "metadata" && "$*" == "metadata --format-version=1 --manifest-
 
   registry_source='"registry+https://github.com/rust-lang/crates.io-index"'
   arrow_source=$registry_source
-  thrift_package=',
-    {"name":"thrift","version":"0.17.0","source":'"${registry_source}"'}'
+  legacy_package=""
   if [[ "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" == "local-arrow" ]]; then
     arrow_source=null
   fi
-  if [[ "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" == "missing-thrift" ]]; then
-    thrift_package=""
-  fi
+  case "${MOCK_CARGO_CONSUMER_GRAPH:-valid}" in
+    legacy-arrow | legacy-parquet)
+      legacy_name=${MOCK_CARGO_CONSUMER_GRAPH#legacy-}
+      legacy_package=',
+    {"name":"'"${legacy_name}"'","version":"57.3.1","source":'"${registry_source}"'}'
+      ;;
+    legacy-thrift)
+      legacy_package=',
+    {"name":"thrift","version":"0.17.0","source":'"${registry_source}"'}'
+      ;;
+  esac
 
   cat << JSON
 {
   "packages": [
-    {"name":"arrow","version":"57.3.1","source":${arrow_source}},
-    {"name":"arrow","version":"59.2.0","source":${registry_source}},
-    {"name":"parquet","version":"57.3.1","source":${registry_source}},
-    {"name":"parquet","version":"59.2.0","source":${registry_source}}${thrift_package}
+    {"name":"arrow","version":"59.3.1","source":${arrow_source}},
+    {"name":"parquet","version":"59.3.1","source":${registry_source}}${legacy_package}
   ]
 }
 JSON
@@ -607,20 +612,22 @@ fi
 assert_contains "$local_arrow_output" "Published consumer graph resolved local arrow" \
   "--dry-run mode did not report the local Arrow package."
 
-missing_thrift_output="${work_dir}/missing-thrift-output.txt"
-set +e
-MOCK_CARGO_CONSUMER_GRAPH=missing-thrift \
-  run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
-  "$dry_run_curl_log" "$dry_run_cargo_log" \
-  > "$missing_thrift_output" 2>&1
-missing_thrift_status=$?
-set -e
+for legacy_package in arrow parquet thrift; do
+  legacy_output="${work_dir}/legacy-${legacy_package}-output.txt"
+  set +e
+  MOCK_CARGO_CONSUMER_GRAPH="legacy-${legacy_package}" \
+    run_publish_script "--dry-run" "$dev_build_metadata" "$dry_run_exists_file" \
+    "$dry_run_curl_log" "$dry_run_cargo_log" \
+    > "$legacy_output" 2>&1
+  legacy_status=$?
+  set -e
 
-if [[ "$missing_thrift_status" -eq 0 ]]; then
-  fail "--dry-run mode should reject a consumer graph without thrift."
-fi
-assert_contains "$missing_thrift_output" "thrift 0 from crates.io is missing" \
-  "--dry-run mode did not report the missing thrift package."
+  if [[ "$legacy_status" -eq 0 ]]; then
+    fail "--dry-run mode should reject legacy ${legacy_package} in the consumer graph."
+  fi
+  assert_contains "$legacy_output" "Published consumer graph resolved Arrow/Parquet 57 or thrift" \
+    "--dry-run mode did not report legacy ${legacy_package}."
+done
 
 publish_no_token_exists_file="${work_dir}/publish-no-token-existing-crates.txt"
 publish_no_token_output="${work_dir}/publish-no-token-output.txt"

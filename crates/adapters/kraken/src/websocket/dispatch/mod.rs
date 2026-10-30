@@ -61,11 +61,9 @@ const DEDUP_CAPACITY: usize = 10_000;
 
 /// A terminal open-orders removal whose fills have not all arrived yet.
 ///
-/// An `is_cancel=true` delta with reason `partial_fill` removes an order from
-/// the book with its remainder discarded (a converted Maker Protection hold
-/// or an IOC-style order). The venue's cumulative filled at the removal is
-/// parked here until the fills feed accounts it, so the closing cancel can
-/// never overtake the fill it belongs with.
+/// The venue's cumulative filled quantity on an `is_cancel=true` order delta
+/// is parked here until the fills feed accounts it, so cancellation of the remainder
+/// cannot overtake its fills.
 #[derive(Debug, Clone)]
 pub struct PendingRemoval {
     /// Cumulative filled quantity reported by the venue on the removal delta.
@@ -204,7 +202,7 @@ pub struct WsDispatchState {
     /// Compared against `OrderIdentity::quantity` to decide when to clean up
     /// tracked state on a terminal fill.
     pub order_filled_qty: DashMap<ClientOrderId, Quantity>,
-    /// Terminal part-fill removals waiting for their fills to be accounted,
+    /// Terminal cancellations waiting for their fills to be accounted,
     /// populated by the futures delta side of dispatch and resolved by the
     /// fill side.
     pub pending_removals: DashMap<ClientOrderId, PendingRemoval>,
@@ -377,7 +375,7 @@ impl WsDispatchState {
         self.order_filled_qty.get(client_order_id).map(|r| *r)
     }
 
-    /// Parks a terminal part-fill removal until the fills feed accounts it.
+    /// Parks a terminal cancellation until the fills feed accounts its cumulative filled quantity.
     pub fn insert_pending_removal(&self, client_order_id: ClientOrderId, removal: PendingRemoval) {
         self.evict_map_if_full(&self.pending_removals);
         self.pending_removals.insert(client_order_id, removal);

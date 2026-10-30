@@ -575,6 +575,21 @@ aborts the connection before WebSockets open, even if another scope succeeds.
 Pre-open instruments and entries that cannot be parsed do not satisfy this
 requirement. Options without configured instrument families remain skipped.
 
+### WebSocket reconnects
+
+If reauthentication fails or times out, the adapter reconnects before attempting another login.
+It does not replay login requests onto replacement connections.
+
+During reconnects, the adapter retains order commands that have not started a transport write.
+It preserves their serialized payloads and request IDs, then sends them in FIFO order after any
+required reauthentication. Queued commands do not wait for subscription restoration.
+Order updates missed before private subscriptions are restored rely on execution reconciliation.
+
+The recovery FIFO holds up to 1,024 commands. Overflow or a transport timeout before a write produces
+a local send failure. The adapter does not automatically replay a command whose delivery is uncertain.
+Local reconciliation timeouts do not cancel queued commands; see
+[outbound commands during reconnect](../developer_guide/adapters.md#outbound-commands-during-reconnect).
+
 ### USD to USDC spot migration
 
 OKX is consolidating USD and USDC spot books. This is a breaking venue change. Affected

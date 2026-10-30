@@ -715,10 +715,6 @@ pub enum KrakenSendStatus {
     /// Post-only order would have crossed.
     PostWouldExecute,
     /// Immediate-or-cancel order would not execute.
-    ///
-    /// Also the final outcome of a Maker Protection hold that was converted
-    /// by a cancel and cannot trade at release: the venue releases the order
-    /// as immediate-or-cancel and reports this status when nothing fills.
     IocWouldNotExecute,
     /// Reduce-only order would increase position.
     ReduceOnlyWouldIncreasePosition,

@@ -2821,6 +2821,7 @@ mod tests {
             msgbus::get_global_msgbus_factory_registry, wrappers::get_python_wrapper,
         },
         runner::{TradingCommandMessage, get_trading_cmd_sender},
+        testing::wait_until_async,
     };
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_execution::engine::stubs::StubExecutionClient;
@@ -3981,7 +3982,6 @@ def add_data_client():
             );
 
             tokio::spawn(async move {
-                tokio::time::sleep(Duration::from_millis(10)).await;
                 response_sent_count.fetch_add(1, Ordering::Relaxed);
                 sender
                     .send(DataEvent::Response(DataResponse::Bars(response)))
@@ -5896,32 +5896,28 @@ class NoConfigActorAlgorithm(ActorAlgorithm):
                 .expect("strategy should register");
         });
 
-        let handle = node.node_mut().unwrap().handle();
-        let stop_handle = handle.clone();
-        let response_sent_count_for_stop = response_sent_count.clone();
+        let stop_handle = node.node_mut().unwrap().handle();
 
-        tokio::spawn(async move {
-            let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
-
-            loop {
-                if response_sent_count_for_stop.load(Ordering::Relaxed) == 1
-                    || tokio::time::Instant::now() >= deadline
-                {
-                    break;
-                }
-
-                tokio::time::sleep(Duration::from_millis(20)).await;
-            }
-
-            tokio::time::sleep(Duration::from_millis(250)).await;
+        let driver = async {
+            wait_until_async(
+                || async { Python::attach(|py| get_results(py, module_name).1 == 1) },
+                Duration::from_secs(3),
+            )
+            .await;
             stop_handle.stop();
-        });
+        };
 
-        node.node_mut()
-            .unwrap()
-            .run()
+        {
+            let mut live_node = node.node_mut().unwrap();
+
+            let (result, ()) = tokio::time::timeout(Duration::from_secs(5), async {
+                tokio::join!(live_node.run(), driver)
+            })
             .await
-            .expect("node should run cleanly");
+            .expect("historical bars callback completes before shutdown");
+
+            result.expect("node should run cleanly");
+        }
 
         let (on_start, on_historical_bars, historical_bar_count) =
             Python::attach(|py| get_results(py, module_name));

@@ -207,18 +207,16 @@ async fn test_livenode_streaming_records_typed_routes_to_feather() {
 
     for tick in &quotes {
         msgbus::publish_quote(quotes_topic, tick);
-        std::thread::sleep(Duration::from_millis(2));
     }
 
     let trades_topic = switchboard::get_trades_topic(instrument_id);
 
     for tick in &trades {
         msgbus::publish_trade(trades_topic, tick);
-        std::thread::sleep(Duration::from_millis(2));
     }
 
     msgbus::publish_deltas(switchboard::get_book_deltas_topic(instrument_id), &deltas);
-    std::thread::sleep(Duration::from_millis(2));
+
     msgbus::publish_bar(switchboard::get_bars_topic(bar_type), &bar);
 
     let strategy_id = StrategyId::from("STREAM-001");

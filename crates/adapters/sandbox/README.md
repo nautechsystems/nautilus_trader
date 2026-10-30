@@ -20,7 +20,15 @@ paper trading and strategy testing in real-time without actual order execution o
   `L1_MBP` uses only the top of book.
   The message-bus handlers use `DataEngine`'s selected source: a managed source takes priority;
   otherwise, the first active book subscription selects the source. Other book data remains
-  available to subscribers.
+  available to subscribers. Quotes derived locally from book data remain available to subscribers
+  without driving sandbox matching a second time. Independent quotes retain their normal behavior.
+  For L1 matching, subscribed deltas are reduced using the subscription's book type. Ordinary
+  updates with known price references use native quote processing; snapshots, source restoration,
+  and initialization without complete price references use native depth processing.
+  Changes to price increments or price/size precision invalidate retained data from the old
+  definition. Data already received under the updated definition remains available for recovery.
+  Cached book-derived quotes initialize an empty engine when compatible with source selection.
+  Independent quotes retain their normal initialization and processing behavior.
   Direct Rust processing methods accept caller-supplied input independently of live source selection.
 - Full order matching simulation using the production-grade `OrderMatchingEngine`.
 - Support for all order types (market, limit, stop, etc.).

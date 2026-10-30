@@ -65,14 +65,17 @@ use serde::{Deserialize, Deserializer, Serialize};
 #[cfg(feature = "defi")]
 use super::fixed::compare_raw_signed;
 use super::fixed::{
-    FIXED_PRECISION, FIXED_SCALAR, canonical_raw, check_fixed_precision, format_scaled_i128,
-    mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked, parse_decimal_mantissa,
-    raw_scales_match, remove_underscores, scaled_raw_to_decimal,
+    FIXED_PRECISION, FIXED_SCALAR, MAX_PRECISION, canonical_raw, check_fixed_precision,
+    format_scaled_i128, mantissa_exponent_to_fixed_i128, mantissa_exponent_to_raw_checked,
+    parse_decimal_mantissa, raw_scales_match, remove_underscores, scaled_raw_to_decimal,
 };
 #[cfg(feature = "high-precision")]
-use super::fixed::{PRECISION_DIFF_SCALAR, f64_to_fixed_i128, fixed_i128_to_f64};
+use super::fixed::{
+    PRECISION_DIFF_SCALAR, check_fixed_raw_i128 as check_fixed_raw, f64_to_fixed_i128,
+    fixed_i128_to_f64,
+};
 #[cfg(not(feature = "high-precision"))]
-use super::fixed::{f64_to_fixed_i64, fixed_i64_to_f64};
+use super::fixed::{check_fixed_raw_i64 as check_fixed_raw, f64_to_fixed_i64, fixed_i64_to_f64};
 use crate::deserialization::StringInput;
 #[cfg(feature = "defi")]
 use crate::types::fixed::MAX_FLOAT_PRECISION;
@@ -231,34 +234,11 @@ impl Price {
     ///
     /// # Panics
     ///
-    /// Panics if `raw` is outside the valid range and is not a sentinel value.
-    /// Panics if `precision` exceeds [`FIXED_PRECISION`].
+    /// Panics if a correctness check fails. See [`Price::from_raw_checked`].
+    #[inline]
     #[must_use]
     pub fn from_raw(raw: PriceRaw, precision: u8) -> Self {
-        assert!(
-            raw == PRICE_ERROR
-                || raw == PRICE_UNDEF
-                || (raw >= PRICE_RAW_MIN && raw <= PRICE_RAW_MAX),
-            "`raw` value {raw} outside valid range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}] for Price"
-        );
-
-        if raw == PRICE_UNDEF {
-            assert!(
-                precision == 0,
-                "`precision` must be 0 when `raw` is PRICE_UNDEF"
-            );
-        }
-        check_fixed_precision(precision).expect_display(FAILED);
-
-        // TODO: Enforce spurious bits validation in v2
-        // if !matches!(raw, PRICE_UNDEF | PRICE_ERROR) && raw != 0 {
-        //     #[cfg(feature = "high-precision")]
-        //     super::fixed::check_fixed_raw_i128(raw, precision).expect(FAILED);
-        //     #[cfg(not(feature = "high-precision"))]
-        //     super::fixed::check_fixed_raw_i64(raw, precision).expect(FAILED);
-        // }
-
-        Self { raw, precision }
+        Self::from_raw_checked(raw, precision).expect_display(FAILED)
     }
 
     /// Creates a new [`Price`] instance from the given `raw` fixed-point value and `precision`
@@ -271,6 +251,8 @@ impl Price {
     /// - `precision` is not 0 when `raw` is `PRICE_UNDEF`.
     /// - `raw` is outside the valid range `[PRICE_RAW_MIN, PRICE_RAW_MAX]`
     ///   and is not a sentinel value.
+    /// - A non-sentinel `raw` contains fractional digits beyond `precision`.
+    #[inline]
     pub fn from_raw_checked(raw: PriceRaw, precision: u8) -> CorrectnessResult<Self> {
         if raw == PRICE_UNDEF && precision != 0 {
             return Err(CorrectnessError::PredicateViolation {
@@ -288,6 +270,11 @@ impl Price {
         }
 
         check_fixed_precision(precision)?;
+        if !matches!(raw, PRICE_ERROR | PRICE_UNDEF) {
+            check_fixed_raw(raw, precision).map_err(|e| CorrectnessError::PredicateViolation {
+                message: e.to_string(),
+            })?;
+        }
 
         Ok(Self { raw, precision })
     }
@@ -544,19 +531,18 @@ impl Price {
         Ok(Self { raw, precision })
     }
 
-    /// Creates a new [`Price`] from a [`Decimal`] value with precision inferred from the decimal's scale.
+    /// Creates a [`Price`] from a [`Decimal`], inferring precision up to the supported maximum.
     ///
-    /// The precision is determined by the scale of the decimal (number of decimal places).
-    /// The value is rounded to the inferred precision using banker's rounding (round half to even).
+    /// Preserves the decimal's scale up to [`FIXED_PRECISION`] (18 with `defi`).
+    /// Rounds excess fractional digits using round half to even.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The inferred precision exceeds [`FIXED_PRECISION`].
     /// - The decimal value cannot be converted to the raw representation.
     /// - Overflow occurs during scaling.
     pub fn from_decimal(decimal: Decimal) -> CorrectnessResult<Self> {
-        let precision = decimal.scale() as u8;
+        let precision = (decimal.scale() as u8).min(MAX_PRECISION);
         Self::from_decimal_dp(decimal, precision)
     }
 
@@ -1159,6 +1145,55 @@ mod tests {
     }
 
     #[rstest]
+    #[case(1, 0)]
+    #[case(-1, 0)]
+    #[case(11, FIXED_PRECISION - 1)]
+    #[case(-11, FIXED_PRECISION - 1)]
+    fn test_from_raw_checked_rejects_spurious_digits(#[case] raw: PriceRaw, #[case] precision: u8) {
+        let scale = PriceRaw::pow(10, u32::from(FIXED_PRECISION - precision));
+        let remainder = raw % scale;
+        let error = Price::from_raw_checked(raw, precision).unwrap_err();
+
+        assert_eq!(
+            error,
+            CorrectnessError::PredicateViolation {
+                message: format!(
+                    "Invalid fixed-point raw value {raw} for precision {precision}: \
+                 remainder {remainder} when divided by scale {scale}. \
+                 Raw value should be a multiple of {scale}. \
+                 This indicates data corruption or incorrect precision/scaling upstream"
+                ),
+            }
+        );
+    }
+
+    #[rstest]
+    #[should_panic(expected = "Condition failed: Invalid fixed-point raw value")]
+    fn test_from_raw_rejects_spurious_digits() {
+        let _ = Price::from_raw(1, 0);
+    }
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(0, FIXED_PRECISION)]
+    #[case(10, FIXED_PRECISION - 1)]
+    #[case(-10, FIXED_PRECISION - 1)]
+    #[case(1, FIXED_PRECISION)]
+    #[case(-1, FIXED_PRECISION)]
+    #[case(PRICE_UNDEF, 0)]
+    #[case(PRICE_ERROR, 2)]
+    fn test_from_raw_checked_preserves_aligned_values(
+        #[case] raw: PriceRaw,
+        #[case] precision: u8,
+    ) {
+        let price = Price::from_raw_checked(raw, precision).unwrap();
+
+        assert_eq!(price.raw(), raw);
+        assert_eq!(price.precision, precision);
+        assert_eq!(Price::from_raw(raw, precision), price);
+    }
+
+    #[rstest]
     fn test_zero_constructor() {
         let zero = Price::zero(3);
         assert!(zero.is_zero());
@@ -1359,15 +1394,62 @@ mod tests {
     }
 
     #[rstest]
-    fn test_from_decimal_excessive_precision_inference() {
-        // Create a decimal with more precision than FIXED_PRECISION
-        // Decimal supports up to 28 decimal places
-        let decimal = dec!(1.1234567890123456789012345678);
+    #[case(0, 0)]
+    #[case(1, 0)]
+    #[case(5, 0)]
+    #[case(10, 1)]
+    #[case(14, 1)]
+    #[case(15, 2)]
+    #[case(16, 2)]
+    #[case(25, 2)]
+    #[case(35, 4)]
+    #[case(-1, 0)]
+    #[case(-5, 0)]
+    #[case(-14, -1)]
+    #[case(-15, -2)]
+    #[case(-16, -2)]
+    #[case(-25, -2)]
+    #[case(-35, -4)]
+    fn test_from_decimal_rounds_excess_precision(
+        #[case] mantissa: i128,
+        #[case] expected_raw: PriceRaw,
+        #[values(1, 10)] excess: u32,
+    ) {
+        let decimal = Decimal::from_i128_with_scale(
+            mantissa * 10_i128.pow(excess - 1),
+            u32::from(MAX_PRECISION) + excess,
+        );
 
-        // If scale exceeds FIXED_PRECISION, from_decimal should error
-        if decimal.scale() > u32::from(FIXED_PRECISION) {
-            assert!(Price::from_decimal(decimal).is_err());
-        }
+        let price = Price::from_decimal(decimal).unwrap();
+
+        assert_eq!(
+            (price.raw(), price.precision),
+            (expected_raw, MAX_PRECISION)
+        );
+    }
+
+    #[rstest]
+    fn test_from_decimal_rounding_carries_into_integer() {
+        let precision = u32::from(MAX_PRECISION);
+        let decimal = Decimal::from_i128_with_scale(10_i128.pow(precision + 1) - 5, precision + 1);
+
+        let price = Price::from_decimal(decimal).unwrap();
+
+        assert_eq!(price.raw(), PriceRaw::pow(10, precision));
+        assert_eq!(price.precision, MAX_PRECISION);
+    }
+
+    #[rstest]
+    fn test_from_decimal_rejects_overflow() {
+        let error = Price::from_decimal(Decimal::MAX).unwrap_err();
+
+        let expected = if cfg!(feature = "high-precision") {
+            "Overflow when scaling mantissa to fixed precision".to_string()
+        } else {
+            format!("Decimal value exceeds PriceRaw range [{PRICE_RAW_MIN}, {PRICE_RAW_MAX}]")
+        };
+
+        assert_eq!(error.to_string(), expected);
     }
 
     #[rstest]
@@ -1469,9 +1551,9 @@ mod tests {
     #[rstest]
     #[case(PRICE_ERROR, true)]
     #[case(PRICE_UNDEF, false)]
-    #[case(-1, false)]
+    #[case(-(FIXED_SCALAR as PriceRaw), false)]
     #[case(0, false)]
-    #[case(1, false)]
+    #[case(FIXED_SCALAR as PriceRaw, false)]
     fn test_is_error(#[case] raw: PriceRaw, #[case] expected: bool) {
         let price = Price::from_raw(raw, 0);
         assert_eq!(price.is_error(), expected);
@@ -1565,14 +1647,14 @@ mod tests {
 
     #[rstest]
     fn test_price_checked_arith_rejects_out_of_bounds_without_integer_overflow() {
-        let one_unit = Price::from_raw(1, 0);
+        let one_unit = Price::from_raw(1, FIXED_PRECISION);
 
         assert_eq!(
-            Price::from_raw(PRICE_RAW_MAX, 0).checked_add(one_unit),
+            Price::from_raw(PRICE_RAW_MAX, FIXED_PRECISION).checked_add(one_unit),
             None
         );
         assert_eq!(
-            Price::from_raw(PRICE_RAW_MIN, 0).checked_sub(one_unit),
+            Price::from_raw(PRICE_RAW_MIN, FIXED_PRECISION).checked_sub(one_unit),
             None
         );
     }
@@ -1580,7 +1662,7 @@ mod tests {
     #[rstest]
     fn test_price_checked_sub_rejects_sentinel_before_bounds_check() {
         let undef = Price::from_raw(PRICE_UNDEF, 0);
-        let max = Price::from_raw(PRICE_RAW_MAX, 0);
+        let max = Price::from_raw(PRICE_RAW_MAX, FIXED_PRECISION);
 
         assert_eq!(undef.checked_sub(max), None);
     }
@@ -1604,21 +1686,21 @@ mod tests {
 
     #[rstest]
     fn test_price_checked_add_at_exact_max_returns_some() {
-        let near_max = Price::from_raw(PRICE_RAW_MAX - 1, 0);
-        let one_unit = Price::from_raw(1, 0);
+        let near_max = Price::from_raw(PRICE_RAW_MAX - 1, FIXED_PRECISION);
+        let one_unit = Price::from_raw(1, FIXED_PRECISION);
         assert_eq!(
             near_max.checked_add(one_unit),
-            Some(Price::from_raw(PRICE_RAW_MAX, 0)),
+            Some(Price::from_raw(PRICE_RAW_MAX, FIXED_PRECISION)),
         );
     }
 
     #[rstest]
     fn test_price_checked_sub_at_exact_min_returns_some() {
-        let near_min = Price::from_raw(PRICE_RAW_MIN + 1, 0);
-        let one_unit = Price::from_raw(1, 0);
+        let near_min = Price::from_raw(PRICE_RAW_MIN + 1, FIXED_PRECISION);
+        let one_unit = Price::from_raw(1, FIXED_PRECISION);
         assert_eq!(
             near_min.checked_sub(one_unit),
-            Some(Price::from_raw(PRICE_RAW_MIN, 0)),
+            Some(Price::from_raw(PRICE_RAW_MIN, FIXED_PRECISION)),
         );
     }
 

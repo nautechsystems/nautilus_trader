@@ -1478,12 +1478,17 @@ ExecTesterConfig::builder()
 
 Test bracket order submission (entry + take-profit + stop-loss).
 
-| TC     | Name                         | Description                                     | Skip when           |
-| ------ | ---------------------------- | ----------------------------------------------- | ------------------- |
-| TC-E50 | Bracket BUY                  | Entry limit buy + TP limit sell + SL stop sell. | No bracket support. |
-| TC-E51 | Bracket SELL                 | Entry limit sell + TP limit buy + SL stop buy.  | No bracket support. |
-| TC-E52 | Bracket entry fill activates | Verify TP/SL become active after entry fill.    | No bracket support. |
-| TC-E53 | Bracket with post-only entry | Entry order uses post-only flag.                | No bracket or PO.   |
+`ExecTester` defaults to `OUO` exits and a `LIMIT` take-profit. For adapters that require native OCO
+exits with a conditional take-profit, set `bracket_contingency_type` to `OCO` and
+`bracket_tp_order_type` to `MARKET_IF_TOUCHED` or `LIMIT_IF_TOUCHED`, as supported by the adapter.
+For Lighter, use `OCO` and `MARKET_IF_TOUCHED`; see [contingent orders](../integrations/lighter.md#contingent-orders).
+
+| TC     | Name                         | Description                                  | Skip when           |
+| ------ | ---------------------------- | -------------------------------------------- | ------------------- |
+| TC-E50 | Bracket BUY                  | Entry limit buy + TP sell + SL stop sell.    | No bracket support. |
+| TC-E51 | Bracket SELL                 | Entry limit sell + TP buy + SL stop buy.     | No bracket support. |
+| TC-E52 | Bracket entry fill activates | Verify TP/SL become active after entry fill. | No bracket support. |
+| TC-E53 | Bracket with post-only entry | Entry order uses post-only flag.             | No bracket or PO.   |
 
 ### TC-E50: Bracket BUY
 
@@ -1555,13 +1560,16 @@ ExecTesterConfig::builder()
 
 ### TC-E53: Bracket with post-only entry
 
-| Field              | Value                                                                   |
-| ------------------ | ----------------------------------------------------------------------- |
-| **Prerequisite**   | Adapter supports brackets and post-only.                                |
-| **Action**         | Submit bracket with `use_post_only=True` (applied to entry and TP).     |
-| **Event sequence** | Same as TC-E50 with post-only flag on entry.                            |
-| **Pass criteria**  | Entry and TP orders accepted as post-only (maker). SL is not post-only. |
-| **Skip when**      | No bracket support or no post-only support.                             |
+| Field              | Value                                        |
+| ------------------ | -------------------------------------------- |
+| **Prerequisite**   | Adapter supports brackets and post-only.     |
+| **Action**         | Submit bracket with `use_post_only=True`.    |
+| **Event sequence** | Same as TC-E50 with post-only flag on entry. |
+| **Pass criteria**  | Entry order accepted as post-only (maker).   |
+| **Skip when**      | No bracket support or no post-only support.  |
+
+`LIMIT` and `LIMIT_IF_TOUCHED` take-profits are also post-only. Stop-loss and `MARKET_IF_TOUCHED`
+take-profit orders are not post-only.
 
 ---
 
@@ -2354,6 +2362,8 @@ The Rust builder uses equivalent defaults.
 | `enable_brackets`                               | `bool`                | `False`                | 6              |
 | `batch_submit_limit_pair`                       | `bool`                | `False`                | 2, 5           |
 | `bracket_entry_order_type`                      | `OrderType`           | `LIMIT`                | 6              |
+| `bracket_contingency_type`                      | `ContingencyType`     | `OUO`                  | 6              |
+| `bracket_tp_order_type`                         | `OrderType`           | `LIMIT`                | 6              |
 | `bracket_offset_ticks`                          | `PositiveInt`         | `500`                  | 6              |
 | `modify_orders_to_maintain_tob_offset`          | `bool`                | `False`                | 4              |
 | `modify_stop_orders_to_maintain_offset`         | `bool`                | `False`                | 4              |

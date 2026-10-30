@@ -23,6 +23,7 @@ pub mod parse;
 pub mod rpc;
 pub mod urls;
 
+pub(crate) mod capabilities;
 pub(crate) mod serialization;
 
 #[cfg(test)]

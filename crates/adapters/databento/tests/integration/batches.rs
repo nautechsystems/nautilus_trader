@@ -34,7 +34,7 @@ use nautilus_live::node::LiveNode;
 use nautilus_model::{
     data::{Bar, BarType, Data, QuoteTick, TradeTick},
     enums::AggressorSide,
-    identifiers::{ClientId, InstrumentId, TradeId, TraderId, Venue},
+    identifiers::{ClientId, InstrumentId, TradeId, TraderId, Venue, futures::FuturesYearDigits},
     types::{Price, Quantity},
 };
 use rstest::rstest;
@@ -248,6 +248,7 @@ async fn test_actor_lists_reach_databento_hooks_and_deliver_decoded_data() {
         false,
         false,
     );
+    config.futures_year_digits = FuturesYearDigits::One;
     config.live_gateway_addr = Some(server.addr());
     let commands = Rc::new(RefCell::new(Vec::new()));
 

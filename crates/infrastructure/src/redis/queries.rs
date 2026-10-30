@@ -300,7 +300,9 @@ impl DatabaseQueries {
         }
     }
 
-    /// Loads all cache data (currencies, instruments, synthetics, accounts, orders, positions) for `trader_key`.
+    /// Loads the supported cache records for `trader_key`.
+    ///
+    /// Greeks and yield curves are empty because Redis does not persist them.
     ///
     /// # Errors
     ///
@@ -326,11 +328,6 @@ impl DatabaseQueries {
             )
             .map_err(|e| anyhow::anyhow!("Error loading cache data: {e}"))?;
 
-        // For now, we don't load greeks and yield curves from the database
-        // This will be implemented in the future
-        let greeks = AHashMap::new();
-        let yield_curves = AHashMap::new();
-
         Ok(CacheMap {
             currencies,
             instruments,
@@ -339,8 +336,8 @@ impl DatabaseQueries {
             accounts,
             orders,
             positions,
-            greeks,
-            yield_curves,
+            greeks: AHashMap::new(),
+            yield_curves: AHashMap::new(),
         })
     }
 

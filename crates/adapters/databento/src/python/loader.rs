@@ -22,7 +22,7 @@ use jiff::civil::Time;
 use nautilus_core::python::{IntoPyObjectNautilusExt, to_pyvalue_err};
 use nautilus_model::{
     data::{Bar, InstrumentStatus, OrderBookDelta, OrderBookDepth, QuoteTick, TradeTick},
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol, Venue, futures::FuturesYearDigits},
     python::instruments::instrument_any_to_pyobject,
 };
 use pyo3::{prelude::*, types::PyList};
@@ -66,9 +66,20 @@ impl DatabentoDataLoader {
     ///
     /// <https://databento.com/docs/schemas-and-data-formats>
     #[new]
-    #[pyo3(signature = (publishers_filepath=None))]
-    fn py_new(publishers_filepath: Option<PathBuf>) -> PyResult<Self> {
-        Self::new(publishers_filepath).map_err(to_pyvalue_err)
+    #[pyo3(signature = (publishers_filepath=None, futures_year_digits=None))]
+    fn py_new(
+        publishers_filepath: Option<PathBuf>,
+        futures_year_digits: Option<u8>,
+    ) -> PyResult<Self> {
+        let futures_year_digits = futures_year_digits
+            .map(FuturesYearDigits::try_from)
+            .transpose()
+            .map_err(to_pyvalue_err)?
+            .unwrap_or_default();
+
+        Self::new(publishers_filepath)
+            .map(|loader| loader.with_futures_year_digits(futures_year_digits))
+            .map_err(to_pyvalue_err)
     }
 
     /// Load the publishers data from the file at the given `filepath`.

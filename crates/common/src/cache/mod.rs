@@ -73,8 +73,8 @@ use nautilus_model::{
         option_chain::OptionGreeks,
     },
     enums::{
-        AggregationSource, ContingencyType, InstrumentClass, OmsType, OrderSide, PositionSide,
-        PriceType,
+        AggregationSource, BookType, ContingencyType, InstrumentClass, OmsType, OrderSide,
+        PositionSide, PriceType,
     },
     events::{AccountState, OrderEventAny, OrderFilled, PositionAdjusted},
     identifiers::{
@@ -103,7 +103,7 @@ pub use view::CacheView; // Re-export
 
 use crate::xrate::get_exchange_rate;
 
-/// The live book source selected by the data engine for automatic consumers.
+/// An order book data source for automatic market-data consumers.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum OrderBookSource {
     /// Incremental order book deltas.
@@ -130,6 +130,7 @@ pub struct Cache {
     book_sources: AHashMap<InstrumentId, BookSourceState>,
     own_books: AHashMap<InstrumentId, OwnOrderBook>,
     quotes: AHashMap<InstrumentId, BoundedVecDeque<QuoteTick>>,
+    quote_book_sources: AHashMap<InstrumentId, OrderBookSource>,
     trades: AHashMap<InstrumentId, BoundedVecDeque<TradeTick>>,
     mark_xrates: AHashMap<(Currency, Currency), f64>,
     mark_prices: AHashMap<InstrumentId, BoundedVecDeque<MarkPriceUpdate>>,
@@ -170,6 +171,7 @@ impl Debug for Cache {
             .field("book_sources", &self.book_sources)
             .field("own_books", &self.own_books)
             .field("quotes", &self.quotes)
+            .field("quote_book_sources", &self.quote_book_sources)
             .field("trades", &self.trades)
             .field("mark_xrates", &self.mark_xrates)
             .field("mark_prices", &self.mark_prices)
@@ -246,6 +248,7 @@ impl Cache {
             book_sources: AHashMap::new(),
             own_books: AHashMap::new(),
             quotes: AHashMap::new(),
+            quote_book_sources: AHashMap::new(),
             trades: AHashMap::new(),
             mark_xrates: AHashMap::new(),
             mark_prices: AHashMap::new(),
@@ -491,21 +494,32 @@ impl Cache {
             .is_some_and(|state| state.both_sources || state.selected == source)
     }
 
+    /// Returns the retained delta subscription's book type, independently of source selection.
+    #[must_use]
+    pub fn order_book_deltas_book_type(&self, instrument_id: &InstrumentId) -> Option<BookType> {
+        self.book_sources
+            .get(instrument_id)
+            .and_then(|state| state.deltas_book_type)
+    }
+
     /// Records or replaces the data engine's selected live book source for an instrument.
     ///
     /// Subscription ownership and conflicts are validated by the data engine.
     /// `both_sources` records whether both delta and depth subscription owners exist.
+    /// `deltas_book_type` projects the delta owner configuration used to reduce incremental input.
     pub fn set_order_book_source(
         &mut self,
         instrument_id: InstrumentId,
         source: OrderBookSource,
         both_sources: bool,
+        deltas_book_type: Option<BookType>,
     ) {
         self.book_sources.insert(
             instrument_id,
             BookSourceState {
                 selected: source,
                 both_sources,
+                deltas_book_type,
             },
         );
     }
@@ -546,17 +560,22 @@ impl Cache {
 
     /// Loads all core caches from the database.
     ///
-    /// The loaded instrument closes replace all closes already held in memory. This includes values
-    /// added directly before the persistent cache is loaded.
+    /// The loaded instrument closes, Greeks, and yield curves replace their corresponding maps in
+    /// memory, including values added directly before the persistent cache is loaded.
     ///
     /// # Errors
     ///
-    /// Returns an error if loading cache data fails.
+    /// Returns an error if loading cache data fails or a loaded yield curve fails
+    /// [`YieldCurve::validate`].
     pub async fn cache_all(&mut self) -> anyhow::Result<()> {
         let mut cache_map = match &self.database {
             Some(db) => db.load_all().await?,
             None => CacheMap::default(),
         };
+
+        for curve in cache_map.yield_curves.values() {
+            curve.validate()?;
+        }
 
         // An adapter registers the loaded currencies before decoding their dependents; repeating
         // it here keeps the cached map consistent with the registry whatever the adapter did.
@@ -565,6 +584,8 @@ impl Cache {
         self.instruments = cache_map.instruments;
         self.instrument_closes = cache_map.instrument_closes;
         self.synthetics = cache_map.synthetics;
+        self.greeks = cache_map.greeks;
+        self.yield_curves = cache_map.yield_curves;
         self.accounts = cache_map
             .accounts
             .into_iter()
@@ -2067,6 +2088,7 @@ impl Cache {
         self.books.remove(&instrument_id);
         self.own_books.remove(&instrument_id);
         self.quotes.remove(&instrument_id);
+        self.quote_book_sources.remove(&instrument_id);
         self.trades.remove(&instrument_id);
         self.mark_prices.remove(&instrument_id);
         self.index_prices.remove(&instrument_id);
@@ -2159,6 +2181,7 @@ impl Cache {
         self.books.clear();
         self.own_books.clear();
         self.quotes.clear();
+        self.quote_book_sources.clear();
         self.trades.clear();
         self.mark_xrates.clear();
         self.mark_prices.clear();
@@ -2347,11 +2370,7 @@ impl Cache {
     pub fn add_funding_rates(&mut self, funding_rates: &[FundingRateUpdate]) -> anyhow::Result<()> {
         check_slice_not_empty(funding_rates, stringify!(funding_rates))?;
 
-        let instrument_id = funding_rates[0].instrument_id;
-        log::debug!(
-            "Adding `FundingRateUpdate`[{}] {instrument_id}",
-            funding_rates.len()
-        );
+        log::debug!("Adding `FundingRateUpdate`[{}]", funding_rates.len());
 
         if self.config.save_market_data
             && let Some(database) = &mut self.database
@@ -2361,12 +2380,11 @@ impl Cache {
             }
         }
 
-        let funding_rate_deque = self
-            .funding_rates
-            .entry(instrument_id)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
-
         for funding_rate in funding_rates {
+            let funding_rate_deque = self
+                .funding_rates
+                .entry(funding_rate.instrument_id)
+                .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
             funding_rate_deque.push_front(*funding_rate);
         }
         Ok(())
@@ -2431,6 +2449,25 @@ impl Cache {
             .entry(quote.instrument_id)
             .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
         quotes_deque.push_front(quote);
+        self.quote_book_sources.remove(&quote.instrument_id);
+        Ok(())
+    }
+
+    /// Adds a quote derived from an order book and records its source.
+    ///
+    /// Source metadata belongs to the latest cached quote and is not persisted.
+    /// Ordinary quote writes replace it, including identical quotes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the quote tick to the backing database fails.
+    pub fn add_book_quote(
+        &mut self,
+        quote: QuoteTick,
+        source: OrderBookSource,
+    ) -> anyhow::Result<()> {
+        self.add_quote(quote)?;
+        self.quote_book_sources.insert(quote.instrument_id, source);
         Ok(())
     }
 
@@ -2442,8 +2479,7 @@ impl Cache {
     pub fn add_quotes(&mut self, quotes: &[QuoteTick]) -> anyhow::Result<()> {
         check_slice_not_empty(quotes, stringify!(quotes))?;
 
-        let instrument_id = quotes[0].instrument_id;
-        log::debug!("Adding `QuoteTick`[{}] {instrument_id}", quotes.len());
+        log::debug!("Adding `QuoteTick`[{}]", quotes.len());
 
         if self.config.save_market_data
             && let Some(database) = &mut self.database
@@ -2453,13 +2489,13 @@ impl Cache {
             }
         }
 
-        let quotes_deque = self
-            .quotes
-            .entry(instrument_id)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
-
         for quote in quotes {
+            let quotes_deque = self
+                .quotes
+                .entry(quote.instrument_id)
+                .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
             quotes_deque.push_front(*quote);
+            self.quote_book_sources.remove(&quote.instrument_id);
         }
         Ok(())
     }
@@ -2494,8 +2530,7 @@ impl Cache {
     pub fn add_trades(&mut self, trades: &[TradeTick]) -> anyhow::Result<()> {
         check_slice_not_empty(trades, stringify!(trades))?;
 
-        let instrument_id = trades[0].instrument_id;
-        log::debug!("Adding `TradeTick`[{}] {instrument_id}", trades.len());
+        log::debug!("Adding `TradeTick`[{}]", trades.len());
 
         if self.config.save_market_data
             && let Some(database) = &mut self.database
@@ -2505,12 +2540,11 @@ impl Cache {
             }
         }
 
-        let trades_deque = self
-            .trades
-            .entry(instrument_id)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
-
         for trade in trades {
+            let trades_deque = self
+                .trades
+                .entry(trade.instrument_id)
+                .or_insert_with(|| BoundedVecDeque::new(self.config.tick_capacity));
             trades_deque.push_front(*trade);
         }
         Ok(())
@@ -2549,8 +2583,7 @@ impl Cache {
     pub fn add_bars(&mut self, bars: &[Bar]) -> anyhow::Result<()> {
         check_slice_not_empty(bars, stringify!(bars))?;
 
-        let bar_type = bars[0].bar_type;
-        log::debug!("Adding `Bar`[{}] {bar_type}", bars.len());
+        log::debug!("Adding `Bar`[{}]", bars.len());
 
         if self.config.save_market_data
             && let Some(database) = &mut self.database
@@ -2560,12 +2593,11 @@ impl Cache {
             }
         }
 
-        let bars_deque = self
-            .bars
-            .entry(bar_type)
-            .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
-
         for bar in bars {
+            let bars_deque = self
+                .bars
+                .entry(bar.bar_type)
+                .or_insert_with(|| BoundedVecDeque::new(self.config.bar_capacity));
             insert_bar(bars_deque, *bar);
         }
         Ok(())
@@ -2598,16 +2630,19 @@ impl Cache {
 
     /// Adds the `greeks` data to the cache.
     ///
+    /// With market-data persistence enabled, the adapter accepts the write before memory is updated.
+    /// Queued adapters can log later database failures without rolling back the cached value.
+    ///
     /// # Errors
     ///
-    /// Returns an error if persisting the greeks data to the backing database fails.
+    /// Returns an error if the adapter cannot accept the greeks data for persistence.
     pub fn add_greeks(&mut self, greeks: GreeksData) -> anyhow::Result<()> {
         log::debug!("Adding `GreeksData` {}", greeks.instrument_id);
 
         if self.config.save_market_data
-            && let Some(_database) = &mut self.database
+            && let Some(database) = &mut self.database
         {
-            // TODO: Implement database.add_greeks(&greeks) when database adapter is updated
+            database.add_greeks(&greeks)?;
         }
 
         self.greeks.insert(greeks.instrument_id, greeks);
@@ -2633,20 +2668,23 @@ impl Cache {
 
     /// Adds the `yield_curve` data to the cache.
     ///
+    /// With market-data persistence enabled, the adapter accepts the write before memory is updated.
+    /// Queued adapters can log later database failures without rolling back the cached value.
+    ///
     /// # Errors
     ///
     /// Returns an error if:
     /// - The yield curve fails [`YieldCurve::validate`].
-    /// - Persisting the yield curve data to the backing database fails.
+    /// - The adapter cannot accept the yield curve data for persistence.
     pub fn add_yield_curve(&mut self, yield_curve: YieldCurve) -> anyhow::Result<()> {
         yield_curve.validate()?;
 
         log::debug!("Adding `YieldCurve` {}", yield_curve.curve_name);
 
         if self.config.save_market_data
-            && let Some(_database) = &mut self.database
+            && let Some(database) = &mut self.database
         {
-            // TODO: Implement database.add_yield_curve(&yield_curve) when database adapter is updated
+            database.add_yield_curve(&yield_curve)?;
         }
 
         self.yield_curves
@@ -3331,8 +3369,7 @@ impl Cache {
 
         self.index.position_oms.insert(position_id, oms_type);
         self.index.positions.insert(position_id);
-        self.index.positions_open.insert(position_id);
-        self.index.positions_closed.remove(&position_id); // Cleanup for NETTING reopen
+        self.refresh_position_indexes(&position_cell.borrow());
         self.index.strategies.insert(strategy_id);
         self.index.strategy_orders.entry(strategy_id).or_default();
 
@@ -6411,6 +6448,12 @@ impl Cache {
             .and_then(|quotes| quotes.front())
     }
 
+    /// Returns the book source of the latest cached quote, if it was derived locally.
+    #[must_use]
+    pub fn quote_book_source(&self, instrument_id: &InstrumentId) -> Option<OrderBookSource> {
+        self.quote_book_sources.get(instrument_id).copied()
+    }
+
     /// Returns the quote at `index` for the `instrument_id`.
     ///
     /// Index 0 is the most recently added quote; index 1 is the previous insertion.
@@ -7242,4 +7285,5 @@ fn insert_bar_historical(bars: &mut BoundedVecDeque<Bar>, bar: Bar) {
 struct BookSourceState {
     selected: OrderBookSource,
     both_sources: bool,
+    deltas_book_type: Option<BookType>,
 }

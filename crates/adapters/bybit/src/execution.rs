@@ -1843,6 +1843,7 @@ impl ExecutionClient for BybitExecutionClient {
             let account_id = self.core.account_id;
             let quantity = cmd.quantity;
             let price = cmd.price;
+            let trigger_price = cmd.trigger_price;
 
             self.spawn_task("modify_order_http", async move {
                 let result = http_client
@@ -1854,6 +1855,7 @@ impl ExecutionClient for BybitExecutionClient {
                         venue_order_id,
                         quantity,
                         price,
+                        trigger_price,
                     )
                     .await;
 
@@ -1913,7 +1915,7 @@ impl ExecutionClient for BybitExecutionClient {
             order_link_id: Some(cmd.client_order_id.to_string()),
             qty: cmd.quantity.map(|q| q.to_string()),
             price: cmd.price.map(|p| p.to_string()),
-            trigger_price: None,
+            trigger_price: cmd.trigger_price.map(|p| p.to_string()),
             take_profit: None,
             stop_loss: None,
             tp_trigger_by: None,

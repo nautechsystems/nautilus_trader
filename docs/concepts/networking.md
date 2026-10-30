@@ -56,6 +56,18 @@ The client accepts default and per-request headers, query parameters with repeat
 request bodies, and `GET`, `POST`, `PUT`, `PATCH`, and `DELETE` methods. A client-level timeout applies to
 all requests unless a request supplies its own timeout.
 
+### Client certificates
+
+By default, HTTPS uses system trust without a client certificate. Set `certs_dir` on
+`HttpClient::builder()` for mutual TLS.
+
+- **Identity**: Supply a PEM client certificate and matching unencrypted PEM private key. Client creation
+  fails without a matching pair.
+- **Server trust**: All HTTPS requests from that client use bundled web PKI roots plus other certificates
+  in the directory instead of system trust. Use a dedicated directory with restricted write access,
+  because those additional certificates become trust anchors.
+- **Simulation**: Setting `certs_dir` fails client creation; client certificates are unsupported.
+
 ### Proxy routing
 
 By default the client honors ambient proxy configuration. With `use_system_proxy` at its default of `true` and

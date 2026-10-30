@@ -476,7 +476,10 @@ impl IbReportClient {
                         None,    // report_id: auto-generated
                         None,    // venue_position_id
                         avg_px_open,
-                    );
+                    )
+                    // `position_avg_px_open` rounds IB's average cost to the price precision,
+                    // and that cost includes commissions: reconciliation allows one tick for both
+                    .with_avg_px_open_precision(instrument.price_precision());
 
                     if Self::upsert_position_report(&mut reports, report) {
                         tracing::debug!(

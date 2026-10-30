@@ -16,7 +16,9 @@
 //! Parsing functions for Deribit API responses into Nautilus domain types.
 
 use anyhow::Context;
+use indexmap::IndexMap;
 use nautilus_core::{
+    Params,
     datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND},
     nanos::UnixNanos,
     uuid::UUID4,
@@ -38,6 +40,7 @@ use ustr::Ustr;
 
 use crate::{
     common::{
+        capabilities::{IS_CBE_ROUTED, IS_CSR},
         consts::DERIBIT_VENUE,
         enums::{DeribitOptionType, DeribitProductType},
     },
@@ -163,6 +166,7 @@ pub fn extract_server_timestamp(us_out: Option<u64>) -> anyhow::Result<UnixNanos
 /// - Required fields are missing (e.g., strike price for options).
 /// - Timestamp conversion fails.
 /// - Decimal conversion fails for fees.
+/// - Spot instrument validation fails.
 pub fn parse_deribit_instrument_any(
     instrument: &DeribitInstrument,
     ts_init: UnixNanos,
@@ -205,6 +209,15 @@ fn parse_spot_instrument(
     let size_increment = parse_min_trade_amount(instrument)?;
     let min_quantity = parse_min_trade_amount(instrument)?;
 
+    let mut info = IndexMap::new();
+    if let Some(value) = instrument.is_cbe_routed {
+        info.insert(IS_CBE_ROUTED.to_string(), value.into());
+    }
+
+    if let Some(value) = instrument.is_csr {
+        info.insert(IS_CSR.to_string(), value.into());
+    }
+
     let currency_pair = CurrencyPair::builder()
         .instrument_id(instrument_id)
         .raw_symbol(instrument.instrument_name.into())
@@ -215,10 +228,10 @@ fn parse_spot_instrument(
         .price_increment(price_increment)
         .size_increment(size_increment)
         .min_quantity(min_quantity)
+        .maybe_info((!info.is_empty()).then(|| Params::new(info)))
         .ts_event(ts_event)
         .ts_init(ts_init)
-        .build()
-        .unwrap();
+        .build()?;
 
     Ok(InstrumentAny::CurrencyPair(currency_pair))
 }
@@ -982,6 +995,24 @@ mod tests {
             DeribitAccountSummariesResponse, DeribitJsonRpcResponse, DeribitTradesResponse,
         },
     };
+
+    #[rstest]
+    #[case(dec!(-0.5999))]
+    #[case(dec!(0))]
+    fn test_parse_spot_invalid_tick_returns_error(#[case] tick_size: Decimal) {
+        let json = load_test_json("http_get_instrument_routed_spot.json");
+        let mut definition: DeribitInstrument = serde_json::from_str(&json).unwrap();
+        definition.tick_size = tick_size;
+
+        let error =
+            parse_deribit_instrument_any(&definition, UnixNanos::default(), UnixNanos::default())
+                .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("invalid `Price` for 'price_increment' not positive, was {tick_size}")
+        );
+    }
 
     #[rstest]
     fn test_parse_perpetual_instrument() {

@@ -21,8 +21,8 @@ Example of databento futures settlement.
 # %% [markdown]
 # # Futures settlement at expiry
 #
-# Replay the bundled Databento BBO sample across the ESZ5 expiry. The strategy
-# opens one ESZ5 contract before expiry while ESH6 quotes advance the clock past
+# Replay the bundled Databento BBO sample across the ESZ25 expiry. The strategy
+# opens one ESZ25 contract before expiry while ESH26 quotes advance the clock past
 # settlement.
 
 # %%
@@ -122,8 +122,8 @@ if __name__ == "__main__":
         data_dir / "futures_settlement_bbo-1m_2025-12-19T14-25-00_2025-12-19T14-35-00.dbn.zst",
     )
 
-    future_id = InstrumentId.from_str("ESZ5.XCME")
-    next_future_id = InstrumentId.from_str("ESH6.XCME")
+    future_id = InstrumentId.from_str("ESZ25.XCME")
+    next_future_id = InstrumentId.from_str("ESH26.XCME")
     engine = BacktestEngine(
         BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
     )

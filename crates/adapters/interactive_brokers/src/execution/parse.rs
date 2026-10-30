@@ -169,7 +169,9 @@ impl FillEvidence {
 /// it. The entry price therefore replaces IB's average cost only when every execution of the
 /// instrument was parsed and the entry price plus the opening commissions per unit reproduces
 /// IB's average cost, within the rounding of the average cost and of each commission. Otherwise
-/// the position keeps IB's average cost, which position recovery prices from.
+/// the position keeps IB's average cost, which position recovery prices from, with the
+/// one-tick precision the report was built with. A replaced average is the fills' own,
+/// unrounded, so its precision is cleared and reconciliation uses only the relative tolerance.
 pub(crate) fn fill_position_avg_px_from_fills(
     position_reports: &mut [PositionStatusReport],
     evidence: &FillEvidence,
@@ -234,6 +236,7 @@ pub(crate) fn fill_position_avg_px_from_fills(
 
         if (venue_avg_px - venue_avg_px_expected).abs() <= tolerance {
             report.avg_px_open = Some(lot.avg_px);
+            report.avg_px_open_precision = None;
         } else {
             tracing::debug!(
                 "Keeping IB average cost {venue_avg_px} for {instrument_id}: fills give entry \
@@ -1015,6 +1018,8 @@ mod tests {
             None,
             Some(Decimal::from_str(venue_avg_px).unwrap()),
         )
+        // As `generate_position_status_reports` builds it: rounded to the price precision
+        .with_avg_px_open_precision(equity_aapl().price_precision())
     }
 
     fn rebuild_avg_px_open(
@@ -1206,6 +1211,42 @@ mod tests {
             position_reports[0].avg_px_open,
             Some(Decimal::from_str("4.8675").unwrap())
         );
+    }
+
+    #[rstest]
+    // The fills reproduce IB's average cost: their entry price replaces it, unrounded
+    #[case::replaced(vec![(OrderSide::Buy, "7", "229.67")], "229.81", None)]
+    // IB's rounded average cost is kept, and so is its one-tick precision
+    #[case::kept_without_fills(vec![], "229.81", Some(2))]
+    #[case::kept_when_fills_disagree(vec![(OrderSide::Buy, "7", "229.67")], "230.50", Some(2))]
+    fn test_fill_position_avg_px_from_fills_sets_the_average_precision(
+        #[case] fills: Vec<(OrderSide, &str, &str)>,
+        #[case] venue_avg_px: &str,
+        #[case] expected: Option<u8>,
+    ) {
+        let evidence = FillEvidence {
+            reports: fills
+                .into_iter()
+                .enumerate()
+                .map(|(index, (side, qty, px))| {
+                    create_test_entry_fill(side, qty, px, &format!("T-{index}"), index as u64 + 10)
+                })
+                .collect(),
+            ..Default::default()
+        };
+        let mut position_reports = vec![create_test_entry_position_report(
+            PositionSide::Long,
+            "7",
+            venue_avg_px,
+        )];
+
+        fill_position_avg_px_from_fills(
+            &mut position_reports,
+            &evidence,
+            &create_test_avg_px_provider(),
+        );
+
+        assert_eq!(position_reports[0].avg_px_open_precision, expected);
     }
 
     #[rstest]

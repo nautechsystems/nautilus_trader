@@ -24,6 +24,7 @@ use std::{
     },
 };
 
+use http::HeaderValue;
 use nautilus_core::string::{secret::SecretString, urlencoding};
 use nautilus_network::{
     http::{HttpClient, HttpRedirectPolicy, Method, create_standard_nautilus_headers},
@@ -36,15 +37,17 @@ use zeroize::Zeroizing;
 
 use super::{
     error::BetfairHttpError,
-    models::{LoginResponse, LoginStatus},
+    models::{CertLoginResponse, LoginResponse, LoginStatus},
 };
 use crate::common::{
     consts::{
-        BETFAIR_ACCOUNTS_URL, BETFAIR_BETTING_URL, BETFAIR_IDENTITY_LOGIN_URL,
-        BETFAIR_KEEP_ALIVE_URL, BETFAIR_NAVIGATION_URL, BETFAIR_RATE_LIMIT_DEFAULT,
-        BETFAIR_RATE_LIMIT_ORDERS, HEADER_X_APPLICATION, HEADER_X_AUTHENTICATION,
+        BETFAIR_ACCOUNTS_URL, BETFAIR_BETTING_URL, BETFAIR_CERT_LOGIN_URL,
+        BETFAIR_IDENTITY_LOGIN_URL, BETFAIR_KEEP_ALIVE_URL, BETFAIR_NAVIGATION_URL,
+        BETFAIR_RATE_LIMIT_DEFAULT, BETFAIR_RATE_LIMIT_ORDERS, HEADER_X_APPLICATION,
+        HEADER_X_AUTHENTICATION,
     },
     credential::BetfairCredential,
+    enums::CertLoginStatus,
 };
 
 // Keep the final dispatch 15 seconds inside Betfair's 60-second customerRef window
@@ -108,6 +111,7 @@ pub struct BetfairHttpClient {
     url_betting: String,
     url_accounts: String,
     url_navigation: String,
+    url_cert_login: String,
 }
 
 impl BetfairHttpClient {
@@ -151,6 +155,7 @@ impl BetfairHttpClient {
                 .maybe_default_quota(Self::default_quota(request_rate_per_second.unwrap_or(5))?)
                 .maybe_timeout_secs(timeout_secs)
                 .maybe_proxy_url(proxy_url)
+                .maybe_certs_dir(credential.certs_dir().map(str::to_owned))
                 .build()
                 .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {e}"))?,
             credential,
@@ -165,13 +170,14 @@ impl BetfairHttpClient {
             url_betting: BETFAIR_BETTING_URL.to_string(),
             url_accounts: BETFAIR_ACCOUNTS_URL.to_string(),
             url_navigation: BETFAIR_NAVIGATION_URL.to_string(),
+            url_cert_login: BETFAIR_CERT_LOGIN_URL.to_string(),
         })
     }
 
     /// Overrides the API base URLs (for testing with mock servers).
     ///
-    /// The keep-alive URL is derived from `identity_login` by replacing the
-    /// path with `/keepAlive`.
+    /// The certificate login and keep-alive URLs use the same base as `identity_login`,
+    /// with the final path segment replaced by `certlogin` and `keepAlive`.
     #[must_use]
     pub fn with_urls(
         mut self,
@@ -180,9 +186,10 @@ impl BetfairHttpClient {
         accounts: String,
         navigation: String,
     ) -> Self {
-        // Derive keep-alive from same host as login
+        // Derive identity URLs from the same base for mock servers
         if let Some(base) = identity_login.rfind('/') {
             self.url_keep_alive = format!("{}/keepAlive", &identity_login[..base]);
+            self.url_cert_login = format!("{}/certlogin", &identity_login[..base]);
         }
         self.url_identity_login = identity_login;
         self.url_betting = betting;
@@ -224,7 +231,8 @@ impl BetfairHttpClient {
         self.credential.app_key()
     }
 
-    /// Authenticates with Betfair using interactive (non-cert) login.
+    /// Authenticates with Betfair using certificate login when a certificate directory is set.
+    /// Uses interactive login otherwise.
     ///
     /// Sends credentials to the Identity API and stores the returned
     /// session token for subsequent requests.
@@ -278,6 +286,30 @@ impl BetfairHttpClient {
             urlencoding::encode(self.credential.username()),
             password.as_str(),
         ));
+
+        if self.credential.certs_dir().is_some() {
+            let resp_bytes = self.send_identity(&self.url_cert_login, form_body).await?;
+            let mut resp: CertLoginResponse = serde_json::from_slice(&resp_bytes)?;
+            if resp.login_status != CertLoginStatus::Success {
+                let response: serde_json::Value = serde_json::from_slice(&resp_bytes)?;
+                let status = response["loginStatus"]
+                    .as_str()
+                    .unwrap_or(resp.login_status.as_ref())
+                    .to_string();
+                return Err(BetfairHttpError::LoginFailed { status });
+            }
+
+            return resp
+                .session_token
+                .take()
+                .filter(|token| {
+                    let value = token.expose_secret();
+                    !value.trim().is_empty() && value.parse::<HeaderValue>().is_ok()
+                })
+                .ok_or_else(|| BetfairHttpError::LoginFailed {
+                    status: "SUCCESS without a valid session token".to_string(),
+                });
+        }
 
         let resp_bytes = self
             .send_identity(&self.url_identity_login, form_body)

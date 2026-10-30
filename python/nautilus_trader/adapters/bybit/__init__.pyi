@@ -257,6 +257,7 @@ class BybitHttpClient:
         venue_order_id: model.VenueOrderId | None = None,
         quantity: model.Quantity | None = None,
         price: model.Price | None = None,
+        trigger_price: model.Price | None = None,
     ) -> typing.Any: ...
     def cancel_order(
         self,

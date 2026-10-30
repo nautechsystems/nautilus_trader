@@ -61,6 +61,25 @@ impl DataEngine {
             .collect()
     }
 
+    /// Returns whether a retained book subscription names or covers `instrument_id`.
+    ///
+    /// Includes resolved parent targets and ownership retained after a client subscription failure.
+    /// Does not indicate that an upstream feed is active or a book is complete.
+    #[must_use]
+    pub fn has_book_subscription(&self, instrument_id: &InstrumentId) -> bool {
+        self.book_subscription_owners.contains_key(instrument_id)
+            || self.book_subscriptions.contains_key(instrument_id)
+            || self.subscriptions_external.iter().any(|((_, key), _)| {
+                matches!(
+                    key,
+                    SubscriptionKey::BookDeltas(id)
+                        | SubscriptionKey::BookDepth(id)
+                        | SubscriptionKey::BookSnapshots(id, _)
+                        if id == instrument_id
+                )
+            })
+    }
+
     pub(super) fn subscribe_book_deltas(
         &mut self,
         cmd: &SubscribeBookDeltas,
@@ -838,6 +857,17 @@ impl DataEngine {
                 book.owners.iter().any(|owner| owner.is_depth())
                     && book.owners.iter().any(|owner| !owner.is_depth())
             });
+        let deltas_book_type = self
+            .book_subscriptions
+            .get(&instrument_id)
+            .and_then(|book| {
+                book.owners
+                    .iter()
+                    .filter(|owner| !owner.is_depth())
+                    .find(|owner| owner.managed())
+                    .or_else(|| book.owners.iter().find(|owner| !owner.is_depth()))
+                    .map(|owner| owner.config().0)
+            });
         let selected = selected.map(|owner| {
             if owner.is_depth() {
                 OrderBookSource::Depth
@@ -848,15 +878,18 @@ impl DataEngine {
         let changed = {
             let mut cache = self.cache.borrow_mut();
             let previous = cache.order_book_source(&instrument_id);
+            let previous_deltas_book_type = cache.order_book_deltas_book_type(&instrument_id);
             let previously_both = cache
                 .has_order_book_source_subscription(&instrument_id, OrderBookSource::Deltas)
                 && cache.has_order_book_source_subscription(&instrument_id, OrderBookSource::Depth);
             if let Some(source) = selected {
-                cache.set_order_book_source(instrument_id, source, both_sources);
+                cache.set_order_book_source(instrument_id, source, both_sources, deltas_book_type);
             } else {
                 cache.clear_order_book_source(&instrument_id);
             }
-            previous != selected || previously_both != both_sources
+            previous != selected
+                || previously_both != both_sources
+                || previous_deltas_book_type != deltas_book_type
         };
 
         if changed {
@@ -1005,7 +1038,7 @@ impl Handler<OrderBookDeltas> for BookUpdater {
         }
 
         if let Some(quote) = emit {
-            publish_quote_if_changed(&self.cache, quote);
+            publish_quote_if_changed(&self.cache, quote, OrderBookSource::Deltas);
         }
     }
 }
@@ -1032,7 +1065,7 @@ impl Handler<OrderBookDepth> for BookUpdater {
         }
 
         if let Some(quote) = emit {
-            publish_quote_if_changed(&self.cache, quote);
+            publish_quote_if_changed(&self.cache, quote, OrderBookSource::Depth);
         }
     }
 }
@@ -1062,7 +1095,11 @@ fn derive_quote_from_book(book: &OrderBook) -> Option<QuoteTick> {
 ///
 /// Writes to cache and republishes only when bid/ask price or size differs
 /// from the cached quote.
-pub(crate) fn publish_quote_if_changed(cache: &Rc<RefCell<Cache>>, quote: QuoteTick) {
+pub(crate) fn publish_quote_if_changed(
+    cache: &Rc<RefCell<Cache>>,
+    quote: QuoteTick,
+    source: OrderBookSource,
+) {
     let publish = {
         let cache_ref = cache.borrow();
         match cache_ref.quote(&quote.instrument_id) {
@@ -1080,12 +1117,12 @@ pub(crate) fn publish_quote_if_changed(cache: &Rc<RefCell<Cache>>, quote: QuoteT
         return;
     }
 
-    if let Err(e) = cache.borrow_mut().add_quote(quote) {
+    if let Err(e) = cache.borrow_mut().add_book_quote(quote, source) {
         log::error!("Error on cache insert: {e}");
     }
 
     let topic = switchboard::get_quotes_topic(quote.instrument_id);
-    msgbus::publish_quote(topic, &quote);
+    msgbus::publish_book_quote(topic, &quote);
 }
 
 /// Creates periodic snapshots of order books at configured intervals.

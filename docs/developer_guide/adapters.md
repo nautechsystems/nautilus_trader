@@ -2072,13 +2072,20 @@ response. Stream-mode clients own their reconnect loop, and their handles report
 
 :::note
 Never require the old socket to remain live until a replacement is ready. Use the existing reconnect
-path instead of adding parallel connection ownership, buffering, and epoch coordination to avoid a
+path instead of adding parallel connection ownership and epoch coordination to avoid a
 reconnect gap.
 
 Execution reconciliation can often recover missed order and fill state. Use venue-supported snapshots
 or replay for market-data gaps. Recovery depends on venue coverage and does not guarantee delivery of
 every missed message.
 :::
+
+#### Outbound commands during reconnect
+
+A handler may queue commands known not to have been written while the shared client reconnects. Resume
+sending after required session state is restored, preserving command identity. Do not replay commands
+whose write outcome is unknown. Queued commands can still reach the venue after local timeout resolution;
+see [terminal reconciliation provenance](../concepts/execution/policies.md#terminal-reconciliation-provenance).
 
 #### Shutdown
 

@@ -32,9 +32,9 @@ use super::{
     TickImbalanceBarAggregator, TickRunsBarAggregator, TimeBarAggregator, UnsubscribeBars,
     UnsubscribeCommand, UnsubscribeQuotes, UnsubscribeTrades, ValueBarAggregator,
     ValueImbalanceBarAggregator, ValueRunsBarAggregator, VolumeBarAggregator,
-    VolumeImbalanceBarAggregator, VolumeRunsBarAggregator, log_error_on_cache_insert,
-    process_engine_bar, request_bar_aggregation_from_params, request_params,
-    requests::time_zone_from_params, switchboard,
+    VolumeImbalanceBarAggregator, VolumeRunsBarAggregator, handlers::WarmupBuffer,
+    log_error_on_cache_insert, process_engine_bar, request_bar_aggregation_from_params,
+    request_params, requests::time_zone_from_params, switchboard,
 };
 
 impl DataEngine {
@@ -169,12 +169,23 @@ impl DataEngine {
 
         let aggregator_request_id = state.aggregator_request_id(*request_id);
 
-        for bar_type in state.bar_types {
+        // Finish each source before the aggregators that depend on it, so the bars from its
+        // replayed live data reach dependents still in historical mode
+        let bar_types = sources_before_dependents(&state.bar_types);
+
+        for bar_type in bar_types {
             let key = bar_aggregator_key(bar_type, aggregator_request_id);
             let has_live_handlers =
                 state.update_subscriptions && self.bar_aggregator_handlers.contains_key(&key);
 
             let keep_running = if has_live_handlers {
+                // Replay live data held back during the request before going live
+                if let Some(warmup) = self.bar_aggregator_warmups.remove(&key)
+                    && let Some(aggregator) = self.bar_aggregators.get(&key)
+                {
+                    warmup.release(aggregator.borrow_mut().as_mut());
+                }
+
                 match self.setup_bar_aggregator(bar_type, false, aggregator_request_id) {
                     Ok(()) => true,
                     Err(e) => {
@@ -653,14 +664,27 @@ impl DataEngine {
             // Subscribe to underlying data topics
             let mut subscriptions = Vec::new();
 
+            // A deferred aggregator is still replaying its request in historical mode, so live data
+            // is held back and replayed once the request completes
+            let defer = defer_subscription_activation;
+            let warmup;
+
             if bar_type.is_composite() {
                 let topic = switchboard::get_bars_topic(bar_type.composite());
-                let handler = TypedHandler::new(BarBarHandler::new(&aggregator, bar_type_std));
+                let buffer = defer.then(WarmupBuffer::new);
+                let handler = TypedHandler::new(
+                    BarBarHandler::new(&aggregator, bar_type_std).with_warmup(buffer.clone()),
+                );
+                warmup = buffer.map(BarAggregatorWarmup::Bar);
                 msgbus::subscribe_bars(topic.into(), handler.clone(), None);
                 subscriptions.push(BarAggregatorSubscription::Bar { topic, handler });
             } else if bar_type.spec().price_type == PriceType::Last {
                 let topic = switchboard::get_trades_topic(bar_type.instrument_id());
-                let handler = TypedHandler::new(BarTradeHandler::new(&aggregator, bar_type_std));
+                let buffer = defer.then(WarmupBuffer::new);
+                let handler = TypedHandler::new(
+                    BarTradeHandler::new(&aggregator, bar_type_std).with_warmup(buffer.clone()),
+                );
+                warmup = buffer.map(BarAggregatorWarmup::Trade);
                 msgbus::subscribe_trades(
                     topic.into(),
                     handler.clone(),
@@ -686,7 +710,11 @@ impl DataEngine {
                 }
 
                 let topic = switchboard::get_quotes_topic(bar_type.instrument_id());
-                let handler = TypedHandler::new(BarQuoteHandler::new(&aggregator, bar_type_std));
+                let buffer = defer.then(WarmupBuffer::new);
+                let handler = TypedHandler::new(
+                    BarQuoteHandler::new(&aggregator, bar_type_std).with_warmup(buffer.clone()),
+                );
+                warmup = buffer.map(BarAggregatorWarmup::Quote);
                 msgbus::subscribe_quotes(
                     topic.into(),
                     handler.clone(),
@@ -696,6 +724,10 @@ impl DataEngine {
             }
 
             self.bar_aggregator_handlers.insert(key, subscriptions);
+
+            if let Some(warmup) = warmup {
+                self.bar_aggregator_warmups.insert(key, warmup);
+            }
         }
 
         if defer_subscription_activation {
@@ -879,6 +911,7 @@ impl DataEngine {
         })?;
 
         aggregator.borrow_mut().stop();
+        self.bar_aggregator_warmups.remove(&key);
 
         // Unsubscribe any registered message handlers
         if let Some(subs) = self.bar_aggregator_handlers.remove(&key) {
@@ -917,6 +950,62 @@ pub(crate) type BarAggregatorKey = (BarType, Option<UUID4>);
 #[inline]
 pub(crate) fn bar_aggregator_key(bar_type: BarType, request_id: Option<UUID4>) -> BarAggregatorKey {
     (bar_type.standard(), request_id)
+}
+
+/// Returns `bar_types` ordered so that every composite follows the bar type it aggregates from.
+///
+/// Bar types at the same depth of the chain keep their original order.
+fn sources_before_dependents(bar_types: &[BarType]) -> Vec<BarType> {
+    // Depth is bounded by the number of bar types so a cyclic chain cannot loop
+    let depth = |bar_type: &BarType| {
+        let mut depth = 0;
+        let mut current = *bar_type;
+
+        while current.is_composite() && depth < bar_types.len() {
+            let Some(source) = bar_types
+                .iter()
+                .find(|candidate| candidate.standard() == current.composite().standard())
+            else {
+                break;
+            };
+            current = *source;
+            depth += 1;
+        }
+
+        depth
+    };
+
+    let mut ordered = bar_types.to_vec();
+    ordered.sort_by_cached_key(depth);
+    ordered
+}
+
+/// Live data held back for a bar aggregator that is still replaying a historical request.
+#[derive(Debug)]
+pub(super) enum BarAggregatorWarmup {
+    Bar(WarmupBuffer<Bar>),
+    Trade(WarmupBuffer<TradeTick>),
+    Quote(WarmupBuffer<QuoteTick>),
+}
+
+impl BarAggregatorWarmup {
+    /// Ends the warm-up and feeds the held data to `aggregator` in arrival order.
+    pub(super) fn release(&self, aggregator: &mut dyn BarAggregator) {
+        match self {
+            Self::Bar(buffer) => buffer
+                .release()
+                .into_iter()
+                .for_each(|bar| aggregator.handle_bar(bar)),
+            Self::Trade(buffer) => buffer
+                .release()
+                .into_iter()
+                .for_each(|trade| aggregator.handle_trade(trade)),
+            Self::Quote(buffer) => buffer
+                .release()
+                .into_iter()
+                .for_each(|quote| aggregator.handle_quote(quote)),
+        }
+    }
 }
 
 /// Typed subscription for bar aggregator handlers.
@@ -982,7 +1071,10 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::{bar_aggregator_key, request_bar_aggregation_from_params, time_zone_from_params};
+    use super::{
+        bar_aggregator_key, request_bar_aggregation_from_params, sources_before_dependents,
+        time_zone_from_params,
+    };
     use crate::engine::{DataEngine, config::DataEngineConfig};
 
     #[rstest]
@@ -1170,5 +1262,52 @@ mod tests {
         assert_eq!(request_zone, get_timezone("America/New_York").unwrap());
         assert_eq!(live_zone, jiff::tz::TimeZone::UTC);
         assert_eq!(engine.bar_aggregators.len(), 2);
+    }
+
+    #[rstest]
+    #[case::source_first(&["1-MINUTE-MID-INTERNAL", "5-MINUTE-MID-INTERNAL@1-MINUTE-INTERNAL"])]
+    #[case::composite_first(&["5-MINUTE-MID-INTERNAL@1-MINUTE-INTERNAL", "1-MINUTE-MID-INTERNAL"])]
+    fn test_sources_before_dependents_orders_two_level_chain(#[case] raw: &[&str]) {
+        let bar_types = to_bar_types(raw);
+
+        let ordered = sources_before_dependents(&bar_types);
+
+        assert_eq!(
+            ordered,
+            to_bar_types(&[
+                "1-MINUTE-MID-INTERNAL",
+                "5-MINUTE-MID-INTERNAL@1-MINUTE-INTERNAL",
+            ])
+        );
+    }
+
+    #[rstest]
+    fn test_sources_before_dependents_orders_three_level_chain_and_keeps_unrelated_order() {
+        let bar_types = to_bar_types(&[
+            "15-MINUTE-MID-INTERNAL@5-MINUTE-INTERNAL",
+            "100-TICK-LAST-INTERNAL",
+            "5-MINUTE-MID-INTERNAL@1-MINUTE-INTERNAL",
+            "1-MINUTE-MID-INTERNAL",
+            "50-TICK-LAST-INTERNAL",
+        ]);
+
+        let ordered = sources_before_dependents(&bar_types);
+
+        assert_eq!(
+            ordered,
+            to_bar_types(&[
+                "100-TICK-LAST-INTERNAL",
+                "1-MINUTE-MID-INTERNAL",
+                "50-TICK-LAST-INTERNAL",
+                "5-MINUTE-MID-INTERNAL@1-MINUTE-INTERNAL",
+                "15-MINUTE-MID-INTERNAL@5-MINUTE-INTERNAL",
+            ])
+        );
+    }
+
+    fn to_bar_types(raw: &[&str]) -> Vec<BarType> {
+        raw.iter()
+            .map(|bar_type| BarType::from(format!("AUD/USD.SIM-{bar_type}").as_str()))
+            .collect()
     }
 }

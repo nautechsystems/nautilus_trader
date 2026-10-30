@@ -25,6 +25,15 @@ reach.
 Not every module requires every technique. Use this section to decide which layers apply
 before adding tests or `debug_assert!` statements.
 
+:::note
+
+Generally avoid log captures as evidence of correctness or as synchronization signals. Assert on returned
+values, emitted events, protocol traffic, or resulting state instead. Integration tests should usually avoid
+asserting exact log wording. Capture logs when logging itself is the contract, such as ensuring sensitive
+data is omitted, and prefer semantic checks over matching full messages.
+
+:::
+
 ### Mechanism ladder
 
 The [Rust guide](rust.md#design-by-contract) covers runtime contracts. The order of preference is:

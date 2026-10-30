@@ -971,17 +971,20 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
 }
 
 #[rstest]
-#[case::deltas(BookSubscriptionKind::Deltas)]
-#[case::depth(BookSubscriptionKind::Depth)]
+#[case::deltas_managed(BookSubscriptionKind::Deltas, true)]
+#[case::deltas_unmanaged(BookSubscriptionKind::Deltas, false)]
+#[case::depth_managed(BookSubscriptionKind::Depth, true)]
+#[case::depth_unmanaged(BookSubscriptionKind::Depth, false)]
 fn test_shared_book_subscription_retries_after_client_failure(
     #[case] kind: BookSubscriptionKind,
+    #[case] managed: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
     cache: Rc<RefCell<Cache>>,
     client_id: ClientId,
-    venue: Venue,
 ) {
+    let venue = audusd_sim.id.venue;
     let mut data_engine = data_engine.borrow_mut();
     let recorder = Rc::new(RefCell::new(Vec::new()));
     register_failing_subscribe_client(
@@ -1003,7 +1006,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
             command_id,
             UnixNanos::from(1),
             NonZeroUsize::new(5),
-            true,
+            managed,
             None,
             None,
         )),
@@ -1015,7 +1018,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
             command_id,
             UnixNanos::from(1),
             NonZeroUsize::new(5),
-            true,
+            managed,
             None,
             None,
         )),
@@ -1024,8 +1027,12 @@ fn test_shared_book_subscription_retries_after_client_failure(
     let first = subscribe(UUID4::new());
     let second = subscribe(UUID4::new());
 
+    assert!(!data_engine.has_book_subscription(&audusd_sim.id));
     data_engine.execute(DataCommand::Subscribe(first));
     assert!(recorder.borrow().is_empty());
+    assert!(data_engine.has_book_subscription(&audusd_sim.id));
+    assert!(data_engine.subscribed_book_deltas().is_empty());
+    assert!(data_engine.subscribed_book_depth().is_empty());
 
     data_engine.execute(DataCommand::Subscribe(second.clone()));
 
@@ -1057,6 +1064,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
     };
 
     data_engine.execute(DataCommand::Unsubscribe(unsubscribe(UUID4::new())));
+    assert!(data_engine.has_book_subscription(&audusd_sim.id));
     assert_eq!(
         recorder.borrow().as_slice(),
         std::slice::from_ref(&expected_subscribe)
@@ -1064,6 +1072,7 @@ fn test_shared_book_subscription_retries_after_client_failure(
 
     let expected_unsubscribe = DataCommand::Unsubscribe(unsubscribe(UUID4::new()));
     data_engine.execute(expected_unsubscribe.clone());
+    assert!(!data_engine.has_book_subscription(&audusd_sim.id));
     assert_eq!(
         recorder.borrow().as_slice(),
         &[expected_subscribe, expected_unsubscribe]
@@ -1107,11 +1116,14 @@ fn test_shared_book_snapshot_retries_source_after_client_failure(
         ))
     };
 
+    assert!(!data_engine.has_book_subscription(&audusd_sim.id));
     data_engine.execute(DataCommand::Subscribe(subscribe(
         first_command_id,
         UnixNanos::from(1),
     )));
     assert!(recorder.borrow().is_empty());
+    assert!(data_engine.has_book_subscription(&audusd_sim.id));
+    assert!(data_engine.subscribed_book_deltas().is_empty());
 
     data_engine.execute(DataCommand::Subscribe(subscribe(
         UUID4::new(),
@@ -1152,9 +1164,11 @@ fn test_shared_book_snapshot_retries_source_after_client_failure(
     };
 
     data_engine.execute(unsubscribe());
+    assert!(data_engine.has_book_subscription(&audusd_sim.id));
     assert_eq!(recorder.borrow().len(), 1);
     data_engine.execute(unsubscribe());
 
+    assert!(!data_engine.has_book_subscription(&audusd_sim.id));
     let recorded = recorder.borrow();
     assert_eq!(recorded.len(), 2);
 
@@ -2159,6 +2173,25 @@ fn test_interval_and_managed_depth_conflict(
 }
 
 #[rstest]
+fn test_book_subscription_ownership_clears_on_reset(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+    let unrelated = InstrumentId::from("EUR/USD.SIM");
+    assert!(!engine.has_book_subscription(&audusd_sim.id));
+    assert!(!engine.has_book_subscription(&unrelated));
+    let command = book_source_command(audusd_sim.id, client_id, false, false);
+    engine.execute_subscribe(command).unwrap();
+    assert!(engine.has_book_subscription(&audusd_sim.id));
+    assert!(!engine.has_book_subscription(&unrelated));
+    engine.reset();
+    assert!(!engine.has_book_subscription(&audusd_sim.id));
+    assert!(!engine.has_book_subscription(&unrelated));
+}
+
+#[rstest]
 fn test_parent_book_owner_keeps_original_targets(
     managed_book_engine: Rc<RefCell<DataEngine>>,
     client_id: ClientId,
@@ -2181,7 +2214,12 @@ fn test_parent_book_owner_keeps_original_targets(
     };
 
     command.params = Some(parent_params());
+    assert!(!engine.has_book_subscription(&parent_id));
+    assert!(!engine.has_book_subscription(&first_id));
     engine.execute_subscribe(original.clone()).unwrap();
+    assert!(engine.has_book_subscription(&parent_id));
+    assert!(engine.has_book_subscription(&first_id));
+    assert!(!engine.has_book_subscription(&second_id));
 
     cache
         .borrow_mut()
@@ -2195,6 +2233,9 @@ fn test_parent_book_owner_keeps_original_targets(
 
     command.command_id = UUID4::new();
     engine.execute_subscribe(expanded.clone()).unwrap();
+    assert!(engine.has_book_subscription(&parent_id));
+    assert!(engine.has_book_subscription(&first_id));
+    assert!(engine.has_book_subscription(&second_id));
     assert_eq!(
         cache.borrow().order_book_source(&first_id),
         Some(OrderBookSource::Deltas)
@@ -2234,6 +2275,10 @@ fn test_parent_book_owner_keeps_original_targets(
         0
     );
 
+    assert!(engine.has_book_subscription(&parent_id));
+    assert!(engine.has_book_subscription(&first_id));
+    assert!(!engine.has_book_subscription(&second_id));
+
     engine
         .execute_subscribe(book_source_command(second_id, client_id, true, true))
         .unwrap();
@@ -2266,6 +2311,9 @@ fn test_parent_book_owner_keeps_original_targets(
         msgbus::subscriber_count_depth(switchboard::get_book_depth_topic(second_id)),
         1
     );
+    assert!(!engine.has_book_subscription(&parent_id));
+    assert!(!engine.has_book_subscription(&first_id));
+    assert!(engine.has_book_subscription(&second_id));
 }
 
 #[rstest]

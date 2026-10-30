@@ -761,7 +761,9 @@ pub async fn subscribe_positions(
                                     None,
                                     None,
                                     avg_px_open,
-                                );
+                                )
+                                // Rounded to the price precision, commissions included
+                                .with_avg_px_open_precision(instrument.price_precision());
                                 let event = ExecutionEvent::Report(ExecutionReport::Position(
                                     Box::new(report),
                                 ));

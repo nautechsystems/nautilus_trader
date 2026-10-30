@@ -525,11 +525,13 @@ fn derive_instrument_info(instrument: &DeriveInstrument) -> anyhow::Result<Param
 }
 
 fn price_from_decimal(value: Decimal, field: &str) -> anyhow::Result<Price> {
-    Price::from_decimal(value).with_context(|| format!("invalid Derive {field}"))
+    Price::from_decimal_dp(value, value.scale() as u8)
+        .with_context(|| format!("invalid Derive {field}"))
 }
 
 fn quantity_from_decimal(value: Decimal, field: &str) -> anyhow::Result<Quantity> {
-    Quantity::from_decimal(value).with_context(|| format!("invalid Derive {field}"))
+    Quantity::from_decimal_dp(value, value.scale() as u8)
+        .with_context(|| format!("invalid Derive {field}"))
 }
 
 fn timestamp_seconds_to_nanos(value: i64, field: &str) -> anyhow::Result<UnixNanos> {
@@ -1091,6 +1093,28 @@ mod tests {
 
         assert!(message.contains("price_increment"), "{message}");
         assert!(message.contains("not positive"), "{message}");
+    }
+
+    #[rstest]
+    #[case("tick_size")]
+    #[case("amount_step")]
+    #[case("maximum_amount")]
+    fn test_parse_instrument_rejects_excess_precision(
+        #[case] field: &str,
+        #[values(
+            "perps/instrument_eth.json",
+            "options/instrument_eth.json",
+            "spot/instrument_eth.json"
+        )]
+        filename: &str,
+    ) {
+        let mut response = load_json(filename);
+        response[field] = json!(Decimal::new(1, 28).to_string());
+        let instrument: DeriveInstrument = serde_json::from_value(response).unwrap();
+
+        let error = parse_derive_instrument_any(&instrument, UnixNanos::from(123)).unwrap_err();
+
+        assert_eq!(error.to_string(), format!("invalid Derive {field}"));
     }
 
     #[rstest]

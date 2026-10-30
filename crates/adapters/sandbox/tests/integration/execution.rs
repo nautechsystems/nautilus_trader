@@ -33,8 +33,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         data::{
-            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand, UnsubscribeBookDeltas,
-            UnsubscribeBookDepth,
+            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCommand, SubscribeQuotes,
+            UnsubscribeBookDeltas, UnsubscribeBookDepth,
         },
         execution::{
             BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
@@ -53,7 +53,10 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
-use nautilus_data::{client::DataClientAdapter, engine::DataEngine};
+use nautilus_data::{
+    client::DataClientAdapter,
+    engine::{DataEngine, config::DataEngineConfig},
+};
 #[cfg(feature = "python")]
 use nautilus_execution::python::{
     fee::{PythonFeeModel, fee_model_any_to_pyobject},
@@ -13406,5 +13409,1968 @@ impl DataClient for BookDataClient {
 
     fn unsubscribe_book_depth(&mut self, _: &UnsubscribeBookDepth) -> anyhow::Result<()> {
         Ok(())
+    }
+}
+
+#[rstest]
+#[case::deltas_plain(false, false, false)]
+#[case::depth_plain(true, false, false)]
+#[case::deltas_derived(false, true, false)]
+#[case::depth_direct(true, false, true)]
+#[case::depth_updater(true, true, false)]
+#[case::depth_both_emitters(true, true, true)]
+fn test_book_quote_single_book_with_quotes(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] depth_source: bool,
+    #[case] emit_book: bool,
+    #[case] emit_depth: bool,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+    #[values(false, true)] independent_quote: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, emit_book, emit_depth);
+    let (handler, quotes) = get_typed_message_saving_handler::<QuoteTick>(None);
+    msgbus::subscribe_quotes(
+        switchboard::get_quotes_topic(instrument.id()).into(),
+        handler,
+        None,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            depth_source,
+            emit_book,
+        ))
+        .unwrap();
+
+    if independent_quote {
+        engine
+            .execute_subscribe(quote_subscription(instrument.id()))
+            .unwrap();
+    }
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1004.00", "1.000")],
+        ),
+        depth_source,
+    ));
+    let order = submit_book_quote_order(&harness, trader_id, &instrument, "MIX-SINGLE", "4.000");
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1000.00", "1.000")],
+        ),
+        depth_source,
+    ));
+    let from_book = handoff_fills(harness.settle(), order.client_order_id());
+    assert_eq!(
+        quotes.get_messages().len(),
+        if emit_book || (depth_source && emit_depth) {
+            2
+        } else {
+            0
+        }
+    );
+
+    if independent_quote {
+        engine.process_data(Data::Quote(book_quote(instrument.id(), "1000.00")));
+        assert_eq!(
+            handoff_fills(harness.settle(), order.client_order_id()),
+            one_unit_maker_fill()
+        );
+    }
+    let expected = one_unit_maker_fill();
+    assert_eq!(
+        from_book, expected,
+        "one book input must not get an extra pass through its derived quote"
+    );
+}
+
+#[rstest]
+#[case::l2_deltas((BookType::L2_MBP, false, true))]
+#[case::l2_depth((BookType::L2_MBP, true, true))]
+#[case::l1_depth((BookType::L1_MBP, true, true))]
+#[case::l1_deltas((BookType::L1_MBP, false, true))]
+#[case::l1_deltas_unmanaged((BookType::L1_MBP, false, false))]
+#[case::l3_deltas((BookType::L3_MBO, false, true))]
+#[case::l2_deltas_unmanaged((BookType::L2_MBP, false, false))]
+#[case::l2_depth_unmanaged((BookType::L2_MBP, true, false))]
+fn test_book_quote_both_books_and_quote_routes(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] selected: (BookType, bool, bool),
+    #[values(false, true)] emit_book: bool,
+    #[values(false, true)] emit_depth: bool,
+    #[values(false, true)] independent_quote: bool,
+    #[values(false, true)] unselected_first: bool,
+) {
+    let (book_type, selected_depth, selected_managed) = selected;
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, emit_book, emit_depth);
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            selected_depth,
+            selected_managed,
+        ))
+        .unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            !selected_depth,
+            false,
+        ))
+        .unwrap();
+
+    if independent_quote {
+        engine
+            .execute_subscribe(quote_subscription(instrument.id()))
+            .unwrap();
+    }
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1004.00", "1.000")],
+        ),
+        selected_depth,
+    ));
+    let order = submit_book_quote_order(&harness, trader_id, &instrument, "MIX-BOTH", "8.000");
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    let selected = book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1000.00", "1.000")],
+        ),
+        selected_depth,
+    );
+    let unselected = book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("998.00", "1.000")],
+            &[("999.00", "1.000")],
+        ),
+        !selected_depth,
+    );
+    let (from_selected, from_unselected) = if unselected_first {
+        engine.process_data(unselected);
+        let other = handoff_fills(harness.settle(), order.client_order_id());
+        engine.process_data(selected);
+        (
+            handoff_fills(harness.settle(), order.client_order_id()),
+            other,
+        )
+    } else {
+        engine.process_data(selected);
+        let chosen = handoff_fills(harness.settle(), order.client_order_id());
+        engine.process_data(unselected);
+        (
+            chosen,
+            handoff_fills(harness.settle(), order.client_order_id()),
+        )
+    };
+
+    if independent_quote {
+        engine.process_data(Data::Quote(book_quote(instrument.id(), "1000.00")));
+        assert_eq!(
+            handoff_fills(harness.settle(), order.client_order_id()),
+            one_unit_maker_fill()
+        );
+    }
+    assert!(
+        from_unselected.is_empty(),
+        "an unselected book must not bypass selection through its derived quote: {from_unselected:?}"
+    );
+    assert_eq!(
+        from_selected,
+        one_unit_maker_fill(),
+        "selected book and its derived quote must not duplicate matching"
+    );
+}
+
+#[rstest]
+#[case::automatic_delta(true)]
+#[case::complete_depth_control(false)]
+fn test_book_quote_delta_derived_quote_after_deleting_executable_level(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] delta_update: bool,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, true, false);
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            !delta_update,
+            true,
+        ))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1000.00", "1.000")],
+        ),
+        !delta_update,
+    ));
+    let order = submit_book_quote_order(&harness, trader_id, &instrument, "MIX-DELETE", "2.000");
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1000.00"), Quantity::from("1.000"))],
+        "initial marketable limit fills as taker at the displayed ask"
+    );
+
+    if delta_update {
+        let mut frame = handoff_delta(instrument.id(), BookAction::Delete, "1000.00", "0.000", 2);
+        frame.deltas[0].flags = 0;
+        frame
+            .deltas
+            .extend(handoff_delta(instrument.id(), BookAction::Add, "1004.00", "1.000", 2).deltas);
+        engine.process_data(Data::BookDeltas(Box::new(frame)));
+    } else {
+        // Same final state through a representation the native L1 and L2 APIs both apply
+        let replacement = book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1004.00", "1.000")],
+        );
+        engine.process_data(Data::BookDepth(Box::new(replacement)));
+    }
+    assert!(
+        handoff_fills(harness.settle(), order.client_order_id()).is_empty(),
+        "deleted liquidity must not execute while the L1 delta path still has the old book"
+    );
+}
+
+#[rstest]
+fn test_book_quote_cached_derived_depth_quote_is_not_an_extra_market_input(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+    #[values(false, true)] emit_depth: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, false, emit_depth);
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), true, true))
+        .unwrap();
+    let resting = submit_book_quote_order(&harness, trader_id, &instrument, "MIX-CACHED", "8.000");
+    harness.settle();
+    engine.process_data(Data::BookDepth(Box::new(book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[("1000.00", "1.000")],
+    ))));
+    let initial = handoff_fills(harness.settle(), resting.client_order_id());
+    assert!(!initial.is_empty());
+    let unrelated =
+        submit_through_engine(&harness, trader_id, &instrument, "MIX-NONCROSS", "900.00");
+    let after = harness.settle();
+    assert!(handoff_fills(after.clone(), unrelated.client_order_id()).is_empty());
+    assert!(
+        handoff_fills(after, resting.client_order_id()).is_empty(),
+        "publishing a derived quote into Cache must not cause another matching pass when a noncrossing order arrives"
+    );
+}
+
+#[rstest]
+#[case::l2_deltas(BookType::L2_MBP, false)]
+#[case::l2_depth(BookType::L2_MBP, true)]
+#[case::l1_depth(BookType::L1_MBP, true)]
+fn test_book_quote_quote_subscription_is_not_book_selection(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] book_type: BookType,
+    #[case] depth_source: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, false, false);
+    let quotes = quote_subscription(instrument.id());
+    engine.execute_subscribe(quotes.clone()).unwrap();
+    assert_eq!(
+        harness.cache.borrow().order_book_source(&instrument.id()),
+        None
+    );
+    engine.process_data(Data::Quote(book_quote(instrument.id(), "900.00")));
+    let book = book_source_subscription(instrument.id(), depth_source, true);
+    engine.execute_subscribe(book.clone()).unwrap();
+    let expected = Some(if depth_source {
+        OrderBookSource::Depth
+    } else {
+        OrderBookSource::Deltas
+    });
+    assert_eq!(
+        harness.cache.borrow().order_book_source(&instrument.id()),
+        expected
+    );
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1000.00", "1.000")],
+        ),
+        depth_source,
+    ));
+    engine
+        .execute_unsubscribe(
+            &quotes
+                .clone()
+                .into_unsubscribe(UUID4::new(), 2.into(), None),
+        )
+        .unwrap();
+    assert_eq!(
+        harness.cache.borrow().order_book_source(&instrument.id()),
+        expected
+    );
+    engine.execute_subscribe(quotes).unwrap();
+    engine
+        .execute_unsubscribe(&book.into_unsubscribe(UUID4::new(), 3.into(), None))
+        .unwrap();
+    assert_eq!(
+        harness.cache.borrow().order_book_source(&instrument.id()),
+        None
+    );
+    engine.process_data(Data::Quote(book_quote(instrument.id(), "900.00")));
+    let probe = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "MIX-QUOTE-AFTER-BOOK",
+        "1500.00",
+    );
+    let price = if book_type == BookType::L1_MBP {
+        "900.00"
+    } else {
+        "1000.00"
+    };
+    assert_eq!(
+        handoff_fills(harness.settle(), probe.client_order_id()),
+        vec![(Price::from(price), Quantity::from("1.000"))],
+        "compatibility: quote updates L1 but does not replace the L2 book"
+    );
+}
+
+#[rstest]
+fn test_book_quote_quote_only_input(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, false, false);
+    engine
+        .execute_subscribe(quote_subscription(instrument.id()))
+        .unwrap();
+    engine.process_data(Data::Quote(book_quote(instrument.id(), "1000.00")));
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "MIX-QUOTE-ONLY",
+        "1500.00",
+    );
+    let expected = if book_type == BookType::L1_MBP {
+        vec![(Price::from("1000.00"), Quantity::from("1.000"))]
+    } else {
+        Vec::new()
+    };
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        expected,
+        "quotes initialize L1, not L2 depth"
+    );
+}
+
+#[rstest]
+fn test_book_quote_both_managed_book_families_remain_rejected(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] depth_first: bool,
+) {
+    let harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, true, true);
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), depth_first, true))
+        .unwrap();
+    assert!(
+        engine
+            .execute_subscribe(book_source_subscription(
+                instrument.id(),
+                !depth_first,
+                true
+            ))
+            .is_err()
+    );
+    assert_eq!(
+        harness.cache.borrow().order_book_source(&instrument.id()),
+        Some(if depth_first {
+            OrderBookSource::Depth
+        } else {
+            OrderBookSource::Deltas
+        })
+    );
+}
+
+#[rstest]
+fn test_book_quote_quote_arrival_order_can_mask_derived_duplication(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] depth_source: bool,
+    #[values(false, true)] quote_first: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, true, depth_source);
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            depth_source,
+            true,
+        ))
+        .unwrap();
+    engine
+        .execute_subscribe(quote_subscription(instrument.id()))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1004.00", "1.000")],
+        ),
+        depth_source,
+    ));
+    let order = submit_book_quote_order(&harness, trader_id, &instrument, "MIX-ARRIVAL", "8.000");
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    let quote = QuoteTick::new(
+        instrument.id(),
+        Price::from("999.00"),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        1.into(),
+        1.into(),
+    );
+
+    if quote_first {
+        engine.process_data(Data::Quote(quote));
+        assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    }
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("999.00", "1.000")],
+            &[("1000.00", "1.000")],
+        ),
+        depth_source,
+    ));
+    let from_book = handoff_fills(harness.settle(), order.client_order_id());
+
+    if !quote_first {
+        engine.process_data(Data::Quote(quote));
+        assert_eq!(
+            handoff_fills(harness.settle(), order.client_order_id()),
+            one_unit_maker_fill()
+        );
+    }
+    assert_eq!(
+        from_book,
+        one_unit_maker_fill(),
+        "an earlier identical independent quote can suppress derivation; a later one must not conceal a duplicate book pass"
+    );
+}
+
+#[rstest]
+fn test_book_quote_empty_depth_does_not_revive_cached_quote(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+    #[values(false, true)] emit_depth: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, false, emit_depth);
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), true, true))
+        .unwrap();
+    engine.process_data(Data::BookDepth(Box::new(book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[("1000.00", "1.000")],
+    ))));
+    engine.process_data(Data::BookDepth(Box::new(book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[],
+    ))));
+    harness.settle();
+    let probe = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "MIX-EMPTY-CACHE",
+        "1500.00",
+    );
+    assert!(
+        handoff_fills(harness.settle(), probe.client_order_id()).is_empty(),
+        "an old cached quote must not restore an ask removed by the latest full depth snapshot"
+    );
+}
+
+fn quote_emitting_data_engine(
+    harness: &EngineHarness,
+    instrument: &InstrumentAny,
+    emit_book: bool,
+    emit_depth: bool,
+) -> DataEngine {
+    let config = DataEngineConfig {
+        emit_quotes_from_book: emit_book,
+        emit_quotes_from_book_depths: emit_depth,
+        ..Default::default()
+    };
+    let mut engine = DataEngine::new(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        Some(config),
+    );
+    let client = BookDataClient {
+        venue: instrument.id().venue,
+    };
+    engine.register_client(
+        DataClientAdapter::new(
+            client.client_id(),
+            Some(instrument.id().venue),
+            true,
+            true,
+            Box::new(client),
+        ),
+        None,
+    );
+    engine
+}
+
+fn quote_subscription(id: InstrumentId) -> SubscribeCommand {
+    SubscribeCommand::Quotes(SubscribeQuotes::new(
+        id,
+        Some(ClientId::new("BOOK")),
+        Some(id.venue),
+        UUID4::new(),
+        1.into(),
+        None,
+        None,
+    ))
+}
+
+fn book_quote(id: InstrumentId, ask: &str) -> QuoteTick {
+    QuoteTick::new(
+        id,
+        Price::from("899.00"),
+        Price::from(ask),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        1.into(),
+        1.into(),
+    )
+}
+
+fn submit_book_quote_order(
+    harness: &EngineHarness,
+    trader_id: TraderId,
+    instrument: &InstrumentAny,
+    id: &str,
+    size: &str,
+) -> OrderAny {
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id(id.into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1001.00"))
+        .quantity(Quantity::from(size))
+        .build();
+    send_through_engine(harness, trader_id, order)
+}
+
+fn one_unit_maker_fill() -> Vec<(Price, Quantity)> {
+    vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+}
+
+#[rstest]
+#[case::quotes_disabled(false)]
+#[case::quotes_enabled(true)]
+fn test_depth_matches_once_with_derived_quotes(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] emit_quotes: bool,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+        config.liquidity_consumption = false;
+    });
+    let config = DataEngineConfig {
+        emit_quotes_from_book_depths: emit_quotes,
+        ..Default::default()
+    };
+    let mut engine = DataEngine::new(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        Some(config),
+    );
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("REVIEW-DEPTH-ONCE".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1001.00"))
+        .quantity(Quantity::from("2.000"))
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    engine.process_data(Data::BookDepth(Box::new(book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[("1000.00", "1.000")],
+    ))));
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))],
+    );
+}
+
+#[rstest]
+#[case::uninterrupted(false)]
+#[case::override_without_snapshot(true)]
+fn test_delta_updates_survive_override_without_depth(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] interrupted: bool,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[],
+            &[("1001.00", "1.000"), ("1002.00", "1.000")],
+        ),
+        false,
+    ));
+    let overriding = book_source_subscription(instrument.id(), true, true);
+    if interrupted {
+        engine.execute_subscribe(overriding.clone()).unwrap();
+    }
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Delete,
+        "1001.00",
+        "0.000",
+        2,
+    ))));
+
+    if interrupted {
+        engine
+            .execute_unsubscribe(&overriding.into_unsubscribe(UUID4::new(), 3.into(), None))
+            .unwrap();
+    }
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        instrument.id(),
+        BookAction::Add,
+        "1800.00",
+        "1.000",
+        4,
+    ))));
+    harness.settle();
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "REVIEW-DELTA-RETURN",
+        "2000.00",
+    );
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1002.00"), Quantity::from("1.000"))],
+    );
+}
+
+#[rstest]
+fn test_source_round_trip_without_updates_does_not_match_again(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L2_MBP;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "1.000")]),
+        false,
+    ));
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("SIMPLE-NO-GAP".into())
+        .side(OrderSide::Buy)
+        .price(Price::from("1001.00"))
+        .quantity(Quantity::from("2.000"))
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from("1.000"))]
+    );
+    let overriding = book_source_subscription(instrument.id(), true, true);
+    engine.execute_subscribe(overriding.clone()).unwrap();
+    engine
+        .execute_unsubscribe(&overriding.into_unsubscribe(UUID4::new(), 3.into(), None))
+        .unwrap();
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+}
+
+#[rstest]
+fn test_book_source_cache_bootstrap_and_fresh_quote_delivery(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] consumption: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+        config.liquidity_consumption = consumption;
+    });
+    harness
+        .cache
+        .borrow_mut()
+        .add_quote(book_quote(instrument.id(), "1004.00"))
+        .unwrap();
+    let order = submit_book_quote_order(
+        &harness,
+        trader_id,
+        &instrument,
+        "CONVERGE-BOOTSTRAP",
+        "1.000",
+    );
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Accepted);
+    let mut engine = DataEngine::new(harness.test_clock.clone(), harness.cache.clone(), None);
+    engine.process_data(Data::Quote(book_quote(instrument.id(), "1000.00")));
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        one_unit_maker_fill()
+    );
+}
+
+#[rstest]
+fn test_book_source_same_source_retained_progress_after_application_failure(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.book_type = book_type;
+        });
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context.client.start().unwrap();
+    let mut engine = book_data_engine(
+        context.test_clock.clone(),
+        context.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("2001.00", "1.000")]),
+        false,
+    ));
+    let updated = updated_instrument_with_price_precision_3(instrument);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(updated.clone())
+        .unwrap();
+    // The retained frame is valid against Cache; the existing matching engine still has precision 2
+    engine.process_data(book_source_data(
+        &book_depth(updated.id(), &[], &[("1001.000", "2.000")]),
+        false,
+    ));
+    context.client.on_instrument(updated.clone());
+    engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+        updated.id(),
+        BookAction::Add,
+        "1400.000",
+        "1.000",
+        3,
+    ))));
+    let order = resting_limit(&updated, "CONVERGE-SAME-SOURCE-RETRY", "1500.000", 3.into());
+    submit_to_client(&context, trader_id, &order);
+    assert_eq!(
+        handoff_fills(drain_order_events(&mut rx), order.client_order_id()),
+        vec![(Price::from("1001.000"), Quantity::from("1.000"))]
+    );
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::delete_best((BookAction::Delete, true))]
+#[case::empty_side((BookAction::Delete, false))]
+#[case::empty_book((BookAction::Clear, false))]
+#[case::size_only((BookAction::Update, false))]
+fn test_l1_delta_batch_applies_current_top_before_matching(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] change: (BookAction, bool),
+    #[values(BookType::L1_MBP, BookType::L2_MBP, BookType::L3_MBO)] source_book_type: BookType,
+    #[values(false, true)] managed: bool,
+    #[values(false, true)] emit_quotes: bool,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let (action, replace_top) = change;
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, emit_quotes, false);
+    let mut subscription = book_source_subscription(instrument.id(), false, managed);
+    if let SubscribeCommand::BookDeltas(cmd) = &mut subscription {
+        cmd.book_type = source_book_type;
+    }
+    engine.execute_subscribe(subscription).unwrap();
+    assert_eq!(
+        harness
+            .cache
+            .borrow()
+            .order_book_deltas_book_type(&instrument.id()),
+        Some(source_book_type)
+    );
+    let (bid, ask, limit, replacement) = if side == OrderSide::Buy {
+        ("999.00", "1004.00", "1001.00", "1004.00")
+    } else {
+        ("996.00", "1005.00", "999.00", "996.00")
+    };
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[(bid, "1.000")], &[(ask, "1.000")]),
+        false,
+    ));
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("L1-BATCH".into())
+        .side(side)
+        .price(Price::from(limit))
+        .quantity(Quantity::from("4.000"))
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    let (bids, asks) = if side == OrderSide::Buy {
+        (vec![(bid, "1.000")], vec![("1000.00", "1.000")])
+    } else {
+        (vec![("1000.00", "1.000")], vec![(ask, "1.000")])
+    };
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &bids, &asks),
+        false,
+    ));
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from(limit), Quantity::from("1.000"))]
+    );
+    let book_side = if side == OrderSide::Buy {
+        OrderSide::Sell
+    } else {
+        OrderSide::Buy
+    };
+    let size = if action == BookAction::Update {
+        "2.000"
+    } else {
+        "0.000"
+    };
+    let mut frame = vec![OrderBookDelta::new(
+        instrument.id(),
+        action,
+        BookOrder::new(book_side, Price::from("1000.00"), Quantity::from(size), 0),
+        RecordFlag::F_LAST as u8,
+        3,
+        3.into(),
+        3.into(),
+    )];
+
+    if replace_top {
+        frame[0].flags = 0;
+        frame.push(OrderBookDelta::new(
+            instrument.id(),
+            BookAction::Add,
+            BookOrder::new(
+                book_side,
+                Price::from(replacement),
+                Quantity::from("1.000"),
+                0,
+            ),
+            RecordFlag::F_LAST as u8,
+            3,
+            3.into(),
+            3.into(),
+        ));
+    }
+    engine.process_data(Data::BookDeltas(Box::new(OrderBookDeltas::new(
+        instrument.id(),
+        frame,
+    ))));
+    let fills = handoff_fills(harness.settle(), order.client_order_id());
+    if action == BookAction::Update {
+        assert_eq!(fills, vec![(Price::from(limit), Quantity::from("2.000"))]);
+    } else {
+        assert!(
+            fills.is_empty(),
+            "removed liquidity must not execute before the new L1 view"
+        );
+    }
+}
+
+#[rstest]
+fn test_depth_updates_survive_override_without_deltas(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), true, false))
+        .unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1001.00", "1.000")]),
+        true,
+    ));
+    let overriding = book_source_subscription(instrument.id(), false, true);
+    engine.execute_subscribe(overriding.clone()).unwrap();
+    engine.process_data(book_source_data(
+        &book_depth(instrument.id(), &[], &[("1002.00", "1.000")]),
+        true,
+    ));
+    engine
+        .execute_unsubscribe(&overriding.into_unsubscribe(UUID4::new(), 3.into(), None))
+        .unwrap();
+    harness.settle();
+    let order = submit_through_engine(&harness, trader_id, &instrument, "DEPTH-RETURN", "2000.00");
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1002.00"), Quantity::from("1.000"))]
+    );
+}
+
+#[rstest]
+#[case::mbp(BookType::L2_MBP, "2.000")]
+#[case::mbo(BookType::L3_MBO, "1.000")]
+fn test_l1_delta_reduction_uses_native_top_of_book(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] source_book_type: BookType,
+    #[case] expected_size: &str,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, true, false);
+    let mut subscription = book_source_subscription(instrument.id(), false, true);
+    if let SubscribeCommand::BookDeltas(cmd) = &mut subscription {
+        cmd.book_type = source_book_type;
+    }
+    engine.execute_subscribe(subscription).unwrap();
+    let (handler, quotes) = get_typed_message_saving_handler::<QuoteTick>(None);
+    msgbus::subscribe_quotes(
+        switchboard::get_quotes_topic(instrument.id()).into(),
+        handler,
+        None,
+    );
+    let order =
+        submit_book_quote_order(&harness, trader_id, &instrument, "L1-AGGREGATION", "4.000");
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    let orders = [
+        BookOrder::new(
+            OrderSide::Buy,
+            Price::from("999.00"),
+            Quantity::from("1.000"),
+            3,
+        ),
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("1.000"),
+            1,
+        ),
+        BookOrder::new(
+            OrderSide::Sell,
+            Price::from("1000.00"),
+            Quantity::from("2.000"),
+            2,
+        ),
+    ];
+    let deltas = orders
+        .into_iter()
+        .enumerate()
+        .map(|(index, order)| {
+            OrderBookDelta::new(
+                instrument.id(),
+                BookAction::Add,
+                order,
+                if index == 2 {
+                    RecordFlag::F_LAST as u8
+                } else {
+                    0
+                },
+                1,
+                1.into(),
+                1.into(),
+            )
+        })
+        .collect();
+    engine.process_data(Data::BookDeltas(Box::new(OrderBookDeltas::new(
+        instrument.id(),
+        deltas,
+    ))));
+    // Match DataEngine's existing BBO accessors, including the first MBO order's size
+    assert_eq!(
+        quotes.get_messages()[0].ask_size,
+        Quantity::from(expected_size)
+    );
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from("1001.00"), Quantity::from(expected_size))]
+    );
+}
+
+#[rstest]
+fn test_book_source_unselected_book_quote_cannot_seed_cold_l1(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] independent_quote: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+        config.liquidity_consumption = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, false, true);
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), false, true))
+        .unwrap();
+    engine
+        .execute_subscribe(book_source_subscription(instrument.id(), true, false))
+        .unwrap();
+    engine.process_data(Data::BookDepth(Box::new(book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[("1000.00", "1.000")],
+    ))));
+
+    if independent_quote {
+        engine.process_data(Data::Quote(book_quote(instrument.id(), "1000.00")));
+    }
+    harness.settle();
+    let order = submit_through_engine(&harness, trader_id, &instrument, "REAUDIT-COLD", "1500.00");
+    let fills = handoff_fills(harness.settle(), order.client_order_id());
+    let expected = if independent_quote {
+        vec![(Price::from("1000.00"), Quantity::from("1.000"))]
+    } else {
+        Vec::new()
+    };
+    assert_eq!(
+        fills, expected,
+        "unselected H/Qh must remain observational even before the first selected D frame"
+    );
+}
+
+#[rstest]
+#[case::ordinary(false)]
+#[case::snapshot(true)]
+fn test_l1_book_update_preserves_native_queue_semantics(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] from_deltas: bool,
+    #[values(false, true)] consumption: bool,
+    #[case] snapshot: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+        config.queue_position = true;
+        config.trade_execution = true;
+        config.liquidity_consumption = consumption;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, true, false);
+    if from_deltas {
+        engine
+            .execute_subscribe(book_source_subscription(instrument.id(), false, true))
+            .unwrap();
+        engine.process_data(book_source_data(
+            &book_depth(
+                instrument.id(),
+                &[("1000.00", "100.000")],
+                &[("1004.00", "100.000")],
+            ),
+            false,
+        ));
+    } else {
+        engine.process_data(Data::Quote(QuoteTick::new(
+            instrument.id(),
+            Price::from("1000.00"),
+            Price::from("1004.00"),
+            Quantity::from("100.000"),
+            Quantity::from("100.000"),
+            1.into(),
+            1.into(),
+        )));
+    }
+    let order = submit_through_engine(&harness, trader_id, &instrument, "REAUDIT-QUEUE", "1000.00");
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+
+    if snapshot {
+        engine.process_data(book_source_data(
+            &book_depth(
+                instrument.id(),
+                &[("1001.00", "100.000")],
+                &[("1004.00", "100.000")],
+            ),
+            !from_deltas,
+        ));
+    } else if from_deltas {
+        let delta = OrderBookDelta::new(
+            instrument.id(),
+            BookAction::Update,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1001.00"),
+                Quantity::from("100.000"),
+                0,
+            ),
+            RecordFlag::F_LAST as u8,
+            2,
+            2.into(),
+            2.into(),
+        );
+        engine.process_data(Data::BookDeltas(Box::new(OrderBookDeltas::new(
+            instrument.id(),
+            vec![delta],
+        ))));
+    } else {
+        engine.process_data(Data::Quote(QuoteTick::new(
+            instrument.id(),
+            Price::from("1001.00"),
+            Price::from("1004.00"),
+            Quantity::from("100.000"),
+            Quantity::from("100.000"),
+            2.into(),
+            2.into(),
+        )));
+    }
+    assert!(handoff_fills(harness.settle(), order.client_order_id()).is_empty());
+    engine.process_data(Data::Trade(TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new("REAUDIT-T"),
+        3.into(),
+        3.into(),
+    )));
+    let fills = handoff_fills(harness.settle(), order.client_order_id());
+
+    if snapshot {
+        assert_eq!(
+            fills,
+            vec![(Price::from("1000.00"), Quantity::from("1.000"))]
+        );
+    } else {
+        assert!(
+            fills.is_empty(),
+            "a better bid does not delete the 100 units ahead at 1000; one trade unit must not reach our queued order"
+        );
+    }
+}
+
+#[rstest]
+fn test_cached_quote_initialization_respects_book_provenance(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] selected_depth: bool,
+    #[values(false, true)] quote_from_depth: bool,
+    #[values(false, true)] independent: bool,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    engine
+        .execute_subscribe(book_source_subscription(
+            instrument.id(),
+            selected_depth,
+            false,
+        ))
+        .unwrap();
+    let quote = book_quote(instrument.id(), "1000.00");
+    let source = if quote_from_depth {
+        OrderBookSource::Depth
+    } else {
+        OrderBookSource::Deltas
+    };
+    harness
+        .cache
+        .borrow_mut()
+        .add_book_quote(quote, source)
+        .unwrap();
+    if independent {
+        harness.cache.borrow_mut().add_quote(quote).unwrap();
+    }
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "CACHED-QUOTE-SOURCE",
+        "1500.00",
+    );
+    let expected =
+        if book_type == BookType::L1_MBP && (independent || selected_depth == quote_from_depth) {
+            vec![(Price::from("1000.00"), Quantity::from("1.000"))]
+        } else {
+            Vec::new()
+        };
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        expected
+    );
+}
+
+#[rstest]
+fn test_l1_ordinary_delta_keeps_native_late_quote_semantics(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] from_deltas: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, true, false);
+    let mut baseline = book_depth(
+        instrument.id(),
+        &[("999.00", "1.000")],
+        &[("1000.00", "1.000")],
+    );
+    baseline.ts_event = 10.into();
+    baseline.ts_init = 10.into();
+
+    if from_deltas {
+        engine
+            .execute_subscribe(book_source_subscription(instrument.id(), false, true))
+            .unwrap();
+        engine.process_data(book_source_data(&baseline, false));
+        let mut frame = handoff_delta(instrument.id(), BookAction::Delete, "1000.00", "0.000", 2);
+        frame.deltas[0].flags = 0;
+        frame
+            .deltas
+            .extend(handoff_delta(instrument.id(), BookAction::Add, "1004.00", "1.000", 2).deltas);
+        engine.process_data(Data::BookDeltas(Box::new(frame)));
+    } else {
+        engine.process_data(Data::BookDepth(Box::new(baseline)));
+        let mut late = book_quote(instrument.id(), "1004.00");
+        late.ts_event = 2.into();
+        late.ts_init = 2.into();
+        engine.process_data(Data::Quote(late));
+    }
+    harness.settle();
+    let old = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "LATE-QUOTE-BASELINE",
+        "1500.00",
+    );
+    assert_eq!(
+        handoff_fills(harness.settle(), old.client_order_id()),
+        vec![(Price::from("1000.00"), Quantity::from("1.000"))]
+    );
+
+    if from_deltas {
+        engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+            instrument.id(),
+            BookAction::Add,
+            "1800.00",
+            "1.000",
+            11,
+        ))));
+    } else {
+        let mut fresh = book_quote(instrument.id(), "1004.00");
+        fresh.ts_event = 11.into();
+        fresh.ts_init = 11.into();
+        engine.process_data(Data::Quote(fresh));
+    }
+    harness.settle();
+    let fresh = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "FRESH-QUOTE-BASELINE",
+        "1500.00",
+    );
+    assert_eq!(
+        handoff_fills(harness.settle(), fresh.client_order_id()),
+        vec![(Price::from("1004.00"), Quantity::from("1.000"))]
+    );
+}
+
+#[rstest]
+fn test_l1_ordinary_side_clear_preserves_other_side_queue(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] from_deltas: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+        config.queue_position = true;
+        config.trade_execution = true;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, true, false);
+    if from_deltas {
+        engine
+            .execute_subscribe(book_source_subscription(instrument.id(), false, true))
+            .unwrap();
+        engine.process_data(book_source_data(
+            &book_depth(
+                instrument.id(),
+                &[("1000.00", "100.000")],
+                &[("1004.00", "100.000")],
+            ),
+            false,
+        ));
+    } else {
+        engine.process_data(Data::Quote(QuoteTick::new(
+            instrument.id(),
+            Price::from("1000.00"),
+            Price::from("1004.00"),
+            Quantity::from("100.000"),
+            Quantity::from("100.000"),
+            1.into(),
+            1.into(),
+        )));
+    }
+    let resting = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "SIDE-CLEAR-QUEUE",
+        "1000.00",
+    );
+    assert!(handoff_fills(harness.settle(), resting.client_order_id()).is_empty());
+
+    if from_deltas {
+        let update = OrderBookDelta::new(
+            instrument.id(),
+            BookAction::Update,
+            BookOrder::new(
+                OrderSide::Buy,
+                Price::from("1001.00"),
+                Quantity::from("100.000"),
+                0,
+            ),
+            RecordFlag::F_LAST as u8,
+            2,
+            2.into(),
+            2.into(),
+        );
+        engine.process_data(Data::BookDeltas(Box::new(OrderBookDeltas::new(
+            instrument.id(),
+            vec![update],
+        ))));
+        engine.process_data(Data::BookDeltas(Box::new(handoff_delta(
+            instrument.id(),
+            BookAction::Delete,
+            "1004.00",
+            "0.000",
+            3,
+        ))));
+    } else {
+        engine.process_data(Data::Quote(QuoteTick::new(
+            instrument.id(),
+            Price::from("1001.00"),
+            Price::from("1004.00"),
+            Quantity::from("100.000"),
+            Quantity::from("100.000"),
+            2.into(),
+            2.into(),
+        )));
+        engine.process_data(Data::Quote(QuoteTick::new(
+            instrument.id(),
+            Price::from("1001.00"),
+            Price::from("1004.00"),
+            Quantity::from("100.000"),
+            Quantity::from("0.000"),
+            3.into(),
+            3.into(),
+        )));
+    }
+    assert!(handoff_fills(harness.settle(), resting.client_order_id()).is_empty());
+    engine.process_data(Data::Trade(TradeTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Quantity::from("1.000"),
+        AggressorSide::Sell,
+        TradeId::new("SIDE-CLEAR-T"),
+        4.into(),
+        4.into(),
+    )));
+    assert!(handoff_fills(harness.settle(), resting.client_order_id()).is_empty());
+    let probe = submit_through_engine(
+        &harness,
+        trader_id,
+        &instrument,
+        "SIDE-CLEAR-PROBE",
+        "1500.00",
+    );
+    let fills = handoff_fills(harness.settle(), probe.client_order_id());
+    assert!(
+        fills.iter().all(|(price, _)| !price.is_zero()),
+        "an absent ask must not become executable zero-price liquidity: {fills:?}"
+    );
+}
+
+#[rstest]
+#[case::automatic_deltas(Some(OrderBookSource::Deltas))]
+#[case::native_zero_size_quote(None)]
+#[case::native_depth(Some(OrderBookSource::Depth))]
+fn test_l1_side_withdrawal_preserves_stop_after_trade(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] source: Option<OrderBookSource>,
+    #[values(OrderSide::Buy, OrderSide::Sell)] withdrawn_side: OrderSide,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+        config.trade_execution = true;
+        config.reject_stop_orders = false;
+    });
+    let mut engine = quote_emitting_data_engine(&harness, &instrument, true, false);
+    let snapshot = book_depth(
+        instrument.id(),
+        &[("1000.00", "1.000")],
+        &[("1004.00", "1.000")],
+    );
+
+    if source == Some(OrderBookSource::Deltas) {
+        engine
+            .execute_subscribe(book_source_subscription(instrument.id(), false, true))
+            .unwrap();
+        engine.process_data(book_source_data(&snapshot, false));
+    } else {
+        engine.process_data(Data::BookDepth(Box::new(snapshot)));
+    }
+    let withdraw_bid = withdrawn_side == OrderSide::Buy;
+    let stop = OrderTestBuilder::new(OrderType::StopMarket)
+        .instrument_id(instrument.id())
+        .client_order_id("SIDE-WITHDRAWAL-STOP".into())
+        .side(if withdraw_bid {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        })
+        .trigger_price(Price::from(if withdraw_bid { "999.00" } else { "1005.00" }))
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let stop = send_through_engine(&harness, trader_id, stop);
+    harness.settle();
+    assert_eq!(cached_status(&harness.cache, &stop), OrderStatus::Accepted);
+
+    for ts in [2, 4, 5] {
+        if ts == 4 {
+            engine.process_data(Data::Trade(TradeTick::new(
+                instrument.id(),
+                Price::from(if withdraw_bid { "1004.00" } else { "1000.00" }),
+                Quantity::from("1.000"),
+                if withdraw_bid {
+                    AggressorSide::Buy
+                } else {
+                    AggressorSide::Sell
+                },
+                TradeId::new("SIDE-WITHDRAWAL-TRADE"),
+                3.into(),
+                3.into(),
+            )));
+            harness.settle();
+            assert_eq!(cached_status(&harness.cache, &stop), OrderStatus::Accepted);
+        }
+        let bid_price = if ts == 5 && withdraw_bid {
+            "998.00"
+        } else {
+            "1000.00"
+        };
+        let ask_price = if ts == 5 && !withdraw_bid {
+            "1006.00"
+        } else {
+            "1004.00"
+        };
+        let bid_size = if withdraw_bid && ts != 5 {
+            "0.000"
+        } else {
+            "1.000"
+        };
+        let ask_size = if !withdraw_bid && ts != 5 {
+            "0.000"
+        } else {
+            "1.000"
+        };
+        let (bid_size, ask_size) = if ts >= 4 {
+            if withdraw_bid {
+                (bid_size, "2.000")
+            } else {
+                ("2.000", ask_size)
+            }
+        } else {
+            (bid_size, ask_size)
+        };
+
+        match source {
+            Some(OrderBookSource::Deltas) => {
+                let side = if ts == 4 {
+                    if withdraw_bid {
+                        OrderSide::Sell
+                    } else {
+                        OrderSide::Buy
+                    }
+                } else {
+                    withdrawn_side
+                };
+                let (price, size) = if side == OrderSide::Buy {
+                    (bid_price, bid_size)
+                } else {
+                    (ask_price, ask_size)
+                };
+                let action = match ts {
+                    2 => BookAction::Delete,
+                    4 => BookAction::Update,
+                    _ => BookAction::Add,
+                };
+                let delta = OrderBookDelta::new(
+                    instrument.id(),
+                    action,
+                    BookOrder::new(side, Price::from(price), Quantity::from(size), 0),
+                    RecordFlag::F_LAST as u8,
+                    ts,
+                    ts.into(),
+                    ts.into(),
+                );
+                engine.process_data(Data::BookDeltas(Box::new(OrderBookDeltas::new(
+                    instrument.id(),
+                    vec![delta],
+                ))));
+            }
+            None => engine.process_data(Data::Quote(QuoteTick::new(
+                instrument.id(),
+                Price::from(bid_price),
+                Price::from(ask_price),
+                Quantity::from(bid_size),
+                Quantity::from(ask_size),
+                ts.into(),
+                ts.into(),
+            ))),
+            Some(OrderBookSource::Depth) => {
+                let bids = if bid_size == "0.000" {
+                    vec![]
+                } else {
+                    vec![(bid_price, bid_size)]
+                };
+                let asks = if ask_size == "0.000" {
+                    vec![]
+                } else {
+                    vec![(ask_price, ask_size)]
+                };
+                let mut depth = book_depth(instrument.id(), &bids, &asks);
+                depth.ts_event = ts.into();
+                depth.ts_init = ts.into();
+                engine.process_data(Data::BookDepth(Box::new(depth)));
+            }
+        }
+        let events = harness.settle();
+        if ts == 5 {
+            assert_eq!(cached_status(&harness.cache, &stop), OrderStatus::Filled);
+            assert_eq!(
+                handoff_fills(events, stop.client_order_id()),
+                vec![(
+                    Price::from(if withdraw_bid { "998.00" } else { "1006.00" }),
+                    Quantity::from("1.000"),
+                )]
+            );
+        } else {
+            assert_eq!(
+                cached_status(&harness.cache, &stop),
+                OrderStatus::Accepted,
+                "withdrawing quantity does not introduce a new quote price; events={events:?}"
+            );
+        }
+    }
+}
+
+#[rstest]
+fn test_l1_one_sided_deltas_initialize_without_quote_reference(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(false, true)] from_deltas: bool,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = BookType::L1_MBP;
+    });
+    let mut engine = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    let price = if side == OrderSide::Buy {
+        "1000.00"
+    } else {
+        "1004.00"
+    };
+
+    if from_deltas {
+        engine
+            .execute_subscribe(book_source_subscription(instrument.id(), false, true))
+            .unwrap();
+        let delta = OrderBookDelta::new(
+            instrument.id(),
+            BookAction::Add,
+            BookOrder::new(side, Price::from(price), Quantity::from("1.000"), 0),
+            RecordFlag::F_LAST as u8,
+            1,
+            1.into(),
+            1.into(),
+        );
+        engine.process_data(Data::BookDeltas(Box::new(OrderBookDeltas::new(
+            instrument.id(),
+            vec![delta],
+        ))));
+    } else {
+        let bids = if side == OrderSide::Buy {
+            vec![(price, "1.000")]
+        } else {
+            vec![]
+        };
+        let asks = if side == OrderSide::Sell {
+            vec![(price, "1.000")]
+        } else {
+            vec![]
+        };
+        engine.process_data(Data::BookDepth(Box::new(book_depth(
+            instrument.id(),
+            &bids,
+            &asks,
+        ))));
+    }
+    harness.settle();
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument.id())
+        .client_order_id("ONE-SIDED-INITIALIZATION".into())
+        .side(if side == OrderSide::Buy {
+            OrderSide::Sell
+        } else {
+            OrderSide::Buy
+        })
+        .price(Price::from(price))
+        .quantity(Quantity::from("1.000"))
+        .build();
+    let order = send_through_engine(&harness, trader_id, order);
+    assert_eq!(
+        handoff_fills(harness.settle(), order.client_order_id()),
+        vec![(Price::from(price), Quantity::from("1.000"),)]
+    );
+    assert_eq!(cached_status(&harness.cache, &order), OrderStatus::Filled);
+}
+
+#[rstest]
+#[case::automatic_l1(BookType::L1_MBP, true)]
+#[case::automatic_l2(BookType::L2_MBP, true)]
+#[case::native_l1_depth(BookType::L1_MBP, false)]
+#[case::native_l2_deltas(BookType::L2_MBP, false)]
+fn test_book_definition_updates_follow_native_reset(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] book_type: BookType,
+    #[case] automatic: bool,
+    #[values("price_precision", "price_increment", "size_precision")] change: &str,
+    #[values(false, true)] handoff: bool,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+    ExecutionEngine::subscribe_venue_instruments(&harness.engine, instrument.id().venue);
+    let mut data = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+
+    if automatic {
+        data.execute_subscribe(book_source_subscription(instrument.id(), false, false))
+            .unwrap();
+    }
+    let old = book_depth(
+        instrument.id(),
+        &[("1000.00", "1.000")],
+        &[("1004.00", "1.000")],
+    );
+    data.process_data(book_source_data(&old, !automatic));
+    harness.settle();
+    let InstrumentAny::CryptoPerpetual(mut updated) = instrument else {
+        panic!("Expected perpetual")
+    };
+
+    match change {
+        "price_precision" => {
+            updated.price_precision = 3;
+            updated.price_increment = Price::from("0.001");
+        }
+        "price_increment" => {
+            updated.price_increment = Price::from("0.05");
+        }
+        _ => {
+            updated.size_precision = 4;
+            updated.size_increment = Quantity::from("0.0001");
+        }
+    }
+    let updated = InstrumentAny::CryptoPerpetual(updated);
+    data.process(&updated);
+    harness.settle();
+    let price = |whole| {
+        if change == "price_precision" {
+            Price::new(whole, 3)
+        } else {
+            Price::new(whole, 2)
+        }
+    };
+    let size = Quantity::from(if change == "size_precision" {
+        "1.0000"
+    } else {
+        "1.000"
+    });
+    let waiting = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(updated.id())
+        .client_order_id("DEFINITION-WAITING".into())
+        .side(OrderSide::Buy)
+        .price(price(1005.0))
+        .quantity(size)
+        .build();
+    let waiting = send_through_engine(&harness, trader_id, waiting);
+    assert!(handoff_fills(harness.settle(), waiting.client_order_id()).is_empty());
+    let delta = |side, p, ts: u64| {
+        OrderBookDeltas::new(
+            updated.id(),
+            vec![OrderBookDelta::new(
+                updated.id(),
+                BookAction::Update,
+                BookOrder::new(side, price(p), size, 0),
+                RecordFlag::F_LAST as u8,
+                ts,
+                ts.into(),
+                ts.into(),
+            )],
+        )
+    };
+
+    if automatic || book_type == BookType::L2_MBP {
+        data.process_data(Data::BookDeltas(Box::new(delta(OrderSide::Buy, 999.0, 3))));
+    } else {
+        data.process_data(Data::BookDepth(Box::new(OrderBookDepth::new(
+            updated.id(),
+            [BookOrder::new(OrderSide::Buy, price(999.0), size, 0)],
+            [],
+            [1],
+            [],
+            RecordFlag::F_SNAPSHOT as u8,
+            3,
+            3.into(),
+            3.into(),
+        ))));
+    }
+    let after_bid = handoff_fills(harness.settle(), waiting.client_order_id());
+    assert!(
+        after_bid.is_empty(),
+        "native instrument update invalidates old ask; bid-only update must not revive it: {after_bid:?}"
+    );
+
+    if automatic || book_type == BookType::L2_MBP {
+        data.process_data(Data::BookDeltas(Box::new(delta(
+            OrderSide::Sell,
+            1006.0,
+            4,
+        ))));
+    } else {
+        data.process_data(Data::BookDepth(Box::new(OrderBookDepth::new(
+            updated.id(),
+            [BookOrder::new(OrderSide::Buy, price(999.0), size, 0)],
+            [BookOrder::new(OrderSide::Sell, price(1006.0), size, 0)],
+            [1],
+            [1],
+            RecordFlag::F_SNAPSHOT as u8,
+            4,
+            4.into(),
+            4.into(),
+        ))));
+    }
+    assert!(handoff_fills(harness.settle(), waiting.client_order_id()).is_empty());
+    let override_source = if automatic && handoff {
+        let owner = book_source_subscription(updated.id(), true, true);
+        data.execute_subscribe(owner.clone()).unwrap();
+        Some(owner)
+    } else {
+        None
+    };
+
+    if automatic || book_type == BookType::L2_MBP {
+        data.process_data(Data::BookDeltas(Box::new(delta(
+            OrderSide::Sell,
+            1003.0,
+            5,
+        ))));
+    } else {
+        data.process_data(Data::BookDepth(Box::new(OrderBookDepth::new(
+            updated.id(),
+            [BookOrder::new(OrderSide::Buy, price(999.0), size, 0)],
+            [BookOrder::new(OrderSide::Sell, price(1003.0), size, 0)],
+            [1],
+            [1],
+            RecordFlag::F_SNAPSHOT as u8,
+            5,
+            5.into(),
+            5.into(),
+        ))));
+    }
+
+    if let Some(owner) = override_source {
+        data.execute_unsubscribe(&owner.into_unsubscribe(UUID4::new(), 6.into(), None))
+            .unwrap();
+    }
+    let fills = handoff_fills(harness.settle(), waiting.client_order_id());
+    assert_eq!(
+        fills,
+        vec![(price(1005.0), size)],
+        "current-definition market should recover without a new full snapshot"
+    );
+}
+
+#[rstest]
+fn test_book_definition_update_preserves_cached_quote_initialization(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[values(BookType::L1_MBP, BookType::L2_MBP)] book_type: BookType,
+) {
+    let mut harness = setup_engine_harness_with_config(trader_id, &instrument, None, |config| {
+        config.book_type = book_type;
+    });
+    ExecutionEngine::subscribe_venue_instruments(&harness.engine, instrument.id().venue);
+    let mut data = book_data_engine(
+        harness.test_clock.clone(),
+        harness.cache.clone(),
+        instrument.id().venue,
+    );
+    data.execute_subscribe(book_source_subscription(instrument.id(), false, false))
+        .unwrap();
+    data.process_data(book_source_data(
+        &book_depth(
+            instrument.id(),
+            &[("1000.00", "1.000")],
+            &[("1004.00", "1.000")],
+        ),
+        false,
+    ));
+    data.process_data(Data::Quote(QuoteTick::new(
+        instrument.id(),
+        Price::from("1000.00"),
+        Price::from("1004.00"),
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        2.into(),
+        2.into(),
+    )));
+    let InstrumentAny::CryptoPerpetual(mut updated) = instrument else {
+        panic!("Expected perpetual")
+    };
+    updated.price_increment = Price::from("0.05");
+    let updated = InstrumentAny::CryptoPerpetual(updated);
+    data.process(&updated);
+    harness.settle();
+    let order = submit_through_engine(
+        &harness,
+        trader_id,
+        &updated,
+        "DEFINITION-CACHED-QUOTE",
+        "1500.00",
+    );
+    let fills = handoff_fills(harness.settle(), order.client_order_id());
+
+    if book_type == BookType::L1_MBP {
+        assert_eq!(
+            fills,
+            vec![(Price::from("1004.00"), Quantity::from("1.000"))]
+        );
+    } else {
+        assert!(fills.is_empty(), "native quotes do not establish L2 depth");
     }
 }

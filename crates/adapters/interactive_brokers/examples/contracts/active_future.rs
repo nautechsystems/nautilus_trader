@@ -22,8 +22,10 @@ use jiff::{
     civil::{Date, Weekday},
     tz::TimeZone,
 };
-use nautilus_interactive_brokers::common::futures::{format_futures_symbol, futures_month_code};
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::identifiers::{
+    InstrumentId,
+    futures::{FuturesYearDigits, format_futures_symbol, futures_month_code},
+};
 
 const QUARTERLY_CONTRACT_MONTHS: [i8; 4] = [3, 6, 9, 12];
 // Roll to the next contract this many days before expiry, so a run never lands in expiry week.
@@ -49,8 +51,13 @@ pub(crate) fn active_quarterly_contract(root: &str, venue: &str, today: Date) ->
             }
 
             let month_code = futures_month_code(month as u8).expect("quarterly month code");
-            let symbol = format_futures_symbol(root, month_code, i32::from(year), 1)
-                .expect("single-digit futures symbol");
+            let symbol = format_futures_symbol(
+                root,
+                month_code,
+                i32::from(year),
+                FuturesYearDigits::default().into(),
+            )
+            .expect("valid futures symbol");
             return InstrumentId::from(format!("{symbol}.{venue}").as_str());
         }
 
@@ -81,10 +88,10 @@ mod tests {
     }
 
     #[rstest]
-    #[case(date(2026, 9, 21), "ESZ6.XCME")]
-    #[case(date(2026, 11, 3), "ESZ6.XCME")]
-    #[case(date(2026, 11, 4), "ESH7.XCME")]
-    #[case(date(2026, 12, 31), "ESH7.XCME")]
+    #[case(date(2026, 9, 21), "ESZ26.XCME")]
+    #[case(date(2026, 11, 3), "ESZ26.XCME")]
+    #[case(date(2026, 11, 4), "ESH27.XCME")]
+    #[case(date(2026, 12, 31), "ESH27.XCME")]
     fn test_active_quarterly_contract_rolls_before_expiry(
         #[case] today: Date,
         #[case] expected: &str,

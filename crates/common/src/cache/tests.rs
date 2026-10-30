@@ -32,7 +32,7 @@ use nautilus_model::{
     data::{
         Bar, BarType, CustomData, DataType, FundingRateUpdate, IndexPriceUpdate, InstrumentClose,
         InstrumentStatus, MarkPriceUpdate, QuoteTick, TradeTick,
-        greeks::{OptionGreekValues, YieldCurve},
+        greeks::{GreeksData, OptionGreekValues, YieldCurve},
         option_chain::OptionGreeks,
     },
     enums::{
@@ -2206,6 +2206,204 @@ fn test_add_instrument_close_persists_replacement() {
         restored.instrument_close(&instrument_id),
         Some(&replacement)
     );
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_greeks_and_yield_curves_survive_cache_restart(#[case] with_memory: bool) {
+    let database = SnapshotBlobTestDatabase::default();
+    let greeks = Arc::clone(&database.greeks);
+    let curves = Arc::clone(&database.yield_curves);
+
+    let config = CacheConfig {
+        save_market_data: true,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+    let expected_greeks = [
+        persisted_greeks("SPY240315C00500000.OPRA", 1.0),
+        persisted_greeks("SPY240315P00510000.OPRA", 2.0),
+    ];
+    let expected_curves = [
+        YieldCurve::new(
+            "USD".into(),
+            vec![0.25, 0.5, 1.0],
+            vec![0.03, 0.04, 0.05],
+            101.into(),
+            102.into(),
+        ),
+        YieldCurve::new(
+            "EUR".into(),
+            vec![0.75],
+            vec![0.025],
+            103.into(),
+            104.into(),
+        ),
+    ];
+
+    for value in &expected_greeks {
+        cache.add_greeks(value.clone()).unwrap();
+    }
+
+    for value in &expected_curves {
+        cache.add_yield_curve(value.clone()).unwrap();
+    }
+
+    drop(cache);
+
+    let database = SnapshotBlobTestDatabase {
+        greeks,
+        yield_curves: curves,
+        ..Default::default()
+    };
+
+    let mut restored = Cache::new(None, Some(Box::new(database)));
+
+    if with_memory {
+        let stale = persisted_greeks("STALE.OPRA", 4.0);
+        restored.greeks.insert(stale.instrument_id, stale);
+        restored.yield_curves.insert(
+            "STALE".into(),
+            YieldCurve::new("STALE".into(), vec![1.0], vec![0.09], 91.into(), 92.into()),
+        );
+    }
+
+    futures::executor::block_on(restored.cache_all()).unwrap();
+
+    assert_eq!(restored.greeks.len(), 2);
+    assert_eq!(restored.yield_curves.len(), 2);
+
+    for value in expected_greeks {
+        assert_eq!(restored.greeks(&value.instrument_id), Some(value));
+    }
+
+    for value in expected_curves {
+        assert_eq!(restored.yield_curves.get(&value.curve_name), Some(&value));
+    }
+
+    assert_eq!(restored.yield_curve("USD").unwrap()(0.5), 0.04);
+    assert_eq!(restored.yield_curve("EUR").unwrap()(0.5), 0.025);
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_greeks_and_yield_curve_write_failure_preserves_memory(#[case] replace: bool) {
+    let database = SnapshotBlobTestDatabase {
+        fail_market_data: true,
+        ..Default::default()
+    };
+
+    let greeks = Arc::clone(&database.greeks);
+    let curves = Arc::clone(&database.yield_curves);
+
+    let config = CacheConfig {
+        save_market_data: true,
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(Some(config), Some(Box::new(database)));
+    let first = persisted_greeks("SPY240315C00500000.OPRA", 1.0);
+    let curve = YieldCurve::new("USD".into(), vec![1.0], vec![0.04], 11.into(), 12.into());
+
+    if replace {
+        cache.greeks.insert(first.instrument_id, first);
+        cache.yield_curves.insert(curve.curve_name.clone(), curve);
+    }
+
+    let expected_greeks = cache.greeks.clone();
+    let expected_curves = cache.yield_curves.clone();
+
+    let greek_error = cache
+        .add_greeks(persisted_greeks("SPY240315C00500000.OPRA", 2.0))
+        .unwrap_err();
+    let curve_error = cache
+        .add_yield_curve(YieldCurve::new(
+            "USD".into(),
+            vec![2.0],
+            vec![0.06],
+            21.into(),
+            22.into(),
+        ))
+        .unwrap_err();
+
+    assert_eq!(greek_error.to_string(), "add greeks failed");
+    assert_eq!(curve_error.to_string(), "add yield curve failed");
+    assert_eq!(cache.greeks, expected_greeks);
+    assert_eq!(cache.yield_curves, expected_curves);
+    assert!(greeks.lock().is_empty());
+    assert!(curves.lock().is_empty());
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+fn test_greeks_and_yield_curves_remain_memory_only(#[case] with_database: bool) {
+    let database = SnapshotBlobTestDatabase {
+        fail_market_data: true,
+        ..Default::default()
+    };
+
+    let database = with_database.then(|| Box::new(database) as Box<dyn CacheDatabaseAdapter>);
+    let mut cache = Cache::new(None, database);
+    let greeks = persisted_greeks("SPY240315C00500000.OPRA", 3.0);
+    let curve = YieldCurve::new("GBP".into(), vec![1.0], vec![0.035], 31.into(), 32.into());
+
+    cache.add_greeks(greeks.clone()).unwrap();
+    cache.add_yield_curve(curve.clone()).unwrap();
+
+    assert_eq!(cache.greeks(&greeks.instrument_id), Some(greeks));
+    assert_eq!(cache.yield_curves.get("GBP"), Some(&curve));
+}
+
+#[rstest]
+fn test_cache_all_rejects_invalid_persisted_yield_curve() {
+    let curve = YieldCurve::new("USD".into(), vec![], vec![], 41.into(), 42.into());
+
+    let database = SnapshotBlobTestDatabase {
+        yield_curves: Arc::new(Mutex::new(AHashMap::from([("USD".into(), curve)]))),
+        ..Default::default()
+    };
+
+    let mut cache = Cache::new(None, Some(Box::new(database)));
+    let error = futures::executor::block_on(cache.cache_all()).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("one rate or at least three points")
+    );
+    assert!(cache.yield_curves.is_empty());
+}
+
+fn persisted_greeks(instrument: &str, scale: f64) -> GreeksData {
+    GreeksData::new(
+        InstrumentId::from(instrument),
+        scale == 1.0,
+        500.0 * scale,
+        20270315,
+        40,
+        0.125 * scale,
+        100.0,
+        2.0 * scale,
+        510.0 * scale,
+        0.035 * scale,
+        0.015 * scale,
+        0.25 * scale,
+        12.5 * scale,
+        18.75 * scale,
+        OptionGreekValues {
+            delta: 0.625 * scale,
+            gamma: 0.0125 * scale,
+            vega: 2.5 * scale,
+            theta: -0.125 * scale,
+            rho: 0.375 * scale,
+        },
+        0.75 / scale,
+        1_800_000_000_123_456_789_u64.into(),
+        1_800_000_000_987_654_321_u64.into(),
+    )
 }
 
 #[rstest]
@@ -5685,9 +5883,10 @@ fn test_price_mid_matches_decimal(
     let ceiling = FIXED_PRECISION;
 
     for precision in [FIXED_PRECISION - 1, FIXED_PRECISION, ceiling] {
-        let bid = Price::from_raw(bid_raw, precision);
-        let ask = Price::from_raw(ask_raw, precision);
-
+        let mut bid = Price::from_raw(bid_raw, precision.max(FIXED_PRECISION));
+        let mut ask = Price::from_raw(ask_raw, precision.max(FIXED_PRECISION));
+        bid.precision = precision;
+        ask.precision = precision;
         let expected_precision = if precision < ceiling && precision != MAX_FLOAT_PRECISION {
             precision + 1
         } else {
@@ -5714,10 +5913,15 @@ fn assert_mid_raw(
     precision: u8,
     expected: Option<(PriceRaw, u8)>,
 ) {
+    let mut bid = Price::from_raw(bid_raw, precision.max(FIXED_PRECISION));
+    let mut ask = Price::from_raw(ask_raw, precision.max(FIXED_PRECISION));
+    bid.precision = precision;
+    ask.precision = precision;
+
     let quote = QuoteTick::new(
         instrument_id,
-        Price::from_raw(bid_raw, precision),
-        Price::from_raw(ask_raw, precision),
+        bid,
+        ask,
         Quantity::from(1),
         Quantity::from(1),
         UnixNanos::from(5),
@@ -6281,6 +6485,39 @@ fn test_add_quotes_enforces_tick_capacity() {
 }
 
 #[rstest]
+fn test_add_quotes_indexes_each_instrument() {
+    let mut cache = cache_with_data_capacity(2, 10);
+    let a = InstrumentId::from("AUDUSD.SIM");
+    let b = InstrumentId::from("EURUSD.SIM");
+
+    let quotes = [
+        QuoteTick {
+            instrument_id: a,
+            ..quote_tick_with_ts(1)
+        },
+        QuoteTick {
+            instrument_id: b,
+            ..quote_tick_with_ts(2)
+        },
+        QuoteTick {
+            instrument_id: a,
+            ..quote_tick_with_ts(3)
+        },
+        QuoteTick {
+            instrument_id: a,
+            ..quote_tick_with_ts(4)
+        },
+    ];
+
+    cache.add_quotes(&quotes).unwrap();
+
+    assert_eq!(cache.quotes(&a), Some(vec![quotes[3], quotes[2]]));
+    assert_eq!(cache.quotes(&b), Some(vec![quotes[1]]));
+    assert_eq!(cache.quote(&a), Some(&quotes[3]));
+    assert_eq!(cache.quote(&b), Some(&quotes[1]));
+}
+
+#[rstest]
 fn test_add_trades_enforces_tick_capacity() {
     let mut cache = cache_with_data_capacity(3, 10);
     let instrument_id = TradeTick::default().instrument_id;
@@ -6299,6 +6536,39 @@ fn test_add_trades_enforces_tick_capacity() {
 }
 
 #[rstest]
+fn test_add_trades_indexes_each_instrument() {
+    let mut cache = cache_with_data_capacity(2, 10);
+    let a = InstrumentId::from("AUDUSD.SIM");
+    let b = InstrumentId::from("EURUSD.SIM");
+
+    let trades = [
+        TradeTick {
+            instrument_id: a,
+            ..trade_tick_with_ts(1)
+        },
+        TradeTick {
+            instrument_id: b,
+            ..trade_tick_with_ts(2)
+        },
+        TradeTick {
+            instrument_id: a,
+            ..trade_tick_with_ts(3)
+        },
+        TradeTick {
+            instrument_id: a,
+            ..trade_tick_with_ts(4)
+        },
+    ];
+
+    cache.add_trades(&trades).unwrap();
+
+    assert_eq!(cache.trades(&a), Some(vec![trades[3], trades[2]]));
+    assert_eq!(cache.trades(&b), Some(vec![trades[1]]));
+    assert_eq!(cache.trade(&a), Some(&trades[3]));
+    assert_eq!(cache.trade(&b), Some(&trades[1]));
+}
+
+#[rstest]
 fn test_add_bars_enforces_bar_capacity() {
     let mut cache = cache_with_data_capacity(10, 3);
     let bar_type = Bar::default().bar_type;
@@ -6314,6 +6584,37 @@ fn test_add_bars_enforces_bar_capacity() {
 
     assert_eq!(cache.bar_count(&bar_type), 3);
     assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_bars_indexes_each_bar_type() {
+    let mut cache = cache_with_data_capacity(10, 2);
+    let a = BarType::from("AUDUSD.SIM-1-MINUTE-LAST-EXTERNAL");
+    let b = BarType::from("EURUSD.SIM-1-MINUTE-LAST-EXTERNAL");
+
+    let bars = [
+        Bar {
+            bar_type: a,
+            ..bar_with_ts(1)
+        },
+        Bar {
+            bar_type: b,
+            ..bar_with_ts(5)
+        },
+        Bar {
+            bar_type: a,
+            ..bar_with_ts(3)
+        },
+        Bar {
+            bar_type: a,
+            ..bar_with_ts(4)
+        },
+    ];
+
+    cache.add_bars(&bars).unwrap();
+
+    assert_eq!(cache.bars(&a), Some(vec![bars[3], bars[2]]));
+    assert_eq!(cache.bars(&b), Some(vec![bars[1]]));
 }
 
 #[rstest]
@@ -6382,6 +6683,40 @@ fn test_add_funding_rates_enforces_tick_capacity() {
     assert_eq!(cache.funding_rate_count(&instrument_id), 3);
     assert!(cache.has_funding_rates(&instrument_id));
     assert_eq!(ts_events, vec![4, 3, 2]);
+}
+
+#[rstest]
+fn test_add_funding_rates_indexes_each_instrument() {
+    let mut cache = cache_with_data_capacity(2, 10);
+    let a = InstrumentId::from("AUDUSD.SIM");
+    let b = InstrumentId::from("EURUSD.SIM");
+    let rates = [
+        funding_rate_with_ts(a, 1),
+        funding_rate_with_ts(b, 2),
+        funding_rate_with_ts(a, 3),
+        funding_rate_with_ts(a, 4),
+    ];
+
+    cache.add_funding_rates(&rates).unwrap();
+
+    let cached_a = cache.funding_rates(&a).unwrap();
+    let cached_b = cache.funding_rates(&b).unwrap();
+    assert_eq!(cached_a, vec![rates[3], rates[2]]);
+    assert_eq!(cached_b, vec![rates[1]]);
+    assert_eq!(
+        cached_a
+            .iter()
+            .map(|rate| (rate.ts_event.as_u64(), rate.ts_init.as_u64()))
+            .collect::<Vec<_>>(),
+        vec![(4, 4), (3, 3)]
+    );
+    assert_eq!(
+        cached_b
+            .iter()
+            .map(|rate| (rate.ts_event.as_u64(), rate.ts_init.as_u64()))
+            .collect::<Vec<_>>(),
+        vec![(2, 2)]
+    );
 }
 
 #[rstest]
@@ -10308,6 +10643,48 @@ fn test_update_own_order_book_reinserts_missing_levels(mut cache: Cache) {
 }
 
 #[rstest]
+#[case::indexed(Cache::add_position, false)]
+#[case::orderless(Cache::add_position_without_order, false)]
+#[case::replacement(
+    |cache: &mut Cache, position: &Position, oms_type: OmsType| {
+        cache.replace_position(position, oms_type, true, false)
+    },
+    true
+)]
+fn test_closed_position_insertion_indexes_and_purges(
+    #[case] insert: fn(&mut Cache, &Position, OmsType) -> anyhow::Result<()>,
+    #[case] replace_open: bool,
+) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let mut source = Cache::default();
+    let position_id = closed_position_in_cache(&mut source, &instrument, "P-CLOSED-INSERT");
+    let closed = source.position(&position_id).unwrap().clone();
+    let mut cache = Cache::default();
+
+    if replace_open {
+        let opened = Position::new(&instrument, closed.events[0].clone());
+        cache.add_position(&opened, OmsType::Netting).unwrap();
+    }
+
+    insert(&mut cache, &closed, OmsType::Netting).unwrap();
+
+    let state = (
+        cache.position(&position_id).unwrap().is_closed(),
+        cache.is_position_open(&position_id),
+        cache.is_position_closed(&position_id),
+    );
+    let open_ids = cache.position_open_ids(None, None, None, None);
+    let closed_ids = cache.position_closed_ids(None, None, None, None);
+
+    cache.purge_closed_positions(UnixNanos::from(3_000_000_000), 0);
+
+    assert_eq!(state, (true, false, true));
+    assert!(open_ids.is_empty());
+    assert_eq!(closed_ids, AHashSet::from([position_id]));
+    assert!(!cache.position_exists(&position_id));
+}
+
+#[rstest]
 fn test_position_flip_netting_mode_cleans_up_closed_index() {
     // Regression test for NETTING position flip index corruption (issue #3081)
     // Verifies that when a position ID is reused in NETTING mode,
@@ -10585,6 +10962,8 @@ struct SnapshotBlobTestDatabase {
     general: AHashMap<String, Bytes>,
     currencies: AHashMap<Ustr, Currency>,
     instrument_closes: Arc<Mutex<AHashMap<InstrumentId, InstrumentClose>>>,
+    greeks: Arc<Mutex<AHashMap<InstrumentId, GreeksData>>>,
+    yield_curves: Arc<Mutex<AHashMap<String, YieldCurve>>>,
     accounts: AHashMap<AccountId, AccountAny>,
     orders: AHashMap<ClientOrderId, OrderAny>,
     positions: AHashMap<PositionId, Position>,
@@ -10598,6 +10977,7 @@ struct SnapshotBlobTestDatabase {
     fail_add_currency: bool,
     fail_flush: bool,
     fail_add_instrument_close: bool,
+    fail_market_data: bool,
     fail_add_order: bool,
     fail_add_position: bool,
     fail_index_order_clients: bool,
@@ -10737,6 +11117,8 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
         Ok(CacheMap {
             currencies: self.currencies.clone(),
             instrument_closes: self.instrument_closes.lock().clone(),
+            greeks: self.greeks.lock().clone(),
+            yield_curves: self.yield_curves.lock().clone(),
             accounts: self.accounts.clone(),
             orders: self.orders.clone(),
             positions: self.positions.clone(),
@@ -10962,6 +11344,28 @@ impl CacheDatabaseAdapter for SnapshotBlobTestDatabase {
     }
 
     fn add_bar(&self, _bar: &Bar) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn add_greeks(&self, greeks: &GreeksData) -> anyhow::Result<()> {
+        if self.fail_market_data {
+            anyhow::bail!("add greeks failed");
+        }
+
+        self.greeks
+            .lock()
+            .insert(greeks.instrument_id, greeks.clone());
+        Ok(())
+    }
+
+    fn add_yield_curve(&self, curve: &YieldCurve) -> anyhow::Result<()> {
+        if self.fail_market_data {
+            anyhow::bail!("add yield curve failed");
+        }
+
+        self.yield_curves
+            .lock()
+            .insert(curve.curve_name.clone(), curve.clone());
         Ok(())
     }
 
@@ -13846,10 +14250,6 @@ fn test_position_filters_with_state_and_side(mut cache: Cache) {
     cache.add_position(&pos_a_long, OmsType::Netting).unwrap();
     cache.add_position(&pos_b_short, OmsType::Netting).unwrap();
     cache.add_position(&pos_a_closed, OmsType::Netting).unwrap();
-    // `add_position` always inserts into `positions_open`; the closed flag is honored
-    // only when state is reconciled via `update_position`.
-    cache.update_position(&pos_a_closed).unwrap();
-
     // Open ids: filter by venue
     assert_eq!(
         cache.position_open_ids(Some(&venue_a), None, None, None),
@@ -14525,14 +14925,24 @@ fn test_order_book_source_updates_selection_and_isolates_instruments(mut cache: 
     let first = InstrumentId::from("ETHUSDT.BINANCE");
     let second = InstrumentId::from("BTCUSDT.BINANCE");
     assert_eq!(cache.order_book_source(&first), None);
-    cache.set_order_book_source(first, OrderBookSource::Deltas, false);
-    cache.set_order_book_source(first, OrderBookSource::Deltas, false);
-    cache.set_order_book_source(second, OrderBookSource::Depth, false);
+    cache.set_order_book_source(
+        first,
+        OrderBookSource::Deltas,
+        false,
+        Some(BookType::L2_MBP),
+    );
+    cache.set_order_book_source(
+        first,
+        OrderBookSource::Deltas,
+        false,
+        Some(BookType::L2_MBP),
+    );
+    cache.set_order_book_source(second, OrderBookSource::Depth, false, None);
     assert_eq!(
         cache.order_book_source(&first),
         Some(OrderBookSource::Deltas)
     );
-    cache.set_order_book_source(first, OrderBookSource::Depth, true);
+    cache.set_order_book_source(first, OrderBookSource::Depth, true, Some(BookType::L2_MBP));
     assert!(cache.has_order_book_source_subscription(&first, OrderBookSource::Deltas));
     assert!(cache.has_order_book_source_subscription(&first, OrderBookSource::Depth));
     assert_eq!(
@@ -14541,6 +14951,7 @@ fn test_order_book_source_updates_selection_and_isolates_instruments(mut cache: 
     );
     cache.clear_order_book_source(&first);
     assert_eq!(cache.order_book_source(&first), None);
+    assert_eq!(cache.order_book_deltas_book_type(&first), None);
     assert!(!cache.has_order_book_source_subscription(&first, OrderBookSource::Deltas));
     assert!(!cache.has_order_book_source_subscription(&first, OrderBookSource::Depth));
     assert_eq!(
@@ -14557,11 +14968,93 @@ fn test_reset_preserves_order_book_source_registrations(
     #[case] source: OrderBookSource,
 ) {
     let instrument_id = InstrumentId::from("ETHUSDT.BINANCE");
-    cache.set_order_book_source(instrument_id, source, true);
+    cache.set_order_book_source(instrument_id, source, true, Some(BookType::L2_MBP));
     cache.reset();
+    assert_eq!(
+        cache.order_book_deltas_book_type(&instrument_id),
+        Some(BookType::L2_MBP)
+    );
     assert_eq!(cache.order_book_source(&instrument_id), Some(source));
     assert!(cache.has_order_book_source_subscription(&instrument_id, OrderBookSource::Deltas));
     assert!(cache.has_order_book_source_subscription(&instrument_id, OrderBookSource::Depth));
     cache.clear_order_book_source(&instrument_id);
     assert_eq!(cache.order_book_source(&instrument_id), None);
+}
+
+#[rstest]
+#[case::deltas(OrderBookSource::Deltas)]
+#[case::depth(OrderBookSource::Depth)]
+fn test_book_quote_provenance_follows_latest_write(
+    mut cache: Cache,
+    #[case] source: OrderBookSource,
+) {
+    let quote = quote_tick_with_ts(1);
+    let other = QuoteTick {
+        instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+        ..quote
+    };
+    cache.add_book_quote(quote, source).unwrap();
+    cache.add_quote(other).unwrap();
+    assert_eq!(cache.quote_book_source(&quote.instrument_id), Some(source));
+    assert_eq!(cache.quote_book_source(&other.instrument_id), None);
+    cache.add_quote(quote).unwrap();
+    assert_eq!(cache.quote_book_source(&quote.instrument_id), None);
+    cache.add_book_quote(quote, source).unwrap();
+    cache.add_quotes(&[quote]).unwrap();
+    assert_eq!(cache.quote_book_source(&quote.instrument_id), None);
+}
+
+#[rstest]
+fn test_add_quotes_clears_book_sources_for_each_written_instrument(
+    mut cache: Cache,
+    #[values(false, true)] reverse: bool,
+) {
+    let a = quote_tick_with_ts(1);
+    let b = QuoteTick {
+        instrument_id: InstrumentId::from("BTCUSDT.BINANCE"),
+        ..a
+    };
+    let untouched = QuoteTick {
+        instrument_id: InstrumentId::from("ETHUSDT.BINANCE"),
+        ..a
+    };
+    cache.add_book_quote(a, OrderBookSource::Deltas).unwrap();
+    cache.add_book_quote(b, OrderBookSource::Depth).unwrap();
+    cache
+        .add_book_quote(untouched, OrderBookSource::Deltas)
+        .unwrap();
+
+    // Identical independent quotes still replace the provenance of both instruments
+    let quotes = if reverse { [b, a, b] } else { [a, b, a] };
+    cache.add_quotes(&quotes).unwrap();
+
+    assert_eq!(cache.quote(&a.instrument_id), Some(&a));
+    assert_eq!(cache.quote(&b.instrument_id), Some(&b));
+    assert_eq!(cache.quote_book_source(&a.instrument_id), None);
+    assert_eq!(cache.quote_book_source(&b.instrument_id), None);
+    assert_eq!(cache.quote(&untouched.instrument_id), Some(&untouched));
+    assert_eq!(
+        cache.quote_book_source(&untouched.instrument_id),
+        Some(OrderBookSource::Deltas)
+    );
+}
+
+#[rstest]
+#[case::reset(false)]
+#[case::purge(true)]
+fn test_book_quote_provenance_is_removed_with_quotes(mut cache: Cache, #[case] purge: bool) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+    let quote = QuoteTick {
+        instrument_id: instrument.id(),
+        ..quote_tick_with_ts(1)
+    };
+    cache.add_instrument(instrument).unwrap();
+    cache.add_book_quote(quote, OrderBookSource::Depth).unwrap();
+    if purge {
+        cache.purge_instrument(quote.instrument_id);
+    } else {
+        cache.reset();
+    }
+    assert!(cache.quote(&quote.instrument_id).is_none());
+    assert_eq!(cache.quote_book_source(&quote.instrument_id), None);
 }

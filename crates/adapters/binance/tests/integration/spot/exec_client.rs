@@ -56,6 +56,7 @@ use nautilus_binance::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    clock::VirtualClock,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, ExecutionReport, SystemEvent,
@@ -68,8 +69,11 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::UnixNanos;
-use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_core::{DurationNanos, UnixNanos};
+use nautilus_live::{
+    ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    manager::{ExecutionManager, ExecutionManagerConfig},
+};
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
     enums::{
@@ -81,10 +85,11 @@ use nautilus_model::{
         order::spec::{OrderFilledSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TradeId,
+        TraderId, VenueOrderId,
     },
     instruments::{
+        Instrument,
         any::InstrumentAny,
         stubs::{crypto_perpetual_ethusdt, currency_pair_btcusdt},
     },
@@ -92,6 +97,7 @@ use nautilus_model::{
         LimitOrder, Order, OrderAny, OrderList, OrderTestBuilder, StopLimitOrder,
         stubs::TestOrderEventStubs,
     },
+    position::Position,
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -1768,6 +1774,80 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>, account_id: AccountId) 
 
     let account = AccountAny::Cash(CashAccount::new(account_state, true, false));
     cache.borrow_mut().add_account(account).unwrap();
+}
+
+#[rstest]
+#[case::spot(false)]
+#[case::binance_us(true)]
+#[tokio::test]
+async fn test_position_check_preserves_spot_position_without_reports(#[case] us: bool) {
+    let config = BinanceExecutionClientConfig {
+        account_id: AccountId::from("BINANCE-001"),
+        us,
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
+        base_url_http: Some("http://127.0.0.1:1".to_string()),
+        base_url_ws: Some("ws://127.0.0.1:1".to_string()),
+        base_url_ws_trading: Some("ws://127.0.0.1:1".to_string()),
+        ..Default::default()
+    };
+    let (client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, client.account_id());
+    let instrument = InstrumentAny::CurrencyPair(currency_pair_btcusdt());
+    let position_id = PositionId::from("P-SPOT-RETAINED");
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000000"))
+        .build();
+    let fill: OrderFilled = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-SPOT-OPEN")),
+        Some(position_id),
+        Some(Price::from("50000.00")),
+        None,
+        None,
+        None,
+        None,
+        Some(client.account_id()),
+    )
+    .into();
+    let position = Position::new(&instrument, fill);
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let config = ExecutionManagerConfig {
+        position_check_threshold_ns: DurationNanos::ZERO,
+        ..Default::default()
+    };
+    let mut manager = ExecutionManager::new(clock, cache.clone(), config).unwrap();
+
+    // Empty spot reports cannot establish that a retained position is flat
+    for _ in 0..2 {
+        let events = manager.check_positions_consistency(&[&client]).await;
+        assert!(
+            events.is_empty(),
+            "Unexpected reconciliation events: {events:?}"
+        );
+    }
+
+    let cache = cache.borrow();
+    assert!(cache.orders_refs(None, None, None, None, None).is_empty());
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 1);
+    let cached_position = cache.position(&position_id).unwrap();
+    assert_eq!(cached_position.quantity, position.quantity);
+    assert_eq!(
+        cached_position.signed_decimal_qty(),
+        position.signed_decimal_qty()
+    );
+    assert_eq!(cached_position.side, position.side);
+    assert_eq!(cached_position.avg_px_open, position.avg_px_open);
+    assert_eq!(cached_position.event_count(), position.event_count());
 }
 
 #[rstest]

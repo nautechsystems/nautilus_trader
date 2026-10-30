@@ -6071,7 +6071,7 @@ fn test_fill_report_collector_marks_instrument_missing_when_not_cached() {
     assert!(!evidence.missing_all);
     assert_eq!(
         evidence.missing_instruments,
-        AHashSet::from([InstrumentId::from("MESZ6.CME")])
+        AHashSet::from([InstrumentId::from("MESZ26.CME")])
     );
 }
 

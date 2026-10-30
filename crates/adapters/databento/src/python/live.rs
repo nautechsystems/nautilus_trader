@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 use nautilus_core::python::{to_pyruntime_err, to_pyvalue_err};
 use nautilus_model::{
-    identifiers::InstrumentId,
+    identifiers::{InstrumentId, futures::FuturesYearDigits},
     python::{data::data_to_pyobject, instruments::instrument_any_to_pyobject},
 };
 use pyo3::{IntoPyObjectExt, prelude::*};
@@ -112,7 +112,7 @@ impl DatabentoLiveClient {
     ///
     /// Returns an error if reading or parsing the publishers file fails.
     #[new]
-    #[pyo3(signature = (key, dataset, publishers_filepath, use_exchange_as_venue, bars_timestamp_on_close=None, reconnect_timeout_mins=None))]
+    #[pyo3(signature = (key, dataset, publishers_filepath, use_exchange_as_venue, bars_timestamp_on_close=None, reconnect_timeout_mins=None, futures_year_digits=None))]
     pub fn py_new(
         key: String,
         dataset: String,
@@ -120,7 +120,14 @@ impl DatabentoLiveClient {
         use_exchange_as_venue: bool,
         bars_timestamp_on_close: Option<bool>,
         reconnect_timeout_mins: Option<i64>,
+        futures_year_digits: Option<u8>,
     ) -> PyResult<Self> {
+        let futures_year_digits = futures_year_digits
+            .map(FuturesYearDigits::try_from)
+            .transpose()
+            .map_err(to_pyvalue_err)?
+            .unwrap_or_default();
+
         Self::new(
             key,
             dataset,
@@ -129,6 +136,7 @@ impl DatabentoLiveClient {
             bars_timestamp_on_close,
             reconnect_timeout_mins,
         )
+        .map(|client| client.with_futures_year_digits(futures_year_digits))
         .map_err(to_pyvalue_err)
     }
 

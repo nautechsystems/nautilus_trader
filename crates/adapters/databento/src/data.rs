@@ -58,7 +58,7 @@ use nautilus_live::task::TaskGroup;
 use nautilus_model::{
     data::{BarSpecification, BarType, CustomData, Data, DataType, custom::CustomDataTrait},
     enums::{BarAggregation, PriceType},
-    identifiers::{ClientId, InstrumentId, Symbol, Venue},
+    identifiers::{ClientId, InstrumentId, Symbol, Venue, futures::FuturesYearDigits},
     instruments::{Instrument, InstrumentAny},
 };
 use parking_lot::Mutex;
@@ -69,7 +69,10 @@ use crate::{
     historical::{DatabentoHistoricalClient, RangeQueryParams},
     live::{DatabentoFeedHandler, DatabentoMessage, HandlerCommand},
     loader::DatabentoDataLoader,
-    symbology::{check_consistent_symbology, infer_symbology_type, instrument_id_to_symbol_string},
+    symbology::{
+        check_consistent_symbology, infer_symbology_type, instrument_id_to_symbol_string,
+        raw_symbol,
+    },
     types::{DatabentoImbalance, DatabentoStatistics, Dataset, PublisherId},
 };
 
@@ -121,6 +124,8 @@ pub struct DatabentoDataClientConfig {
     pub bars_timestamp_on_close: bool,
     /// Reconnection timeout in minutes (None for infinite retries).
     pub reconnect_timeout_mins: Option<u64>,
+    /// Year digits in futures IDs: 2 by default, or 1 for existing catalogs and caches.
+    pub futures_year_digits: FuturesYearDigits,
 }
 
 #[cfg(feature = "python")]
@@ -143,6 +148,7 @@ impl DatabentoDataClientConfig {
         bars_timestamp_on_close: bool,
     ) -> Self {
         Self {
+            futures_year_digits: FuturesYearDigits::default(),
             credential: Credential::new(api_key),
             publishers_filepath,
             venue_dataset_map: IndexMap::new(),
@@ -217,10 +223,12 @@ impl DatabentoDataClient {
                 clock,
                 config.use_exchange_as_venue,
             )?,
-        };
+        }
+        .with_futures_year_digits(config.futures_year_digits);
 
         // Create data loader for venue-to-dataset mapping
-        let mut loader = DatabentoDataLoader::new(Some(config.publishers_filepath.clone()))?;
+        let mut loader = DatabentoDataLoader::new(Some(config.publishers_filepath.clone()))?
+            .with_futures_year_digits(config.futures_year_digits);
         for (venue, dataset) in &config.venue_dataset_map {
             loader.set_dataset_for_venue(
                 Dataset::from(dataset.as_str()),
@@ -301,9 +309,24 @@ impl DatabentoDataClient {
         &self,
         dataset: &str,
         price_precisions: impl IntoIterator<Item = (Symbol, u8)>,
-        subscription: Subscription,
+        mut subscription: Subscription,
         start_after_subscribe: bool,
     ) -> anyhow::Result<()> {
+        if subscription.stype_in == dbn::SType::RawSymbol
+            && let databento::Symbols::Symbols(symbols) = &mut subscription.symbols
+        {
+            for symbol in symbols {
+                let raw = raw_symbol(symbol, dataset, self.config.futures_year_digits);
+
+                *symbol = raw;
+            }
+        }
+
+        let price_precisions = price_precisions.into_iter().map(|(symbol, precision)| {
+            let raw = raw_symbol(symbol.as_str(), dataset, self.config.futures_year_digits);
+            (Symbol::from(raw.as_str()), precision)
+        });
+
         let tx = {
             let channels = self.cmd_channels.lock();
             channels
@@ -396,7 +419,8 @@ impl DatabentoDataClient {
             self.config.use_exchange_as_venue,
             self.config.bars_timestamp_on_close,
             self.config.reconnect_timeout_mins,
-        );
+        )
+        .with_futures_year_digits(self.config.futures_year_digits);
 
         if let Some(addr) = &self.config.live_gateway_addr {
             feed_handler = feed_handler.with_gateway_addr(addr.clone());
@@ -2420,7 +2444,7 @@ mod tests {
             &base_url,
         )
         .unwrap();
-        let instrument_id = InstrumentId::from("ESU6.GLBX");
+        let instrument_id = InstrumentId::from("ESU26.GLBX");
         let end = UnixNanos::from(1_782_345_600_000_000_123);
 
         tokio::time::timeout(

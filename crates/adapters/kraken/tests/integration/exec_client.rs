@@ -5055,10 +5055,7 @@ async fn test_futures_unknown_submit_status_does_not_emit_rejected() {
 #[rstest]
 #[tokio::test]
 async fn test_futures_ioc_would_not_execute_submit_emits_rejected() {
-    // Maker Protection outcome: `iocWouldNotExecute` is the venue's terminal
-    // answer for an order that cannot trade (including a converted hold that
-    // finds no liquidity at release). It must reject the order, not leave it
-    // ambiguous like an unknown status.
+    // iocWouldNotExecute is a definitive rejection, unlike an unknown status
     let (client, mut rx, cache, state) =
         connected_client_with_command_responses(CommandResponses {
             submit: OrderCommandResponse::IocWouldNotExecute,
@@ -8614,6 +8611,120 @@ async fn test_ambiguous_single_cancel_failure_does_not_emit_cancel_rejected() {
         )
     })
     .await;
+}
+
+#[rstest]
+#[case(SingleCancelResponse::Success)]
+#[case(SingleCancelResponse::StructuredReject)]
+#[tokio::test]
+async fn test_futures_held_cancel_waits_for_its_stream_fill(
+    #[case] cancel_response: SingleCancelResponse,
+) {
+    let (client, mut rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses {
+            single_cancel: cancel_response,
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("held-cancel-stream");
+    let venue_order_id = VenueOrderId::from("F-HELD-CANCEL");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("2"))
+        .price(Price::from("50000"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    client.submit_order(submit_order_command(&order)).unwrap();
+    recv_until(&mut rx, |event| {
+        matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(_)))
+    })
+    .await;
+
+    wait_for_count(&state.submit_request_count, 1).await;
+    client
+        .cancel_order(cancel_order_command(client_order_id, venue_order_id))
+        .unwrap();
+    wait_for_count(&state.cancel_request_count, 1).await;
+
+    if matches!(cancel_response, SingleCancelResponse::StructuredReject) {
+        let event = recv_until(&mut rx, |event| {
+            matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+            )
+        })
+        .await;
+
+        let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event else {
+            unreachable!();
+        };
+
+        assert_eq!(rejected.client_order_id, client_order_id);
+        assert_eq!(rejected.venue_order_id, Some(venue_order_id));
+        assert!(rejected.reason.contains("notFound"));
+    }
+
+    let mut removal: Value =
+        serde_json::from_str(&load_test_data("ws_futures_open_orders_delta.json")).unwrap();
+    removal["order"]["qty"] = json!(2);
+    removal["order"]["filled"] = json!(1);
+    removal["order"]["order_id"] = json!(venue_order_id.as_str());
+    removal["order"]["cli_ord_id"] = json!(client_order_id.as_str());
+    removal["is_cancel"] = json!(true);
+    removal["reason"] = json!("cancelled_by_user");
+    state.ws_message_tx.send(removal.to_string()).unwrap();
+
+    let mut fills: Value =
+        serde_json::from_str(&load_test_data("ws_futures_fills_delta.json")).unwrap();
+    let fill = &mut fills["fills"][0];
+    fill["instrument"] = json!("PI_XBTUSD");
+    fill["qty"] = json!(1);
+    fill["price"] = json!(49999);
+    fill["fee_paid"] = json!("0.05");
+    fill["order_id"] = json!(venue_order_id.as_str());
+    fill["cli_ord_id"] = json!(client_order_id.as_str());
+    state.ws_message_tx.send(fills.to_string()).unwrap();
+
+    let mut events = Vec::new();
+
+    for _ in 0..3 {
+        let event = recv_until(&mut rx, |event| {
+            matches!(event, ExecutionEvent::Order(event) if event.client_order_id() == client_order_id)
+        })
+        .await;
+
+        events.push(event);
+    }
+
+    let ExecutionEvent::Order(OrderEventAny::Accepted(accepted)) = &events[0] else {
+        panic!("expected Accepted first, was {:?}", events[0]);
+    };
+
+    let ExecutionEvent::Order(OrderEventAny::Filled(filled)) = &events[1] else {
+        panic!("expected Filled second, was {:?}", events[1]);
+    };
+
+    let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = &events[2] else {
+        panic!("expected Canceled last, was {:?}", events[2]);
+    };
+
+    assert_eq!(accepted.venue_order_id, venue_order_id);
+    assert_eq!(filled.venue_order_id, venue_order_id);
+    assert_eq!(filled.last_qty, Quantity::from("1"));
+    assert_eq!(filled.last_px, Price::from("49999"));
+    assert_eq!(filled.commission, Some(Money::from("0.05 USD")));
+    assert_eq!(canceled.venue_order_id, Some(venue_order_id));
+    assert_eq!(canceled.reason.as_deref(), Some("cancelled_by_user"));
+    assert_eq!(state.submit_request_count.load(Ordering::Relaxed), 1);
+    assert_eq!(state.cancel_request_count.load(Ordering::Relaxed), 1);
 }
 
 #[rstest]

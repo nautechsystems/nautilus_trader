@@ -25,25 +25,9 @@ use nautilus_model::{
 };
 
 use crate::{
-    common::{consts::CANCEL_ALREADY_DONE, enums::PolymarketOrderType},
+    common::enums::PolymarketOrderType,
     http::{error::Error, models::PolymarketOrder},
 };
-
-/// Classifies cancel rejection reasons to eliminate duplicate if/else blocks.
-pub(crate) enum CancelOutcome {
-    AlreadyDone,
-    Rejected(String),
-}
-
-impl CancelOutcome {
-    pub(crate) fn classify(reason: &str) -> Self {
-        if reason.contains(CANCEL_ALREADY_DONE) {
-            Self::AlreadyDone
-        } else {
-            Self::Rejected(reason.to_string())
-        }
-    }
-}
 
 /// Classifies a state-changing order command HTTP failure at the execution boundary.
 pub(crate) fn classify_http_command_failure(error: &Error) -> CommandFailure {
