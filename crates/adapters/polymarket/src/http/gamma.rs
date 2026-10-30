@@ -76,6 +76,8 @@ enum GammaStop {
 ///
 /// Handles HTTP transport for fetching market data from the public Gamma API.
 /// Retries transient failures per request. No authentication is required.
+/// Uses three retries with exponential backoff and a 180-second total budget.
+/// The configured HTTP timeout bounds each attempt.
 #[derive(Debug, Clone)]
 pub struct PolymarketGammaRawHttpClient {
     client: HttpClient,
@@ -116,7 +118,9 @@ impl PolymarketGammaRawHttpClient {
                 .trim_end_matches('/')
                 .to_string(),
             retry_manager: Arc::new(RetryManager::new(RetryConfig {
+                jitter_ms: 1_000,
                 operation_timeout_ms: None,
+                max_elapsed_ms: Some(180_000),
                 ..RetryConfig::default()
             })),
         })
@@ -502,6 +506,8 @@ pub struct PolymarketGammaHttpClient {
 impl PolymarketGammaHttpClient {
     /// Creates a new [`PolymarketGammaHttpClient`].
     ///
+    /// `retry_config` controls indexing-lag retries, independently of HTTP retries.
+    ///
     /// # Errors
     ///
     /// Returns an error if the underlying HTTP client cannot be created.
@@ -524,15 +530,15 @@ impl PolymarketGammaHttpClient {
         mut retry_config: RetryConfig,
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
-        let mut inner =
-            PolymarketGammaRawHttpClient::new_with_proxy(gamma_base_url, timeout_secs, proxy_url)?;
-        inner.retry_manager = Arc::new(RetryManager::new(retry_config.clone()));
-
         // HTTP attempts own their timeouts; indexing retries include HTTP backoff
         retry_config.operation_timeout_ms = None;
 
         Ok(Self {
-            inner: Arc::new(inner),
+            inner: Arc::new(PolymarketGammaRawHttpClient::new_with_proxy(
+                gamma_base_url,
+                timeout_secs,
+                proxy_url,
+            )?),
             clock: get_atomic_clock_realtime(),
             retry_manager: Arc::new(RetryManager::new(retry_config)),
         })
@@ -1106,45 +1112,90 @@ mod tests {
 
     async fn retry_client(
         router: Router,
-        max_retries: u32,
     ) -> (PolymarketGammaHttpClient, tokio::task::JoinHandle<()>) {
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let client = PolymarketGammaHttpClient::new(
+        let retry_config = RetryConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 10,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            ..RetryConfig::default()
+        };
+        let mut client = PolymarketGammaHttpClient::new(
             Some(format!("http://{addr}")),
-            5,
+            1,
             RetryConfig {
-                max_retries,
-                initial_delay_ms: 10,
-                max_delay_ms: 10,
-                jitter_ms: 0,
+                max_retries: 1,
                 operation_timeout_ms: Some(100),
-                ..RetryConfig::default()
+                ..retry_config
             },
         )
         .unwrap();
+        Arc::get_mut(&mut client.inner).unwrap().retry_manager =
+            Arc::new(RetryManager::new(retry_config));
         (client, server)
     }
 
     #[rstest]
-    #[case::server_error(&[503, 200], "[]", None, 1, 2)]
-    #[case::rate_limit(&[429, 200], "[]", None, 1, 2)]
-    #[case::rate_limit_hint(&[429, 200], "[]", Some("1"), 1, 2)]
-    #[case::server_error_hint(&[503, 200], "[]", Some("1"), 1, 2)]
-    #[case::invalid_hint(&[503, 200], "[]", Some("invalid"), 1, 2)]
-    #[case::overflow_hint(&[503, 200], "[]", Some("18446744073709551615"), 1, 2)]
-    #[case::timeout(&[0, 200], "[]", None, 1, 2)]
-    #[case::exhausted(&[503], "[]", None, 1, 2)]
-    #[case::disabled(&[503], "[]", None, 0, 1)]
-    #[case::forbidden(&[403], "[]", None, 1, 1)]
-    #[case::decode(&[200], "invalid", None, 1, 1)]
+    #[tokio::test(start_paused = true)]
+    async fn test_http_policy_is_independent_of_indexing_policy() {
+        let client = PolymarketGammaHttpClient::new(
+            None,
+            90,
+            RetryConfig {
+                max_retries: 0,
+                operation_timeout_ms: Some(30_000),
+                immediate_first: true,
+                max_elapsed_ms: Some(300_000),
+                ..RetryConfig::default()
+            },
+        )
+        .unwrap();
+        let attempts = AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let tags: Vec<GammaTag> = client
+            .inner
+            .send_request("/tags", || {
+                let attempt = attempts.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    if attempt == 0 {
+                        return Err(HttpClientError::TransportError("reset".to_string()));
+                    }
+
+                    tokio::time::sleep(Duration::from_secs(65)).await;
+                    Ok(HttpResponse {
+                        status: 200_u16.try_into().unwrap(),
+                        headers: HashMap::new(),
+                        body: "[]".into(),
+                    })
+                }
+            })
+            .await
+            .unwrap();
+
+        assert!(tags.is_empty());
+        assert_eq!(attempts.load(Ordering::Relaxed), 2);
+        assert!(started.elapsed() >= Duration::from_secs(66));
+    }
+
+    #[rstest]
+    #[case::server_error(&[503, 200], "[]", None, 2)]
+    #[case::rate_limit(&[429, 200], "[]", None, 2)]
+    #[case::rate_limit_hint(&[429, 200], "[]", Some("1"), 2)]
+    #[case::server_error_hint(&[503, 200], "[]", Some("1"), 2)]
+    #[case::invalid_hint(&[503, 200], "[]", Some("invalid"), 2)]
+    #[case::overflow_hint(&[503, 200], "[]", Some("18446744073709551615"), 2)]
+    #[case::timeout(&[0, 200], "[]", None, 2)]
+    #[case::exhausted(&[503], "[]", None, 4)]
+    #[case::forbidden(&[403], "[]", None, 1)]
+    #[case::decode(&[200], "invalid", None, 1)]
     #[tokio::test]
     async fn test_http_retries(
         #[case] statuses: &[u16],
         #[case] body: &'static str,
         #[case] retry_after: Option<&'static str>,
-        #[case] max_retries: u32,
         #[case] expected_requests: usize,
     ) {
         let requests = Arc::new(AtomicUsize::new(0));
@@ -1156,7 +1207,7 @@ mod tests {
             let status = statuses[attempt.min(statuses.len() - 1)];
             async move {
                 if status == 0 {
-                    tokio::time::sleep(Duration::from_millis(400)).await;
+                    tokio::time::sleep(Duration::from_millis(1_400)).await;
                 }
                 let mut response =
                     (StatusCode::from_u16(status.max(200)).unwrap(), body).into_response();
@@ -1169,7 +1220,7 @@ mod tests {
                 response
             }
         }));
-        let (client, server) = retry_client(router, max_retries).await;
+        let (client, server) = retry_client(router).await;
         let started = std::time::Instant::now();
         let result = client.inner.get_gamma_tags().await;
 
@@ -1214,7 +1265,7 @@ mod tests {
             };
             async { response }
         }));
-        let (client, server) = retry_client(router, 1).await;
+        let (client, server) = retry_client(router).await;
         let count = if events {
             client
                 .request_events_by_params(Default::default())
@@ -1264,12 +1315,15 @@ mod tests {
                 .into_response()
             }
         }));
-        let (client, server) = retry_client(router, 1).await;
+        let (client, server) = retry_client(router).await;
         let result = client
             .request_instruments_by_slugs_with_retry(vec!["slug".to_string()])
             .await;
 
-        assert_eq!(requests.load(Ordering::Relaxed), 2);
+        assert_eq!(
+            requests.load(Ordering::Relaxed),
+            if exhausted { 4 } else { 2 }
+        );
 
         if exhausted {
             assert!(result.unwrap_err().to_string().contains("503"));
