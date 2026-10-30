@@ -418,7 +418,7 @@ mod tests {
     async fn data_factory_propagates_configured_proxy() {
         const USERNAME: &str = "proxytest";
         const SECRET: &str = "http-client-proxy-secret";
-        let (proxy_addr, requests) = spawn_rejecting_proxy(3).await;
+        let (proxy_addr, requests) = spawn_rejecting_proxy(13).await;
         let proxy_url = format!("http://{USERNAME}:{SECRET}@{proxy_addr}");
         let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
         replace_data_event_sender(data_tx);
@@ -473,11 +473,12 @@ mod tests {
 
         assert_eq!(
             request_lines,
-            [
-                "CONNECT gamma.fixture:443 HTTP/1.1",
-                "CONNECT clob-public.fixture:443 HTTP/1.1",
-                "CONNECT data.fixture:443 HTTP/1.1",
-            ]
+            std::iter::repeat_n("CONNECT gamma.fixture:443 HTTP/1.1", 11)
+                .chain([
+                    "CONNECT clob-public.fixture:443 HTTP/1.1",
+                    "CONNECT data.fixture:443 HTTP/1.1",
+                ])
+                .collect::<Vec<_>>()
         );
 
         for request in requests.iter() {
