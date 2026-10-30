@@ -14,6 +14,12 @@ The following applies to **all** source files (Rust, Python, shell, etc.):
   external API spellings through exact identifier exceptions. Exclude verbatim data and generated files. Run
   `prek run typos --all-files` to check the repository.
 
+The spelling tools preserve complete double-quoted form fields (`key=value`) containing valid
+percent escapes as verbatim wire values. This exception does not cover ordinary text, malformed
+escapes, or neighboring identifiers. For this policy, `make test-scripts` probes the configuration
+only; `make test-encoded-wire-spelling` also checks the real tools. The latter requires the versions
+pinned in `.pre-commit-config.yaml` already on `PATH` and fails if either tool is missing or mismatched.
+
 ### Shell scripts
 
 Bash is the default shell for repository scripts. Use POSIX `sh` only when a caller cannot rely on
