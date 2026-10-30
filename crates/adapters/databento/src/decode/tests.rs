@@ -1192,7 +1192,13 @@ fn test_decode_definition_msg_futures_spread() {
 }
 
 #[rstest]
-fn test_decode_definition_msg_option_contract() {
+#[case("ESU6 C9600.GLBX", "ESU6 P6575.GLBX", "ESU6")]
+#[case("ESU26 C9600.GLBX", "ESU26 P6575.GLBX", "ESU26")]
+fn test_decode_definition_msg_option_contract(
+    #[case] call_id: InstrumentId,
+    #[case] put_id: InstrumentId,
+    #[case] underlying: &str,
+) {
     let path = test_data_path().join("test_data.definition.option.dbn.zst");
     let mut dbn_stream = Decoder::from_zstd_file(path)
         .unwrap()
@@ -1200,7 +1206,6 @@ fn test_decode_definition_msg_option_contract() {
 
     // First record: call ('C')
     let msg = dbn_stream.next().unwrap().unwrap();
-    let call_id = InstrumentId::from("ESU6 C9600.GLBX");
     let result = decode_instrument_def_msg(msg, call_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("option class 'C' should produce an instrument");
@@ -1212,7 +1217,7 @@ fn test_decode_definition_msg_option_contract() {
     assert_eq!(call.asset_class, AssetClass::Commodity);
     assert_eq!(call.option_kind, OptionKind::Call);
     assert_eq!(call.strike_price, Price::from("9600.00"));
-    assert_eq!(call.underlying, "ESU6");
+    assert_eq!(call.underlying, underlying);
     assert_eq!(call.currency, Currency::from("USD"));
     assert_eq!(call.multiplier, quantity(50));
     // GLBX expirations carry an accurate intraday time (2026-09-18 13:30 UTC) and must not be
@@ -1225,7 +1230,6 @@ fn test_decode_definition_msg_option_contract() {
 
     // Second record: put ('P')
     let msg = dbn_stream.next().unwrap().unwrap();
-    let put_id = InstrumentId::from("ESU6 P6575.GLBX");
     let result = decode_instrument_def_msg(msg, put_id, Some(0.into()), None)
         .expect("decode failed")
         .expect("option class 'P' should produce an instrument");
@@ -1233,9 +1237,49 @@ fn test_decode_definition_msg_option_contract() {
         panic!("Expected OptionContract");
     };
     assert_eq!(put.id, put_id);
+    assert_eq!(put.underlying, underlying);
     assert_eq!(put.raw_symbol.as_str(), "ESU6 P6575");
     assert_eq!(put.option_kind, OptionKind::Put);
     assert_eq!(put.strike_price, Price::from("6575.00"));
+}
+
+#[rstest]
+#[case(
+    "EW2F26 C9600.GLBX",
+    "EW2F6 C9600",
+    "ESH6",
+    "2026-01-09T13:30:00Z",
+    "ESH26"
+)]
+#[case(
+    "LOZ25 C9600.GLBX",
+    "LOZ5 C9600",
+    "CLF6",
+    "2025-12-16T13:30:00Z",
+    "CLF26"
+)]
+fn test_decode_option_underlying_uses_definition(
+    #[case] instrument_id: InstrumentId,
+    #[case] raw_symbol: &str,
+    #[case] underlying: &str,
+    #[case] expiry: &str,
+    #[case] expected: &str,
+) {
+    let path = test_data_path().join("test_data.definition.option.dbn.zst");
+    let mut dbn_stream = Decoder::from_zstd_file(path)
+        .unwrap()
+        .decode_stream::<dbn::InstrumentDefMsg>();
+    let mut msg = dbn_stream.next().unwrap().unwrap().clone();
+    msg.raw_symbol = cstr(raw_symbol);
+    msg.underlying = cstr(underlying);
+    msg.activation = 0;
+    msg.expiration = expiry.parse::<jiff::Timestamp>().unwrap().as_nanosecond() as u64;
+    let option = decode_option_contract(&msg, instrument_id, Some(0.into()), None).unwrap();
+
+    assert_eq!(option.id, instrument_id);
+    assert_eq!(option.raw_symbol.as_str(), raw_symbol);
+    assert_eq!(option.underlying.as_str(), expected);
+    assert_eq!(option.expiration_ns, msg.expiration);
 }
 
 #[rstest]
@@ -1351,6 +1395,7 @@ fn option_definition_msg(
         ),
         ts_recv: 1_000_000_000,
         instrument_class: 'C' as c_char,
+        raw_symbol: cstr::<{ dbn::SYMBOL_CSTR_LEN }>("RAW_OPTION"),
         exchange: cstr::<5>(exchange),
         cfi: cstr::<7>("OCXXXX"),
         currency: cstr::<4>("USD"),
@@ -1378,6 +1423,7 @@ fn test_decode_option_contract_corrects_opra_midnight_expiration() {
         ),
         ts_recv: 1_000_000_000,
         instrument_class: 'C' as c_char,
+        raw_symbol: cstr::<{ dbn::SYMBOL_CSTR_LEN }>("SPX"),
         exchange: cstr::<5>("XCBO"),
         currency: cstr::<4>("USD"),
         strike_price: 5_000_000_000_000,

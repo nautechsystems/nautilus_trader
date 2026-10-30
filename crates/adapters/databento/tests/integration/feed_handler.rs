@@ -31,7 +31,7 @@ use nautilus_databento::live::{DatabentoMessage, HandlerCommand};
 use nautilus_model::{
     data::Data,
     enums::{AggressorSide, BookAction},
-    identifiers::{Symbol, TradeId},
+    identifiers::{Symbol, TradeId, Venue, futures::FuturesYearDigits},
     instruments::Instrument,
     types::{Price, Quantity},
 };
@@ -162,6 +162,52 @@ async fn test_subscribe_trades() {
     cmd_tx.send(HandlerCommand::Close).unwrap();
     let _ = handle.await;
     server.stop().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_futures_record_without_publisher_venue_does_not_end_session() {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+    let (cmd_tx, mut msg_rx, handler) = create_test_handler(&server.addr(), TEST_DATASET);
+    let mut handler = handler.with_futures_year_digits(FuturesYearDigits::Two);
+    let mut invalid = trade_msg(INSTRUMENT_ID, 1_010_000_000, 17);
+    invalid.hd.publisher_id = dbn::Publisher::XoseItchXose as u16;
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, RAW_SYMBOL));
+    server.send_record(invalid);
+    server.send_record(trade_msg(INSTRUMENT_ID, 1_170_400_000, 50));
+
+    let handle = tokio::spawn(async move { handler.run().await });
+    cmd_tx
+        .send(HandlerCommand::SetPricePrecision(
+            Symbol::from(RAW_SYMBOL),
+            5,
+        ))
+        .unwrap();
+    cmd_tx
+        .send(HandlerCommand::Subscribe(subscription(dbn::Schema::Trades)))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let msg = recv_msg(&mut msg_rx).await;
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    handle.await.unwrap().unwrap();
+    server.stop().await;
+
+    match msg {
+        DatabentoMessage::Data(Data::Trade(trade)) => {
+            assert_eq!(trade.instrument_id.to_string(), "ESM74.GLBX");
+            assert_eq!(trade.price, Price::from("1.17040"));
+            assert_eq!(trade.size, Quantity::from(50));
+            assert_eq!(trade.aggressor_side, AggressorSide::Sell);
+            assert_eq!(trade.trade_id, TradeId::from("1"));
+            assert_eq!(trade.ts_event.as_u64(), 1_000_000_000);
+        }
+        other => panic!("expected Data::Trade, was {other:?}"),
+    }
 }
 
 #[rstest]
@@ -1918,4 +1964,289 @@ async fn test_buffered_subscribe_during_backoff() {
     let _ = handle.await;
     collect_handle.abort();
     server.stop().await;
+}
+
+#[rstest]
+#[case(false, "XNYM", "GLBX")]
+#[case(true, "XNYM", "XNYM")]
+#[tokio::test]
+async fn test_futures_definition_replaces_inferred_year_and_preserves_venue(
+    #[case] use_exchange: bool,
+    #[case] exchange: &str,
+    #[case] venue: &str,
+) {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+
+    let config = TestHandlerConfig {
+        use_exchange_as_venue: use_exchange,
+        ..Default::default()
+    };
+
+    let (cmd_tx, mut msg_rx, handler) =
+        create_test_handler_with_config(&server.addr(), TEST_DATASET, &config);
+    let mut handler = handler.with_futures_year_digits(FuturesYearDigits::Two);
+    let mut quote = mbp1_msg(INSTRUMENT_ID, 70_000_000_000, 71_000_000_000, b'A');
+    quote.ts_recv = 1_798_761_600_000_000_000;
+    let mut definition = instrument_def_msg(INSTRUMENT_ID, b'F');
+    definition.expiration = 1_766_102_400_000_000_000;
+    definition.raw_symbol = crate::common::str_to_cchar_array::<{ dbn::SYMBOL_CSTR_LEN }>("CLF6");
+    definition.exchange = crate::common::str_to_cchar_array::<5>(exchange);
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "CLF6"));
+    server.send_record(quote.clone());
+    server.send_record(definition);
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "CLF6"));
+    server.send_record(quote);
+
+    let handle = tokio::spawn(async move { handler.run().await });
+    cmd_tx
+        .send(HandlerCommand::Subscribe(
+            Subscription::builder()
+                .symbols("CLF6")
+                .schema(dbn::Schema::Mbp1)
+                .build(),
+        ))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let DatabentoMessage::Data(Data::Quote(first)) = recv_msg(&mut msg_rx).await else {
+        panic!("expected quote");
+    };
+
+    let DatabentoMessage::Instrument(instrument) = recv_msg(&mut msg_rx).await else {
+        panic!("expected instrument");
+    };
+
+    let DatabentoMessage::Data(Data::Quote(last)) = recv_msg(&mut msg_rx).await else {
+        panic!("expected quote");
+    };
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    handle.await.unwrap().unwrap();
+    server.stop().await;
+
+    assert_eq!(first.instrument_id.to_string(), "CLF36.GLBX");
+    assert_eq!(instrument.id().to_string(), format!("CLF26.{venue}"));
+    assert_eq!(instrument.raw_symbol(), Symbol::from("CLF6"));
+    assert_eq!(last.instrument_id.to_string(), format!("CLF26.{venue}"));
+    assert_eq!(last.bid_price, Price::from("70.00"));
+    assert_eq!(last.ask_price, Price::from("71.00"));
+}
+
+#[rstest]
+#[case(false, "SR3Z26.XCME")]
+#[case(true, "SR3Z26.XNYM")]
+#[tokio::test]
+async fn test_post_year_quotes_preserve_requested_and_definition_identity(
+    #[case] use_exchange: bool,
+    #[case] defined_id: &str,
+) {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+
+    let config = TestHandlerConfig {
+        use_exchange_as_venue: use_exchange,
+        ..Default::default()
+    };
+
+    config
+        .symbol_venue_map
+        .insert(Symbol::from("SR3Z26"), Venue::from("XCME"));
+    let (cmd_tx, mut msg_rx, handler) =
+        create_test_handler_with_config(&server.addr(), TEST_DATASET, &config);
+    let mut handler = handler.with_futures_year_digits(FuturesYearDigits::Two);
+    let mut quote = mbp1_msg(INSTRUMENT_ID, 95_120_000_000, 95_250_000_000, b'A');
+    quote.ts_recv = "2027-02-01T00:00:00Z"
+        .parse::<jiff::Timestamp>()
+        .unwrap()
+        .as_nanosecond() as u64;
+    let mut definition = instrument_def_msg(INSTRUMENT_ID, b'F');
+    definition.expiration = "2027-03-16T00:00:00Z"
+        .parse::<jiff::Timestamp>()
+        .unwrap()
+        .as_nanosecond() as u64;
+    definition.raw_symbol = crate::common::str_to_cchar_array::<{ dbn::SYMBOL_CSTR_LEN }>("SR3Z6");
+    definition.exchange = crate::common::str_to_cchar_array::<5>("XNYM");
+
+    server.authenticate();
+    server.expect_subscription();
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "SR3Z6"));
+    server.send_record(quote.clone());
+    server.send_record(definition);
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "SR3Z6"));
+    server.send_record(quote.clone());
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "SR3H7"));
+    server.send_record(quote);
+
+    let handle = tokio::spawn(async move { handler.run().await });
+    cmd_tx
+        .send(HandlerCommand::Subscribe(
+            Subscription::builder()
+                .symbols("SR3Z6")
+                .schema(dbn::Schema::Mbp1)
+                .build(),
+        ))
+        .unwrap();
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let DatabentoMessage::Data(Data::Quote(first)) = recv_msg(&mut msg_rx).await else {
+        panic!("expected quote");
+    };
+
+    let DatabentoMessage::Instrument(instrument) = recv_msg(&mut msg_rx).await else {
+        panic!("expected instrument");
+    };
+
+    let DatabentoMessage::Data(Data::Quote(repeated)) = recv_msg(&mut msg_rx).await else {
+        panic!("expected quote");
+    };
+
+    let DatabentoMessage::Data(Data::Quote(changed)) = recv_msg(&mut msg_rx).await else {
+        panic!("expected quote");
+    };
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    handle.await.unwrap().unwrap();
+    server.stop().await;
+
+    assert_eq!(first.instrument_id.to_string(), "SR3Z26.XCME");
+    assert_eq!(instrument.id().to_string(), defined_id);
+    assert_eq!(instrument.raw_symbol(), Symbol::from("SR3Z6"));
+    assert_eq!(repeated.instrument_id.to_string(), defined_id);
+    assert_eq!(changed.instrument_id.to_string(), "SR3H27.GLBX");
+    assert_eq!(repeated.bid_price, Price::from("95.12"));
+    assert_eq!(repeated.ask_price, Price::from("95.25"));
+}
+
+#[rstest]
+#[case(1, false, false, "SR3Z6.GLBX", "SR3Z6.XCME")]
+#[case(1, true, false, "SR3Z6.GLBX", "SR3Z6.XCME")]
+#[case(1, true, true, "SR3Z6.XNYM", "SR3Z6.XCME")]
+#[case(2, false, false, "SR3Z36.GLBX", "SR3Z26.XCME")]
+#[case(2, true, false, "SR3Z26.GLBX", "SR3Z26.XCME")]
+#[case(2, true, true, "SR3Z26.XNYM", "SR3Z26.XNYM")]
+#[tokio::test]
+async fn test_later_contract_subscription_refreshes_inferred_identity(
+    #[case] digits: u8,
+    #[case] with_definition: bool,
+    #[case] use_exchange: bool,
+    #[case] first_id: &str,
+    #[case] last_id: &str,
+) {
+    let server = MockLsgServer::new(TEST_DATASET).await;
+
+    let config = TestHandlerConfig {
+        use_exchange_as_venue: use_exchange,
+        ..Default::default()
+    };
+
+    let (cmd_tx, mut msg_rx, handler) =
+        create_test_handler_with_config(&server.addr(), TEST_DATASET, &config);
+    let mut handler = handler.with_futures_year_digits(digits.try_into().unwrap());
+    let mut quote = mbp1_msg(INSTRUMENT_ID, 95_120_000_000, 95_250_000_000, b'A');
+    quote.ts_recv = "2027-02-01T00:00:00Z"
+        .parse::<jiff::Timestamp>()
+        .unwrap()
+        .as_nanosecond() as u64;
+    let mut definition = instrument_def_msg(INSTRUMENT_ID, b'F');
+    definition.expiration = "2027-03-16T00:00:00Z"
+        .parse::<jiff::Timestamp>()
+        .unwrap()
+        .as_nanosecond() as u64;
+    definition.raw_symbol = crate::common::str_to_cchar_array::<{ dbn::SYMBOL_CSTR_LEN }>("SR3Z6");
+    definition.exchange = crate::common::str_to_cchar_array::<5>("XNYM");
+
+    server.authenticate();
+    server.expect_subscription();
+    if with_definition {
+        server.expect_subscription();
+    }
+
+    server.start();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "SR3Z6"));
+    if with_definition {
+        server.send_record(definition);
+    }
+
+    server.send_record(quote.clone());
+
+    let handle = tokio::spawn(async move { handler.run().await });
+    cmd_tx
+        .send(HandlerCommand::Subscribe(
+            Subscription::builder()
+                .symbols("SR3.c.0")
+                .schema(dbn::Schema::Mbp1)
+                .stype_in(dbn::SType::Continuous)
+                .build(),
+        ))
+        .unwrap();
+
+    if with_definition {
+        cmd_tx
+            .send(HandlerCommand::Subscribe(
+                Subscription::builder()
+                    .symbols("SR3.FUT")
+                    .schema(dbn::Schema::Definition)
+                    .stype_in(dbn::SType::Parent)
+                    .build(),
+            ))
+            .unwrap();
+    }
+
+    cmd_tx.send(HandlerCommand::Start).unwrap();
+
+    let instrument = if with_definition {
+        let DatabentoMessage::Instrument(instrument) = recv_msg(&mut msg_rx).await else {
+            panic!("expected instrument");
+        };
+
+        Some(instrument)
+    } else {
+        None
+    };
+
+    let DatabentoMessage::Data(Data::Quote(first)) = recv_msg(&mut msg_rx).await else {
+        panic!("expected quote");
+    };
+
+    let symbol = if digits == 1 { "SR3Z6" } else { "SR3Z26" };
+    config
+        .symbol_venue_map
+        .insert(Symbol::from(symbol), Venue::from("XCME"));
+    server.expect_subscription();
+    server.send_record(symbol_mapping_msg(INSTRUMENT_ID, "SR3Z6"));
+    server.send_record(quote);
+    cmd_tx
+        .send(HandlerCommand::Subscribe(
+            Subscription::builder()
+                .symbols("SR3Z6")
+                .schema(dbn::Schema::Mbp1)
+                .build(),
+        ))
+        .unwrap();
+
+    let DatabentoMessage::Data(Data::Quote(last)) = recv_msg(&mut msg_rx).await else {
+        panic!("expected quote");
+    };
+
+    cmd_tx.send(HandlerCommand::Close).unwrap();
+    handle.await.unwrap().unwrap();
+    server.stop().await;
+
+    assert_eq!(first.instrument_id.to_string(), first_id);
+
+    if let Some(instrument) = instrument {
+        assert_eq!(instrument.id().to_string(), first_id);
+        assert_eq!(instrument.raw_symbol(), Symbol::from("SR3Z6"));
+    }
+
+    assert_eq!(last.instrument_id.to_string(), last_id);
+    assert_eq!(last.bid_price, Price::from("95.12"));
+    assert_eq!(last.ask_price, Price::from("95.25"));
+    assert_eq!(last.bid_size, Quantity::from(100));
+    assert_eq!(last.ask_size, Quantity::from(50));
+    assert_eq!(last.ts_event.as_u64(), 1_801_440_000_000_000_000);
 }

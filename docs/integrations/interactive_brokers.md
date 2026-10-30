@@ -554,14 +554,26 @@ queries do not apply the same fills again.
 | `SymbologyMethod.RAW`        | IDs that retain the IB security type for explicit lookup. |
 
 One symbology value built from this setting drives every mapping site in the adapter, so data,
-execution, and provider paths always resolve identical IDs. Raw symbology
-(`AAPL=STK.SMART`) is the lossless escape hatch: it preserves the IB local symbol and security
-type for instruments the simplified format rules cannot express, such as complex international
-listings.
+execution, and provider paths always resolve identical IDs. Raw symbology (`AAPL=STK.SMART`) preserves
+the IB security type and supports local symbols that simplified rules cannot express, such as complex
+international listings. Standard futures year suffixes are normalized under both methods.
 
-Futures and futures-option IDs carry the local symbol reported by IB, such as `YMM6.XCBT` and
-`YMM6 C45000.XCBT`. The adapter does not rewrite the contract year, so identifiers stay stable
-across catalogs and caches.
+Standard futures and futures-option codes use two-digit years by default, such as `YMM26.XCBT`
+and `YMM26 C45000.XCBT`. Futures-option underlying codes use the same year digits. The instrument's
+`raw_symbol` keeps the native IB symbol.
+
+Rust APIs use `nautilus_model::identifiers::futures::FuturesYearDigits::{One, Two}`, with `Two` as the
+default. Python configuration keeps the integer values `1` and `2`.
+
+When using Databento data with Interactive Brokers execution, set `futures_year_digits` to the same
+value in both adapters so their instrument IDs match.
+
+After upgrading, either set `futures_year_digits=1` on `InteractiveBrokersInstrumentProviderConfig` or
+re-import existing data into a separate catalog, rebuild instrument caches, and update configured instrument IDs. Renaming catalog files does not change
+IDs stored in records.
+
+Keep `futures_year_digits=1` until working orders are canceled and positions opened with one-digit IDs are
+closed. Rebuild cached trading state before switching to two-digit IDs.
 
 The symbology method controls symbol conversion. Venue selection is a separate step with this
 precedence:
@@ -601,6 +613,7 @@ instrument cannot be resolved.
 | Option                          | Default      | Purpose                                                 |
 | ------------------------------- | ------------ | ------------------------------------------------------- |
 | `symbology_method`              | `SIMPLIFIED` | Select simplified or raw symbol conversion.             |
+| `futures_year_digits`           | `2`          | Use two-digit years, or `1` for existing futures IDs.   |
 | `load_ids`                      | Empty        | Load Nautilus instrument IDs at startup.                |
 | `load_contracts`                | Empty        | Load IB contract dictionaries at startup.               |
 | `min_expiry_days`               | `None`       | Minimum relative expiry for chain loading.              |

@@ -13,10 +13,20 @@ Released on TBD (UTC).
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
 - Changed Bybit HTTP `modify_order` to take `trigger_price`; pass `None` when unchanged
+- Changed Databento and Interactive Brokers futures year settings to `FuturesYearDigits`; Python keeps `1`/`2`
+- Changed Databento futures IDs to two-digit years by default; `futures_year_digits=1` keeps old IDs, thanks @faysou
+- Changed Databento futures-option IDs and underlyings to match `futures_year_digits`
+- Changed Databento and Interactive Brokers catalog/cache IDs; rebuild stored data when adopting two-digit years
+- Changed Databento definition decoders to preserve native `raw_symbol`; supply `msg.raw_symbol`
+- Changed Databento `decode_nautilus_instrument_id`; pass year mode, definitions, and optional request hints
+- Changed Databento `get_nautilus_instrument_id_for_record`; pass year mode, definitions, venues, and request hints
 - Changed Deribit orders to require cached instruments; include traded product types in execution `product_types`
 - Changed Deribit spot orders to reject `GTD`; use `GTC`, `IOC`, or `FOK`
 - Changed `DeribitInstrument` literals; add `is_cbe_routed: None` and `is_csr: None`
 - Changed Derive endpoint overrides to `SecretString`; pass strings to builders or use `.into()` in struct literals
+- Changed Interactive Brokers futures IDs to two-digit years by default; use `futures_year_digits=1`, thanks @faysou
+- Changed Interactive Brokers futures-option IDs and underlyings to match `futures_year_digits`
+- Changed Interactive Brokers provider config literals; add `futures_year_digits: FuturesYearDigits::Two`
 - Changed Polymarket data/execution credentials and funders to reject blanks; omit them for environment fallback
 - Changed Polymarket execution examples to dry run by default; disable `DRY_RUN` for live orders
 

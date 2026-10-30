@@ -55,7 +55,7 @@ from nautilus_trader.trading import StrategyConfig
 INSTRUMENT_ID = InstrumentId.from_str(
     os.getenv("IB_V2_SUBSCRIPTION_INSTRUMENT_ID", default_aapl_instrument_id()),
 )
-# Paper acceptance has also been verified with ESZ6.XCME while the stock market is closed.
+# Paper acceptance has also been verified with ESZ26.XCME while the stock market is closed.
 
 
 # %%

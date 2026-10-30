@@ -326,9 +326,9 @@ Granular unsubscribe is a documented no-op for every member. Stop the live sessi
 # Default MBP-1 quotes (also emits trades on trade events)
 self.subscribe_quotes(instrument_id, client_id=DATABENTO_CLIENT_ID)
 
-# One subscription for both raw symbols in GLBX.MDP3
+# One subscription for both contract IDs in GLBX.MDP3
 self.subscribe_quotes(
-    instrument_id=[InstrumentId.from_str("ESZ6.GLBX"), InstrumentId.from_str("NQZ6.GLBX")],
+    instrument_id=[InstrumentId.from_str("ESZ26.GLBX"), InstrumentId.from_str("NQZ26.GLBX")],
     params={"price_precision": 2},
     client_id=DATABENTO_CLIENT_ID,
 )
@@ -419,26 +419,26 @@ emits. `subscribe_data()` streams `DatabentoStatistics` or `DatabentoImbalance` 
 instrument ID given as the data type identifier, and rejects a data type with metadata. Records are
 published with that identifier, so a subscriber receives only the records of its own instrument.
 
-These three subscriptions accept raw symbols such as `ESM4.GLBX` only. Records resolve to the
+These three subscriptions accept contract IDs such as `ESZ26.GLBX` only. Records resolve to the
 underlying contract, so continuous (`ES.c.0`) and parent (`ES.FUT`) symbols are rejected rather than
-published on topics the subscriber does not listen on. The examples use a raw symbol:
+published on topics the subscriber does not listen on. The examples use a contract ID:
 
 ```python
-raw_instrument_id = InstrumentId.from_str("ESM4.GLBX")
+instrument_id = InstrumentId.from_str("ESZ26.GLBX")
 
 self.subscribe_book_depth(
-    instrument_id=raw_instrument_id,
+    instrument_id=instrument_id,
     book_type=BookType.L2_MBP,
     client_id=DATABENTO_CLIENT_ID,
 )
 
 self.subscribe_bars(
-    BarType.from_str(f"{raw_instrument_id}-1-MINUTE-LAST-EXTERNAL"),
+    BarType.from_str(f"{instrument_id}-1-MINUTE-LAST-EXTERNAL"),
     client_id=DATABENTO_CLIENT_ID,
 )
 
 self.subscribe_data(
-    DataType("DatabentoStatistics", identifier=str(raw_instrument_id)),
+    DataType("DatabentoStatistics", identifier=str(instrument_id)),
     client_id=DATABENTO_CLIENT_ID,
 )
 ```
@@ -481,26 +481,55 @@ Databento synthesizes one if the publisher does not provide it. Databento only g
 within a given day. This differs from the Nautilus `InstrumentId`, a string of symbol + venue separated by a
 period: `"{symbol}.{venue}"`.
 
-The decoder maps the Databento `raw_symbol` to the Nautilus `symbol`. Publisher
-IDs map to the default Nautilus venue through `publishers.json`. Subscription
-`InstrumentId` metadata can also seed the symbol-to-venue map before market data
-arrives.
+The decoder derives the Nautilus `symbol` from the Databento `raw_symbol`, normalizing supported futures
+year suffixes as described below. Publisher IDs map to the default Nautilus venue through `publishers.json`.
+Subscription `InstrumentId` metadata can also seed the symbol-to-venue map before market data arrives.
 
 Dataset IDs follow Databento's
 [dataset naming conventions](https://databento.com/docs/api-reference-historical/basics/datasets),
 which are distinct from the venue code in a Nautilus `InstrumentId`.
 
-For historical requests and live subscriptions, the adapter sends the Nautilus
-symbol portion of each `InstrumentId` as the Databento symbol and infers
-`stype_in` from that string:
+For historical requests and live subscriptions, the adapter converts supported futures codes to
+native year digits and infers `stype_in` from the symbol:
 
 - Symbols ending in `.FUT` or `.OPT` use Databento parent symbology, for example
   `ES.FUT.XCME`.
 - Three-part symbols whose last part is numeric use continuous symbology, for
   example `ES.c.0.GLBX`.
 - All-numeric symbols use Databento `instrument_id` symbology.
-- All other symbols use raw symbol symbology, for example `ESZ6.XCME` or
+- All other symbols use raw symbol symbology, for example `ESZ26.XCME` or
   `AAPL.EQUS`.
+
+Supported futures and futures-option IDs use two-digit years by default, such as `ESZ26.XCME` and
+`ESZ26 P5000.XCME`. This applies to `GLBX.MDP3`, `IFEU.IMPACT`, `NDEX.IMPACT`, `IFUS.IMPACT`,
+`IFLL.IMPACT`, `XEUR.EOBI`, `XEEE.EOBI`, `XCBF.PITCH`, and `XOSE.ITCH`. The instrument's `raw_symbol`
+keeps the native symbol; futures-option `underlying` symbols use the same year digits as instrument IDs.
+
+Rust APIs use `nautilus_model::identifiers::futures::FuturesYearDigits::{One, Two}`, with `Two` as the
+default. Python configuration keeps the integer values `1` and `2`.
+
+When using Databento data with Interactive Brokers execution, set `futures_year_digits` to the same
+value in both adapters so their instrument IDs match.
+
+Requests send native symbols: `ESU26-ESM27` is sent as `ESU6-ESM7`. Set `futures_year_digits=1` on the data
+client config, data loader, historical client, or live client to retain existing IDs.
+
+The factory convenience method `DatabentoDataClientFactory.create_live_data_client()` uses the default.
+To retain old IDs, construct `DatabentoDataClient` directly with `futures_year_digits=1`.
+
+To use `XOSE.ITCH`, supply a publisher metadata file with its publisher entry; the bundled file does not include it.
+
+Load definitions for the data's dates through the same loader or historical client instance before
+loading market data to use their contract-year context. Without a definition, canonical IDs in the current historical request also
+identify contracts that trade into the following year. Earlier historical requests do not supply year hints. Otherwise, one-digit years resolve to the next matching
+year at or after the record's `ts_recv` year (`ts_event` for OHLCV). Live records received before a
+definition retain their resolved IDs; later records use the definition's year and venue. Repeated mappings
+preserve definition-derived years and exchange venues. Inferred IDs refresh from subscription hints;
+changed native symbols clear cached identity.
+
+After upgrading, either set `futures_year_digits=1` or re-import existing data into a separate catalog,
+rebuild caches, and update configured instrument IDs. Renaming catalog files does not change IDs stored
+in records.
 
 All symbols in one request or subscription must use the same symbology type.
 Batch `AAPL.EQUS` with `MSFT.EQUS`, or `ES.FUT.XCME` with `NQ.FUT.XCME`, but do
@@ -616,7 +645,7 @@ precision in this order:
 
 1. Precision from an `InstrumentDefMsg` already seen for the Databento record `instrument_id`.
 2. Subscription-supplied precision matched to the record `instrument_id` through a symbol mapping message.
-3. Subscription-supplied precision matched directly on the Nautilus symbol.
+3. Subscription-supplied precision matched directly on the native Databento symbol.
 4. The USD default precision of 2.
 
 Supply precision with the `price_precision` parameter on `subscribe_quotes()` or
@@ -636,7 +665,7 @@ record in this order:
 1. An explicit `price_precision` argument on the call.
 2. A per-symbol cache populated by loading definitions (`load_instruments`
    on the file loader, `get_range_instruments` on the historical client) or
-   by an explicit `set_price_precision(symbol, precision)` call.
+   by an explicit `set_price_precision(symbol, precision)` call using the Nautilus symbol, such as `ESZ26`.
 
 The data client fetches the requested instrument's definition when neither
 source supplies precision. The lookup starts at UTC midnight on the request's
@@ -856,7 +885,8 @@ Call `schema_for_file` to read a file's schema from its DBN metadata header when
 method.
 
 Optional `instrument_id` and `price_precision` arguments bypass symbology or precision lookup when
-those values are already known. The bar loader also accepts `timestamp_on_close`.
+those values are already known. An explicit `instrument_id` is used as given; match its year digits to the
+loader's `futures_year_digits`. The bar loader also accepts `timestamp_on_close`.
 
 ## Real-time client architecture
 
@@ -914,6 +944,7 @@ and point `publishers_filepath` at the local copy.
 | `api_key`                 | Required | Databento API key.                                      |
 | `publishers_filepath`     | Required | Local path to Databento publisher metadata.             |
 | `use_exchange_as_venue`   | `False`  | Use exchange MIC venues for GLBX instruments.           |
+| `futures_year_digits`     | `2`      | Use two-digit years, or `1` for existing futures IDs.   |
 | `bars_timestamp_on_close` | `True`   | Timestamp bars on close instead of the interval open.   |
 | `venue_dataset_map`       | `None`   | Override venue-to-dataset mappings from publisher data. |
 | `historical_base_url`     | `None`   | Override the Historical API base URL.                   |

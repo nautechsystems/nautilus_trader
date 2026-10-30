@@ -13,11 +13,15 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use ahash::AHashMap;
 use databento::dbn;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::AssetClass,
-    identifiers::{InstrumentId, Symbol},
+    identifiers::{
+        InstrumentId, Symbol,
+        futures::{FuturesYearDigits, parse_futures_symbol},
+    },
     instruments::{
         CurrencyPair, Equity, FuturesContract, FuturesSpread, InstrumentAny, OptionContract,
         OptionSpread,
@@ -34,6 +38,7 @@ use super::{
         parse_currency_or_usd_default, parse_option_kind,
     },
 };
+use crate::symbology::resolve_futures_instrument_id;
 
 /// # Errors
 ///
@@ -202,6 +207,7 @@ pub fn decode_futures_contract(
     instrument_id: InstrumentId,
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<FuturesContract> {
+    let raw_symbol = Symbol::new_checked(msg.raw_symbol()?)?;
     let currency = parse_currency_or_usd_default(msg.currency());
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = decode_underlying(msg.asset()?, &instrument_id.symbol);
@@ -214,7 +220,7 @@ pub fn decode_futures_contract(
 
     Ok(FuturesContract::builder()
         .instrument_id(instrument_id)
-        .raw_symbol(instrument_id.symbol)
+        .raw_symbol(raw_symbol)
         .asset_class(asset_class.unwrap_or(AssetClass::Commodity))
         .exchange(exchange)
         .underlying(underlying)
@@ -240,6 +246,7 @@ pub fn decode_futures_spread(
     instrument_id: InstrumentId,
     ts_init: Option<UnixNanos>,
 ) -> anyhow::Result<FuturesSpread> {
+    let raw_symbol = Symbol::new_checked(msg.raw_symbol()?)?;
     let exchange = Ustr::from(msg.exchange()?);
     let underlying = decode_underlying(msg.asset()?, &instrument_id.symbol);
     let (asset_class, _) = parse_cfi_iso10926(msg.cfi()?);
@@ -253,7 +260,7 @@ pub fn decode_futures_spread(
 
     Ok(FuturesSpread::builder()
         .instrument_id(instrument_id)
-        .raw_symbol(instrument_id.symbol)
+        .raw_symbol(raw_symbol)
         .asset_class(asset_class.unwrap_or(AssetClass::Commodity))
         .exchange(exchange)
         .underlying(underlying)
@@ -281,10 +288,30 @@ pub fn decode_option_contract(
     ts_init: Option<UnixNanos>,
     decode_config: Option<&DatabentoDecodeConfig>,
 ) -> anyhow::Result<OptionContract> {
+    let raw_symbol = Symbol::new_checked(msg.raw_symbol()?)?;
     let currency = parse_currency_or_usd_default(msg.currency());
     let strike_price_currency = parse_currency_or_usd_default(msg.strike_price_currency());
     let exchange = Ustr::from(msg.exchange()?);
-    let underlying = decode_underlying(msg.underlying()?, &instrument_id.symbol);
+    let mut underlying = decode_underlying(msg.underlying()?, &instrument_id.symbol);
+    if instrument_id
+        .symbol
+        .as_str()
+        .split_once(' ')
+        .and_then(|(code, _)| parse_futures_symbol(code))
+        .is_some_and(|parsed| parsed.year_digits.len() == 2)
+    {
+        let underlying_id =
+            InstrumentId::new(Symbol::from(underlying.as_str()), instrument_id.venue);
+        let underlying_id = resolve_futures_instrument_id(
+            &dbn::RecordRef::from(msg),
+            underlying_id,
+            FuturesYearDigits::Two,
+            &AHashMap::new(),
+            None,
+        )?;
+        underlying = Ustr::from(underlying_id.symbol.as_str());
+    }
+
     let asset_class_opt = if instrument_id.venue.as_str() == "OPRA" {
         Some(AssetClass::Equity)
     } else {
@@ -313,7 +340,7 @@ pub fn decode_option_contract(
 
     Ok(OptionContract::builder()
         .instrument_id(instrument_id)
-        .raw_symbol(instrument_id.symbol)
+        .raw_symbol(raw_symbol)
         .asset_class(asset_class_opt.unwrap_or(AssetClass::Commodity))
         .exchange(exchange)
         .underlying(underlying)

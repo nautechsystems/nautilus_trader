@@ -274,7 +274,10 @@ class InteractiveBrokersInstrumentProviderConfig:
         filter_sec_types: set[str] | None = None,
         filter_callable: str | None = None,
         cache_path: str | None = None,
+        futures_year_digits: int | None = None,
     ) -> None: ...
+    @property
+    def futures_year_digits(self) -> int: ...
     @property
     def symbology_method(self) -> SymbologyMethod: ...
     @property

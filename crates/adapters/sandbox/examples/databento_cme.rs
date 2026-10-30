@@ -52,7 +52,7 @@ const VENUE: &str = "XCME";
 const ACCOUNT_ID: &str = "XCME-SANDBOX-001";
 const STRATEGY_ID: &str = "SANDBOX_TESTER-001";
 const CLIENT_ID: &str = "DATABENTO";
-const INSTRUMENT_ID: &str = "ESM6.XCME";
+const INSTRUMENT_ID: &str = "ESM26.XCME";
 const ORDER_QTY: &str = "1";
 const STARTING_BALANCE: f64 = 1_000_000.0;
 

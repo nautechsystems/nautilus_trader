@@ -18,8 +18,11 @@
 use std::path::PathBuf;
 
 use indexmap::IndexMap;
-use nautilus_core::{python::to_pyruntime_err, time::get_atomic_clock_realtime};
-use nautilus_model::identifiers::ClientId;
+use nautilus_core::{
+    python::{to_pyruntime_err, to_pyvalue_err},
+    time::get_atomic_clock_realtime,
+};
+use nautilus_model::identifiers::{ClientId, futures::FuturesYearDigits};
 use pyo3::prelude::*;
 
 use crate::{
@@ -32,7 +35,11 @@ use crate::{
 impl DatabentoDataClientConfig {
     /// Configuration for the Databento data client.
     #[new]
-    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true, venue_dataset_map=None, historical_base_url=None, live_gateway_addr=None))]
+    #[pyo3(signature = (api_key, publishers_filepath, use_exchange_as_venue=false, bars_timestamp_on_close=true, venue_dataset_map=None, historical_base_url=None, live_gateway_addr=None, futures_year_digits=None))]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the Python constructor preserves existing positional parameters"
+    )]
     fn py_new(
         api_key: String,
         publishers_filepath: PathBuf,
@@ -41,7 +48,14 @@ impl DatabentoDataClientConfig {
         venue_dataset_map: Option<IndexMap<String, String>>,
         historical_base_url: Option<String>,
         live_gateway_addr: Option<String>,
-    ) -> Self {
+        futures_year_digits: Option<u8>,
+    ) -> PyResult<Self> {
+        let futures_year_digits = futures_year_digits
+            .map(FuturesYearDigits::try_from)
+            .transpose()
+            .map_err(to_pyvalue_err)?
+            .unwrap_or_default();
+
         let mut config = Self::new(
             api_key,
             publishers_filepath,
@@ -55,8 +69,14 @@ impl DatabentoDataClientConfig {
 
         config.historical_base_url = historical_base_url;
         config.live_gateway_addr = live_gateway_addr;
+        config.futures_year_digits = futures_year_digits;
 
-        config
+        Ok(config)
+    }
+
+    #[getter]
+    fn futures_year_digits(&self) -> u8 {
+        self.futures_year_digits.into()
     }
 
     fn __repr__(&self) -> String {
@@ -102,5 +122,62 @@ impl DatabentoDataClientFactory {
             get_atomic_clock_realtime(),
         )
         .map_err(to_pyruntime_err)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, types::PyDict};
+    use rstest::rstest;
+
+    use super::DatabentoDataClientConfig;
+
+    #[rstest]
+    #[case(None, 2)]
+    #[case(Some(1), 1)]
+    #[case(Some(2), 2)]
+    fn test_python_futures_year_digits(#[case] configured: Option<u8>, #[case] expected: u8) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            if let Some(digits) = configured {
+                kwargs.set_item("futures_year_digits", digits).unwrap();
+            }
+
+            let config = py
+                .get_type::<DatabentoDataClientConfig>()
+                .call(("test-key", "publishers.json"), Some(&kwargs))
+                .unwrap();
+            assert_eq!(
+                config
+                    .getattr("futures_year_digits")
+                    .unwrap()
+                    .extract::<u8>()
+                    .unwrap(),
+                expected
+            );
+        });
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(3)]
+    #[case(4)]
+    #[case(u8::MAX)]
+    fn test_python_rejects_invalid_futures_year_digits(#[case] digits: u8) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("futures_year_digits", digits).unwrap();
+            let error = py
+                .get_type::<DatabentoDataClientConfig>()
+                .call(("test-key", "publishers.json"), Some(&kwargs))
+                .unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                "`futures_year_digits` must be either 1 or 2"
+            );
+        });
     }
 }

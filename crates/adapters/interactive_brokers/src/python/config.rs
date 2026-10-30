@@ -19,7 +19,10 @@ use std::str::FromStr;
 
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::{python::to_pyvalue_err, string::secret::SecretString};
-use nautilus_model::{identifiers::InstrumentId, types::Currency};
+use nautilus_model::{
+    identifiers::{InstrumentId, futures::FuturesYearDigits},
+    types::Currency,
+};
 use pyo3::prelude::*;
 
 use crate::{
@@ -329,7 +332,7 @@ impl InteractiveBrokersExecutionClientConfig {
 impl InteractiveBrokersInstrumentProviderConfig {
     /// Creates a new `InteractiveBrokersInstrumentProviderConfig` instance.
     #[new]
-    #[pyo3(signature = (symbology_method=None, load_ids=None, load_contracts=None, min_expiry_days=None, max_expiry_days=None, build_options_chain=None, build_futures_chain=None, cache_validity_days=None, convert_exchange_to_mic_venue=None, symbol_to_mic_venue=None, filter_sec_types=None, filter_callable=None, cache_path=None))]
+    #[pyo3(signature = (symbology_method=None, load_ids=None, load_contracts=None, min_expiry_days=None, max_expiry_days=None, build_options_chain=None, build_futures_chain=None, cache_validity_days=None, convert_exchange_to_mic_venue=None, symbol_to_mic_venue=None, filter_sec_types=None, filter_callable=None, cache_path=None, futures_year_digits=None))]
     #[allow(clippy::too_many_arguments)]
     fn py_new(
         py: Python<'_>,
@@ -346,7 +349,14 @@ impl InteractiveBrokersInstrumentProviderConfig {
         filter_sec_types: Option<std::collections::HashSet<String>>,
         filter_callable: Option<String>,
         cache_path: Option<String>,
+        futures_year_digits: Option<u8>,
     ) -> PyResult<Self> {
+        let futures_year_digits = futures_year_digits
+            .map(FuturesYearDigits::try_from)
+            .transpose()
+            .map_err(to_pyvalue_err)?
+            .unwrap_or_default();
+
         let config = Self {
             symbology_method: symbology_method.unwrap_or_default(),
             load_ids: load_ids.unwrap_or_default(),
@@ -379,10 +389,16 @@ impl InteractiveBrokersInstrumentProviderConfig {
                 .collect::<PyResult<_>>()?,
             filter_callable,
             cache_path,
+            futures_year_digits,
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
         Ok(config)
+    }
+
+    #[getter]
+    fn futures_year_digits(&self) -> u8 {
+        self.futures_year_digits.into()
     }
 
     /// Returns the symbology method.
@@ -548,5 +564,62 @@ impl DockerizedIBGatewayConfig {
     #[getter]
     fn vnc_port(&self) -> Option<u16> {
         self.vnc_port
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pyo3::{prelude::*, types::PyDict};
+    use rstest::rstest;
+
+    use super::InteractiveBrokersInstrumentProviderConfig;
+
+    #[rstest]
+    #[case(None, 2)]
+    #[case(Some(1), 1)]
+    #[case(Some(2), 2)]
+    fn test_python_futures_year_digits(#[case] configured: Option<u8>, #[case] expected: u8) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            if let Some(digits) = configured {
+                kwargs.set_item("futures_year_digits", digits).unwrap();
+            }
+
+            let config = py
+                .get_type::<InteractiveBrokersInstrumentProviderConfig>()
+                .call((), Some(&kwargs))
+                .unwrap();
+            assert_eq!(
+                config
+                    .getattr("futures_year_digits")
+                    .unwrap()
+                    .extract::<u8>()
+                    .unwrap(),
+                expected
+            );
+        });
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(3)]
+    #[case(4)]
+    #[case(u8::MAX)]
+    fn test_python_rejects_invalid_futures_year_digits(#[case] digits: u8) {
+        Python::initialize();
+        Python::attach(|py| {
+            let kwargs = PyDict::new(py);
+            kwargs.set_item("futures_year_digits", digits).unwrap();
+            let error = py
+                .get_type::<InteractiveBrokersInstrumentProviderConfig>()
+                .call((), Some(&kwargs))
+                .unwrap_err();
+            assert!(error.is_instance_of::<pyo3::exceptions::PyValueError>(py));
+            assert_eq!(
+                error.value(py).to_string(),
+                "`futures_year_digits` must be either 1 or 2"
+            );
+        });
     }
 }

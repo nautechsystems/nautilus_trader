@@ -22,7 +22,10 @@ use std::{
 
 use nautilus_common::config::{ConfigResult, check_unique_values};
 use nautilus_core::string::secret::SecretString;
-use nautilus_model::{identifiers::InstrumentId, types::Currency};
+use nautilus_model::{
+    identifiers::{InstrumentId, futures::FuturesYearDigits},
+    types::Currency,
+};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::common::{
@@ -312,6 +315,9 @@ pub struct InteractiveBrokersInstrumentProviderConfig {
     /// Path to cache file for persistent instrument caching (equivalent to pickle_path in Python).
     /// If provided, instruments will be cached to disk and loaded from cache if still valid.
     pub cache_path: Option<String>,
+    /// Year digits in futures IDs: 2 by default, or 1 for existing catalogs and caches.
+    #[builder(default)]
+    pub futures_year_digits: FuturesYearDigits,
 }
 
 impl Default for InteractiveBrokersInstrumentProviderConfig {
@@ -465,7 +471,7 @@ impl Default for DockerizedIBGatewayConfig {
 }
 
 impl InteractiveBrokersInstrumentProviderConfig {
-    /// Validates that configured selections contain no duplicates.
+    /// Validates configured selections.
     ///
     /// # Errors
     ///
@@ -489,7 +495,7 @@ impl InteractiveBrokersExecutionClientConfig {
 #[cfg(test)]
 mod tests {
     use nautilus_common::config::ConfigError;
-    use nautilus_model::types::Currency;
+    use nautilus_model::{identifiers::futures::FuturesYearDigits, types::Currency};
     use rstest::rstest;
 
     use super::{
@@ -790,5 +796,46 @@ mod tests {
                 .unwrap_err();
 
         assert_eq!(error, ConfigError::duplicate("load_contracts", None));
+    }
+
+    #[rstest]
+    fn test_provider_defaults_to_two_digit_futures_years() {
+        let config = InteractiveBrokersInstrumentProviderConfig::default();
+        let decoded: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_str("{}").unwrap();
+        assert_eq!(config.futures_year_digits, FuturesYearDigits::Two);
+        assert_eq!(decoded.futures_year_digits, FuturesYearDigits::Two);
+    }
+
+    #[rstest]
+    #[case(1, FuturesYearDigits::One)]
+    #[case(2, FuturesYearDigits::Two)]
+    fn test_provider_deserializes_futures_year_digits(
+        #[case] digits: u8,
+        #[case] expected: FuturesYearDigits,
+    ) {
+        let config: InteractiveBrokersInstrumentProviderConfig =
+            serde_json::from_value(serde_json::json!({"futures_year_digits": digits})).unwrap();
+        assert_eq!(config.futures_year_digits, expected);
+        assert_eq!(
+            serde_json::to_value(&config).unwrap()["futures_year_digits"],
+            serde_json::json!(digits)
+        );
+    }
+
+    #[rstest]
+    #[case(0)]
+    #[case(3)]
+    #[case(4)]
+    #[case(u8::MAX)]
+    fn test_provider_rejects_invalid_serialized_futures_year_digits(#[case] digits: u8) {
+        let error = serde_json::from_value::<InteractiveBrokersInstrumentProviderConfig>(
+            serde_json::json!({"futures_year_digits": digits}),
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "`futures_year_digits` must be either 1 or 2"
+        );
     }
 }

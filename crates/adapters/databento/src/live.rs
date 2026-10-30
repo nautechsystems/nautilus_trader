@@ -49,7 +49,7 @@ use nautilus_core::{
 use nautilus_model::{
     data::{Data, InstrumentStatus, OrderBookDelta, OrderBookDeltas},
     enums::RecordFlag,
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{InstrumentId, Symbol, Venue, futures::FuturesYearDigits},
     instruments::{Instrument, InstrumentAny},
     types::Currency,
 };
@@ -65,7 +65,10 @@ use super::{
 use crate::{
     common::{Credential, build_publisher_venue_map, load_publishers},
     decode::{decode_instrument_def_msg, decode_record},
-    symbology::{check_consistent_symbology, infer_symbology_type},
+    symbology::{
+        check_consistent_symbology, dataset_uses_futures_symbology, infer_symbology_type,
+        raw_symbol, resolve_futures_instrument_id,
+    },
     types::PublisherId,
 };
 
@@ -98,6 +101,7 @@ pub enum DatabentoMessage {
     pyo3_stub_gen::derive::gen_stub_pyclass(module = "nautilus_trader.adapters.databento")
 )]
 pub struct DatabentoLiveClient {
+    futures_year_digits: FuturesYearDigits,
     credential: Credential,
     pub dataset: String,
     is_running: bool,
@@ -145,6 +149,7 @@ impl DatabentoLiveClient {
             .and_then(|mins| if mins >= 0 { Some(mins as u64) } else { None });
 
         Ok(Self {
+            futures_year_digits: FuturesYearDigits::default(),
             credential: Credential::new(key),
             dataset,
             cmd_tx,
@@ -157,6 +162,13 @@ impl DatabentoLiveClient {
             bars_timestamp_on_close: bars_timestamp_on_close.unwrap_or(true),
             reconnect_timeout_mins,
         })
+    }
+
+    /// Selects one- or two-digit years for futures instrument IDs.
+    #[must_use]
+    pub fn with_futures_year_digits(mut self, futures_year_digits: FuturesYearDigits) -> Self {
+        self.futures_year_digits = futures_year_digits;
+        self
     }
 
     #[must_use]
@@ -197,7 +209,7 @@ impl DatabentoLiveClient {
 
         let symbols: Vec<String> = instrument_ids
             .iter()
-            .map(|id| id.symbol.to_string())
+            .map(|id| raw_symbol(id.symbol.as_str(), &self.dataset, self.futures_year_digits))
             .collect();
         let first_symbol = symbols
             .first()
@@ -230,8 +242,13 @@ impl DatabentoLiveClient {
         if let Some(precisions) = price_precisions {
             for (instrument_id, precision) in instrument_ids.iter().zip(precisions) {
                 if let Some(precision) = precision {
+                    let raw = raw_symbol(
+                        instrument_id.symbol.as_str(),
+                        &self.dataset,
+                        self.futures_year_digits,
+                    );
                     self.send_command(HandlerCommand::SetPricePrecision(
-                        instrument_id.symbol,
+                        Symbol::from(raw.as_str()),
                         precision,
                     ))?;
                 }
@@ -278,7 +295,8 @@ impl DatabentoLiveClient {
             self.use_exchange_as_venue,
             self.bars_timestamp_on_close,
             self.reconnect_timeout_mins,
-        );
+        )
+        .with_futures_year_digits(self.futures_year_digits);
 
         self.send_command(HandlerCommand::Start)?;
         self.is_running = true;
@@ -356,6 +374,7 @@ impl std::error::Error for CommandSendError {}
 /// live feed. If decoded output cannot be drained, memory pressure is the hard
 /// failure mode instead of arbitrary queue limits or delayed market data.
 pub struct DatabentoFeedHandler {
+    futures_year_digits: FuturesYearDigits,
     credential: Credential,
     dataset: String,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
@@ -387,6 +406,13 @@ impl Debug for DatabentoFeedHandler {
 }
 
 impl DatabentoFeedHandler {
+    /// Selects one- or two-digit years for futures instrument IDs.
+    #[must_use]
+    pub fn with_futures_year_digits(mut self, futures_year_digits: FuturesYearDigits) -> Self {
+        self.futures_year_digits = futures_year_digits;
+        self
+    }
+
     /// Creates a new [`DatabentoFeedHandler`] instance.
     ///
     /// # Panics
@@ -418,6 +444,7 @@ impl DatabentoFeedHandler {
             .expect("hardcoded backoff parameters are valid");
 
         Self {
+            futures_year_digits: FuturesYearDigits::default(),
             credential,
             dataset,
             cmd_rx: rx,
@@ -557,7 +584,7 @@ impl DatabentoFeedHandler {
         let session_start = tokio::time::Instant::now();
         let clock = get_atomic_clock_realtime();
         let mut symbol_map = PitSymbolMap::new();
-        let mut instrument_id_map: AHashMap<u32, InstrumentId> = AHashMap::new();
+        let mut instrument_id_map: AHashMap<u32, CachedInstrumentId> = AHashMap::new();
         let mut instrument_def_price_precision_map: AHashMap<u32, u8> = AHashMap::new();
         let mut subscription_price_precision_map: AHashMap<u32, u8> = AHashMap::new();
 
@@ -782,6 +809,13 @@ impl DatabentoFeedHandler {
 
             let ts_init = clock.get_time_ns();
 
+            if let Err(e) =
+                self.cache_futures_instrument_id(&record, &symbol_map, &mut instrument_id_map)
+            {
+                log::error!("Error resolving futures instrument ID: {e}");
+                continue;
+            }
+
             // Decode record
             if let Some(msg) = record.get::<dbn::ErrorMsg>() {
                 handle_error_msg(msg);
@@ -790,34 +824,23 @@ impl DatabentoFeedHandler {
                     self.send_msg(DatabentoMessage::SubscriptionAck(ack));
                 }
             } else if let Some(msg) = record.get::<dbn::SymbolMappingMsg>() {
-                // Remove instrument ID index as the raw symbol may have changed
-                instrument_id_map.remove(&msg.hd.instrument_id);
                 instrument_def_price_precision_map.remove(&msg.hd.instrument_id);
                 update_price_precision_map_with_symbol_mapping_msg(
                     msg,
                     &self.price_precision_overrides,
                     &mut subscription_price_precision_map,
                 )?;
-                handle_symbol_mapping_msg(msg, &mut symbol_map, &mut instrument_id_map)?;
+                handle_symbol_mapping_msg(
+                    msg,
+                    &mut symbol_map,
+                    &self.symbol_venue_map,
+                    &mut instrument_id_map,
+                )?;
             } else if let Some(msg) = record.get::<dbn::InstrumentDefMsg>() {
-                if self.use_exchange_as_venue {
-                    let exchange = msg.exchange()?;
-                    if !exchange.is_empty() {
-                        update_instrument_id_map_with_exchange(
-                            &symbol_map,
-                            &self.symbol_venue_map,
-                            &mut instrument_id_map,
-                            msg.hd.instrument_id,
-                            exchange,
-                        )?;
-                    }
-                }
-                let maybe_data = handle_instrument_def_msg(
+                let maybe_data = self.handle_instrument_def_msg(
                     msg,
                     &record,
                     &symbol_map,
-                    &self.publisher_venue_map,
-                    &self.symbol_venue_map,
                     &mut instrument_id_map,
                     ts_init,
                 )?;
@@ -956,6 +979,118 @@ impl DatabentoFeedHandler {
         }
     }
 
+    /// Handles instrument definition messages and decodes them into Nautilus instruments.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if instrument decoding fails.
+    fn handle_instrument_def_msg(
+        &self,
+        msg: &dbn::InstrumentDefMsg,
+        record: &dbn::RecordRef,
+        symbol_map: &PitSymbolMap,
+        instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        instrument_id_map.remove(&msg.hd.instrument_id);
+        let exchange = if self.use_exchange_as_venue {
+            msg.exchange()?
+        } else {
+            ""
+        };
+
+        if !exchange.is_empty() {
+            update_instrument_id_map_with_exchange(
+                symbol_map,
+                &self.symbol_venue_map,
+                instrument_id_map,
+                msg.hd.instrument_id,
+                exchange,
+            )?;
+        }
+
+        let instrument_id = update_instrument_id_map(
+            record,
+            symbol_map,
+            &self.publisher_venue_map,
+            &self.symbol_venue_map,
+            instrument_id_map,
+        )?;
+        let mut instrument_id = resolve_futures_instrument_id(
+            record,
+            instrument_id,
+            self.futures_year_digits,
+            &self.symbol_venue_map.load(),
+            None,
+        )?;
+
+        if exchange.is_empty()
+            && let Some(venue) = self.symbol_venue_map.get_cloned(&instrument_id.symbol)
+        {
+            instrument_id.venue = venue;
+        }
+
+        let instrument = decode_instrument_def_msg(msg, instrument_id, Some(ts_init), None)?;
+
+        let cached = if instrument.is_some()
+            && self.futures_year_digits == FuturesYearDigits::Two
+            && dataset_uses_futures_symbology(&self.dataset)
+        {
+            if exchange.is_empty() {
+                CachedInstrumentId::Definition(instrument_id)
+            } else {
+                CachedInstrumentId::Exchange(instrument_id)
+            }
+        } else {
+            CachedInstrumentId::Inferred(instrument_id)
+        };
+
+        instrument_id_map.insert(record.header().instrument_id, cached);
+        Ok(instrument)
+    }
+
+    fn cache_futures_instrument_id(
+        &self,
+        record: &dbn::RecordRef,
+        symbol_map: &PitSymbolMap,
+        instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
+    ) -> anyhow::Result<()> {
+        if self.futures_year_digits != FuturesYearDigits::Two
+            || !dataset_uses_futures_symbology(&self.dataset)
+            || record.get::<dbn::InstrumentDefMsg>().is_some()
+            || record.get::<dbn::SymbolMappingMsg>().is_some()
+            || instrument_id_map.contains_key(&record.header().instrument_id)
+            || symbol_map.get_for_rec(record).is_none()
+        {
+            return Ok(());
+        }
+
+        let instrument_id = update_instrument_id_map(
+            record,
+            symbol_map,
+            &self.publisher_venue_map,
+            &self.symbol_venue_map,
+            instrument_id_map,
+        )?;
+        let mut instrument_id = resolve_futures_instrument_id(
+            record,
+            instrument_id,
+            self.futures_year_digits,
+            &self.symbol_venue_map.load(),
+            None,
+        )?;
+
+        if let Some(venue) = self.symbol_venue_map.get_cloned(&instrument_id.symbol) {
+            instrument_id.venue = venue;
+        }
+
+        instrument_id_map.insert(
+            record.header().instrument_id,
+            CachedInstrumentId::Inferred(instrument_id),
+        );
+        Ok(())
+    }
+
     /// Sends a message to the message processing task.
     fn send_msg(&self, msg: DatabentoMessage) {
         log::trace!("Sending {msg:?}");
@@ -970,6 +1105,13 @@ impl DatabentoFeedHandler {
             log::debug!("Could not send close message: {e}");
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+enum CachedInstrumentId {
+    Inferred(InstrumentId),
+    Definition(InstrumentId),
+    Exchange(InstrumentId),
 }
 
 /// Handles Databento error messages by logging them.
@@ -1031,12 +1173,29 @@ fn parse_ack_message(message: &str) -> String {
 fn handle_symbol_mapping_msg(
     msg: &dbn::SymbolMappingMsg,
     symbol_map: &mut PitSymbolMap,
-    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
+    symbol_venue_map: &AtomicMap<Symbol, Venue>,
+    instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
 ) -> anyhow::Result<()> {
+    let changed =
+        symbol_map.get(msg.hd.instrument_id).map(String::as_str) != Some(msg.stype_out_symbol()?);
     symbol_map
         .on_symbol_mapping(msg)
         .map_err(|e| anyhow::anyhow!("on_symbol_mapping failed for {msg:?}: {e}"))?;
-    instrument_id_map.remove(&msg.hd.instrument_id);
+
+    match instrument_id_map.get(&msg.hd.instrument_id).copied() {
+        Some(CachedInstrumentId::Definition(mut id)) if !changed => {
+            if let Some(venue) = symbol_venue_map.get_cloned(&id.symbol) {
+                id.venue = venue;
+            }
+
+            instrument_id_map.insert(msg.hd.instrument_id, CachedInstrumentId::Definition(id));
+        }
+        Some(CachedInstrumentId::Exchange(_)) if !changed => {}
+        _ => {
+            instrument_id_map.remove(&msg.hd.instrument_id);
+        }
+    }
+
     Ok(())
 }
 
@@ -1077,7 +1236,7 @@ fn update_price_precision_map_with_symbol_mapping_msg(
 fn update_instrument_id_map_with_exchange(
     symbol_map: &PitSymbolMap,
     symbol_venue_map: &AtomicMap<Symbol, Venue>,
-    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
+    instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
     raw_instrument_id: u32,
     exchange: &str,
 ) -> anyhow::Result<InstrumentId> {
@@ -1091,7 +1250,11 @@ fn update_instrument_id_map_with_exchange(
     symbol_venue_map.rcu(|m| {
         m.entry(symbol).or_insert(venue);
     });
-    instrument_id_map.insert(raw_instrument_id, instrument_id);
+
+    instrument_id_map.insert(
+        raw_instrument_id,
+        CachedInstrumentId::Exchange(instrument_id),
+    );
     Ok(instrument_id)
 }
 
@@ -1100,13 +1263,13 @@ fn update_instrument_id_map(
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AtomicMap<Symbol, Venue>,
-    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
+    instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
 ) -> anyhow::Result<InstrumentId> {
     let header = record.header();
 
     // Check if instrument ID is already in the map
     if let Some(&instrument_id) = instrument_id_map.get(&header.instrument_id) {
-        return Ok(instrument_id);
+        return Ok(instrument_id.id());
     }
 
     let raw_symbol = symbol_map.get_for_rec(record).ok_or_else(|| {
@@ -1129,33 +1292,19 @@ fn update_instrument_id_map(
     };
     let instrument_id = InstrumentId::new(symbol, venue);
 
-    instrument_id_map.insert(header.instrument_id, instrument_id);
+    instrument_id_map.insert(
+        header.instrument_id,
+        CachedInstrumentId::Inferred(instrument_id),
+    );
     Ok(instrument_id)
 }
 
-/// Handles instrument definition messages and decodes them into Nautilus instruments.
-///
-/// # Errors
-///
-/// Returns an error if instrument decoding fails.
-fn handle_instrument_def_msg(
-    msg: &dbn::InstrumentDefMsg,
-    record: &dbn::RecordRef,
-    symbol_map: &PitSymbolMap,
-    publisher_venue_map: &IndexMap<PublisherId, Venue>,
-    symbol_venue_map: &AtomicMap<Symbol, Venue>,
-    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
-    ts_init: UnixNanos,
-) -> anyhow::Result<Option<InstrumentAny>> {
-    let instrument_id = update_instrument_id_map(
-        record,
-        symbol_map,
-        publisher_venue_map,
-        symbol_venue_map,
-        instrument_id_map,
-    )?;
-
-    decode_instrument_def_msg(msg, instrument_id, Some(ts_init), None)
+impl CachedInstrumentId {
+    fn id(self) -> InstrumentId {
+        match self {
+            Self::Inferred(id) | Self::Definition(id) | Self::Exchange(id) => id,
+        }
+    }
 }
 
 fn handle_status_msg(
@@ -1164,7 +1313,7 @@ fn handle_status_msg(
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AtomicMap<Symbol, Venue>,
-    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
+    instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
     ts_init: UnixNanos,
 ) -> anyhow::Result<InstrumentStatus> {
     let instrument_id = update_instrument_id_map(
@@ -1185,7 +1334,7 @@ fn handle_imbalance_msg(
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AtomicMap<Symbol, Venue>,
-    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
+    instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
     instrument_def_price_precision_map: &AHashMap<u32, u8>,
     subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
@@ -1201,7 +1350,7 @@ fn handle_imbalance_msg(
 
     let price_precision = resolve_price_precision(
         msg.hd.instrument_id,
-        instrument_id,
+        symbol_map.get_for_rec(record).map(String::as_str),
         instrument_def_price_precision_map,
         subscription_price_precision_map,
         price_precision_overrides,
@@ -1217,7 +1366,7 @@ fn handle_statistics_msg(
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AtomicMap<Symbol, Venue>,
-    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
+    instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
     instrument_def_price_precision_map: &AHashMap<u32, u8>,
     subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
@@ -1239,7 +1388,7 @@ fn handle_statistics_msg(
 
     let price_precision = resolve_price_precision(
         msg.hd.instrument_id,
-        instrument_id,
+        symbol_map.get_for_rec(record).map(String::as_str),
         instrument_def_price_precision_map,
         subscription_price_precision_map,
         price_precision_overrides,
@@ -1254,7 +1403,7 @@ fn handle_record(
     symbol_map: &PitSymbolMap,
     publisher_venue_map: &IndexMap<PublisherId, Venue>,
     symbol_venue_map: &AtomicMap<Symbol, Venue>,
-    instrument_id_map: &mut AHashMap<u32, InstrumentId>,
+    instrument_id_map: &mut AHashMap<u32, CachedInstrumentId>,
     instrument_def_price_precision_map: &AHashMap<u32, u8>,
     subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
@@ -1272,7 +1421,7 @@ fn handle_record(
 
     let price_precision = resolve_price_precision(
         record.header().instrument_id,
-        instrument_id,
+        symbol_map.get_for_rec(&record).map(String::as_str),
         instrument_def_price_precision_map,
         subscription_price_precision_map,
         price_precision_overrides,
@@ -1321,7 +1470,7 @@ fn claim_trade_source(
 
 fn resolve_price_precision(
     record_instrument_id: u32,
-    instrument_id: InstrumentId,
+    raw_symbol: Option<&str>,
     instrument_def_price_precision_map: &AHashMap<u32, u8>,
     subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
@@ -1335,9 +1484,11 @@ fn resolve_price_precision(
                 .copied()
         })
         .or_else(|| {
-            price_precision_overrides
-                .get(&instrument_id.symbol)
-                .copied()
+            raw_symbol.and_then(|symbol| {
+                price_precision_overrides
+                    .get(&Symbol::from_str_unchecked(symbol))
+                    .copied()
+            })
         })
         .unwrap_or(Currency::USD().precision)
 }
@@ -1423,6 +1574,7 @@ mod tests {
 
     use databento::{dbn::enums::rtype, live::Subscription};
     use indexmap::IndexMap;
+    use nautilus_model::types::{Price, Quantity};
     use rstest::*;
     use time::macros::datetime;
 
@@ -2093,5 +2245,118 @@ mod tests {
                 prop_assert_eq!(result.unwrap().deltas.len(), total);
             }
         }
+    }
+
+    #[rstest]
+    #[case(2, "CLZ29-CLF30.XNYM")]
+    #[case(1, "CLZ9-CLF0.XNYM")]
+    fn test_live_subscription_preserves_native_symbols(
+        #[case] digits: u8,
+        #[case] id: InstrumentId,
+    ) {
+        let mut client = create_test_client().with_futures_year_digits(digits.try_into().unwrap());
+        client
+            .subscribe(
+                "mbp-1".to_string(),
+                vec![id],
+                None,
+                None,
+                Some(vec![Some(3)]),
+                None,
+            )
+            .unwrap();
+        let rx = client.cmd_rx.as_mut().unwrap();
+        assert!(
+            matches!(rx.try_recv().unwrap(), HandlerCommand::SetPricePrecision(symbol, 3) if symbol == Symbol::from("CLZ9-CLF0"))
+        );
+
+        let HandlerCommand::Subscribe(subscription) = rx.try_recv().unwrap() else {
+            panic!("expected subscription");
+        };
+
+        let expected = Subscription::builder()
+            .schema(dbn::Schema::Mbp1)
+            .symbols(vec!["CLZ9-CLF0".to_string()])
+            .build();
+        assert_eq!(subscription, expected);
+        assert_eq!(
+            client.symbol_venue_map.get_cloned(&id.symbol),
+            Some(Venue::from("XNYM"))
+        );
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+    }
+
+    #[rstest]
+    fn test_futures_cache_uses_requested_venue_after_year_conversion() {
+        let mut handler = create_test_handler(None);
+        handler.publisher_venue_map.insert(1, Venue::from("GLBX"));
+        handler
+            .symbol_venue_map
+            .insert(Symbol::from("CLF26"), Venue::from("XNYM"));
+        let mut mapping = dbn::PitSymbolMap::new();
+        mapping.inner_mut().insert(42, "CLF6".to_string());
+        let mut msg = dbn::BboMsg::default_for_schema(dbn::Schema::Bbo1S);
+        msg.hd.publisher_id = 1;
+        msg.hd.instrument_id = 42;
+        msg.ts_recv = 1_766_102_400_000_000_000;
+        let mut ids = AHashMap::new();
+        handler
+            .cache_futures_instrument_id(&dbn::RecordRef::from(&msg), &mapping, &mut ids)
+            .unwrap();
+        assert_eq!(
+            ids.get(&42).copied().map(CachedInstrumentId::id),
+            Some(InstrumentId::from("CLF26.XNYM"))
+        );
+    }
+
+    #[rstest]
+    fn test_futures_precision_override_uses_native_symbol() {
+        let mut handler = create_test_handler(None);
+        handler.publisher_venue_map.insert(1, Venue::from("GLBX"));
+        let mut mapping = dbn::PitSymbolMap::new();
+        mapping.inner_mut().insert(42, "CLF6".to_string());
+        let mut msg = dbn::TradeMsg::default();
+        msg.hd.publisher_id = 1;
+        msg.hd.instrument_id = 42;
+        msg.hd.ts_event = 1_766_102_400_000_000_000;
+        msg.ts_recv = msg.hd.ts_event;
+        msg.price = 75_125_000_000;
+        msg.size = 7;
+        msg.side = b'A' as std::ffi::c_char;
+        let record = dbn::RecordRef::from(&msg);
+        let mut ids = AHashMap::new();
+        handler
+            .cache_futures_instrument_id(&record, &mapping, &mut ids)
+            .unwrap();
+        let overrides = AHashMap::from_iter([(Symbol::from("CLF6"), 3)]);
+        let (data, extra) = handle_record(
+            record,
+            &mapping,
+            &handler.publisher_venue_map,
+            &handler.symbol_venue_map,
+            &mut ids,
+            &AHashMap::new(),
+            &AHashMap::new(),
+            &overrides,
+            1_766_102_400_000_000_001.into(),
+            &HashSet::new(),
+            true,
+        )
+        .unwrap();
+
+        let Some(Data::Trade(trade)) = data else {
+            panic!("expected trade");
+        };
+
+        assert_eq!(trade.instrument_id, InstrumentId::from("CLF26.GLBX"));
+        assert_eq!(trade.price.precision, 3);
+        assert_eq!(trade.price, Price::from("75.125"));
+        assert_eq!(trade.size, Quantity::from(7));
+        assert_eq!(trade.ts_event, msg.hd.ts_event);
+        assert_eq!(trade.ts_init, 1_766_102_400_000_000_001);
+        assert!(extra.is_none());
     }
 }

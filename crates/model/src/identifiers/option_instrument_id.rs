@@ -28,14 +28,15 @@ use thiserror::Error;
 
 use crate::{
     enums::OptionKind,
-    identifiers::{InstrumentId, Symbol, Venue},
+    identifiers::{
+        InstrumentId, Symbol, Venue,
+        futures::{futures_month, futures_month_code, parse_futures_symbol},
+    },
     types::{
         Price,
         fixed::{check_fixed_precision, raw_scale},
     },
 };
-
-const MONTH_CODES: &[u8; 12] = b"FGHJKMNQUVXZ";
 
 /// The contract inputs used to compute a candidate option identifier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -209,6 +210,10 @@ pub fn compute_option_instrument_id(
 /// - The futures code, root, or midcurve tenor is unsupported.
 /// - The expiry is on a weekend, a nominal WTI monthly date, or an ambiguous micro date.
 /// - The strike is non-positive or cannot fit the supported integral symbol scale.
+#[expect(
+    clippy::missing_panics_doc,
+    reason = "the futures parser validates the month code before conversion"
+)]
 pub fn cme_globex_option_symbol(
     future_code: &str,
     strike: Price,
@@ -216,7 +221,21 @@ pub fn cme_globex_option_symbol(
     expiry: Date,
     mid_curve: Option<u8>,
 ) -> Result<String, OptionInstrumentIdError> {
-    let (root, future_month, future_year) = parse_futures_symbol(future_code)?;
+    let parsed = parse_futures_symbol(future_code)
+        .filter(|parsed| {
+            matches!(parsed.year_digits.len(), 1 | 2)
+                && future_code
+                    .bytes()
+                    .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+        })
+        .ok_or_else(|| OptionInstrumentIdError::InvalidFutureCode {
+            value: future_code.to_string(),
+            reason: "expected a root, month code, and one- or two-digit year".to_string(),
+        })?;
+
+    let root = parsed.root;
+    let future_month = u32::from(futures_month(parsed.month_code).expect("parsed futures month"));
+    let future_year = parsed.year_digits;
     let day = expiry.weekday().to_monday_one_offset();
     if day > 5 {
         return Err(invalid_expiry(
@@ -247,7 +266,7 @@ pub fn cme_globex_option_symbol(
         }
     };
 
-    let month_code = char::from(MONTH_CODES[(month - 1) as usize]);
+    let month_code = futures_month_code(month as u8).expect("expiry month is valid");
     let side = option_letter(option_kind);
     let year_width = future_year.len();
     let year_modulus = if year_width == 1 { 10 } else { 100 };
@@ -506,45 +525,6 @@ fn invalid_expiry(expiry: Date, reason: &str) -> OptionInstrumentIdError {
         value: expiry.to_string(),
         reason: reason.to_string(),
     }
-}
-
-fn parse_futures_symbol(code: &str) -> Result<(&str, u32, &str), OptionInstrumentIdError> {
-    let invalid = |reason: &str| OptionInstrumentIdError::InvalidFutureCode {
-        value: code.to_string(),
-        reason: reason.to_string(),
-    };
-
-    if !code
-        .bytes()
-        .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
-    {
-        return Err(invalid("expected uppercase ASCII letters and digits"));
-    }
-
-    let year_start = code
-        .rfind(|c: char| !c.is_ascii_digit())
-        .map_or(0, |index| index + 1);
-    let head = &code[..year_start];
-    let year = &code[year_start..];
-
-    if !matches!(year.len(), 1 | 2) {
-        return Err(invalid("year must contain one or two digits"));
-    }
-
-    let Some(month_code) = head.as_bytes().last() else {
-        return Err(invalid("missing month code"));
-    };
-
-    let month = MONTH_CODES
-        .iter()
-        .position(|c| c == month_code)
-        .ok_or_else(|| invalid("invalid month code"))?;
-    let root = &head[..head.len() - 1];
-    if root.is_empty() {
-        return Err(invalid("missing future root"));
-    }
-
-    Ok((root, month as u32 + 1, year))
 }
 
 #[cfg(test)]

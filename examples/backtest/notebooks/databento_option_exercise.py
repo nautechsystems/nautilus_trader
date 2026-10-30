@@ -143,8 +143,8 @@ if __name__ == "__main__":
         for index, bar in enumerate(bars)
     ]
 
-    future_id = InstrumentId.from_str("ESH6.XCME")
-    option_id = InstrumentId.from_str("EW2F6 C7000.XCME")
+    future_id = InstrumentId.from_str("ESH26.XCME")
+    option_id = InstrumentId.from_str("EW2F26 C7000.XCME")
     engine = BacktestEngine(
         BacktestEngineConfig(trader_id=TraderId.from_str("BACKTESTER-001")),
     )
