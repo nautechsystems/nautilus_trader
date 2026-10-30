@@ -41,12 +41,6 @@ existing matching engine, so resting orders, book state, and generated IDs are p
 different definition for a registered ID raises an error and leaves the engine unchanged. The
 comparison ignores `ts_event` and `ts_init`.
 
-Instrument definitions delivered as replay data update existing matching engines before publication
-to strategies, in replay order. Price grid changes reset execution market data and queue state and
-cancel incompatible working orders using the matching engine's existing behavior. Positions,
-accounts, and generated ID sequences are preserved. Expiration changes are rejected. Resetting the
-engine restores the definitions used before replay updates.
-
 ### Loading data
 
 Each `add_data()` call copies its input into an independent stream. The engine orders each stream
