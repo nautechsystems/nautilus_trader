@@ -357,7 +357,10 @@ impl DockerizedIBGateway {
     /// returns an empty container ID.
     pub async fn create_owned(&self) -> anyhow::Result<OwnedIBGateway> {
         let container_id = self.create_container().await?;
-        anyhow::ensure!(!container_id.is_empty(), "Docker returned an empty container ID");
+        anyhow::ensure!(
+            !container_id.is_empty(),
+            "Docker returned an empty container ID"
+        );
 
         Ok(OwnedIBGateway {
             gateway: self.clone(),
@@ -659,7 +662,9 @@ impl OwnedIBGateway {
             .await
             .context("failed to start the owned gateway container")?;
 
-        self.gateway.wait_until_ready(&self.container_id, wait).await
+        self.gateway
+            .wait_until_ready(&self.container_id, wait)
+            .await
     }
 
     /// Stops and removes only this container, without falling back to its name.
@@ -705,7 +710,7 @@ impl OwnedIBGateway {
 }
 
 #[cfg(all(test, feature = "gateway"))]
-#[path = "dockerized/owned_tests.rs"]
+#[path = "dockerized/tests/owned_tests.rs"]
 mod owned_tests;
 
 /// Stub implementation when gateway feature is disabled.

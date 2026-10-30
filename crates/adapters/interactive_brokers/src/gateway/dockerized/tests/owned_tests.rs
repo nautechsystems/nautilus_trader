@@ -70,16 +70,17 @@ async fn test_owned_create_returns_handle_before_start() {
     assert_eq!(owned.host(), "127.0.0.1");
     assert_eq!(owned.port(), 4002);
     server.assert_requests(&[("POST", "/containers/create")]);
-    assert!(server.requests[0].1.contains("name=nautilus-ib-gateway-paper"));
+    assert!(
+        server.requests[0]
+            .1
+            .contains("name=nautilus-ib-gateway-paper")
+    );
 }
 
 #[tokio::test]
 async fn test_owned_create_rejects_empty_container_id() {
-    let mut server = DockerServer::new(vec![Reply::json(
-        201,
-        json!({"Id": "", "Warnings": []}),
-    )])
-    .await;
+    let mut server =
+        DockerServer::new(vec![Reply::json(201, json!({"Id": "", "Warnings": []}))]).await;
 
     let e = server.gateway().create_owned().await.unwrap_err();
 
@@ -227,10 +228,7 @@ async fn test_owned_start_already_running_waits_for_readiness() {
     let mut server = DockerServer::new(vec![
         Reply::json(201, json!({"Id": "owned-a", "Warnings": []})),
         Reply::empty(304),
-        Reply::json(
-            200,
-            json!({"State": {"StartedAt": "2026-10-31T00:00:00Z"}}),
-        ),
+        Reply::json(200, json!({"State": {"StartedAt": "2026-10-31T00:00:00Z"}})),
         Reply::Response(200, logs),
     ])
     .await;
@@ -296,13 +294,20 @@ async fn test_python_owned_blocking_cleanup_after_start_failure() {
         Python::initialize();
         Python::attach(|py| {
             let gateway = Py::new(py, gateway).unwrap();
-            let owned = gateway.bind(py).call_method0("create_owned_blocking").unwrap();
+            let owned = gateway
+                .bind(py)
+                .call_method0("create_owned_blocking")
+                .unwrap();
             assert_python_owned_contract(py, &owned);
 
             let e = owned.call_method1("start_blocking", (1,)).unwrap_err();
             assert!(e.is_instance_of::<PyRuntimeError>(py));
             assert_eq!(
-                owned.getattr("container_id").unwrap().extract::<String>().unwrap(),
+                owned
+                    .getattr("container_id")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
                 "owned-a",
             );
             owned.call_method0("stop_blocking").unwrap();
@@ -360,14 +365,26 @@ async def bounded_result(task):
                 c"owned_gateway_test",
             )
             .unwrap();
-            let event_loop = py.import("asyncio").unwrap().call_method0("new_event_loop").unwrap();
+            let event_loop = py
+                .import("asyncio")
+                .unwrap()
+                .call_method0("new_event_loop")
+                .unwrap();
             let gateway = Py::new(py, gateway).unwrap();
-            let exercise = module.getattr("exercise").unwrap().call1((gateway,)).unwrap();
+            let exercise = module
+                .getattr("exercise")
+                .unwrap()
+                .call1((gateway,))
+                .unwrap();
             let task = event_loop.call_method1("create_task", (exercise,)).unwrap();
             sender
                 .send((event_loop.clone().unbind(), task.clone().unbind()))
                 .unwrap();
-            let completion = module.getattr("bounded_result").unwrap().call1((&task,)).unwrap();
+            let completion = module
+                .getattr("bounded_result")
+                .unwrap()
+                .call1((&task,))
+                .unwrap();
             let result = event_loop.call_method1("run_until_complete", (completion,));
             event_loop.call_method0("close").unwrap();
             assert_python_owned_contract(py, &result.unwrap());
@@ -398,7 +415,11 @@ async def bounded_result(task):
 fn assert_python_owned_contract(py: Python<'_>, owned: &Bound<'_, PyAny>) {
     let class = py.get_type::<OwnedIBGateway>();
     assert_eq!(
-        class.getattr("__module__").unwrap().extract::<String>().unwrap(),
+        class
+            .getattr("__module__")
+            .unwrap()
+            .extract::<String>()
+            .unwrap(),
         "nautilus_trader.adapters.interactive_brokers",
     );
     assert!(class.call0().unwrap_err().is_instance_of::<PyTypeError>(py));
@@ -415,7 +436,11 @@ fn assert_python_owned_contract(py: Python<'_>, owned: &Bound<'_, PyAny>) {
             .is_instance_of::<PyAttributeError>(py),
     );
     assert_eq!(
-        owned.getattr("container_id").unwrap().extract::<String>().unwrap(),
+        owned
+            .getattr("container_id")
+            .unwrap()
+            .extract::<String>()
+            .unwrap(),
         "owned-a",
     );
     let cloned = owned.extract::<OwnedIBGateway>().unwrap();
