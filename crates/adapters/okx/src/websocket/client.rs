@@ -836,14 +836,15 @@ impl OKXWebSocketClient {
                         Some(OKXWsMessage::Reconnected) => {
                             let epoch = ws_client.connection_epoch();
 
-                            if signal.load(Ordering::Acquire)
-                                || !ws_client.is_active()
-                                || epoch == reconnect_epoch
-                            {
+                            if !advance_reconnect_epoch(
+                                &mut reconnect_epoch,
+                                epoch,
+                                signal.load(Ordering::Acquire),
+                                ws_client.is_active(),
+                            ) {
                                 continue;
                             }
 
-                            reconnect_epoch = epoch;
                             auth_tracker.invalidate();
                             has_reconnected = true;
 
@@ -3495,6 +3496,20 @@ fn subscription_arg_batches(
     args.chunks(OKX_WS_SUBSCRIPTION_ARGS_MAX_PER_MESSAGE)
 }
 
+fn advance_reconnect_epoch(
+    reconnect_epoch: &mut u64,
+    epoch: u64,
+    stopping: bool,
+    active: bool,
+) -> bool {
+    if stopping || !active || epoch == *reconnect_epoch {
+        return false;
+    }
+
+    *reconnect_epoch = epoch;
+    true
+}
+
 fn auth_attempt_superseded(error: &Error) -> bool {
     error.to_string().contains("superseded")
         || matches!(error, Error::Io(e) if matches!(
@@ -4315,6 +4330,36 @@ mod tests {
         assert_eq!(batches.len(), 2);
         assert_eq!(batches[0].len(), 256);
         assert_eq!(batches[1].len(), 44);
+    }
+
+    #[rstest]
+    #[case::buffered_notifications(false)]
+    #[case::notification_during_install(true)]
+    fn buffered_reconnects_advance_only_the_active_epoch(#[case] install_window: bool) {
+        let mut reconnect_epoch = 0;
+        if install_window {
+            let advanced = advance_reconnect_epoch(&mut reconnect_epoch, 2, false, false);
+            assert!(!advanced);
+            assert_eq!(reconnect_epoch, 0);
+        }
+
+        let first = advance_reconnect_epoch(&mut reconnect_epoch, 2, false, true);
+        let duplicate = advance_reconnect_epoch(&mut reconnect_epoch, 2, false, true);
+        let next = advance_reconnect_epoch(&mut reconnect_epoch, 3, false, true);
+
+        assert!(first);
+        assert!(!duplicate);
+        assert!(next);
+        assert_eq!(reconnect_epoch, 3);
+    }
+
+    #[rstest]
+    fn stopped_reconnect_does_not_advance_the_epoch() {
+        let mut reconnect_epoch = 1;
+        let advanced = advance_reconnect_epoch(&mut reconnect_epoch, 2, true, true);
+
+        assert!(!advanced);
+        assert_eq!(reconnect_epoch, 1);
     }
 
     #[rstest]
