@@ -25,13 +25,14 @@ use nautilus_model::{
 /// Uses checked fixed-point arithmetic to preserve all stored price units.
 ///
 /// # Returns
-/// A calculated protection price.
+/// A calculated protection price at the price increment's precision.
 ///
 /// # Errors
 /// Returns an error if:
 /// - the order type is invalid.
 /// - best bid/ask is not provided when required for the order side.
 /// - the calculated price is outside the representable range.
+/// - the calculated price has fractional digits beyond the price increment's precision.
 pub fn protection_price_calculate(
     price_increment: Price,
     order: &OrderAny,
@@ -69,7 +70,7 @@ mod tests {
     use nautilus_model::{
         enums::{OrderSide, OrderType, TriggerType},
         orders::builder::OrderTestBuilder,
-        types::Quantity,
+        types::{Quantity, fixed::FIXED_PRECISION},
     };
     use rstest::rstest;
 
@@ -94,7 +95,7 @@ mod tests {
     #[rstest]
     #[case(OrderSide::Buy, "123.456821")]
     #[case(OrderSide::Sell, "123.456761")]
-    fn test_protection_preserves_sub_increment_units(
+    fn test_protection_rejects_sub_increment_units(
         #[case] side: OrderSide,
         #[case] expected: &str,
         #[values(5, 6)] quote_precision: u8,
@@ -102,11 +103,47 @@ mod tests {
         let order = build_stop_order(OrderType::Market, side);
         let mut quote = Price::from("123.456791");
         quote.precision = quote_precision;
-        let price =
-            protection_price_calculate(Price::from("0.00001"), &order, 3, Some(quote), Some(quote))
-                .unwrap();
+        let increment = Price::from("0.00001");
+        let precision = increment.precision;
+        let raw = Price::from(expected).raw();
+        let scale = PriceRaw::pow(10, u32::from(FIXED_PRECISION - precision));
+        let remainder = raw % scale;
+
+        let error =
+            protection_price_calculate(increment, &order, 3, Some(quote), Some(quote)).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Invalid fixed-point raw value {raw} for precision {precision}: \
+                 remainder {remainder} when divided by scale {scale}. \
+                 Raw value should be a multiple of {scale}. \
+                 This indicates data corruption or incorrect precision/scaling upstream"
+            )
+        );
+    }
+
+    #[rstest]
+    #[case(OrderSide::Buy, "123.456821")]
+    #[case(OrderSide::Sell, "123.456761")]
+    fn test_protection_preserves_sub_increment_units(
+        #[case] side: OrderSide,
+        #[case] expected: &str,
+    ) {
+        let order = build_stop_order(OrderType::Market, side);
+        let quote = Price::from("123.456791");
+
+        let price = protection_price_calculate(
+            Price::from("0.000010"),
+            &order,
+            3,
+            Some(quote),
+            Some(quote),
+        )
+        .unwrap();
+
         assert_eq!(price, Price::from(expected));
-        assert_eq!(price.precision, 5);
+        assert_eq!(price.precision, 6);
     }
 
     #[rstest]

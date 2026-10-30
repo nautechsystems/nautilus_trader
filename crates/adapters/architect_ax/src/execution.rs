@@ -3152,6 +3152,8 @@ fn classify_ax_ws_failure(error: &AxOrdersWsClientError) -> CommandFailure {
 
 #[cfg(test)]
 mod tests {
+    mod replacement;
+
     use std::{cell::RefCell, net::SocketAddr, rc::Rc, sync::Arc, time::Duration};
 
     use dashmap::DashMap;

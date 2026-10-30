@@ -19,9 +19,10 @@ use databento::dbn;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{AggressorSide, AssetClass, BookAction, InstrumentClass, OptionKind, OrderSide},
-    identifiers::Symbol,
+    identifiers::{InstrumentId, Symbol},
     types::{
         Currency, Price, Quantity,
+        fixed::{FIXED_PRECISION, FIXED_PRECISION_STANDARD},
         price::{PRICE_UNDEF, decode_raw_price_i64},
     },
 };
@@ -226,13 +227,14 @@ pub fn parse_status_trading_event(value: u16) -> anyhow::Result<Option<Ustr>> {
 ///
 /// # Errors
 ///
-/// Returns an error if `value` is `i64::MAX` (undefined).
+/// Returns an error if `value` is undefined or cannot be represented exactly at `precision`.
 #[inline(always)]
 pub fn decode_price(value: i64, precision: u8, field_name: &str) -> anyhow::Result<Price> {
     if value == i64::MAX {
         anyhow::bail!("Missing required price for `{field_name}`")
     } else {
-        Ok(Price::from_raw(decode_raw_price_i64(value), precision))
+        decode_price_or_undef(value, precision)
+            .map_err(|e| anyhow::anyhow!("Invalid price for `{field_name}`: {e}"))
     }
 }
 
@@ -240,27 +242,71 @@ pub fn decode_price(value: i64, precision: u8, field_name: &str) -> anyhow::Resu
 ///
 /// Databento uses `i64::MAX` as a sentinel value for unset/null prices (see
 /// [`UNDEF_PRICE`](https://docs.rs/dbn/latest/dbn/constant.UNDEF_PRICE.html)).
+///
+/// # Errors
+///
+/// Returns an error if a defined value cannot be represented exactly at `precision`.
 #[inline(always)]
-#[must_use]
-pub fn decode_optional_price(value: i64, precision: u8) -> Option<Price> {
+pub fn decode_optional_price(value: i64, precision: u8) -> anyhow::Result<Option<Price>> {
     if value == i64::MAX {
-        None
+        Ok(None)
     } else {
-        Some(Price::from_raw(decode_raw_price_i64(value), precision))
+        decode_price_or_undef(value, precision).map(Some)
     }
+}
+
+#[inline(always)]
+pub(super) fn decode_price_field(
+    value: i64,
+    precision: u8,
+    instrument_id: InstrumentId,
+    field_name: &str,
+) -> anyhow::Result<Price> {
+    decode_price_or_undef(value, precision)
+        .map_err(|e| anyhow::anyhow!("Invalid `{field_name}` for {instrument_id}: {e}"))
 }
 
 /// Decodes a price, returning `PRICE_UNDEF` if the value is undefined.
 ///
 /// This is used for market data where undefined prices should pass through
 /// as `PRICE_UNDEF` rather than causing an error.
+///
+/// # Errors
+///
+/// Returns an error if a defined value cannot be represented exactly at `precision`.
 #[inline(always)]
-#[must_use]
-pub fn decode_price_or_undef(value: i64, precision: u8) -> Price {
+pub fn decode_price_or_undef(value: i64, precision: u8) -> anyhow::Result<Price> {
     if value == i64::MAX {
-        Price::from_raw(PRICE_UNDEF, 0)
+        Ok(Price::from_raw(PRICE_UNDEF, 0))
     } else {
-        Price::from_raw(decode_raw_price_i64(value), precision)
+        let raw = decode_raw_price_i64(value);
+
+        // Extended precision uses a finer raw scale than decode_raw_price_i64
+        let result = if precision > FIXED_PRECISION {
+            Price::from_mantissa_exponent_checked(
+                value,
+                -(FIXED_PRECISION_STANDARD as i8),
+                precision,
+            )
+        } else {
+            Price::from_raw_checked(raw, precision)
+        };
+
+        result.map_err(|e| {
+            let required = precision_from_raw(value);
+            if required > precision
+                && let Ok(price) = Price::from_raw_checked(raw, FIXED_PRECISION_STANDARD)
+            {
+                let price = price.to_string();
+                let price = price.trim_end_matches('0').trim_end_matches('.');
+                anyhow::anyhow!(
+                    "Price {price} requires at least {required} decimal places, \
+                     but resolved precision is {precision}; increase `price_precision` explicitly"
+                )
+            } else {
+                anyhow::anyhow!("Invalid price raw {value} at precision {precision}: {e}")
+            }
+        })
     }
 }
 

@@ -203,66 +203,72 @@ become approval authority.
 
 #### Balance calculation
 
-Balance refreshes use the venue-reported pUSD total and derive locked collateral from the
-execution client's local state:
+Refreshes use the venue-reported pUSD total and calculate locks from local state:
 
-- Open BUY order reservations for its account, using cached limit prices and remaining quantities.
-- Its BUY fill notional and commission that the venue total may still include.
+- **Reservations**: Open BUY orders for this account, valued at cached limit prices and remaining quantities.
+  Excludes submitted orders awaiting acceptance and orders absent from the execution cache.
+- **Unsettled spend**: Known BUY fill notional and commission that the venue total may still include.
 
-Reservations exclude submitted orders awaiting acceptance and orders absent from the execution cache.
-SELL orders reserve outcome tokens rather than pUSD and do not contribute to locked collateral.
+SELL orders reserve outcome tokens without locking pUSD. Locked collateral is capped at the total;
+free balance equals total minus locked, following the [balance model](../concepts/accounting.md#balance-model).
 
-**Unsettled BUY spend**: The next refresh after a known BUY fill subtracts its notional plus commission from
-free balance. It also subtracts other unsettled BUY spend measured against the same snapshot.
+#### Unsettled BUY spend
 
-These amounts release together when the venue total has fallen by at least the combined amount since that
-snapshot. Thus, a drained total is not subtracted again. Until then, locked unsettled spend is only the part
-of the open spend that the decrease has not covered. A refresh whose venue total is unchanged keeps the open
-spend locked.
+Each refresh deducts uncovered BUY spend from free balance.
 
-**Voids**: A void removes that fill's spend from locked collateral immediately. Later void revisions
-are cumulative, so only the increase is removed. The voided amount still counts toward the decrease
-required to release other open spend. A void of a fill that was never locked does not raise that
-threshold. When no open spend remains, the next refresh releases the voided amount and moves the
-snapshot.
+The **snapshot** is a reference balance and time, set by the first applied refresh. It resets to the venue
+total while no BUY spend is pending and can adjust when fills release.
 
-The adapter does not lock these BUY fills:
+Locks release through either path:
 
-- A fill first applied from terminal REST evidence, including a confirmed fill report, because that
-  evidence is admitted only after the trade is confirmed.
-- A reconciled fill more than 15 seconds older than the snapshot, or received before any snapshot.
+- **Confirmed settlement**: At refresh start, the adapter records confirmed pending fills. If any exist, it
+  updates the CLOB balance cache, then reads the venue total. After both requests succeed, it releases only
+  recorded fills that remain confirmed, even if credits hide their debit. Stale responses and failed
+  refreshes leave locks unchanged.
+- **Balance decrease**: Other pending spend releases together once the total's drop from the snapshot covers
+  its combined amount. Until then, only uncovered spend stays locked. Confirmed releases are subtracted from
+  the observed decrease; the remainder reduces other locks, including on later unchanged refreshes.
 
-Locked collateral is capped at the reported total, with free balance equal to total minus locked,
-following the [balance model](../concepts/accounting.md#balance-model).
+**Voids**:
+
+- A void immediately removes its fill's locked spend. Cumulative revisions remove only the increase.
+- The voided amount still counts toward the decrease needed to release other open spend. Voids of never-locked
+  fills do not raise this threshold.
+- When no open spend remains, the next refresh releases the voided amount and updates the snapshot.
+
+**Excluded fills**: No lock applies to:
+
+- Fills first applied from terminal REST evidence, including confirmed fill reports: this evidence is
+  admitted only after confirmation.
+- Reconciled fills more than 15 seconds older than the snapshot, or received before any snapshot.
 
 #### Refresh timing
 
-The adapter seeds reservations from the execution cache at connect. It updates reservations and unsettled BUY
-spend as the core processes order events, including reconciled events. A transport reconnect keeps unsettled
-BUY spend. Reset clears it. The initial balance refresh precedes startup reconciliation. Orders discovered
-during reconciliation affect balances on the next refresh.
-
-Refreshes occur at connect, on account queries, after finalized trade updates, and on user WebSocket
-reconnect. A balance response that arrives after a newer refresh, after an execution-client reconnect, or
-after the client resets, is not applied. A user WebSocket reconnect does not discard an in-flight refresh. A
-newer refresh still wins. Account balances do not change on each order event. Balance refreshes do not request
-open orders.
+- **Startup**: At connect, the adapter seeds reservations from the execution cache. The initial refresh
+  precedes startup reconciliation; discovered orders affect the next refresh.
+- **Order events**: Core order events, including reconciled events, update reservations and unsettled spend.
+  Account balances change only on refresh, not on each event.
+- **Triggers**: Refreshes run at connect, on account queries, after finalized trade updates, and on user
+  WebSocket reconnect. They do not request open orders.
+- **Reconnect and reset**: Transport reconnect preserves unsettled BUY spend; reset clears it.
+- **Response ordering**: The adapter discards responses superseded by a newer refresh or invalidated by an
+  execution-client reconnect or reset. A user WebSocket reconnect retains in-flight refreshes;
+  a newer refresh still wins.
 
 :::warning
-**These balances are estimates.** HTTP balance responses and order events can reflect different
-points in time. They do not guarantee funds are reserved before submission.
+**These balances are estimates.** HTTP responses and order events can reflect different times.
+They do not guarantee funds are reserved before submission.
 
 Timing effects include:
 
-- A collateral credit, including own SELL settlement, can leave unsettled BUY spend locked after
-  the venue total already reflects the drain. That hold is limited to the amount the decrease has
-  not covered.
-- An unrelated debit can release that spend before the fill has drained.
-- A void whose amount never leaves the venue total can keep that uncovered shortfall locked while
-  other unsettled spend is still open.
-- A confirmation still inside the drain window can report terminal REST BUY spend as free until a
-  later refresh.
-- A refresh that applies before a queued fill is processed can leave that fill locked after the
+- **Credits**: Collateral credits, including own SELL settlement, can hide BUY debits. Uncovered spend stays
+  locked until one of the release paths above succeeds.
+- **Other debits**: An unrelated debit can release spend before the fill drains.
+- **Voids**: An amount that never leaves the venue total can keep its shortfall locked while other
+  unsettled spend remains open.
+- **REST confirmations**: A confirmation inside the drain window can report terminal REST BUY spend as free
+  until a later refresh.
+- **Queued fills**: A refresh applied before a queued fill is processed can leave it locked after the
   total has already drained.
 
 The adapter does not lock matched spend from another client on the same funder, or from a fill it

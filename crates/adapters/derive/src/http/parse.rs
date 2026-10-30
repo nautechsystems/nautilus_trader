@@ -506,11 +506,8 @@ pub fn parse_derive_subaccount_to_balances(
 }
 
 fn price_from_decimal(value: Decimal, precision: Option<u8>, field: &str) -> anyhow::Result<Price> {
-    match precision {
-        Some(precision) => Price::from_decimal_dp(value, precision),
-        None => Price::from_decimal(value.normalize()),
-    }
-    .with_context(|| format!("invalid Derive {field}"))
+    let precision = precision.unwrap_or_else(|| value.normalize().scale() as u8);
+    Price::from_decimal_dp(value, precision).with_context(|| format!("invalid Derive {field}"))
 }
 
 fn quantity_from_decimal(
@@ -518,11 +515,8 @@ fn quantity_from_decimal(
     precision: Option<u8>,
     field: &str,
 ) -> anyhow::Result<Quantity> {
-    match precision {
-        Some(precision) => Quantity::from_decimal_dp(value, precision),
-        None => Quantity::from_decimal(value.normalize()),
-    }
-    .with_context(|| format!("invalid Derive {field}"))
+    let precision = precision.unwrap_or_else(|| value.normalize().scale() as u8);
+    Quantity::from_decimal_dp(value, precision).with_context(|| format!("invalid Derive {field}"))
 }
 
 fn parse_client_order_id(
@@ -1792,7 +1786,8 @@ mod tests {
         position.amount = amount;
         subaccount.positions = vec![position];
 
-        let expected = Quantity::from_decimal(amount).expect_err("unrepresentable test amount");
+        let expected = Quantity::from_decimal_dp(amount, amount.scale() as u8)
+            .expect_err("unrepresentable test amount");
         let err = parse_derive_subaccount_to_balances(&subaccount).unwrap_err();
 
         assert_eq!(

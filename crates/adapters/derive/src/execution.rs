@@ -321,9 +321,11 @@ impl DeriveExecutionClient {
             "Derive amount_step must be positive"
         );
         let price_increment =
-            Price::from_decimal(instrument.tick_size).context("invalid Derive tick_size")?;
+            Price::from_decimal_dp(instrument.tick_size, instrument.tick_size.scale() as u8)
+                .context("invalid Derive tick_size")?;
         let size_increment =
-            Quantity::from_decimal(instrument.amount_step).context("invalid Derive amount_step")?;
+            Quantity::from_decimal_dp(instrument.amount_step, instrument.amount_step.scale() as u8)
+                .context("invalid Derive amount_step")?;
         self.dispatch_state.register_instrument_precision(
             instrument_id,
             price_increment.precision,
@@ -5137,11 +5139,9 @@ async fn fetch_order_record(
 }
 
 fn quantity_from_report_decimal(value: Decimal, precision: Option<u8>) -> anyhow::Result<Quantity> {
-    match precision {
-        Some(precision) => Quantity::from_decimal_dp(value, precision),
-        None => Quantity::from_decimal(value.normalize()),
-    }
-    .context("native cumulative report quantity cannot be represented")
+    let precision = precision.unwrap_or_else(|| value.normalize().scale() as u8);
+    Quantity::from_decimal_dp(value, precision)
+        .context("native cumulative report quantity cannot be represented")
 }
 
 fn decimal_from_scaled(mut value: U256) -> anyhow::Result<Decimal> {
@@ -5977,12 +5977,14 @@ async fn refresh_market_order_quote(
     clock: &'static AtomicTime,
 ) -> anyhow::Result<QuoteTick> {
     let ticker = http_client.get_ticker(venue_symbol).await?;
-    let price_precision = Price::from_decimal(instrument.tick_size)
-        .with_context(|| format!("invalid Derive tick_size for {venue_symbol}"))?
-        .precision;
-    let size_precision = Quantity::from_decimal(instrument.amount_step)
-        .with_context(|| format!("invalid Derive amount_step for {venue_symbol}"))?
-        .precision;
+    let price_precision =
+        Price::from_decimal_dp(instrument.tick_size, instrument.tick_size.scale() as u8)
+            .with_context(|| format!("invalid Derive tick_size for {venue_symbol}"))?
+            .precision;
+    let size_precision =
+        Quantity::from_decimal_dp(instrument.amount_step, instrument.amount_step.scale() as u8)
+            .with_context(|| format!("invalid Derive amount_step for {venue_symbol}"))?
+            .precision;
 
     parse_ticker_quote_from_rest(
         &ticker,
@@ -7006,6 +7008,43 @@ mod tests {
         assert_eq!(
             client.dispatch_state.instrument_precision(&instrument_id),
             Some((2, 3)),
+        );
+    }
+
+    #[rstest]
+    #[case("tick_size")]
+    #[case("amount_step")]
+    fn test_cache_instrument_rejects_excess_precision(#[case] field: &str) {
+        let client = DeriveExecutionClient::new(test_core(), test_config()).unwrap();
+        let mut instrument = sample_derive_instrument();
+        let instrument_id = format_instrument_id(instrument.instrument_name).unwrap();
+        let value = Decimal::new(1, 28);
+        match field {
+            "tick_size" => instrument.tick_size = value,
+            "amount_step" => instrument.amount_step = value,
+            _ => unreachable!(),
+        }
+
+        let error = client.cache_instrument(instrument).unwrap_err();
+
+        assert_eq!(error.to_string(), format!("invalid Derive {field}"));
+        assert!(client.instruments.is_empty());
+        assert_eq!(
+            client.dispatch_state.instrument_precision(&instrument_id),
+            None
+        );
+    }
+
+    #[rstest]
+    fn test_quantity_from_report_decimal_rejects_excess_precision() {
+        let value = Decimal::new(1, 28);
+        let expected = Quantity::from_decimal_dp(value, 28).unwrap_err();
+
+        let error = quantity_from_report_decimal(value, None).unwrap_err();
+
+        assert_eq!(
+            format!("{error:#}"),
+            format!("native cumulative report quantity cannot be represented: {expected}")
         );
     }
 

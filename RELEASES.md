@@ -12,6 +12,8 @@ Released on TBD (UTC).
 
 - Changed `CacheDatabaseAdapter` Greek and yield-curve defaults to errors; override supported reads and writes
 - Changed `Cache::cache_all` to replace preloaded Greeks and yield curves; add transient values after loading
+- Changed raw `Price` and `Quantity` construction and decoding to reject digits beyond precision; rescale or round first
+- Changed `Price.from_decimal` and `Quantity.from_decimal` to round excess decimal places half even
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
 - Changed Bybit HTTP `modify_order` to take `trigger_price`; pass `None` when unchanged
@@ -22,6 +24,10 @@ Released on TBD (UTC).
 - Changed Databento definition decoders to preserve native `raw_symbol`; supply `msg.raw_symbol`
 - Changed Databento `decode_nautilus_instrument_id`; pass year mode, definitions, and optional request hints
 - Changed Databento `get_nautilus_instrument_id_for_record`; pass year mode, definitions, venues, and request hints
+- Changed Databento `decode_optional_price` and `decode_price_or_undef` to return `Result`; handle errors
+- Changed Databento live precision overrides to take precedence; omit them to use definitions
+- Changed Databento statistics to use at least nine decimal places
+- Changed Databento market decoding to reject extra price digits, including sub-penny equity trades and bars
 - Changed Deribit orders to require cached instruments; include traded product types in execution `product_types`
 - Changed Deribit spot orders to reject `GTD`; use `GTC`, `IOC`, or `FOK`
 - Changed `DeribitInstrument` literals; add `is_cbe_routed: None` and `is_csr: None`
@@ -44,11 +50,17 @@ Released on TBD (UTC).
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
+- Fixed Databento statistics decoding with insufficient precision for VWAP, volatility, and delta
+- Fixed Databento statistics Arrow encoding accepting mixed instruments or precisions
+- Fixed Databento MBO decode errors delaying buffered book events at `F_LAST` boundaries
+- Fixed Databento option strikes rejecting values finer than the strike currency precision
+- Fixed Databento price scaling at explicitly selected 17- and 18-decimal precision
 - Fixed Deribit instrument loading panicking on invalid spot definitions
+- Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects
-- Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed Polymarket accepting invalid funders, malformed `load_ids`, and unsafe retry delays
+- Fixed Polymarket settled BUY spend staying locked when collateral credits offset balance decreases
 - Fixed Polymarket explicit event slugs being ignored when an event-slug builder is configured
 - Fixed Polymarket data-client builder defaults disabling the 60-minute instrument refresh
 

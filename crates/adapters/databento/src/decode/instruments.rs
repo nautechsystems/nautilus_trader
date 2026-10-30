@@ -35,7 +35,7 @@ use super::{
     primitives::{
         decode_lot_size, decode_multiplier, decode_optional_timestamp, decode_price,
         decode_price_increment, decode_timestamp, decode_underlying, parse_cfi_iso10926,
-        parse_currency_or_usd_default, parse_option_kind,
+        parse_currency_or_usd_default, parse_option_kind, precision_from_raw,
     },
 };
 use crate::symbology::resolve_futures_instrument_id;
@@ -279,6 +279,8 @@ pub fn decode_futures_spread(
 
 /// Decodes a Databento instrument definition message into an `OptionContract` instrument.
 ///
+/// Strike precision preserves every wire digit, with a floor at the strike currency's precision.
+///
 /// # Errors
 ///
 /// Returns an error if parsing or constructing `OptionContract` fails.
@@ -319,11 +321,10 @@ pub fn decode_option_contract(
         asset_class
     };
     let option_kind = parse_option_kind(msg.instrument_class)?;
-    let strike_price = decode_price(
-        msg.strike_price,
-        strike_price_currency.precision,
-        "strike_price",
-    )?;
+    let strike_precision =
+        precision_from_raw(msg.strike_price).max(strike_price_currency.precision);
+    let strike_price = decode_price(msg.strike_price, strike_precision, "strike_price")
+        .map_err(|e| anyhow::anyhow!("{instrument_id}: {e}"))?;
     let dataset = msg.hd.publisher().ok().map(|p| p.dataset());
     let price_increment = decode_price_increment(msg.min_price_increment, currency.precision);
     let multiplier =

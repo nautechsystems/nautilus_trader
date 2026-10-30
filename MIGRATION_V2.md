@@ -630,6 +630,9 @@ outputs instead.
 High-precision prices and quantities use exact scaled integers. Parse decimal text exactly; do not use v1
 display strings to check compatibility.
 
+`Price.from_raw` and `Quantity.from_raw` reject raw values with fractional digits beyond the declared
+precision. Arrow and SBE decoding reject the same values without rounding.
+
 ### Margin accounts
 
 `MarginAccount.margin()`, `MarginAccount.margins()`, and `MarginAccount.account_margins()` keep their v1
@@ -903,6 +906,9 @@ The v2 Python catalog API and Arrow schemas differ from v1. Migrate recognized l
 them with v2. The [Parquet migration guide](docs/how_to/migrate_parquet_catalog.md) covers schema
 fingerprints, tested source formats, and recovery from partial migrations.
 
+Legacy catalog migration does not round raw digits. Built-in rows with digits beyond their declared
+precision fail migration. Regenerate affected data or explicitly correct its precision or scaling before migration.
+
 Catalog order-event data written before `activation_price` and `OrderFilled.info` were added cannot be read by
 the new schema. Regenerate or migrate that data before upgrading a catalog in place.
 
@@ -950,6 +956,14 @@ such as `anon` to `skip_signature`. See [storage
 options](docs/concepts/data/catalog.md#filesystem-protocols-and-storage-options).
 
 ## Update Rust integrations
+
+### Value types
+
+`Price::from_raw` and `Quantity::from_raw` panic on digits beyond the declared precision. Their
+`from_raw_checked` counterparts return an error.
+
+Quantity multiplication retains the maximum operand precision even when its raw product has finer digits.
+Explicitly rescale to sufficient precision or round the raw value before reconstruction or serialization.
 
 ### Data subscription APIs
 

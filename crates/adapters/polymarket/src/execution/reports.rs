@@ -50,6 +50,7 @@ use super::{
         normalize_terminal_order_report_quantity, venue_leg_filled_before_and_quantity,
     },
     responses::confirm_modify_replacement,
+    settlement::SettlementRegistry,
 };
 use crate::{
     common::enums::{PolymarketSignatureType, PolymarketSignerType},
@@ -390,6 +391,7 @@ impl PolymarketExecutionClient {
         let clock = self.clock;
         let signature_type = self.config.signature_type;
         let collateral_locks = self.collateral_locks.clone();
+        let settlement = self.settlement.clone();
 
         self.spawn_task("query_account", async move {
             fetch_and_emit_account_state(
@@ -398,6 +400,7 @@ impl PolymarketExecutionClient {
                 clock,
                 signature_type,
                 &collateral_locks,
+                &settlement,
             )
             .await
         });
@@ -1211,14 +1214,22 @@ pub(super) async fn fetch_and_emit_account_state(
     clock: &'static AtomicTime,
     signature_type: PolymarketSignatureType,
     collateral_locks: &Mutex<CollateralLocks>,
+    settlement: &SettlementRegistry,
 ) -> anyhow::Result<()> {
-    let ticket = collateral_locks.lock().begin_refresh();
+    let mut ticket = collateral_locks.lock().begin_refresh(settlement);
 
     let params = GetBalanceAllowanceParams {
         asset_type: Some(crate::http::query::AssetType::Collateral),
         signature_type: Some(signature_type),
         ..Default::default()
     };
+
+    if !ticket.confirmed.is_empty() {
+        http_client
+            .update_balance_allowance(params.clone())
+            .await
+            .context("failed to refresh confirmed Polymarket collateral")?;
+    }
 
     let balance = http_client
         .get_balance(params)
@@ -1230,8 +1241,13 @@ pub(super) async fn fetch_and_emit_account_state(
         parse_balance_allowance(balance, pusd).context("failed to parse balance")?;
     let now = clock.get_time_ns();
 
-    let AppliedBalance::Fresh(account_balance) = collateral_locks
-        .lock()
+    let mut locks = collateral_locks.lock();
+    let confirmed = settlement.confirmed_fills();
+    ticket
+        .confirmed
+        .retain(|trade_id| confirmed.contains(trade_id));
+
+    let AppliedBalance::Fresh(account_balance) = locks
         .apply_refresh(ticket, account_balance.total, now)
         .context("failed to apply Polymarket balance reservations")?
     else {
@@ -1239,11 +1255,14 @@ pub(super) async fn fetch_and_emit_account_state(
         return Ok(());
     };
 
+    emitter.emit_account_state(vec![account_balance], vec![], true, now, None);
+    drop(confirmed);
+    drop(locks);
+
     log::debug!(
         "Account state updated: balance={} pUSD",
         account_balance.total
     );
-    emitter.emit_account_state(vec![account_balance], vec![], true, now, None);
     Ok(())
 }
 
@@ -1268,9 +1287,149 @@ pub(super) async fn fetch_collateral_balance_pusd(
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+
+    use axum::{Json, Router, routing::get};
+    use nautilus_common::messages::ExecutionEvent;
+    use nautilus_model::{
+        enums::AccountType,
+        identifiers::{AccountId, TraderId},
+        types::{AccountBalance, Money},
+    };
     use rstest::rstest;
+    use serde_json::json;
 
     use super::*;
+    use crate::common::credential::Credential;
+
+    #[tokio::test]
+    async fn overlapping_account_refreshes_publish_only_the_newest_balance() {
+        let started = Arc::new(tokio::sync::Notify::new());
+        let release = Arc::new(tokio::sync::Notify::new());
+        let requests = Arc::new(AtomicUsize::new(0));
+
+        let app = Router::new().route(
+            "/balance-allowance",
+            get({
+                let started = started.clone();
+                let release = release.clone();
+                let requests = requests.clone();
+                move || {
+                    let started = started.clone();
+                    let release = release.clone();
+                    let requests = requests.clone();
+                    async move {
+                        let first = requests.fetch_add(1, Ordering::AcqRel) == 0;
+                        if first {
+                            started.notify_one();
+                            release.notified().await;
+                        }
+
+                        Json(json!({"balance": if first { "1011000000" } else { "1012000000" }}))
+                    }
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let credential =
+            Credential::new("test-key".into(), "dGVzdA==".into(), "test-pass".into()).unwrap();
+        let client = PolymarketClobHttpClient::new(
+            credential,
+            "0x1111111111111111111111111111111111111111".to_string(),
+            Some(format!("http://{addr}")),
+            5,
+        )
+        .unwrap();
+        let account_id = AccountId::from("POLYMARKET-001");
+        let clock: &'static AtomicTime =
+            Box::leak(Box::new(AtomicTime::new(false, UnixNanos::from(1))));
+
+        let mut emitter = ExecutionEventEmitter::new(
+            clock,
+            TraderId::from("TRADER-001"),
+            account_id,
+            AccountType::Cash,
+            Some(Currency::pUSD()),
+        );
+        let (sender, mut events) = tokio::sync::mpsc::unbounded_channel();
+        emitter.set_sender(sender);
+        let locks = Arc::new(Mutex::new(CollateralLocks::default()));
+        let settlement = Arc::new(SettlementRegistry::new(account_id));
+
+        let first = tokio::spawn({
+            let client = client.clone();
+            let emitter = emitter.clone();
+            let locks = locks.clone();
+            let settlement = settlement.clone();
+            async move {
+                fetch_and_emit_account_state(
+                    &client,
+                    &emitter,
+                    clock,
+                    PolymarketSignatureType::Eoa,
+                    &locks,
+                    &settlement,
+                )
+                .await
+                .unwrap();
+            }
+        });
+
+        tokio::time::timeout(Duration::from_secs(5), async {
+            started.notified().await;
+            fetch_and_emit_account_state(
+                &client,
+                &emitter,
+                clock,
+                PolymarketSignatureType::Eoa,
+                &locks,
+                &settlement,
+            )
+            .await
+            .unwrap();
+            release.notify_one();
+            first.await.unwrap();
+        })
+        .await
+        .unwrap();
+
+        server.abort();
+
+        let ExecutionEvent::Account(event) = events.try_recv().unwrap() else {
+            panic!("expected account state");
+        };
+
+        assert_eq!(requests.load(Ordering::Acquire), 2);
+        assert_eq!(event.account_id, account_id);
+        assert_eq!(event.account_type, AccountType::Cash);
+        assert_eq!(event.base_currency, Some(Currency::pUSD()));
+        assert!(event.is_reported);
+        assert!(event.margins.is_empty());
+        assert_eq!(event.ts_event, UnixNanos::from(1));
+        assert_eq!(event.ts_init, UnixNanos::from(1));
+        assert_eq!(event.info, None);
+        assert_eq!(
+            event.balances,
+            vec![AccountBalance::new(
+                Money::from("1012 pUSD"),
+                Money::from("0 pUSD"),
+                Money::from("1012 pUSD"),
+            )]
+        );
+        assert!(matches!(
+            events.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
 
     #[rstest]
     #[case::ioc_dust(TimeInForce::Ioc, "5.202910", "5.202897", OrderStatus::Canceled)]

@@ -552,6 +552,8 @@ fn invalid_definitions_fail_with_field(
 #[rstest]
 #[case::blank_base(|s: &mut Symbol| s.asset_id_base = Some(Ustr::from("  ")), "asset_id_base")]
 #[case::excess_price_scale(|s: &mut Symbol| s.price_precision = Some(Decimal::new(1, 28)), "price_precision")]
+#[case::excess_size_scale(|s: &mut Symbol| s.size_precision = Some(Decimal::new(1, 28)), "size_precision")]
+#[case::excess_contract_unit_scale(|s: &mut Symbol| s.future_contract_unit = Some(Decimal::new(1, 28)), "future_contract_unit")]
 #[case::malformed_start(|s: &mut Symbol| s.data_start = Some("2026-13-01".into()), "data_start")]
 #[case::expiry_before_activation(|s: &mut Symbol| s.data_start = Some("2027-01-01".into()), "data_start")]
 fn invalid_values_fail_with_field(#[case] mutate: fn(&mut Symbol), #[case] field: &str) {

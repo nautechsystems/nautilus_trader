@@ -38,10 +38,6 @@ use axum::{
     routing::{get, post},
 };
 use futures_util::stream;
-use nautilus_architect_ax::{
-    common::consts::AX_VENUE,
-    http::query::{GetFillsParams, GetInstrumentParams, GetOpenOrdersParams, GetOrderStatusParams},
-};
 use nautilus_common::testing::wait_until_async;
 use nautilus_model::{
     enums::AssetClass,
@@ -53,6 +49,11 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::json;
 use ustr::Ustr;
+
+use super::adapter::{
+    common::consts::AX_VENUE,
+    http::query::{GetFillsParams, GetInstrumentParams, GetOpenOrdersParams, GetOrderStatusParams},
+};
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct CapturedOrdersQuery {

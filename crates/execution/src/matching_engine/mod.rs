@@ -5368,8 +5368,12 @@ impl OrderMatchingEngine {
                 };
 
                 let required_qty = leaves_qty;
+
                 let leaves_qty = queue_allowed_raw.map_or(leaves_qty, |allowed| {
-                    Quantity::from_raw(leaves_qty.raw().min(allowed), leaves_qty.precision)
+                    Quantity::from_raw(
+                        leaves_qty.raw().min(allowed),
+                        self.instrument.size_precision(),
+                    )
                 });
 
                 let mut journal = self.fok_consumption_journal(&order);
