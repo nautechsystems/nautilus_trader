@@ -3602,7 +3602,8 @@ impl OKXHttpClient {
         end: Option<Timestamp>,
         limit: Option<u32>,
     ) -> anyhow::Result<(Vec<FundingRateUpdate>, OKXHistoryCoverage)> {
-        const OKX_FUNDING_PAGE_SIZE: usize = 100;
+        // OKX returns at most 400 records a page, which is also its default when no limit is set
+        const OKX_FUNDING_PAGE_SIZE: usize = 400;
 
         let mut params = GetFundingRateHistoryParams {
             inst_id: instrument_id.symbol.to_string(),

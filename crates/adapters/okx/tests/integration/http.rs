@@ -9914,7 +9914,7 @@ async fn test_request_bars_month_window_does_not_stop_on_a_short_february() {
 }
 
 /// Funding records every eight hours for the last `days`, answered as OKX does: newest first,
-/// `before` and `after` as exclusive bounds, at most 100 a page.
+/// `before` and `after` as exclusive bounds, at most 400 a page, which is also the default.
 async fn start_funding_rate_server(days: i64) -> SocketAddr {
     let now_ms = Timestamp::now().as_millisecond();
     let interval_ms = 8 * 3_600_000;
@@ -9936,7 +9936,7 @@ async fn start_funding_rate_server(days: i64) -> SocketAddr {
                     let after = params.get("after").map(|v| v.parse::<i64>().unwrap());
                     let limit = params
                         .get("limit")
-                        .map_or(100, |v| v.parse::<usize>().unwrap());
+                        .map_or(400, |v| v.parse::<usize>().unwrap());
                     let data: Vec<Value> = records
                         .into_iter()
                         .filter(|ts| {
@@ -9969,7 +9969,8 @@ async fn start_funding_rate_server(days: i64) -> SocketAddr {
 #[rstest]
 #[case::covered(60, 10, OKXHistoryCoverage::Complete)]
 #[case::history_starts_after_the_start(5, 10, OKXHistoryCoverage::Unverified)]
-#[case::full_page_before_the_start(60, 60, OKXHistoryCoverage::Truncated)]
+#[case::full_page_before_the_start(150, 150, OKXHistoryCoverage::Truncated)]
+#[case::more_than_a_hundred_records_from_between_settlements(60, 40, OKXHistoryCoverage::Complete)]
 #[tokio::test]
 async fn test_request_funding_rates_coverage(
     #[case] history_days: i64,
