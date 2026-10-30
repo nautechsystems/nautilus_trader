@@ -150,8 +150,8 @@ database, or gateway credentials without returning values. Retain reusable secre
   `reconcile_market_ids_only` still controls whether the filter applies.
 - Rename `stream_heartbeat_ms` to `stream_heartbeat_secs` and `stream_idle_timeout_ms` to
   `stream_heartbeat_timeout_secs`, then convert configured values from milliseconds to seconds.
-- `certs_dir` is removed because v2 uses interactive login. The HTTP keepalive interval is fixed
-  internally at 36,000 seconds rather than exposed as `keep_alive_secs`.
+- `certs_dir` enables certificate login when set. Without it, v2 uses interactive login.
+  The HTTP keepalive interval is fixed internally at 36,000 seconds rather than exposed as `keep_alive_secs`.
 
 ### Databento
 

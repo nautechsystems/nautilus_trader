@@ -4,6 +4,8 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `HttpClient` certificate support through `certs_dir`
+- Added Betfair certificate login through `certs_dir`
 - Added Deribit routed spot metadata and local order and market data capability checks
 
 ### Breaking Changes
