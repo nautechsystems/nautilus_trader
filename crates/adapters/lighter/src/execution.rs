@@ -10372,6 +10372,10 @@ fn ensure_accepted_emitted(
 }
 
 #[cfg(test)]
+#[path = "../tests/integration/exec_client.rs"]
+mod exec_client_tests;
+
+#[cfg(test)]
 mod tests {
     use std::{
         cell::RefCell,

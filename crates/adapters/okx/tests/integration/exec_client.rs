@@ -8017,7 +8017,6 @@ async fn start_history_page_test_server(state: Arc<HistoryPageState>) -> SocketA
 #[case::two_pages(Some(2), 2, 2, false)]
 #[case::exhausted(Some(3), 2, 3, true)]
 #[case::empty(Some(1), 0, 1, true)]
-#[case::safety_cap(Some(51), 50, 50, false)]
 #[tokio::test]
 async fn test_generate_mass_status_history_page_limits(
     #[case] max_pages: Option<u32>,

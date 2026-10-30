@@ -57,7 +57,20 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos};
-use nautilus_hyperliquid::{
+use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_model::{
+    data::{BarType, CustomData, Data, DataType, InstrumentStatus, OrderBookDeltas},
+    enums::{BookAction, BookType, MarketStatusAction, RecordFlag},
+    identifiers::InstrumentId,
+    instruments::Instrument,
+};
+use nautilus_network::http::{HttpClient, Method};
+use parking_lot::Mutex;
+use rstest::rstest;
+use serde_json::{Value, json};
+use ustr::Ustr;
+
+use crate::{
     common::{
         consts::{ASSET_INDEX_INFO_KEY, HYPERLIQUID_CLIENT_ID, HYPERLIQUID_VENUE},
         enums::HyperliquidEnvironment,
@@ -73,18 +86,6 @@ use nautilus_hyperliquid::{
         query::InfoRequest,
     },
 };
-use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
-use nautilus_model::{
-    data::{BarType, CustomData, Data, DataType, InstrumentStatus, OrderBookDeltas},
-    enums::{BookAction, BookType, MarketStatusAction, RecordFlag},
-    identifiers::InstrumentId,
-    instruments::Instrument,
-};
-use nautilus_network::http::{HttpClient, Method};
-use parking_lot::Mutex;
-use rstest::rstest;
-use serde_json::{Value, json};
-use ustr::Ustr;
 
 #[derive(Clone, Default)]
 struct TestServerState {
@@ -2991,7 +2992,7 @@ async fn test_data_client_instrument_refresh_emits_status_change_for_subscribed(
 #[rstest]
 #[case::disconnect(false)]
 #[case::reset(true)]
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[tokio::test]
 async fn test_data_client_periodic_instrument_refresh_survives_reconnect(#[case] reset: bool) {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
@@ -3004,20 +3005,30 @@ async fn test_data_client_periodic_instrument_refresh_survives_reconnect(#[case]
     let btc_id = InstrumentId::from("BTC-USD-PERP.HYPERLIQUID");
 
     for (size_precision, request_refresh) in [(4, true), (5, false)] {
-        client.connect().await.unwrap();
+        connect_with_refresh(&mut client).await;
+        let started = tokio::time::Instant::now();
 
         while rx.try_recv().is_ok() {}
         let before = *state.all_perp_metas_request_count.lock().await;
-        client.connect().await.unwrap();
+        connect_with_refresh(&mut client).await;
         assert_eq!(*state.all_perp_metas_request_count.lock().await, before);
         *state.btc_size_decimals_changed.lock().await = size_precision == 4;
 
         // Only the post-reconnect refresh needs to wait for the periodic timer
         if request_refresh {
             client.request_instruments(instruments_request()).unwrap();
+        } else {
+            advance_refresh_clock(Duration::from_secs(59).saturating_sub(started.elapsed())).await;
+            assert!(
+                tokio::time::timeout(Duration::from_millis(100), rx.recv())
+                    .await
+                    .is_err()
+            );
+            assert_eq!(*state.all_perp_metas_request_count.lock().await, before);
+            advance_refresh_clock(Duration::from_secs(60).saturating_sub(started.elapsed())).await;
         }
 
-        let refreshed = tokio::time::timeout(Duration::from_secs(70), async {
+        let refreshed = tokio::time::timeout(Duration::from_secs(5), async {
             loop {
                 if let Some(DataEvent::Data(Data::Instrument(instrument))) = rx.recv().await
                     && instrument.id() == btc_id
@@ -3787,4 +3798,70 @@ async fn test_data_client_reset_recreates_public_trade_stream() {
     wait_for_public_trade_event(&mut rx, instrument_id, data_type).await;
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::disabled(0)]
+#[case::enabled(1)]
+#[tokio::test]
+async fn test_connect_registers_one_instrument_refresh(#[case] minutes: u64) {
+    let addr = start_mock_server(TestServerState::default()).await;
+    let mut config = create_data_client_config(addr);
+    config.stream_health_check_interval_secs = 0;
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    config.update_instruments_interval_mins = minutes;
+    let mut client = HyperliquidDataClient::new(*HYPERLIQUID_CLIENT_ID, config).unwrap();
+
+    client.connect().await.unwrap();
+    client.connect().await.unwrap();
+
+    assert_eq!(client.session_tasks.len(), 1 + usize::from(minutes != 0));
+    client.disconnect().await.unwrap();
+    assert!(client.session_tasks.is_empty());
+}
+
+async fn connect_with_refresh(client: &mut HyperliquidDataClient) {
+    if client.is_connected() {
+        client.connect().await.unwrap();
+        return;
+    }
+
+    // Keep the refresh timer on the test clock and retain session task ownership
+    let minutes = client.config.update_instruments_interval_mins;
+    client.config.update_instruments_interval_mins = 0;
+    client.connect().await.unwrap();
+    client.config.update_instruments_interval_mins = minutes;
+
+    if let Some(future) = client.instrument_refresh() {
+        let (ready, started) = tokio::sync::oneshot::channel();
+        let mut tasks = tokio::task::JoinSet::new();
+        tasks.spawn(async move {
+            let mut future = Box::pin(future);
+            let mut ready = Some(ready);
+            std::future::poll_fn(move |cx| {
+                let result = future.as_mut().poll(cx);
+
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(());
+                }
+
+                result
+            })
+            .await;
+        });
+
+        client
+            .session_tasks
+            .spawn(async move { tasks.join_next().await.unwrap().unwrap() })
+            .unwrap();
+        started.await.unwrap();
+    }
+}
+
+async fn advance_refresh_clock(duration: Duration) {
+    tokio::time::pause();
+    tokio::time::advance(duration).await;
+    tokio::time::resume();
+    tokio::task::yield_now().await;
 }
