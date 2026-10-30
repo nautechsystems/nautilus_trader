@@ -2356,7 +2356,7 @@ mod tests {
     };
     use nautilus_model::{
         accounts::MarginAccount,
-        enums::{AccountType, BookType, InstrumentCloseType, MarketStatus, OrderSide, OrderType},
+        enums::{AccountType, BookType, OrderSide, OrderType},
         events::AccountState,
         identifiers::{ClientOrderId, StrategyId, TraderId},
         instruments::{CurrencyPair, InstrumentAny, stubs::audusd_sim},
@@ -2432,35 +2432,6 @@ mod tests {
         ] {
             assert_eq!(instrument.expiration_ns(), original.expiration_ns());
         }
-    }
-
-    #[rstest]
-    fn test_replay_expiration_extension_keeps_settled_contract_closed() {
-        let mut exchange = setup_exchange(Dispatch::Queued);
-        let mut option = nautilus_model::instruments::stubs::binary_option();
-        option.id = InstrumentId::from("TEST.SIM");
-        let id = option.id;
-        exchange
-            .add_instrument(InstrumentAny::BinaryOption(option.clone()))
-            .unwrap();
-        exchange
-            .process_instrument_close(InstrumentClose::new(
-                id,
-                Price::from("1.000"),
-                InstrumentCloseType::ContractExpired,
-                1.into(),
-                1.into(),
-            ))
-            .unwrap();
-        option.expiration_ns = UnixNanos::from(u64::MAX);
-
-        exchange
-            .update_instrument(&InstrumentAny::BinaryOption(option))
-            .unwrap();
-
-        let matching = exchange.get_matching_engine(&id).unwrap();
-        assert!(matching.is_expiration_processed());
-        assert_eq!(matching.market_status, MarketStatus::Closed);
     }
 
     #[rstest]
