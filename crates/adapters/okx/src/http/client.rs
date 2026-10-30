@@ -3674,6 +3674,14 @@ impl OKXHttpClient {
             _ => OKXHistoryCoverage::Unverified,
         };
 
+        // A start with sub-millisecond precision lets the settlement just before it through the
+        // widened lower bound. That record shows the page reached the start, so it is dropped
+        // only after the coverage check above
+        if let Some(start) = start {
+            let start_ns = start.as_nanosecond();
+            rates.retain(|rate| i128::from(rate.ts_event.as_u64()) >= start_ns);
+        }
+
         Ok((rates, coverage))
     }
 

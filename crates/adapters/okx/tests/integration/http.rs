@@ -10053,6 +10053,106 @@ async fn test_request_funding_rates_keeps_records_on_the_window_bounds() {
 
 #[rstest]
 #[tokio::test]
+async fn test_request_funding_rates_respects_a_start_with_sub_millisecond_precision() {
+    let addr = start_funding_rate_server(10).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    // The start falls 1 ns after a funding time, the end exactly on one
+    let interval_ms = 8 * 3_600_000;
+    let now_ms = Timestamp::now().as_millisecond();
+    let newest_ms = now_ms - now_ms % interval_ms;
+    let settlement = Timestamp::from_millisecond(newest_ms - 10 * interval_ms).unwrap();
+    let start = Timestamp::from_nanosecond(settlement.as_nanosecond() + 1).unwrap();
+    let end = Timestamp::from_millisecond(newest_ms - 2 * interval_ms).unwrap();
+
+    let (rates, coverage) = client
+        .request_funding_rates_with_coverage(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            Some(start),
+            Some(end),
+            None,
+        )
+        .await
+        .unwrap();
+
+    let to_nanos = |ts: Timestamp| UnixNanos::from(u64::try_from(ts.as_nanosecond()).unwrap());
+    let next = Timestamp::from_millisecond(newest_ms - 9 * interval_ms).unwrap();
+    assert_eq!(rates.first().unwrap().ts_event, to_nanos(next));
+    assert_eq!(rates.last().unwrap().ts_event, to_nanos(end));
+    assert_eq!(rates.len(), 8);
+    assert_eq!(coverage, OKXHistoryCoverage::Complete);
+}
+
+#[rstest]
+#[case::one_record_left_after_the_trim(10, 1, 1, OKXHistoryCoverage::Complete)]
+#[case::full_page_holding_the_trimmed_record(150, 399, 399, OKXHistoryCoverage::Complete)]
+#[tokio::test]
+async fn test_request_funding_rates_judges_coverage_on_the_page_before_the_trim(
+    #[case] history_days: i64,
+    #[case] settlements_after_start: i64,
+    #[case] expected_rows: usize,
+    #[case] expected: OKXHistoryCoverage,
+) {
+    let addr = start_funding_rate_server(history_days).await;
+    let client = OKXHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        3,
+        1000,
+        10_000,
+        OKXEnvironment::Live,
+        None,
+    )
+    .unwrap();
+
+    for instrument in load_swap_instruments_any() {
+        client.cache_instrument(instrument);
+    }
+
+    // The start falls 1 ns after a settlement, as for a catalog gap that follows stored data;
+    // the page proves the window is covered with that settlement, which is then trimmed
+    let interval_ms = 8 * 3_600_000;
+    let now_ms = Timestamp::now().as_millisecond();
+    let newest_ms = now_ms - now_ms % interval_ms;
+    let settlement_ms = newest_ms - settlements_after_start * interval_ms;
+    let settlement = Timestamp::from_millisecond(settlement_ms).unwrap();
+    let start = Timestamp::from_nanosecond(settlement.as_nanosecond() + 1).unwrap();
+    let end = (settlements_after_start == 1).then(|| {
+        Timestamp::from_millisecond(settlement_ms + interval_ms + interval_ms / 2).unwrap()
+    });
+
+    let (rates, coverage) = client
+        .request_funding_rates_with_coverage(
+            InstrumentId::from("BTC-USDT-SWAP.OKX"),
+            Some(start),
+            end,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let to_nanos = |ts: Timestamp| UnixNanos::from(u64::try_from(ts.as_nanosecond()).unwrap());
+    let first = Timestamp::from_millisecond(settlement_ms + interval_ms).unwrap();
+    assert_eq!(rates.first().unwrap().ts_event, to_nanos(first));
+    assert_eq!(rates.len(), expected_rows);
+    assert_eq!(coverage, expected);
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_request_funding_rates_is_unverified_when_the_record_at_the_start_is_missing() {
     let addr = start_funding_rate_server(10).await;
     let client = OKXHttpClient::new(
