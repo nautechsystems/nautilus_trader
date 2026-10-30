@@ -13,7 +13,6 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-mod data_client;
 mod disconnect;
 mod dst;
 mod exec_client;

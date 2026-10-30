@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 mod catalog;
-mod data_client;
 mod dispatch;
 mod exec_client;
 mod http;

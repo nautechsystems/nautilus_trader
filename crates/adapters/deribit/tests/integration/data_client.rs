@@ -56,16 +56,6 @@ use nautilus_common::{
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
-use nautilus_deribit::{
-    common::{
-        consts::{DERIBIT_CLIENT_ID, DERIBIT_VENUE},
-        enums::DeribitEnvironment,
-    },
-    config::DeribitDataClientConfig,
-    data::DeribitDataClient,
-    data_types::DeribitBookSummary,
-    http::models::DeribitProductType,
-};
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
     data::{BarType, CustomData, Data, DataType, TradeTick},
@@ -81,6 +71,17 @@ use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
+
+use crate::{
+    common::{
+        consts::{DERIBIT_CLIENT_ID, DERIBIT_VENUE},
+        enums::DeribitEnvironment,
+    },
+    config::DeribitDataClientConfig,
+    data::DeribitDataClient,
+    data_types::DeribitBookSummary,
+    http::models::DeribitProductType,
+};
 
 const TEST_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -2473,18 +2474,19 @@ async fn test_scheduled_instrument_refresh_publishes_and_caches_definitions(
     let mut config = create_test_config(addr);
     config.update_instruments_interval_mins = 1;
     let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+    connect_with_refresh(&mut client).await;
     let mut started = tokio::time::Instant::now();
-    client.connect().await.unwrap();
 
     if reconnect {
         client.disconnect().await.unwrap();
+        connect_with_refresh(&mut client).await;
         started = tokio::time::Instant::now();
-        client.connect().await.unwrap();
     }
 
     // A repeated connect while connected must not spawn a second refresh task
-    client.connect().await.unwrap();
+    connect_with_refresh(&mut client).await;
     let initial_calls = state.get_instruments_request_count.load(Ordering::SeqCst);
+    assert_eq!(initial_calls, if reconnect { 2 } else { 1 });
 
     while rx.try_recv().is_ok() {}
 
@@ -2498,6 +2500,11 @@ async fn test_scheduled_instrument_refresh_publishes_and_caches_definitions(
     client
         .request_book_snapshot(book_snapshot(listing_id))
         .unwrap();
+    wait_until_async(
+        || async { client.command_tasks.all_finished() },
+        TEST_TIMEOUT,
+    )
+    .await;
     let mut rows = instrument_rows();
     instrument_row_mut(&mut rows, "BTC-PERPETUAL")["tick_size"] = json!(1.0);
     let mut listing = instrument_row_mut(&mut rows, "BTC-27DEC24").clone();
@@ -2507,13 +2514,23 @@ async fn test_scheduled_instrument_refresh_publishes_and_caches_definitions(
     rows.push(listing);
     *state.instruments_response.lock().await = Some(instruments_body(&rows));
 
+    advance_refresh_clock(Duration::from_secs(59).saturating_sub(started.elapsed())).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), rx.recv())
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        state.get_instruments_request_count.load(Ordering::SeqCst),
+        initial_calls
+    );
+    advance_refresh_clock(Duration::from_secs(60).saturating_sub(started.elapsed())).await;
     let mut refreshed = AHashMap::new();
     while refreshed.len() < 3 {
-        let instrument = recv_instrument(&mut rx, Duration::from_secs(65)).await;
+        let instrument = recv_instrument(&mut rx, Duration::from_secs(15)).await;
         refreshed.insert(instrument.id(), instrument);
     }
 
-    assert!(started.elapsed() >= Duration::from_secs(60));
     assert_eq!(refreshed[&perp_id].price_increment().as_decimal(), dec!(1));
     assert!(refreshed.contains_key(&listing_id));
     assert_eq!(
@@ -2521,32 +2538,37 @@ async fn test_scheduled_instrument_refresh_publishes_and_caches_definitions(
         initial_calls + 1
     );
 
-    client
-        .request_book_snapshot(book_snapshot(listing_id))
-        .unwrap();
+    assert_eq!(
+        client
+            .http_client
+            .get_instrument(&listing_id.symbol.inner())
+            .unwrap()
+            .id(),
+        listing_id
+    );
+    assert_eq!(
+        client
+            .http_client
+            .get_instrument(&perp_id.symbol.inner())
+            .unwrap()
+            .price_increment()
+            .as_decimal(),
+        dec!(1),
+    );
     client
         .subscribe_quotes(subscribe_quotes(listing_id))
         .unwrap();
-    let mut book_received = false;
-    let mut quote_received = false;
 
-    while !(book_received && quote_received) {
-        match tokio::time::timeout(TEST_TIMEOUT, rx.recv())
-            .await
-            .unwrap()
-            .unwrap()
-        {
-            DataEvent::Response(DataResponse::Book(response)) => {
-                assert_eq!(response.instrument_id, listing_id);
-                book_received = true;
-            }
-            DataEvent::Data(Data::Quote(quote)) => {
-                assert_eq!(quote.instrument_id, listing_id);
-                quote_received = true;
-            }
-            event => panic!("unexpected event {event:?}"),
+    let quote = tokio::time::timeout(TEST_TIMEOUT, async {
+        match rx.recv().await.unwrap() {
+            DataEvent::Data(Data::Quote(quote)) => quote,
+            event => panic!("expected refreshed quote, was {event:?}"),
         }
-    }
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(quote.instrument_id, listing_id);
 
     client.disconnect().await.unwrap();
 }
@@ -2560,7 +2582,7 @@ async fn test_scheduled_instrument_refresh_during_reconnect_reaches_handler() {
     let mut config = create_test_config(addr);
     config.update_instruments_interval_mins = 1;
     let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
-    client.connect().await.unwrap();
+    connect_with_refresh(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
@@ -2587,8 +2609,10 @@ async fn test_scheduled_instrument_refresh_during_reconnect_reaches_handler() {
     )
     .await;
 
+    advance_refresh_clock(Duration::from_secs(60)).await;
+
     loop {
-        let instrument = recv_instrument(&mut rx, Duration::from_secs(65)).await;
+        let instrument = recv_instrument(&mut rx, TEST_TIMEOUT).await;
         if instrument.id() == listing_id {
             break;
         }
@@ -2624,14 +2648,15 @@ async fn test_scheduled_instrument_refresh_during_reconnect_reaches_handler() {
 #[rstest]
 #[tokio::test]
 async fn test_scheduled_instrument_refresh_retries_after_failure() {
+    let _capture = lock_log_capture().await;
+    let logger = install_capturing_debug_logger();
     let (addr, state) = start_test_server().await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     replace_data_event_sender(tx);
     let mut config = create_test_config(addr);
     config.update_instruments_interval_mins = 1;
     let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
-    let started = tokio::time::Instant::now();
-    client.connect().await.unwrap();
+    connect_with_refresh(&mut client).await;
     let initial_calls = state.get_instruments_request_count.load(Ordering::SeqCst);
 
     while rx.try_recv().is_ok() {}
@@ -2643,35 +2668,45 @@ async fn test_scheduled_instrument_refresh_retries_after_failure() {
         "error": {"code": 10000, "message": "temporary refresh failure"},
         "testnet": true
     }));
+    advance_refresh_clock(Duration::from_secs(60)).await;
     wait_until_async(
-        || async { state.get_instruments_request_count.load(Ordering::SeqCst) > initial_calls },
-        Duration::from_secs(65),
+        || async { logger.contains("Failed to refresh instruments for Future:") },
+        TEST_TIMEOUT,
     )
     .await;
 
-    assert!(
-        tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .is_err()
+    let retry_started = tokio::time::Instant::now();
+    assert_eq!(
+        state.get_instruments_request_count.load(Ordering::SeqCst),
+        initial_calls + 1
     );
-    client
-        .request_book_snapshot(book_snapshot(perp_id))
-        .unwrap();
-    let event = tokio::time::timeout(TEST_TIMEOUT, rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
-    let DataEvent::Response(DataResponse::Book(response)) = event else {
-        panic!("expected book response, was {event:?}");
-    };
-    assert_eq!(response.instrument_id, perp_id);
+    assert!(rx.try_recv().is_err());
+    assert_eq!(
+        client
+            .http_client
+            .get_instrument(&perp_id.symbol.inner())
+            .unwrap()
+            .id(),
+        perp_id
+    );
+    assert!(client.is_connected());
 
     let mut rows = instrument_rows();
     instrument_row_mut(&mut rows, "BTC-PERPETUAL")["tick_size"] = json!(1.0);
     *state.instruments_response.lock().await = Some(instruments_body(&rows));
-    let refreshed = recv_instrument(&mut rx, Duration::from_secs(65)).await;
+    advance_refresh_clock(Duration::from_secs(59).saturating_sub(retry_started.elapsed())).await;
+    assert!(
+        tokio::time::timeout(Duration::from_millis(100), rx.recv())
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        state.get_instruments_request_count.load(Ordering::SeqCst),
+        initial_calls + 1
+    );
+    advance_refresh_clock(Duration::from_secs(60).saturating_sub(retry_started.elapsed())).await;
+    let refreshed = recv_instrument(&mut rx, TEST_TIMEOUT).await;
 
-    assert!(started.elapsed() >= Duration::from_secs(120));
     assert_eq!(refreshed.id().venue, *DERIBIT_VENUE);
     assert!(client.is_connected());
     client.disconnect().await.unwrap();
@@ -2687,14 +2722,16 @@ async fn test_scheduled_instrument_refresh_preserves_combo_legs_when_combos_fail
     config.product_types = vec![DeribitProductType::Future, DeribitProductType::FutureCombo];
     config.update_instruments_interval_mins = 1;
     let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
-    client.connect().await.unwrap();
+    connect_with_refresh(&mut client).await;
 
     while rx.try_recv().is_ok() {}
 
     state.fail_get_combos.store(true, Ordering::Relaxed);
     let combo_id = InstrumentId::from("BTC-COMBO-1.DERIBIT");
+    advance_refresh_clock(Duration::from_secs(60)).await;
+
     let refreshed = loop {
-        let instrument = recv_instrument(&mut rx, Duration::from_secs(65)).await;
+        let instrument = recv_instrument(&mut rx, Duration::from_secs(15)).await;
         if instrument.id() == combo_id {
             break instrument;
         }
@@ -2760,7 +2797,7 @@ async fn test_scheduled_instrument_refresh_shutdown(
     let mut config = create_test_config(addr);
     config.update_instruments_interval_mins = 1;
     let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
-    client.connect().await.unwrap();
+    connect_with_refresh(&mut client).await;
     let initial_calls = state.get_instruments_request_count.load(Ordering::SeqCst);
 
     while rx.try_recv().is_ok() {}
@@ -2769,9 +2806,10 @@ async fn test_scheduled_instrument_refresh_shutdown(
 
     if in_flight {
         *state.instruments_gate.lock().await = Some(Arc::clone(&gate));
+        advance_refresh_clock(Duration::from_secs(60)).await;
         wait_until_async(
             || async { state.get_instruments_request_count.load(Ordering::SeqCst) > initial_calls },
-            Duration::from_secs(65),
+            Duration::from_secs(15),
         )
         .await;
     }
@@ -2787,15 +2825,17 @@ async fn test_scheduled_instrument_refresh_shutdown(
         _ => unreachable!(),
     }
 
+    wait_until_async(
+        || async { client.session_tasks.all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
     gate.add_permits(1);
     let calls = state.get_instruments_request_count.load(Ordering::SeqCst);
 
     assert!(!client.is_connected());
-    assert!(
-        tokio::time::timeout(Duration::from_secs(61), rx.recv())
-            .await
-            .is_err()
-    );
+    advance_refresh_clock(Duration::from_secs(61)).await;
+    assert!(rx.try_recv().is_err());
     assert_eq!(
         state.get_instruments_request_count.load(Ordering::SeqCst),
         calls
@@ -2813,16 +2853,13 @@ async fn test_scheduled_instrument_refresh_disabled_when_interval_zero() {
     let mut config = create_test_config(addr);
     config.update_instruments_interval_mins = 0;
     let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
-    client.connect().await.unwrap();
+    connect_with_refresh(&mut client).await;
     let initial_calls = state.get_instruments_request_count.load(Ordering::SeqCst);
 
     while rx.try_recv().is_ok() {}
 
-    assert!(
-        tokio::time::timeout(Duration::from_secs(61), rx.recv())
-            .await
-            .is_err()
-    );
+    advance_refresh_clock(Duration::from_secs(61)).await;
+    assert!(rx.try_recv().is_err());
     assert_eq!(
         state.get_instruments_request_count.load(Ordering::SeqCst),
         initial_calls
@@ -2948,4 +2985,69 @@ async fn test_scheduled_instrument_refresh_mainnet() {
         initial.len(),
         started.elapsed().as_secs_f64()
     );
+}
+
+#[rstest]
+#[case::disabled(0)]
+#[case::enabled(1)]
+#[tokio::test]
+async fn test_connect_registers_one_instrument_refresh(#[case] minutes: u64) {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let mut config = create_test_config(addr);
+    let (tx, _rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    config.update_instruments_interval_mins = minutes;
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+
+    client.connect().await.unwrap();
+    client.connect().await.unwrap();
+
+    assert_eq!(client.session_tasks.len(), 1 + usize::from(minutes != 0));
+    client.disconnect().await.unwrap();
+    assert!(client.session_tasks.is_empty());
+}
+
+async fn connect_with_refresh(client: &mut DeribitDataClient) {
+    if client.is_connected() {
+        client.connect().await.unwrap();
+        return;
+    }
+
+    // Keep the refresh timer on the test clock and retain session task ownership
+    let minutes = client.config.update_instruments_interval_mins;
+    client.config.update_instruments_interval_mins = 0;
+    client.connect().await.unwrap();
+    client.config.update_instruments_interval_mins = minutes;
+
+    if let Some(future) = client.instrument_refresh() {
+        let (ready, started) = tokio::sync::oneshot::channel();
+        let mut tasks = tokio::task::JoinSet::new();
+        tasks.spawn(async move {
+            let mut future = Box::pin(future);
+            let mut ready = Some(ready);
+            std::future::poll_fn(move |cx| {
+                let result = future.as_mut().poll(cx);
+
+                if let Some(ready) = ready.take() {
+                    let _ = ready.send(());
+                }
+
+                result
+            })
+            .await;
+        });
+
+        client
+            .session_tasks
+            .spawn(async move { tasks.join_next().await.unwrap().unwrap() })
+            .unwrap();
+        started.await.unwrap();
+    }
+}
+
+async fn advance_refresh_clock(duration: Duration) {
+    tokio::time::pause();
+    tokio::time::advance(duration).await;
+    tokio::time::resume();
+    tokio::task::yield_now().await;
 }

@@ -106,6 +106,7 @@ criterion = { workspace = true }
 dashmap = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 toml = { workspace = true }
 
 # Run with `cargo bench -p nautilus-deribit --bench websocket`

@@ -27,5 +27,5 @@ slow-timeout = { period = "300s" }
 # Under heavy parallelism the global runtime's worker threads can be starved,
 # causing internal wait-for-request timeouts (e.g. wait_for_command_requests).
 [[profile.default.overrides]]
-filter = '(binary(integration) & (test(/^data_client::/) | test(/^websocket::/) | test(/::.*exec_client/))) | (!binary(integration) & test(exec_client))'
+filter = '(binary(integration) & (test(/^data_client::/) | test(/^websocket::/) | test(/::.*exec_client/))) | (!binary(integration) & (test(exec_client) | test(data_client_tests)))'
 retries = 3
