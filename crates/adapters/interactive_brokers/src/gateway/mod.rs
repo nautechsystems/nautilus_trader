@@ -18,4 +18,4 @@
 pub mod dockerized;
 
 #[cfg(feature = "gateway")]
-pub use dockerized::{ContainerStatus, DockerizedIBGateway};
+pub use dockerized::{ContainerStatus, DockerizedIBGateway, OwnedIBGateway};

@@ -135,6 +135,16 @@ def test_adapter_all_names_resolve(adapter: object) -> None:
     assert not missing, f"{adapter} __all__ names missing at runtime: {missing}"
 
 
+def test_interactive_brokers_exports_owned_gateway() -> None:
+    """
+    Test the owned gateway is available through the Interactive Brokers facade.
+    """
+    module = _import("interactive_brokers")
+
+    assert "OwnedIBGateway" in module.__all__
+    assert isinstance(module.OwnedIBGateway, type)
+
+
 @pytest.mark.parametrize("adapter", ADAPTERS)
 def test_runtime_all_matches_stub_all_exactly(adapter: object) -> None:
     """

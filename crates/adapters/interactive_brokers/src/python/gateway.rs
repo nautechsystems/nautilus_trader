@@ -25,7 +25,7 @@ use pyo3::prelude::*;
 #[cfg(feature = "gateway")]
 use crate::config::DockerizedIBGatewayConfig;
 #[cfg(feature = "gateway")]
-use crate::gateway::dockerized::DockerizedIBGateway;
+use crate::gateway::dockerized::{DockerizedIBGateway, OwnedIBGateway};
 
 #[cfg(feature = "gateway")]
 #[pymethods]
@@ -61,6 +61,25 @@ impl DockerizedIBGateway {
     #[getter("port")]
     fn py_port(&self) -> u16 {
         self.port()
+    }
+
+    #[pyo3(name = "create_owned")]
+    fn py_create_owned<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let gateway = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let owned = gateway
+                .create_owned()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("{e}")))?;
+            Python::attach(|py| Py::new(py, owned))
+        })
+    }
+
+    #[pyo3(name = "create_owned_blocking")]
+    fn py_create_owned_blocking(&self) -> PyResult<OwnedIBGateway> {
+        let gateway = self.clone();
+        block_on_nautilus_with(move || async move { gateway.create_owned().await })
+            .map_err(|e| to_pyruntime_err(format!("{e}")))
     }
 
     /// Start the gateway.
@@ -134,5 +153,70 @@ impl DockerizedIBGateway {
                 .await
                 .map_err(|e| to_pyruntime_err(format!("{e}")))
         })
+    }
+}
+
+#[cfg(feature = "gateway")]
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl OwnedIBGateway {
+    fn __repr__(&self) -> String {
+        format!(
+            "OwnedIBGateway(container_id={}, host={}, port={})",
+            self.container_id(),
+            self.host(),
+            self.port()
+        )
+    }
+
+    #[getter("container_id")]
+    fn py_container_id(&self) -> String {
+        self.container_id().to_string()
+    }
+
+    #[getter("host")]
+    fn py_host(&self) -> String {
+        self.host().to_string()
+    }
+
+    #[getter("port")]
+    fn py_port(&self) -> u16 {
+        self.port()
+    }
+
+    #[pyo3(name = "start", signature = (wait=None))]
+    fn py_start<'py>(&self, py: Python<'py>, wait: Option<u64>) -> PyResult<Bound<'py, PyAny>> {
+        let gateway = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            gateway
+                .start(wait)
+                .await
+                .map_err(|e| to_pyruntime_err(format!("{e}")))
+        })
+    }
+
+    #[pyo3(name = "start_blocking", signature = (wait=None))]
+    fn py_start_blocking(&self, wait: Option<u64>) -> PyResult<()> {
+        let gateway = self.clone();
+        block_on_nautilus_with(move || async move { gateway.start(wait).await })
+            .map_err(|e| to_pyruntime_err(format!("{e}")))
+    }
+
+    #[pyo3(name = "stop")]
+    fn py_stop<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let gateway = self.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            gateway
+                .stop()
+                .await
+                .map_err(|e| to_pyruntime_err(format!("{e}")))
+        })
+    }
+
+    #[pyo3(name = "stop_blocking")]
+    fn py_stop_blocking(&self) -> PyResult<()> {
+        let gateway = self.clone();
+        block_on_nautilus_with(move || async move { gateway.stop().await })
+            .map_err(|e| to_pyruntime_err(format!("{e}")))
     }
 }

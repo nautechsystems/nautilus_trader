@@ -25,6 +25,8 @@ use bollard::Docker;
 #[cfg(feature = "gateway")]
 use bollard::container::LogOutput;
 #[cfg(feature = "gateway")]
+use bollard::errors::Error as DockerError;
+#[cfg(feature = "gateway")]
 use bollard::models::{
     ContainerCreateBody, ContainerCreateResponse, HostConfig, PortBinding, RestartPolicy,
     RestartPolicyNameEnum,
@@ -342,6 +344,27 @@ impl DockerizedIBGateway {
         }
     }
 
+    /// Creates a gateway container without starting or adopting an existing container.
+    ///
+    /// The returned handle retains the exact Docker creation ID. Obtain the handle before
+    /// starting it so startup failure or cancellation does not discard ownership. If creation
+    /// is cancelled before the handle is delivered, its outcome may be unknown. No automatic
+    /// recovery or cleanup is attempted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Docker rejects creation, including an existing container name, or
+    /// returns an empty container ID.
+    pub async fn create_owned(&self) -> anyhow::Result<OwnedIBGateway> {
+        let container_id = self.create_container().await?;
+        anyhow::ensure!(!container_id.is_empty(), "Docker returned an empty container ID");
+
+        Ok(OwnedIBGateway {
+            gateway: self.clone(),
+            container_id,
+        })
+    }
+
     /// Start the gateway container.
     ///
     /// # Errors
@@ -376,6 +399,17 @@ impl DockerizedIBGateway {
 
         tracing::debug!("Starting new container");
 
+        let container_id = self.create_container().await?;
+
+        self.docker
+            .start_container(&container_id, None::<StartContainerOptions>)
+            .await
+            .context("Failed to start container")?;
+
+        self.wait_until_ready(&container_id, wait).await
+    }
+
+    async fn create_container(&self) -> anyhow::Result<String> {
         // Determine port mappings
         let host_port = Self::host_port_for_mode(self.config.trading_mode);
         let container_port = Self::container_port_for_mode(self.config.trading_mode);
@@ -448,14 +482,10 @@ impl DockerizedIBGateway {
             .await
             .context("Failed to create container")?;
 
-        let container_id = create_response.id;
+        Ok(create_response.id)
+    }
 
-        // Start container
-        self.docker
-            .start_container(&container_id, None::<StartContainerOptions>)
-            .await
-            .context("Failed to start container")?;
-
+    async fn wait_until_ready(&self, container_id: &str, wait: Option<u64>) -> anyhow::Result<()> {
         tracing::debug!(
             "Container `{}` starting, waiting for ready",
             self.container_name
@@ -466,7 +496,7 @@ impl DockerizedIBGateway {
         let mut waited = 0u64;
 
         while waited < wait_time {
-            if self.is_logged_in(&container_id).await.unwrap_or(false) {
+            if self.is_logged_in(container_id).await.unwrap_or(false) {
                 tracing::debug!(
                     "Gateway `{}` ready. VNC port is {:?}",
                     self.container_name,
@@ -558,6 +588,125 @@ impl DockerizedIBGateway {
         Ok(())
     }
 }
+
+/// A gateway container created by an explicit [`DockerizedIBGateway::create_owned`] call.
+///
+/// Its immutable ID is the only cleanup target. Cloning a handle preserves that ID. There is
+/// no public constructor or implicit cleanup. Callers must retain the handle and call [`Self::stop`].
+#[derive(Clone)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        module = "nautilus_trader.adapters.interactive_brokers",
+        from_py_object
+    )
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass(
+        module = "nautilus_trader.adapters.interactive_brokers"
+    )
+)]
+#[cfg(feature = "gateway")]
+pub struct OwnedIBGateway {
+    gateway: DockerizedIBGateway,
+    container_id: String,
+}
+
+#[cfg(feature = "gateway")]
+impl Debug for OwnedIBGateway {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct(stringify!(OwnedIBGateway))
+            .field("container_id", &self.container_id)
+            .field("host", &self.host())
+            .field("port", &self.port())
+            .finish_non_exhaustive()
+    }
+}
+
+#[cfg(feature = "gateway")]
+impl OwnedIBGateway {
+    /// Returns the exact container ID supplied by Docker at creation.
+    #[must_use]
+    pub fn container_id(&self) -> &str {
+        &self.container_id
+    }
+
+    /// Returns the gateway host address.
+    #[must_use]
+    pub fn host(&self) -> &str {
+        self.gateway.host()
+    }
+
+    /// Returns the gateway API port.
+    #[must_use]
+    pub fn port(&self) -> u16 {
+        self.gateway.port()
+    }
+
+    /// Starts this container and waits for readiness without looking up its name.
+    ///
+    /// The handle remains usable after a startup error or cancellation. Retrying an already
+    /// started container waits for readiness again. A removed container is never recreated.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Docker cannot start this container or readiness times out.
+    pub async fn start(&self, wait: Option<u64>) -> anyhow::Result<()> {
+        self.gateway
+            .docker
+            .start_container(&self.container_id, None::<StartContainerOptions>)
+            .await
+            .context("failed to start the owned gateway container")?;
+
+        self.gateway.wait_until_ready(&self.container_id, wait).await
+    }
+
+    /// Stops and removes only this container, without falling back to its name.
+    ///
+    /// An absent container is already cleaned up. A failed cleanup can be retried using the
+    /// same handle. No container with a replacement name is adopted.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if Docker cannot stop or remove this container.
+    pub async fn stop(&self) -> anyhow::Result<()> {
+        match self
+            .gateway
+            .docker
+            .stop_container(&self.container_id, None::<StopContainerOptions>)
+            .await
+        {
+            Ok(()) => {}
+            Err(DockerError::DockerResponseServerError {
+                status_code: 404, ..
+            }) => return Ok(()),
+            Err(e) => return Err(e).context("failed to stop the owned gateway container"),
+        }
+
+        let options = RemoveContainerOptions {
+            force: true,
+            ..Default::default()
+        };
+
+        match self
+            .gateway
+            .docker
+            .remove_container(&self.container_id, Some(options))
+            .await
+        {
+            Ok(())
+            | Err(DockerError::DockerResponseServerError {
+                status_code: 404, ..
+            }) => Ok(()),
+            Err(e) => Err(e).context("failed to remove the owned gateway container"),
+        }
+    }
+}
+
+#[cfg(all(test, feature = "gateway"))]
+#[path = "dockerized/owned_tests.rs"]
+mod owned_tests;
 
 /// Stub implementation when gateway feature is disabled.
 #[cfg(not(feature = "gateway"))]

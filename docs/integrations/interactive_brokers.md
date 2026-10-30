@@ -824,6 +824,30 @@ not restart a subscription.
 plus `container_status`. The safe start variants reuse a ready container and replace an unhealthy
 one.
 
+For cleanup limited to a container created by the caller, use `create_owned` or
+`create_owned_blocking` instead. These methods only create a new container and return an
+`OwnedIBGateway`; an existing name is an error and is never reused or replaced. Keep the returned
+handle before starting it:
+
+```python
+owned = gateway.create_owned_blocking()
+try:
+    owned.start_blocking()
+    # Connect a node using owned.host and owned.port
+finally:
+    owned.stop_blocking()
+```
+
+The handle exposes a read-only `container_id`. Its asynchronous and blocking start/stop methods
+always target that ID. Cleanup is idempotent when that container is absent and never looks up a
+replacement by name. A failed or cancelled start leaves the delivered handle available for cleanup.
+Cloning a handle preserves the same ID; it does not create or adopt another container.
+
+Creation cancelled before the handle reaches the caller can have an unknown outcome, including
+cancellation while Python awaits its result. This interface does not provide crash recovery,
+automatic cleanup on object destruction, or resource adoption. The original manager methods retain
+their existing behavior.
+
 ## Python enum reference
 
 All public Python enum names use `SCREAMING_SNAKE_CASE`. IB conversion enums expose `as_str()` or

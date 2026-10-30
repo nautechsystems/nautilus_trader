@@ -71,6 +71,7 @@ __all__ = [
     "InteractiveBrokersInstrumentProviderConfig",
     "InteractiveBrokersSubscriptionIdle",
     "MarketDataType",
+    "OwnedIBGateway",
     "SymbologyMethod",
     "TradingMode",
 ]

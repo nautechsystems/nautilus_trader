@@ -22,7 +22,7 @@ use nautilus_system::get_global_pyo3_registry;
 use pyo3::prelude::*;
 
 #[cfg(feature = "gateway")]
-use crate::gateway::dockerized::{ContainerStatus, DockerizedIBGateway};
+use crate::gateway::dockerized::{ContainerStatus, DockerizedIBGateway, OwnedIBGateway};
 use crate::{
     common::{consts::IB, enums::*},
     config::{
@@ -168,6 +168,7 @@ pub fn interactive_brokers(_py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult
     {
         m.add_class::<ContainerStatus>()?;
         m.add_class::<DockerizedIBGateway>()?;
+        m.add_class::<OwnedIBGateway>()?;
     }
 
     let registry = get_global_pyo3_registry();
