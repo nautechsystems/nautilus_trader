@@ -903,6 +903,7 @@ test-scripts:  #-- Run repository script tests
 	$Q bash .pre-commit-hooks/test_check_formatting_rs.sh
 	$Q bash .pre-commit-hooks/test_check_jiff_features.sh
 	$Q bash .pre-commit-hooks/test_check_logging_conventions.sh
+	$Q bash .pre-commit-hooks/test_check_nautilus_conventions.bash
 	$Q bash .pre-commit-hooks/test_check_pyo3_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_typos.sh
 	$Q bash .pre-commit-hooks/test_check_unicode_typography.sh

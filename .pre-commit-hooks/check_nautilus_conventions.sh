@@ -419,8 +419,9 @@ if [ -f "$PYO3_LIB" ]; then
 
   expected_pairs=$(echo "$EXPECTED_PYO3_MODULES" | sed '/^$/d' | sort)
 
-  added=$(comm -13 <(echo "$expected_pairs") <(echo "$actual_pairs") || true)
-  removed=$(comm -23 <(echo "$expected_pairs") <(echo "$actual_pairs") || true)
+  # comm returns zero for differences, so a failed comparison must stop the check
+  added=$(comm -13 <(echo "$expected_pairs") <(echo "$actual_pairs"))
+  removed=$(comm -23 <(echo "$expected_pairs") <(echo "$actual_pairs"))
 
   if [[ -n "$added" ]]; then
     while IFS= read -r pair; do
