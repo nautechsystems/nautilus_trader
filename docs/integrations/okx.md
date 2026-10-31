@@ -537,7 +537,8 @@ Use `get_account_instruments` to read the typed `OKXRpiPermission` value:
 The public instrument endpoint does not return account permissions. Raw fee responses expose `rpiMaker` as an
 optional `Decimal`. An empty value means RPI is not applicable.
 
-Responses may contain both RPI and ELP field names during the transition. The adapter prefers `rpi`
+Responses may contain both RPI and ELP field names during the transition, which ends with OKX's
+October 31, 2026 ELP name deprecation deadline. The adapter prefers `rpi`
 and `rpiMaker`, reads `elp` and `elpMaker` as response aliases, and sends only RPI names. Raw trade
 messages describe `source: "1"` as an RPI order.
 
