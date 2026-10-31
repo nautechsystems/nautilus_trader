@@ -2638,6 +2638,22 @@ def _concrete_stub_defaults(method: ast.FunctionDef | ast.AsyncFunctionDef) -> o
     return defaults
 
 
+def test_infrastructure_stub_exposes_configs_and_factories() -> None:
+    """
+    Keep generated bindings limited to configuration and factory entry points.
+    """
+    stub = ast.parse((STUB_ROOT / "infrastructure" / "__init__.pyi").read_text(encoding="utf-8"))
+    classes = {node.name for node in stub.body if isinstance(node, ast.ClassDef)}
+
+    assert classes == {
+        "PostgresCacheConfig",
+        "PostgresConnectOptions",
+        "RedisCacheConfig",
+        "RedisMessageBusConfig",
+        "RedisMessageBusFactory",
+    }
+
+
 def test_generated_config_stubs_include_signature_defaults() -> None:
     """
     Test generated config stubs include signature defaults.

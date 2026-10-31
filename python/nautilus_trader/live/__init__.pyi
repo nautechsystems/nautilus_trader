@@ -724,6 +724,8 @@ class LiveExecutionEngineConfig:
     @property
     def purge_account_events_lookback_mins(self) -> int | None: ...
     @property
+    def purge_from_database(self) -> bool: ...
+    @property
     def own_books_audit_interval_secs(self) -> float | None: ...
     @property
     def debug(self) -> bool: ...
@@ -767,6 +769,7 @@ class LiveExecutionEngineConfig:
         snapshot_orders: bool | None = None,
         snapshot_positions: bool | None = None,
         submission_recovery_policy: SubmissionRecoveryPolicy | None = None,
+        purge_from_database: bool | None = None,
     ) -> LiveExecutionEngineConfig: ...
 
 @typing.final

@@ -24727,7 +24727,8 @@ mod tests {
         assert_eq!(identity.filled_qty(), Decimal::ZERO);
         cache
             .borrow_mut()
-            .purge_closed_orders(UnixNanos::from(u64::MAX), 0);
+            .purge_closed_orders(UnixNanos::from(u64::MAX), 0, false)
+            .unwrap();
         assert!(cache.borrow().order(&rig.cloid).is_none());
         assert!(execution_instruments_pending(&client.core, &client.dispatch).is_empty());
         server.abort();

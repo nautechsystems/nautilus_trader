@@ -28,8 +28,6 @@ fn get_cache(cache_database: Option<Box<dyn CacheDatabaseAdapter>>) -> Cache {
 mod serial_tests {
     use std::time::Duration;
 
-    use ahash::AHashMap;
-    use bytes::Bytes;
     use indexmap::IndexMap;
     use nautilus_common::{cache::database::CacheDatabaseAdapter, testing::wait_until_async};
     use nautilus_core::{UUID4, UnixNanos};
@@ -416,8 +414,8 @@ mod serial_tests {
         database.close().unwrap();
     }
 
-    #[tokio::test(flavor = "multi_thread")]
-    async fn test_load_all_and_unsupported_loads_return_results() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_load_all_and_missing_state_return_empty_results() {
         let mut database = get_test_pg_cache_database().await.unwrap();
         reset_test_database(&database).await;
 
@@ -427,29 +425,19 @@ mod serial_tests {
             .await;
         let actor_result = database.load_actor(&ActorId::from("ACTOR-001"));
         let strategy_result = database.load_strategy(&StrategyId::from("STRATEGY-001"));
-        let state = AHashMap::from([("state".to_string(), Bytes::from_static(b"value"))]);
-        let actor_update_result = database.update_actor(&ActorId::from("ACTOR-001"), &state);
-        let strategy_update_result =
-            database.update_strategy(&StrategyId::from("STRATEGY-001"), &state);
 
+        assert!(loaded.currencies.is_empty());
+        assert!(loaded.instruments.is_empty());
+        assert!(loaded.instrument_closes.is_empty());
         assert!(loaded.synthetics.is_empty());
-        assert!(synthetic_result.is_err());
-        assert_eq!(
-            actor_result.unwrap_err().to_string(),
-            "load_actor not implemented for PostgreSQL cache adapter: ACTOR-001"
-        );
-        assert_eq!(
-            strategy_result.unwrap_err().to_string(),
-            "load_strategy not implemented for PostgreSQL cache adapter: STRATEGY-001"
-        );
-        assert_eq!(
-            actor_update_result.unwrap_err().to_string(),
-            "update_actor not implemented for PostgreSQL cache adapter: ACTOR-001"
-        );
-        assert_eq!(
-            strategy_update_result.unwrap_err().to_string(),
-            "update_strategy not implemented for PostgreSQL cache adapter: STRATEGY-001"
-        );
+        assert!(loaded.accounts.is_empty());
+        assert!(loaded.orders.is_empty());
+        assert!(loaded.positions.is_empty());
+        assert!(loaded.greeks.is_empty());
+        assert!(loaded.yield_curves.is_empty());
+        assert!(synthetic_result.unwrap().is_none());
+        assert!(actor_result.unwrap().is_empty());
+        assert!(strategy_result.unwrap().is_empty());
 
         database.close().unwrap();
     }

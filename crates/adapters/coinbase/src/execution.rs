@@ -355,6 +355,14 @@ impl ExecutionClient for CoinbaseExecutionClient {
         self.core.oms_type
     }
 
+    fn provides_bulk_position_coverage(&self, instrument_id: InstrumentId) -> bool {
+        self.is_margin()
+            && self
+                .instruments_cache
+                .get(instrument_id.symbol.as_str())
+                .is_some_and(|instrument| instrument.id() == instrument_id)
+    }
+
     fn get_account(&self) -> Option<AccountAny> {
         self.core.cache().account_owned(&self.core.account_id)
     }
@@ -2123,12 +2131,20 @@ impl CumulativeStateMap {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{
+        cache::Cache,
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_model::{
         enums::AccountType,
         events::OrderEventAny,
-        identifiers::{Symbol, TraderId},
-        instruments::CurrencyPair,
+        identifiers::{Symbol, TraderId, Venue},
+        instruments::{
+            CurrencyPair,
+            stubs::{crypto_future_btcusdt, crypto_perpetual_ethusdt},
+        },
         types::Currency,
     };
     use rstest::rstest;
@@ -2147,6 +2163,68 @@ mod tests {
         },
         websocket::messages::WsOrderUpdate,
     };
+
+    #[rstest]
+    #[case::cash(AccountType::Cash, true, false)]
+    #[case::margin_cached(AccountType::Margin, true, true)]
+    #[case::margin_uncached(AccountType::Margin, false, false)]
+    fn test_bulk_position_coverage(
+        #[case] account_type: AccountType,
+        #[case] cached: bool,
+        #[case] expected: bool,
+        #[values(false, true)] perpetual: bool,
+    ) {
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("COINBASE-TEST"),
+            *COINBASE_VENUE,
+            OmsType::Netting,
+            AccountId::from("COINBASE-001"),
+            account_type,
+            None,
+            cache,
+        );
+
+        let config = CoinbaseExecutionClientConfig {
+            api_key: Some("test-key".into()),
+            api_secret: Some("test-secret".into()),
+            account_type,
+            ..Default::default()
+        };
+
+        let mut client = CoinbaseExecutionClient::new(core, config).unwrap();
+
+        let instrument = if perpetual {
+            let mut instrument = crypto_perpetual_ethusdt();
+            instrument.id = InstrumentId::from("ETH-PERP.COINBASE");
+            InstrumentAny::CryptoPerpetual(instrument)
+        } else {
+            let mut instrument =
+                crypto_future_btcusdt(2, 6, Price::from("0.01"), Quantity::from("0.000001"));
+            instrument.id = InstrumentId::from("BIP-20DEC30-CDE.COINBASE");
+            InstrumentAny::CryptoFuture(instrument)
+        };
+
+        let instrument_id = instrument.id();
+
+        if cached {
+            client.instruments_cache = Arc::new(AHashMap::from([(
+                instrument_id.symbol.as_str().to_owned(),
+                instrument,
+            )]));
+        }
+
+        assert_eq!(
+            client.provides_bulk_position_coverage(instrument_id),
+            expected
+        );
+        let foreign_id = InstrumentId::new(instrument_id.symbol, Venue::from("OTHER"));
+        assert!(!client.provides_bulk_position_coverage(foreign_id));
+        assert!(!client.provides_bulk_position_coverage(InstrumentId::from("BTC-USD.COINBASE")));
+        assert!(!client.provides_bulk_position_coverage(InstrumentId::from("UNKNOWN.COINBASE")));
+    }
 
     #[rstest]
     fn test_submit_local_command_failure_classification() {

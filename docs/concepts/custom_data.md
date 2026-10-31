@@ -383,11 +383,10 @@ The PostgreSQL and Redis cache database implementations support `CustomData`.
 - The stored record includes `data_type`, `metadata`, `identifier`, and full
   JSON payload.
 - Reads reconstruct `CustomData` using `CustomData::from_json_bytes(...)`.
-- Python SQL bindings expose `add_custom_data` and `load_custom_data`.
 - Redis cache stores custom data under keys
   `custom:<ts_init_020>:<uuid>` with full `CustomData` JSON as value.
 - Redis `add_custom_data` and `load_custom_data` filter by `DataType` (type_name, metadata, identifier) and
-  return results sorted by `ts_init`. This is exposed through the PyO3 `RedisCacheDatabase` API.
+  return results sorted by `ts_init`.
 
 ## Practical implications
 

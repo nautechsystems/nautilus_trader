@@ -36,10 +36,6 @@ pub fn infrastructure(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     #[cfg(feature = "redis")]
     m.add_class::<crate::redis::cache::RedisCacheConfig>()?;
     #[cfg(feature = "redis")]
-    m.add_class::<crate::redis::cache::RedisCacheDatabase>()?;
-    #[cfg(feature = "redis")]
-    m.add_class::<redis::msgbus::PyRedisMessageBusBacking>()?;
-    #[cfg(feature = "redis")]
     m.add_class::<redis::msgbus::PyRedisMessageBusFactory>()?;
     #[cfg(feature = "redis")]
     m.add_class::<crate::redis::msgbus::RedisMessageBusConfig>()?;
@@ -49,8 +45,6 @@ pub fn infrastructure(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     redis::cache::register_redis_cache_database_factory()?;
     #[cfg(feature = "postgres")]
     m.add_class::<crate::sql::cache::PostgresCacheConfig>()?;
-    #[cfg(feature = "postgres")]
-    m.add_class::<crate::sql::cache::PostgresCacheDatabase>()?;
     #[cfg(feature = "postgres")]
     m.add_class::<crate::sql::pg::PostgresConnectOptions>()?;
     #[cfg(feature = "postgres")]
@@ -76,6 +70,8 @@ mod tests {
             let module = PyModule::new(py, "infrastructure").unwrap();
 
             infrastructure(py, &module).unwrap();
+
+            assert!(module.getattr("RedisCacheDatabase").is_err());
 
             let config = module
                 .getattr("RedisCacheConfig")
@@ -131,6 +127,8 @@ mod tests {
 
             infrastructure(py, &module).unwrap();
 
+            assert!(module.getattr("PostgresCacheDatabase").is_err());
+
             let config = module
                 .getattr("PostgresCacheConfig")
                 .unwrap()
@@ -167,7 +165,7 @@ mod tests {
 
             infrastructure(py, &module).unwrap();
 
-            assert!(module.getattr("RedisMessageBusBacking").is_ok());
+            assert!(module.getattr("RedisMessageBusBacking").is_err());
             assert!(module.getattr("RedisMessageBusConfig").is_ok());
             assert!(module.getattr("RedisMessageBusFactory").is_ok());
 

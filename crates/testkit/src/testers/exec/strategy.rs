@@ -1877,6 +1877,16 @@ impl ExecTester {
             return Ok(());
         }
 
+        if matches!(
+            (
+                self.config.limit_time_in_force,
+                self.config.order_expire_time_delta_mins
+            ),
+            (Some(TimeInForce::Gtd), _) | (None, Some(_))
+        ) {
+            anyhow::bail!("GTD time in force not supported for bracket take-profit legs");
+        }
+
         let (time_in_force, expire_time) =
             self.resolve_time_in_force(self.config.limit_time_in_force);
         let sl_time_in_force = self.config.stop_time_in_force.unwrap_or(TimeInForce::Gtc);

@@ -19,7 +19,7 @@ pre-commit-revision = "v{version}"
 
 [ruff]
 kind = "tool"
-version = "0.17.2"
+version = "0.17.3"
 ci = true
 releases = "pypi:ruff"
 pre-commit-repository = "https://github.com/astral-sh/ruff-pre-commit"
@@ -92,6 +92,11 @@ kind = "tool"
 version = "0.13.14"
 releases = "crates:cargo-edit"
 
+[cargo-hawk]
+kind = "tool"
+version = "0.1.15"
+releases = "crates:cargo-hawk"
+
 [cargo-llvm-cov]
 kind = "tool"
 version = "0.9.1"
@@ -99,7 +104,7 @@ releases = "crates:cargo-llvm-cov"
 
 [cargo-nextest]
 kind = "tool"
-version = "0.9.149"
+version = "0.9.150"
 releases = "crates:cargo-nextest"
 
 [cargo-vet]

@@ -835,146 +835,86 @@ impl ExecutionEngine {
 
     /// Starts the purge timers if configured.
     pub fn start_purge_timers(&mut self) {
-        if let Some(interval_mins) = self
-            .config
-            .purge_closed_orders_interval_mins
-            .filter(|&m| m > 0)
-            && !self
-                .clock
-                .borrow()
-                .timer_names()
-                .contains(&TIMER_PURGE_CLOSED_ORDERS)
-        {
-            'purge_closed_orders: {
-                let Ok(interval_ns) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
-                    log::error!(
-                        "Invalid purge_closed_orders_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
-                    );
-                    break 'purge_closed_orders;
-                };
-                let buffer_mins = self.config.purge_closed_orders_buffer_mins.unwrap_or(0);
-                let buffer_secs = mins_to_secs(u64::from(buffer_mins));
-                let cache = self.cache.clone();
-                let clock = self.clock.clone();
+        self.start_purge_timer(
+            TIMER_PURGE_CLOSED_ORDERS,
+            "purge_closed_orders_interval_mins",
+            "purge closed orders",
+            self.config.purge_closed_orders_interval_mins,
+            self.config.purge_closed_orders_buffer_mins,
+            Cache::purge_closed_orders,
+        );
+        self.start_purge_timer(
+            TIMER_PURGE_CLOSED_POSITIONS,
+            "purge_closed_positions_interval_mins",
+            "purge closed positions",
+            self.config.purge_closed_positions_interval_mins,
+            self.config.purge_closed_positions_buffer_mins,
+            Cache::purge_closed_positions,
+        );
+        self.start_purge_timer(
+            TIMER_PURGE_ACCOUNT_EVENTS,
+            "purge_account_events_interval_mins",
+            "purge account events",
+            self.config.purge_account_events_interval_mins,
+            self.config.purge_account_events_lookback_mins,
+            Cache::purge_account_events,
+        );
+    }
 
-                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                    let ts_now = clock.borrow().timestamp_ns();
-                    cache.borrow_mut().purge_closed_orders(ts_now, buffer_secs);
-                });
-                let callback = TimeEventCallback::from(callback_fn);
+    fn start_purge_timer(
+        &self,
+        name: &'static str,
+        field: &str,
+        description: &str,
+        interval_mins: Option<u32>,
+        buffer_mins: Option<u32>,
+        purge: fn(&mut Cache, UnixNanos, u64, bool) -> anyhow::Result<()>,
+    ) {
+        let Some(interval_mins) = interval_mins.filter(|&mins| mins > 0) else {
+            return;
+        };
 
-                log::info!(
-                    "Starting purge closed orders timer at {interval_mins} minute intervals"
-                );
-
-                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
-                    TIMER_PURGE_CLOSED_ORDERS,
-                    interval_ns,
-                    None,
-                    None,
-                    Some(callback),
-                    None,
-                    None,
-                ) {
-                    log::error!("Failed to set {TIMER_PURGE_CLOSED_ORDERS} timer: {e}");
-                }
-            }
+        if self.clock.borrow().timer_names().contains(&name) {
+            return;
         }
 
-        if let Some(interval_mins) = self
-            .config
-            .purge_closed_positions_interval_mins
-            .filter(|&m| m > 0)
-            && !self
-                .clock
-                .borrow()
-                .timer_names()
-                .contains(&TIMER_PURGE_CLOSED_POSITIONS)
-        {
-            'purge_closed_positions: {
-                let Ok(interval_ns) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
-                    log::error!(
-                        "Invalid purge_closed_positions_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
-                    );
-                    break 'purge_closed_positions;
-                };
-                let buffer_mins = self.config.purge_closed_positions_buffer_mins.unwrap_or(0);
-                let buffer_secs = mins_to_secs(u64::from(buffer_mins));
-                let cache = self.cache.clone();
-                let clock = self.clock.clone();
+        let Ok(interval_ns) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
+            log::error!(
+                "Invalid {field} {interval_mins}: minutes to nanoseconds conversion overflow"
+            );
+            return;
+        };
 
-                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                    let ts_now = clock.borrow().timestamp_ns();
-                    cache
-                        .borrow_mut()
-                        .purge_closed_positions(ts_now, buffer_secs);
-                });
-                let callback = TimeEventCallback::from(callback_fn);
+        let buffer_secs = mins_to_secs(u64::from(buffer_mins.unwrap_or(0)));
+        let purge_from_database = self.config.purge_from_database;
+        let cache = self.cache.clone();
+        let clock = self.clock.clone();
+        let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
+            let ts_now = clock.borrow().timestamp_ns();
 
-                log::info!(
-                    "Starting purge closed positions timer at {interval_mins} minute intervals"
-                );
-
-                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
-                    TIMER_PURGE_CLOSED_POSITIONS,
-                    interval_ns,
-                    None,
-                    None,
-                    Some(callback),
-                    None,
-                    None,
-                ) {
-                    log::error!("Failed to set {TIMER_PURGE_CLOSED_POSITIONS} timer: {e}");
-                }
+            if let Err(e) = purge(
+                &mut cache.borrow_mut(),
+                ts_now,
+                buffer_secs,
+                purge_from_database,
+            ) {
+                log::error!("Failed to purge cached state for {name}: {e}");
             }
-        }
+        });
 
-        if let Some(interval_mins) = self
-            .config
-            .purge_account_events_interval_mins
-            .filter(|&m| m > 0)
-            && !self
-                .clock
-                .borrow()
-                .timer_names()
-                .contains(&TIMER_PURGE_ACCOUNT_EVENTS)
-        {
-            'purge_account_events: {
-                let Ok(interval_ns) = DurationNanos::try_from_mins(u64::from(interval_mins)) else {
-                    log::error!(
-                        "Invalid purge_account_events_interval_mins {interval_mins}: minutes to nanoseconds conversion overflow"
-                    );
-                    break 'purge_account_events;
-                };
-                let lookback_mins = self.config.purge_account_events_lookback_mins.unwrap_or(0);
-                let lookback_secs = mins_to_secs(u64::from(lookback_mins));
-                let cache = self.cache.clone();
-                let clock = self.clock.clone();
+        let callback = TimeEventCallback::from(callback_fn);
+        log::info!("Starting {description} timer at {interval_mins} minute intervals");
 
-                let callback_fn: Rc<dyn Fn(TimeEvent)> = Rc::new(move |_event| {
-                    let ts_now = clock.borrow().timestamp_ns();
-                    cache
-                        .borrow_mut()
-                        .purge_account_events(ts_now, lookback_secs);
-                });
-                let callback = TimeEventCallback::from(callback_fn);
-
-                log::info!(
-                    "Starting purge account events timer at {interval_mins} minute intervals"
-                );
-
-                if let Err(e) = self.clock.borrow_mut().set_timer_ns(
-                    TIMER_PURGE_ACCOUNT_EVENTS,
-                    interval_ns,
-                    None,
-                    None,
-                    Some(callback),
-                    None,
-                    None,
-                ) {
-                    log::error!("Failed to set {TIMER_PURGE_ACCOUNT_EVENTS} timer: {e}");
-                }
-            }
+        if let Err(e) = self.clock.borrow_mut().set_timer_ns(
+            name,
+            interval_ns,
+            None,
+            None,
+            Some(callback),
+            None,
+            None,
+        ) {
+            log::error!("Failed to set {name} timer: {e}");
         }
     }
 
@@ -3117,12 +3057,16 @@ impl ExecutionEngine {
         }
 
         let event_client_order_id = event.client_order_id();
-        let cache = self.cache.borrow();
+        let mut cache = self.cache.borrow();
+
         let client_order_id = if cache.order_exists(&event_client_order_id) {
             event_client_order_id
         } else {
+            drop(cache);
             let is_leg_fill =
                 matches!(event, OrderEventAny::Filled(fill) if self.is_leg_fill(fill));
+            cache = self.cache.borrow();
+
             if !is_leg_fill {
                 log::warn!(
                     "Order with {} not found in the cache to apply {}",
@@ -3251,9 +3195,7 @@ impl ExecutionEngine {
 
                 let event = OrderEventAny::Filled(fill.clone());
 
-                let Some(order) =
-                    self.update_cached_order(client_order_id, &event, affects_quantity)
-                else {
+                let Some(order) = self.update_cached_order(client_order_id, &event, false) else {
                     return false;
                 };
 
@@ -3392,16 +3334,9 @@ impl ExecutionEngine {
     }
 
     fn handle_leg_fill_without_order(&mut self, mut fill: OrderFilled) -> bool {
-        let instrument =
-            if let Some(instrument) = self.cache.borrow().instrument(&fill.instrument_id) {
-                instrument.clone()
-            } else {
-                log::error!(
-                    "Cannot handle leg fill: no instrument found for {}, {fill}",
-                    fill.instrument_id,
-                );
-                return false;
-            };
+        let Some(instrument) = self.load_fill_instrument(&fill.instrument_id) else {
+            return false;
+        };
 
         if let Err(e) = self.cache.borrow().try_account(&fill.account_id) {
             log::error!("Cannot handle leg fill: {e}, {fill}");
@@ -3518,9 +3453,7 @@ impl ExecutionEngine {
             return false;
         }
 
-        self.cache
-            .borrow()
-            .instrument(&fill.instrument_id)
+        self.load_fill_instrument(&fill.instrument_id)
             .is_some_and(|instrument| !instrument.is_spread())
     }
 
@@ -4157,16 +4090,9 @@ impl ExecutionEngine {
         oms_type: OmsType,
         restatement: bool,
     ) -> Vec<PositionEvent> {
-        let instrument =
-            if let Some(instrument) = self.cache.borrow().instrument(&fill.instrument_id) {
-                instrument.clone()
-            } else {
-                log::error!(
-                    "Cannot handle order fill: no instrument found for {}, {fill}",
-                    fill.instrument_id,
-                );
-                return Vec::new();
-            };
+        let Some(instrument) = self.load_fill_instrument(&fill.instrument_id) else {
+            return Vec::new();
+        };
 
         let is_margin_account = {
             let cache = self.cache.borrow();
@@ -4181,10 +4107,8 @@ impl ExecutionEngine {
             account.is_margin_account()
         };
 
-        // Skip portfolio position updates for combo fills (spread instruments)
-        // Combo fills are only used for order management, not portfolio updates.
-        // A price restatement does not change quantity, so it is not a cash fill.
-        if !instrument.is_spread() && is_margin_account && !restatement {
+        // Margin combo fills update order state only; price restatements do not change quantity
+        if !restatement && (!is_margin_account || !instrument.is_spread()) {
             let portfolio_endpoint = MessagingSwitchboard::portfolio_update_order();
             msgbus::send_order_event(portfolio_endpoint, OrderEventAny::Filled(fill.clone()));
         }
@@ -4269,6 +4193,25 @@ impl ExecutionEngine {
         msgbus::publish_order_event(topic, &event);
 
         position_events
+    }
+
+    fn load_fill_instrument(&self, instrument_id: &InstrumentId) -> Option<InstrumentAny> {
+        if let Some(instrument) = self.cache.borrow().instrument(instrument_id) {
+            return Some(instrument.clone());
+        }
+
+        let loaded = self.cache.borrow_mut().load_instrument(instrument_id);
+        match loaded {
+            Ok(Some(instrument)) => Some(instrument),
+            Ok(None) => {
+                log::error!("Cannot handle fill: no instrument found for {instrument_id}");
+                None
+            }
+            Err(e) => {
+                log::error!("Cannot load instrument {instrument_id} for fill: {e}");
+                None
+            }
+        }
     }
 
     fn index_external_position_reduction(

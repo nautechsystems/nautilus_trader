@@ -43,6 +43,7 @@ use futures_util::StreamExt;
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    clock::VirtualClock,
     live::runner::set_exec_event_sender,
     messages::{
         ExecutionEvent,
@@ -56,7 +57,9 @@ use nautilus_common::{
 };
 use nautilus_core::{AtomicMap, DurationNanos, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_live::{
-    ExecutionClientCore, ExecutionEventEmitter, execution::context::OrderIdentity,
+    ExecutionClientCore, ExecutionEventEmitter,
+    execution::context::OrderIdentity,
+    manager::{ExecutionManager, ExecutionManagerConfig},
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
@@ -65,7 +68,7 @@ use nautilus_model::{
         TimeInForce, TriggerType,
     },
     events::{
-        OrderEventAny, OrderInitialized, OrderUpdated,
+        AccountState, OrderEventAny, OrderInitialized, OrderUpdated,
         order::spec::{
             OrderAcceptedSpec, OrderPendingUpdateSpec, OrderSubmittedSpec, OrderTriggeredSpec,
             OrderUpdatedSpec,
@@ -85,7 +88,7 @@ use nautilus_model::{
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
     reports::{FillReport, OrderStatusReport},
-    types::{Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use nautilus_okx::{
@@ -3467,6 +3470,130 @@ fn create_test_execution_client_configured(
     let client = OKXExecutionClient::new(core, config).unwrap();
 
     (client, rx, cache)
+}
+
+#[rstest]
+#[case::default(vec![], "BTC-USDT.OKX", false)]
+#[case::spot(vec![OKXInstrumentType::Spot], "BTC-USDT.OKX", false)]
+#[case::margin(vec![OKXInstrumentType::Margin], "BTC-USDT.OKX", false)]
+#[case::mixed_spot(vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap], "BTC-USDT.OKX", false)]
+#[case::swap(vec![OKXInstrumentType::Swap], "BTC-USDT-SWAP.OKX", true)]
+#[case::future(vec![OKXInstrumentType::Futures], "BTC-USDT-301220.OKX", true)]
+#[case::option(vec![OKXInstrumentType::Option], "BTC-USD-301220-50000-C.OKX", true)]
+#[case::unconfigured(vec![OKXInstrumentType::Spot], "BTC-USDT-SWAP.OKX", false)]
+#[case::other_derivative(vec![OKXInstrumentType::Swap], "BTC-USDT-301220.OKX", false)]
+#[case::any(vec![OKXInstrumentType::Any], "BTC-USDT-SWAP.OKX", false)]
+#[case::unknown(vec![OKXInstrumentType::Swap], "UNKNOWN.OKX", false)]
+#[case::spread(vec![OKXInstrumentType::Events], "BTC-USDT-SWAP_BTC-USDT-301220.OKX", false)]
+fn test_bulk_position_coverage(
+    #[case] instrument_types: Vec<OKXInstrumentType>,
+    #[case] instrument_id: &str,
+    #[case] expected: bool,
+) {
+    let (client, _rx, _cache) =
+        create_test_execution_client_configured("http://127.0.0.1:1", |config| {
+            config.instrument_types = instrument_types;
+        });
+
+    assert_eq!(
+        client.provides_bulk_position_coverage(InstrumentId::from(instrument_id)),
+        expected
+    );
+}
+
+#[rstest]
+#[case::default(vec![])]
+#[case::spot(vec![OKXInstrumentType::Spot])]
+#[case::margin(vec![OKXInstrumentType::Margin])]
+#[case::mixed(vec![OKXInstrumentType::Spot, OKXInstrumentType::Swap])]
+#[tokio::test]
+async fn test_position_check_preserves_spot_position_without_reports(
+    #[case] instrument_types: Vec<OKXInstrumentType>,
+) {
+    let state = Arc::new(ReportRouteState::default());
+    let addr = start_exec_report_test_server(state).await;
+
+    let (mut client, _rx, cache) =
+        create_test_execution_client_configured(&format!("http://{addr}"), |config| {
+            config.instrument_types = instrument_types;
+        });
+
+    let instrument = make_margin_spot_report_instrument();
+    client.on_instrument(instrument.clone());
+
+    let account_state = AccountState::new(
+        client.account_id(),
+        AccountType::Margin,
+        vec![AccountBalance::new(
+            Money::from("100000 USDT"),
+            Money::from("0 USDT"),
+            Money::from("100000 USDT"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    cache
+        .borrow_mut()
+        .add_account(AccountAny::Margin(MarginAccount::new(account_state, true)))
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000000"))
+        .build();
+    let position_id = PositionId::from("P-SPOT-RETAINED");
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-SPOT-OPEN")),
+        Some(position_id),
+        Some(Price::from("50000.00")),
+        None,
+        None,
+        None,
+        None,
+        Some(client.account_id()),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+    let mut manager = ExecutionManager::new(
+        clock,
+        cache.clone(),
+        ExecutionManagerConfig {
+            position_check_threshold_ns: DurationNanos::ZERO,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let mut events = Vec::new();
+    for _ in 0..2 {
+        events.extend(manager.check_positions_consistency(&[&client]).await);
+    }
+
+    assert!(
+        events.is_empty(),
+        "Unexpected reconciliation events: {events:?}"
+    );
+    let cache = cache.borrow();
+    assert!(cache.orders_refs(None, None, None, None, None).is_empty());
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 1);
+    let retained = cache.position(&position_id).unwrap();
+    assert_eq!(retained.quantity, position.quantity);
+    assert_eq!(retained.signed_decimal_qty(), position.signed_decimal_qty());
+    assert_eq!(retained.side, position.side);
+    assert_eq!(retained.avg_px_open, position.avg_px_open);
+    assert_eq!(retained.event_count(), position.event_count());
 }
 
 fn make_margin_spot_report_instrument() -> InstrumentAny {

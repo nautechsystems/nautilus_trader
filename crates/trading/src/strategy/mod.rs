@@ -3760,6 +3760,19 @@ mod tests {
         let order = make_initialized_market_order("O-20250208-INIT-001");
         let client_order_id = order.client_order_id();
         let cache_rc = strategy.core.cache_rc();
+        let old_instrument_id = InstrumentId::from("ETHUSDT.KRAKEN");
+        let old_order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(old_instrument_id)
+            .client_order_id(client_order_id)
+            .strategy_id(order.strategy_id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(1))
+            .build();
+        cache_rc
+            .borrow_mut()
+            .add_order(old_order, None, None, false)
+            .unwrap();
+        let new_instrument_id = order.instrument_id();
         let timeline = Rc::new(RefCell::new(Vec::new()));
         let event_messages = Rc::new(RefCell::new(Vec::new()));
 
@@ -3768,6 +3781,19 @@ mod tests {
             let timeline = timeline.clone();
             TypedHandler::from_with_id("events.order.initialized", move |event: &OrderEventAny| {
                 assert!(cache_rc.borrow().order_exists(&client_order_id));
+                assert!(
+                    cache_rc
+                        .borrow()
+                        .orders(None, Some(&old_instrument_id), None, None, None)
+                        .is_empty()
+                );
+                assert_eq!(
+                    cache_rc
+                        .borrow()
+                        .orders(None, Some(&new_instrument_id), None, None, None)
+                        .len(),
+                    1,
+                );
                 assert!(matches!(event, OrderEventAny::Initialized(_)));
                 event_messages.borrow_mut().push(event.clone());
                 timeline.borrow_mut().push("init");

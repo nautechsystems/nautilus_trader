@@ -205,65 +205,74 @@ impl DataEngine {
         Ok(None)
     }
 
+    /// Rejects a request asking for catalog write-back (`update_catalog`) that cannot get one:
+    /// no catalog is registered, or the request carries a source schema or a record limit.
+    pub(super) fn validate_catalog_update(&self, request: &RequestCommand) -> anyhow::Result<()> {
+        if request_params(request).and_then(|p| p.get_bool(PARAM_UPDATE_CATALOG)) != Some(true) {
+            return Ok(());
+        }
+
+        anyhow::ensure!(
+            !self.catalogs.is_empty(),
+            "Catalog write-back requires a registered catalog"
+        );
+        anyhow::ensure!(
+            !request_has_schema(request),
+            "Catalog write-back is unsupported for requests with a source schema"
+        );
+        anyhow::ensure!(
+            request_limit(request).is_none(),
+            "Catalog write-back is unsupported for requests with a record limit"
+        );
+        Ok(())
+    }
+
+    /// Writes `response` back to a catalog when `request` asks for it (`update_catalog`).
+    /// `validate_catalog_update` has accepted the request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the requested write-back fails, so the response data is not
+    /// persisted: an identifier's coverage is unverified, or a write fails.
     pub(super) fn update_catalog_from_response(
         &mut self,
         response: &DataResponse,
         request: &RequestCommand,
-    ) {
+    ) -> anyhow::Result<()> {
         let Some(params) =
             request_params(request).filter(|p| p.get_bool(PARAM_UPDATE_CATALOG).unwrap_or(false))
         else {
-            return;
+            return Ok(());
         };
 
         if response
             .params()
             .is_some_and(|p| p.get_bool(PARAM_UPDATE_CATALOG) == Some(false))
         {
-            return;
-        }
-
-        if self.catalogs.is_empty() {
-            log::warn!("No catalog registered for response write-back");
-            return;
+            return Ok(());
         }
 
         if let DataResponse::Instrument(value) = response {
-            self.write_response_instruments(std::slice::from_ref(&value.data), params);
-            return;
+            return self.write_response_instruments(std::slice::from_ref(&value.data), params);
         }
 
         if let DataResponse::Instruments(value) = response {
-            self.write_response_instruments(&value.data, params);
-            return;
-        }
-
-        if request_has_schema(request) {
-            log::warn!(
-                "Skipping catalog write-back because source schemas are not part of the catalog key, request={}",
-                request.request_id()
-            );
-            return;
-        }
-
-        if request_limit(request).is_some() {
-            log::warn!(
-                "Skipping catalog write-back because a record limit can leave incomplete coverage, request={}",
-                request.request_id()
-            );
-            return;
+            return self.write_response_instruments(&value.data, params);
         }
 
         let batches = match response_batches(response) {
             Ok(batches) => batches,
             Err(e) => {
                 log::error!("Cannot prepare response catalog write: {e}");
-                return;
+                anyhow::bail!(
+                    "Catalog write-back failed: cannot prepare the response batches: {e}"
+                );
             }
         };
 
         let bounds = response_write_bounds(request, response);
         let data_type = response.data_kind();
+        let mut failures = Vec::new();
 
         for (identifier, batch) in batches {
             if !request_contains_batch(request, identifier.as_deref(), &batch) {
@@ -271,6 +280,9 @@ impl DataEngine {
                     "Skipping catalog write-back because identifier coverage is unverified, request={}, identifier={identifier:?}",
                     request.request_id()
                 );
+                failures.push(format!(
+                    "Catalog write-back failed: identifier coverage is unverified, identifier={identifier:?}"
+                ));
                 continue;
             }
 
@@ -278,8 +290,14 @@ impl DataEngine {
                 self.write_response_batch(&batch, &data_type, identifier.as_deref(), params, bounds)
             {
                 log::error!("Catalog write-back failed for {identifier:?}: {e}");
+                failures.push(format!("Catalog write-back failed for {identifier:?}: {e}"));
             }
         }
+
+        if !failures.is_empty() {
+            anyhow::bail!(failures.join("; "));
+        }
+        Ok(())
     }
 
     fn write_response_batch(
@@ -307,10 +325,15 @@ impl DataEngine {
         catalog.write_data_batch(batch, start, end, Some(params.clone()))
     }
 
-    fn write_response_instruments(&mut self, instruments: &[InstrumentAny], params: &Params) {
+    fn write_response_instruments(
+        &mut self,
+        instruments: &[InstrumentAny],
+        params: &Params,
+    ) -> anyhow::Result<()> {
         let force = params
             .get_bool(PARAM_FORCE_INSTRUMENT_UPDATE)
             .unwrap_or(false);
+        let mut failures = Vec::new();
 
         for instrument in instruments {
             let identifier = instrument.id().to_string();
@@ -340,8 +363,16 @@ impl DataEngine {
 
             if let Err(e) = result {
                 log::error!("Instrument catalog write-back failed for {identifier}: {e}");
+                failures.push(format!(
+                    "Catalog write-back failed for instrument {identifier}: {e}"
+                ));
             }
         }
+
+        if !failures.is_empty() {
+            anyhow::bail!(failures.join("; "));
+        }
+        Ok(())
     }
 
     fn catalog_for_update(

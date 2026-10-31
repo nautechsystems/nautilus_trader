@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Provides Redis cache database bindings.
+//! Provides Redis configuration and factory bindings.
 
 pub mod cache;
 pub mod msgbus;

@@ -961,6 +961,100 @@ impl Cache {
         self.database.is_some()
     }
 
+    /// Loads an instrument from memory, falling back to the database and caching the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading the instrument fails.
+    pub fn load_instrument(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        if let Some(instrument) = self.instruments.get(instrument_id) {
+            return Ok(Some(instrument.clone()));
+        }
+
+        let Some(database) = &self.database else {
+            return Ok(None);
+        };
+
+        let instrument = database.load_instrument_sync(instrument_id)?;
+        if let Some(instrument) = &instrument {
+            self.instruments.insert(instrument.id(), instrument.clone());
+        }
+
+        Ok(instrument)
+    }
+
+    /// Loads a synthetic from memory, falling back to the database and caching the result.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the ID is not synthetic or loading the instrument fails.
+    pub fn load_synthetic(
+        &mut self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        anyhow::ensure!(
+            instrument_id.is_synthetic(),
+            "Instrument ID is not synthetic: {instrument_id}"
+        );
+
+        if let Some(synthetic) = self.synthetics.get(instrument_id) {
+            return Ok(Some(synthetic.clone()));
+        }
+
+        let Some(database) = &self.database else {
+            return Ok(None);
+        };
+
+        let synthetic = database.load_synthetic_sync(instrument_id)?;
+        if let Some(synthetic) = &synthetic {
+            self.synthetics.insert(synthetic.id, synthetic.clone());
+        }
+
+        Ok(synthetic)
+    }
+
+    /// Deletes persisted actor state. Does nothing without a database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deleting the state fails.
+    pub fn delete_actor(&self, actor_id: &ActorId) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.delete_actor(actor_id)?;
+        }
+
+        Ok(())
+    }
+
+    /// Deletes persisted strategy state. Does nothing without a database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if deleting the state fails.
+    pub fn delete_strategy(&self, strategy_id: &StrategyId) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.delete_strategy(strategy_id)?;
+        }
+
+        Ok(())
+    }
+
+    /// Persists the heartbeat timestamp. Does nothing without a database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if persisting the timestamp fails.
+    pub fn heartbeat(&self, timestamp: UnixNanos) -> anyhow::Result<()> {
+        if let Some(database) = &self.database {
+            database.heartbeat(timestamp)?;
+        }
+
+        Ok(())
+    }
+
     /// Loads persisted actor state.
     ///
     /// Returns `None` when the cache has no backing database.
@@ -1473,7 +1567,18 @@ impl Cache {
     ///
     /// Only orders that have been closed for at least this amount of time will be purged.
     /// A value of 0 means purge all closed orders regardless of when they were closed.
-    pub fn purge_closed_orders(&mut self, ts_now: UnixNanos, buffer_secs: u64) {
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database deletion cannot be queued.
+    pub fn purge_closed_orders(
+        &mut self,
+        ts_now: UnixNanos,
+        buffer_secs: u64,
+        purge_from_database: bool,
+    ) -> anyhow::Result<()> {
         log::debug!(
             "Purging closed orders{}",
             if buffer_secs > 0 {
@@ -1487,12 +1592,13 @@ impl Cache {
             log::warn!(
                 "Cannot purge closed orders: buffer_secs {buffer_secs} is not representable in `u64` nanoseconds"
             );
-            return;
+            return Ok(());
         };
         let purge_cutoff = ts_now.checked_sub(buffer_ns);
 
         let mut affected_order_list_ids: AHashSet<OrderListId> = AHashSet::new();
         let mut purged_client_order_ids: AHashSet<ClientOrderId> = AHashSet::new();
+        let mut result = Ok(());
 
         'outer: for client_order_id in self.index.orders_closed.clone() {
             let purge_target = self.orders.get(&client_order_id).and_then(|order_cell| {
@@ -1529,8 +1635,15 @@ impl Cache {
                 affected_order_list_ids.insert(order_list_id);
             }
 
-            if self.purge_order_except_aliases(client_order_id) {
-                purged_client_order_ids.insert(client_order_id);
+            match self.purge_order_checked(client_order_id, purge_from_database) {
+                Ok(true) => {
+                    purged_client_order_ids.insert(client_order_id);
+                }
+                Ok(false) => {}
+                Err(e) => {
+                    result = Err(e);
+                    break;
+                }
             }
         }
 
@@ -1553,10 +1666,23 @@ impl Cache {
                 }
             }
         }
+
+        result
     }
 
     /// Purges all closed positions from the cache that are older than `buffer_secs`.
-    pub fn purge_closed_positions(&mut self, ts_now: UnixNanos, buffer_secs: u64) {
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database deletion cannot be queued.
+    pub fn purge_closed_positions(
+        &mut self,
+        ts_now: UnixNanos,
+        buffer_secs: u64,
+        purge_from_database: bool,
+    ) -> anyhow::Result<()> {
         log::debug!(
             "Purging closed positions{}",
             if buffer_secs > 0 {
@@ -1570,7 +1696,7 @@ impl Cache {
             log::warn!(
                 "Cannot purge closed positions: buffer_secs {buffer_secs} is not representable in `u64` nanoseconds"
             );
-            return;
+            return Ok(());
         };
         let purge_cutoff = ts_now.checked_sub(buffer_ns);
 
@@ -1584,20 +1710,52 @@ impl Cache {
             });
 
             if should_purge {
-                self.purge_position(position_id);
+                self.purge_position(position_id, purge_from_database)?;
             }
         }
+
+        Ok(())
     }
 
     /// Purges the order with the `client_order_id` from the cache (if found).
     ///
     /// For safety, an order is prevented from being purged if it's open.
-    pub fn purge_order(&mut self, client_order_id: ClientOrderId) {
-        if self.purge_order_except_aliases(client_order_id) {
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database deletion cannot be queued.
+    pub fn purge_order(
+        &mut self,
+        client_order_id: ClientOrderId,
+        purge_from_database: bool,
+    ) -> anyhow::Result<()> {
+        if self.purge_order_checked(client_order_id, purge_from_database)? {
             self.index
                 .venue_order_ids
                 .retain(|_, owner| owner != &client_order_id);
         }
+
+        Ok(())
+    }
+
+    fn purge_order_checked(
+        &mut self,
+        client_order_id: ClientOrderId,
+        purge_from_database: bool,
+    ) -> anyhow::Result<bool> {
+        if purge_from_database
+            && let Some(database) = &self.database
+            && self
+                .orders
+                .get(&client_order_id)
+                .is_none_or(|order| !order.borrow().is_open())
+        {
+            database.delete_order(&client_order_id)?;
+        }
+
+        Ok(self.purge_order_except_aliases(client_order_id))
     }
 
     /// Removes the order and its indexes, leaving the reverse venue order ID aliases for the
@@ -1837,7 +1995,17 @@ impl Cache {
     /// Purges the position with the `position_id` from the cache (if found).
     ///
     /// For safety, a position is prevented from being purged if it's open.
-    pub fn purge_position(&mut self, position_id: PositionId) {
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database deletion cannot be queued.
+    pub fn purge_position(
+        &mut self,
+        position_id: PositionId,
+        purge_from_database: bool,
+    ) -> anyhow::Result<()> {
         // Keep the cell alive during index cleanup without cloning position history
         let position_cell = self.positions.get(&position_id).cloned();
         let position = position_cell.as_ref().map(|cell| cell.borrow());
@@ -1847,8 +2015,10 @@ impl Cache {
             && pos.is_open()
         {
             log::warn!("Position {position_id} found open when purging, skipping purge");
-            return;
+            return Ok(());
         }
+
+        self.delete_position_from_database(position_id, purge_from_database)?;
 
         // If position exists in cache, remove it and clean up position-specific indices
         if let Some(ref pos) = position {
@@ -1940,6 +2110,19 @@ impl Cache {
         // Always clean up position snapshots (even if position not in cache)
         self.position_snapshots.remove(&position_id);
         self.bump_position_snapshot_revision(position_id);
+        Ok(())
+    }
+
+    fn delete_position_from_database(
+        &self,
+        position_id: PositionId,
+        requested: bool,
+    ) -> anyhow::Result<()> {
+        if requested && let Some(database) = &self.database {
+            database.delete_position(&position_id)?;
+        }
+
+        Ok(())
     }
 
     /// Purges the instrument with the `instrument_id` from the cache (if found).
@@ -2057,8 +2240,20 @@ impl Cache {
     /// Purges all account state events which are outside the lookback window.
     ///
     /// Only events which are outside the lookback window will be purged.
-    /// A value of 0 means purge all account state events.
-    pub fn purge_account_events(&mut self, ts_now: UnixNanos, lookback_secs: u64) {
+    /// A value of 0 purges all but the latest account state event.
+    ///
+    /// When `purge_from_database` is true, also requests deletion from the backing database.
+    /// Redis and PostgreSQL log the request and retain the full account history for replay.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database deletion cannot be queued.
+    pub fn purge_account_events(
+        &mut self,
+        ts_now: UnixNanos,
+        lookback_secs: u64,
+        purge_from_database: bool,
+    ) -> anyhow::Result<()> {
         log::debug!(
             "Purging account events{}",
             if lookback_secs > 0 {
@@ -2071,6 +2266,8 @@ impl Cache {
         for account_cell in self.accounts.values() {
             let mut account = account_cell.borrow_mut();
             let event_count = account.event_count();
+            let events_before =
+                (purge_from_database && self.database.is_some()).then(|| account.events());
             account.purge_account_events(ts_now, lookback_secs);
             let count_diff = event_count - account.event_count();
             if count_diff > 0 {
@@ -2079,8 +2276,42 @@ impl Cache {
                     count_diff,
                     account.id()
                 );
+
+                if let Some(database) = &self.database
+                    && let Some(events_before) = events_before
+                {
+                    Self::delete_purged_account_events(
+                        database.as_ref(),
+                        &account,
+                        &events_before,
+                    )?;
+                }
             }
         }
+
+        Ok(())
+    }
+
+    fn delete_purged_account_events(
+        database: &dyn CacheDatabaseAdapter,
+        account: &AccountAny,
+        events_before: &[AccountState],
+    ) -> anyhow::Result<()> {
+        let retained: AHashSet<_> = account
+            .events()
+            .iter()
+            .map(|event| event.event_id)
+            .collect();
+
+        for event in events_before {
+            if retained.contains(&event.event_id) {
+                continue;
+            }
+
+            database.delete_account_event(&account.id(), &event.event_id.to_string())?;
+        }
+
+        Ok(())
     }
 
     /// Clears the caches index.
@@ -2807,16 +3038,15 @@ impl Cache {
     ///
     /// # Parameters
     ///
-    /// `override_existing`: If the added order should 'override' any existing order and replace
-    /// it in the cache. This is currently used for emulated orders which are
-    /// being released and transformed into another type.
+    /// `replace_existing`: Replaces an existing order with the same client order ID. Emulated
+    /// orders use this when release transforms them into another order type.
     ///
     /// # Errors
     ///
-    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache,
-    /// or if persisting the order to the backing database fails. The order and every index are
-    /// committed to memory before persistence is attempted, so a persistence error leaves the
-    /// cache internally consistent.
+    /// Returns an error if the client order ID exists and `replace_existing` is false, a
+    /// replacement claims another order's venue order ID, or persistence fails. The order and
+    /// every index are committed to memory before persistence is attempted, so a persistence
+    /// error leaves the cache internally consistent.
     pub fn add_order(
         &mut self,
         order: OrderAny,
@@ -2842,11 +3072,22 @@ impl Cache {
 
         log::debug!("Adding {order:?}");
 
+        let old_order_cell = self.orders.get(&client_order_id).cloned();
+        let replacing = old_order_cell.is_some();
+        if let Some(old_order_cell) = &old_order_cell {
+            self.reindex_replaced_order(old_order_cell, &order, position_id)?;
+        }
+
         self.index.orders.insert(client_order_id);
 
         if order.is_active_local() {
             self.index.orders_active_local.insert(client_order_id);
         }
+
+        if order.emulation_trigger().is_some() && (!replacing || !order.is_closed()) {
+            self.index.orders_emulated.insert(client_order_id);
+        }
+
         self.index
             .order_strategy
             .insert(client_order_id, strategy_id);
@@ -2902,11 +3143,6 @@ impl Cache {
                 .insert(client_order_id);
         }
 
-        // Update emulation index
-        if order.emulation_trigger().is_some() {
-            self.index.orders_emulated.insert(client_order_id);
-        }
-
         // Index position ID if provided
         if let Some(position_id) = position_id {
             self.index_position_id_in_memory(&position_id, &venue, &client_order_id, &strategy_id);
@@ -2942,6 +3178,249 @@ impl Cache {
         }
 
         Ok(())
+    }
+
+    fn reindex_replaced_order(
+        &mut self,
+        old_order_cell: &SharedCell<OrderAny>,
+        order: &OrderAny,
+        position_id: Option<PositionId>,
+    ) -> anyhow::Result<()> {
+        let client_order_id = order.client_order_id();
+        let current_venue_order_id = order.venue_order_id();
+        let venue_order_ids = order.venue_order_ids();
+
+        if let Some(venue_order_id) = current_venue_order_id {
+            self.validate_venue_order_id_ownership(&client_order_id, &venue_order_id)?;
+        }
+
+        for venue_order_id in &venue_order_ids {
+            if current_venue_order_id == Some(**venue_order_id) {
+                continue;
+            }
+
+            self.validate_venue_order_id_ownership(&client_order_id, venue_order_id)?;
+        }
+
+        {
+            let old_order = old_order_cell.borrow();
+
+            if let Some(position_id) = position_id {
+                Self::remove_replaced_order_position_memberships(
+                    &mut self.index,
+                    &self.positions,
+                    &old_order,
+                    position_id,
+                );
+            }
+
+            Self::remove_replaced_order_filter_memberships(&mut self.index, &old_order, order);
+        }
+
+        self.index.orders_active_local.remove(&client_order_id);
+        self.index.orders_open.remove(&client_order_id);
+        self.index.orders_closed.remove(&client_order_id);
+        self.index.orders_emulated.remove(&client_order_id);
+        self.index.orders_inflight.remove(&client_order_id);
+        if order.is_open() {
+            self.index.orders_open.insert(client_order_id);
+        }
+
+        if order.is_closed() {
+            self.index.orders_pending_cancel.remove(&client_order_id);
+            self.index.orders_closed.insert(client_order_id);
+        }
+
+        if order.is_inflight() {
+            self.index.orders_inflight.insert(client_order_id);
+        }
+
+        self.index.client_order_ids.remove(&client_order_id);
+
+        if let Some(venue_order_id) = current_venue_order_id {
+            self.index
+                .client_order_ids
+                .insert(client_order_id, venue_order_id);
+            self.index
+                .venue_order_ids
+                .insert(venue_order_id, client_order_id);
+        }
+
+        for venue_order_id in venue_order_ids {
+            if current_venue_order_id != Some(*venue_order_id) {
+                self.index
+                    .venue_order_ids
+                    .insert(*venue_order_id, client_order_id);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn remove_replaced_order_filter_memberships(
+        index: &mut CacheIndex,
+        old_order: &OrderAny,
+        replacement: &OrderAny,
+    ) {
+        let client_order_id = old_order.client_order_id();
+        let old_instrument_id = old_order.instrument_id();
+        let new_instrument_id = replacement.instrument_id();
+        let old_venue = old_instrument_id.venue;
+        let old_strategy_id = old_order.strategy_id();
+
+        if old_venue != new_instrument_id.venue
+            && Self::remove_order_from_bucket(&mut index.venue_orders, &old_venue, &client_order_id)
+        {
+            index.venue_orders.remove(&old_venue);
+        }
+
+        if old_instrument_id != new_instrument_id {
+            let became_empty = Self::remove_order_from_bucket(
+                &mut index.instrument_orders,
+                &old_instrument_id,
+                &client_order_id,
+            );
+            let has_positions = index
+                .instrument_positions
+                .get(&old_instrument_id)
+                .is_some_and(|positions| !positions.is_empty());
+
+            if became_empty && !has_positions {
+                index.instrument_orders.remove(&old_instrument_id);
+            }
+        }
+
+        if old_strategy_id != replacement.strategy_id() {
+            let became_empty = Self::remove_order_from_bucket(
+                &mut index.strategy_orders,
+                &old_strategy_id,
+                &client_order_id,
+            );
+            let has_positions = index
+                .strategy_positions
+                .get(&old_strategy_id)
+                .is_some_and(|positions| !positions.is_empty());
+
+            if became_empty && !has_positions {
+                index.strategy_orders.remove(&old_strategy_id);
+                index.strategies.remove(&old_strategy_id);
+            }
+        }
+
+        if let Some(account_id) = old_order.account_id()
+            && Some(account_id) != replacement.account_id()
+            && Self::remove_order_from_bucket(
+                &mut index.account_orders,
+                &account_id,
+                &client_order_id,
+            )
+        {
+            index.account_orders.remove(&account_id);
+        }
+
+        if let Some(exec_algorithm_id) = old_order.exec_algorithm_id()
+            && Some(exec_algorithm_id) != replacement.exec_algorithm_id()
+            && Self::remove_order_from_bucket(
+                &mut index.exec_algorithm_orders,
+                &exec_algorithm_id,
+                &client_order_id,
+            )
+        {
+            index.exec_algorithm_orders.remove(&exec_algorithm_id);
+            index.exec_algorithms.remove(&exec_algorithm_id);
+        }
+
+        if let Some(exec_spawn_id) = old_order.exec_spawn_id()
+            && Some(exec_spawn_id) != replacement.exec_spawn_id()
+            && Self::remove_order_from_bucket(
+                &mut index.exec_spawn_orders,
+                &exec_spawn_id,
+                &client_order_id,
+            )
+        {
+            index.exec_spawn_orders.remove(&exec_spawn_id);
+        }
+    }
+
+    fn remove_replaced_order_position_memberships(
+        index: &mut CacheIndex,
+        positions: &AHashMap<PositionId, SharedCell<Position>>,
+        old_order: &OrderAny,
+        new_position_id: PositionId,
+    ) {
+        let client_order_id = old_order.client_order_id();
+        let indexed_position_id = index.order_position.get(&client_order_id).copied();
+        let mut removed_position_id = None;
+        for old_position_id in [indexed_position_id, old_order.position_id()]
+            .into_iter()
+            .flatten()
+        {
+            if old_position_id == new_position_id || removed_position_id == Some(old_position_id) {
+                continue;
+            }
+
+            removed_position_id = Some(old_position_id);
+            Self::remove_replaced_order_position_membership(
+                index,
+                positions,
+                client_order_id,
+                old_position_id,
+                old_order.instrument_id().venue,
+            );
+        }
+    }
+
+    fn remove_replaced_order_position_membership(
+        index: &mut CacheIndex,
+        positions: &AHashMap<PositionId, SharedCell<Position>>,
+        client_order_id: ClientOrderId,
+        old_position_id: PositionId,
+        old_venue: Venue,
+    ) {
+        let has_other_orders = if let Some(orders) = index.position_orders.get_mut(&old_position_id)
+        {
+            orders.remove(&client_order_id);
+            !orders.is_empty()
+        } else {
+            index
+                .order_position
+                .iter()
+                .any(|(candidate_id, candidate)| {
+                    *candidate_id != client_order_id && *candidate == old_position_id
+                })
+        };
+
+        if positions.contains_key(&old_position_id) || has_other_orders {
+            return;
+        }
+
+        index.position_orders.remove(&old_position_id);
+        if let Some(strategy_id) = index.position_strategy.remove(&old_position_id)
+            && let Some(strategy_positions) = index.strategy_positions.get_mut(&strategy_id)
+        {
+            strategy_positions.remove(&old_position_id);
+            if strategy_positions.is_empty() {
+                index.strategy_positions.remove(&strategy_id);
+            }
+        }
+
+        if let Some(venue_positions) = index.venue_positions.get_mut(&old_venue) {
+            venue_positions.remove(&old_position_id);
+            if venue_positions.is_empty() {
+                index.venue_positions.remove(&old_venue);
+            }
+        }
+    }
+
+    fn remove_order_from_bucket<K: Eq + std::hash::Hash>(
+        buckets: &mut AHashMap<K, AHashSet<ClientOrderId>>,
+        key: &K,
+        client_order_id: &ClientOrderId,
+    ) -> bool {
+        buckets.get_mut(key).is_some_and(|orders| {
+            orders.remove(client_order_id);
+            orders.is_empty()
+        })
     }
 
     /// Claims the execution-client origin for one or more cached orders.

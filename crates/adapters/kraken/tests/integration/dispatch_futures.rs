@@ -36,11 +36,12 @@ use nautilus_kraken::{
     },
 };
 use nautilus_model::{
-    enums::{OrderSide, OrderType},
-    events::OrderEventAny,
-    identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol},
+    enums::{LiquiditySide, OrderSide, OrderStatus, OrderType},
+    events::{OrderEventAny, order::spec::OrderPendingUpdateSpec},
+    identifiers::{ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny, crypto_perpetual::CryptoPerpetual},
-    types::{Currency, Price, Quantity},
+    orders::{Order, OrderTestBuilder},
+    types::{Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -1201,6 +1202,232 @@ fn test_futures_held_amend_full_fill_leaves_nothing_to_cancel() {
         events[1],
         ExecutionEvent::Order(OrderEventAny::Filled(_))
     ));
+}
+
+#[rstest]
+#[case::fills_first(true)]
+#[case::orders_first(false)]
+fn test_futures_split_amend_reduction_then_reprice(#[case] fills_first: bool) {
+    let frames: Vec<serde_json::Value> =
+        serde_json::from_str(include_str!("../../test_data/ws_futures_split_amend.json")).unwrap();
+    let placement: KrakenFuturesOpenOrdersDelta =
+        serde_json::from_value(frames[0].clone()).unwrap();
+    let cid = ClientOrderId::from(placement.order.cli_ord_id.as_deref().unwrap());
+    let venue_order_id = VenueOrderId::from(placement.order.order_id.as_str());
+    let instrument_id = InstrumentId::from("PF_APEUSD.KRAKEN");
+    let strategy_id = StrategyId::from("EXEC_TESTER-001");
+    let (emitter, mut rx) = test_emitter();
+    let state = WsDispatchState::new();
+    state.register_identity(
+        cid,
+        OrderIdentity {
+            strategy_id,
+            instrument_id,
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Limit,
+            quantity: Quantity::from("0.0040"),
+        },
+    );
+
+    let instrument = CryptoPerpetual::builder()
+        .instrument_id(instrument_id)
+        .raw_symbol(Symbol::from("PF_APEUSD"))
+        .base_currency(Currency::get_or_create_crypto("APE"))
+        .quote_currency(Currency::USD())
+        .settlement_currency(Currency::USD())
+        .is_inverse(false)
+        .price_precision(1)
+        .size_precision(4)
+        .price_increment(Price::from("0.5"))
+        .size_increment(Quantity::from("0.0001"))
+        .ts_event(UnixNanos::default())
+        .ts_init(UnixNanos::default())
+        .build()
+        .unwrap();
+    let instruments = instruments_with(InstrumentAny::CryptoPerpetual(instrument));
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(emitter.trader_id())
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .client_order_id(cid)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("0.0040"))
+        .price(Price::from("70000.0"))
+        .submit(true)
+        .build();
+
+    let resting = (
+        "0.0040",
+        "70000.0",
+        "0.0000",
+        "0.0040",
+        OrderStatus::Accepted,
+    );
+    let reduced = (
+        "0.0025",
+        "70000.0",
+        "0.0000",
+        "0.0025",
+        OrderStatus::Accepted,
+    );
+    let partial = (
+        "0.0025",
+        "70000.0",
+        "0.0007",
+        "0.0018",
+        OrderStatus::PartiallyFilled,
+    );
+    let repriced = (
+        "0.0025",
+        "70123.5",
+        "0.0007",
+        "0.0018",
+        OrderStatus::PartiallyFilled,
+    );
+
+    let sequence = if fills_first {
+        [
+            (0, resting),
+            (1, reduced),
+            (2, partial),
+            (3, partial),
+            (4, repriced),
+        ]
+    } else {
+        [
+            (0, resting),
+            (1, reduced),
+            (3, reduced),
+            (2, partial),
+            (4, repriced),
+        ]
+    };
+
+    let mut accepted = 0;
+    let mut updated = 0;
+    let mut filled = 0;
+
+    for (index, (quantity, price, expected_filled, leaves, status)) in sequence {
+        if index == 1 {
+            let pending = OrderPendingUpdateSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(strategy_id)
+                .instrument_id(instrument_id)
+                .client_order_id(cid)
+                .account_id(account_id())
+                .venue_order_id(venue_order_id)
+                .build();
+            order.apply(OrderEventAny::PendingUpdate(pending)).unwrap();
+            assert_eq!(order.status(), OrderStatus::PendingUpdate);
+        }
+
+        if index == 2 {
+            let delta: KrakenFuturesFillsDelta =
+                serde_json::from_value(frames[index].clone()).unwrap();
+            dispatch::futures::fills_delta(
+                &delta,
+                &state,
+                &emitter,
+                &instruments,
+                &empty_string_map(),
+                &empty_string_map(),
+                account_id(),
+                UnixNanos::default(),
+            );
+        } else {
+            let delta: KrakenFuturesOpenOrdersDelta =
+                serde_json::from_value(frames[index].clone()).unwrap();
+            dispatch::futures::open_orders_delta(
+                &delta,
+                &state,
+                &emitter,
+                &instruments,
+                &empty_string_map(),
+                &empty_instrument_id_map(),
+                &empty_string_map(),
+                &empty_quantity_map(),
+                account_id(),
+                UnixNanos::default(),
+            );
+        }
+
+        let events = drain_events(&mut rx);
+        assert_eq!(
+            events.len(),
+            usize::from(index != 3),
+            "frame {index}: {events:?}"
+        );
+
+        for event in events {
+            let ExecutionEvent::Order(event) = event else {
+                panic!("expected tracked order event, was {event:?}");
+            };
+
+            assert_eq!(event.trader_id(), order.trader_id());
+            assert_eq!(event.strategy_id(), strategy_id);
+            assert_eq!(event.instrument_id(), instrument_id);
+            assert_eq!(event.client_order_id(), cid);
+            assert_eq!(event.venue_order_id(), Some(venue_order_id));
+            assert_eq!(event.account_id(), Some(account_id()));
+
+            match (index, &event) {
+                (0, OrderEventAny::Accepted(_)) => accepted += 1,
+                (1 | 4, OrderEventAny::Updated(event)) => {
+                    updated += 1;
+                    assert_eq!(event.quantity, Quantity::from("0.0025"));
+
+                    assert_eq!(event.price, Some(Price::from(price)));
+                    assert_eq!(event.trigger_price, None);
+                    assert!(!event.reconciliation);
+                }
+                (2, OrderEventAny::Filled(event)) => {
+                    filled += 1;
+                    assert_eq!(
+                        event.trade_id,
+                        TradeId::from("f4651c55-bba6-477d-a013-8a07b2fd85d1")
+                    );
+                    assert_eq!(event.order_side, OrderSide::Buy);
+                    assert_eq!(event.order_type, OrderType::Limit);
+                    assert_eq!(event.last_qty, Quantity::from("0.0007"));
+                    assert_eq!(event.last_px, Price::from("70000.0"));
+                    assert_eq!(event.currency, Currency::USD());
+                    assert_eq!(event.liquidity_side, LiquiditySide::Maker);
+                    assert_eq!(event.commission, Some(Money::from("0.02 USD")));
+                }
+                _ => panic!("unexpected event for frame {index}: {event:?}"),
+            }
+
+            order.apply(event).unwrap();
+        }
+
+        assert_eq!(order.status(), status, "frame {index}");
+        assert_eq!(order.quantity(), Quantity::from(quantity));
+        assert_eq!(order.price(), Some(Price::from(price)));
+        assert_eq!(order.filled_qty(), Quantity::from(expected_filled));
+        assert_eq!(order.leaves_qty(), Quantity::from(leaves));
+        assert_eq!(order.client_order_id(), cid);
+        assert_eq!(order.venue_order_id(), Some(venue_order_id));
+        assert_eq!(order.account_id(), Some(account_id()));
+        assert!(order.is_open());
+        assert!(!order.is_closed());
+        let identity = state
+            .lookup_identity(&cid)
+            .expect("resting identity retained");
+        assert_eq!(identity.quantity, order.quantity());
+        assert_eq!(identity.strategy_id, strategy_id);
+        assert_eq!(identity.instrument_id, instrument_id);
+        assert_eq!(identity.order_side, OrderSide::Buy);
+        assert_eq!(identity.order_type, OrderType::Limit);
+        assert!(!state.filled_orders.contains(&cid));
+    }
+
+    assert_eq!((accepted, updated, filled), (1, 2, 1));
+    assert_eq!(order.event_count(), 7);
+    assert_eq!(order.avg_px(), Some(dec!(70000)));
+    assert_eq!(
+        state.previous_filled_qty(&cid),
+        Some(Quantity::from("0.0007"))
+    );
 }
 
 #[rstest]

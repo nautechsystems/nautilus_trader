@@ -100,6 +100,7 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use nautilus_testkit::cache::TestCacheDatabaseControl;
 use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -7095,11 +7096,13 @@ fn test_purge_operations_respect_retention_config(
     #[case] accounts_mins: Option<u32>,
     #[case] elapsed_ns: u64,
     #[case] purged: [bool; 3],
+    #[values(false, true)] purge_from_database: bool,
 ) {
     let config = ExecutionManagerConfig {
         purge_closed_orders_buffer_mins: orders_mins,
         purge_closed_positions_buffer_mins: positions_mins,
         purge_account_events_lookback_mins: accounts_mins,
+        purge_from_database,
         ..Default::default()
     };
 
@@ -7169,10 +7172,33 @@ fn test_purge_operations_respect_retention_config(
     assert!(ctx.cache.borrow().is_order_closed(&order.client_order_id()));
     assert!(ctx.cache.borrow().is_position_closed(&position.id));
 
+    let (database, database_control) = TestCacheDatabaseControl::create();
+    ctx.cache.borrow_mut().set_database(Box::new(database));
+    let mut expected_database_events = Vec::new();
+
+    if purge_from_database {
+        if purged[0] {
+            expected_database_events.push(format!("delete_order:{}", order.client_order_id()));
+        }
+
+        if purged[1] {
+            expected_database_events.push(format!("delete_position:{}", position.id));
+        }
+
+        if purged[2] {
+            expected_database_events.push(format!(
+                "delete_account_event:{}:{}",
+                test_account_id(),
+                first.event_id
+            ));
+        }
+    }
+
     ctx.manager.purge_closed_orders();
     ctx.manager.purge_closed_positions();
     ctx.manager.purge_account_events();
 
+    assert_eq!(database_control.events(), expected_database_events);
     let cache = ctx.cache.borrow();
     assert_eq!(
         cache

@@ -125,10 +125,3 @@ reason = "zstd-safe seekable streaming compression is disabled"
 [[IgnoredVulns]]
 id = "RUSTSEC-2026-0406"
 reason = "zstd-safe multithreaded contexts are disabled"
-
-# The advisory describes cursor bytes stored inside block data. Versions 0.9.0
-# and 0.10.4 store position separately and have no ReadBuffer. The 0.12 series
-# resolves to patched 0.12.1; recheck this exception if these versions change.
-[[IgnoredVulns]]
-id = "GHSA-qwgh-2vcv-g2f7"
-reason = "block-buffer 0.9.0 and 0.10.4 use separate cursor fields; inline-cursor corruption does not apply"

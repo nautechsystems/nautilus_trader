@@ -26,6 +26,7 @@ use std::{
         Arc, LazyLock,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::{AHashMap, AHashSet};
@@ -2842,7 +2843,9 @@ impl BybitHttpClient {
         parse_order_status_report(&order, &instrument, account_id, ts_init)
     }
 
-    /// Cancel an order.
+    /// Cancels an order and returns its confirmed terminal status.
+    ///
+    /// Polls until the order closes, bounded by the configured HTTP timeout.
     ///
     /// # Errors
     ///
@@ -2851,6 +2854,7 @@ impl BybitHttpClient {
     /// - The request fails.
     /// - The order doesn't exist.
     /// - The API returns an error.
+    /// - Terminal status confirmation times out.
     pub async fn cancel_order(
         &self,
         account_id: AccountId,
@@ -2859,7 +2863,7 @@ impl BybitHttpClient {
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
     ) -> anyhow::Result<OrderStatusReport> {
-        let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
+        self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
 
         let mut cancel_entry = BybitBatchCancelOrderEntryBuilder::default();
@@ -2892,19 +2896,33 @@ impl BybitHttpClient {
             .order_id
             .ok_or(BybitCancelOrderError::MissingOrderId)?;
 
-        let order = self
-            .query_order_by_id(
-                product_type,
-                order_id.as_str(),
-                BYBIT_ORDER_HISTORY,
-                "after cancellation",
-            )
+        let venue_order_id = VenueOrderId::from(order_id.as_str());
+
+        let confirmation = async {
+            loop {
+                if let Some(report) = self
+                    .query_order(
+                        account_id,
+                        product_type,
+                        instrument_id,
+                        client_order_id,
+                        Some(venue_order_id),
+                    )
+                    .await?
+                    && report.order_status.is_closed()
+                {
+                    return Ok(report);
+                }
+
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        };
+
+        tokio::time::timeout(Duration::from_secs(self.inner.timeout_secs), confirmation)
             .await
-            .map_err(|source| BybitCancelOrderError::PostCancelLookup { source })?;
-
-        let ts_init = self.generate_ts_init();
-
-        parse_order_status_report(&order, &instrument, account_id, ts_init)
+            .context("timed out confirming Bybit order cancellation")
+            .and_then(|result| result)
+            .map_err(|source| BybitCancelOrderError::PostCancelLookup { source }.into())
     }
 
     /// Batch cancel multiple orders.
