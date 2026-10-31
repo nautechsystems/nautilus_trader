@@ -1507,6 +1507,8 @@ impl DataEngine {
 
     fn execute_request_inner(&mut self, req: RequestCommand) -> anyhow::Result<()> {
         Self::validate_request(&req)?;
+        #[cfg(feature = "streaming")]
+        self.validate_catalog_update(&req)?;
 
         // Skip requests for external clients
         if let Some(cid) = req.client_id()
@@ -1857,12 +1859,17 @@ impl DataEngine {
     fn process_response_envelope(&mut self, envelope: DataResponseEnvelope) {
         let request = self.inflight_requests.remove(envelope.correlation_id());
         #[cfg(feature = "streaming")]
-        if envelope.completed()
-            && envelope.failure_reason().is_none()
-            && let (Some(request), Some(response)) = (&request, envelope.response())
-        {
-            self.update_catalog_from_response(response, request);
-        }
+        let envelope = match (&request, envelope.response()) {
+            (Some(request), Some(response))
+                if envelope.completed() && envelope.failure_reason().is_none() =>
+            {
+                match self.update_catalog_from_response(response, request) {
+                    Ok(()) => envelope,
+                    Err(e) => envelope.with_failure(e.to_string()),
+                }
+            }
+            _ => envelope,
+        };
 
         #[cfg(not(feature = "streaming"))]
         let _ = request;
