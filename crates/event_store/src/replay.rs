@@ -2540,6 +2540,16 @@ mod tests {
             &[],
         ),
         cache_mutation(
+            "load_instrument",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
+            "load_synthetic",
+            CacheMutationRecoveryClass::SnapshotOwned,
+            &[],
+        ),
+        cache_mutation(
             "cache_accounts",
             CacheMutationRecoveryClass::SnapshotOwned,
             &[],

@@ -6565,7 +6565,8 @@ fn test_inbound_latency_deferred_submit_rejects_when_it_cannot_be_applied(
     harness
         .cache
         .borrow_mut()
-        .purge_order(order.client_order_id());
+        .purge_order(order.client_order_id(), false)
+        .unwrap();
 
     assert_eq!(
         advance_and_fire(

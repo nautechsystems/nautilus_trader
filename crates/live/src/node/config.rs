@@ -509,7 +509,8 @@ pub struct LiveExecutionEngineConfig {
     pub purge_account_events_interval_mins: Option<u32>,
     /// The time buffer (minutes) before account events can be purged.
     pub purge_account_events_lookback_mins: Option<u32>,
-    /// If purge operations should also delete from the backing database.
+    /// If purging also deletes orders and positions from the backing database.
+    /// Redis and PostgreSQL retain persisted account events for replay.
     #[builder(default)]
     pub purge_from_database: bool,
     /// The interval (seconds) between audits that remove own-book orders the cache no longer
@@ -1083,11 +1084,6 @@ impl LiveExecutionEngineConfig {
 
         let default = Self::default();
         collector.collect(check_supported_field(
-            "LiveExecutionEngineConfig.purge_from_database",
-            self.purge_from_database == default.purge_from_database,
-            RUST_RUNTIME_UNSUPPORTED,
-        ));
-        collector.collect(check_supported_field(
             "LiveExecutionEngineConfig.qsize",
             self.qsize == default.qsize,
             RUST_RUNTIME_UNSUPPORTED,
@@ -1316,6 +1312,19 @@ mean_dispatch_ns_clear = 700
     #[rstest]
     fn test_validate_runtime_support_with_defaults() {
         let config = LiveNodeConfig::default();
+
+        assert!(config.validate_runtime_support().is_ok());
+    }
+
+    #[rstest]
+    fn test_validate_runtime_support_accepts_database_purge() {
+        let config = LiveNodeConfig {
+            exec_engine: LiveExecutionEngineConfig {
+                purge_from_database: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
         assert!(config.validate_runtime_support().is_ok());
     }

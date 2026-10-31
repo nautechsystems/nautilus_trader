@@ -217,7 +217,7 @@ fn bench_position_purge(c: &mut Criterion) {
                 },
                 |cache| {
                     // Timing includes final destruction of the cached position and its history
-                    cache.purge_position(black_box(position_id));
+                    cache.purge_position(black_box(position_id), false).unwrap();
                     assert!(!cache.position_exists(&position_id));
                 },
                 BatchSize::PerIteration,

@@ -3402,9 +3402,13 @@ impl ExecutionManager {
         let ts_now = self.timestamp_ns();
         let buffer_secs = mins_to_secs(u64::from(buffer_mins));
 
-        self.cache
-            .borrow_mut()
-            .purge_closed_orders(ts_now, buffer_secs);
+        if let Err(e) = self.cache.borrow_mut().purge_closed_orders(
+            ts_now,
+            buffer_secs,
+            self.config.purge_from_database,
+        ) {
+            log::error!("Failed to purge cached state: {e}");
+        }
     }
 
     /// Purges closed positions from the cache that are older than the configured buffer.
@@ -3416,9 +3420,13 @@ impl ExecutionManager {
         let ts_now = self.clock.borrow().timestamp_ns();
         let buffer_secs = mins_to_secs(u64::from(buffer_mins));
 
-        self.cache
-            .borrow_mut()
-            .purge_closed_positions(ts_now, buffer_secs);
+        if let Err(e) = self.cache.borrow_mut().purge_closed_positions(
+            ts_now,
+            buffer_secs,
+            self.config.purge_from_database,
+        ) {
+            log::error!("Failed to purge cached state: {e}");
+        }
     }
 
     /// Purges old account events from the cache based on the configured lookback.
@@ -3430,9 +3438,13 @@ impl ExecutionManager {
         let ts_now = self.clock.borrow().timestamp_ns();
         let lookback_secs = mins_to_secs(u64::from(lookback_mins));
 
-        self.cache
-            .borrow_mut()
-            .purge_account_events(ts_now, lookback_secs);
+        if let Err(e) = self.cache.borrow_mut().purge_account_events(
+            ts_now,
+            lookback_secs,
+            self.config.purge_from_database,
+        ) {
+            log::error!("Failed to purge cached state: {e}");
+        }
     }
 
     fn get_order(&self, client_order_id: ClientOrderId) -> Option<OrderAny> {
@@ -7999,7 +8011,7 @@ mod tests {
                         position.apply(&closing);
                     }
 
-                    cache.purge_position(position_id);
+                    cache.purge_position(position_id, false).unwrap();
                 } else {
                     let mut position = cache
                         .position_mut(&report.venue_position_id.unwrap())
@@ -8118,7 +8130,7 @@ mod tests {
 
                 match change {
                     "unchanged" => {}
-                    "missing_source" => cache.purge_position(source_id),
+                    "missing_source" => cache.purge_position(source_id, false).unwrap(),
                     "conflicting_fragment" => {
                         let mut position = cache.position_mut(&destination_id).unwrap();
 

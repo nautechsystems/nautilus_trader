@@ -47,16 +47,18 @@ mod serial_tests {
         events::{
             OrderEventAny, OrderFilled, OrderSnapshot, PositionSnapshot,
             account::stubs::{
-                cash_account_state_million_usd, wallet_account_state, wallet_account_state_changed,
+                cash_account_state_million_usd, cash_account_state_multi,
+                cash_account_state_multi_changed_btc, wallet_account_state,
+                wallet_account_state_changed,
             },
             order::spec::OrderFillVoidedSpec,
         },
         identifiers::{
-            AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId,
-            TraderId, VenueOrderId, stubs::account_id,
+            AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
+            Symbol, TradeId, TraderId, VenueOrderId, stubs::account_id,
         },
         instruments::{
-            Instrument, InstrumentAny,
+            Instrument, InstrumentAny, SyntheticInstrument,
             stubs::{
                 audusd_sim, binary_option, cfd_gold, commodity_gold, crypto_future_btcusdt,
                 crypto_futures_spread_btc_deribit, crypto_option_btc_deribit,
@@ -155,6 +157,298 @@ mod serial_tests {
 
         assert_eq!(owner, trader_id);
         assert!(loaded.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_account_event_purge_preserves_incremental_replay() {
+        let mut adapter = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&adapter).await;
+        let mut account = AccountAny::from(cash_account_state_multi());
+        let mut update = cash_account_state_multi_changed_btc();
+        update
+            .balances
+            .retain(|balance| balance.currency == Currency::BTC());
+        update.event_id = UUID4::new();
+        update.ts_event = UnixNanos::from(10);
+        update.ts_init = UnixNanos::from(11);
+        adapter.add_currency(&Currency::BTC()).unwrap();
+        adapter.add_currency(&Currency::ETH()).unwrap();
+        adapter.add_account(&account).unwrap();
+        account.apply(update.clone()).unwrap();
+        adapter.update_account(&account).unwrap();
+        adapter.close().unwrap();
+        let adapter = get_test_pg_cache_database().await.unwrap();
+        let mut cache = Cache::default();
+        cache.add_account(account.clone()).unwrap();
+        cache.set_database(Box::new(adapter));
+
+        cache
+            .purge_account_events(UnixNanos::from(u64::MAX), 0, true)
+            .unwrap();
+        assert_eq!(cache.account(&account.id()).unwrap().events(), vec![update]);
+        cache.dispose();
+
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let loaded = restarted
+            .load_account(&account.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(account).unwrap()
+        );
+        restarted.flush().unwrap();
+        restarted.close().unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_lazy_instrument_load_registers_persisted_currencies(
+        #[values(false, true)] sync: bool,
+    ) {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&database).await;
+
+        let code = if sync { "ZZQP1" } else { "ZZQP2" };
+        let currency = Currency::new(code, 6, 0, "Lazy base token", CurrencyType::Crypto);
+        let mut pair = audusd_sim();
+        pair.id = InstrumentId::from(format!("{code}/USD.SIM").as_str());
+        pair.raw_symbol = Symbol::from(format!("{code}/USD"));
+        pair.base_currency = currency;
+        pair.tick_scheme = None;
+        let instrument = InstrumentAny::CurrencyPair(pair);
+        database.add_currency(&currency).unwrap();
+        database.add_currency(&Currency::USD()).unwrap();
+        database.add_instrument(&instrument).unwrap();
+        database.close().unwrap();
+        assert!(Currency::try_from_str(code).is_none());
+        let mut restarted = get_test_pg_cache_database().await.unwrap();
+        let loaded = if sync {
+            restarted.load_instrument_sync(&instrument.id())
+        } else {
+            restarted.load_instrument(&instrument.id()).await
+        }
+        .unwrap()
+        .unwrap();
+
+        let registered = Currency::try_from_str(code).unwrap();
+
+        assert_entirely_equal(&loaded, &instrument);
+        assert_eq!(registered.code, currency.code);
+        assert_eq!(registered.precision, currency.precision);
+        assert_eq!(registered.iso4217, currency.iso4217);
+        assert_eq!(registered.name, currency.name);
+        assert_eq!(registered.currency_type, currency.currency_type);
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_component_state_and_synthetics_survive_restart() {
+        let trader_a = TraderId::from("CACHE-A");
+        let trader_b = TraderId::from("CACHE-A:SECOND-B");
+        let actor_id = ActorId::from("PERSISTED-ACTOR");
+        let strategy_id = StrategyId::from("PERSISTED-STRATEGY");
+        let state_a = AHashMap::from([("value".to_string(), Bytes::from_static(b"actor-a"))]);
+        let state_b = AHashMap::from([("value".to_string(), Bytes::from_static(b"actor-b"))]);
+        let synthetic = SyntheticInstrument::default();
+        let mut pair = audusd_sim();
+        pair.ts_event = UnixNanos::from(123);
+        pair.ts_init = UnixNanos::from(456);
+        let instrument = InstrumentAny::CurrencyPair(pair);
+        let database = get_pg_cache_database(trader_a).await.unwrap();
+        reset_test_database(&database).await;
+        database.update_actor(&actor_id, &state_a).unwrap();
+        database.update_strategy(&strategy_id, &state_b).unwrap();
+        database.add_synthetic(&synthetic).unwrap();
+        database.heartbeat(UnixNanos::from(987_654_321)).unwrap();
+        let mut cache = Cache::new(None, Some(Box::new(database)));
+        cache.add_instrument(instrument.clone()).unwrap();
+        cache.dispose();
+        let mut other = get_pg_cache_database(trader_b).await.unwrap();
+        other.update_actor(&actor_id, &state_b).unwrap();
+        other.close().unwrap();
+
+        let database = get_pg_cache_database(trader_a).await.unwrap();
+        assert_eq!(database.load_actor(&actor_id).unwrap(), state_a);
+        assert_eq!(database.load_strategy(&strategy_id).unwrap(), state_b);
+        let heartbeat: Vec<u8> = sqlx::query_scalar("SELECT value FROM general WHERE id = $1")
+            .bind("cache-database:trader:7:CACHE-A:health:heartbeat")
+            .fetch_one(&database.pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            serde_json::from_slice::<UnixNanos>(&heartbeat).unwrap(),
+            UnixNanos::from(987_654_321)
+        );
+        assert!(database.load().unwrap().is_empty());
+        let synthetics = database.load_all().await.unwrap().synthetics;
+        assert_eq!(synthetics.len(), 1);
+        assert_entirely_equal(synthetics.get(&synthetic.id).unwrap(), &synthetic);
+        let expected_instrument = database
+            .load_instrument(&instrument.id())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut cache = Cache::new(None, Some(Box::new(database)));
+        let loaded = cache.load_instrument(&instrument.id()).unwrap().unwrap();
+        assert_entirely_equal(&loaded, &expected_instrument);
+        assert_eq!(loaded.ts_event(), UnixNanos::from(123));
+        assert_eq!(loaded.ts_init(), UnixNanos::from(456));
+        let loaded = cache.load_synthetic(&synthetic.id).unwrap().unwrap();
+        assert_entirely_equal(&loaded, &synthetic);
+        cache.delete_actor(&actor_id).unwrap();
+        cache.delete_strategy(&strategy_id).unwrap();
+        cache.dispose();
+
+        let mut restarted = get_pg_cache_database(trader_a).await.unwrap();
+        assert!(restarted.load_actor(&actor_id).unwrap().is_empty());
+        assert!(restarted.load_strategy(&strategy_id).unwrap().is_empty());
+        restarted.flush().unwrap();
+        let heartbeat_count: i64 = sqlx::query_scalar("SELECT count(*) FROM general WHERE id = $1")
+            .bind("cache-database:trader:7:CACHE-A:health:heartbeat")
+            .fetch_one(&restarted.pool)
+            .await
+            .unwrap();
+        assert_eq!(heartbeat_count, 0);
+        assert_eq!(restarted.load_synthetics().await.unwrap().len(), 1);
+        let mut other = get_pg_cache_database(trader_b).await.unwrap();
+        assert_eq!(other.load_actor(&actor_id).unwrap(), state_b);
+        other.close().unwrap();
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_component_state_and_synthetic_loads_propagate_invalid_payloads() {
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        reset_test_database(&database).await;
+        let actor_id = ActorId::from("INVALID-ACTOR");
+        let strategy_id = StrategyId::from("INVALID-STRATEGY");
+        let state = AHashMap::from([("value".to_string(), Bytes::from_static(b"state"))]);
+        let synthetic = SyntheticInstrument::default();
+        database.update_actor(&actor_id, &state).unwrap();
+        database.update_strategy(&strategy_id, &state).unwrap();
+        database.add_synthetic(&synthetic).unwrap();
+        database.close().unwrap();
+
+        let mut database = get_test_pg_cache_database().await.unwrap();
+        let corrupted = sqlx::query("UPDATE general SET value = $1")
+            .bind(b"invalid JSON".as_slice())
+            .execute(&database.pool)
+            .await
+            .unwrap();
+        let results = [
+            database.load_actor(&actor_id).map(drop),
+            database.load_strategy(&strategy_id).map(drop),
+            database.load_synthetic_sync(&synthetic.id).map(drop),
+            database.load_synthetic(&synthetic.id).await.map(drop),
+        ];
+        let load_all_error = database.load_all().await.unwrap_err();
+
+        assert_eq!(corrupted.rows_affected(), 3);
+
+        for result in results {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "expected value at line 1 column 1"
+            );
+        }
+
+        assert_eq!(
+            load_all_error.to_string(),
+            "Error loading cache data: expected value at line 1 column 1"
+        );
+        reset_test_database(&database).await;
+        database.close().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_database_purge_preserves_other_traders_and_retained_positions() {
+        let traders = [TraderId::from("PURGE-A"), TraderId::from("PURGE-B")];
+        let mut expected = Vec::new();
+
+        for (index, trader_id) in traders.into_iter().enumerate() {
+            let database = get_pg_cache_database(trader_id).await.unwrap();
+            if index == 0 {
+                reset_test_database(&database).await;
+            }
+
+            let mut cache = Cache::new(None, Some(Box::new(database)));
+            let (_, source_id, destination_id) =
+                crate::position_flip::populate_flip_cache(&mut cache, trader_id, "", false);
+            let source = cache.position(&source_id).unwrap().cloned();
+            let destination = cache.position(&destination_id).unwrap().cloned();
+            cache.dispose();
+            let mut database = get_pg_cache_database(trader_id).await.unwrap();
+            database
+                .add_position_snapshot(&PositionSnapshot::from_replay_state(&source, None))
+                .unwrap();
+            database.close().unwrap();
+            expected.push((source, destination));
+        }
+
+        let database = get_pg_cache_database(traders[0]).await.unwrap();
+        let source_id = expected[0].0.id;
+        let destination_id = expected[0].1.id;
+        assert!(database.load_position(&source_id).await.unwrap().is_some());
+        assert!(
+            database
+                .load_position_snapshot(&source_id)
+                .unwrap()
+                .is_some()
+        );
+        let mut cache = Cache::new(None, Some(Box::new(database)));
+        cache.cache_all().await.unwrap();
+        cache.build_index();
+        cache.purge_position(source_id, true).unwrap();
+        cache
+            .purge_order(ClientOrderId::from("O-PERSISTED-OPEN"), true)
+            .unwrap();
+        cache.dispose();
+
+        let mut restarted = get_pg_cache_database(traders[0]).await.unwrap();
+        assert!(
+            restarted
+                .load_order(&ClientOrderId::from("O-PERSISTED-OPEN"))
+                .await
+                .unwrap()
+                .is_none()
+        );
+        assert!(
+            restarted
+                .load_order_snapshot(&ClientOrderId::from("O-PERSISTED-OPEN"))
+                .unwrap()
+                .is_none()
+        );
+        assert!(restarted.load_position(&source_id).await.unwrap().is_none());
+        assert!(
+            restarted
+                .load_position_snapshot(&source_id)
+                .unwrap()
+                .is_none()
+        );
+        assert_eq!(restarted.load_positions().await.unwrap().len(), 1);
+        let retained = restarted
+            .load_position(&destination_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_entirely_equal(&retained, &expected[0].1);
+        let mut other = get_pg_cache_database(traders[1]).await.unwrap();
+        let other_source = other.load_position(&source_id).await.unwrap().unwrap();
+        assert_entirely_equal(&other_source, &expected[1].0);
+        assert!(
+            other
+                .load_order(&ClientOrderId::from("O-PERSISTED-OPEN"))
+                .await
+                .unwrap()
+                .is_some()
+        );
+        other.close().unwrap();
+        reset_test_database(&restarted).await;
+        restarted.close().unwrap();
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

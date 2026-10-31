@@ -4,6 +4,9 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `Cache` lazy instrument and synthetic loads, saved component-state deletion, and explicit heartbeat writes
+- Added `LiveExecutionEngineConfig.purge_from_database` support in Python and live nodes
+- Added Postgres cache support for actor and strategy state, synthetics, heartbeat writes, and entity deletion
 - Added `HttpClient` certificate support through `certs_dir`
 - Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`
@@ -14,6 +17,7 @@ Released on TBD (UTC).
 - Removed Python `RedisCacheDatabase` and `PostgresCacheDatabase`; configure cache persistence through node factories
 - Removed Python `RedisMessageBusBacking`; configure external message bus backing through node factories
 - Changed `PostgresCacheDatabase::connect` to take `PostgresCacheConfig`; replace individual connection arguments
+- Changed Rust `Cache` order/position/account purges to return `Result`; pass `false` for memory only
 - Changed `CacheDatabaseAdapter` Greek and yield-curve defaults to errors; override supported reads and writes
 - Changed `Cache::cache_all` to replace preloaded Greeks and yield curves; add transient values after loading
 - Changed raw `Price` and `Quantity` construction and decoding to reject digits beyond precision; rescale or round first
@@ -49,6 +53,8 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed closed-order and position purges ignoring `purge_from_database` in execution timers
+- Fixed Redis order and position deletion leaving routine snapshots and restoring purged positions
 - Fixed `Cache` indexing closed positions as open and excluding them from purging after insertion
 - Fixed mixed-key market data batches being cached under the first row's instrument or bar type
 - Fixed `ExecTester` panicking on unsupported `GTD` brackets

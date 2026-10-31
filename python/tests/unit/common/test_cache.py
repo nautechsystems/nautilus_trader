@@ -244,6 +244,32 @@ def test_cache_constructor_accepts_default_config() -> None:
     assert isinstance(Cache(), Cache)
 
 
+@pytest.mark.parametrize(
+    ("method_name", "args"),
+    [
+        ("purge_order", (CLIENT_ORDER_ID,)),
+        ("purge_position", (POSITION_ID,)),
+        ("purge_closed_orders", (0, 0)),
+        ("purge_closed_positions", (0, 0)),
+        ("purge_account_events", (0, 0)),
+    ],
+)
+def test_cache_database_purge_option_without_backing(
+    method_name: str,
+    args: tuple[object, ...],
+) -> None:
+    """
+    Test purge options without a backing database.
+    """
+    cache = Cache()
+
+    result = getattr(cache, method_name)(*args, purge_from_database=True)
+
+    assert result is None
+    assert cache.orders_total_count() == 0
+    assert cache.positions_total_count() == 0
+
+
 @pytest.mark.parametrize(("method_name", "args"), CACHE_NONE_CASES)
 def test_cache_empty_methods_return_none(method_name: str, args: tuple[object, ...]) -> None:
     """

@@ -1283,7 +1283,7 @@ mod tests {
             cache
                 .update_order(&OrderEventAny::Canceled(canceled))
                 .unwrap();
-            cache.purge_order(primary_id);
+            cache.purge_order(primary_id, false).unwrap();
         }
         assert!(algo.cache().order(&primary_id).is_none());
 
@@ -1472,7 +1472,7 @@ mod tests {
             cache
                 .update_order(&OrderEventAny::Canceled(canceled))
                 .unwrap();
-            cache.purge_order(primary_id);
+            cache.purge_order(primary_id, false).unwrap();
         }
 
         assert!(algo.cache().order(&primary_id).is_none());

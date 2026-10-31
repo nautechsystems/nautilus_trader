@@ -6473,6 +6473,7 @@ dependencies = [
  "nautilus-common",
  "nautilus-core",
  "nautilus-cryptography",
+ "nautilus-execution",
  "nautilus-live",
  "nautilus-model",
  "nautilus-persistence",
