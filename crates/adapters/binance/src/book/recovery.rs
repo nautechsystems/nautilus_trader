@@ -20,13 +20,7 @@
 //! snapshot completes recovery only when [`BookSyncTracker::accept_snapshot`] bridges it to the
 //! buffered diffs. The data client supplies the fetch, its request weight, and the task scope.
 
-use std::{
-    future::Future,
-    sync::{
-        Arc,
-        atomic::{AtomicBool, Ordering},
-    },
-};
+use std::{future::Future, sync::Arc};
 
 use nautilus_common::live::dst::time::{self, Duration};
 use nautilus_live::{book::recovery::BookRecovery, task::TaskSpawner};
@@ -34,15 +28,16 @@ use nautilus_model::identifiers::InstrumentId;
 
 use super::{
     BinanceBookError,
+    pacing::{SnapshotAdmission, SnapshotPermit},
     sync::{BookSyncTracker, DepthSnapshot},
 };
 
 /// Spawns a task that fetches snapshots until `tracker` accepts one or the recovery is cancelled.
 ///
-/// Each fetch first draws `weight` from the tracker's snapshot pacer. The task takes the first
-/// permit before the runner starts, so waiting behind other books spends neither attempts nor
-/// the recovery budget. The snapshot timeout bounds each fetch once paced; zero leaves the fetch
-/// to the HTTP client's timeout.
+/// Each fetch reserves `weight` from the tracker's snapshot pacer and spends it at HTTP admission.
+/// The task takes the first reservation before the runner starts, so waiting behind other books
+/// spends neither attempts nor the recovery budget. The snapshot timeout bounds each fetch once
+/// reserved; zero leaves the fetch to the HTTP client's timeout.
 pub(crate) fn spawn_recovery<F, Fut>(
     instrument_id: InstrumentId,
     recovery: Arc<BookRecovery<BinanceBookError>>,
@@ -52,7 +47,7 @@ pub(crate) fn spawn_recovery<F, Fut>(
     snapshot_timeout: Duration,
     tasks: &TaskSpawner,
 ) where
-    F: Fn() -> Fut + Send + Sync + 'static,
+    F: Fn(SnapshotPermit) -> Fut + Send + Sync + 'static,
     Fut: Future<Output = Result<DepthSnapshot, BinanceBookError>> + Send + 'static,
 {
     let shutdown = tasks.cancellation_token();
@@ -61,14 +56,14 @@ pub(crate) fn spawn_recovery<F, Fut>(
     let task = async move {
         let _recovery_guard = recovery_guard;
 
-        tokio::select! {
+        let permit = tokio::select! {
             biased;
             () = shutdown.cancelled() => return,
             () = recovery.cancellation.cancelled() => return,
-            () = tracker.pacer().acquire(weight) => {}
-        }
+            permit = tracker.pacer().acquire(weight) => permit,
+        };
 
-        let prepaid = AtomicBool::new(true);
+        let admission = SnapshotAdmission::new(permit);
 
         tokio::select! {
             biased;
@@ -77,17 +72,15 @@ pub(crate) fn spawn_recovery<F, Fut>(
                 instrument_id,
                 snapshot_timeout,
                 |_, gate| {
-                    let prepaid = prepaid.swap(false, Ordering::Relaxed);
-                    let snapshot = fetch_with_deadline(fetch(), snapshot_timeout);
+                    let admission = &admission;
+                    let fetch = &fetch;
                     let tracker = &tracker;
                     let recovery = &recovery;
 
                     async move {
-                        if !prepaid {
-                            tracker.pacer().acquire(weight).await;
-                        }
+                        let permit = admission.acquire().await;
 
-                        snapshot
+                        fetch_with_deadline(fetch(permit), snapshot_timeout)
                             .await
                             .and_then(|snapshot| {
                                 tracker.accept_snapshot(instrument_id, recovery, &gate, snapshot)
@@ -128,7 +121,10 @@ async fn fetch_with_deadline(
 
 #[cfg(test)]
 mod tests {
-    use std::{num::NonZeroU32, sync::atomic::AtomicUsize};
+    use std::{
+        num::NonZeroU32,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
 
     use nautilus_common::{
         live::sender::EventSender, messages::DataEvent, testing::wait_until_async,
@@ -231,7 +227,8 @@ mod tests {
             instrument_id(),
             Arc::clone(&recovery),
             tracker.clone(),
-            move || {
+            move |permit| {
+                permit.commit();
                 let attempt = fetch_count.fetch_add(1, Ordering::SeqCst);
                 async move { Ok(snapshot(if attempt == 0 { 99 } else { 100 })) }
             },
@@ -268,7 +265,8 @@ mod tests {
             instrument_id(),
             Arc::clone(&recovery),
             tracker.clone(),
-            move || {
+            move |permit| {
+                permit.commit();
                 fetch_count.fetch_add(1, Ordering::SeqCst);
                 async { Err(BinanceBookError::Permanent("invalid symbol".to_string())) }
             },
@@ -303,7 +301,7 @@ mod tests {
 
         // Include setup time because weight refills before the recovery task starts
         let started = std::time::Instant::now();
-        tracker.pacer().acquire(600).await;
+        tracker.pacer().acquire(600).await.commit();
         let recovery = tracker.handle_update(instrument_id(), update(101)).unwrap();
         let fetches = Arc::new(AtomicUsize::new(0));
         let fetch_count = Arc::clone(&fetches);
@@ -311,7 +309,8 @@ mod tests {
             instrument_id(),
             Arc::clone(&recovery),
             tracker.clone(),
-            move || {
+            move |permit| {
+                permit.commit();
                 fetch_count.fetch_add(1, Ordering::SeqCst);
                 async { Ok(snapshot(100)) }
             },
@@ -347,7 +346,7 @@ mod tests {
     #[tokio::test]
     async fn recovery_spanning_reconnect_completes_before_new_diffs() {
         let (tracker, mut rx, tasks) = setup(600);
-        tracker.pacer().acquire(600).await;
+        tracker.pacer().acquire(600).await.commit();
         let recovery = tracker.handle_update(instrument_id(), update(101)).unwrap();
         let fetches = Arc::new(AtomicUsize::new(0));
         let fetch_count = Arc::clone(&fetches);
@@ -356,7 +355,8 @@ mod tests {
             instrument_id(),
             Arc::clone(&recovery),
             tracker.clone(),
-            move || {
+            move |permit| {
+                permit.commit();
                 fetch_count.fetch_add(1, Ordering::SeqCst);
                 async { Ok(snapshot(100)) }
             },
@@ -388,7 +388,7 @@ mod tests {
     #[tokio::test]
     async fn unsubscribe_cancels_recovery_queued_for_weight() {
         let (tracker, mut rx, tasks) = setup(60);
-        tracker.pacer().acquire(60).await;
+        tracker.pacer().acquire(60).await.commit();
         let recovery = tracker.handle_update(instrument_id(), update(101)).unwrap();
         let fetches = Arc::new(AtomicUsize::new(0));
         let fetch_count = Arc::clone(&fetches);
@@ -397,7 +397,8 @@ mod tests {
             instrument_id(),
             Arc::clone(&recovery),
             tracker.clone(),
-            move || {
+            move |permit| {
+                permit.commit();
                 fetch_count.fetch_add(1, Ordering::SeqCst);
                 async { Ok(snapshot(100)) }
             },

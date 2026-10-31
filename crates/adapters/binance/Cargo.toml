@@ -110,6 +110,7 @@ dotenvy = { workspace = true }
 rstest = { workspace = true }
 rust_decimal_macros = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util"] }
 toml = { workspace = true }
 
 # Run with `cargo bench -p nautilus-binance --bench encoder`

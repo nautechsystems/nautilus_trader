@@ -330,8 +330,10 @@ response. Retrying could create a duplicate order or apply a second amendment.
 `retry_delay_initial_ms`, and `retry_delay_max_ms` for HTTP GET requests. Transient read failures
 retry with bounded exponential backoff and fresh authentication fields. A venue `Retry-After`
 header sets the minimum delay, which can exceed `retry_delay_max_ms`. The fixed total retry budget
-is 180 seconds. When a required delay exceeds the remaining budget, the request returns the venue
-error without waiting.
+is 180 seconds. When a retry's advertised delay exceeds the remaining budget, the request returns
+the venue error without waiting. Shared cooldown waits also count against the fixed 30-second read
+attempt timeout and the total budget. A read can time out before transmission instead of
+returning a venue error.
 
 These settings do not retry order commands because resending an ambiguous command could duplicate
 an order or amendment.
@@ -829,7 +831,11 @@ resyncs, such as after a reconnect, waits for budget instead of exceeding it:
 
 - Queueing for the first snapshot does not consume the recovery's attempts or 180-second budget.
 - Explicit snapshot requests draw on the same budget.
-- The HTTP client's retries of a failed snapshot request are not paced.
+- Each HTTP attempt, including retries, spends snapshot weight immediately before transmission.
+  Queued reservations do not accumulate send credit during a cooldown. An unsent attempt releases its
+  reservation on cancellation, timeout, or failure.
+- HTTP retries wait for weight inside the read attempt timeout and, during book recovery, the snapshot
+  timeout. A retry can time out while waiting for weight.
 
 ### Live recovery validation
 
@@ -1234,8 +1240,8 @@ Binance charges these weights per request:
 | `/fapi/v1/depth`          | 2+     | Scales with `limit`; 20 at 1000.       |
 
 USD-M Futures `POST /fapi/v1/algoOrder` consumes `1` from both `X-MBX-ORDER-COUNT-10S` and
-`X-MBX-ORDER-COUNT-1M`. Binance charges no IP request weight for this endpoint. The adapter still queues it
-through the global bucket as part of its local pacing model.
+`X-MBX-ORDER-COUNT-1M`. Binance charges no IP request weight for this endpoint. The adapter still requires
+a global-bucket token and fails locally if it is unavailable.
 
 ### WebSocket API limits
 
@@ -1251,25 +1257,57 @@ REST API:
 ### Adapter pacing
 
 The adapter runs its own token bucket limiters ahead of the venue's accounting. Every HTTP request
-draws one token from a per-product request bucket, and every order operation draws an additional
-token from the order-count buckets:
+draws one token from a per-product request bucket. Placements and applicable modifications also draw
+from the order-count buckets:
 
 | Product                    | Requests     | Order operations             |
 | -------------------------- | ------------ | ---------------------------- |
 | Spot                       | 1,200/minute | 10/second, 100,000/day       |
 | Futures (USD-M and COIN-M) | 2,400/minute | 300/10 seconds, 1,200/minute |
 
-The order-count buckets cover every order operation the product supports, not just placement:
-submit, OCO submit, batch submit, algo submit, modify (Spot modifies through cancel-replace), batch
-modify, cancel, cancel-all, batch cancel, and algo cancel. Cancel-heavy and modify-heavy strategies
-are throttled by these buckets as well. Non-order authenticated requests, such as leverage and
-margin-type changes and listen-key keepalives, draw from the request bucket alone.
+The order-count buckets cover submit, OCO submit, batch submit, algo submit, Spot cancel-replace, and
+USD-M modify and batch modify. Cancellations and COIN-M modifications use the request bucket alone.
+Non-order authenticated requests, such as leverage and margin-type changes and listen-key keepalives,
+also use the request bucket alone. Mutations are rejected as `NotSent` when an applicable bucket is empty.
+Futures data and execution clients share the request bucket for matching configurations.
 
 The request bucket counts calls rather than weight, so it does not mirror the venue's weight accounting. A run
 of high-weight or dynamic-weight endpoints (`/api/v3/allOrders` at weight 20, or `/klines` scaling with
 `limit`) spends venue weight faster than the local bucket accounts for. Large history requests may need manual
 pacing. Monitor the `X-MBX-USED-WEIGHT-*` response headers to track actual venue usage. Order book snapshot
 requests also wait on a weight-aware budget. See [Snapshot pacing](#snapshot-pacing).
+
+### Shared REST backoff
+
+HTTP 429 and 418 responses with a usable `Retry-After` header extend a shared REST cooldown for the
+failed quota. Reads, including book recovery snapshots, wait before signing and sending. REST mutations
+fail locally as `RateLimitBlocked` before transmission when an applicable cooldown or local quota blocks them.
+Later responses cannot shorten the cooldown. Requests already in flight can still complete.
+
+- IP cooldowns apply across clients in the same process with the same environment, endpoint scope, and
+  configured proxy. Spot and Futures remain separate; USD-M and COIN-M share one Futures scope.
+- An order-count 429 identified by error `-1015`, with a usable `Retry-After` header, blocks placements
+  and modifications that use order-count quota with the same API key, product family, environment, and
+  endpoint scope, including through different proxies. Market-data and cancellation requests continue,
+  subject to IP cooldowns and the request bucket.
+
+Separate processes, different custom URLs, and different proxy settings need external coordination
+when they reach the same IP quota. Multiple API keys for one account also need external coordination.
+WebSocket requests do not use this REST cooldown.
+
+Submit, modify, and cancel commands blocked by a shared cooldown or local quota are classified as `NotSent`.
+The execution client emits the corresponding rejection event for single orders and tracked batch children.
+Cancel-all failures are logged without per-order rejection events. Check order status after a failed
+cancel-all. Blocked commands are not queued for later transmission or retried automatically.
+Preparatory order-identity reads also fail fast and do not retry.
+Strategy code decides whether to issue a new command when quota is available.
+
+A 418 without a parseable `Retry-After`, or a delay beyond the supported clock range on either status,
+blocks the affected scope until process restart and logs an error. All requests in the affected scope,
+including reads, fail locally before transmission. Verify that the venue no longer blocks those requests
+before restarting.
+A 429 with a missing or unparsable header keeps the normal read retry backoff; the adapter does not
+infer a shared expiry.
 
 :::warning
 Binance returns HTTP 429 when you exceed the allowed weight. Repeated

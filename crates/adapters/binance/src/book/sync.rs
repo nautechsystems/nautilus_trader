@@ -106,7 +106,7 @@ impl BookSyncTracker {
         }
     }
 
-    pub(crate) fn pacer(&self) -> &SnapshotPacer {
+    pub(crate) fn pacer(&self) -> &Arc<SnapshotPacer> {
         &self.pacer
     }
 
