@@ -511,15 +511,33 @@ total at or below the filled quantity.
 ### Maker Protection (Futures)
 
 Kraken Futures [Maker Protection](https://docs.kraken.com/exchange/guides/futures/maker-protection)
-holds placements and edits that would take liquidity on arrival. The hold applies to every client
-on selected markets.
+holds placements and edits that would take liquidity on arrival. This eligibility rule took effect
+on 29 October 2026 at 08:00 UTC, as announced in the
+[22 October 2026 changelog](https://docs.kraken.com/exchange/changelog). Before that boundary,
+eligibility followed order type: non-post-only limit placements were held even when they would rest.
+The Phase 3 rollout added 51 markets at the same time. The hold applies to every client on selected markets.
 
 - **Window**: The raw instrument field `makerProtectionMillis` gives the market's window, at most
-  100 ms. The adapter exposes no setting for it.
+  100 ms. Read `/instruments` or `/trading/instruments` for the live market set; an absent or zero
+  value means no delay. The adapter exposes no setting for it.
 - **Exemptions**: Orders and edits that would rest, post-only orders, and stop or take-profit trigger
   placements are not held. Orders fired by triggers are held unless post-only.
 - **Self-trade prevention**: A released order cancels any resting order of the same account it would
   match, overriding the configured strategy. The resting order's cancel reason is `CANCELLED_BY_SELF_TRADE`.
+
+#### Split amendments
+
+When an edit both reduces size and reprices a resting order across the book, the size reduction
+applies immediately and preserves queue priority. Only the reprice waits for the hold to release.
+The order can fill at its original price during that window, up to the reduced size. Both changes
+keep the same venue and client order IDs.
+
+The adapter emits `OrderUpdated` for each tracked open-order update that changes quantity or price.
+When the venue reports the reduction and reprice separately, the first update carries the reduced
+quantity at the original price. It restores the order's prior lifecycle status from `PENDING_UPDATE`,
+but does not establish that the requested price has taken effect. Read each update's quantity and
+price, and account for fills during the window. Do not treat the first update as confirmation of
+the whole edit.
 
 #### Cancellation
 
