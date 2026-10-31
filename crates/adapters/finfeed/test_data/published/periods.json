@@ -1,0 +1,26 @@
+[
+  {
+    "period_id": "1SEC",
+    "length_seconds": 1,
+    "length_months": 0,
+    "unit_count": 1,
+    "unit_name": "second",
+    "display_name": "1 Second"
+  },
+  {
+    "period_id": "10DAY",
+    "length_seconds": 864000,
+    "length_months": 0,
+    "unit_count": 10,
+    "unit_name": "day",
+    "display_name": "10 Days"
+  },
+  {
+    "period_id": "2YRS",
+    "length_seconds": 0,
+    "length_months": 24,
+    "unit_count": 2,
+    "unit_name": "year",
+    "display_name": "2 Years"
+  }
+]

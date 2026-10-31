@@ -1,0 +1,31 @@
+{
+  "data": [
+    {
+      "market_id": "TEST-EVENT-27DEC31_NO",
+      "title": "Authored KALSHI outcome",
+      "description": "Authored unsupported-venue definition.",
+      "outcome_name": "No",
+      "price": 0,
+      "status": "Open",
+      "exchange_id": "KALSHI",
+      "outcome_type": "Binary",
+      "source_specific_data": {
+        "unknown": "preserved"
+      }
+    },
+    {
+      "market_id": "TEST-EVENT-27DEC31_YES",
+      "title": "Authored KALSHI outcome",
+      "description": "Authored unsupported-venue definition.",
+      "outcome_name": "Yes",
+      "price": 0,
+      "status": "Open",
+      "exchange_id": "KALSHI",
+      "outcome_type": "Binary",
+      "source_specific_data": {
+        "unknown": "preserved"
+      }
+    }
+  ],
+  "next_cursor": "authored-cursor"
+}

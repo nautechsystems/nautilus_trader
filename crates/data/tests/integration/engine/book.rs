@@ -1836,6 +1836,31 @@ fn test_process_book_snapshot_publish_for_multiple_intervals_same_instrument(
     assert_eq!(fast_saver.get_messages()[0].instrument_id, audusd_sim.id);
     assert!(!slow_saver.get_messages().is_empty());
     assert_eq!(slow_saver.get_messages()[0].instrument_id, audusd_sim.id);
+
+    let initial_counts = (
+        fast_saver.get_messages().len(),
+        slow_saver.get_messages().len(),
+    );
+    assert_eq!(initial_counts, (4, 1));
+    let interval_ns =
+        DurationNanos::from_millis(fast_interval_ms.get().try_into().unwrap()).as_u64();
+
+    for (advance_ns, fast_delta, slow_delta) in [
+        (interval_ns - 1, 0, 0),
+        (1, 1, 1),
+        (interval_ns, 2, 1),
+        (interval_ns, 3, 2),
+    ] {
+        advance_clock_and_dispatch(&clock, advance_ns);
+        assert_eq!(
+            fast_saver.get_messages().len(),
+            initial_counts.0 + fast_delta
+        );
+        assert_eq!(
+            slow_saver.get_messages().len(),
+            initial_counts.1 + slow_delta
+        );
+    }
 }
 
 #[rstest]

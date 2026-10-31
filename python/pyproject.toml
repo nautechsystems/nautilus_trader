@@ -51,6 +51,7 @@ features = [
   "arrow",
   "betfair",
   "coinapi",
+  "finfeed",
   "high-precision",
   "mimalloc",
   "redis",

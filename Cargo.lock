@@ -6387,6 +6387,39 @@ dependencies = [
 ]
 
 [[package]]
+name = "nautilus-finfeed"
+version = "0.68.0"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "bon",
+ "codspeed-criterion-compat",
+ "indexmap 2.14.2",
+ "jiff",
+ "log",
+ "madsim",
+ "nautilus-common",
+ "nautilus-core",
+ "nautilus-live",
+ "nautilus-model",
+ "nautilus-network",
+ "nautilus-system",
+ "nautilus-testkit",
+ "parking_lot 0.13.0",
+ "pyo3",
+ "pyo3-async-runtimes",
+ "pyo3-stub-gen",
+ "rstest",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tokio",
+ "tokio-util",
+ "url",
+]
+
+[[package]]
 name = "nautilus-hyperliquid"
 version = "0.68.0"
 dependencies = [
@@ -6991,6 +7024,7 @@ dependencies = [
  "nautilus-derive",
  "nautilus-dydx",
  "nautilus-execution",
+ "nautilus-finfeed",
  "nautilus-hyperliquid",
  "nautilus-indicators",
  "nautilus-infrastructure",

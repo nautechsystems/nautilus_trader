@@ -1,0 +1,47 @@
+[
+  {
+    "exchange_id": "KALSHI",
+    "market_name_institution_description": "A US\u2011regulated exchange for trading event contracts.",
+    "website": "https://kalshi.com"
+  },
+  {
+    "exchange_id": "POLYMARKET",
+    "market_name_institution_description": "The world's largest prediction market.",
+    "website": "https://polymarket.com"
+  },
+  {
+    "exchange_id": "MYRIAD",
+    "market_name_institution_description": "A decentralized prediction markets platform.",
+    "website": "https://myriad.markets"
+  },
+  {
+    "exchange_id": "MANIFOLD",
+    "market_name_institution_description": "The world's largest social prediction market (play\u2011money).",
+    "website": "https://manifold.markets"
+  },
+  {
+    "exchange_id": "HYPERLIQUIDOUTCOME",
+    "market_name_institution_description": "Hyperliquid HIP-4 outcome markets \u2014 fully collateralized binary and multi-outcome contracts.",
+    "website": "https://hyperliquid.xyz"
+  },
+  {
+    "exchange_id": "PASCAL",
+    "market_name_institution_description": "A noncustodial prediction market exchange on Solana.",
+    "website": "https://www.pascal.trade"
+  },
+  {
+    "exchange_id": "GEMINIPM",
+    "market_name_institution_description": "Gemini's prediction markets product.",
+    "website": "https://www.gemini.com/prediction-markets"
+  },
+  {
+    "exchange_id": "CRYPTOCOMPM",
+    "market_name_institution_description": "Crypto.com's OG prediction markets product, powered by CDNA.",
+    "website": "https://crypto.com/us/prediction"
+  },
+  {
+    "exchange_id": "FORECASTEX",
+    "market_name_institution_description": "IBKR's CFTC-licensed event contract exchange \u2014 one of Robinhood's prediction-market data providers alongside KalshiEX.",
+    "website": "https://www.forecastex.com"
+  }
+]

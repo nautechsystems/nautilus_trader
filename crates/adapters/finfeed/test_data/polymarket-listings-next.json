@@ -1,0 +1,53 @@
+{
+  "data": [
+    {
+      "market_id": "TEST-OUTCOME_NO",
+      "title": "Authored binary outcome",
+      "description": "Authored metadata for field preservation.\nA second line checks multiline text.",
+      "outcome_name": "No",
+      "price": 0.42,
+      "status": "Open",
+      "exchange": {
+        "exchange_id": "POLYMARKET",
+        "market_name_institution_description": "Authored exchange metadata",
+        "website": "https://example.com"
+      },
+      "exchange_id": "POLYMARKET",
+      "outcome_type": "Binary",
+      "source_specific_data": {
+        "ConditionId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "QuestionId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "MinimumTickSize": "0.01",
+        "EndDateIso": "2027-01-01T00:00:00+00:00",
+        "Tokens": "[{\"token_id\":\"101011010110101101011010110101101011010110101101011010110101101011010110101\",\"outcome\":\"Yes\"},{\"token_id\":\"202022020220202202022020220202202022020220202202022020220202202022020220202\",\"outcome\":\"No\"}]",
+        "Tags": "[\"Test\",\"Binary\"]",
+        "Description": "Authored metadata for field preservation.\nA second line checks multiline text."
+      }
+    },
+    {
+      "market_id": "TEST-OUTCOME_YES",
+      "title": "Authored binary outcome",
+      "description": "Authored metadata for field preservation.\nA second line checks multiline text.",
+      "outcome_name": "Yes",
+      "price": 0.58,
+      "status": "Open",
+      "exchange": {
+        "exchange_id": "POLYMARKET",
+        "market_name_institution_description": "Authored exchange metadata",
+        "website": "https://example.com"
+      },
+      "exchange_id": "POLYMARKET",
+      "outcome_type": "Binary",
+      "source_specific_data": {
+        "ConditionId": "0x1111111111111111111111111111111111111111111111111111111111111111",
+        "QuestionId": "0x2222222222222222222222222222222222222222222222222222222222222222",
+        "MinimumTickSize": "0.01",
+        "EndDateIso": "2027-01-01T00:00:00+00:00",
+        "Tokens": "[{\"token_id\":\"101011010110101101011010110101101011010110101101011010110101101011010110101\",\"outcome\":\"Yes\"},{\"token_id\":\"202022020220202202022020220202202022020220202202022020220202202022020220202\",\"outcome\":\"No\"}]",
+        "Tags": "[\"Test\",\"Binary\"]",
+        "Description": "Authored metadata for field preservation.\nA second line checks multiline text."
+      }
+    }
+  ],
+  "next_cursor": "test-outcome_YES"
+}

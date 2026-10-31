@@ -740,11 +740,11 @@ each audited adapter without its default features in the standard-precision core
 
 `cargo-test-sim` uses three feature-coherent nextest invocations:
 
-| Precision | Packages                                                                                                              | Features                    | Selection                                                                                           |
-| --------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------- |
-| Standard  | `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`, `nautilus-execution`, `nautilus-live` | `simulation`                | All compatible common, event-store, network, and execution tests, plus focused live and core tests. |
-| Standard  | Each audited adapter                                                                                                  | `simulation`                | Integration `dst` tests only, without adapter default features.                                     |
-| High      | `nautilus-common`, `nautilus-execution`                                                                               | `simulation,high-precision` | All tests in both packages.                                                                         |
+| Precision | Packages                                                                                                              | Features                    | Selection                                                                                                            |
+| --------- | --------------------------------------------------------------------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Standard  | `nautilus-common`, `nautilus-core`, `nautilus-event-store`, `nautilus-network`, `nautilus-execution`, `nautilus-live` | `simulation`                | All compatible common, event-store, network, and execution tests, plus focused live and core tests.                  |
+| Standard  | Each audited adapter                                                                                                  | `simulation`                | Integration `dst` tests plus all compatible FinFeed library and integration tests, without adapter default features. |
+| High      | `nautilus-common`, `nautilus-execution`                                                                               | `simulation,high-precision` | All tests in both packages.                                                                                          |
 
 Nextest compiles the selected library and test targets, so the gate does not run a separate Cargo
 build. The invocations resolve each feature set once across their package sets. Together they
@@ -808,9 +808,18 @@ The focused `nautilus-core` selection pins `wall_clock_now` against virtual time
 
 #### Adapter tests
 
-Each audited adapter runs its integration `dst` tests under `simulation` without the crate's
-default features. Those `#[madsim::test]` cases pin the slice the adapter's integration guide
-records: subscribe bytes, reconnect behavior, authentication frames, and per-operation wire fields.
+Each audited adapter runs its compatible integration `dst` tests under `simulation` without the crate's
+default features. These cases exercise transport wire fields and lifecycle behavior.
+See the tested scope for [OKX](../integrations/okx.md#deterministic-simulation-testing),
+[CoinAPI](../../crates/adapters/coinapi/tests/integration/dst.rs), and
+[Derive](../integrations/derive.md#deterministic-simulation-testing).
+WebSocket paths include subscribe bytes and authentication frames.
+
+FinFeed also runs its simulation-compatible library tests and other integration modules, including
+request, polling, and lifecycle tests. Bar tests reset the process-wide atomic clock before each
+simulated runtime starts its tasks, so sequential in-process seed repetitions remain isolated.
+Its [conformance reference](../../crates/adapters/finfeed/tests/README.md) maps exact HTTP request
+bytes, authentication and attribution headers, and domain output to the tested capabilities.
 
 #### Overall gate coverage
 

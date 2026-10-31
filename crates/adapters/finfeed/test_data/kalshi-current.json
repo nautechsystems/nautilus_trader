@@ -1,0 +1,10 @@
+{
+  "trade": {
+    "id": "authored-trade-1",
+    "market_id": "TEST-KALSHI_NO",
+    "price": 0.16,
+    "quantity": 11.125,
+    "timestamp": "2026-10-11T00:01:00.0000001Z",
+    "side": "Sell"
+  }
+}

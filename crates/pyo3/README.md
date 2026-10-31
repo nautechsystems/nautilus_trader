@@ -27,6 +27,7 @@ This crate provides feature flags to control source code inclusion during compil
 - `coinapi`: Enables the CoinAPI adapter and its Python bindings.
 - `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
 - `extension-module`: Builds as a Python extension module and is automatically enabled by `maturin`.
+- `finfeed`: Enables the FinFeed adapter and its Python bindings.
 - `high-precision`: Uses 128-bit value types throughout the workspace.
 - `hypersync`: Enables [`hypersync-client`](https://crates.io/crates/hypersync-client) support for the blockchain adapter.
 - `mimalloc`: Sets [mimalloc](https://crates.io/crates/mimalloc) as Rust's global allocator.

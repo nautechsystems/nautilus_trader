@@ -3573,3 +3573,40 @@ def _module_name_from_stub_path(relative_package: Path) -> str:
         return "nautilus_trader"
 
     return f"nautilus_trader.{'.'.join(relative_package.parts)}"
+
+
+def test_injected_model_constant_imports_its_annotation_namespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Keep constant annotations resolvable when no class imports the model module.
+    """
+    stub = tmp_path / "adapters" / "finfeed" / "__init__.pyi"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(
+        '__all__ = ["FinFeedDataClientFactory"]\nclass FinFeedDataClientFactory: ...\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        generate_stubs,
+        "collect_module_constants",
+        lambda _: {
+            "adapters.finfeed": [
+                generate_stubs.ModuleConstant("FINFEED_CLIENT_ID", "model.ClientId"),
+            ],
+        },
+    )
+
+    generate_stubs.inject_module_constants(tmp_path, tmp_path)
+    content = stub.read_text(encoding="utf-8")
+    tree = ast.parse(content)
+    imports = [node for node in tree.body if isinstance(node, ast.ImportFrom)]
+    assert [
+        (node.module, [(name.name, name.asname) for name in node.names]) for node in imports
+    ] == [
+        ("nautilus_trader", [("model", None)]),
+    ]
+    assert "FINFEED_CLIENT_ID: model.ClientId" in content
+    generate_stubs.inject_module_constants(tmp_path, tmp_path)
+    assert stub.read_text(encoding="utf-8") == content

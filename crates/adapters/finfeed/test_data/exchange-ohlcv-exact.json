@@ -1,0 +1,28 @@
+[
+  {
+    "time_period_start": "2026-10-11T00:00:00.0000001Z",
+    "time_period_end": "2026-10-11T00:01:00.0000002Z",
+    "time_open": "2026-10-11T00:00:02.0000003Z",
+    "time_close": "2026-10-11T00:00:58.0000004Z",
+    "price_open": 0.1,
+    "price_high": 0.9,
+    "price_low": 0.01,
+    "price_close": 0.5,
+    "volume_traded": 9007199254740993.125,
+    "trades_count": 9223372036854775807,
+    "market_id_exchange": "MixedCase/Outcome?+=%_NO"
+  },
+  {
+    "market_id_exchange": "unknown/YES",
+    "time_period_start": "2026-10-12T00:00:00.0000001Z",
+    "time_period_end": "2026-10-12T01:00:00.0000002Z",
+    "time_open": "2026-10-12T00:02:03.0000003Z",
+    "time_close": "2026-10-12T00:57:58.0000004Z",
+    "price_open": 0.1234567890123456789012345678,
+    "price_high": 0.9876543210987654321098765432,
+    "price_low": 0.0123456789012345678901234567,
+    "price_close": 0.5432109876543210987654321098,
+    "volume_traded": 18446744073709551617.125,
+    "trades_count": 37
+  }
+]

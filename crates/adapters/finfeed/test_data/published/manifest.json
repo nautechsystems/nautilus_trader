@@ -1,0 +1,45 @@
+{
+  "source": "https://github.com/api-bricks/api-bricks-sdk/blob/20ae84c54320b32b8af4fda0515de047ce689fa0/finfeedapi/prediction-markets-api-rest/spec/openapi.json",
+  "source_sha256": "af57e4b3d454dbb6af9484158fea26c66484b9b77019053a5c52dd03e0ee2af2",
+  "license": "MIT",
+  "license_file": "LICENSE",
+  "transformation": "Extracted application/json example values without adding fields or changing values. Whitespace and number spelling are normalized; decimal numbers remain JSON numbers and retain their exact values.",
+  "limitations": "Published documentation examples, not independently captured responses or evidence of live coverage. The market example lacks the source fields needed for a checked instrument, and the book example has empty sides and year-one clocks.",
+  "fixtures": [
+    {
+      "fixture": "../exchanges.json",
+      "json_pointer": "/paths/~1v1~1exchanges/get/responses/200/content/application~1json/examples/Example list/value",
+      "sha256": "099cb72b43f321dfeb65df0fc459462bfa60e7997464febb1ad201b2a09bd2a3"
+    },
+    {
+      "fixture": "exchange.json",
+      "json_pointer": "/paths/~1v1~1exchanges~1{exchange_id}/get/responses/200/content/application~1json/examples/Example exchange/value",
+      "sha256": "59119e9190aea2733f6331c1cca8071a7b3a52c6d9fa5b2e490c67987b60817c"
+    },
+    {
+      "fixture": "markets.json",
+      "json_pointer": "/paths/~1v1~1markets~1{exchange_id}~1history/get/responses/200/content/application~1json/examples/Example list/value",
+      "sha256": "c456f1cde5d123056e72962698cd74e794f3da4529b3c38c6896dc64aa7a4f5b"
+    },
+    {
+      "fixture": "active.json",
+      "json_pointer": "/paths/~1v1~1markets~1{exchange_id}~1active/get/responses/200/content/application~1json/examples/Example active market IDs/value",
+      "sha256": "8fb8e452a692dcf1b10015374e4598acc9e4bb08d3333d035f8d5b52150e53b1"
+    },
+    {
+      "fixture": "market.json",
+      "json_pointer": "/paths/~1v1~1markets~1{exchange_id}~1{market_id}/get/responses/200/content/application~1json/examples/Example market/value",
+      "sha256": "c46873f0fbd63a808df82e0e3cd9c85416af853ecc38fcad2bb6dc50c8e0f8f1"
+    },
+    {
+      "fixture": "periods.json",
+      "json_pointer": "/paths/~1v1~1ohlcv~1periods/get/responses/200/content/application~1json/examples/Example response/value",
+      "sha256": "9d2a9bb6a9cb069cbb05355e88c579b3f0f19177290309f4bc627e2928e0a28d"
+    },
+    {
+      "fixture": "book.json",
+      "json_pointer": "/paths/~1v1~1orderbook~1{exchange_id}~1{market_id}~1current/get/responses/200/content/application~1json/examples/Example orderbook/value",
+      "sha256": "da7f25679a4f2e5d873ef790de5b9cc35a78252c0c7e4bc21584d03949fdcdc9"
+    }
+  ]
+}
