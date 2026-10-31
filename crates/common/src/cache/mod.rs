@@ -2807,16 +2807,15 @@ impl Cache {
     ///
     /// # Parameters
     ///
-    /// `override_existing`: If the added order should 'override' any existing order and replace
-    /// it in the cache. This is currently used for emulated orders which are
-    /// being released and transformed into another type.
+    /// `replace_existing`: Replaces an existing order with the same client order ID. Emulated
+    /// orders use this when release transforms them into another order type.
     ///
     /// # Errors
     ///
-    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache,
-    /// or if persisting the order to the backing database fails. The order and every index are
-    /// committed to memory before persistence is attempted, so a persistence error leaves the
-    /// cache internally consistent.
+    /// Returns an error if the client order ID exists and `replace_existing` is false, a
+    /// replacement claims another order's venue order ID, or persistence fails. The order and
+    /// every index are committed to memory before persistence is attempted, so a persistence
+    /// error leaves the cache internally consistent.
     pub fn add_order(
         &mut self,
         order: OrderAny,
@@ -2842,11 +2841,22 @@ impl Cache {
 
         log::debug!("Adding {order:?}");
 
+        let old_order_cell = self.orders.get(&client_order_id).cloned();
+        let replacing = old_order_cell.is_some();
+        if let Some(old_order_cell) = &old_order_cell {
+            self.reindex_replaced_order(old_order_cell, &order, position_id)?;
+        }
+
         self.index.orders.insert(client_order_id);
 
         if order.is_active_local() {
             self.index.orders_active_local.insert(client_order_id);
         }
+
+        if order.emulation_trigger().is_some() && (!replacing || !order.is_closed()) {
+            self.index.orders_emulated.insert(client_order_id);
+        }
+
         self.index
             .order_strategy
             .insert(client_order_id, strategy_id);
@@ -2902,11 +2912,6 @@ impl Cache {
                 .insert(client_order_id);
         }
 
-        // Update emulation index
-        if order.emulation_trigger().is_some() {
-            self.index.orders_emulated.insert(client_order_id);
-        }
-
         // Index position ID if provided
         if let Some(position_id) = position_id {
             self.index_position_id_in_memory(&position_id, &venue, &client_order_id, &strategy_id);
@@ -2942,6 +2947,249 @@ impl Cache {
         }
 
         Ok(())
+    }
+
+    fn reindex_replaced_order(
+        &mut self,
+        old_order_cell: &SharedCell<OrderAny>,
+        order: &OrderAny,
+        position_id: Option<PositionId>,
+    ) -> anyhow::Result<()> {
+        let client_order_id = order.client_order_id();
+        let current_venue_order_id = order.venue_order_id();
+        let venue_order_ids = order.venue_order_ids();
+
+        if let Some(venue_order_id) = current_venue_order_id {
+            self.validate_venue_order_id_ownership(&client_order_id, &venue_order_id)?;
+        }
+
+        for venue_order_id in &venue_order_ids {
+            if current_venue_order_id == Some(**venue_order_id) {
+                continue;
+            }
+
+            self.validate_venue_order_id_ownership(&client_order_id, venue_order_id)?;
+        }
+
+        {
+            let old_order = old_order_cell.borrow();
+
+            if let Some(position_id) = position_id {
+                Self::remove_replaced_order_position_memberships(
+                    &mut self.index,
+                    &self.positions,
+                    &old_order,
+                    position_id,
+                );
+            }
+
+            Self::remove_replaced_order_filter_memberships(&mut self.index, &old_order, order);
+        }
+
+        self.index.orders_active_local.remove(&client_order_id);
+        self.index.orders_open.remove(&client_order_id);
+        self.index.orders_closed.remove(&client_order_id);
+        self.index.orders_emulated.remove(&client_order_id);
+        self.index.orders_inflight.remove(&client_order_id);
+        if order.is_open() {
+            self.index.orders_open.insert(client_order_id);
+        }
+
+        if order.is_closed() {
+            self.index.orders_pending_cancel.remove(&client_order_id);
+            self.index.orders_closed.insert(client_order_id);
+        }
+
+        if order.is_inflight() {
+            self.index.orders_inflight.insert(client_order_id);
+        }
+
+        self.index.client_order_ids.remove(&client_order_id);
+
+        if let Some(venue_order_id) = current_venue_order_id {
+            self.index
+                .client_order_ids
+                .insert(client_order_id, venue_order_id);
+            self.index
+                .venue_order_ids
+                .insert(venue_order_id, client_order_id);
+        }
+
+        for venue_order_id in venue_order_ids {
+            if current_venue_order_id != Some(*venue_order_id) {
+                self.index
+                    .venue_order_ids
+                    .insert(*venue_order_id, client_order_id);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn remove_replaced_order_filter_memberships(
+        index: &mut CacheIndex,
+        old_order: &OrderAny,
+        replacement: &OrderAny,
+    ) {
+        let client_order_id = old_order.client_order_id();
+        let old_instrument_id = old_order.instrument_id();
+        let new_instrument_id = replacement.instrument_id();
+        let old_venue = old_instrument_id.venue;
+        let old_strategy_id = old_order.strategy_id();
+
+        if old_venue != new_instrument_id.venue
+            && Self::remove_order_from_bucket(&mut index.venue_orders, &old_venue, &client_order_id)
+        {
+            index.venue_orders.remove(&old_venue);
+        }
+
+        if old_instrument_id != new_instrument_id {
+            let became_empty = Self::remove_order_from_bucket(
+                &mut index.instrument_orders,
+                &old_instrument_id,
+                &client_order_id,
+            );
+            let has_positions = index
+                .instrument_positions
+                .get(&old_instrument_id)
+                .is_some_and(|positions| !positions.is_empty());
+
+            if became_empty && !has_positions {
+                index.instrument_orders.remove(&old_instrument_id);
+            }
+        }
+
+        if old_strategy_id != replacement.strategy_id() {
+            let became_empty = Self::remove_order_from_bucket(
+                &mut index.strategy_orders,
+                &old_strategy_id,
+                &client_order_id,
+            );
+            let has_positions = index
+                .strategy_positions
+                .get(&old_strategy_id)
+                .is_some_and(|positions| !positions.is_empty());
+
+            if became_empty && !has_positions {
+                index.strategy_orders.remove(&old_strategy_id);
+                index.strategies.remove(&old_strategy_id);
+            }
+        }
+
+        if let Some(account_id) = old_order.account_id()
+            && Some(account_id) != replacement.account_id()
+            && Self::remove_order_from_bucket(
+                &mut index.account_orders,
+                &account_id,
+                &client_order_id,
+            )
+        {
+            index.account_orders.remove(&account_id);
+        }
+
+        if let Some(exec_algorithm_id) = old_order.exec_algorithm_id()
+            && Some(exec_algorithm_id) != replacement.exec_algorithm_id()
+            && Self::remove_order_from_bucket(
+                &mut index.exec_algorithm_orders,
+                &exec_algorithm_id,
+                &client_order_id,
+            )
+        {
+            index.exec_algorithm_orders.remove(&exec_algorithm_id);
+            index.exec_algorithms.remove(&exec_algorithm_id);
+        }
+
+        if let Some(exec_spawn_id) = old_order.exec_spawn_id()
+            && Some(exec_spawn_id) != replacement.exec_spawn_id()
+            && Self::remove_order_from_bucket(
+                &mut index.exec_spawn_orders,
+                &exec_spawn_id,
+                &client_order_id,
+            )
+        {
+            index.exec_spawn_orders.remove(&exec_spawn_id);
+        }
+    }
+
+    fn remove_replaced_order_position_memberships(
+        index: &mut CacheIndex,
+        positions: &AHashMap<PositionId, SharedCell<Position>>,
+        old_order: &OrderAny,
+        new_position_id: PositionId,
+    ) {
+        let client_order_id = old_order.client_order_id();
+        let indexed_position_id = index.order_position.get(&client_order_id).copied();
+        let mut removed_position_id = None;
+        for old_position_id in [indexed_position_id, old_order.position_id()]
+            .into_iter()
+            .flatten()
+        {
+            if old_position_id == new_position_id || removed_position_id == Some(old_position_id) {
+                continue;
+            }
+
+            removed_position_id = Some(old_position_id);
+            Self::remove_replaced_order_position_membership(
+                index,
+                positions,
+                client_order_id,
+                old_position_id,
+                old_order.instrument_id().venue,
+            );
+        }
+    }
+
+    fn remove_replaced_order_position_membership(
+        index: &mut CacheIndex,
+        positions: &AHashMap<PositionId, SharedCell<Position>>,
+        client_order_id: ClientOrderId,
+        old_position_id: PositionId,
+        old_venue: Venue,
+    ) {
+        let has_other_orders = if let Some(orders) = index.position_orders.get_mut(&old_position_id)
+        {
+            orders.remove(&client_order_id);
+            !orders.is_empty()
+        } else {
+            index
+                .order_position
+                .iter()
+                .any(|(candidate_id, candidate)| {
+                    *candidate_id != client_order_id && *candidate == old_position_id
+                })
+        };
+
+        if positions.contains_key(&old_position_id) || has_other_orders {
+            return;
+        }
+
+        index.position_orders.remove(&old_position_id);
+        if let Some(strategy_id) = index.position_strategy.remove(&old_position_id)
+            && let Some(strategy_positions) = index.strategy_positions.get_mut(&strategy_id)
+        {
+            strategy_positions.remove(&old_position_id);
+            if strategy_positions.is_empty() {
+                index.strategy_positions.remove(&strategy_id);
+            }
+        }
+
+        if let Some(venue_positions) = index.venue_positions.get_mut(&old_venue) {
+            venue_positions.remove(&old_position_id);
+            if venue_positions.is_empty() {
+                index.venue_positions.remove(&old_venue);
+            }
+        }
+    }
+
+    fn remove_order_from_bucket<K: Eq + std::hash::Hash>(
+        buckets: &mut AHashMap<K, AHashSet<ClientOrderId>>,
+        key: &K,
+        client_order_id: &ClientOrderId,
+    ) -> bool {
+        buckets.get_mut(key).is_some_and(|orders| {
+            orders.remove(client_order_id);
+            orders.is_empty()
+        })
     }
 
     /// Claims the execution-client origin for one or more cached orders.

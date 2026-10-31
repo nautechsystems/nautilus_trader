@@ -4031,6 +4031,7 @@ mod tests {
                 ));
 
                 if matches!(event, OrderEventAny::Initialized(_)) {
+                    assert!(!cache.borrow().is_order_emulated(&client_order_id));
                     msgbus::send_trading_command(
                         MessagingSwitchboard::order_emulator_execute(),
                         TradingCommand::CancelOrder(cancel.clone()),

@@ -1885,16 +1885,15 @@ impl Cache {
     ///
     /// # Parameters
     ///
-    /// `override_existing`: If the added order should 'override' any existing order and replace
-    /// it in the cache. This is currently used for emulated orders which are
-    /// being released and transformed into another type.
+    /// `replace_existing`: Replaces an existing order with the same client order ID. Emulated
+    /// orders use this when release transforms them into another order type.
     ///
     /// # Errors
     ///
-    /// Returns an error if not `replace_existing` and the `order.client_order_id` is already contained in the cache,
-    /// or if persisting the order to the backing database fails. The order and every index are
-    /// committed to memory before persistence is attempted, so a persistence error leaves the
-    /// cache internally consistent.
+    /// Returns an error if the client order ID exists and `replace_existing` is false, a
+    /// replacement claims another order's venue order ID, or persistence fails. The order and
+    /// every index are committed to memory before persistence is attempted, so a persistence
+    /// error leaves the cache internally consistent.
     #[pyo3(name = "add_order")]
     fn py_add_order(
         &mut self,

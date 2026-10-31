@@ -3348,14 +3348,495 @@ fn test_add_order_replace_existing_overwrites_value(mut cache: Cache, audusd_sim
         .build();
     let client_order_id = order.client_order_id();
     cache.add_order(order.clone(), None, None, false).unwrap();
+    let original_cell = cache.orders.get(&client_order_id).unwrap().clone();
+    cache.update_order_pending_cancel_local(&order);
 
     let mut replacement = order;
     replacement.set_position_id(Some(PositionId::from("P-NEW")));
     cache.add_order(replacement, None, None, true).unwrap();
 
     assert_eq!(
+        original_cell.as_ptr(),
+        cache.orders.get(&client_order_id).unwrap().as_ptr(),
+    );
+    assert_eq!(
         cache.order(&client_order_id).unwrap().position_id(),
         Some(PositionId::from("P-NEW"))
+    );
+    assert_eq!(
+        cache.client_order_ids(None, Some(&audusd_sim.id), None, None),
+        AHashSet::from([client_order_id]),
+    );
+    assert!(cache.is_order_pending_cancel_local(&client_order_id));
+}
+
+#[rstest]
+fn test_add_order_replacement_removes_old_filters(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let old_instrument_id = audusd_sim.id;
+    let new_instrument_id = InstrumentId::from("EUR/USD.OTHER");
+    let old_strategy_id = StrategyId::from("S-OLD");
+    let new_strategy_id = StrategyId::from("S-NEW");
+    let old_account_id = AccountId::from("SIM-OLD");
+    let new_account_id = AccountId::from("SIM-NEW");
+    let old_exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+    let new_exec_algorithm_id = ExecAlgorithmId::from("VWAP");
+    let old_spawn_id = ClientOrderId::from("O-SPAWN-OLD");
+    let new_spawn_id = ClientOrderId::from("O-SPAWN-NEW");
+    let client_order_id = ClientOrderId::from("O-REPLACED");
+    let mut old_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(old_instrument_id)
+        .strategy_id(old_strategy_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .exec_algorithm_id(old_exec_algorithm_id)
+        .exec_spawn_id(old_spawn_id)
+        .build();
+    cache
+        .add_order(old_order.clone(), None, None, false)
+        .unwrap();
+    promote_to_open(
+        &mut cache,
+        &mut old_order,
+        old_account_id,
+        VenueOrderId::from("V-OLD"),
+    );
+
+    let mut replacement = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(new_instrument_id)
+        .strategy_id(new_strategy_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("2.00000"))
+        .quantity(Quantity::from(200_000))
+        .exec_algorithm_id(new_exec_algorithm_id)
+        .exec_spawn_id(new_spawn_id)
+        .build();
+    replacement
+        .apply(TestOrderEventStubs::submitted(&replacement, new_account_id))
+        .unwrap();
+    cache.add_order(replacement, None, None, true).unwrap();
+
+    assert!(
+        cache
+            .orders(Some(&old_instrument_id.venue), None, None, None, None)
+            .is_empty()
+    );
+    assert!(
+        cache
+            .orders(None, Some(&old_instrument_id), None, None, None)
+            .is_empty()
+    );
+    assert!(
+        cache
+            .orders(None, None, Some(&old_strategy_id), None, None)
+            .is_empty()
+    );
+    assert!(
+        cache
+            .orders(None, None, None, Some(&old_account_id), None)
+            .is_empty()
+    );
+    assert!(
+        cache
+            .orders_for_exec_algorithm(&old_exec_algorithm_id, None, None, None, None, None)
+            .is_empty()
+    );
+    assert!(cache.orders_for_exec_spawn(&old_spawn_id).is_empty());
+    assert!(cache.orders_open(None, None, None, None, None).is_empty());
+    assert_eq!(cache.venue_order_id(&client_order_id), None);
+    assert_eq!(
+        cache.client_order_id(&VenueOrderId::from("V-OLD")),
+        Some(&client_order_id),
+    );
+    assert_eq!(
+        cache.client_order_ids(
+            Some(&new_instrument_id.venue),
+            Some(&new_instrument_id),
+            Some(&new_strategy_id),
+            Some(&new_account_id),
+        ),
+        AHashSet::from([client_order_id]),
+    );
+    assert_eq!(
+        cache
+            .orders_for_exec_algorithm(&new_exec_algorithm_id, None, None, None, None, None)
+            .len(),
+        1,
+    );
+    assert_eq!(cache.orders_for_exec_spawn(&new_spawn_id).len(), 1);
+    assert_eq!(
+        cache.client_order_ids_inflight(None, None, None, None),
+        AHashSet::from([client_order_id])
+    );
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_add_order_replacement_moves_position_and_client_mappings(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let client_order_id = ClientOrderId::from("O-REPLACED-MAPPINGS");
+    let old_position_id = PositionId::from("P-OLD");
+    let new_position_id = PositionId::from("P-NEW");
+    let old_client_id = ClientId::from("CLIENT-OLD");
+    let new_client_id = ClientId::from("CLIENT-NEW");
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache
+        .add_order(
+            order.clone(),
+            Some(old_position_id),
+            Some(old_client_id),
+            false,
+        )
+        .unwrap();
+
+    cache
+        .add_order(
+            order.clone(),
+            Some(new_position_id),
+            Some(new_client_id),
+            true,
+        )
+        .unwrap();
+    cache.add_order(order, None, None, true).unwrap();
+
+    assert_eq!(cache.position_id(&client_order_id), Some(&new_position_id));
+    assert!(cache.orders_for_position(&old_position_id).is_empty());
+    assert!(!cache.index.position_orders.contains_key(&old_position_id));
+    assert!(!cache.index.position_strategy.contains_key(&old_position_id));
+    assert_eq!(cache.orders_for_position(&new_position_id).len(), 1);
+    assert_eq!(cache.client_id(&client_order_id), Some(&new_client_id));
+}
+
+#[rstest]
+fn test_add_order_replacement_removes_unbacked_position_and_strategy(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let client_order_id = ClientOrderId::from("O-REPLACED-STRATEGY");
+    let old_strategy_id = StrategyId::from("S-OLD");
+    let new_strategy_id = StrategyId::from("S-NEW");
+    let old_position_id = PositionId::from("P-OLD");
+    let new_position_id = PositionId::from("P-NEW");
+    let old_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .strategy_id(old_strategy_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache
+        .add_order(old_order, Some(old_position_id), None, false)
+        .unwrap();
+    let replacement = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(audusd_sim.id)
+        .strategy_id(new_strategy_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(200_000))
+        .build();
+
+    cache
+        .add_order(replacement, Some(new_position_id), None, true)
+        .unwrap();
+
+    assert!(!cache.strategy_ids().contains(&old_strategy_id));
+    assert!(!cache.index.strategy_orders.contains_key(&old_strategy_id));
+    assert!(
+        !cache
+            .index
+            .strategy_positions
+            .contains_key(&old_strategy_id)
+    );
+    assert!(!cache.index.position_strategy.contains_key(&old_position_id));
+    assert_eq!(cache.position_id(&client_order_id), Some(&new_position_id));
+    assert!(cache.strategy_ids().contains(&new_strategy_id));
+}
+
+#[rstest]
+fn test_add_order_replacement_rejects_venue_id_conflict_before_commit(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let client_order_id = ClientOrderId::from("O-REPLACE-CONFLICT");
+    let new_instrument_id = InstrumentId::from("EUR/USD.OTHER");
+    let venue_order_id = VenueOrderId::from("V-OWNED");
+    let owner_id = ClientOrderId::from("O-OWNER");
+    let old_order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache
+        .add_order(old_order.clone(), None, None, false)
+        .unwrap();
+    cache
+        .add_venue_order_id(&owner_id, &venue_order_id, false)
+        .unwrap();
+
+    let mut replacement = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(new_instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .price(Price::from("2.00000"))
+        .quantity(Quantity::from(200_000))
+        .build();
+    let account_id = AccountId::from("SIM-NEW");
+    replacement
+        .apply(TestOrderEventStubs::submitted(&replacement, account_id))
+        .unwrap();
+    replacement
+        .apply(OrderEventAny::Filled(build_order_filled(
+            replacement.trader_id(),
+            replacement.strategy_id(),
+            replacement.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            account_id,
+            TradeId::from("T-CONFLICT"),
+            replacement.order_side(),
+            replacement.order_type(),
+            Quantity::from(1),
+            Price::from("2.00000"),
+            Currency::USD(),
+            LiquiditySide::Maker,
+            None,
+            None,
+        )))
+        .unwrap();
+    assert!(replacement.venue_order_ids().is_empty());
+
+    let error = cache.add_order(replacement, None, None, true).unwrap_err();
+
+    assert!(error.is::<VenueOrderIdOwnershipError>());
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().instrument_id(),
+        audusd_sim.id
+    );
+    assert_eq!(
+        cache
+            .orders(None, Some(&audusd_sim.id), None, None, None)
+            .len(),
+        1,
+    );
+    assert!(
+        cache
+            .orders(None, Some(&new_instrument_id), None, None, None)
+            .is_empty()
+    );
+    assert_eq!(cache.client_order_id(&venue_order_id), Some(&owner_id));
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().status(),
+        old_order.status()
+    );
+}
+
+#[rstest]
+fn test_add_order_replacement_indexes_new_venue_order_id(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let client_order_id = ClientOrderId::from("O-REPLACE-VENUE-ID");
+    let venue_order_id = VenueOrderId::from("V-NEW");
+    let account_id = AccountId::from("SIM-NEW");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    let mut replacement = order;
+    replacement
+        .apply(TestOrderEventStubs::submitted(&replacement, account_id))
+        .unwrap();
+    replacement
+        .apply(OrderEventAny::Filled(build_order_filled(
+            replacement.trader_id(),
+            replacement.strategy_id(),
+            replacement.instrument_id(),
+            client_order_id,
+            venue_order_id,
+            account_id,
+            TradeId::from("T-NEW"),
+            replacement.order_side(),
+            replacement.order_type(),
+            Quantity::from(1),
+            Price::from("1.00000"),
+            Currency::USD(),
+            LiquiditySide::Maker,
+            None,
+            None,
+        )))
+        .unwrap();
+    assert!(replacement.venue_order_ids().is_empty());
+
+    cache.add_order(replacement, None, None, true).unwrap();
+
+    assert_eq!(
+        cache.venue_order_id(&client_order_id),
+        Some(&venue_order_id)
+    );
+    assert_eq!(
+        cache.client_order_id(&venue_order_id),
+        Some(&client_order_id)
+    );
+    assert_eq!(
+        cache.client_order_ids_open(None, None, None, None),
+        AHashSet::from([client_order_id]),
+    );
+}
+
+#[rstest]
+fn test_add_order_replacement_preserves_other_orders_in_old_buckets(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let old_instrument_id = audusd_sim.id;
+    let new_instrument_id = InstrumentId::from("EUR/USD.OTHER");
+    let old_strategy_id = StrategyId::from("S-OLD");
+    let new_strategy_id = StrategyId::from("S-NEW");
+    let old_exec_algorithm_id = ExecAlgorithmId::from("TWAP");
+    let old_spawn_id = ClientOrderId::from("O-SPAWN-OLD");
+    let old_position_id = PositionId::from("P-OLD");
+    let new_position_id = PositionId::from("P-NEW");
+    let client_order_id = ClientOrderId::from("O-REPLACED");
+    let sibling_id = ClientOrderId::from("O-SIBLING");
+
+    for order_id in [client_order_id, sibling_id] {
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(old_instrument_id)
+            .strategy_id(old_strategy_id)
+            .client_order_id(order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(100_000))
+            .exec_algorithm_id(old_exec_algorithm_id)
+            .exec_spawn_id(old_spawn_id)
+            .build();
+        cache
+            .add_order(order, Some(old_position_id), None, false)
+            .unwrap();
+    }
+
+    let replacement = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(new_instrument_id)
+        .strategy_id(new_strategy_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(200_000))
+        .build();
+    cache
+        .add_order(replacement, Some(new_position_id), None, true)
+        .unwrap();
+
+    assert_eq!(
+        cache.client_order_ids(
+            Some(&old_instrument_id.venue),
+            Some(&old_instrument_id),
+            Some(&old_strategy_id),
+            None,
+        ),
+        AHashSet::from([sibling_id]),
+    );
+    assert_eq!(
+        cache
+            .orders_for_exec_algorithm(&old_exec_algorithm_id, None, None, None, None, None)
+            .iter()
+            .map(|order| order.client_order_id())
+            .collect::<AHashSet<_>>(),
+        AHashSet::from([sibling_id]),
+    );
+    assert_eq!(
+        cache
+            .orders_for_exec_spawn(&old_spawn_id)
+            .iter()
+            .map(|order| order.client_order_id())
+            .collect::<AHashSet<_>>(),
+        AHashSet::from([sibling_id]),
+    );
+    assert_eq!(
+        cache
+            .orders_for_position(&old_position_id)
+            .iter()
+            .map(|order| order.client_order_id())
+            .collect::<AHashSet<_>>(),
+        AHashSet::from([sibling_id]),
+    );
+    assert_eq!(cache.position_id(&client_order_id), Some(&new_position_id));
+}
+
+#[rstest]
+fn test_add_order_replacement_clears_closed_lifecycle(mut cache: Cache, audusd_sim: CurrencyPair) {
+    let instrument = InstrumentAny::CurrencyPair(audusd_sim);
+    let old_order = closed_order_in_cache(&mut cache, &instrument, "O-REPLACE-CLOSED");
+    let client_order_id = old_order.client_order_id();
+    let replacement = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(200_000))
+        .build();
+
+    cache.add_order(replacement, None, None, true).unwrap();
+
+    assert!(cache.orders_closed(None, None, None, None, None).is_empty());
+    assert!(cache.orders_open(None, None, None, None, None).is_empty());
+    assert_eq!(
+        cache.client_order_ids_active_local(None, None, None, None),
+        AHashSet::from([client_order_id]),
+    );
+}
+
+#[rstest]
+fn test_add_order_replacement_clears_pending_cancel_when_closed(
+    mut cache: Cache,
+    audusd_sim: CurrencyPair,
+) {
+    let account_id = AccountId::from("SIM-001");
+    let venue_order_id = VenueOrderId::from("V-PENDING-CANCEL");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(audusd_sim.id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1.00000"))
+        .quantity(Quantity::from(100_000))
+        .build();
+    let client_order_id = order.client_order_id();
+    cache.add_order(order.clone(), None, None, false).unwrap();
+    promote_to_open(&mut cache, &mut order, account_id, venue_order_id);
+    cache.update_order_pending_cancel_local(&order);
+    order
+        .apply(OrderEventAny::Canceled(build_order_canceled(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            client_order_id,
+            Some(venue_order_id),
+            Some(account_id),
+        )))
+        .unwrap();
+
+    cache.add_order(order, None, None, true).unwrap();
+
+    assert!(!cache.is_order_pending_cancel_local(&client_order_id));
+    assert_eq!(
+        cache.client_order_ids_closed(None, None, None, None),
+        AHashSet::from([client_order_id]),
+    );
+    assert!(
+        cache
+            .client_order_ids_open(None, None, None, None)
+            .is_empty()
     );
 }
 
@@ -11913,6 +12394,53 @@ fn test_add_order_commits_memory_when_database_add_fails(audusd_sim: CurrencyPai
             .get(&order.strategy_id())
             .unwrap()
             .contains(&client_order_id)
+    );
+    assert!(cache.check_integrity());
+}
+
+#[rstest]
+fn test_add_order_replacement_commits_indexes_when_database_add_fails(audusd_sim: CurrencyPair) {
+    let old_instrument_id = audusd_sim.id;
+    let new_instrument_id = InstrumentId::from("EUR/USD.OTHER");
+    let client_order_id = ClientOrderId::from("O-REPLACE-DB-FAIL");
+    let old_order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(old_instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    let replacement = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(new_instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from(200_000))
+        .build();
+    let mut cache = Cache::default();
+    cache.add_order(old_order, None, None, false).unwrap();
+    let original_cell = cache.orders.get(&client_order_id).unwrap().clone();
+    cache.database = Some(Box::new(SnapshotBlobTestDatabase::fail_add_order()));
+
+    let error = cache.add_order(replacement, None, None, true).unwrap_err();
+
+    assert_eq!(error.to_string(), "add order failed");
+    assert_eq!(
+        original_cell.as_ptr(),
+        cache.orders.get(&client_order_id).unwrap().as_ptr(),
+    );
+    assert!(
+        cache
+            .orders(None, Some(&old_instrument_id), None, None, None)
+            .is_empty()
+    );
+    assert_eq!(
+        cache
+            .orders(None, Some(&new_instrument_id), None, None, None)
+            .len(),
+        1,
+    );
+    assert_eq!(
+        cache.order(&client_order_id).unwrap().instrument_id(),
+        new_instrument_id,
     );
     assert!(cache.check_integrity());
 }
