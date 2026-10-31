@@ -82,6 +82,7 @@ Released on TBD (UTC).
 
 ### Internal Improvements
 
+- Added NETTING startup reconciliation scenarios for flat accounts and recovered positions
 - Improved Docker publishing with temporary digest directories isolated per job
 - Refined Polymarket limit submit responses and venue order ID lookup
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
