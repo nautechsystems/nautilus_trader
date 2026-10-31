@@ -167,6 +167,7 @@ pub struct SimulatedExchange {
     margin_model: Option<MarginModelHandle>,
     latency_model: Option<LatencyModelHandle>,
     instruments: AHashMap<InstrumentId, InstrumentAny>,
+    initial_instruments: AHashMap<InstrumentId, InstrumentAny>,
     matching_engines: IndexMap<InstrumentId, OrderMatchingEngine>,
     last_raw_id: u32,
     pending_funding_rates: BTreeMap<(UnixNanos, InstrumentId), FundingRateUpdate>,
@@ -258,6 +259,7 @@ impl SimulatedExchange {
             margin_model: config.margin_model,
             latency_model: config.latency_model,
             instruments: AHashMap::new(),
+            initial_instruments: AHashMap::new(),
             matching_engines: IndexMap::new(),
             last_raw_id: 0,
             pending_funding_rates: BTreeMap::new(),
@@ -540,6 +542,26 @@ impl SimulatedExchange {
         self.matching_engines.insert(instrument_id, matching_engine);
 
         log::info!("Added instrument {instrument_id} and created matching engine");
+        Ok(())
+    }
+
+    /// Applies replay definitions using the existing matching engine lifecycle.
+    pub(crate) fn update_instrument(&mut self, instrument: &InstrumentAny) -> anyhow::Result<()> {
+        let instrument_id = instrument.id();
+        if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
+            anyhow::ensure!(
+                instrument.expiration_ns() == engine.instrument.expiration_ns(),
+                "Cannot change expiration for instrument {instrument_id} during replay"
+            );
+            self.cache.borrow_mut().add_instrument(instrument.clone())?;
+            self.initial_instruments
+                .entry(instrument_id)
+                .or_insert_with(|| engine.instrument.clone());
+            engine.update_instrument(instrument.clone())?;
+            self.instruments.insert(instrument_id, instrument.clone());
+        }
+
+        self.drain_oto_commands();
         Ok(())
     }
 
@@ -1854,8 +1876,18 @@ impl SimulatedExchange {
             }
         }
 
-        for matching_engine in self.matching_engines.values_mut() {
+        for (instrument_id, matching_engine) in &mut self.matching_engines {
             matching_engine.reset();
+
+            if let Some(instrument) = self.initial_instruments.get(instrument_id) {
+                if let Err(e) = self.cache.borrow_mut().add_instrument(instrument.clone()) {
+                    callback_error.get_or_insert_with(|| e.to_string());
+                    continue;
+                }
+
+                matching_engine.update_instrument(instrument.clone())?;
+                self.instruments.insert(*instrument_id, instrument.clone());
+            }
         }
 
         self.pending_funding_rates.clear();
@@ -2363,6 +2395,35 @@ mod tests {
         }
 
         SimulatedExchange::new(config, cache, clock).unwrap()
+    }
+
+    #[rstest]
+    fn test_replay_instrument_expiration_change_is_rejected() {
+        let mut exchange = setup_exchange(Dispatch::Queued);
+        let mut option = nautilus_model::instruments::stubs::binary_option();
+        option.id = InstrumentId::from("TEST.SIM");
+        let original = InstrumentAny::BinaryOption(option.clone());
+        exchange.add_instrument(original.clone()).unwrap();
+        exchange
+            .cache
+            .borrow_mut()
+            .add_instrument(original.clone())
+            .unwrap();
+        option.expiration_ns = UnixNanos::from(10);
+
+        let error = exchange
+            .update_instrument(&InstrumentAny::BinaryOption(option))
+            .unwrap_err();
+
+        assert!(error.to_string().contains("Cannot change expiration"));
+        let cache = exchange.cache.borrow();
+        for instrument in [
+            &exchange.instruments[&original.id()],
+            &exchange.matching_engines[&original.id()].instrument,
+            cache.instrument(&original.id()).unwrap(),
+        ] {
+            assert_eq!(instrument.expiration_ns(), original.expiration_ns());
+        }
     }
 
     #[rstest]

@@ -1587,10 +1587,7 @@ impl BacktestEngine {
     ) -> anyhow::Result<()> {
         if matches!(
             data,
-            DataRef::Instrument(_)
-                | DataRef::IndexPrice(_)
-                | DataRef::OptionGreeks(_)
-                | DataRef::Custom(_)
+            DataRef::IndexPrice(_) | DataRef::OptionGreeks(_) | DataRef::Custom(_)
         ) {
             return Ok(());
         }
@@ -1605,6 +1602,7 @@ impl BacktestEngine {
             let mut processed_book_data = false;
 
             match data {
+                DataRef::Instrument(instrument) => exchange_ref.update_instrument(instrument)?,
                 DataRef::BookDelta(delta) => {
                     exchange_ref.process_order_book_delta(*delta)?;
                     processed_book_data = true;
@@ -1636,7 +1634,7 @@ impl BacktestEngine {
                 DataRef::InstrumentClose(close) => {
                     exchange_ref.process_instrument_close(*close)?;
                 }
-                DataRef::Instrument(_) | DataRef::Custom(_) => {
+                DataRef::Custom(_) => {
                     unreachable!("filtered before exchange routing")
                 }
                 #[cfg(feature = "defi")]
@@ -4050,6 +4048,119 @@ mod tests {
             "Instrument ETHUSDT-PERP.BINANCE is already registered with a different definition"
         );
         assert_original_registration_kept(&engine, &instrument);
+    }
+
+    #[rstest]
+    #[case::unchanged("0.01", "0.01", false)]
+    #[case::finer("0.10", "0.01", true)]
+    #[case::coarser("0.01", "0.10", true)]
+    #[case::precision("0.01", "0.001", true)]
+    fn test_replay_instrument_updates(
+        mut crypto_perpetual_ethusdt: CryptoPerpetual,
+        #[case] initial_tick: &str,
+        #[case] revised_tick: &str,
+        #[case] clears_book: bool,
+    ) {
+        crypto_perpetual_ethusdt.price_increment = Price::from(initial_tick);
+        let original = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt.clone());
+        let id = original.id();
+        let mut engine = engine_with_quoted_instrument(&original);
+        let cache = engine.kernel.cache();
+        let exchange = Rc::clone(&engine.venues[&id.venue]);
+        let observed = Rc::new(Cell::new(0));
+        let received = Rc::clone(&observed);
+        let updated_exchange = Rc::clone(&exchange);
+        let order_id = ClientOrderId::from("O-REPLAY-UPDATE");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(engine.trader_id())
+            .instrument_id(id)
+            .client_order_id(order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("1000.00") + original.price_increment())
+            .build();
+        let order_cache = Rc::clone(&cache);
+        msgbus::subscribe_instruments(
+            nautilus_common::msgbus::switchboard::get_instruments_pattern(id.venue),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                let exchange = updated_exchange.borrow();
+                let matching = exchange.get_matching_engine(&id).unwrap();
+                let increment = instrument.price_increment();
+                assert_eq!(matching.instrument.price_increment(), increment);
+                assert_eq!(matching.get_core().price_increment, increment);
+                drop(exchange);
+
+                if received.get() == 0 {
+                    order_cache
+                        .borrow_mut()
+                        .add_order(order.clone(), None, None, false)
+                        .unwrap();
+                    send_execution_command(TradingCommand::SubmitOrder(
+                        create_submit_order_command(&order),
+                    ));
+                }
+                received.set(received.get() + 1);
+            }),
+            None,
+        );
+        let increment = Price::from(revised_tick);
+        crypto_perpetual_ethusdt.price_precision = increment.precision;
+        crypto_perpetual_ethusdt.price_increment = increment;
+        let quote = QuoteTick::new(
+            id,
+            Price::from("1000.00"),
+            Price::from("1001.00"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            1.into(),
+            1.into(),
+        );
+        let mut data = vec![
+            Data::Instrument(Box::new(original.clone())),
+            Data::Quote(quote),
+        ];
+        data.extend([2, 3].map(|timestamp| {
+            let mut revised = crypto_perpetual_ethusdt.clone();
+            revised.ts_event = UnixNanos::from(timestamp);
+            revised.ts_init = UnixNanos::from(timestamp);
+            Data::Instrument(Box::new(InstrumentAny::CryptoPerpetual(revised)))
+        }));
+        engine.add_data(data, None, true, true).unwrap();
+
+        for _ in 0..2 {
+            engine.run(None, None, None, false).unwrap();
+            assert_eq!(observed.replace(0), 3);
+            assert_eq!(
+                cache.borrow().instrument(&id).unwrap().price_increment(),
+                increment
+            );
+            assert_eq!(
+                cache.borrow().order(&order_id).unwrap().status(),
+                if revised_tick == "0.10" {
+                    OrderStatus::Canceled
+                } else {
+                    OrderStatus::Accepted
+                }
+            );
+            {
+                let exchange = exchange.borrow();
+                let matching = exchange.get_matching_engine(&id).unwrap();
+                assert_eq!(matching.raw_id, 1);
+                assert_eq!(matching.instrument.price_precision(), increment.precision);
+                assert_eq!(exchange.best_bid_price(id).is_none(), clears_book);
+            }
+            engine.reset().unwrap();
+        }
+        assert_eq!(
+            cache.borrow().instrument(&id).unwrap().price_increment(),
+            original.price_increment()
+        );
+        let exchange = exchange.borrow();
+        let matching = exchange.get_matching_engine(&id).unwrap();
+        assert_eq!(
+            matching.get_core().price_increment,
+            original.price_increment()
+        );
     }
 
     #[rstest]
