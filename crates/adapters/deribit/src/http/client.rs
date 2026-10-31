@@ -71,6 +71,7 @@ use super::{
 };
 use crate::{
     common::{
+        capabilities,
         consts::{
             DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_API_PATH, DERIBIT_GLOBAL_RATE_KEY,
             DERIBIT_HTTP_ACCOUNT_QUOTA, DERIBIT_HTTP_ORDER_QUOTA, DERIBIT_HTTP_REST_QUOTA,
@@ -1256,6 +1257,7 @@ impl DeribitHttpClient {
         // Get instrument from cache to determine precisions
         let (price_precision, size_precision) =
             if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
+                capabilities::validate_public_trades(&instrument)?;
                 (instrument.price_precision(), instrument.size_precision())
             } else {
                 log::warn!("Instrument {instrument_id} not in cache, skipping trades request");
@@ -1413,8 +1415,10 @@ impl DeribitHttpClient {
         }
 
         let instrument_id = bar_type.instrument_id();
+
         let (price_precision, size_precision, use_cost_for_volume) =
             if let Some(instrument) = self.get_instrument(&instrument_id.symbol.inner()) {
+                capabilities::validate_public_trades(&instrument)?;
                 (
                     instrument.price_precision(),
                     instrument.size_precision(),
@@ -2024,9 +2028,47 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::common::consts::{
-        DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_GLOBAL_RATE_KEY, DERIBIT_ORDER_RATE_KEY,
+    use crate::common::{
+        consts::{DERIBIT_ACCOUNT_RATE_KEY, DERIBIT_GLOBAL_RATE_KEY, DERIBIT_ORDER_RATE_KEY},
+        testing::routed_spot_instrument,
     };
+
+    #[tokio::test]
+    async fn routed_spot_rejects_trade_and_bar_history_before_http() {
+        let client = DeribitHttpClient::new(
+            Some("http://127.0.0.1:1".into()),
+            DeribitEnvironment::Testnet,
+            1,
+            0,
+            1,
+            1,
+            None,
+        )
+        .unwrap();
+        let instrument = routed_spot_instrument();
+        let instrument_id = instrument.id();
+        client.cache_instruments(&[instrument]);
+
+        let trades_error = client
+            .request_trades(instrument_id, None, None, None)
+            .await
+            .unwrap_err();
+        let bars_error = client
+            .request_bars(
+                "BTC_USDC.DERIBIT-1-MINUTE-LAST-EXTERNAL".parse().unwrap(),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(
+            trades_error.to_string(),
+            "Deribit routed spot does not support public trades or charts for BTC_USDC.DERIBIT"
+        );
+        assert_eq!(bars_error.to_string(), trades_error.to_string());
+    }
 
     #[tokio::test]
     async fn test_authenticated_client_rejects_redirects() {

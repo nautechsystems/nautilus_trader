@@ -32,12 +32,6 @@ pub mod bar;
 pub mod book;
 pub mod config;
 
-#[cfg(feature = "defi")]
-pub mod pool;
-
-#[cfg(feature = "streaming")]
-mod streaming;
-
 mod commands;
 mod dispatch;
 mod futures;
@@ -49,6 +43,12 @@ mod responses;
 mod spread_quote;
 mod synthetic;
 mod time_range;
+
+#[cfg(feature = "defi")]
+pub mod pool;
+
+#[cfg(feature = "streaming")]
+mod streaming;
 
 use std::{
     any::{Any, type_name},
@@ -65,7 +65,7 @@ use ::futures::future::join_all;
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 pub use bar::BarAggregatorSubscription;
-use bar::{BarAggregationSubscription, BarAggregatorKey, bar_aggregator_key};
+use bar::{BarAggregationSubscription, BarAggregatorKey, BarAggregatorWarmup, bar_aggregator_key};
 use book::{
     BookDeltasKey, BookSnapshotInfos, BookSnapshotKey, BookSnapshotSource, BookSnapshotter,
     BookSubscription, BookSubscriptionOwner, BookUpdater,
@@ -193,6 +193,7 @@ pub struct DataEngine {
     book_snapshotters: AHashMap<NonZeroUsize, Rc<BookSnapshotter>>,
     bar_aggregators: IndexMap<BarAggregatorKey, Rc<RefCell<Box<dyn BarAggregator>>>>,
     bar_aggregator_handlers: AHashMap<BarAggregatorKey, Vec<BarAggregatorSubscription>>,
+    bar_aggregator_warmups: AHashMap<BarAggregatorKey, BarAggregatorWarmup>,
     subscriptions_bar_aggregation: AHashMap<BarType, BarAggregationSubscription>,
     request_bar_aggregations: AHashMap<UUID4, RequestBarAggregation>,
     inflight_requests: AHashMap<UUID4, RequestCommand>,
@@ -271,6 +272,7 @@ impl DataEngine {
             book_snapshotters: AHashMap::new(),
             bar_aggregators: IndexMap::new(),
             bar_aggregator_handlers: AHashMap::new(),
+            bar_aggregator_warmups: AHashMap::new(),
             subscriptions_bar_aggregation: AHashMap::new(),
             request_bar_aggregations: AHashMap::new(),
             inflight_requests: AHashMap::new(),

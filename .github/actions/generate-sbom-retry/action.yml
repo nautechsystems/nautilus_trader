@@ -32,7 +32,7 @@ runs:
       id: sbom1
       continue-on-error: true
       # https://github.com/anchore/sbom-action
-      uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       with:
         image: ${{ inputs.image }}
         output-file: ${{ inputs.output-file }}
@@ -53,7 +53,7 @@ runs:
       if: steps.sbom1.outcome == 'failure'
       continue-on-error: true
       # https://github.com/anchore/sbom-action
-      uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       with:
         image: ${{ inputs.image }}
         output-file: ${{ inputs.output-file }}
@@ -72,7 +72,7 @@ runs:
     - name: Generate SBOM (attempt 3/3, final)
       if: steps.sbom2.outcome == 'failure'
       # https://github.com/anchore/sbom-action
-      uses: anchore/sbom-action@3ad7283483fc7af8ff2b4ea19663c2d5ca935e26 # v0.24.2
+      uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
       with:
         image: ${{ inputs.image }}
         output-file: ${{ inputs.output-file }}

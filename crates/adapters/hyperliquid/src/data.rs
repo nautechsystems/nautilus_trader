@@ -430,13 +430,21 @@ impl HyperliquidDataClient {
     /// interval is zero. The task is tracked in `self.session_tasks`, so the
     /// cancellation token stops it on disconnect, failed connect, and dispose.
     fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        if let Some(future) = self.instrument_refresh() {
+            self.session_tasks.spawn(future)?;
+        }
+
+        Ok(())
+    }
+
+    fn instrument_refresh(&self) -> Option<impl Future<Output = ()> + Send + 'static> {
         let minutes = self.config.update_instruments_interval_mins;
 
         if minutes == 0 {
             log::debug!(
                 "Hyperliquid instrument refresh disabled (update_instruments_interval_mins=0)"
             );
-            return Ok(());
+            return None;
         }
 
         let interval = Duration::from_secs(minutes.saturating_mul(60));
@@ -450,7 +458,7 @@ impl HyperliquidDataClient {
         let data_sender = self.data_sender.clone();
         let client_id = self.client_id;
 
-        self.session_tasks.spawn(async move {
+        Some(async move {
             log::info!("Hyperliquid instrument refresh started, interval={interval:?}");
 
             loop {
@@ -489,9 +497,7 @@ impl HyperliquidDataClient {
             }
 
             log::debug!("Hyperliquid instrument refresh stopped");
-        })?;
-
-        Ok(())
+        })
     }
 
     async fn spawn_ws(&self) -> anyhow::Result<()> {
@@ -2542,6 +2548,10 @@ async fn request_bars_from_http(
     log::debug!("Fetched {} bars for {}", bars.len(), bar_type);
     Ok(bars)
 }
+
+#[cfg(test)]
+#[path = "../tests/integration/data_client.rs"]
+mod data_client_tests;
 
 #[cfg(test)]
 mod tests {

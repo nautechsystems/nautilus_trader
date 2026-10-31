@@ -22,7 +22,7 @@
 //! Edit the constants below to change the target event, market token, and order size.
 //!
 //! Run with: `cargo run --example polymarket-exec-tester --package nautilus-polymarket --features examples`
-//! The example opens a quote-denominated market BUY and closes its position on stop.
+//! Set `DRY_RUN` to `false` to open a quote-denominated market BUY and close its position on stop.
 //!
 //! Required credential environment variables:
 //! - `POLYMARKET_PK` (EOA signer private key)
@@ -49,9 +49,9 @@ use nautilus_testkit::testers::{ExecTester, ExecTesterConfig};
 use nautilus_trading::strategy::StrategyConfig;
 
 // WARNING: With `DRY_RUN = false`, this tester submits orders to the configured
-// environment and may use real funds. Set `DRY_RUN = true` to connect without
+// environment and may use real funds. Keep `DRY_RUN = true` to connect without
 // submitting orders or sending shutdown cancel/close commands.
-const DRY_RUN: bool = false;
+const DRY_RUN: bool = true;
 const TRADER_ID: &str = "TESTER-001";
 const ACCOUNT_ID: &str = "POLYMARKET-001";
 const NODE_NAME: &str = "POLYMARKET-EXEC-TESTER-001";

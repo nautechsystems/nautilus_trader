@@ -112,14 +112,14 @@ pub use arrow::custom::ensure_custom_data_registered;
 /// Re-exports MsgPack codecs for consumers configuring serialization through this crate.
 pub use nautilus_core::serialization::msgpack;
 
+#[cfg(feature = "python")]
+pub mod python;
+
 #[cfg(feature = "sbe")]
 pub mod sbe;
 
 #[cfg(feature = "sbe")]
 mod numeric;
-
-#[cfg(feature = "python")]
-pub mod python;
 
 /// Generates typed Arrow encoding for custom data.
 #[cfg(feature = "arrow")]

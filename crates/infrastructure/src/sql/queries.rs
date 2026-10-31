@@ -17,7 +17,10 @@ use ahash::AHashMap;
 use nautilus_common::signal::Signal;
 use nautilus_model::{
     accounts::AccountAny,
-    data::{Bar, CustomData, DataType, HasTsInit, InstrumentClose, QuoteTick, TradeTick},
+    data::{
+        Bar, CustomData, DataType, HasTsInit, InstrumentClose, QuoteTick, TradeTick,
+        greeks::{GreeksData, YieldCurve},
+    },
     events::{
         AccountState, OrderEvent, OrderEventAny, OrderFilled, OrderInitialized, OrderSnapshot,
         position::snapshot::PositionSnapshot,
@@ -320,6 +323,76 @@ impl DatabaseQueries {
         .await
         .map(|rows| rows.into_iter().map(|row| row.0).collect())
         .map_err(|e| anyhow::anyhow!("Failed to load instrument closes: {e}"))
+    }
+
+    pub(crate) async fn add_greeks(pool: &PgPool, greeks: &GreeksData) -> anyhow::Result<()> {
+        let value = serde_json::to_value(greeks)?;
+        sqlx::query(
+            "INSERT INTO greeks (instrument_id, value) VALUES ($1, $2) \
+             ON CONFLICT (instrument_id) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(greeks.instrument_id.to_string())
+        .bind(value)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn load_greeks(
+        pool: &PgPool,
+    ) -> anyhow::Result<AHashMap<InstrumentId, GreeksData>> {
+        let rows = sqlx::query("SELECT instrument_id, value FROM greeks")
+            .fetch_all(pool)
+            .await?;
+        let mut greeks = AHashMap::with_capacity(rows.len());
+        for row in rows {
+            let key: String = row.try_get("instrument_id")?;
+            let instrument_id = key.parse::<InstrumentId>()?;
+            let data: GreeksData = serde_json::from_value(row.try_get("value")?)?;
+            anyhow::ensure!(
+                data.instrument_id == instrument_id,
+                "Greeks key ID {instrument_id} did not match payload ID {}",
+                data.instrument_id
+            );
+            greeks.insert(instrument_id, data);
+        }
+
+        Ok(greeks)
+    }
+
+    pub(crate) async fn add_yield_curve(pool: &PgPool, curve: &YieldCurve) -> anyhow::Result<()> {
+        let value = serde_json::to_value(curve)?;
+        sqlx::query(
+            "INSERT INTO yield_curve (curve_name, value) VALUES ($1, $2) \
+             ON CONFLICT (curve_name) DO UPDATE SET value = EXCLUDED.value",
+        )
+        .bind(&curve.curve_name)
+        .bind(value)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    pub(crate) async fn load_yield_curves(
+        pool: &PgPool,
+    ) -> anyhow::Result<AHashMap<String, YieldCurve>> {
+        let rows = sqlx::query("SELECT curve_name, value FROM yield_curve")
+            .fetch_all(pool)
+            .await?;
+        let mut curves = AHashMap::with_capacity(rows.len());
+        for row in rows {
+            let name: String = row.try_get("curve_name")?;
+            let curve: YieldCurve = serde_json::from_value(row.try_get("value")?)?;
+            anyhow::ensure!(
+                curve.curve_name == name,
+                "Yield curve key {name} did not match payload name {}",
+                curve.curve_name
+            );
+            curve.validate()?;
+            curves.insert(name, curve);
+        }
+
+        Ok(curves)
     }
 
     /// Inserts an `OrderInitialized` event via the provided `pool`.

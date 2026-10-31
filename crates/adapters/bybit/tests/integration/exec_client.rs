@@ -102,6 +102,7 @@ struct TestServerState {
     trade_order_ret_code: Arc<AtomicUsize>,
     trade_order_requests: Arc<AtomicUsize>,
     trade_order_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    amend_order_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     trade_order_req_id_present: Arc<AtomicBool>,
     authenticated: Arc<AtomicBool>,
     subscriptions: Arc<tokio::sync::Mutex<Vec<String>>>,
@@ -134,6 +135,7 @@ impl Default for TestServerState {
             trade_order_ret_code: Arc::new(AtomicUsize::new(0)),
             trade_order_requests: Arc::new(AtomicUsize::new(0)),
             trade_order_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            amend_order_payloads: Arc::default(),
             trade_order_req_id_present: Arc::new(AtomicBool::new(false)),
             authenticated: Arc::new(AtomicBool::new(false)),
             subscriptions: Arc::new(tokio::sync::Mutex::new(Vec::new())),
@@ -482,6 +484,17 @@ async fn handle_cancel_order(
     .into_response()
 }
 
+async fn handle_amend_order(
+    State(state): State<TestServerState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> StatusCode {
+    assert!(has_auth_headers(&headers));
+    let payload: Value = serde_json::from_slice(&body).unwrap();
+    state.amend_order_payloads.lock().await.push(payload);
+    StatusCode::NOT_FOUND
+}
+
 async fn handle_cancel_all_orders(
     State(state): State<TestServerState>,
     headers: HeaderMap,
@@ -809,6 +822,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/v5/order/history", get(handle_get_orders_history))
         .route("/v5/execution/list", get(handle_get_executions))
         .route("/v5/order/create", post(handle_post_order))
+        .route("/v5/order/amend", post(handle_amend_order))
         .route("/v5/order/cancel", post(handle_cancel_order))
         .route("/v5/order/cancel-all", post(handle_cancel_all_orders))
         .route("/v5/position/switch-mode", post(handle_switch_mode))
@@ -2478,6 +2492,90 @@ async fn test_exec_client_cancel_all_confirms_cancellations(
         if history { 0 } else { 3 }
     );
     assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::trigger_only(None, None, Some("1732.45"))]
+#[case::combined(Some("0.023"), Some("1741.23"), Some("1732.45"))]
+#[case::limit(Some("0.023"), Some("1741.23"), None)]
+#[tokio::test]
+async fn test_exec_client_modify_order_payload(
+    #[values(true, false)] demo: bool,
+    #[case] quantity: Option<&str>,
+    #[case] price: Option<&str>,
+    #[case] trigger_price: Option<&str>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let config = if demo {
+        create_test_demo_exec_config(addr)
+    } else {
+        create_test_exec_config(addr)
+    };
+
+    let (mut client, mut rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    client.start().unwrap();
+    drain_execution_events(&mut rx).await;
+
+    let cmd = ModifyOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*BYBIT_CLIENT_ID),
+        StrategyId::from("S-001"),
+        InstrumentId::from("ETHUSDT-LINEAR.BYBIT"),
+        ClientOrderId::from("test-amend-trigger"),
+        Some(VenueOrderId::from("open-order-1")),
+        quantity.map(Quantity::from),
+        price.map(Price::from),
+        trigger_price.map(Price::from),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    client.modify_order(cmd).unwrap();
+
+    wait_until_async(
+        || async {
+            if demo {
+                !state.amend_order_payloads.lock().await.is_empty()
+            } else {
+                !state.trade_order_payloads.lock().await.is_empty()
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let mut expected = json!({
+        "category": "linear",
+        "symbol": "ETHUSDT",
+        "orderId": "open-order-1",
+    });
+
+    for (key, value) in [
+        ("qty", quantity),
+        ("price", price),
+        ("triggerPrice", trigger_price),
+    ] {
+        if let Some(value) = value {
+            expected[key] = json!(value);
+        }
+    }
+
+    if demo {
+        assert_eq!(*state.amend_order_payloads.lock().await, vec![expected]);
+        assert_eq!(state.trade_order_requests.load(Ordering::Relaxed), 0);
+    } else {
+        expected["orderLinkId"] = json!("test-amend-trigger");
+        let payloads = state.trade_order_payloads.lock().await;
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["op"], "order.amend");
+        assert_eq!(payloads[0]["args"], json!([expected]));
+        assert!(state.amend_order_payloads.lock().await.is_empty());
+    }
+
     client.disconnect().await.unwrap();
 }
 

@@ -234,7 +234,7 @@ async fn test_live_execution_cancel_on_disconnect() {
     let config = DeriveExecutionClientConfig::builder()
         .environment(environment)
         .wallet_address(credential.wallet_address().to_string())
-        .session_key(credential.session_key().into())
+        .session_key(credential.session_key())
         .subaccount_id(credential.subaccount_id())
         .max_fee_per_contract(dec!(1000))
         .signature_expiry_secs(900)

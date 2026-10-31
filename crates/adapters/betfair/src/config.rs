@@ -64,13 +64,17 @@ fn resolve_credential(
     username: Option<SecretString>,
     password: Option<SecretString>,
     app_key: Option<SecretString>,
+    certs_dir: Option<String>,
 ) -> anyhow::Result<BetfairCredential> {
     match BetfairCredential::resolve(
         username.map(SecretString::into_inner),
         password.map(SecretString::into_inner),
         app_key.map(SecretString::into_inner),
     ) {
-        Ok(Some(credential)) => Ok(credential),
+        Ok(Some(credential)) => Ok(match certs_dir {
+            Some(dir) => credential.with_certs_dir(dir),
+            None => credential,
+        }),
         Ok(None) => anyhow::bail!("Missing Betfair credentials in config and environment"),
         Err(e) => Err(match e {
             CredentialError::MissingPassword => anyhow::anyhow!(
@@ -185,6 +189,8 @@ pub struct BetfairDataClientConfig {
     /// Set to 0 to disable.
     #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
     pub book_snapshot_timeout_secs: u64,
+    /// Directory containing the client certificate and private key for certificate login.
+    pub certs_dir: Option<String>,
 }
 
 #[cfg(feature = "python")]
@@ -212,6 +218,7 @@ nautilus_core::impl_pyo3_config_getters!(BetfairDataClientConfig {
     subscribe_race_data: bool,
     subscribe_cricket_data: bool,
     book_snapshot_timeout_secs: u64,
+    certs_dir: Option<String>,
 });
 
 impl Default for BetfairDataClientConfig {
@@ -237,6 +244,7 @@ impl BetfairDataClientConfig {
             self.username.clone(),
             self.password.clone(),
             self.app_key.clone(),
+            self.certs_dir.clone(),
         )
     }
 
@@ -406,6 +414,8 @@ pub struct BetfairExecutionClientConfig {
     /// comfortably exceed the longest expected reconnect duration.
     #[builder(default = 10)]
     pub stream_gap_recovery_lookback_mins: u64,
+    /// Directory containing the client certificate and private key for certificate login.
+    pub certs_dir: Option<String>,
 }
 
 #[cfg(feature = "python")]
@@ -429,6 +439,7 @@ nautilus_core::impl_pyo3_config_getters!(BetfairExecutionClientConfig {
     reconcile_market_ids: Option<Vec<String>>,
     use_market_version: bool,
     stream_gap_recovery_lookback_mins: u64,
+    certs_dir: Option<String>,
 });
 
 impl Default for BetfairExecutionClientConfig {
@@ -454,6 +465,7 @@ impl BetfairExecutionClientConfig {
             self.username.clone(),
             self.password.clone(),
             self.app_key.clone(),
+            self.certs_dir.clone(),
         )
     }
 
@@ -588,6 +600,35 @@ mod tests {
         ] {
             assert!(!formatted.contains(secret));
         }
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some("/betfair/certs".to_string()))]
+    fn test_config_credentials_attach_certs_dir(#[case] certs_dir: Option<String>) {
+        let data = BetfairDataClientConfig::builder()
+            .username("data-user".into())
+            .password("data-password".into())
+            .app_key("data-key".into())
+            .maybe_certs_dir(certs_dir.clone())
+            .build();
+        let execution = BetfairExecutionClientConfig::builder()
+            .username("execution-user".into())
+            .password("execution-password".into())
+            .app_key("execution-key".into())
+            .maybe_certs_dir(certs_dir.clone())
+            .build();
+        let data_credential = data.credential().unwrap();
+        let execution_credential = execution.credential().unwrap();
+
+        assert_eq!(data_credential.username(), "data-user");
+        assert_eq!(data_credential.password(), "data-password");
+        assert_eq!(data_credential.app_key(), "data-key");
+        assert_eq!(data_credential.certs_dir(), certs_dir.as_deref());
+        assert_eq!(execution_credential.username(), "execution-user");
+        assert_eq!(execution_credential.password(), "execution-password");
+        assert_eq!(execution_credential.app_key(), "execution-key");
+        assert_eq!(execution_credential.certs_dir(), certs_dir.as_deref());
     }
 
     #[rstest]

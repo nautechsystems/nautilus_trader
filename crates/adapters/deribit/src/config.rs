@@ -78,7 +78,8 @@ pub struct DeribitDataClientConfig {
     /// Optional WebSocket authentication timeout (seconds), defaulting to
     /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
     pub auth_timeout_secs: Option<u64>,
-    /// Interval for refreshing instruments (in minutes).
+    /// Interval in minutes for refreshing instruments of the configured product types.
+    /// A zero value disables periodic refresh.
     #[builder(default = 60)]
     pub update_instruments_interval_mins: u64,
     /// If `true`, subscribes for uncached instruments lazy-load via HTTP; otherwise fail fast.

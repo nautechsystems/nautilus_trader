@@ -33,11 +33,10 @@ python = [
   "nautilus-core/python",
   "nautilus-model/python",
   "pyo3",
-  "pyo3-async-runtimes",
   "pyo3-stub-gen",
 ]
 redis = ["dep:redis"]
-postgres = ["dep:sqlx"]
+postgres = ["dep:sqlx", "serde_json/float_roundtrip"]
 
 [package.metadata.docs.rs]
 # Python docs depend on the local pyo3-stub-gen patch for now, which published crates do not carry
@@ -69,7 +68,6 @@ tokio = { workspace = true }
 ustr = { workspace = true }
 
 pyo3 = { workspace = true, optional = true }
-pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 redis = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }

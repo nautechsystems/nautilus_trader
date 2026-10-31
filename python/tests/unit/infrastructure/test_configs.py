@@ -16,15 +16,20 @@
 Test configs behavior.
 """
 
+import pytest
+
+from nautilus_trader import infrastructure
 from nautilus_trader.infrastructure import PostgresCacheConfig
 from nautilus_trader.infrastructure import RedisCacheConfig
+from nautilus_trader.infrastructure import RedisMessageBusConfig
 
 
-def test_redis_cache_config_defaults() -> None:
+@pytest.mark.parametrize("config_type", [RedisCacheConfig, RedisMessageBusConfig])
+def test_redis_config_defaults(config_type) -> None:
     """
-    Test redis cache config defaults.
+    Test Redis backend config defaults.
     """
-    config = RedisCacheConfig()
+    config = config_type()
 
     assert config.host is None
     assert config.port is None
@@ -39,11 +44,12 @@ def test_redis_cache_config_defaults() -> None:
     assert config.factor == 2
 
 
-def test_redis_cache_config_accepts_explicit_kwargs() -> None:
+@pytest.mark.parametrize("config_type", [RedisCacheConfig, RedisMessageBusConfig])
+def test_redis_config_accepts_explicit_kwargs(config_type) -> None:
     """
-    Test redis cache config accepts explicit kwargs.
+    Test Redis backend config accepts explicit kwargs.
     """
-    config = RedisCacheConfig(
+    config = config_type(
         host="redis.example.com",
         port=6380,
         username="user",
@@ -100,3 +106,14 @@ def test_postgres_cache_config_accepts_explicit_kwargs() -> None:
     assert config.username == "user"
     assert config.password == "secret"
     assert config.database == "nautilus"
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["RedisCacheDatabase", "PostgresCacheDatabase", "RedisMessageBusBacking"],
+)
+def test_infrastructure_does_not_expose_concrete_backends(name: str) -> None:
+    """
+    Keep backend operations behind the native factory boundary.
+    """
+    assert not hasattr(infrastructure, name)

@@ -17,6 +17,7 @@
 # Optional env:
 #   ATTESTATION_IDENTITY - expected OIDC identity for GitHub artifact attestations
 #   ATTESTATION_ISSUER   - expected OIDC issuer for GitHub artifact attestations
+#   ATTESTATION_PREDICATE_TYPE - additional publication recovery predicate to document
 set -euo pipefail
 
 if [[ -z "${TAG_NAME:-}" ]]; then
@@ -293,6 +294,16 @@ publish_checksum_assets() {
     printf '  --cert-identity "%s" \\\n' "$attestation_identity"
     printf '  --cert-oidc-issuer %s\n' "$attestation_issuer"
     printf '```\n\n'
+    if [[ -n "${ATTESTATION_PREDICATE_TYPE:-}" ]]; then
+      printf 'For artifacts with publication recovery attestations, select the recovery predicate:\n\n'
+      printf '```bash\n'
+      printf 'gh attestation verify <artifact> \\\n'
+      printf '  --repo %s \\\n' "$GITHUB_REPOSITORY"
+      printf '  --cert-identity "%s" \\\n' "$attestation_identity"
+      printf '  --cert-oidc-issuer %s \\\n' "$attestation_issuer"
+      printf '  --predicate-type "%s"\n' "$ATTESTATION_PREDICATE_TYPE"
+      printf '```\n\n'
+    fi
     printf '<!-- release-checksums:end -->\n'
   } >> "$body_file"
 

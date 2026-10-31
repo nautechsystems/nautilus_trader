@@ -21,9 +21,11 @@
 //! tests pass bogus credentials that still sign with a valid EC key pair.
 
 use std::{
+    cell::RefCell,
     collections::{HashMap, HashSet, VecDeque},
     net::SocketAddr,
     path::PathBuf,
+    rc::Rc,
     sync::Arc,
     time::Duration,
 };
@@ -53,6 +55,7 @@ use nautilus_coinbase::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    clock::VirtualClock,
     live::runner::replace_exec_event_sender,
     messages::{
         ExecutionEvent,
@@ -63,18 +66,23 @@ use nautilus_common::{
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
-use nautilus_live::ExecutionClientCore;
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
+use nautilus_live::{
+    ExecutionClientCore,
+    manager::{ExecutionManager, ExecutionManagerConfig},
+};
 use nautilus_model::{
+    accounts::{AccountAny, CashAccount},
     enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce},
-    events::OrderEventAny,
+    events::{AccountState, OrderEventAny},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
+        TradeId, TraderId, VenueOrderId,
     },
-    instruments::InstrumentAny,
-    orders::{Order, OrderList, builder::OrderTestBuilder},
-    types::{Price, Quantity},
+    instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
+    orders::{Order, OrderList, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    position::Position,
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
 use parking_lot::Mutex;
@@ -1978,6 +1986,95 @@ async fn test_exec_client_position_reports_margin_single_hits_scoped_endpoint() 
         1
     );
     assert!(state.requests_for("/cfm/positions").is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_position_check_preserves_spot_position_without_reports() {
+    let (client, _rx, cache) =
+        make_exec_client_with_events_and_cache("127.0.0.1:1".parse().unwrap(), AccountType::Cash);
+    let mut pair = currency_pair_btcusdt();
+    pair.id = InstrumentId::from("BTC-USD.COINBASE");
+    pair.quote_currency = Currency::USD();
+    let instrument = InstrumentAny::CurrencyPair(pair);
+
+    let account_state = AccountState::new(
+        client.account_id(),
+        AccountType::Cash,
+        vec![AccountBalance::new(
+            Money::from("100000 USD"),
+            Money::from("0 USD"),
+            Money::from("100000 USD"),
+        )],
+        vec![],
+        true,
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        None,
+    );
+    cache
+        .borrow_mut()
+        .add_account(AccountAny::Cash(CashAccount::new(
+            account_state,
+            true,
+            false,
+        )))
+        .unwrap();
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1.000000"))
+        .build();
+    let position_id = PositionId::from("P-SPOT-RETAINED");
+    let fill = TestOrderEventStubs::filled(
+        &order,
+        &instrument,
+        Some(TradeId::from("T-SPOT-OPEN")),
+        Some(position_id),
+        Some(Price::from("50000.00")),
+        None,
+        None,
+        None,
+        None,
+        Some(client.account_id()),
+    );
+    let position = Position::new(&instrument, fill.into());
+    cache.borrow_mut().add_instrument(instrument).unwrap();
+    cache
+        .borrow_mut()
+        .add_position(&position, OmsType::Hedging)
+        .unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+    let mut manager = ExecutionManager::new(
+        clock,
+        cache.clone(),
+        ExecutionManagerConfig {
+            position_check_threshold_ns: DurationNanos::ZERO,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let mut events = Vec::new();
+    for _ in 0..2 {
+        events.extend(manager.check_positions_consistency(&[&client]).await);
+    }
+
+    assert!(
+        events.is_empty(),
+        "Unexpected reconciliation events: {events:?}"
+    );
+    let cache = cache.borrow();
+    assert!(cache.orders_refs(None, None, None, None, None).is_empty());
+    assert_eq!(cache.positions_open(None, None, None, None, None).len(), 1);
+    let retained = cache.position(&position_id).unwrap();
+    assert_eq!(retained.quantity, position.quantity);
+    assert_eq!(retained.signed_decimal_qty(), position.signed_decimal_qty());
+    assert_eq!(retained.side, position.side);
+    assert_eq!(retained.avg_px_open, position.avg_px_open);
+    assert_eq!(retained.event_count(), position.event_count());
 }
 
 // Cash clients have no positions: the exec client's fast-path must return

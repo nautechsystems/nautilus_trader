@@ -25,6 +25,7 @@ use nautilus_network::{
     RECONNECTED,
     backoff::ExponentialBackoff,
     dst::net::TcpListener,
+    http::{HttpClient, HttpClientError},
     websocket::{
         WebSocketClient, WebSocketConfig, config::TransportBackend, types::channel_message_handler,
     },
@@ -157,4 +158,16 @@ fn jitter_restarts_with_runtime_seed() {
     };
 
     assert_eq!(sample(), sample());
+}
+
+#[rstest::rstest]
+fn http_client_certificates_are_rejected_under_simulation() {
+    let result = HttpClient::builder()
+        .certs_dir("nonexistent-certificates".to_string())
+        .build();
+
+    assert!(
+        matches!(result, Err(HttpClientError::ClientBuildError(message))
+        if message == "HTTP client certificates are unsupported under simulation")
+    );
 }

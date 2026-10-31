@@ -108,8 +108,7 @@ pub struct DataTesterConfig {
     /// Whether to request historical quotes.
     #[builder(default = false)]
     pub request_quotes: bool,
-    // TODO: Support request_trades when historical data requests are available
-    /// Whether to request historical trades (not yet implemented).
+    /// Whether to request historical trades.
     #[builder(default = false)]
     pub request_trades: bool,
     /// Whether to request historical bars.

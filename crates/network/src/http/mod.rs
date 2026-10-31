@@ -83,14 +83,14 @@ pub mod client;
 pub mod error;
 pub mod types;
 
+mod stream;
+
 #[cfg(not(all(feature = "simulation", madsim)))]
 mod connector;
 #[cfg(all(feature = "simulation", madsim))]
 mod simulation;
 #[cfg(not(all(feature = "simulation", madsim)))]
 mod transport;
-
-mod stream;
 
 #[cfg(all(test, not(all(feature = "simulation", madsim))))]
 mod tests;

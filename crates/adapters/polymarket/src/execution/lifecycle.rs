@@ -404,6 +404,7 @@ impl PolymarketExecutionClient {
             self.clock,
             self.config.signature_type,
             &self.collateral_locks,
+            &self.settlement,
         )
         .await
     }
@@ -519,11 +520,12 @@ impl PolymarketExecutionClient {
                             let http = http_client.clone();
                             let emit = emitter.clone();
                             let reservations = collateral_locks.clone();
+                            let settlement = settlement.clone();
                             let session_spawner = session_spawner.clone();
 
                             let future = async move {
                                 match fetch_and_emit_account_state(
-                                    &http, &emit, clock, signature_type, &reservations,
+                                    &http, &emit, clock, signature_type, &reservations, &settlement,
                                 )
                                 .await
                                 {
@@ -557,8 +559,9 @@ impl PolymarketExecutionClient {
                         let http = http_client.clone();
                         let emit = emitter.clone();
                         let reservations = collateral_locks.clone();
+                        let settlement = settlement.clone();
                         let future = async move {
-                            match fetch_and_emit_account_state(&http, &emit, clock, signature_type, &reservations)
+                            match fetch_and_emit_account_state(&http, &emit, clock, signature_type, &reservations, &settlement)
                                 .await
                             {
                                 Ok(()) => {
@@ -711,6 +714,7 @@ impl PolymarketExecutionClient {
                         clock,
                         signature_type,
                         &collateral_locks,
+                        &settlement,
                     )
                     .await
                 {
@@ -3127,7 +3131,10 @@ mod tests {
         let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
 
         let apply = |client: &PolymarketExecutionClient, total: &str, now: u64| {
-            let ticket = client.collateral_locks.lock().begin_refresh();
+            let ticket = client
+                .collateral_locks
+                .lock()
+                .begin_refresh(&client.settlement);
             match client
                 .collateral_locks
                 .lock()
@@ -3205,7 +3212,10 @@ mod tests {
         let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
 
         let apply = |client: &PolymarketExecutionClient, total: &str, now: u64| {
-            let ticket = client.collateral_locks.lock().begin_refresh();
+            let ticket = client
+                .collateral_locks
+                .lock()
+                .begin_refresh(&client.settlement);
             match client
                 .collateral_locks
                 .lock()
@@ -3236,7 +3246,10 @@ mod tests {
         );
         cache.borrow_mut().update_order(&filled).unwrap();
         publish_order_event(topic, &filled);
-        let stale = client.collateral_locks.lock().begin_refresh();
+        let stale = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
 
         client.load_orders_from_cache();
         let discarded = client
@@ -3289,7 +3302,10 @@ mod tests {
             }],
         });
 
-        let ticket = client.collateral_locks.lock().begin_refresh();
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
         client
             .collateral_locks
             .lock()
@@ -3314,7 +3330,10 @@ mod tests {
             msgbus::switchboard::get_event_order_topic(StrategyId::from("S-001")),
             &filled,
         );
-        let ticket = client.collateral_locks.lock().begin_refresh();
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
 
         let after_fill = match client
             .collateral_locks
@@ -3369,7 +3388,10 @@ mod tests {
             .settlement
             .build_fill_report("REPORT-BUY", &leg, UnixNanos::from(1))
             .unwrap();
-        let ticket = client.collateral_locks.lock().begin_refresh();
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
         client
             .collateral_locks
             .lock()
@@ -3399,7 +3421,10 @@ mod tests {
             msgbus::switchboard::get_event_order_topic(StrategyId::from("S-001")),
             &filled,
         );
-        let ticket = client.collateral_locks.lock().begin_refresh();
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
 
         let after_fill = match client
             .collateral_locks
@@ -3439,7 +3464,10 @@ mod tests {
             .add_instrument(instrument.clone())
             .unwrap();
         client.ensure_order_event_subscription();
-        let ticket = client.collateral_locks.lock().begin_refresh();
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
 
         let baseline = match client
             .collateral_locks
@@ -3469,7 +3497,10 @@ mod tests {
             msgbus::switchboard::get_event_order_topic(StrategyId::from("S-001")),
             &fill,
         );
-        let ticket = client.collateral_locks.lock().begin_refresh();
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
 
         let after_sell = match client
             .collateral_locks
@@ -3694,7 +3725,10 @@ mod tests {
 
         client.reset_client();
 
-        let ticket = client.collateral_locks.lock().begin_refresh();
+        let ticket = client
+            .collateral_locks
+            .lock()
+            .begin_refresh(&client.settlement);
 
         let balance = match client
             .collateral_locks

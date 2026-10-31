@@ -202,9 +202,9 @@ impl Credential {
         api_secret: Option<SecretString>,
         passphrase: Option<SecretString>,
     ) -> Result<Self> {
-        let key = resolve_secret(api_key, API_KEY_VAR)?;
-        let secret = resolve_secret(api_secret, API_SECRET_VAR)?;
-        let pass = resolve_secret(passphrase, PASSPHRASE_VAR)?;
+        let key = resolve_secret(api_key, "api_key", API_KEY_VAR)?;
+        let secret = resolve_secret(api_secret, "api_secret", API_SECRET_VAR)?;
+        let pass = resolve_secret(passphrase, "passphrase", PASSPHRASE_VAR)?;
 
         Self::new(key, secret, pass)
     }
@@ -256,7 +256,8 @@ impl RelayerApiKey {
     ///
     /// Returns an error if either value is missing or invalid.
     pub fn resolve(key: Option<SecretString>, address: Option<String>) -> Result<Self> {
-        let key = resolve_secret(key, RELAYER_API_KEY_VAR)?;
+        let key = key.filter(|value| !value.expose_secret().trim().is_empty());
+        let key = resolve_secret(key, "relayer_api_key", RELAYER_API_KEY_VAR)?;
 
         let address = match address.filter(|value| !value.trim().is_empty()) {
             Some(address) => address,
@@ -347,13 +348,21 @@ impl Secrets {
         passphrase: Option<SecretString>,
         funder: Option<String>,
     ) -> Result<Self> {
-        let pk_str = resolve_secret(private_key, PRIVATE_KEY_VAR)?;
+        let pk_str = resolve_secret(private_key, "private_key", PRIVATE_KEY_VAR)?;
 
         let private_key = EvmPrivateKey::new(pk_str.expose_secret())?;
         let credential = Credential::resolve(api_key, api_secret, passphrase)?;
 
-        let funder = get_or_env_var_opt(funder.filter(|s| !s.trim().is_empty()), FUNDER_VAR)
-            .filter(|s| !s.trim().is_empty());
+        validate_env_override(funder.as_deref(), "funder", FUNDER_VAR)?;
+
+        let funder = get_or_env_var_opt(funder, FUNDER_VAR)
+            .filter(|s| !s.trim().is_empty())
+            .map(|value| {
+                Address::from_str(value.trim())
+                    .map(|address| format!("{address:#x}"))
+                    .map_err(|e| Error::bad_request(format!("Invalid funder address: {e}")))
+            })
+            .transpose()?;
 
         let key_hex = private_key
             .as_hex()
@@ -383,14 +392,30 @@ impl Secrets {
     }
 }
 
-fn resolve_secret(value: Option<SecretString>, env_var: &str) -> Result<SecretString> {
-    if let Some(value) = value.filter(|value| !value.expose_secret().trim().is_empty()) {
+fn resolve_secret(value: Option<SecretString>, field: &str, env_var: &str) -> Result<SecretString> {
+    validate_env_override(
+        value.as_ref().map(SecretString::expose_secret),
+        field,
+        env_var,
+    )?;
+
+    if let Some(value) = value {
         return Ok(value);
     }
 
     get_or_env_var(None, env_var)
         .map(SecretString::from)
         .map_err(|_| Error::bad_request(format!("{env_var} environment variable is not set")))
+}
+
+pub(crate) fn validate_env_override(value: Option<&str>, field: &str, env_var: &str) -> Result<()> {
+    if value.is_some_and(|value| value.trim().is_empty()) {
+        return Err(Error::bad_request(format!(
+            "{field} must not be blank; omit it or pass None to use {env_var}"
+        )));
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -645,5 +670,37 @@ mod tests {
             RelayerApiKey::new("".into(), "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266").is_err()
         );
         assert!(RelayerApiKey::new("key".into(), "not-an-address").is_err());
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case(" \t")]
+    fn blank_override_never_falls_back(#[case] blank: &str) {
+        let error = resolve_secret(Some(blank.into()), "private_key", "POLYMARKET_PK").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "bad request: private_key must not be blank; omit it or pass None to use POLYMARKET_PK"
+        );
+    }
+
+    #[rstest]
+    fn explicit_override_does_not_require_environment() {
+        let resolved = resolve_secret(
+            Some("explicit-value".into()),
+            "api_key",
+            "POLYMARKET_CONFIG_TEST_MISSING_VARIABLE",
+        )
+        .unwrap();
+        assert_eq!(resolved.expose_secret(), "explicit-value");
+    }
+
+    #[rstest]
+    fn omitted_override_requires_environment() {
+        let error =
+            resolve_secret(None, "api_key", "POLYMARKET_CONFIG_TEST_MISSING_VARIABLE").unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "bad request: POLYMARKET_CONFIG_TEST_MISSING_VARIABLE environment variable is not set"
+        );
     }
 }

@@ -39,7 +39,7 @@ use nautilus_model::{
     reports::FillReport,
     types::Money,
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
@@ -585,6 +585,15 @@ impl SettlementRegistry {
         self.inner.lock().settled_on_arrival.contains(trade_id)
     }
 
+    /// Locks settlement authority until the returned view is dropped.
+    ///
+    /// Acquire collateral locks first when using the view to release spend.
+    pub(crate) fn confirmed_fills(&self) -> ConfirmedFills<'_> {
+        ConfirmedFills {
+            inner: self.inner.lock(),
+        }
+    }
+
     /// Returns whether the trade reached a confirmed settlement (stream or REST).
     ///
     /// A hard fault does not clear this outcome. Terminal bookkeeping uses
@@ -948,6 +957,33 @@ impl TakerFeeBasisLookup for SettlementRegistry {
                 .find(|leg| &leg.venue_order_id == venue_order_id)
                 .and_then(|leg| leg.taker_fee_basis)
         })
+    }
+}
+
+/// A synchronized view of fill confirmations that blocks settlement changes until dropped.
+#[derive(Debug)]
+pub(crate) struct ConfirmedFills<'a> {
+    inner: MutexGuard<'a, RegistryInner>,
+}
+
+impl ConfirmedFills<'_> {
+    /// Returns whether a fill belongs to confirmed settlement with no retained fault.
+    pub(crate) fn contains(&self, trade_id: &TradeId) -> bool {
+        if self.inner.client_fault.is_some() {
+            return false;
+        }
+
+        self.inner
+            .leg_trade_ids
+            .get(trade_id)
+            .and_then(|key| self.inner.records.get(key))
+            .is_some_and(|record| {
+                record.hard_fault.is_none()
+                    && matches!(
+                        record.settlement,
+                        SettlementState::StreamConfirmed | SettlementState::RestConfirmed
+                    )
+            })
     }
 }
 
@@ -1753,6 +1789,78 @@ pub(crate) mod tests {
             status,
             legs,
         }
+    }
+
+    #[rstest]
+    #[case::confirmed(PolymarketTradeStatus::Confirmed, true)]
+    #[case::matched(PolymarketTradeStatus::Matched, false)]
+    #[case::failed(PolymarketTradeStatus::Failed, false)]
+    fn fill_confirmation_uses_the_bound_venue_trade(
+        #[case] status: PolymarketTradeStatus,
+        #[case] expected: bool,
+        #[values(false, true)] rest: bool,
+    ) {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker");
+        registry.note_order_submitted(leg.venue_order_id);
+        let evidence = trade(status, vec![leg.clone()]);
+        if rest {
+            registry.admit_rest_result(&evidence);
+        } else {
+            registry.admit_stream_trade(&evidence);
+        }
+
+        let confirmed = registry.confirmed_fills();
+
+        assert_eq!(confirmed.contains(&leg.trade_id), expected);
+        assert!(!confirmed.contains(&TradeId::from("UNKNOWN")));
+    }
+
+    #[rstest]
+    fn fill_confirmation_withdraws_authority_on_faults(#[values(false, true)] client_fault: bool) {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker");
+        registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![leg.clone()]));
+        assert!(registry.confirmed_fills().contains(&leg.trade_id));
+
+        if client_fault {
+            force_client_fault(&registry, "capacity exhausted");
+        } else {
+            force_trade_fault(&registry, TRADE, "contradictory evidence");
+        }
+
+        assert!(!registry.confirmed_fills().contains(&leg.trade_id));
+    }
+
+    #[rstest]
+    fn fill_confirmation_blocks_faults_until_release(#[values(false, true)] client_fault: bool) {
+        let registry = live_registry();
+        let leg = maker_leg("0xmaker");
+        registry.admit_rest_result(&trade(PolymarketTradeStatus::Confirmed, vec![leg.clone()]));
+        std::thread::scope(|scope| {
+            let confirmed = registry.confirmed_fills();
+            let (attempted, attempt) = std::sync::mpsc::sync_channel(0);
+            let registry = &registry;
+            let fault = scope.spawn(move || {
+                attempted.send(registry.inner.try_lock().is_none()).unwrap();
+                if client_fault {
+                    force_client_fault(registry, "capacity exhausted");
+                } else {
+                    force_trade_fault(registry, TRADE, "contradictory evidence");
+                }
+            });
+
+            assert!(
+                attempt
+                    .recv_timeout(std::time::Duration::from_secs(5))
+                    .unwrap()
+            );
+            assert!(confirmed.contains(&leg.trade_id));
+            drop(confirmed);
+            fault.join().unwrap();
+        });
+
+        assert!(!registry.confirmed_fills().contains(&leg.trade_id));
     }
 
     fn applied_fill(leg: &AdmittedLeg, venue_trade_id: Option<&str>) -> OrderFilled {

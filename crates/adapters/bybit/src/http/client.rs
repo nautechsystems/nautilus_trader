@@ -72,6 +72,7 @@ use super::{
         BybitSubMembersResponse, BybitSwitchModeResponse, BybitTickerData, BybitTickerOption,
         BybitTickersOptionResponse, BybitTradeHistoryResponse, BybitTradesResponse,
         BybitUpdateMasterApiResponse, BybitUpdateSubApiResponse, BybitWalletBalanceResponse,
+        BybitWithdrawResponse, BybitWithdrawalRecord, BybitWithdrawalRecordsResponse,
     },
     query::{
         BybitAmendOrderParamsBuilder, BybitBatchAmendOrderEntryBuilder,
@@ -87,6 +88,7 @@ use super::{
         BybitSubApiKeysParams, BybitSubMembersPageParams, BybitSwitchModeParamsBuilder,
         BybitTickersParams, BybitTradeHistoryParams, BybitTradesParams, BybitTradesParamsBuilder,
         BybitUpdateMasterApiParams, BybitUpdateSubApiParams, BybitWalletBalanceParams,
+        BybitWithdrawParams, BybitWithdrawalRecordsParams,
     },
 };
 use crate::common::{
@@ -537,6 +539,31 @@ impl BybitRawHttpClient {
         body: Option<Vec<u8>>,
         authenticate: bool,
     ) -> Result<T, BybitHttpError> {
+        self.dispatch(method, endpoint, params, body, authenticate, true)
+            .await
+    }
+
+    async fn send_request_once<T: DeserializeOwned + BybitResponseCheck, P: Serialize>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        params: Option<&P>,
+        body: Option<Vec<u8>>,
+        authenticate: bool,
+    ) -> Result<T, BybitHttpError> {
+        self.dispatch(method, endpoint, params, body, authenticate, false)
+            .await
+    }
+
+    async fn dispatch<T: DeserializeOwned + BybitResponseCheck, P: Serialize>(
+        &self,
+        method: Method,
+        endpoint: &str,
+        params: Option<&P>,
+        body: Option<Vec<u8>>,
+        authenticate: bool,
+        retry: bool,
+    ) -> Result<T, BybitHttpError> {
         let endpoint = endpoint.to_string();
         let url = format!("{}{endpoint}", self.base_url);
         let method_clone = method.clone();
@@ -652,6 +679,8 @@ impl BybitRawHttpClient {
             }
         };
 
+        let should_retry = |e: &BybitHttpError| retry && should_retry_http(e);
+
         let create_error = |error: RetryError| -> BybitHttpError {
             match error {
                 RetryError::Canceled => {
@@ -664,12 +693,7 @@ impl BybitRawHttpClient {
         let token = self.cancellation_token();
 
         self.retry_manager
-            .invocation(
-                endpoint.as_str(),
-                operation,
-                should_retry_http,
-                create_error,
-            )
+            .invocation(endpoint.as_str(), operation, should_retry, create_error)
             .cancellation_token(&token)
             .execute()
             .await
@@ -1551,6 +1575,97 @@ impl BybitRawHttpClient {
         }
 
         result
+    }
+
+    /// Withdraws coins from the account.
+    ///
+    /// Retries only when `request_id` is set.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The API key lacks withdrawal permission or is not a master UID key.
+    /// - The address is not in the account's withdrawal address book.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw>
+    pub async fn withdraw(
+        &self,
+        params: &BybitWithdrawParams,
+    ) -> Result<BybitWithdrawResponse, BybitHttpError> {
+        let body = serde_json::to_vec(params)?;
+        let endpoint = "/v5/asset/withdraw/create";
+
+        if params.request_id.is_some() {
+            self.send_request::<_, ()>(Method::POST, endpoint, None, Some(body), true)
+                .await
+        } else {
+            self.send_request_once::<_, ()>(Method::POST, endpoint, None, Some(body), true)
+                .await
+        }
+    }
+
+    /// Fetches withdrawal records.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - Credentials are missing.
+    /// - The request fails.
+    /// - The response cannot be parsed.
+    ///
+    /// # References
+    ///
+    /// - <https://bybit-exchange.github.io/docs/v5/asset/withdraw/withdraw-record>
+    pub async fn get_withdrawal_records(
+        &self,
+        params: &BybitWithdrawalRecordsParams,
+    ) -> Result<BybitWithdrawalRecordsResponse, BybitHttpError> {
+        self.send_request(
+            Method::GET,
+            "/v5/asset/withdraw/query-record",
+            Some(params),
+            None,
+            true,
+        )
+        .await
+    }
+
+    /// Fetches every page of withdrawal records matching `params` and returns
+    /// the flattened list. Walks the cursor until Bybit signals end-of-pages.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any page request fails or the response cannot be parsed.
+    pub async fn fetch_all_withdrawal_records(
+        &self,
+        params: &BybitWithdrawalRecordsParams,
+    ) -> Result<Vec<BybitWithdrawalRecord>, BybitHttpError> {
+        let mut params = params.clone();
+        let mut records = Vec::new();
+        let mut cursor_walk = CursorWalk::default();
+
+        loop {
+            let mut page = self.get_withdrawal_records(&params).await?;
+            records.append(&mut page.result.rows);
+
+            let next = cursor_walk
+                .advance(
+                    "/v5/asset/withdraw/query-record",
+                    page.result.next_page_cursor.take(),
+                )
+                .map_err(|e| BybitHttpError::ValidationError(e.to_string()))?;
+
+            match next {
+                Some(c) => params.cursor = Some(c),
+                None => break,
+            }
+        }
+
+        Ok(records)
     }
 
     /// Fetches tickers for market data.
@@ -3004,6 +3119,7 @@ impl BybitHttpClient {
         venue_order_id: Option<VenueOrderId>,
         quantity: Option<Quantity>,
         price: Option<Price>,
+        trigger_price: Option<Price>,
     ) -> anyhow::Result<OrderStatusReport> {
         let instrument = self.instrument_from_cache(&instrument_id.symbol)?;
         let bybit_symbol = BybitSymbol::new(instrument_id.symbol.as_str())?;
@@ -3025,6 +3141,10 @@ impl BybitHttpClient {
 
         if let Some(price) = price {
             amend_entry.price(Some(price.to_string()));
+        }
+
+        if let Some(trigger_price) = trigger_price {
+            amend_entry.trigger_price(Some(trigger_price.to_string()));
         }
 
         let amend_entry = amend_entry.build().build_anyhow()?;

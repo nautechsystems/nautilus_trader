@@ -142,13 +142,13 @@ use crate::{
 pub mod builder;
 pub mod config;
 
-#[cfg(feature = "plugin")]
-pub mod plugin;
-
 mod metrics;
 mod queue;
 mod reconciliation;
 mod state;
+
+#[cfg(feature = "plugin")]
+pub mod plugin;
 
 use builder::ExternalMessageBusIngress;
 pub use builder::LiveNodeBuilder;
@@ -6465,7 +6465,9 @@ mod tests {
     #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
     async fn test_batch_cancel_command_registers_each_child_for_inflight_timeout() {
         use nautilus_common::messages::execution::{BatchCancelOrders, CancelOrder};
-        use nautilus_model::{events::OrderPendingCancel, identifiers::ClientOrderId};
+        use nautilus_model::{
+            events::order::spec::OrderPendingCancelSpec, identifiers::ClientOrderId,
+        };
 
         let config = LiveNodeConfig {
             exec_engine: crate::config::LiveExecutionEngineConfig {
@@ -6508,18 +6510,16 @@ mod tests {
             // event (not a Submitted-order rejection).
             let submitted = TestOrderEventStubs::submitted(&order, account_id);
             let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
-            let pending_cancel = OrderEventAny::PendingCancel(OrderPendingCancel::new(
-                trader_id,
-                strategy_id,
-                instrument_id,
-                client_order_id,
-                Some(account_id),
-                UUID4::new(),
-                UnixNanos::default(),
-                UnixNanos::default(),
-                false,
-                Some(venue_order_id),
-            ));
+            let pending_cancel = OrderEventAny::PendingCancel(
+                OrderPendingCancelSpec::builder()
+                    .trader_id(trader_id)
+                    .strategy_id(strategy_id)
+                    .instrument_id(instrument_id)
+                    .client_order_id(client_order_id)
+                    .account_id(account_id)
+                    .venue_order_id(venue_order_id)
+                    .build(),
+            );
             let mut cache = node.kernel.cache.borrow_mut();
             cache.add_order(order, None, None, false).unwrap();
             cache.update_order(&submitted).unwrap();

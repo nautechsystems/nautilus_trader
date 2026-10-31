@@ -21,6 +21,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
+    cache::InstrumentLookupError,
     clients::ExecutionClient,
     live::runner::get_exec_event_sender,
     messages::execution::{
@@ -43,7 +44,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType, TimeInForce},
     events::OrderEventAny,
-    identifiers::{AccountId, ClientId, Venue},
+    identifiers::{AccountId, ClientId, InstrumentId, Venue},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance},
@@ -52,11 +53,15 @@ use serde::Serialize;
 
 use crate::{
     common::{
+        capabilities::validate_order,
         consts::{DERIBIT_VENUE, DERIBIT_WS_HEARTBEAT_SECS},
         enums::resolve_trigger_type,
     },
     config::DeribitExecutionClientConfig,
-    http::{client::DeribitHttpClient, models::DeribitCurrency, query::GetOrderStateParams},
+    http::{
+        client::DeribitHttpClient, error::DeribitHttpError, models::DeribitCurrency,
+        query::GetOrderStateParams,
+    },
     websocket::{
         auth::DERIBIT_EXECUTION_SESSION_NAME,
         client::DeribitWebSocketClient,
@@ -241,7 +246,14 @@ impl DeribitExecutionClient {
     }
 
     // Rejects unsupported order types, time-in-force values, and params without exact JSON numbers
-    fn build_order_params(order: &dyn Order) -> anyhow::Result<DeribitOrderParams> {
+    fn build_order_params(&self, order: &dyn Order) -> anyhow::Result<DeribitOrderParams> {
+        let instrument_id = order.instrument_id();
+        let instrument = self
+            .http_client
+            .get_instrument(&instrument_id.symbol.inner())
+            .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+        validate_order(&instrument, order)?;
+
         let order_type = match order.order_type() {
             OrderType::Limit => "limit",
             OrderType::Market => "market",
@@ -600,43 +612,29 @@ impl ExecutionClient for DeribitExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        // If venue_order_id is provided, fetch the specific order by ID
-        if let Some(venue_order_id) = &cmd.venue_order_id {
+        let report = if let Some(venue_order_id) = &cmd.venue_order_id {
             let params = GetOrderStateParams {
                 order_id: venue_order_id.to_string(),
             };
             let ts_init = self.clock.get_time_ns();
 
-            match self.http_client.inner.get_order_state(params).await {
-                Ok(response) => {
-                    if let Some(order) = response.result {
-                        let symbol = order.instrument_name;
-                        if let Some(instrument) = self.http_client.get_instrument(&symbol) {
-                            let report = parse_user_order_msg(
-                                &order,
-                                &instrument,
-                                self.core.account_id,
-                                ts_init,
-                            )?;
-                            return Ok(Some(report));
-                        } else {
-                            log::warn!(
-                                "Instrument {} not in cache for order {}",
-                                order.instrument_name,
-                                order.order_id
-                            );
-                        }
-                    }
-                }
-                Err(e) => {
-                    log::warn!("Failed to get order state: {e}");
-                }
-            }
-            return Ok(None);
-        }
+            let response = match self.http_client.inner.get_order_state(params).await {
+                Ok(response) => response,
+                Err(DeribitHttpError::DeribitError {
+                    error_code: 10004, ..
+                }) => return Ok(None),
+                Err(e) => return Err(e.into()),
+            };
 
-        // If client_order_id is provided, search open then closed orders
-        if let Some(client_order_id) = &cmd.client_order_id {
+            let order = response.result.context("missing order state result")?;
+            let instrument_id = InstrumentId::new(order.instrument_name.into(), *DERIBIT_VENUE);
+            let instrument = self
+                .http_client
+                .get_instrument(&order.instrument_name)
+                .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+
+            parse_user_order_msg(&order, &instrument, self.core.account_id, ts_init)?
+        } else if let Some(client_order_id) = &cmd.client_order_id {
             let reports = self
                 .http_client
                 .request_order_status_reports(
@@ -644,19 +642,37 @@ impl ExecutionClient for DeribitExecutionClient {
                     cmd.instrument_id,
                     None,
                     None,
-                    false, // search all orders, not just open
+                    false, // Search all orders, not just open
                 )
                 .await?;
 
-            // Filter by client_order_id
-            for report in reports {
-                if report.client_order_id == Some(*client_order_id) {
-                    return Ok(Some(report));
-                }
-            }
-        }
+            // Bulk reports can omit orders outside the cached products or venue history window
+            reports
+                .into_iter()
+                .find(|report| report.client_order_id == Some(*client_order_id))
+                .context("order lookup by client order ID was inconclusive")?
+        } else {
+            anyhow::bail!("Order lookup requires a client order ID or venue order ID");
+        };
 
-        Ok(None)
+        // External orders can lack a venue label after Nautilus assigns a client order ID
+        anyhow::ensure!(
+            cmd.instrument_id
+                .is_none_or(|id| report.instrument_id == id)
+                && report
+                    .client_order_id
+                    .zip(cmd.client_order_id)
+                    .is_none_or(|(reported, queried)| reported == queried)
+                && cmd
+                    .venue_order_id
+                    .is_none_or(|id| report.venue_order_id == id),
+            "Order status report identity does not match query: instrument_id={}, client_order_id={:?}, venue_order_id={}",
+            report.instrument_id,
+            report.client_order_id,
+            report.venue_order_id,
+        );
+
+        Ok(Some(report))
     }
 
     async fn generate_order_status_reports(
@@ -816,7 +832,7 @@ impl ExecutionClient for DeribitExecutionClient {
             return Ok(());
         }
 
-        let params = Self::build_order_params(&order)?;
+        let params = self.build_order_params(&order)?;
         self.emitter.try_emit_order_submitted(&order)?;
         self.spawn_order_submit(&order, params, "submit_order");
         Ok(())
@@ -844,7 +860,7 @@ impl ExecutionClient for DeribitExecutionClient {
 
         let params = orders
             .iter()
-            .map(|order| Self::build_order_params(order))
+            .map(|order| self.build_order_params(order))
             .collect::<anyhow::Result<Vec<_>>>()?;
 
         for order in &orders {
@@ -1247,17 +1263,207 @@ mod tests {
     };
     use nautilus_core::UUID4;
     use nautilus_model::{
-        enums::{LiquiditySide, OrderSide, OrderStatus},
+        enums::{LiquiditySide, OrderSide, OrderStatus, TriggerType},
         events::{OrderDenied, OrderFilled},
         identifiers::{
             ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId, VenueOrderId,
         },
+        instruments::InstrumentAny,
         orders::{OrderList, OrderTestBuilder},
         types::{Currency, Money, Price, Quantity},
     };
     use rstest::rstest;
 
     use super::*;
+    use crate::{
+        common::{parse::parse_deribit_instrument_any, testing::routed_spot_instrument},
+        http::models::{DeribitInstrument, DeribitJsonRpcResponse},
+    };
+
+    #[rstest]
+    #[case(OrderType::Limit, TimeInForce::Gtc, true)]
+    #[case(OrderType::Limit, TimeInForce::Ioc, false)]
+    #[case(OrderType::Limit, TimeInForce::Fok, false)]
+    #[case(OrderType::Market, TimeInForce::Ioc, false)]
+    #[case(OrderType::StopLimit, TimeInForce::Gtc, false)]
+    fn routed_spot_supported_order_params(
+        #[case] order_type: OrderType,
+        #[case] tif: TimeInForce,
+        #[case] post_only: bool,
+    ) {
+        let (client, _, _) = submission_test_rig(TimeInForce::Gtc);
+        let instrument = routed_spot_instrument();
+        client.http_client.cache_instruments(&[instrument]);
+        let order = OrderTestBuilder::new(order_type)
+            .instrument_id(InstrumentId::from("BTC_USDC.DERIBIT"))
+            .quantity(Quantity::from("0.0042"))
+            .price(Price::from("45000.25"))
+            .trigger_price(Price::from("46000.50"))
+            .trigger_type(TriggerType::LastPrice)
+            .time_in_force(tif)
+            .post_only(post_only)
+            .build();
+        let params = client.build_order_params(&order).unwrap();
+
+        assert_eq!(params.instrument_name, "BTC_USDC");
+        assert_eq!(
+            params.amount,
+            rust_decimal::Decimal::from_str_exact("0.0042").unwrap()
+        );
+        assert_eq!(
+            params.order_type,
+            match order_type {
+                OrderType::Limit => "limit",
+                OrderType::Market => "market",
+                OrderType::StopLimit => "stop_limit",
+                _ => unreachable!(),
+            }
+        );
+        assert_eq!(params.price, order.price().map(|price| price.as_decimal()));
+        assert_eq!(
+            params.time_in_force.as_deref(),
+            if order_type == OrderType::Market {
+                None
+            } else {
+                Some(match tif {
+                    TimeInForce::Gtc => "good_til_cancelled",
+                    TimeInForce::Ioc => "immediate_or_cancel",
+                    TimeInForce::Fok => "fill_or_kill",
+                    _ => unreachable!(),
+                })
+            }
+        );
+        assert_eq!(params.post_only, post_only.then_some(true));
+        assert_eq!(params.reject_post_only, post_only.then_some(true));
+        assert_eq!(params.reduce_only, None);
+        assert_eq!(params.max_show, None);
+        assert_eq!(params.valid_until, None);
+        assert_eq!(
+            params.trigger_price,
+            order.trigger_price().map(|price| price.as_decimal())
+        );
+        assert_eq!(
+            params.trigger.as_deref(),
+            order.trigger_type().map(|_| "last_price")
+        );
+        assert_eq!(
+            params.label.as_deref(),
+            Some(order.client_order_id().as_str())
+        );
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    fn all_spot_rejects_gtd(#[case] routed: bool) {
+        let (client, _, _) = submission_test_rig(TimeInForce::Gtc);
+        let mut instrument = routed_spot_instrument();
+        if !routed && let InstrumentAny::CurrencyPair(pair) = &mut instrument {
+            pair.info = None;
+        }
+
+        client.http_client.cache_instruments(&[instrument]);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC_USDC.DERIBIT"))
+            .quantity(Quantity::from("0.0042"))
+            .price(Price::from("45000.25"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(1_800_000_000_000_000_000))
+            .build();
+
+        assert_eq!(
+            client.build_order_params(&order).unwrap_err().to_string(),
+            "Deribit spot instruments do not support good_til_day"
+        );
+    }
+
+    #[rstest]
+    fn derivatives_preserve_gtd() {
+        let (client, _, _) = submission_test_rig(TimeInForce::Gtc);
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("BTC-PERPETUAL.DERIBIT"))
+            .quantity(Quantity::from("20"))
+            .price(Price::from("51000"))
+            .time_in_force(TimeInForce::Gtd)
+            .expire_time(UnixNanos::from(1_800_000_000_000_000_000))
+            .build();
+        let params = client.build_order_params(&order).unwrap();
+
+        assert_eq!(params.time_in_force.as_deref(), Some("good_til_day"));
+    }
+
+    #[rstest]
+    fn uncached_order_returns_instrument_lookup_error() {
+        let (client, _, _) = submission_test_rig(TimeInForce::Gtc);
+        let instrument_id = InstrumentId::from("UNCACHED.DERIBIT");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("0.0042"))
+            .price(Price::from("45000.25"))
+            .build();
+
+        let error = client.build_order_params(&order).unwrap_err();
+
+        assert_eq!(
+            error.downcast_ref::<InstrumentLookupError>(),
+            Some(&InstrumentLookupError::not_found(instrument_id))
+        );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn routed_spot_rejection_precedes_submission(#[case] batch: bool) {
+        let (mut client, _, cache) = submission_test_rig(TimeInForce::Gtc);
+        let instrument = routed_spot_instrument();
+        client.http_client.cache_instruments(&[instrument]);
+
+        let orders = (0..2)
+            .map(|index| {
+                let order = OrderTestBuilder::new(OrderType::Limit)
+                    .trader_id(TraderId::from("TESTER-001"))
+                    .strategy_id(StrategyId::from("S-001"))
+                    .instrument_id(InstrumentId::from("BTC_USDC.DERIBIT"))
+                    .client_order_id(ClientOrderId::new(format!("routed-{index}")))
+                    .quantity(Quantity::from("0.0042"))
+                    .price(Price::from("45000.25"))
+                    .reduce_only(!batch || index == 1)
+                    .build();
+                cache
+                    .borrow_mut()
+                    .add_order(order.clone(), None, None, false)
+                    .unwrap();
+                order
+            })
+            .collect::<Vec<_>>();
+
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+
+        let error = submit_test_orders(&client, &orders, batch).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Deribit routed spot does not support reduce_only"
+        );
+        assert_eq!(client.pending_tasks.len(), 0);
+        assert_eq!(
+            rx.try_recv().unwrap_err(),
+            tokio::sync::mpsc::error::TryRecvError::Empty
+        );
+
+        for order in orders {
+            assert_eq!(
+                cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .unwrap()
+                    .status(),
+                OrderStatus::Initialized
+            );
+        }
+    }
 
     fn dispatch_test_rig() -> (
         ExecutionEventEmitter,
@@ -1487,6 +1693,16 @@ mod tests {
         };
 
         let client = DeribitExecutionClient::new(core, config).unwrap();
+        let response: DeribitJsonRpcResponse<Vec<DeribitInstrument>> =
+            serde_json::from_str(include_str!("../test_data/http_get_instruments.json")).unwrap();
+        let instrument = parse_deribit_instrument_any(
+            &response.result.unwrap()[0],
+            UnixNanos::default(),
+            UnixNanos::default(),
+        )
+        .unwrap()
+        .unwrap();
+        client.http_client.cache_instruments(&[instrument]);
 
         let orders = [TimeInForce::Gtc, second_time_in_force]
             .into_iter()

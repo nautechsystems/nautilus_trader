@@ -493,16 +493,6 @@ impl OrderSubmitter {
             .map_err(|e| anyhow::anyhow!("Failed to fetch order status: {e}"))
     }
 
-    pub(crate) fn prepare_limit_order_submissions(
-        &self,
-        requests: &[LimitOrderSubmitRequest],
-    ) -> Vec<anyhow::Result<SignedLimitOrderSubmission>> {
-        requests
-            .iter()
-            .map(|request| self.prepare_limit_order_submission(request))
-            .collect()
-    }
-
     pub(crate) fn prepare_limit_order_submission(
         &self,
         request: &LimitOrderSubmitRequest,

@@ -61,6 +61,25 @@ impl DataEngine {
             .collect()
     }
 
+    /// Returns whether a retained book subscription names or covers `instrument_id`.
+    ///
+    /// Includes resolved parent targets and ownership retained after a client subscription failure.
+    /// Does not indicate that an upstream feed is active or a book is complete.
+    #[must_use]
+    pub fn has_book_subscription(&self, instrument_id: &InstrumentId) -> bool {
+        self.book_subscription_owners.contains_key(instrument_id)
+            || self.book_subscriptions.contains_key(instrument_id)
+            || self.subscriptions_external.iter().any(|((_, key), _)| {
+                matches!(
+                    key,
+                    SubscriptionKey::BookDeltas(id)
+                        | SubscriptionKey::BookDepth(id)
+                        | SubscriptionKey::BookSnapshots(id, _)
+                        if id == instrument_id
+                )
+            })
+    }
+
     pub(super) fn subscribe_book_deltas(
         &mut self,
         cmd: &SubscribeBookDeltas,

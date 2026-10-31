@@ -2739,13 +2739,8 @@ async fn test_failed_unsubscribe_keeps_gate_closed() {
     };
 
     client.subscribe_book_deltas(subscribe(5)).unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 5 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 5 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 5).await;
 
     // A rejected unsubscribe yields no confirmation, so the gate fails closed
     client
@@ -2882,13 +2877,8 @@ async fn test_market_reconnect_does_not_clear_gate() {
     };
 
     client.subscribe_book_deltas(subscribe(5)).unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 5 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 5 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 5).await;
 
     // A rejected depth-5 unsubscribe leaves the gate armed with no confirmation coming
     client
@@ -2989,13 +2979,8 @@ async fn test_failed_unsubscribe_stays_closed_across_transitions() {
     };
 
     client.subscribe_book_deltas(subscribe(20)).unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 20 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 20 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 20).await;
 
     // The rejected depth-20 unsubscribe leaves its stream unresolved
     client
@@ -3074,13 +3059,8 @@ async fn test_partial_to_diff_depth_change_drops_in_flight_frames() {
             None,
         ))
         .unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 5 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 5 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 5).await;
 
     client
         .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
@@ -3332,13 +3312,8 @@ async fn test_disconnect_clears_pending_unsubscribe_gate() {
     };
 
     client.subscribe_book_deltas(subscribe(20)).unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 20 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 20 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 20).await;
 
     // The rejected unsubscribe leaves the gate armed across the teardown
     client
@@ -3387,6 +3362,29 @@ async fn test_disconnect_clears_pending_unsubscribe_gate() {
         }
     }
     client.disconnect().await.unwrap();
+}
+
+async fn recv_partial_snapshots(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    state: &DataTestServerState,
+    depth: usize,
+) {
+    // Gates cannot retract snapshots already emitted before the subscription changes
+    for index in 0..state.depth_update_repetitions {
+        let Data::BookDeltas(snapshot) = recv_data(rx, Duration::from_secs(10))
+            .await
+            .expect("expected partial depth snapshot")
+        else {
+            panic!("expected book deltas");
+        };
+
+        assert_eq!(snapshot.deltas.len(), depth * 2 + 1);
+        assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            snapshot.sequence,
+            state.depth_update_final_update_id + index as u64
+        );
+    }
 }
 
 #[rstest]

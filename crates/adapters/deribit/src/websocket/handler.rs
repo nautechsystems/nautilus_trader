@@ -2996,7 +2996,7 @@ mod tests {
         enums::{BookType, LiquiditySide},
         instruments::Instrument,
         orderbook::OrderBook,
-        types::{Money, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
     use nautilus_network::{
         ratelimiter::quota::Quota,
@@ -3006,7 +3006,10 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::{parse::parse_deribit_instrument_any, testing::load_test_json},
+        common::{
+            parse::parse_deribit_instrument_any,
+            testing::{load_test_json, routed_spot_instrument},
+        },
         http::models::{DeribitInstrument, DeribitJsonRpcResponse},
     };
 
@@ -3106,6 +3109,108 @@ mod tests {
             "params": { "channel": channel, "data": data }
         })
         .to_string()
+    }
+
+    #[rstest]
+    #[case([0, 1, 2])]
+    #[case([0, 2, 1])]
+    #[case([1, 0, 2])]
+    #[case([1, 2, 0])]
+    #[case([2, 0, 1])]
+    #[case([2, 1, 0])]
+    #[tokio::test]
+    async fn routed_spot_async_fills_emit_once(
+        #[case] sequence: [usize; 3],
+        #[values("open", "filled")] ack_state: &str,
+    ) {
+        let mut handler = routing_test_handler();
+        let instrument = routed_spot_instrument();
+        let instrument_id = instrument.id();
+        handler
+            .instruments_cache
+            .insert(instrument.raw_symbol().inner(), instrument);
+        let client_order_id = ClientOrderId::from("routed-904");
+        handler.submitted_order_contexts.insert(
+            client_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler.pending_requests.insert(
+            42,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+        );
+
+        let mut messages: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../test_data/ws_routed_spot_execution.json"
+        ))
+        .unwrap();
+        messages[0]["result"]["order"]["order_state"] = ack_state.into();
+        let mut events = Vec::new();
+
+        for _ in 0..2 {
+            for index in sequence {
+                if let Some(event) = handler
+                    .process_raw_message(&messages[index].to_string())
+                    .await
+                {
+                    events.push(event);
+                }
+
+                events.extend(handler.pending_outgoing.drain(..));
+            }
+        }
+
+        assert_eq!(events.len(), 2);
+
+        let accepted = match &events[0] {
+            NautilusWsMessage::OrderAccepted(event) => event,
+            other => panic!("Expected acceptance, received {other:?}"),
+        };
+
+        let filled = match &events[1] {
+            NautilusWsMessage::OrderFilled(event) => event,
+            other => panic!("Expected fill, received {other:?}"),
+        };
+
+        assert_eq!(accepted.trader_id, TraderId::from("TRADER-001"));
+        assert_eq!(accepted.strategy_id, StrategyId::from("S-001"));
+        assert_eq!(accepted.instrument_id, instrument_id);
+        assert_eq!(accepted.client_order_id, client_order_id);
+        assert_eq!(accepted.venue_order_id, VenueOrderId::from("CSR-ORDER-904"));
+        assert_eq!(accepted.account_id, AccountId::from("DERIBIT-001"));
+        assert_eq!(filled.trader_id, accepted.trader_id);
+        assert_eq!(filled.strategy_id, accepted.strategy_id);
+        assert_eq!(filled.instrument_id, instrument_id);
+        assert_eq!(filled.client_order_id, client_order_id);
+        assert_eq!(filled.venue_order_id, accepted.venue_order_id);
+        assert_eq!(filled.account_id, accepted.account_id);
+        assert_eq!(filled.trade_id, TradeId::from("CSR-TRADE-904"));
+        assert_eq!(filled.order_side, OrderSide::Buy);
+        assert_eq!(filled.order_type, OrderType::Limit);
+        assert_eq!(filled.last_qty, Quantity::from("0.0042"));
+        assert_eq!(filled.last_px, Price::from("45000.25"));
+        assert_eq!(filled.currency, Currency::USDC());
+        assert_eq!(filled.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(filled.commission, Some(Money::from("0.01911000 USDC")));
+        assert_eq!(filled.ts_event, UnixNanos::from(1_787_011_200_500_000_000));
+        assert_eq!(filled.position_id, None);
+        assert!(!filled.reconciliation);
     }
 
     #[rstest]

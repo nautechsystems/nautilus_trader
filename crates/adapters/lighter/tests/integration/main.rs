@@ -14,7 +14,6 @@
 // -------------------------------------------------------------------------------------------------
 
 mod data_client;
-mod exec_client;
 mod http;
 mod python;
 mod websocket;

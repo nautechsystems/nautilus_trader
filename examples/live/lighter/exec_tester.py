@@ -48,7 +48,9 @@ from nautilus_trader.config import LiveRiskEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.model import AccountId
 from nautilus_trader.model import ClientId
+from nautilus_trader.model import ContingencyType
 from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderType
 from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TimeInForce
@@ -121,6 +123,8 @@ def main() -> None:
             open_position_time_in_force=TimeInForce.IOC,
             enable_limit_buys=True,
             enable_limit_sells=True,
+            bracket_contingency_type=ContingencyType.OCO,
+            bracket_tp_order_type=OrderType.MARKET_IF_TOUCHED,
             tob_offset_ticks=TOB_OFFSET_TICKS,
             use_post_only=True,
             cancel_orders_on_stop=True,

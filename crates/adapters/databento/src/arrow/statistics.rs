@@ -28,7 +28,7 @@ use databento::dbn;
 use nautilus_model::{
     data::{Data, custom::CustomData},
     identifiers::InstrumentId,
-    types::{PRICE_UNDEF, QUANTITY_UNDEF, fixed::FIXED_PRECISION},
+    types::{PRICE_UNDEF, Price, QUANTITY_UNDEF, Quantity, fixed::FIXED_PRECISION},
 };
 use nautilus_serialization::arrow::{
     ArrowSchemaProvider, DecodeDataFromRecordBatch, EncodeToRecordBatch, EncodingError,
@@ -76,12 +76,40 @@ impl EncodeToRecordBatch for DatabentoStatistics {
     where
         T: std::borrow::Borrow<Self>,
     {
+        let (instrument_id, price_precision, size_precision) = parse_metadata(metadata)
+            .map_err(|e| ArrowError::InvalidArgumentError(e.to_string()))?;
+
+        let chunk_metadata = if data.is_empty() {
+            metadata.clone()
+        } else {
+            Self::chunk_metadata(data)
+        };
+
         let mut channel_id_builder = UInt16Array::builder(data.len());
         let mut stat_flags_builder = UInt8Array::builder(data.len());
         let mut sequence_builder = UInt32Array::builder(data.len());
         let mut ts_in_delta_builder = Int32Array::builder(data.len());
 
-        for item in data.iter().map(std::borrow::Borrow::borrow) {
+        for (index, item) in data.iter().map(std::borrow::Borrow::borrow).enumerate() {
+            if item.instrument_id != instrument_id || !item.matches_chunk_metadata(&chunk_metadata)
+            {
+                return Err(ArrowError::InvalidArgumentError(
+                    EncodingError::MixedMetadata { index }.to_string(),
+                ));
+            }
+
+            if let Some(price) = item.price.filter(|price| !price.is_undefined()) {
+                Price::from_raw_checked(price.raw(), price_precision).map_err(|e| {
+                    ArrowError::InvalidArgumentError(format!("row {index}: price: {e}"))
+                })?;
+            }
+
+            if let Some(quantity) = item.quantity.filter(|quantity| !quantity.is_undefined()) {
+                Quantity::from_raw_checked(quantity.raw(), size_precision).map_err(|e| {
+                    ArrowError::InvalidArgumentError(format!("row {index}: quantity: {e}"))
+                })?;
+            }
+
             channel_id_builder.append_value(item.channel_id);
             stat_flags_builder.append_value(item.stat_flags);
             sequence_builder.append_value(item.sequence);
@@ -151,15 +179,31 @@ impl EncodeToRecordBatch for DatabentoStatistics {
         let price_precision = chunk
             .iter()
             .map(std::borrow::Borrow::borrow)
-            .find_map(|s| s.price.map(|p| p.precision))
-            .unwrap_or(FIXED_PRECISION);
+            .filter_map(|s| s.price)
+            .find(|price| !price.is_undefined())
+            .map_or(FIXED_PRECISION, |price| price.precision);
         let size_precision = chunk
             .iter()
             .map(std::borrow::Borrow::borrow)
-            .find_map(|s| s.quantity.map(|q| q.precision))
-            .unwrap_or(FIXED_PRECISION);
+            .filter_map(|s| s.quantity)
+            .find(|quantity| !quantity.is_undefined())
+            .map_or(FIXED_PRECISION, |quantity| quantity.precision);
 
         statistics_metadata(&first.instrument_id, price_precision, size_precision)
+    }
+
+    fn matches_chunk_metadata(&self, metadata: &HashMap<String, String>) -> bool {
+        let Ok((instrument_id, price_precision, size_precision)) = parse_metadata(metadata) else {
+            return false;
+        };
+
+        self.instrument_id == instrument_id
+            && self
+                .price
+                .is_none_or(|price| price.is_undefined() || price.precision == price_precision)
+            && self.quantity.is_none_or(|quantity| {
+                quantity.is_undefined() || quantity.precision == size_precision
+            })
     }
 }
 
@@ -258,7 +302,7 @@ fn statistics_metadata(
 ///
 /// # Errors
 ///
-/// Returns an error if `data` is empty or encoding fails.
+/// Returns an error if `data` is empty, instruments or non-null precisions differ, or encoding fails.
 // Guarded by empty check
 pub fn statistics_to_arrow_record_batch(
     data: &[DatabentoStatistics],
@@ -276,12 +320,13 @@ mod tests {
     use std::collections::HashMap;
 
     use nautilus_model::{
+        data::{custom::CustomDataTrait, registry::encode_custom_to_arrow},
         identifiers::InstrumentId,
         types::{Price, Quantity},
     };
     use nautilus_serialization::arrow::{
         ArrowSchemaProvider, EncodeToRecordBatch, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION,
-        KEY_SIZE_PRECISION,
+        KEY_SIZE_PRECISION, custom::ensure_custom_data_registered,
     };
     use rstest::rstest;
 
@@ -515,6 +560,130 @@ mod tests {
         assert_eq!(decoded.len(), 1);
         assert_eq!(decoded[0].price, original[0].price);
         assert_eq!(decoded[0].quantity, original[0].quantity);
+    }
+
+    #[rstest]
+    #[case::price(false, false)]
+    #[case::price_reversed(false, true)]
+    #[case::quantity(true, false)]
+    #[case::quantity_reversed(true, true)]
+    fn test_automatic_encoding_rejects_mixed_precision(
+        #[case] quantity: bool,
+        #[case] reversed: bool,
+    ) {
+        let first = test_statistics(InstrumentId::from("ESM4.GLBX"));
+        let mut second = first.clone();
+        if quantity {
+            second.quantity = Some(Quantity::from("100.0"));
+        } else {
+            second.price = Some(Price::from("5000.500"));
+        }
+
+        let mut data = vec![first, second];
+        if reversed {
+            data.reverse();
+        }
+
+        ensure_custom_data_registered::<DatabentoStatistics>();
+        let custom: Vec<Arc<dyn CustomDataTrait>> = data
+            .iter()
+            .cloned()
+            .map(|item| Arc::new(item) as Arc<dyn CustomDataTrait>)
+            .collect();
+
+        let direct = statistics_to_arrow_record_batch(&data).unwrap_err();
+        let registered = encode_custom_to_arrow("DatabentoStatistics", &custom).unwrap_err();
+
+        let expected =
+            ArrowError::InvalidArgumentError(EncodingError::MixedMetadata { index: 1 }.to_string());
+        assert_eq!(direct.to_string(), format!("Arrow error: {expected}"));
+        assert_eq!(registered.to_string(), expected.to_string());
+    }
+
+    #[rstest]
+    #[case::price(false)]
+    #[case::quantity(true)]
+    fn test_explicit_encoding_rejects_insufficient_precision(#[case] quantity: bool) {
+        let mut item = test_statistics(InstrumentId::from("ESM4.GLBX"));
+
+        let (field, expected) = if quantity {
+            let value = Quantity::from("100.5");
+            item.quantity = Some(value);
+            (
+                "quantity",
+                Quantity::from_raw_checked(value.raw(), 0)
+                    .unwrap_err()
+                    .to_string(),
+            )
+        } else {
+            let value = Price::from("5000.501");
+            item.price = Some(value);
+            (
+                "price",
+                Price::from_raw_checked(value.raw(), 2)
+                    .unwrap_err()
+                    .to_string(),
+            )
+        };
+
+        let error = DatabentoStatistics::encode_batch(&test_metadata(), &[item]).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            format!("Invalid argument error: row 0: {field}: {expected}")
+        );
+    }
+
+    #[rstest]
+    fn test_encoding_rejects_mixed_instruments() {
+        let first = test_statistics(InstrumentId::from("ESM4.GLBX"));
+        let second = test_statistics(InstrumentId::from("ESU4.GLBX"));
+        let data = vec![first, second];
+        ensure_custom_data_registered::<DatabentoStatistics>();
+        let custom: Vec<Arc<dyn CustomDataTrait>> = data
+            .iter()
+            .cloned()
+            .map(|item| Arc::new(item) as Arc<dyn CustomDataTrait>)
+            .collect();
+
+        let direct = statistics_to_arrow_record_batch(&data).unwrap_err();
+        let registered = encode_custom_to_arrow("DatabentoStatistics", &custom).unwrap_err();
+        let explicit = DatabentoStatistics::encode_batch(&test_metadata(), &data).unwrap_err();
+
+        let expected =
+            ArrowError::InvalidArgumentError(EncodingError::MixedMetadata { index: 1 }.to_string());
+        assert_eq!(direct.to_string(), format!("Arrow error: {expected}"));
+        assert_eq!(registered.to_string(), expected.to_string());
+        assert_eq!(explicit.to_string(), expected.to_string());
+    }
+
+    #[rstest]
+    #[case::none(false)]
+    #[case::undefined(true)]
+    fn test_registered_encoding_uses_first_non_null_precision(#[case] undefined: bool) {
+        let item = test_statistics(InstrumentId::from("ESM4.GLBX"));
+        let mut empty = item.clone();
+        empty.price = undefined.then_some(Price::from_raw(PRICE_UNDEF, 0));
+        empty.quantity = undefined.then_some(Quantity::from_raw(QUANTITY_UNDEF, 0));
+        let original = vec![empty, item];
+        let custom: Vec<Arc<dyn CustomDataTrait>> = original
+            .iter()
+            .cloned()
+            .map(|item| Arc::new(item) as Arc<dyn CustomDataTrait>)
+            .collect();
+        ensure_custom_data_registered::<DatabentoStatistics>();
+
+        let batch = encode_custom_to_arrow("DatabentoStatistics", &custom)
+            .unwrap()
+            .unwrap();
+        let decoded = decode_statistics_batch(batch.schema().metadata(), &batch).unwrap();
+
+        let mut expected = original;
+        expected[0].price = None;
+        expected[0].quantity = None;
+        assert_eq!(decoded, expected);
+        assert_eq!(decoded[1].price.unwrap().precision, 2);
+        assert_eq!(decoded[1].quantity.unwrap().precision, 0);
     }
 
     #[rstest]

@@ -344,11 +344,13 @@ post-only orders. An unsupported TIF in an order list denies every leg before su
 
 ### Advanced order features
 
-| Feature            | Spot | Linear | Inverse | Option | Notes                                  |
-| ------------------ | ---- | ------ | ------- | ------ | -------------------------------------- |
-| Order Modification | ✓    | ✓      | ✓       | ✓      | Price and quantity modification.       |
-| Bracket/OCO Orders | -    | -      | -       | -      | Not implemented; submit legs yourself. |
-| Iceberg Orders     | -    | -      | -       | -      | Not implemented.                       |
+| Feature            | Spot | Linear | Inverse | Option | Notes                                        |
+| ------------------ | ---- | ------ | ------- | ------ | -------------------------------------------- |
+| Order Modification | ✓    | ✓      | ✓       | ✓      | Price and quantity modification.             |
+| Bracket/OCO Orders | -    | -      | -       | -      | See [Contingent orders](#contingent-orders). |
+| Iceberg Orders     | -    | -      | -       | -      | Not implemented.                             |
+
+Conditional orders also support trigger-price amendments.
 
 ### Batch operations
 
@@ -483,16 +485,38 @@ Upstream references:
 
 ### Contingent orders
 
-| Feature            | Spot | Linear | Inverse | Option | Notes                                  |
-| ------------------ | ---- | ------ | ------- | ------ | -------------------------------------- |
-| Order lists        | ✓    | ✓      | ✓       | ✓      | Submitted as a batch via WebSocket.    |
-| OCO orders         | -    | -      | -       | -      | Not implemented; submit legs yourself. |
-| Bracket orders     | -    | -      | -       | -      | Not implemented; submit legs yourself. |
-| Conditional orders | ✓    | ✓      | ✓       | -      | Stop and limit-if-touched orders.      |
+| Feature            | Spot | Linear | Inverse | Option | Notes                                              |
+| ------------------ | ---- | ------ | ------- | ------ | -------------------------------------------------- |
+| Order lists        | ✓    | ✓      | ✓       | ✓      | WebSocket batch; individual HTTP requests in demo. |
+| OCO orders         | -    | -      | -       | -      | *No native linkage*; manage sibling orders.        |
+| Bracket orders     | -    | -      | -       | -      | *No native entry-fill sequencing*.                 |
+| Conditional orders | ✓    | ✓      | ✓       | -      | Stop and limit-if-touched orders.                  |
 
-An order list is validated as a unit before any leg is sent. When one leg fails validation, that leg is denied
+An order list is validated locally as a unit before any leg is sent. When one leg fails validation, that leg is denied
 with its specific reason. The remaining legs are denied with `ORDER_LIST_DENIED`. Thus, a partially submitted
-list cannot reach the venue.
+list cannot result from a local validation failure. Venue submission is not atomic: Bybit can accept some legs
+and reject others.
+
+#### Bracket submission limits
+
+For non-emulated bracket order lists sent to the Bybit adapter, the entry, take-profit (TP), and stop-loss
+(SL) legs submit without waiting for entry fills. The adapter does not defer exit submission or provide native
+OCO linkage for these legs.
+
+:::warning
+Bybit [rejects reduce-only limit orders when no position exists](https://www.bybit.com/en/help-center/article/Reduce-Only-Order).
+In demo trading, an `ETHUSDT-LINEAR` bracket with a resting limit entry can have its entry and conditional
+reduce-only stop-market SL accepted while the non-conditional reduce-only limit TP is rejected with
+`current position is zero, cannot fix reduce-only order qty`.
+The accepted legs can leave the position without a TP order. With `StrategyConfig.manage_contingent_orders`
+enabled, the TP rejection can also cancel its open SL sibling, leaving no exit orders.
+:::
+
+Wait for confirmed entry fills before submitting separate reduce-only exits, and size them to the filled
+position. Handle `OrderRejected` for each leg, and manage sibling cancellation and quantity updates in your
+strategy. See [Strategy-managed contingencies](../concepts/orders/advanced.md#strategy-managed-contingencies)
+for automatic management of open sibling orders. To use native TP/SL, pass [order parameters](#order-parameters)
+to `submit_order` for a single entry order. Order-list `params` apply to every leg.
 
 ### Order parameters
 
@@ -538,8 +562,11 @@ The adapter validates these params before emitting `OrderSubmitted` and denies t
 - `smp_type` must be `"None"`, `"CancelMaker"`, `"CancelTaker"`, or `"CancelBoth"`, matched
   case-insensitively.
 
-When `take_profit` or `stop_loss` is set without `tpsl_mode`, the adapter sends `Full`. When a TP or
-SL price is set without its own `tp_trigger_by` or `sl_trigger_by`, the adapter derives the trigger
+When `take_profit` or `stop_loss` is set without `tpsl_mode`, the adapter sends `Full`. For Linear and Inverse,
+`Full` covers the entire position and supports only market TP/SL. Set `tpsl_mode="Partial"` to size native TP/SL
+to the entry's filled quantity and support limit TP/SL. See Bybit's
+[create-order parameters](https://bybit-exchange.github.io/docs/v5/order/create-order#request-parameters).
+When a TP or SL price is set without its own `tp_trigger_by` or `sl_trigger_by`, the adapter derives the trigger
 type from the order's trigger type.
 
 :::note
@@ -602,6 +629,9 @@ order = strategy.order_factory.limit(
     order_side=OrderSide.BUY,
     quantity=Quantity.from_str("0.01"),
     price=Price.from_str("60000.0"),
+)
+strategy.submit_order(
+    order,
     params={
         "take_profit": "65000.0",
         "stop_loss": "58000.0",
@@ -609,7 +639,6 @@ order = strategy.order_factory.limit(
         "sl_trigger_by": "LastPrice",
     },
 )
-strategy.submit_order(order)
 ```
 
 #### Example: BBO order

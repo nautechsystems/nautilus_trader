@@ -62,9 +62,6 @@ pub mod types;
 #[cfg(feature = "arrow")]
 pub mod arrow;
 
-#[cfg(feature = "python")]
-pub mod python;
-
 #[cfg(feature = "live")]
 pub mod data;
 
@@ -73,3 +70,6 @@ pub mod factories;
 
 #[cfg(feature = "live")]
 pub mod live;
+
+#[cfg(feature = "python")]
+pub mod python;

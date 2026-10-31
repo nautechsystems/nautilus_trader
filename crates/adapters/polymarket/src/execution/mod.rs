@@ -83,7 +83,7 @@ use crate::{
     common::{consts::POLYMARKET_VENUE, credential::Secrets, enums::PolymarketSignatureType},
     config::PolymarketExecutionClientConfig,
     http::{clob::PolymarketClobHttpClient, data_api::PolymarketDataApiHttpClient},
-    signing::eip712::OrderSigner,
+    signing::eip712::{OrderSigner, parse_address},
     websocket::{
         USER_STREAMS_ENDPOINT, client::PolymarketWebSocketClient, dispatch::WsDispatchState,
     },
@@ -284,15 +284,21 @@ fn resolve_maker_address(
         })?,
     };
 
-    if signature_type != PolymarketSignatureType::Eoa
-        && maker_address.eq_ignore_ascii_case(signer_address)
-    {
+    let maker_address = parse_address(maker_address.trim(), "funder")?;
+    let signer_address = parse_address(signer_address, "signer")?;
+    if signature_type == PolymarketSignatureType::Eoa && maker_address != signer_address {
+        anyhow::bail!(
+            "Polymarket Eoa signature type requires the funder to equal the signing address"
+        );
+    }
+
+    if signature_type != PolymarketSignatureType::Eoa && maker_address == signer_address {
         anyhow::bail!(
             "Polymarket {signature_type:?} signature type requires a funder distinct from the signing address",
         );
     }
 
-    Ok(maker_address.to_string())
+    Ok(format!("{maker_address:#x}"))
 }
 
 #[async_trait(?Send)]
@@ -598,20 +604,28 @@ mod tests {
     fn proxy_signature_types_require_distinct_funder(
         #[case] signature_type: PolymarketSignatureType,
     ) {
-        let error =
-            resolve_maker_address(signature_type, "0xsigner", Some("0xSIGNER")).unwrap_err();
+        let error = resolve_maker_address(
+            signature_type,
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            Some("0xABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD"),
+        )
+        .unwrap_err();
 
         assert!(error.to_string().contains("requires a funder distinct"));
     }
 
     #[rstest]
-    #[case(None, "0xsigner")]
-    #[case(Some("0xfunder"), "0xfunder")]
-    fn eoa_uses_configured_funder_or_signer(#[case] funder: Option<&str>, #[case] expected: &str) {
-        let maker_address =
-            resolve_maker_address(PolymarketSignatureType::Eoa, "0xsigner", funder).unwrap();
+    #[case(None)]
+    #[case(Some("0xABCDEFABCDEFABCDEFABCDEFABCDEFABCDEFABCD"))]
+    fn eoa_uses_configured_funder_or_signer(#[case] funder: Option<&str>) {
+        let maker_address = resolve_maker_address(
+            PolymarketSignatureType::Eoa,
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            funder,
+        )
+        .unwrap();
 
-        assert_eq!(maker_address, expected);
+        assert_eq!(maker_address, "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd");
     }
 
     #[rstest]
@@ -651,5 +665,37 @@ mod tests {
             error.downcast_ref::<ConfigError>(),
             Some(&ConfigError::duplicate("series_ids", None))
         );
+    }
+
+    #[rstest]
+    #[case(
+        PolymarketSignatureType::Eoa,
+        "0x1111111111111111111111111111111111111111",
+        "requires the funder to equal"
+    )]
+    #[case(PolymarketSignatureType::Eoa, "invalid", "Invalid funder address")]
+    #[case(
+        PolymarketSignatureType::PolyProxy,
+        "invalid",
+        "Invalid funder address"
+    )]
+    #[case(
+        PolymarketSignatureType::PolyGnosisSafe,
+        "invalid",
+        "Invalid funder address"
+    )]
+    #[case(PolymarketSignatureType::Poly1271, "invalid", "Invalid funder address")]
+    fn maker_address_rejects_invalid_configuration(
+        #[case] signature_type: PolymarketSignatureType,
+        #[case] funder: &str,
+        #[case] expected: &str,
+    ) {
+        let error = resolve_maker_address(
+            signature_type,
+            "0xabcdefabcdefabcdefabcdefabcdefabcdefabcd",
+            Some(funder),
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains(expected));
     }
 }

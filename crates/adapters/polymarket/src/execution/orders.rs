@@ -129,7 +129,6 @@ impl PolymarketExecutionClient {
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
         let account_id = self.core.account_id;
-        let size_precision = instrument.size_precision();
         let price_precision = instrument.price_precision();
 
         self.spawn_task("submit_limit_order", async move {
@@ -154,9 +153,6 @@ impl PolymarketExecutionClient {
             let expected_venue_order_id = submission.expected_venue_order_id;
             emit_signed_base_quantity_update(
                 &mut order,
-                quote_quantity,
-                side,
-                quantity,
                 submission.expected_base_qty,
                 &emitter,
                 clock,
@@ -164,87 +160,28 @@ impl PolymarketExecutionClient {
 
             pending_submits.insert(expected_venue_order_id, order.client_order_id());
 
-            match submitter.post_limit_order_submission(submission).await {
-                Ok(response) => {
-                    let fok_order_id = fok_check_order_id(&response, tif);
-                    if let Some((order_id_str, venue_order_id)) = handle_order_response(
-                        Ok(response),
-                        &order,
-                        expected_venue_order_id,
-                        &emitter,
-                        clock,
-                        &fill_tracker,
-                        &settlement,
-                        &order_contexts,
-                        &pending_cancels,
-                        account_id,
-                        size_precision,
-                        price_precision,
-                    ) {
-                        execute_deferred_cancel(
-                            &submitter,
-                            &order,
-                            &order_id_str,
-                            venue_order_id,
-                            &emitter,
-                            &pending_cancels,
-                            clock,
-                        )
-                        .await;
-                    }
-
-                    if let Some(order_id) = fok_order_id {
-                        check_fok_status(
-                            &submitter,
-                            &order_id,
-                            &order,
-                            &fill_tracker,
-                            &order_contexts,
-                            &ws_dispatch_state,
-                            &emitter,
-                            account_id,
-                            size_precision,
-                            price_precision,
-                            clock,
-                        )
-                        .await;
-                    }
-                }
-                Err(e) => match classify_http_command_failure(&e) {
-                    CommandFailure::Ambiguous(reason) => {
-                        if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
-                            &order,
-                            expected_venue_order_id,
-                            &reason,
-                            None,
-                            &emitter,
-                            clock,
-                            &fill_tracker,
-                            &settlement,
-                            &order_contexts,
-                            &pending_submits,
-                            &pending_cancels,
-                            account_id,
-                            size_precision,
-                            price_precision,
-                        ) {
-                            execute_deferred_cancel(
-                                &submitter,
-                                &order,
-                                &order_id_str,
-                                venue_order_id,
-                                &emitter,
-                                &pending_cancels,
-                                clock,
-                            )
-                            .await;
-                        }
-                    }
-                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
-                        reject_submit_order(&order, &reason, &emitter, clock, &pending_cancels);
-                    }
+            let result = submitter.post_limit_order_submission(submission).await;
+            handle_single_order_response(
+                result,
+                BatchLimitOrderContext {
+                    order,
+                    request,
+                    price_precision,
                 },
-            }
+                expected_venue_order_id,
+                &submitter,
+                &emitter,
+                clock,
+                &fill_tracker,
+                &settlement,
+                &order_contexts,
+                &ws_dispatch_state,
+                &pending_submits,
+                &pending_cancels,
+                account_id,
+            )
+            .await;
+
             Ok(())
         });
     }
@@ -368,9 +305,6 @@ impl PolymarketExecutionClient {
                     let mut order = order;
                     emit_market_order_quantity_update(
                         &mut order,
-                        is_quote_qty,
-                        side,
-                        amount,
                         result.expected_base_qty,
                         result.response.success,
                         size_precision,
@@ -441,9 +375,6 @@ impl PolymarketExecutionClient {
                         let mut order = order;
                         emit_market_order_quantity_update(
                             &mut order,
-                            is_quote_qty,
-                            side,
-                            amount,
                             unknown.expected_base_qty,
                             true,
                             size_precision,
@@ -698,9 +629,10 @@ impl PolymarketExecutionClient {
                 emitter.emit_order_submitted(&batch_order.order);
             }
 
-            let requests: Vec<LimitOrderSubmitRequest> =
-                batch_orders.iter().map(|bo| bo.request.clone()).collect();
-            let prepare_results = submitter.prepare_limit_order_submissions(&requests);
+            let prepare_results: Vec<_> = batch_orders
+                .iter()
+                .map(|batch_order| submitter.prepare_limit_order_submission(&batch_order.request))
+                .collect();
 
             let mut prepared_orders = Vec::with_capacity(batch_orders.len());
             let mut submissions = Vec::with_capacity(batch_orders.len());
@@ -710,9 +642,6 @@ impl PolymarketExecutionClient {
                     Ok(submission) => {
                         emit_signed_base_quantity_update(
                             &mut batch_order.order,
-                            batch_order.request.quote_quantity,
-                            batch_order.request.side,
-                            batch_order.request.quantity,
                             submission.expected_base_qty,
                             &emitter,
                             clock,
@@ -890,16 +819,7 @@ impl PolymarketExecutionClient {
             return;
         };
 
-        let venue_order_id = self
-            .order_contexts
-            .venue_order_id(&cmd.client_order_id)
-            .or_else(|| order.venue_order_id())
-            .or_else(|| {
-                self.core
-                    .cache()
-                    .venue_order_id(&cmd.client_order_id)
-                    .copied()
-            });
+        let venue_order_id = self.current_venue_order_id(&order);
 
         let reject = |reason: &str| {
             self.emitter.emit_order_modify_rejected(

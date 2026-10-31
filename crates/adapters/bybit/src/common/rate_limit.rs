@@ -572,6 +572,8 @@ fn account_limit(endpoint: &str, category: Option<BybitProductType>) -> (String,
         "/v5/account/borrow" | "/v5/account/no-convert-repay" | "/v5/account/repay" => 1,
         "/v5/account/fee-rate"
         | "/v5/account/set-margin-mode"
+        | "/v5/asset/withdraw/create"
+        | "/v5/asset/withdraw/query-record"
         | "/v5/user/escrow_sub_members"
         | "/v5/user/submembers"
         | "/v5/user/update-api"
@@ -763,6 +765,8 @@ mod tests {
     #[case("/v5/account/repay", None, 1)]
     #[case("/v5/account/fee-rate", None, 5)]
     #[case("/v5/account/set-margin-mode", None, 5)]
+    #[case("/v5/asset/withdraw/create", None, 5)]
+    #[case("/v5/asset/withdraw/query-record", None, 5)]
     #[case("/v5/user/escrow_sub_members", None, 5)]
     #[case("/v5/user/submembers", None, 5)]
     #[case("/v5/user/update-api", None, 5)]

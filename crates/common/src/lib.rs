@@ -149,6 +149,7 @@ pub mod messages;
 pub mod msgbus;
 pub mod providers;
 pub mod runner;
+pub mod serialization;
 pub mod signal;
 pub mod testing;
 pub mod throttler;
@@ -157,13 +158,11 @@ pub mod xrate;
 
 mod macros;
 
-#[cfg(feature = "live")]
-pub mod live;
-
 #[cfg(feature = "defi")]
 pub mod defi;
 
+#[cfg(feature = "live")]
+pub mod live;
+
 #[cfg(feature = "python")]
 pub mod python;
-
-pub mod serialization;

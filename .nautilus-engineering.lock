@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "80bf50eee134222e978fadfbfc5d7a3b3d30ebcf"
+revision = "0a9f6fb2d3c3422b34cda9e4ea5eb9833b58f33d"
 manifest_sha256 = "e2e91502b0682520f8a8cc302ce87b33687cef8421f4c4244103022cfb4ff866"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -44,7 +44,7 @@ executable = false
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "88a7fb5d58cd326f50ac2edb3fadf42b407c1d82d767a5877fd4ea4ea77c3c72"
+sha256 = "91a705d4cda38f74e107cb6a5ad96a86733e4696672dedd6880a9fc67afff323"
 executable = false
 
 [[file]]
@@ -62,7 +62,7 @@ executable = false
 [[file]]
 artifact = "markdown-standard"
 path = "docs/developer_guide/markdown_style.md"
-sha256 = "392d51f8f317b6c0ea73acac5767d547c7ed3085db8962af662350a47016e553"
+sha256 = "8b3ef01847dbb0799c22d7f7a11810fac9e5e92bbce0de990a774b6997e1ac19"
 executable = false
 
 [[file]]
@@ -104,7 +104,7 @@ executable = true
 [[file]]
 artifact = "github-action-pin-check"
 path = "scripts/ci/check-github-action-shas.sh"
-sha256 = "c65a312d41472d58898f0ec6617a03510e116fc1957875ffc0464df8e5102601"
+sha256 = "1bb731e945822869fcb3d9a835e56e067cf6f5a241ebfe3d7cd262d59367e676"
 executable = true
 
 [[file]]

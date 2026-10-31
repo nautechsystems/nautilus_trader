@@ -402,6 +402,10 @@ mod tests {
     }
 
     fn cases() -> [(&'static str, Decimal, bool); 22] {
+        // Probe dependency behavior because Cargo unifies serde_json features across crates
+        let float_roundtrip =
+            serde_json::from_str::<f64>("1e-28").unwrap().to_bits() == 1e-28_f64.to_bits();
+
         [
             ("123456789.123456789", dec!(123456789.123456789), false),
             ("0.12345678901234568", dec!(0.12345678901234568), true),
@@ -417,8 +421,16 @@ mod tests {
                 dec!(-79228162514264337593543950335),
                 false,
             ),
-            ("1e-28", dec!(0.0000000000000000000000000001), false),
-            ("10e-29", dec!(0.0000000000000000000000000001), false),
+            (
+                "1e-28",
+                dec!(0.0000000000000000000000000001),
+                float_roundtrip,
+            ),
+            (
+                "10e-29",
+                dec!(0.0000000000000000000000000001),
+                float_roundtrip,
+            ),
             ("1e28", dec!(10000000000000000000000000000), true),
             ("0.1e29", dec!(10000000000000000000000000000), true),
             (
@@ -434,7 +446,7 @@ mod tests {
             (
                 "0.00000000000000000000000000010",
                 dec!(0.0000000000000000000000000001),
-                false,
+                float_roundtrip,
             ),
             (
                 "79228162514264337593543950335.0",
@@ -453,7 +465,7 @@ mod tests {
             (
                 "0.00000000000000000000000000001e1",
                 dec!(0.0000000000000000000000000001),
-                false,
+                float_roundtrip,
             ),
             ("-12345e-4", dec!(-1.2345), true),
             (

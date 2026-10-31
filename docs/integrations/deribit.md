@@ -57,9 +57,11 @@ Read the Deribit documentation with this NautilusTrader integration guide.
 
 ## Product support
 
-Each client loads only the product families listed in its `product_types` configuration, once on connect.
-Neither client refreshes the instrument set afterwards, so restart the node to pick up newly listed
-instruments. On the data client, `auto_load_missing_instruments` instead fetches an uncached instrument on
+Each client loads only the product families listed in its `product_types` configuration on connect.
+The data client then refreshes them every `update_instruments_interval_mins` and publishes the definitions,
+including new listings. A failed refresh keeps the cached definitions and retries at the next interval.
+The execution client does not refresh its instrument caches, so restart the node to trade newly listed
+instruments. On the data client, `auto_load_missing_instruments` also fetches an uncached instrument on
 first subscribe. See [Lazy-load on subscribe](#lazy-load-on-subscribe).
 
 | Product type      | Data feed | Trading | Notes                                          |
@@ -143,6 +145,20 @@ Examples:
 ```python
 InstrumentId.from_str("BTC_USDC.DERIBIT")
 ```
+
+When present, Deribit's `is_cbe_routed` and `is_csr` flags are copied into instrument `info`.
+A spot pair is treated as routed to Coinbase Exchange if either key exists.
+The adapter rejects these features locally for routed pairs:
+
+- Order types other than `MARKET`, `LIMIT`, and `STOP_LIMIT`.
+- Time in force other than `GTC`, `IOC`, and `FOK`.
+- Stop-limit triggers other than `LAST_PRICE` or `DEFAULT`.
+- Reduce-only, iceberg, and contingent orders, including brackets.
+- Public trade and bar history requests and subscriptions.
+
+Post-only remains supported with `reject_post_only=true`. Order book data remains supported.
+Fills arrive through the user streams even when placement responses contain no trades.
+See the [Deribit JSON-RPC changelog](https://docs.deribit.com/changelogs/jsonrpc).
 
 ### Future combos
 
@@ -304,6 +320,9 @@ side. Alternatively, filter by prefix only on data captured after the upgrade.
 Live subscriptions are served from WebSocket channels. Historical requests go over HTTP. Every channel that
 takes an `{interval}` resolves it through the `interval` subscription parameter and the default selection
 rules described under [Order book subscriptions](#order-book-subscriptions).
+
+The adapter rejects trade and bar subscriptions and history requests for [routed spot pairs](#spot).
+Order book data remains available.
 
 | Nautilus subscription | Deribit channel                                                           | Notes                                                                      |
 | --------------------- | ------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -546,6 +565,7 @@ self.subscribe_data(
 
 ## Orders capability
 
+An order's instrument must be loaded by the execution client's configured `product_types`.
 The adapter validates order parameters and queues `OrderSubmitted` before sending an order.
 If validation or event queuing fails, the adapter returns an error without sending the order.
 The execution engine handles that error as `OrderDenied`.
@@ -554,6 +574,7 @@ For order lists, the adapter validates every member and queues all `OrderSubmitt
 before sending any member. A validation or queuing failure prevents all venue requests for that list.
 
 Below are the order types, execution instructions, and time-in-force options supported on Deribit.
+Routed spot pairs have the additional restrictions listed under [Spot](#spot).
 
 ### Order types
 
@@ -578,12 +599,12 @@ Below are the order types, execution instructions, and time-in-force options sup
 
 ### Time in force
 
-| Time in force | Supported | Notes                                                |
-| ------------- | --------- | ---------------------------------------------------- |
-| `GTC`         | ✓         | Good till canceled (`good_til_cancelled`).           |
-| `GTD`         | ✓         | Good till day. Expires at 8:00 UTC (`good_til_day`). |
-| `IOC`         | ✓         | Immediate or cancel (`immediate_or_cancel`).         |
-| `FOK`         | ✓         | Fill or kill (`fill_or_kill`).                       |
+| Time in force | Supported | Notes                                                   |
+| ------------- | --------- | ------------------------------------------------------- |
+| `GTC`         | ✓         | Good till canceled (`good_til_cancelled`).              |
+| `GTD`         | ✓         | Derivatives only; expires at 8:00 UTC (`good_til_day`). |
+| `IOC`         | ✓         | Immediate or cancel (`immediate_or_cancel`).            |
+| `FOK`         | ✓         | Fill or kill (`fill_or_kill`).                          |
 
 Deribit applies time in force to limit-style orders. The adapter omits `time_in_force`
 for `MARKET`, `STOP_MARKET`, and `MARKET_IF_TOUCHED` orders because Deribit rejects that
@@ -640,8 +661,8 @@ Deribit offers two post-only modes:
 2. **Reject mode**: Order is immediately rejected if it would cross the spread.
 
 The Nautilus adapter uses **reject mode** (`reject_post_only=true`) for deterministic behavior.
-If a post-only order would take liquidity, it is rejected with error code `11054`, and an `OrderRejected`
-event is emitted with the `due_post_only` flag set to `true`.
+When Deribit returns error code `11054`, the adapter emits `OrderRejected` with `due_post_only=true`.
+Other rejection codes set this flag to `false`, including rejections forwarded from Coinbase Exchange.
 
 This allows strategies to differentiate between:
 
@@ -959,7 +980,7 @@ for the testnet through the testnet interface at [test.deribit.com](https://test
 | `retry_delay_max_ms`               | `10,000`   | Maximum delay in milliseconds between retries.                     |
 | `heartbeat_interval_secs`          | `30`       | WebSocket heartbeat interval.                                      |
 | `auth_timeout_secs`                | `None`     | Seconds to await the WebSocket auth result; unset means 30.        |
-| `update_instruments_interval_mins` | `60`       | Accepted but not yet acted on; instruments load once on connect.   |
+| `update_instruments_interval_mins` | `60`       | Instrument refresh interval in minutes; `0` disables it.           |
 | `auto_load_missing_instruments`    | `False`    | Lazy-load uncached instruments on subscribe.                       |
 | `transport_backend`                | `Sockudo`  | WebSocket transport backend.                                       |
 

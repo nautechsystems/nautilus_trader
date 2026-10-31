@@ -8,14 +8,21 @@ Check release recovery, read-only verification, and interrupted publication.
 
 # Test assertions use literal counts and subprocess exit codes
 # ruff: noqa: PLR2004
+import base64
 import hashlib
+import io
 import json
 import os
+import runpy
 import shutil
 import subprocess
 import tempfile
 import textwrap
+import urllib.error
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
+from unittest.mock import patch
 
 
 repo = Path(__file__).resolve().parents[2]
@@ -75,7 +82,8 @@ elif tool == "cargo":
         )
     )
 elif tool == "uv":
-    assert "pypi-attestations" in args and "--provenance-file" in args, args
+    assert "pypi_attestations" in args and "--provenance-file" in args, args
+    assert "--isolated" in args and "--managed-python" in args and "-I" in args, args
     assert Path(option("--provenance-file")).is_file()
     if os.environ.get("FAIL_REGISTRY"):
         print("provenance mismatch: wrong publisher identity", file=sys.stderr)
@@ -161,7 +169,7 @@ elif tool == "gh":
     if args[:3] == ["attestation", "verify", "--help"]:
         print("--source-digest --source-ref --bundle")
     elif args[:2] == ["attestation", "verify"]:
-        assert option("--source-digest") == sha, args
+        assert option("--source-digest") == ("7" * 40 if "--predicate-type" in args else sha), args
         assert option("--source-ref") == "refs/heads/master", args
         assert (
             option("--cert-identity")
@@ -169,15 +177,37 @@ elif tool == "gh":
         ), args
         if "--bundle" in args:
             bundle = Path(option("--bundle"))
-            assert bundle.suffix == ".sigstore"
-            assert json.loads(bundle.read_text()) == {
-                "dsseEnvelope": {"payload": "signed payload", "signatures": ["signature"]}
-            }
+            assert bundle.suffix in (".json", ".jsonl"), "Unsupported GitHub CLI bundle extension"
+            package = Path(args[2])
+            assert bundle.read_bytes() == package.with_name(package.name + ".sigstore").read_bytes()
+            if os.environ.get("PUBLICATION_RECOVERY"):
+                if "--predicate-type" not in args:
+                    sys.exit(43)
+            else:
+                assert json.loads(bundle.read_text()) == {
+                    "dsseEnvelope": {"payload": "signed payload", "signatures": ["signature"]}
+                }
         if os.environ.get("FAIL_PROVENANCE"):
             sys.exit(43)
     elif args[0] == "api":
         route = args[1]
-        if "/jobs?" in route:
+        if "/actions/runs/456" in route:
+            if "/jobs?" in route:
+                data = {"total_count": 1,
+                        "jobs": [{"name": "recover-pypi", "conclusion": "success"}]}
+            elif "/artifacts?" in route:
+                data = {"total_count": 1, "artifacts": [{
+                    "name": "release-recovery-attestations-456-3", "expired": False,
+                    "workflow_run": {"id": 456, "head_sha": "7" * 40},
+                }]}
+            else:
+                data = {"id": 456, "repository": {"full_name": repository},
+                        "head_repository": {"full_name": repository},
+                        "path": ".github/workflows/build.yml", "event": "workflow_dispatch",
+                        "head_branch": "master", "head_sha": "7" * 40,
+                        "run_attempt": 3, "status": "completed"}
+            print(json.dumps(data))
+        elif "/jobs?" in route:
             print(
                 json.dumps(
                     {"name": "tag-release", "conclusion": os.environ.get("SOURCE_GATE", "success")}
@@ -196,6 +226,9 @@ elif tool == "gh":
                 )
         elif "/commits/" in route:
             print(json.dumps({"sha": "2" * 40 if os.environ.get("WRONG_TAG") else sha}))
+        elif "/actions/runs/123/attempts/" in route:
+            attempt = int(route.rsplit("/", 1)[1])
+            print(json.dumps({"head_sha": sha, "run_attempt": attempt, "status": "completed"}))
         else:
             assert route.endswith("/actions/runs/123"), route
             count_file = root / "source-reads"
@@ -205,6 +238,7 @@ elif tool == "gh":
             print(
                 json.dumps(
                     {
+                        "id": 123,
                         "repository": {"full_name": repository},
                         "head_repository": {
                             "full_name": os.environ.get("SOURCE_REPOSITORY", repository)
@@ -219,10 +253,12 @@ elif tool == "gh":
                 )
             )
     elif args[:2] == ["run", "download"]:
-        assert args[2] == "123"
+        assert args[2] in ("123", "456")
+        if args[2] == "456":
+            assert option("--name") == "release-recovery-attestations-456-3"
         destination = Path(option("--dir"))
         destination.mkdir(parents=True, exist_ok=True)
-        for p in (root / "original").iterdir():
+        for p in (root / ("original" if args[2] == "123" else "publication")).iterdir():
             shutil.copyfile(p, destination / p.name)
     elif args[:2] == ["release", "view"]:
         data = state()
@@ -384,8 +420,333 @@ def _writes(root: Path) -> list[list[str]]:
     ]
 
 
+RECOVERY = runpy.run_path(str(Path(__file__).with_name("release-recovery.py")))
+GLOBALS = RECOVERY["_prepare"].__globals__
+SOURCE_SHA = "1" * 40
+RECOVERY_SHA = "7" * 40
+REPOSITORY = "nautechsystems/nautilus_trader"
+
+
+def _expect_failure(call: Callable[..., object], *args: object) -> None:
+    try:
+        call(*args)
+    except (ValueError, subprocess.CalledProcessError):
+        return
+    raise AssertionError("Expected release recovery to reject invalid evidence")
+
+
+# Keep each evidence mutation beside the original fixture it changes
+def _check_recovery(root: Path) -> None:  # noqa: PLR0915
+    (root / "source").mkdir()
+    (root / "assets").mkdir()
+    (root / "remote").mkdir()
+    (root / "source-artifacts/wheel").mkdir(parents=True)
+    source = {
+        "id": 123,
+        "head_sha": SOURCE_SHA,
+        "run_attempt": 2,
+        "status": "completed",
+        "repository": {"full_name": REPOSITORY},
+    }
+    source_path = root / "source/source-run.json"
+    source_path.write_text(json.dumps(source))
+    name = "nautilus_trader-2.0.0rc8-cp313-cp313-win_amd64.whl"
+    original = root / "source-artifacts/wheel" / name
+    original.write_bytes(b"original wheel content")
+    (root / "assets" / name).write_bytes(original.read_bytes())
+    (root / "remote" / name).write_bytes(original.read_bytes())
+    env = {
+        "GITHUB_REPOSITORY": REPOSITORY,
+        "GITHUB_WORKFLOW_REF": f"{REPOSITORY}/.github/workflows/build.yml@refs/heads/master",
+        "GITHUB_EVENT_NAME": "workflow_dispatch",
+        "GITHUB_RUN_ID": "456",
+        "GITHUB_RUN_ATTEMPT": "3",
+        "RELEASE_RECOVERY_SHA": RECOVERY_SHA,
+        "GITHUB_OUTPUT": str(root / "outputs"),
+        "TAG_NAME": "v2.0.0rc8",
+        "PYPI_RECOVERY_RUN_ID": "456",
+    }
+    with patch.dict(os.environ, env):
+        RECOVERY["_prepare"](root)
+        predicate = json.loads((root / "recovery-predicate.json").read_text())
+        digest = RECOVERY["_digest"](original)
+        assert predicate == {
+            "repository": REPOSITORY,
+            "tag": "v2.0.0rc8",
+            "source": {"sha": SOURCE_SHA, "run": 123, "attempt": 2},
+            "recovery": {"sha": RECOVERY_SHA, "run": 456, "attempt": 3},
+            "artifacts": [{"name": name, "sha256": digest}],
+        }
+        package = root / "distributions" / name
+        package.with_name(name + ".publish.attestation").write_text("publish signature")
+
+        def stage_metadata(route: str) -> dict[str, Any]:
+            if route.endswith("/commits/v2.0.0rc8"):
+                return {"sha": SOURCE_SHA}
+            assert route.endswith("/actions/runs/123"), route
+            return source
+
+        with (
+            patch.dict(GLOBALS, {"_github_json": stage_metadata}),
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess([], 0, '{"isDraft": true}'),
+            ),
+            patch(
+                "urllib.request.urlopen",
+                side_effect=urllib.error.HTTPError("", 404, "", {}, None),
+            ),
+        ):
+            RECOVERY["_stage"](root)
+        assert (root / "publish/dist" / name).read_bytes() == original.read_bytes()
+        assert (
+            root / "publish/dist" / (name + ".publish.attestation")
+        ).read_text() == "publish signature"
+
+        statement = {"predicateType": RECOVERY["PREDICATE_TYPE"], "predicate": predicate}
+        bundle = package.with_name(name + ".sigstore")
+        bundle.write_text(
+            json.dumps(
+                {
+                    "dsseEnvelope": {
+                        "payload": base64.b64encode(json.dumps(statement).encode()).decode(),
+                    },
+                },
+            ),
+        )
+        run = {
+            "repository": {"full_name": REPOSITORY},
+            "head_repository": {"full_name": REPOSITORY},
+            "path": ".github/workflows/build.yml",
+            "event": "workflow_dispatch",
+            "head_branch": "master",
+            "head_sha": RECOVERY_SHA,
+            "run_attempt": 3,
+            "status": "completed",
+        }
+
+        def github_json(route: str) -> dict[str, Any]:
+            if "/actions/runs/123/attempts/" in route:
+                if not route.endswith("/2"):
+                    raise subprocess.CalledProcessError(1, ["gh", "api", route])
+                return {"head_sha": SOURCE_SHA, "run_attempt": 2, "status": "completed"}
+            prefix = f"repos/{REPOSITORY}/actions/runs/456/attempts/3"
+            if route == prefix:
+                return run
+            assert route == prefix + "/jobs?per_page=100", route
+            return {"total_count": 1, "jobs": [{"name": "recover-pypi", "conclusion": "success"}]}
+
+        def verify_bundle(args: list[str], *, check: bool) -> subprocess.CompletedProcess:
+            assert check is True
+            bundle_json = Path(args[args.index("--bundle") + 1])
+            assert bundle_json.suffix == ".json"
+            assert bundle_json.read_bytes() == bundle.read_bytes()
+            return subprocess.CompletedProcess(args, 0)
+
+        with (
+            patch.dict(GLOBALS, {"_github_json": github_json}),
+            patch("subprocess.run", side_effect=verify_bundle) as verify,
+        ):
+            RECOVERY["_verify"](package, source_path)
+            command = verify.call_args.args[0]
+            assert command[command.index("--source-digest") + 1] == RECOVERY_SHA
+            assert command[command.index("--predicate-type") + 1] == RECOVERY["PREDICATE_TYPE"]
+            original_bundle = bundle.read_text()
+            source["run_attempt"] = 3
+            source_path.write_text(json.dumps(source))
+            RECOVERY["_verify"](package, source_path)
+            source["run_attempt"] = 2
+            source_path.write_text(json.dumps(source))
+            for key, value in (("sha", "2" * 40), ("run", 124), ("attempt", 999)):
+                saved = predicate["source"][key]
+                predicate["source"][key] = value
+                bundle.write_text(
+                    json.dumps(
+                        {
+                            "dsseEnvelope": {
+                                "payload": base64.b64encode(
+                                    json.dumps(statement).encode(),
+                                ).decode(),
+                            },
+                        },
+                    ),
+                )
+                _expect_failure(RECOVERY["_verify"], package, source_path)
+                predicate["source"][key] = saved
+            bundle.write_text(original_bundle)
+            with patch.dict(os.environ, {"PYPI_RECOVERY_RUN_ID": "789"}):
+                _expect_failure(RECOVERY["_verify"], package, source_path)
+            for key, value in (
+                ("head_sha", SOURCE_SHA),
+                ("event", "push"),
+                ("head_branch", "develop"),
+            ):
+                saved = run[key]
+                run[key] = value
+                _expect_failure(RECOVERY["_verify"], package, source_path)
+                run[key] = saved
+            with patch.dict(
+                GLOBALS,
+                {
+                    "_github_json": lambda route: (
+                        github_json(route)
+                        if "/jobs?" not in route
+                        else {
+                            "total_count": 1,
+                            "jobs": [{"name": "recover-pypi", "conclusion": "failure"}],
+                        }
+                    ),
+                },
+            ):
+                _expect_failure(RECOVERY["_verify"], package, source_path)
+            with patch("subprocess.run", side_effect=subprocess.CalledProcessError(1, "gh")):
+                _expect_failure(RECOVERY["_verify"], package, source_path)
+            package.write_bytes(b"changed wheel")
+            _expect_failure(RECOVERY["_verify"], package, source_path)
+            package.write_bytes(original.read_bytes())
+        original.write_bytes(b"different source artifact")
+        another = root / "missing-original"
+        (another / "source").mkdir(parents=True)
+        (another / "source/source-run.json").write_text(json.dumps(source))
+        (another / "assets").mkdir()
+        (another / "assets" / name).write_bytes(package.read_bytes())
+        _expect_failure(RECOVERY["_prepare"], another)
+
+        response = {"urls": [{"filename": name, "digests": {"sha256": "bad"}}]}
+        with (
+            patch.dict(GLOBALS, {"_github_json": stage_metadata}),
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess([], 0, '{"isDraft": true}'),
+            ),
+            patch("urllib.request.urlopen", return_value=io.StringIO(json.dumps(response))),
+        ):
+            _expect_failure(RECOVERY["_stage"], root)
+        shutil.rmtree(root / "publish")
+        response["urls"][0]["digests"]["sha256"] = digest
+        with (
+            patch.dict(GLOBALS, {"_github_json": stage_metadata}),
+            patch(
+                "subprocess.run",
+                return_value=subprocess.CompletedProcess([], 0, '{"isDraft": true}'),
+            ),
+            patch("urllib.request.urlopen", return_value=io.StringIO(json.dumps(response))),
+        ):
+            RECOVERY["_stage"](root)
+        assert list((root / "publish/dist").iterdir()) == []
+        assert (root / "outputs").read_text().splitlines()[-1] == "missing=false"
+
+
+def _check_download(root: Path) -> None:
+    (root / "source").mkdir(parents=True)
+    (root / "source/source-run.json").write_text(
+        json.dumps({"repository": {"full_name": REPOSITORY}}),
+    )
+    (root / "assets").mkdir()
+    (root / "assets/wheel.whl.sigstore").write_text("original bundle")
+    run = {"run_attempt": 3, "head_sha": RECOVERY_SHA}
+    metadata = {
+        "total_count": 1,
+        "artifacts": [
+            {
+                "name": "release-recovery-attestations-456-3",
+                "expired": False,
+                "workflow_run": {"id": 456, "head_sha": RECOVERY_SHA},
+            },
+        ],
+    }
+
+    def github_json(route: str) -> dict[str, Any]:
+        if route.endswith("/actions/runs/456"):
+            return run
+        assert route.endswith("/actions/runs/456/artifacts?per_page=100"), route
+        return metadata
+
+    def download(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert command[:4] == ["gh", "run", "download", "456"]
+        assert command[command.index("--repo") + 1] == REPOSITORY
+        assert command[command.index("--name") + 1] == "release-recovery-attestations-456-3"
+        destination = Path(command[command.index("--dir") + 1])
+        destination.mkdir()
+        (destination / "wheel.whl.sigstore").write_text("later bundle")
+        (destination / "wheel.whl.intoto.jsonl").write_text("later envelope")
+        return subprocess.CompletedProcess(command, 0)
+
+    with (
+        patch.dict(GLOBALS, {"_github_json": github_json, "_publication_run": lambda *_args: None}),
+        patch("subprocess.run", side_effect=download) as retrieve,
+    ):
+        RECOVERY["_download"](root, 456)
+        assert (root / "assets/wheel.whl.sigstore").read_text() == "original bundle"
+        assert (root / "assets/wheel.whl.intoto.jsonl").read_text() == "later envelope"
+        assert retrieve.call_count == 1
+        artifact = metadata["artifacts"][0]
+        for key, value in (("expired", True), ("name", "release-recovery-attestations-456-2")):
+            saved = artifact[key]
+            artifact[key] = value
+            _expect_failure(RECOVERY["_download"], root, 456)
+            artifact[key] = saved
+        artifact["workflow_run"]["head_sha"] = SOURCE_SHA
+        _expect_failure(RECOVERY["_download"], root, 456)
+        assert retrieve.call_count == 1
+
+
+def _check_signing(root: Path) -> None:
+    root.mkdir()
+    executable = root / "uv"
+    executable.write_text(
+        '#!/usr/bin/env bash\nset -euo pipefail\nprintf "%s\\n" "$@" > "$SIGNING_ARGUMENTS"\n',
+    )
+    executable.chmod(0o755)
+    artifact = root / "original.whl"
+    artifact.write_bytes(b"original artifact")
+    script_dir = Path(__file__).parent
+    version = subprocess.check_output(
+        [bash, str(script_dir.parent / "tool-version.sh"), "pypi-attestations"],
+        text=True,
+    ).strip()
+    log = root / "arguments"
+    subprocess.run(
+        [bash, str(script_dir / "sign-pypi-attestations.bash"), str(artifact)],
+        check=True,
+        capture_output=True,
+        text=True,
+        env={
+            **os.environ,
+            "PATH": str(root) + os.pathsep + os.environ["PATH"],
+            "SIGNING_ARGUMENTS": str(log),
+            "PYPI_ATTESTATIONS_VERSION": version,
+            "PYPI_ATTESTATION_SIGN_ATTEMPTS": "1",
+            "PYTHONPATH": str(root / "poison"),
+        },
+    )
+    assert log.read_text().splitlines() == [
+        "run",
+        "--isolated",
+        "--no-project",
+        "--no-build",
+        "--managed-python",
+        "--python",
+        "3.13",
+        "--with",
+        f"pypi-attestations=={version}",
+        "--",
+        "python",
+        "-I",
+        "-m",
+        "pypi_attestations",
+        "sign",
+        str(artifact),
+    ]
+
+
 with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
     base = Path(directory)
+    units = base / "publication-units"
+    units.mkdir()
+    _check_recovery(units)
+    _check_download(base / "evidence-download")
+    _check_signing(base / "signing")
     publication = (
         (repo / ".github/workflows/build.yml")
         .read_text()
@@ -469,6 +830,75 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
     assert len(_writes(success)) == write_count, "Published verification changed the release"
     assert {p.name: p.read_bytes() for p in (success / "remote").iterdir()} == before
 
+    preparation = base / "prepare-pypi"
+    _fixture(preparation)
+    for package in (preparation / "original").iterdir():
+        if package.name.endswith((".whl", ".tar.gz")):
+            shutil.copyfile(package, preparation / "remote" / package.name)
+    _invoke(
+        preparation,
+        mode="prepare-pypi",
+        GITHUB_SHA="7" * 40,
+        GITHUB_WORKFLOW_REF="nautechsystems/nautilus_trader/.github/workflows/build.yml@refs/heads/master",
+        GITHUB_EVENT_NAME="workflow_dispatch",
+        GITHUB_RUN_ID="456",
+        GITHUB_RUN_ATTEMPT="3",
+        GITHUB_OUTPUT=str(preparation / "outputs"),
+    )
+    assert _writes(preparation) == []
+    prepared = next((preparation / "diagnostics").glob("recovery.*/recovery-predicate.json"))
+    predicate = json.loads(prepared.read_text())
+    assert predicate["source"] == {"sha": "1" * 40, "run": 123, "attempt": 1}
+    assert predicate["recovery"] == {"sha": "7" * 40, "run": 456, "attempt": 3}
+    assert predicate["artifacts"] == [
+        {"name": p.name, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+        for p in sorted((preparation / "remote").iterdir())
+    ]
+    assert not any(tool == "uv" for tool, args in _calls(preparation) if args != ["--version"])
+
+    publication_recovery = base / "publication-recovery"
+    _fixture(publication_recovery)
+    (publication_recovery / "publication").mkdir()
+    for original in (publication_recovery / "original").iterdir():
+        if original.name.endswith((".sigstore", ".intoto.jsonl")):
+            original.unlink()
+    predicate["artifacts"] = [
+        {"name": p.name, "sha256": hashlib.sha256(p.read_bytes()).hexdigest()}
+        for p in sorted((publication_recovery / "original").iterdir())
+    ]
+    statement = {
+        "predicateType": "https://nautilustrader.io/attestations/release-recovery/v1",
+        "predicate": predicate,
+    }
+    envelope = {
+        "payload": base64.b64encode(json.dumps(statement).encode()).decode(),
+        "signatures": ["signature"],
+    }
+    for package in (publication_recovery / "original").iterdir():
+        shutil.copyfile(package, publication_recovery / "remote" / package.name)
+        (publication_recovery / "publication" / (package.name + ".sigstore")).write_text(
+            json.dumps({"dsseEnvelope": envelope}),
+        )
+        (publication_recovery / "publication" / (package.name + ".intoto.jsonl")).write_text(
+            json.dumps(envelope),
+        )
+    _invoke(publication_recovery, PYPI_RECOVERY_RUN_ID="456", PUBLICATION_RECOVERY="1")
+    published = json.loads((publication_recovery / "state.json").read_text())
+    assert published["isDraft"] is False
+    assert (
+        '--predicate-type "https://nautilustrader.io/attestations/release-recovery/v1"'
+        in published["body"]
+    )
+    assert len(list((publication_recovery / "remote").iterdir())) == 39
+    writes_before = len(_writes(publication_recovery))
+    _invoke(
+        publication_recovery,
+        mode="verify",
+        PYPI_RECOVERY_RUN_ID="",
+        PUBLICATION_RECOVERY="1",
+    )
+    assert len(_writes(publication_recovery)) == writes_before
+
     for name, env, expected in (
         ("wrong-tag", {"WRONG_TAG": "1"}, 1),
         ("wrong-source", {"SOURCE_EVENT": "pull_request"}, 1),
@@ -480,7 +910,7 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
         ("unsupported-seal-tool", {"UNSUPPORTED_SEAL_HELP": "1"}, 2),
         ("parent-seal-help", {"PARENT_SEAL_HELP": "1"}, 1),
         ("failed-source-gate", {"SOURCE_GATE": "failure"}, 1),
-        ("provenance", {"FAIL_PROVENANCE": "1"}, 43),
+        ("provenance", {"FAIL_PROVENANCE": "1"}, 1),
         ("registry", {"FAIL_REGISTRY": "1"}, 42),
         ("missing-originals", {"EXPIRED_ARTIFACTS": "1"}, 1),
         ("changed-source", {"CHANGED_SOURCE": "1"}, 1),

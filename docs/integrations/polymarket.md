@@ -38,6 +38,27 @@ make build-debug
 For development wheels and source-build prerequisites, see the
 [installation guide](../getting_started/installation.md).
 
+## Setup
+
+For public market data, start with the [data tester](https://github.com/nautechsystems/nautilus_trader/blob/develop/examples/live/polymarket/data_tester.py).
+CLOB trading credentials are required only for execution and PolyBolt reference prices.
+
+Before enabling execution:
+
+1. Identify your [wallet type](#signature-types). Set `signature_type` explicitly for a smart wallet
+   and use its address as `funder`. For EOA trading, the funder must equal the signing address.
+1. Create [CLOB credentials](#clob-credentials) for the signing key. Relayer and Builder keys serve
+   different APIs and do not replace the CLOB key, secret, and passphrase.
+1. Check the funding wallet's pUSD balance and [trading approvals](#wallets-and-accounts).
+1. Put the intended instrument IDs in `load_ids` and share the provider config between data and
+   execution clients. Discovery slugs alone do not [scope reconciliation](#instrument-provider-options).
+1. Set both the disconnection timeout and post-stop delay at [30 seconds](#orders-capability).
+   Leave [order-safety heartbeats](#order-safety-heartbeats) disabled unless the process owns all
+   orders under dedicated CLOB credentials.
+1. Run an execution tester in dry run first. The maintained execution examples default to dry run
+   and retain risk checks. Set `DRY_RUN` to `False` in Python or `false` in Rust only when you intend
+   to place real orders.
+
 ## Examples
 
 The maintained examples are available in
@@ -123,8 +144,8 @@ types and setup flows.
 :::
 
 NautilusTrader defaults to signature type 0 (EOA). Set `signature_type` to use another supported
-wallet type. Proxy signature clients fail during construction unless `funder` is present and differs
-from the signing address.
+wallet type. Client construction rejects malformed funder addresses, EOA funders that differ from
+the signing address, and smart-wallet funders that are absent or equal to the signing address.
 
 Environment variables supply a single wallet address per trader instance. To use multiple wallets,
 configure separate execution client instances.
@@ -182,66 +203,72 @@ become approval authority.
 
 #### Balance calculation
 
-Balance refreshes use the venue-reported pUSD total and derive locked collateral from the
-execution client's local state:
+Refreshes use the venue-reported pUSD total and calculate locks from local state:
 
-- Open BUY order reservations for its account, using cached limit prices and remaining quantities.
-- Its BUY fill notional and commission that the venue total may still include.
+- **Reservations**: Open BUY orders for this account, valued at cached limit prices and remaining quantities.
+  Excludes submitted orders awaiting acceptance and orders absent from the execution cache.
+- **Unsettled spend**: Known BUY fill notional and commission that the venue total may still include.
 
-Reservations exclude submitted orders awaiting acceptance and orders absent from the execution cache.
-SELL orders reserve outcome tokens rather than pUSD and do not contribute to locked collateral.
+SELL orders reserve outcome tokens without locking pUSD. Locked collateral is capped at the total;
+free balance equals total minus locked, following the [balance model](../concepts/accounting.md#balance-model).
 
-**Unsettled BUY spend**: The next refresh after a known BUY fill subtracts its notional plus commission from
-free balance. It also subtracts other unsettled BUY spend measured against the same snapshot.
+#### Unsettled BUY spend
 
-These amounts release together when the venue total has fallen by at least the combined amount since that
-snapshot. Thus, a drained total is not subtracted again. Until then, locked unsettled spend is only the part
-of the open spend that the decrease has not covered. A refresh whose venue total is unchanged keeps the open
-spend locked.
+Each refresh deducts uncovered BUY spend from free balance.
 
-**Voids**: A void removes that fill's spend from locked collateral immediately. Later void revisions
-are cumulative, so only the increase is removed. The voided amount still counts toward the decrease
-required to release other open spend. A void of a fill that was never locked does not raise that
-threshold. When no open spend remains, the next refresh releases the voided amount and moves the
-snapshot.
+The **snapshot** is a reference balance and time, set by the first applied refresh. It resets to the venue
+total while no BUY spend is pending and can adjust when fills release.
 
-The adapter does not lock these BUY fills:
+Locks release through either path:
 
-- A fill first applied from terminal REST evidence, including a confirmed fill report, because that
-  evidence is admitted only after the trade is confirmed.
-- A reconciled fill more than 15 seconds older than the snapshot, or received before any snapshot.
+- **Confirmed settlement**: At refresh start, the adapter records confirmed pending fills. If any exist, it
+  updates the CLOB balance cache, then reads the venue total. After both requests succeed, it releases only
+  recorded fills that remain confirmed, even if credits hide their debit. Stale responses and failed
+  refreshes leave locks unchanged.
+- **Balance decrease**: Other pending spend releases together once the total's drop from the snapshot covers
+  its combined amount. Until then, only uncovered spend stays locked. Confirmed releases are subtracted from
+  the observed decrease; the remainder reduces other locks, including on later unchanged refreshes.
 
-Locked collateral is capped at the reported total, with free balance equal to total minus locked,
-following the [balance model](../concepts/accounting.md#balance-model).
+**Voids**:
+
+- A void immediately removes its fill's locked spend. Cumulative revisions remove only the increase.
+- The voided amount still counts toward the decrease needed to release other open spend. Voids of never-locked
+  fills do not raise this threshold.
+- When no open spend remains, the next refresh releases the voided amount and updates the snapshot.
+
+**Excluded fills**: No lock applies to:
+
+- Fills first applied from terminal REST evidence, including confirmed fill reports: this evidence is
+  admitted only after confirmation.
+- Reconciled fills more than 15 seconds older than the snapshot, or received before any snapshot.
 
 #### Refresh timing
 
-The adapter seeds reservations from the execution cache at connect. It updates reservations and unsettled BUY
-spend as the core processes order events, including reconciled events. A transport reconnect keeps unsettled
-BUY spend. Reset clears it. The initial balance refresh precedes startup reconciliation. Orders discovered
-during reconciliation affect balances on the next refresh.
-
-Refreshes occur at connect, on account queries, after finalized trade updates, and on user WebSocket
-reconnect. A balance response that arrives after a newer refresh, after an execution-client reconnect, or
-after the client resets, is not applied. A user WebSocket reconnect does not discard an in-flight refresh. A
-newer refresh still wins. Account balances do not change on each order event. Balance refreshes do not request
-open orders.
+- **Startup**: At connect, the adapter seeds reservations from the execution cache. The initial refresh
+  precedes startup reconciliation; discovered orders affect the next refresh.
+- **Order events**: Core order events, including reconciled events, update reservations and unsettled spend.
+  Account balances change only on refresh, not on each event.
+- **Triggers**: Refreshes run at connect, on account queries, after finalized trade updates, and on user
+  WebSocket reconnect. They do not request open orders.
+- **Reconnect and reset**: Transport reconnect preserves unsettled BUY spend; reset clears it.
+- **Response ordering**: The adapter discards responses superseded by a newer refresh or invalidated by an
+  execution-client reconnect or reset. A user WebSocket reconnect retains in-flight refreshes;
+  a newer refresh still wins.
 
 :::warning
-**These balances are estimates.** HTTP balance responses and order events can reflect different
-points in time. They do not guarantee funds are reserved before submission.
+**These balances are estimates.** HTTP responses and order events can reflect different times.
+They do not guarantee funds are reserved before submission.
 
 Timing effects include:
 
-- A collateral credit, including own SELL settlement, can leave unsettled BUY spend locked after
-  the venue total already reflects the drain. That hold is limited to the amount the decrease has
-  not covered.
-- An unrelated debit can release that spend before the fill has drained.
-- A void whose amount never leaves the venue total can keep that uncovered shortfall locked while
-  other unsettled spend is still open.
-- A confirmation still inside the drain window can report terminal REST BUY spend as free until a
-  later refresh.
-- A refresh that applies before a queued fill is processed can leave that fill locked after the
+- **Credits**: Collateral credits, including own SELL settlement, can hide BUY debits. Uncovered spend stays
+  locked until one of the release paths above succeeds.
+- **Other debits**: An unrelated debit can release spend before the fill drains.
+- **Voids**: An amount that never leaves the venue total can keep its shortfall locked while other
+  unsettled spend remains open.
+- **REST confirmations**: A confirmation inside the drain window can report terminal REST BUY spend as free
+  until a later refresh.
+- **Queued fills**: A refresh applied before a queued fill is processed can leave it locked after the
   total has already drained.
 
 The adapter does not lock matched spend from another client on the same funder, or from a fill it
@@ -632,7 +659,9 @@ Configure signing and authentication through these parameters or their environme
 | `api_secret`  | `POLYMARKET_API_SECRET` | CLOB L2 API secret                                           |
 | `passphrase`  | `POLYMARKET_PASSPHRASE` | CLOB L2 API passphrase                                       |
 
-In owner mode, when a parameter is not supplied explicitly, the client reads its environment variable. Session
+In owner mode, omit a parameter or pass `None` to read its environment variable. An explicitly supplied
+empty or whitespace-only value fails configuration validation; it never selects an environment fallback.
+Nonblank overrides apply per field, so keep the private key and CLOB credentials matched. Session
 mode requires explicit credentials and a funder. CLOB L2 credentials authenticate the private-key signer. For
 `POLY_1271`, the Deposit Wallet remains the `funder`. It is not the L2 authentication address.
 
@@ -647,6 +676,19 @@ Instrument loading also has two common controls:
   returns an error. See [Runtime instrument loading](#runtime-instrument-loading).
 - `auto_load_debounce_ms` (default `100`): Window in milliseconds for coalescing concurrent auto-load
   requests into a single batched Gamma call.
+
+### Troubleshooting setup
+
+| Symptom                        | Check                                      | Action                                                                                                   |
+| ------------------------------ | ------------------------------------------ | -------------------------------------------------------------------------------------------------------- |
+| Blank-override error           | Explicit config value                      | Omit the field or pass `None` for environment fallback.                                                  |
+| Authentication rejection       | CLOB key, secret, passphrase, and signer   | Use the three credentials created for the signing key.                                                   |
+| Signature rejection            | Wallet type and funder                     | Match `signature_type` to the funding wallet; use the signer address for EOA mode.                       |
+| Balance or allowance rejection | Funding wallet and approvals               | Check pUSD, outcome-token balances for sells, and the required spender approvals.                        |
+| Empty discovery                | Instrument IDs, slugs, and market protocol | Check that IDs and slugs identify existing protocol `v1` CTF markets.                                    |
+| Unmapped reconciliation record | Execution provider scope                   | Set `load_ids` for the instruments this node should reconcile and share the config with the data client. |
+
+See Polymarket's [error reference](https://docs.polymarket.com/resources/error-codes) for venue errors.
 
 ## Data capability
 
@@ -1328,6 +1370,16 @@ lifts the report gate.
 On connect, the adapter rebuilds applied fills and voids from the cached order events, so a replayed
 trade does not produce a second fill. Those rebuilt fills are not read again.
 
+#### Unbound fills
+
+Maker fills reconstructed from reconciliation reports can lack the original venue trade ID: their
+composite leg IDs are not reversible. The adapter retains their observed application state as unbound
+legs until a validated user WebSocket trade update or targeted terminal REST result matches the leg IDs.
+A missing venue trade ID alone does not fault or disconnect the client.
+
+Retaining an unbound leg does not establish venue settlement or authorize another fill or void. The
+normal settlement and fault rules apply when venue evidence arrives.
+
 #### Settlement faults
 
 A trade enters a hard fault when its venue outcome and the engine's state cannot be reconciled:
@@ -1344,6 +1396,8 @@ A hard-faulted trade admits no further fills or voids, except the one void owed 
 after REST reported `FAILED`. The adapter logs the fault at error level, refreshes the account, and
 blocks reconciliation for the trade (see [settlement precedence](#settlement-precedence)) until the
 client resets or the node restarts.
+
+The adapter publishes no dedicated quarantine or settlement-fault event or metric.
 
 ##### Submissions
 
@@ -1365,9 +1419,10 @@ expiry, or rejection that the venue reports still applies. One inferred from a `
 
 ##### Settlement records
 
-The adapter keeps settlement records for the lifetime of the execution client. If more than 100,000
-records accumulate after connect, the client faults closed: it reports disconnected and refuses new
-commands until restart. Records rebuilt from the cache on connect do not count toward this limit.
+The adapter keeps settlement records and unbound legs for the lifetime of the execution client. Adding
+an entry beyond the combined limit of 100,000 entries after connect faults the client closed: it reports
+disconnected and refuses new commands until restart. Entries rebuilt from the cache on connect do not
+count toward this limit.
 
 ### Trade ID derivation
 
@@ -2920,6 +2975,14 @@ Class/struct: `PolymarketDataClientConfig`.
 | `book_stale_check_interval_secs`      | `5`       | Book feed staleness check interval in seconds.                                                |
 | `book_stale_threshold_secs`           | `0`       | Maximum book feed silence in seconds before reporting stale; `0` disables the monitor.        |
 
+Retry delays must be finite and nonnegative, and the maximum must be at least the initial delay.
+Both must fit in a Rust duration after adding up to 25% jitter. A zero delay permits an immediate retry;
+use `auto_load_max_retries=0` to disable retries.
+
+Rust builders, `Default`, deserialization, and Python constructors all default to a 60-minute instrument
+refresh interval. To disable refresh in a Rust builder, use `.update_instruments_interval_mins(None)`;
+Python callers pass `update_instruments_interval_mins=None`.
+
 `ws_timeout_secs` applies to market and PolyBolt WebSockets. It also bounds sends waiting for
 reconnection. Use a value above the 5-second maximum reconnect backoff. Each connection attempt
 starts a new timeout, so the total connection time can exceed this value.
@@ -2933,7 +2996,7 @@ Class/struct: `PolymarketExecutionClientConfig`.
 | `account_id`                                        | `POLYMARKET-001`      | Account identifier for this execution client.                                                                         |
 | `private_key`                                       | `POLYMARKET_PK`       | EIP-712 signing key.                                                                                                  |
 | `api_key`, `api_secret`, `passphrase`               | environment variables | CLOB L2 authentication credentials.                                                                                   |
-| `funder`                                            | `POLYMARKET_FUNDER`   | Funding wallet; proxy and deposit-wallet signatures require it to differ from the signing address.                    |
+| `funder`                                            | `POLYMARKET_FUNDER`   | Funding wallet; must equal the signer for EOA mode and differ from it for smart-wallet modes.                         |
 | `signature_type`                                    | `Eoa`                 | `Eoa`, `PolyProxy`, `PolyGnosisSafe`, or `Poly1271`.                                                                  |
 | `signer_type`                                       | `Owner`               | `Owner` or `Session`; sessions require explicit credentials and `Poly1271`.                                           |
 | `base_url_http`, `base_url_ws`, `base_url_data_api` | `None`                | Override the respective production endpoint.                                                                          |
@@ -2989,6 +3052,11 @@ only `has_proxy_url`. Configuration `Debug` output and transport diagnostics red
 
 Pass the same `PolymarketInstrumentProviderConfig` as `instrument_config` on the data client
 config and the execution client config.
+
+Each `load_ids` entry has the form `<condition_id>-<token_id>.POLYMARKET`: the condition ID is a
+`0x`-prefixed 32-byte hex value, and the token ID is a decimal unsigned 256-bit integer. A raw token ID,
+condition ID, slug, or instrument ID for another venue fails validation. Copy `instrument.id` from
+loaded market metadata rather than constructing it from a display name.
 
 `load_ids` is the only reconciliation scope. When that set is non-empty, unmapped records
 outside it are expected absences. When `load_ids` is unset or empty, every open order and position
@@ -3104,6 +3172,9 @@ instrument_config = PolymarketInstrumentProviderConfig(
     ),
 )
 ```
+
+Explicit `event_slugs` and builder-generated slugs load together. Duplicate slugs are requested once
+per load. The combined list keeps explicit slugs first.
 
 For custom event patterns, pass explicit `event_slugs`, pass direct `market_slugs`, scope by
 `series_ids`, or add a Rust filter or builder. The adapter rejects Python callable

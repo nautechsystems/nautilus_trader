@@ -1684,3 +1684,137 @@ async fn unsupported_encoding_chains_are_rejected(
 
     assert_eq!(message, expected);
 }
+
+#[rstest]
+#[case(true, true)]
+#[case(false, false)]
+#[case(true, false)]
+fn certs_dir_requires_matching_client_key(#[case] include_key: bool, #[case] matching_key: bool) {
+    let directory = tempfile::tempdir().unwrap();
+    let key = rcgen::KeyPair::generate().unwrap();
+    let cert = rcgen::CertificateParams::new(vec!["localhost".to_string()])
+        .unwrap()
+        .self_signed(&key)
+        .unwrap();
+    std::fs::write(directory.path().join("client.crt"), cert.pem()).unwrap();
+
+    if include_key {
+        let key = if matching_key {
+            key
+        } else {
+            rcgen::KeyPair::generate().unwrap()
+        };
+
+        std::fs::write(directory.path().join("client.key"), key.serialize_pem()).unwrap();
+    }
+
+    let result = HttpClient::builder()
+        .use_system_proxy(false)
+        .certs_dir(directory.path().to_str().unwrap().to_string())
+        .build();
+
+    if matching_key {
+        result.unwrap();
+    } else {
+        assert!(
+            matches!(result, Err(HttpClientError::ClientBuildError(message))
+            if message.contains("client auth required"))
+        );
+    }
+}
+
+#[rstest]
+#[case(true, "localhost", None)]
+#[case(false, "localhost", Some("UnknownIssuer"))]
+#[case(true, "wrong-host", Some("certificate not valid for name"))]
+#[tokio::test]
+async fn certs_dir_presents_client_certificate_over_https(
+    #[case] trust_server: bool,
+    #[case] server_name: &str,
+    #[case] expected_error: Option<&str>,
+) {
+    nautilus_cryptography::providers::install_cryptographic_provider();
+    let directory = tempfile::tempdir().unwrap();
+    let client_key = rcgen::KeyPair::generate().unwrap();
+    let client_cert = rcgen::CertificateParams::new(vec!["client".to_string()])
+        .unwrap()
+        .self_signed(&client_key)
+        .unwrap();
+    let server_key = rcgen::KeyPair::generate().unwrap();
+    let server_cert = rcgen::CertificateParams::new(vec![server_name.to_string()])
+        .unwrap()
+        .self_signed(&server_key)
+        .unwrap();
+    std::fs::write(directory.path().join("client.crt"), client_cert.pem()).unwrap();
+    std::fs::write(
+        directory.path().join("client.key"),
+        client_key.serialize_pem(),
+    )
+    .unwrap();
+
+    if trust_server {
+        std::fs::write(directory.path().join("server.crt"), server_cert.pem()).unwrap();
+    }
+
+    let client = HttpClient::builder()
+        .use_system_proxy(false)
+        .timeout_secs(5)
+        .certs_dir(directory.path().to_str().unwrap().to_string())
+        .build()
+        .unwrap();
+    let mut roots = rustls::RootCertStore::empty();
+    roots.add(client_cert.der().clone()).unwrap();
+    let verifier = rustls::server::WebPkiClientVerifier::builder(Arc::new(roots))
+        .build()
+        .unwrap();
+    let key = rustls::pki_types::PrivatePkcs8KeyDer::from(server_key.serialize_der());
+    let mut config = rustls::ServerConfig::builder()
+        .with_client_cert_verifier(verifier)
+        .with_single_cert(vec![server_cert.der().clone()], key.into())
+        .unwrap();
+    config.alpn_protocols = vec![b"h2".to_vec()];
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+
+    let reject_server = expected_error.is_some();
+
+    let peer = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+
+        let stream = match acceptor.accept(stream).await {
+            Ok(stream) => stream,
+            Err(_) if reject_server => return,
+            Err(e) => panic!("mutual TLS handshake failed: {e}"),
+        };
+
+        assert_eq!(
+            stream.get_ref().1.peer_certificates().unwrap(),
+            &[client_cert.der().clone()]
+        );
+        let mut connection = h2::server::handshake(stream).await.unwrap();
+        while let Some(request) = connection.accept().await {
+            let (_, mut respond) = request.unwrap();
+            respond
+                .send_response(http::Response::new(()), true)
+                .unwrap();
+        }
+    });
+
+    let result = send(
+        &client,
+        Method::GET,
+        format!("https://localhost:{port}/"),
+        None,
+    )
+    .await;
+    peer.abort();
+
+    match expected_error {
+        Some(expected) => {
+            let message = result.unwrap_err().to_string();
+            assert!(message.contains(expected), "{message}");
+        }
+        None => assert_eq!(result.unwrap().status.as_u16(), 200),
+    }
+}

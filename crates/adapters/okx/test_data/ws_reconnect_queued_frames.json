@@ -1,0 +1,22 @@
+{
+  "response": {
+    "id": "queued-response-17",
+    "op": "order",
+    "code": "0",
+    "msg": "",
+    "data": [
+      {
+        "clOrdId": "OQUEUED17",
+        "ordId": "2497956918703120384",
+        "sCode": "0",
+        "sMsg": ""
+      }
+    ]
+  },
+  "login_failure": {
+    "event": "login",
+    "code": "60009",
+    "msg": "Login failed",
+    "connId": "old-failure"
+  }
+}
