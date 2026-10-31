@@ -550,7 +550,14 @@ impl SimulatedExchange {
         let instrument_id = instrument.id();
         if let Some(engine) = self.matching_engines.get_mut(&instrument_id) {
             anyhow::ensure!(
-                instrument.expiration_ns() == engine.instrument.expiration_ns(),
+                instrument.expiration_ns() == engine.instrument.expiration_ns()
+                    || matches!(
+                        (&engine.instrument, instrument),
+                        (
+                            InstrumentAny::BinaryOption(_),
+                            InstrumentAny::BinaryOption(_)
+                        )
+                    ),
                 "Cannot change expiration for instrument {instrument_id} during replay"
             );
             self.cache.borrow_mut().add_instrument(instrument.clone())?;
@@ -559,6 +566,11 @@ impl SimulatedExchange {
                 .or_insert_with(|| engine.instrument.clone());
             engine.update_instrument(instrument.clone())?;
             self.instruments.insert(instrument_id, instrument.clone());
+            let ts_now = self.clock.borrow().timestamp_ns();
+
+            if instrument.expiration_ns().is_some_and(|ns| ns < ts_now) {
+                engine.process_instrument_expiration(ts_now);
+            }
         }
 
         self.drain_oto_commands();
@@ -2400,19 +2412,15 @@ mod tests {
     #[rstest]
     fn test_replay_instrument_expiration_change_is_rejected() {
         let mut exchange = setup_exchange(Dispatch::Queued);
-        let mut option = nautilus_model::instruments::stubs::binary_option();
+        let mut option = nautilus_model::instruments::stubs::option_contract_appl();
         option.id = InstrumentId::from("TEST.SIM");
-        let original = InstrumentAny::BinaryOption(option.clone());
+        let original = InstrumentAny::OptionContract(option.clone());
         exchange.add_instrument(original.clone()).unwrap();
-        exchange
-            .cache
-            .borrow_mut()
-            .add_instrument(original.clone())
-            .unwrap();
+        exchange.update_instrument(&original).unwrap();
         option.expiration_ns = UnixNanos::from(10);
 
         let error = exchange
-            .update_instrument(&InstrumentAny::BinaryOption(option))
+            .update_instrument(&InstrumentAny::OptionContract(option))
             .unwrap_err();
 
         assert!(error.to_string().contains("Cannot change expiration"));

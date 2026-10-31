@@ -921,10 +921,51 @@ impl BacktestEngine {
             }
 
             let settlement_scope = {
-                let Some(data) = self.data_iterator.peek() else {
+                let Some(mut data) = self.data_iterator.peek() else {
                     continue;
                 };
                 let settlement_scope = Self::settlement_scope(data);
+
+                if let DataRef::Instrument(instrument) = data
+                    && let Some(exchange) = self.venues.get(&instrument.id().venue)
+                {
+                    let instrument_id = instrument.id();
+                    let mut exchange_ref = exchange.borrow_mut();
+                    let previous_expiration = exchange_ref
+                        .get_matching_engine(&instrument_id)
+                        .and_then(|engine| engine.instrument.expiration_ns());
+                    exchange_ref.set_clock_time(ts_init);
+                    exchange_ref.update_instrument(instrument)?;
+
+                    if let Some(previous) = previous_expiration
+                        && Some(previous) != instrument.expiration_ns()
+                        && !exchange_ref
+                            .instrument_expirations()
+                            .iter()
+                            .any(|(_, ns)| *ns == previous)
+                    {
+                        let name =
+                            Self::instrument_expiration_timer_name(instrument_id.venue, previous);
+                        self.kernel.clock.borrow_mut().cancel_timer(&name);
+                        self.accumulator.cancel_timer(&name);
+                    }
+
+                    if let Some(expiration_ns) = instrument.expiration_ns()
+                        && expiration_ns >= ts_init
+                        && let Some(engine) = exchange_ref.get_matching_engine(&instrument_id)
+                        && !engine.is_expiration_processed()
+                    {
+                        self.set_instrument_expiration_timer(
+                            exchange,
+                            instrument_id,
+                            expiration_ns,
+                        )?;
+                    }
+
+                    // End the iterator borrow while scheduling, then reborrow the same row
+                    data = self.data_iterator.peek().expect("replay row exists");
+                }
+
                 Self::route_data_to_exchange(
                     &self.venues,
                     &mut self.has_book_processed,
@@ -1587,7 +1628,10 @@ impl BacktestEngine {
     ) -> anyhow::Result<()> {
         if matches!(
             data,
-            DataRef::IndexPrice(_) | DataRef::OptionGreeks(_) | DataRef::Custom(_)
+            DataRef::Instrument(_)
+                | DataRef::IndexPrice(_)
+                | DataRef::OptionGreeks(_)
+                | DataRef::Custom(_)
         ) {
             return Ok(());
         }
@@ -1602,7 +1646,6 @@ impl BacktestEngine {
             let mut processed_book_data = false;
 
             match data {
-                DataRef::Instrument(instrument) => exchange_ref.update_instrument(instrument)?,
                 DataRef::BookDelta(delta) => {
                     exchange_ref.process_order_book_delta(*delta)?;
                     processed_book_data = true;
@@ -1634,7 +1677,7 @@ impl BacktestEngine {
                 DataRef::InstrumentClose(close) => {
                     exchange_ref.process_instrument_close(*close)?;
                 }
-                DataRef::Custom(_) => {
+                DataRef::Instrument(_) | DataRef::Custom(_) => {
                     unreachable!("filtered before exchange routing")
                 }
                 #[cfg(feature = "defi")]
@@ -2503,24 +2546,25 @@ mod tests {
         },
     };
     use nautilus_model::{
-        data::{Data, InstrumentStatus, QuoteTick},
+        data::{Data, IndexPriceUpdate, InstrumentClose, InstrumentStatus, QuoteTick},
         enums::{
-            AccountType, BookType, ContingencyType, LiquiditySide, MarketStatus,
-            MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
-            TriggerType,
+            AccountType, BookType, ContingencyType, InstrumentCloseType, LiquiditySide,
+            MarketStatus, MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType,
+            PositionSide, TriggerType,
         },
         events::OrderEventAny,
         identifiers::{
             AccountId, ActorId, ClientId, ClientOrderId, PositionId, StrategyId, TraderId, Venue,
         },
         instruments::{
-            CryptoPerpetual, Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt,
+            BinaryOption, CryptoPerpetual, Instrument, InstrumentAny,
+            stubs::{binary_option, crypto_perpetual_ethusdt},
         },
         orders::{
             Order, OrderAny, OrderTestBuilder,
             stubs::{OrderFilledTestBuilder, TestOrderEventStubs},
         },
-        types::{Money, Price, Quantity},
+        types::{Currency, Money, Price, Quantity},
     };
     use nautilus_system::{KernelEventStore, RegisteredComponents};
     use nautilus_testkit::{
@@ -3986,8 +4030,8 @@ mod tests {
             Price::from("1001.00"),
             Quantity::from("1.000"),
             Quantity::from("1.000"),
-            UnixNanos::from(1),
-            UnixNanos::from(1),
+            UnixNanos::default(),
+            UnixNanos::default(),
         );
         msgbus::send_quote(
             format!("SimulatedExchange.process_new_quote.{venue}").into(),
@@ -4055,7 +4099,7 @@ mod tests {
     #[case::finer("0.10", "0.01", true)]
     #[case::coarser("0.01", "0.10", true)]
     #[case::precision("0.01", "0.001", true)]
-    fn test_replay_instrument_updates(
+    fn test_replay_instrument_updates_perpetual(
         mut crypto_perpetual_ethusdt: CryptoPerpetual,
         #[case] initial_tick: &str,
         #[case] revised_tick: &str,
@@ -4099,13 +4143,16 @@ mod tests {
                         create_submit_order_command(&order),
                     ));
                 }
+
                 received.set(received.get() + 1);
             }),
             None,
         );
+
         let increment = Price::from(revised_tick);
         crypto_perpetual_ethusdt.price_precision = increment.precision;
         crypto_perpetual_ethusdt.price_increment = increment;
+
         let quote = QuoteTick::new(
             id,
             Price::from("1000.00"),
@@ -4125,8 +4172,8 @@ mod tests {
             revised.ts_init = UnixNanos::from(timestamp);
             Data::Instrument(Box::new(InstrumentAny::CryptoPerpetual(revised)))
         }));
-        engine.add_data(data, None, true, true).unwrap();
 
+        engine.add_data(data, None, true, true).unwrap();
         for _ in 0..2 {
             engine.run(None, None, None, false).unwrap();
             assert_eq!(observed.replace(0), 3);
@@ -4149,8 +4196,10 @@ mod tests {
                 assert_eq!(matching.instrument.price_precision(), increment.precision);
                 assert_eq!(exchange.best_bid_price(id).is_none(), clears_book);
             }
+
             engine.reset().unwrap();
         }
+
         assert_eq!(
             cache.borrow().instrument(&id).unwrap().price_increment(),
             original.price_increment()
@@ -4161,6 +4210,345 @@ mod tests {
             matching.get_core().price_increment,
             original.price_increment()
         );
+    }
+
+    #[rstest]
+    fn test_replay_expiration_timer_preserves_latency(
+        #[values(2, 5)] revision_ns: u64,
+        #[values(false, true)] shared: bool,
+        #[values(false, true)] settled: bool,
+    ) {
+        let mut binary_option = replay_binary_option(5, "0.01");
+        let original = InstrumentAny::BinaryOption(binary_option.clone());
+        let id = original.id();
+        let mut engine = engine_with_quoted_instrument(&original);
+        let exchange = Rc::clone(&engine.venues[&id.venue]);
+        let mut traded = binary_option.clone();
+        traded.id = InstrumentId::from("TRADED.POLYMARKET");
+        traded.expiration_ns = UnixNanos::from(30);
+        let traded_id = traded.id;
+        engine
+            .add_instrument(&InstrumentAny::BinaryOption(traded))
+            .unwrap();
+        exchange
+            .borrow_mut()
+            .set_latency_model(LatencyModelHandle::new(StaticLatencyModel::new(
+                DurationNanos::default(),
+                DurationNanos::new(if settled { 10 } else { 5 }),
+                DurationNanos::default(),
+                DurationNanos::default(),
+            )));
+
+        if shared {
+            let mut sibling = binary_option.clone();
+            sibling.id = InstrumentId::from("SHARED.POLYMARKET");
+            engine
+                .add_instrument(&InstrumentAny::BinaryOption(sibling))
+                .unwrap();
+        }
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(engine.trader_id())
+            .instrument_id(traded_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .build();
+        let cache = engine.kernel.cache();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        send_execution_command(TradingCommand::SubmitOrder(create_submit_order_command(
+            &order,
+        )));
+        engine.drain_command_queues().unwrap();
+        binary_option.expiration_ns = UnixNanos::from(10);
+        binary_option.ts_init = UnixNanos::from(revision_ns);
+        let quote = |price: &str, ts: u64| {
+            Data::Quote(QuoteTick::new(
+                traded_id,
+                Price::from(price),
+                Price::from(price),
+                Quantity::from("1.000"),
+                Quantity::from("1.000"),
+                ts.into(),
+                ts.into(),
+            ))
+        };
+        let mut data = Vec::new();
+
+        if settled {
+            data.push(Data::InstrumentClose(InstrumentClose::new(
+                id,
+                Price::from("1.00"),
+                InstrumentCloseType::ContractExpired,
+                0.into(),
+                0.into(),
+            )));
+        }
+        data.extend([
+            quote("0.50", 1),
+            Data::Instrument(Box::new(InstrumentAny::BinaryOption(binary_option))),
+            quote("0.70", if settled { 11 } else { 6 }),
+        ]);
+        engine.add_data(data, None, true, true).unwrap();
+
+        engine.run(None, None, None, false).unwrap();
+
+        let exchange = exchange.borrow();
+        let matching = exchange.get_matching_engine(&id).unwrap();
+        assert_eq!(matching.is_expiration_processed(), settled);
+        assert_eq!(
+            matching.market_status,
+            if settled {
+                MarketStatus::Closed
+            } else {
+                MarketStatus::Open
+            }
+        );
+        let cache = cache.borrow();
+        let order = cache.order(&order.client_order_id()).unwrap();
+        let filled = order
+            .events()
+            .into_iter()
+            .find_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill),
+                _ => None,
+            })
+            .unwrap();
+        assert_eq!(
+            filled.last_px,
+            Price::from(if shared && !settled { "0.50" } else { "0.70" })
+        );
+        assert_eq!(
+            filled.ts_event,
+            UnixNanos::from(if settled {
+                11
+            } else if shared {
+                5
+            } else {
+                6
+            })
+        );
+    }
+
+    #[rstest]
+    #[case::unchanged("0.01", "0.01", 10, 10)]
+    #[case::finer("0.10", "0.01", 10, 10)]
+    #[case::coarser("0.01", "0.10", 10, 10)]
+    #[case::precision("0.01", "0.001", 10, 10)]
+    #[case::later("0.01", "0.01", 5, 10)]
+    #[case::earlier("0.01", "0.01", 10, 5)]
+    #[case::at_expiration("0.01", "0.01", 2, 10)]
+    #[case::pending_resolution("0.01", "0.01", 1, 10)]
+    #[case::past_due("0.01", "0.01", 10, 1)]
+    #[case::due_now("0.01", "0.01", 10, 2)]
+    #[case::no_expiration("0.01", "0.01", 1, 0)]
+    fn test_replay_instrument_updates_binary_option(
+        #[case] initial_tick: &str,
+        #[case] revised_tick: &str,
+        #[case] initial_expiration: u64,
+        #[case] revised_expiration: u64,
+        #[values(None, Some(MarketStatusAction::Close), Some(MarketStatusAction::Pause))]
+        status: Option<MarketStatusAction>,
+    ) {
+        let mut binary_option = replay_binary_option(initial_expiration, initial_tick);
+        let original = InstrumentAny::BinaryOption(binary_option.clone());
+        let id = original.id();
+        let mut engine = engine_with_quoted_instrument(&original);
+        let cache = engine.kernel.cache();
+        let exchange = Rc::clone(&engine.venues[&id.venue]);
+        let mut sibling = binary_option.clone();
+        sibling.id = InstrumentId::from("SHARED.POLYMARKET");
+        let sibling_id = sibling.id;
+        engine
+            .add_instrument(&InstrumentAny::BinaryOption(sibling))
+            .unwrap();
+        let observed = Rc::new(Cell::new(0));
+        let received = Rc::clone(&observed);
+        let updated_exchange = Rc::clone(&exchange);
+        let order_id = ClientOrderId::from("O-REPLAY-UPDATE");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(engine.trader_id())
+            .instrument_id(id)
+            .client_order_id(order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("1.000"))
+            .price(Price::from("0.30") + original.price_increment())
+            .build();
+        let order_cache = Rc::clone(&cache);
+        msgbus::subscribe_instruments(
+            nautilus_common::msgbus::switchboard::get_instruments_pattern(id.venue),
+            TypedHandler::from(move |instrument: &InstrumentAny| {
+                let exchange = updated_exchange.borrow();
+                let matching = exchange.get_matching_engine(&id).unwrap();
+                let increment = instrument.price_increment();
+                assert_eq!(matching.instrument.price_increment(), increment);
+                assert_eq!(matching.get_core().price_increment, increment);
+                assert_eq!(
+                    matching.instrument.expiration_ns(),
+                    instrument.expiration_ns()
+                );
+
+                if revised_expiration == 1 && received.get() > 0 {
+                    assert_eq!(matching.market_status, MarketStatus::Closed);
+                }
+                drop(exchange);
+
+                if received.get() == 0 {
+                    order_cache
+                        .borrow_mut()
+                        .add_order(order.clone(), None, None, false)
+                        .unwrap();
+                    send_execution_command(TradingCommand::SubmitOrder(
+                        create_submit_order_command(&order),
+                    ));
+                }
+                received.set(received.get() + 1);
+            }),
+            None,
+        );
+        let increment = Price::from(revised_tick);
+        binary_option.price_precision = increment.precision;
+        binary_option.price_increment = increment;
+        binary_option.expiration_ns = UnixNanos::from(revised_expiration);
+        let quote = QuoteTick::new(
+            id,
+            Price::from("0.40"),
+            Price::from("0.50"),
+            Quantity::from("1.000"),
+            Quantity::from("1.000"),
+            1.into(),
+            1.into(),
+        );
+        let mut data = vec![
+            Data::Instrument(Box::new(original.clone())),
+            Data::Quote(quote),
+        ];
+
+        if let Some(status) = status {
+            data.push(Data::InstrumentStatus(InstrumentStatus::new(
+                id,
+                status,
+                1.into(),
+                1.into(),
+                None,
+                None,
+                None,
+                None,
+                None,
+            )));
+        }
+        data.extend([2, 3].map(|timestamp| {
+            let mut revised = binary_option.clone();
+            revised.ts_event = UnixNanos::from(timestamp);
+            revised.ts_init = UnixNanos::from(timestamp);
+            Data::Instrument(Box::new(InstrumentAny::BinaryOption(revised)))
+        }));
+        data.push(Data::IndexPrice(IndexPriceUpdate::new(
+            id,
+            Price::from("0.40"),
+            7.into(),
+            7.into(),
+        )));
+        engine.add_data(data, None, true, true).unwrap();
+
+        for _ in 0..2 {
+            let order = OrderTestBuilder::new(OrderType::Market)
+                .trader_id(engine.trader_id())
+                .instrument_id(id)
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("1.000"))
+                .build();
+            let fill = OrderFilledTestBuilder::new(&order, &original)
+                .last_px(Price::from("0.40"))
+                .account_id(AccountId::from("POLYMARKET-001"))
+                .commission(Money::from("0 USDT"))
+                .build();
+            let position = Position::new(&original, fill.into());
+            cache
+                .borrow_mut()
+                .add_position(&position, OmsType::Netting)
+                .unwrap();
+            engine.run(None, None, None, false).unwrap();
+            assert_eq!(observed.replace(0), 3);
+            assert_eq!(
+                cache.borrow().instrument(&id).unwrap().price_increment(),
+                increment
+            );
+            assert_eq!(
+                cache.borrow().order(&order_id).unwrap().status(),
+                if revised_tick == "0.10"
+                    || initial_expiration == 1
+                    || (revised_expiration != 0 && revised_expiration <= 7)
+                {
+                    OrderStatus::Canceled
+                } else {
+                    OrderStatus::Accepted
+                }
+            );
+            {
+                let exchange = exchange.borrow();
+                let matching = exchange.get_matching_engine(&id).unwrap();
+                assert_eq!(matching.raw_id, 1);
+                assert_eq!(matching.instrument.price_precision(), increment.precision);
+                assert_eq!(
+                    exchange.best_bid_price(id).is_none(),
+                    initial_tick != revised_tick
+                );
+                assert_eq!(
+                    matching.market_status,
+                    match status {
+                        _ if revised_expiration != 0 && revised_expiration <= 7 =>
+                            MarketStatus::Closed,
+                        Some(MarketStatusAction::Close) => MarketStatus::Closed,
+                        Some(MarketStatusAction::Pause) => MarketStatus::Paused,
+                        _ => MarketStatus::Open,
+                    }
+                );
+                let sibling = exchange.get_matching_engine(&sibling_id).unwrap();
+                assert_eq!(
+                    sibling.market_status,
+                    if initial_expiration <= 7 {
+                        MarketStatus::Closed
+                    } else {
+                        MarketStatus::Open
+                    }
+                );
+            }
+            assert!(cache.borrow().position(&position.id).unwrap().is_open());
+            engine.reset().unwrap();
+            assert!(engine.kernel.clock.borrow().timer_names().is_empty());
+        }
+        assert_eq!(
+            cache.borrow().instrument(&id).unwrap().price_increment(),
+            original.price_increment()
+        );
+        assert_eq!(
+            cache.borrow().instrument(&id).unwrap().expiration_ns(),
+            original.expiration_ns()
+        );
+        let exchange = exchange.borrow();
+        let matching = exchange.get_matching_engine(&id).unwrap();
+        assert_eq!(
+            matching.get_core().price_increment,
+            original.price_increment()
+        );
+        assert_eq!(
+            matching.instrument.expiration_ns(),
+            original.expiration_ns()
+        );
+    }
+
+    fn replay_binary_option(expiration_ns: u64, price_increment: &str) -> BinaryOption {
+        let mut option = binary_option();
+        option.currency = Currency::USDT();
+        option.activation_ns = UnixNanos::default();
+        option.expiration_ns = UnixNanos::from(expiration_ns);
+        option.price_increment = Price::from(price_increment);
+        option.price_precision = option.price_increment.precision;
+        option.size_precision = 3;
+        option
     }
 
     #[rstest]
