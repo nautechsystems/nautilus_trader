@@ -63,6 +63,7 @@ Released on TBD (UTC).
 - Fixed mixed-key market data batches being cached under the first row's instrument or bar type
 - Fixed `ExecTester` panicking on unsupported `GTD` brackets
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
+- Fixed Sockudo WebSocket timeouts overriding the client heartbeat and idle policy
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Binance REST requests ignoring 429 and 418 cooldowns from other requests
 - Fixed Binance cancellations and COIN-M modifications consuming order-count quota
