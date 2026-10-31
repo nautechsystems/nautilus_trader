@@ -18252,6 +18252,34 @@ fn test_reconcile_order_status_report_external_order_without_matching_client_kee
 }
 
 #[rstest]
+fn test_reconcile_order_status_report_external_order_keeps_init_reconciliation(
+    mut execution_engine: ExecutionEngine,
+) {
+    let instrument = audusd_sim();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(instrument.clone()))
+        .unwrap();
+
+    let client_order_id = ClientOrderId::from("O-EXTERNAL-RECON");
+    let report = create_order_status_report(
+        Some(client_order_id),
+        VenueOrderId::from("V-EXTERNAL-RECON"),
+        instrument.id(),
+        OrderStatus::Accepted,
+        Quantity::from(100_000),
+        Quantity::from(0),
+    );
+
+    execution_engine.reconcile_order_status_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert!(order.init_event().reconciliation);
+}
+
+#[rstest]
 fn test_reconcile_order_status_report_external_order_ambiguous_client_keeps_origin_free(
     mut execution_engine: ExecutionEngine,
 ) {

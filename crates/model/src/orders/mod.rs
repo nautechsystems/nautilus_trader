@@ -1651,6 +1651,16 @@ impl OrderCore {
         self.events.splice(..0, events);
     }
 
+    /// Sets the `reconciliation` flag on the stored [`OrderInitialized`] event.
+    ///
+    /// The order constructors always build their init event with `reconciliation = false`,
+    /// so conversions from an [`OrderInitialized`] use this to keep the source event's flag.
+    pub(crate) fn set_init_reconciliation(&mut self, reconciliation: bool) {
+        if let Some(OrderEventAny::Initialized(init)) = self.events.first_mut() {
+            init.reconciliation = reconciliation;
+        }
+    }
+
     #[must_use]
     pub fn init_event(&self) -> Option<OrderEventAny> {
         self.events.first().cloned()

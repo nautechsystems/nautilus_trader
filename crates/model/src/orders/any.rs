@@ -492,6 +492,26 @@ mod tests {
         assert_eq!(replayed.init_event(), &expected_init);
     }
 
+    #[rstest]
+    #[case::limit(OrderType::Limit)]
+    #[case::limit_if_touched(OrderType::LimitIfTouched)]
+    #[case::market(OrderType::Market)]
+    #[case::market_if_touched(OrderType::MarketIfTouched)]
+    #[case::market_to_limit(OrderType::MarketToLimit)]
+    #[case::stop_limit(OrderType::StopLimit)]
+    #[case::stop_market(OrderType::StopMarket)]
+    #[case::trailing_stop_limit(OrderType::TrailingStopLimit)]
+    #[case::trailing_stop_market(OrderType::TrailingStopMarket)]
+    fn test_order_any_from_events_preserves_init_reconciliation(#[case] order_type: OrderType) {
+        let mut init = order_for_list_id_test(order_type).init_event().clone();
+        init.reconciliation = true;
+
+        let order = OrderAny::from_events(vec![OrderEventAny::Initialized(init.clone())]).unwrap();
+
+        assert!(order.init_event().reconciliation);
+        assert_eq!(order.init_event(), &init);
+    }
+
     fn assert_last_event_views(order: &OrderAny) {
         fn generic_last_event<T: Order + ?Sized>(order: &T) -> &OrderEventAny {
             order.last_event()
