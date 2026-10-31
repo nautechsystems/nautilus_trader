@@ -45,14 +45,15 @@ use nautilus_common::{
         DataEvent, DataResponse,
         data::{
             BookResponse, InstrumentResponse, InstrumentsResponse,
-            OptionChainReferencePriceResponse, RequestBookSnapshot, RequestInstrument,
-            RequestInstruments, RequestOptionChainReferencePrice,
+            OptionChainReferencePriceResponse, RequestBars, RequestBookSnapshot, RequestInstrument,
+            RequestInstruments, RequestOptionChainReferencePrice, RequestTrades,
         },
     },
     testing::wait_until_async,
 };
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
+    data::BarType,
     identifiers::{InstrumentId, OptionSeriesId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -169,7 +170,41 @@ fn create_router(state: TestServerState) -> Router {
                 }
             }),
         )
+        .route("/api/v5/market/candles", candles_route())
+        .route("/api/v5/market/history-candles", candles_route())
 }
+
+/// Closed minute candles for `CANDLES_FIRST` and the day after, answered as OKX does:
+/// newest first, `before` and `after` as exclusive bounds on the open time.
+fn candles_route() -> axum::routing::MethodRouter {
+    get(|Query(params): Query<HashMap<String, String>>| async move {
+        let template = load_test_data("http_get_candlesticks.json")["data"][0].clone();
+        let first_ms = CANDLES_FIRST
+            .parse::<jiff::Timestamp>()
+            .unwrap()
+            .as_millisecond();
+        let after = params.get("after").map(|v| v.parse::<i64>().unwrap());
+        let before = params.get("before").map(|v| v.parse::<i64>().unwrap());
+        let limit = params
+            .get("limit")
+            .map_or(100, |v| v.parse::<usize>().unwrap());
+        let data: Vec<Value> = (0..1_440)
+            .rev()
+            .map(|index| first_ms + index * 60_000)
+            .filter(|ts| after.is_none_or(|a| *ts < a) && before.is_none_or(|b| *ts > b))
+            .take(limit)
+            .map(|ts| {
+                let mut candle = template.clone();
+                candle[0] = json!(ts.to_string());
+                candle[8] = json!("1");
+                candle
+            })
+            .collect();
+        Json(json!({"code": "0", "msg": "", "data": data}))
+    })
+}
+
+const CANDLES_FIRST: &str = "2026-09-01T00:00:00Z";
 
 async fn start_test_server(state: TestServerState) -> SocketAddr {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
@@ -634,4 +669,121 @@ async fn test_rpi_request_book_snapshot_routes_to_rpi_endpoint() {
         Some("BTC-USD")
     );
     assert_eq!(queries[0].get("sz").map(String::as_str), Some("2"));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_trades_http_failure_completes_the_request() {
+    let addr = start_test_server(TestServerState::default()).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let request = request_instruments();
+    let instruments_request_id = request.request_id;
+    client
+        .request_instruments(request)
+        .expect("request_instruments");
+    collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
+        .await;
+
+    // The test server has no trades route, so the history fetch fails with HTTP 404
+    let request_id = UUID4::new();
+    client
+        .request_trades(RequestTrades::new(
+            InstrumentId::from("BTC-USD.OKX"),
+            Some(jiff::Timestamp::now() - jiff::SignedDuration::from_hours(1)),
+            None,
+            None,
+            Some(*OKX_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("request_trades");
+
+    let failure = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.recv().await.expect("data event channel closed") {
+                DataEvent::RequestFailed(failure) if failure.request_id == request_id => {
+                    break failure;
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("the failed trades request was never completed");
+
+    assert!(failure.response.is_none());
+    assert!(!failure.reason.is_empty());
+}
+
+#[rstest]
+#[case::window_covered(30, true)]
+#[case::history_starts_after_the_start(-60, false)]
+#[tokio::test]
+async fn test_request_bars_sends_a_completed_envelope_only_for_a_covered_window(
+    #[case] start_minutes: i64,
+    #[case] covered: bool,
+) {
+    let addr = start_test_server(TestServerState::default()).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let request = request_instruments();
+    let instruments_request_id = request.request_id;
+    client
+        .request_instruments(request)
+        .expect("request_instruments");
+    collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
+        .await;
+
+    let first: jiff::Timestamp = CANDLES_FIRST.parse().unwrap();
+    let request_id = UUID4::new();
+    client
+        .request_bars(RequestBars::new(
+            BarType::from("BTC-USD.OKX-1-MINUTE-LAST-EXTERNAL"),
+            Some(first + jiff::SignedDuration::from_mins(start_minutes)),
+            Some(first + jiff::SignedDuration::from_hours(2)),
+            None,
+            Some(*OKX_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            None,
+        ))
+        .expect("request_bars");
+
+    let event = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            match rx.recv().await.expect("data event channel closed") {
+                DataEvent::ResponseEnvelope(envelope)
+                    if *envelope.correlation_id() == request_id =>
+                {
+                    break DataEvent::ResponseEnvelope(envelope);
+                }
+                DataEvent::Response(response) if *response.correlation_id() == request_id => {
+                    break DataEvent::Response(response);
+                }
+                _ => {}
+            }
+        }
+    })
+    .await
+    .expect("the bars request was never answered");
+
+    match event {
+        DataEvent::ResponseEnvelope(envelope) => {
+            assert!(
+                covered,
+                "a window OKX history does not reach was marked completed"
+            );
+            assert!(envelope.completed());
+            assert!(envelope.failure_reason().is_none());
+            assert!(matches!(
+                envelope.response(),
+                Some(DataResponse::Bars(bars)) if !bars.data.is_empty()
+            ));
+        }
+        DataEvent::Response(DataResponse::Bars(bars)) => {
+            assert!(!covered, "a covered window was not marked completed");
+            assert!(!bars.data.is_empty());
+        }
+        other => panic!("unexpected event {other:?}"),
+    }
 }

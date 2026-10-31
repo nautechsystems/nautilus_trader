@@ -11081,7 +11081,7 @@ async fn test_generate_fill_reports_recognizes_position_fills_after_order_purge(
     )
     .await;
     let applied = apply_query_events(&mut engine, &mut rx);
-    cache.borrow_mut().purge_order(native_id);
+    cache.borrow_mut().purge_order(native_id, false).unwrap();
 
     let cmd = GenerateFillReports::new(
         UUID4::new(),

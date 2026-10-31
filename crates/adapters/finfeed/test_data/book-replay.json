@@ -1,0 +1,110 @@
+[
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:01.0000001Z",
+    "price": 0.4,
+    "size": 2,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:01.0000001Z",
+    "price": 0.3,
+    "size": 5,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:01.0000001Z",
+    "price": 0.6,
+    "size": 3,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:01.0000001Z",
+    "price": 0.7,
+    "size": 7,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:02.0000001Z",
+    "price": 0.4,
+    "size": 4,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:02.0000001Z",
+    "price": 0.4,
+    "size": 1.25,
+    "is_sell_ask": false,
+    "update_type": 0,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:02.0000001Z",
+    "price": 0.6,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:02.0000001Z",
+    "price": 0.65,
+    "size": 8,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:03.0000001Z",
+    "price": 0.8,
+    "size": 9,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:04.0000001Z",
+    "price": 0.8,
+    "size": 0,
+    "is_sell_ask": true,
+    "update_type": 1,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:05.0000001Z",
+    "price": 0.2,
+    "size": 6,
+    "is_sell_ask": false,
+    "update_type": 3,
+    "id": ""
+  },
+  {
+    "symbol_id": "test-outcome_NO",
+    "time_exchange": "2026-10-11T00:00:05.0000001Z",
+    "price": 0.9,
+    "size": 10,
+    "is_sell_ask": true,
+    "update_type": 3,
+    "id": ""
+  }
+]

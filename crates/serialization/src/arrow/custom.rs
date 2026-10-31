@@ -22,7 +22,7 @@
 //!   [`DecodeDataFromRecordBatch`] for Parquet-backed custom data decoded at runtime by type name.
 //!   Types must be registered via [`ensure_custom_data_registered::<T>()`] before use.
 
-use std::sync::Arc;
+use std::{collections::HashMap, sync::Arc};
 
 use arrow::{
     array::{
@@ -106,11 +106,14 @@ where
             })
             .collect();
         let typed = typed?;
-        let metadata = typed
-            .first()
-            .map(EncodeToRecordBatch::metadata)
-            .unwrap_or_default();
-        EncodeToRecordBatch::encode_batch(&metadata, &typed).map_err(|e| anyhow::anyhow!("{e}"))
+
+        let metadata = if typed.is_empty() {
+            HashMap::new()
+        } else {
+            T::chunk_metadata(&typed)
+        };
+
+        T::encode_batch(&metadata, &typed).map_err(|e| anyhow::anyhow!("{e}"))
     });
 
     let decoder: ArrowDecoder = Box::new(|metadata, batch| {

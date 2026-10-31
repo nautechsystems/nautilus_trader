@@ -541,7 +541,12 @@ mod tests {
     #[case(FIXED_PRECISION)]
     fn test_option_builders_reject_raw_strike_remainders(#[case] precision: u8) {
         let scale = PriceRaw::try_from(crate::types::fixed::raw_scale(precision)).unwrap();
-        let strike = Price::from_raw(150 * scale + 1, precision);
+
+        let strike = Price {
+            raw: 150 * scale + 1,
+            precision,
+        };
+
         let cme =
             cme_globex_option_symbol("ESH6", strike, OptionKind::Call, date(2026, 1, 9), None);
         let osi = osi_option_symbol("AAPL", date(2026, 1, 9), OptionKind::Call, strike);
@@ -561,7 +566,12 @@ mod tests {
     #[case(FIXED_PRECISION)]
     fn test_option_builders_preserve_raw_strike(#[case] precision: u8) {
         let scale = PriceRaw::try_from(crate::types::fixed::raw_scale(precision)).unwrap();
-        let strike = Price::from_raw(75 * scale + scale / 4, precision);
+
+        let strike = Price {
+            raw: 75 * scale + scale / 4,
+            precision,
+        };
+
         let cme =
             cme_globex_option_symbol("CLH6", strike, OptionKind::Call, date(2026, 1, 9), None)
                 .unwrap();

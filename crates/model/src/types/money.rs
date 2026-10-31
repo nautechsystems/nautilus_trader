@@ -1264,7 +1264,7 @@ mod tests {
     #[rstest]
     fn test_from_quantity_rejects_noncanonical_raw() {
         let precision = FIXED_PRECISION - 1;
-        let quantity = Quantity::from_raw(1, precision);
+        let quantity = Quantity { raw: 1, precision };
         let currency = Currency::new("TOKEN", FIXED_PRECISION, 0, "Token", CurrencyType::Crypto);
         let result = Money::from_quantity(quantity, currency);
 

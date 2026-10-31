@@ -380,6 +380,7 @@ deribit nautilus_deribit::python::deribit
 derive nautilus_derive::python::derive
 dydx nautilus_dydx::python::dydx
 execution nautilus_execution::python::execution
+finfeed nautilus_finfeed::python::finfeed
 hyperliquid nautilus_hyperliquid::python::hyperliquid
 indicators nautilus_indicators::python::indicators
 infrastructure nautilus_infrastructure::python::infrastructure

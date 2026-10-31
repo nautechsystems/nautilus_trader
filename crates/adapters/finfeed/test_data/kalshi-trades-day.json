@@ -1,0 +1,26 @@
+[
+  {
+    "id": "authored-trade-1",
+    "market_id": "TEST-KALSHI_NO",
+    "price": 0.16,
+    "quantity": 11.125,
+    "timestamp": "2026-10-11T00:01:00.0000001Z",
+    "side": "Sell"
+  },
+  {
+    "id": "authored-trade-2",
+    "market_id": "TEST-KALSHI_NO",
+    "price": 0.17,
+    "quantity": 12.125,
+    "timestamp": "2026-10-11T00:02:00.0000002Z",
+    "side": "Buy"
+  },
+  {
+    "id": "authored-trade-3",
+    "market_id": "TEST-KALSHI_NO",
+    "price": 0.18,
+    "quantity": 13.125,
+    "timestamp": "2026-10-11T00:03:00.0000003Z",
+    "side": "Sell"
+  }
+]

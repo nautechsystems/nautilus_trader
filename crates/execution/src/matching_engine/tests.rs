@@ -3906,6 +3906,61 @@ fn test_l1_partial_queue_trades_preserve_remaining_ahead(
 }
 
 #[rstest]
+#[case::buy(OrderSide::Buy, AggressorSide::Sell)]
+#[case::sell(OrderSide::Sell, AggressorSide::Buy)]
+fn test_queue_fill_preserves_fractional_trade_qty_for_coarse_order(
+    #[case] side: OrderSide,
+    #[case] aggressor: AggressorSide,
+    #[values(false, true)] liquidity_consumption: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let instrument_id = instrument.id();
+    let size_precision = instrument.size_precision();
+    let (mut engine, cache) = get_queue_engine(instrument, BookType::L1_MBP);
+    engine.config.liquidity_consumption = liquidity_consumption;
+    engine.process_quote_tick(&QuoteTick::new(
+        instrument_id,
+        Price::from("100.00"),
+        Price::from("101.00"),
+        Quantity::from("5.000"),
+        Quantity::from("5.000"),
+        1.into(),
+        1.into(),
+    ));
+    let price = Price::from("100.50");
+    let client_order_id = ClientOrderId::from("QUEUE-COARSE");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(side)
+        .price(price)
+        .quantity(Quantity::from(1))
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+
+    engine.process_trade_tick(&TradeTick::new(
+        instrument_id,
+        price,
+        Quantity::from("0.370"),
+        aggressor,
+        TradeId::from("QUEUE-FRACTIONAL"),
+        2.into(),
+        2.into(),
+    ));
+
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.quantity(), Quantity::from(1));
+    assert_eq!(order.quantity().precision, 0);
+    assert_eq!(order.filled_qty(), Quantity::from("0.370"));
+    assert_eq!(order.filled_qty().precision, size_precision);
+    assert_eq!(order.leaves_qty(), Quantity::from("0.630"));
+    assert_eq!(order.leaves_qty().precision, size_precision);
+}
+
+#[rstest]
 #[case::at_bid(OrderSide::Buy, "100.00", "5.000", "8.000", "1.000")]
 #[case::at_ask(OrderSide::Sell, "101.00", "5.000", "8.000", "1.000")]
 #[case::inside_buy(OrderSide::Buy, "100.50", "0.000", "3.000", "1.000")]
@@ -6763,7 +6818,9 @@ fn test_market_to_limit_normalized_fill_outcome(
     for (index, (price, size)) in levels.into_iter().enumerate() {
         let size = if scenario == "invalid_quantity" {
             // Valid precision metadata with raw bits that cannot be normalized to it.
-            Quantity::from_raw(Quantity::from("0.0001").raw(), 3)
+            let mut quantity = Quantity::from("0.0001");
+            quantity.precision = 3;
+            quantity
         } else {
             Quantity::from(size)
         };

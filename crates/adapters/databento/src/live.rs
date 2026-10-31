@@ -862,7 +862,7 @@ impl DatabentoFeedHandler {
                 )?;
                 self.send_msg(DatabentoMessage::Status(data));
             } else if let Some(msg) = record.get::<dbn::ImbalanceMsg>() {
-                let data = handle_imbalance_msg(
+                handle_imbalance_msg(
                     msg,
                     &record,
                     &symbol_map,
@@ -873,8 +873,11 @@ impl DatabentoFeedHandler {
                     &subscription_price_precision_map,
                     &self.price_precision_overrides,
                     ts_init,
-                )?;
-                self.send_msg(DatabentoMessage::Imbalance(data));
+                )
+                .map_or_else(
+                    |e| log::error!("Error decoding imbalance: {e}"),
+                    |data| self.send_msg(DatabentoMessage::Imbalance(data)),
+                );
             } else if let Some(msg) = record.get::<dbn::StatMsg>() {
                 let maybe_data = handle_statistics_msg(
                     msg,
@@ -911,7 +914,9 @@ impl DatabentoFeedHandler {
                     Ok(decoded) => decoded,
                     Err(e) => {
                         log::error!("Error decoding record: {e}");
-                        continue;
+
+                        // Preserve raw MBO event boundaries when the payload is rejected
+                        (None, None)
                     }
                 };
 
@@ -941,21 +946,17 @@ impl DatabentoFeedHandler {
                         // `F_LAST` flag or a buffered partial event is
                         // stranded and merged into the next event (e.g. a
                         // non-terminal 'C' followed by 'N' | F_LAST).
-                        let instrument_id = update_instrument_id_map(
-                            &record,
-                            &symbol_map,
-                            &self.publisher_venue_map,
-                            &self.symbol_venue_map,
-                            &mut instrument_id_map,
-                        )?;
+                        let deltas = instrument_id_map.get(&msg.hd.instrument_id).and_then(|id| {
+                            flush_mbo_event_boundary(
+                                id.id(),
+                                msg.ts_recv.into(),
+                                msg.flags.raw(),
+                                &mut buffering_start,
+                                &mut buffered_deltas,
+                            )
+                        });
 
-                        if let Some(deltas) = flush_mbo_event_boundary(
-                            instrument_id,
-                            msg.ts_recv.into(),
-                            msg.flags.raw(),
-                            &mut buffering_start,
-                            &mut buffered_deltas,
-                        ) {
+                        if let Some(deltas) = deltas {
                             self.send_msg(DatabentoMessage::Data(Data::BookDeltas(Box::new(
                                 deltas,
                             ))));
@@ -1475,20 +1476,20 @@ fn resolve_price_precision(
     subscription_price_precision_map: &AHashMap<u32, u8>,
     price_precision_overrides: &AHashMap<Symbol, u8>,
 ) -> u8 {
-    instrument_def_price_precision_map
+    subscription_price_precision_map
         .get(&record_instrument_id)
         .copied()
-        .or_else(|| {
-            subscription_price_precision_map
-                .get(&record_instrument_id)
-                .copied()
-        })
         .or_else(|| {
             raw_symbol.and_then(|symbol| {
                 price_precision_overrides
                     .get(&Symbol::from_str_unchecked(symbol))
                     .copied()
             })
+        })
+        .or_else(|| {
+            instrument_def_price_precision_map
+                .get(&record_instrument_id)
+                .copied()
         })
         .unwrap_or(Currency::USD().precision)
 }
@@ -2310,6 +2311,30 @@ mod tests {
             ids.get(&42).copied().map(CachedInstrumentId::id),
             Some(InstrumentId::from("CLF26.XNYM"))
         );
+    }
+
+    #[rstest]
+    #[case(Some(2), Some(5), Some(4), 5)]
+    #[case(Some(2), None, Some(5), 5)]
+    #[case(Some(5), Some(2), None, 2)]
+    #[case(Some(5), None, Some(2), 2)]
+    #[case(Some(3), None, None, 3)]
+    #[case(None, None, None, 2)]
+    fn test_explicit_precision_precedes_definitions(
+        #[case] definition: Option<u8>,
+        #[case] mapped: Option<u8>,
+        #[case] native: Option<u8>,
+        #[case] expected: u8,
+    ) {
+        let definitions = AHashMap::from_iter(definition.map(|precision| (42, precision)));
+        let subscriptions = AHashMap::from_iter(mapped.map(|precision| (42, precision)));
+        let overrides =
+            AHashMap::from_iter(native.map(|precision| (Symbol::from("CLF6"), precision)));
+
+        let actual =
+            resolve_price_precision(42, Some("CLF6"), &definitions, &subscriptions, &overrides);
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest]

@@ -19,7 +19,10 @@ use std::{fmt::Display, time::Duration};
 
 use nautilus_network::http::error::HttpClientError;
 
-use crate::common::error::{is_retryable_http_status, is_retryable_venue_code};
+use crate::common::error::{
+    BINANCE_IP_BAN_STATUS, BINANCE_RATE_LIMIT_BLOCKED_MESSAGE, is_retryable_http_status,
+    is_retryable_venue_code,
+};
 // Re-export unified SBE decode error
 pub use crate::spot::sbe::SbeDecodeError;
 
@@ -53,6 +56,8 @@ pub enum BinanceSpotHttpError {
     Timeout(String),
     /// Request was canceled.
     Canceled(String),
+    /// The request is not sent because a cooldown or local quota blocks admission.
+    RateLimitBlocked,
     /// The retry elapsed budget was exhausted.
     RetryBudgetExceeded(String),
     /// Unexpected HTTP status code.
@@ -74,6 +79,16 @@ impl BinanceSpotHttpError {
     #[must_use]
     pub fn is_retryable(&self) -> bool {
         match self {
+            Self::BinanceError {
+                status: BINANCE_IP_BAN_STATUS,
+                retry_after: None,
+                ..
+            }
+            | Self::UnexpectedStatus {
+                status: BINANCE_IP_BAN_STATUS,
+                retry_after: None,
+                ..
+            } => false,
             Self::NetworkError(_) | Self::Timeout(_) => true,
             Self::BinanceError { code, status, .. } => {
                 is_retryable_venue_code(*code) || is_retryable_http_status(*status)
@@ -114,6 +129,7 @@ impl Display for BinanceSpotHttpError {
             Self::NetworkError(msg) => write!(f, "Network error: {msg}"),
             Self::Timeout(msg) => write!(f, "Timeout: {msg}"),
             Self::Canceled(msg) => write!(f, "Canceled: {msg}"),
+            Self::RateLimitBlocked => f.write_str(BINANCE_RATE_LIMIT_BLOCKED_MESSAGE),
             Self::RetryBudgetExceeded(msg) => write!(f, "Retry budget exceeded: {msg}"),
             Self::UnexpectedStatus { status, body, .. } => {
                 write!(f, "Unexpected status {status}: {body}")
@@ -190,7 +206,7 @@ mod tests {
     #[case::rate_limit_code(venue_error(-1003, 429), true)]
     #[case::order_rate_limit_code(venue_error(-1015, 400), true)]
     #[case::status_500(venue_error(-1000, 500), true)]
-    #[case::status_418(venue_error(-1003, 418), true)]
+    #[case::status_418_without_expiry(venue_error(-1003, 418), false)]
     #[case::permanent_venue_code(venue_error(-1100, 400), false)]
     #[case::auth_code(venue_error(-2015, 401), false)]
     #[case::timestamp_drift(venue_error(-1021, 400), false)]
@@ -248,5 +264,34 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("-1100"));
         assert!(msg.contains("400"));
+    }
+
+    #[rstest]
+    #[case::unknown_expiry(None, false)]
+    #[case::zero_delay(Some(Duration::ZERO), true)]
+    #[case::known_expiry(Some(Duration::from_secs(300)), true)]
+    fn test_ip_ban_retry_requires_expiry(
+        #[case] delay: Option<Duration>,
+        #[case] expected: bool,
+        #[values(false, true)] decoded: bool,
+    ) {
+        let error = if decoded {
+            BinanceSpotHttpError::BinanceError {
+                code: -1003,
+                message: "IP banned".to_string(),
+                status: 418,
+                retry_after: delay,
+            }
+        } else {
+            BinanceSpotHttpError::UnexpectedStatus {
+                status: 418,
+                body: "banned".to_string(),
+                retry_after: delay,
+            }
+        };
+
+        assert_eq!(error.is_retryable(), expected);
+        assert_eq!(error.retry_after(), delay);
+        assert!(!BinanceSpotHttpError::RateLimitBlocked.is_retryable());
     }
 }

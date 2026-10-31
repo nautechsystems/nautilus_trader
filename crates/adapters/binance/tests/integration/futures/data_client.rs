@@ -30,26 +30,26 @@ use std::{
 use axum::{
     Router,
     extract::{
-        RawQuery, State,
+        Query, RawQuery, State,
         ws::{Message, WebSocket},
     },
     http::StatusCode,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use jiff::{SignedDuration, Timestamp};
 use nautilus_binance::{
     common::{
         bar::BinanceBar,
         consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
-        enums::BinanceProductType,
+        enums::{BinanceEnvironment, BinanceProductType},
     },
     config::BinanceDataClientConfig,
     data_types::{
         BinanceFuturesLiquidation, BinanceFuturesMarkPriceUpdate, BinanceFuturesOpenInterest,
         BinanceFuturesOpenInterestHist, BinanceFuturesTicker,
     },
-    futures::BinanceFuturesDataClient,
+    futures::{BinanceFuturesDataClient, http::client::BinanceRawFuturesHttpClient},
 };
 use nautilus_common::{
     clients::DataClient,
@@ -99,6 +99,7 @@ struct DataTestServerState {
         Option<tokio::sync::mpsc::UnboundedSender<tokio::sync::oneshot::Sender<Response>>>,
     depth_failures_before_success: usize,
     depth_requests: Arc<AtomicUsize>,
+    depth_request_times: Arc<Mutex<Vec<tokio::time::Instant>>>,
     depth_response_delay: Duration,
     depth_snapshot_last_update_ids: Vec<u64>,
     depth_update_delay: Duration,
@@ -125,6 +126,7 @@ impl Default for DataTestServerState {
             exchange_info_requests: None,
             depth_failures_before_success: 0,
             depth_requests: Arc::new(AtomicUsize::new(0)),
+            depth_request_times: Arc::default(),
             depth_response_delay: Duration::ZERO,
             depth_snapshot_last_update_ids: vec![1027024],
             depth_update_delay: Duration::from_millis(50),
@@ -574,7 +576,17 @@ fn depth_update_message(
     depth_update
 }
 
-async fn handle_depth(State(state): State<DataTestServerState>) -> Response {
+async fn handle_depth(
+    State(state): State<DataTestServerState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let coin_m = query
+        .get("symbol")
+        .is_some_and(|symbol| symbol.starts_with("BTCUSD_"));
+    state
+        .depth_request_times
+        .lock()
+        .push(tokio::time::Instant::now());
     let request = state.depth_requests.fetch_add(1, Ordering::Relaxed);
     if request < state.depth_failures_before_success {
         return (
@@ -600,7 +612,7 @@ async fn handle_depth(State(state): State<DataTestServerState>) -> Response {
         "E": 1700000000000_i64,
         "T": 1700000000000_i64,
         "bids": [["50000.00", "1.000"], ["49999.00", "2.000"]],
-        "asks": [["50001.00", "0.500"], ["50002.00", "1.500"]]
+        "asks": [["50001.00", if coin_m { "1" } else { "0.500" }], ["50002.00", if coin_m { "2" } else { "1.500" }]]
     }))
 }
 
@@ -844,6 +856,21 @@ fn create_data_test_router(state: DataTestServerState) -> Router {
             get(|| async { json_response(&load_fixture("exchange_info_delivery_coinm.json")) }),
         )
         .route("/fapi/v1/depth", get(handle_depth))
+        .route("/dapi/v1/depth", get(handle_depth))
+        .route(
+            "/fapi/v1/cooldown",
+            post(|Query(query): Query<HashMap<String, String>>| async move {
+                if let Some(hold) = query.get("hold") {
+                    tokio::time::sleep(Duration::from_secs(hold.parse().unwrap())).await;
+                }
+
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    [("Retry-After", query["seconds"].clone())],
+                    json!({"code": -1003, "msg": "test cooldown"}).to_string(),
+                )
+            }),
+        )
         .route("/fapi/v1/aggTrades", get(handle_usdm_agg_trades))
         .route("/dapi/v1/aggTrades", get(handle_coinm_agg_trades))
         .route("/fapi/v1/klines", get(handle_usdm_klines))
@@ -2739,13 +2766,8 @@ async fn test_failed_unsubscribe_keeps_gate_closed() {
     };
 
     client.subscribe_book_deltas(subscribe(5)).unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 5 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 5 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 5).await;
 
     // A rejected unsubscribe yields no confirmation, so the gate fails closed
     client
@@ -2882,13 +2904,8 @@ async fn test_market_reconnect_does_not_clear_gate() {
     };
 
     client.subscribe_book_deltas(subscribe(5)).unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 5 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 5 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 5).await;
 
     // A rejected depth-5 unsubscribe leaves the gate armed with no confirmation coming
     client
@@ -2989,13 +3006,8 @@ async fn test_failed_unsubscribe_stays_closed_across_transitions() {
     };
 
     client.subscribe_book_deltas(subscribe(20)).unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 20 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 20 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 20).await;
 
     // The rejected depth-20 unsubscribe leaves its stream unresolved
     client
@@ -3074,13 +3086,8 @@ async fn test_partial_to_diff_depth_change_drops_in_flight_frames() {
             None,
         ))
         .unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 5 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 5 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 5).await;
 
     client
         .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
@@ -3332,13 +3339,8 @@ async fn test_disconnect_clears_pending_unsubscribe_gate() {
     };
 
     client.subscribe_book_deltas(subscribe(20)).unwrap();
-    let Data::BookDeltas(snapshot) = recv_data(&mut rx, Duration::from_secs(10))
-        .await
-        .expect("expected depth 20 snapshot")
-    else {
-        panic!("expected book deltas");
-    };
-    assert_eq!(snapshot.deltas.len(), 20 * 2 + 1);
+
+    recv_partial_snapshots(&mut rx, &state, 20).await;
 
     // The rejected unsubscribe leaves the gate armed across the teardown
     client
@@ -3387,6 +3389,29 @@ async fn test_disconnect_clears_pending_unsubscribe_gate() {
         }
     }
     client.disconnect().await.unwrap();
+}
+
+async fn recv_partial_snapshots(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+    state: &DataTestServerState,
+    depth: usize,
+) {
+    // Gates cannot retract snapshots already emitted before the subscription changes
+    for index in 0..state.depth_update_repetitions {
+        let Data::BookDeltas(snapshot) = recv_data(rx, Duration::from_secs(10))
+            .await
+            .expect("expected partial depth snapshot")
+        else {
+            panic!("expected book deltas");
+        };
+
+        assert_eq!(snapshot.deltas.len(), depth * 2 + 1);
+        assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+        assert_eq!(
+            snapshot.sequence,
+            state.depth_update_final_update_id + index as u64
+        );
+    }
 }
 
 #[rstest]
@@ -3472,6 +3497,100 @@ async fn test_subscribe_book_deltas() {
     assert_eq!(replayed.deltas[3].order.price.as_decimal(), dec!(50002.00));
     assert_eq!(replayed.deltas[3].order.size.as_decimal(), dec!(1.500));
     assert_eq!(replayed.deltas[3].flags, RecordFlag::F_LAST as u8);
+}
+
+#[rstest]
+#[case::usd_m(BinanceProductType::UsdM, "BTCUSDT-PERP.BINANCE")]
+#[case::coin_m(BinanceProductType::CoinM, "BTCUSD_260925.BINANCE")]
+#[tokio::test]
+async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
+    #[case] product: BinanceProductType,
+    #[case] instrument_id: &str,
+) {
+    let config = DataTestServerState::default();
+    let times = config.depth_request_times.clone();
+    let addr = start_data_test_server_with_state(config).await;
+    let url = format!("http://{addr}");
+    let (mut client, mut rx) =
+        create_test_data_client_for_product_type(url.clone(), format!("ws://{addr}/ws"), product);
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    // USD-M and COIN-M share the IP cooldown scope.
+    let throttle = BinanceRawFuturesHttpClient::new(
+        BinanceProductType::UsdM,
+        BinanceEnvironment::Live,
+        Some("test-key".into()),
+        Some("test-secret".into()),
+        Some(url),
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+
+    let started = tokio::time::Instant::now();
+
+    let initial_and_queue = async {
+        let initial = throttle
+            .post::<_, serde_json::Value>(
+                "cooldown",
+                Some(&HashMap::from([("seconds", 11)])),
+                None,
+                true,
+                false,
+            )
+            .await;
+
+        for _ in 0..70 {
+            client
+                .request_book_snapshot(RequestBookSnapshot::new(
+                    InstrumentId::from(instrument_id),
+                    Some(NonZeroUsize::new(1000).unwrap()),
+                    Some(*BINANCE_CLIENT_ID),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        }
+
+        initial
+    };
+
+    let extension_params = HashMap::from([("seconds", 16), ("hold", 5)]);
+    let extension = throttle.post::<_, serde_json::Value>(
+        "cooldown",
+        Some(&extension_params),
+        None,
+        true,
+        false,
+    );
+    let (initial, extension) = tokio::join!(initial_and_queue, extension);
+    tokio::time::sleep(Duration::from_secs(105)).await;
+    let times = times.lock().clone();
+    let responses = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter(|event| matches!(event, DataEvent::Response(DataResponse::Book(_))))
+        .count();
+
+    assert!(initial.is_err());
+    assert!(extension.is_err());
+    assert_eq!(times.len(), 70);
+    assert_eq!(responses, 70);
+    assert!(
+        times
+            .iter()
+            .all(|time| *time >= started + Duration::from_secs(21))
+    );
+
+    for start in &times {
+        let weight = times
+            .iter()
+            .filter(|time| **time >= *start && **time < *start + Duration::from_secs(60))
+            .count()
+            * 20;
+        assert!(weight <= 1_200, "snapshot weight exceeded budget: {weight}");
+    }
 }
 
 #[rstest]

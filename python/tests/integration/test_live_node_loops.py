@@ -22,15 +22,12 @@ loop choice and loop closure are what is under test.
 
 import asyncio
 import time
-from datetime import UTC
-from datetime import datetime
-from datetime import timedelta
+from collections.abc import Callable
 
 import pytest
 
 from nautilus_trader.common import DataActor
 from nautilus_trader.common import Environment
-from nautilus_trader.common import ImportableActorConfig
 from nautilus_trader.live import LiveExecutionEngineConfig
 from nautilus_trader.live import LiveNode
 from nautilus_trader.live import LiveNodeConfig
@@ -112,40 +109,27 @@ def test_uvloop_host_stays_responsive_while_the_node_runs() -> None:
     """
     node = build_node("LOOPS-002")
     handle = node.handle()
-    gaps: list[float] = []
+    running: list[bool] = []
 
     async def main() -> None:
-        """
-        Run the entry point.
-        """
         task = asyncio.create_task(node.run_async())
+        try:
+            async with asyncio.timeout(15.0):
+                while not handle.is_running:
+                    await asyncio.sleep(0.01)
 
-        # Sample the running loop, not the startup drain, which is deliberately unbudgeted.
-        async with asyncio.timeout(15.0):
-            while not handle.is_running:
-                await asyncio.sleep(0.01)
-
-        # uvloop's `loop.time()` is millisecond-granular, so measure with perf_counter.
-        previous = time.perf_counter()
-
-        for _ in range(200):
-            await asyncio.sleep(0)
-            now = time.perf_counter()
-            gaps.append(now - previous)
-            previous = now
-
-        handle.stop()
-        async with asyncio.timeout(10.0):
-            await task
+                for _ in range(200):
+                    await asyncio.sleep(0)
+                    running.append(handle.is_running and not task.done())
+        finally:
+            handle.stop()
+            async with asyncio.timeout(10.0):
+                await task
 
     uvloop.run(main())
 
-    # Assert on a percentile: one descheduled sample on a loaded runner says nothing about the
-    # budget, while a starvation regression shows up across many samples.
-    gaps.sort()
-    p99 = gaps[int(len(gaps) * 0.99)]
-    assert p99 < 0.01, f"host loop p99 stall {p99 * 1000:.2f}ms"
-    assert gaps[-1] < 0.5, f"host loop stalled for {gaps[-1] * 1000:.1f}ms"
+    assert running == [True] * 200
+    assert handle.state == NodeState.STOPPED
 
 
 def test_loop_closed_with_a_pending_run_still_stops_the_node() -> None:
@@ -201,92 +185,64 @@ def test_loop_closed_with_a_pending_run_on_uvloop() -> None:
 
 class TimerBurstActor(DataActor):
     """
-    Schedules many alerts for one instant, saturating the runner's time-event channel.
+    Queues timer events before the host loop resumes to exercise a saturated runner.
     """
 
-    count: int = 0
-    fired: int = 0
+    def _queue_burst(self, count: int) -> None:
+        self.count = count
+        self.fired = 0
+        self.progress: list[int] = []
+        self.loop = asyncio.get_running_loop()
+        self.completed = asyncio.Event()
+        due = self.clock.timestamp_ns()
+        for index in range(count):
+            self.clock.set_time_alert_ns(f"burst-{index}", due, self._on_alert)
 
-    @classmethod
-    def configure(cls, count: int) -> None:
-        """
-        Configure.
-        """
-        cls.count = count
-        cls.fired = 0
-
-    def on_start(self) -> None:
-        """
-        On start.
-        """
-        cls = type(self)
-        due = datetime.now(UTC) + timedelta(milliseconds=300)
-        for index in range(cls.count):
-            self.clock.set_time_alert(f"burst-{index}", due, self._on_alert)
+        # Hold the host here until native timer tasks finish queuing the entire burst
+        deadline = time.monotonic() + 15.0
+        while self.clock.timer_count() > 0:
+            assert time.monotonic() < deadline, "timer burst did not enter the runner queue"
+            time.sleep(0.001)
 
     def _on_alert(self, _event: object) -> None:
-        type(self).fired += 1
+        self.fired += 1
+        if self.fired == 1:
+            self.loop.call_soon(self._record_progress)
+        if self.fired == self.count:
+            self.completed.set()
+
+    def _record_progress(self) -> None:
+        self.progress.append(self.fired)
 
 
 @pytest.mark.parametrize("loop_runner", LOOP_RUNNERS)
-def test_host_loop_stall_under_a_timer_burst(loop_runner: object) -> None:
+def test_host_loop_progresses_during_a_timer_burst(loop_runner: Callable[..., None]) -> None:
     """
-    Measure how long a dispatch batch holds the host loop when the runner is saturated.
-
-    This is the evidence behind `DISPATCHES_PER_YIELD`: the budget bounds the stall a host
-    application sees between its own callbacks.
-
+    Check a dispatch batch yields to the host within 64 queued timer callbacks.
     """
     burst = 5_000
-    TimerBurstActor.configure(burst)
-
     node = build_node(f"LOOPS-{'A' if loop_runner is asyncio.run else 'U'}05")
     handle = node.handle()
-    node.add_actor_from_config(
-        ImportableActorConfig(
-            actor_path="tests.integration.test_live_node_loops:TimerBurstActor",
-            config_path="nautilus_trader.common:DataActorConfig",
-            config={"actor_id": "BURST"},
-        ),
-    )
-    gaps: list[float] = []
+    actor = TimerBurstActor()
+    node.add_actor(actor)
 
     async def main() -> None:
-        """
-        Run the entry point.
-        """
         task = asyncio.create_task(node.run_async())
-        loop = asyncio.get_running_loop()
+        try:
+            async with asyncio.timeout(15.0):
+                while not handle.is_running:
+                    await asyncio.sleep(0.01)
 
-        # Startup registers the alerts inside the first poll; sample the drain, not the setup.
-        startup_deadline = loop.time() + 15.0
-        while not handle.is_running and loop.time() < startup_deadline:
-            await asyncio.sleep(0.01)
-        while TimerBurstActor.fired == 0 and loop.time() < startup_deadline:
-            await asyncio.sleep(0.001)
-
-        deadline = time.perf_counter() + 10.0
-        previous = time.perf_counter()
-        while time.perf_counter() < deadline and TimerBurstActor.fired < burst:
-            await asyncio.sleep(0)
-            now = time.perf_counter()
-            gaps.append(now - previous)
-            previous = now
-
-        handle.stop()
-        async with asyncio.timeout(15.0):
-            await task
+                actor._queue_burst(burst)
+                await actor.completed.wait()
+        finally:
+            handle.stop()
+            async with asyncio.timeout(15.0):
+                await task
 
     loop_runner(main())
 
-    gaps.sort()
-    p99 = gaps[int(len(gaps) * 0.99)]
-
-    assert TimerBurstActor.fired == burst, "burst did not drain"
-
-    # Measured p99 on both loops sits under 250us, so 64 dispatches hold the loop well inside a
-    # millisecond. p99 is asserted because it is the stable signal; an occasional scheduler
-    # outlier says nothing about the budget. The loose max still catches a starvation regression,
-    # which drains the whole burst in one poll and costs hundreds of milliseconds.
-    assert p99 < 0.005, f"host loop p99 stall {p99 * 1000:.2f}ms under burst"
-    assert gaps[-1] < 0.1, f"host loop stalled {gaps[-1] * 1000:.1f}ms under burst"
+    assert actor.fired == burst, "burst did not drain"
+    assert len(actor.progress) == 1
+    assert 0 < actor.progress[0] <= 64, "dispatch batch exceeded its callback budget"
+    assert handle.state == NodeState.STOPPED

@@ -1207,7 +1207,7 @@ pub struct OKXOrderMsg {
     pub tag: Option<String>,
     /// Trade mode.
     pub td_mode: OKXTradeMode,
-    /// Target currency (`base_ccy` or `quote_ccy`). Empty for margin modes.
+    /// Quantity unit for spot market orders (`base_ccy` or `quote_ccy`).
     #[serde(default, deserialize_with = "deserialize_target_currency_as_none")]
     pub tgt_ccy: Option<OKXTargetCurrency>,
     /// Take-profit order price.

@@ -332,10 +332,20 @@ impl DeribitDataClient {
 
     /// Spawns a task that refreshes instruments for the configured product types.
     fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        if let Some(future) = self.instrument_refresh() {
+            self.session_tasks
+                .spawn(future)
+                .context("failed to register Deribit instrument refresh task")?;
+        }
+
+        Ok(())
+    }
+
+    fn instrument_refresh(&self) -> Option<impl Future<Output = ()> + Send + 'static> {
         let minutes = self.config.update_instruments_interval_mins;
 
         if minutes == 0 {
-            return Ok(());
+            return None;
         }
 
         let product_types = if self.config.product_types.is_empty() {
@@ -351,7 +361,7 @@ impl DeribitDataClient {
         let instruments_lock = Arc::clone(&self.instruments_lock);
         let sender = self.data_sender.clone();
 
-        let future = async move {
+        Some(async move {
             loop {
                 tokio::select! {
                     biased;
@@ -382,12 +392,7 @@ impl DeribitDataClient {
                     }
                 }
             }
-        };
-
-        self.session_tasks
-            .spawn(future)
-            .context("failed to register Deribit instrument refresh task")?;
-        Ok(())
+        })
     }
 
     /// Handles incoming WebSocket messages.
@@ -2504,6 +2509,10 @@ fn preserve_combo_leg_info(instrument: &mut InstrumentAny, cached: &InstrumentAn
     }
     *info = Some(Params::new(merged));
 }
+
+#[cfg(test)]
+#[path = "../tests/integration/data_client.rs"]
+mod data_client_tests;
 
 #[cfg(test)]
 mod tests {

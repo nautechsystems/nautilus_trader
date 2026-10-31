@@ -90,6 +90,7 @@ pub(crate) struct StartupMassStatusExecutionClient {
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
+    oms_type: OmsType,
     handles_all_order_venues: bool,
 }
 
@@ -103,6 +104,7 @@ pub(crate) struct StartupMassStatusExecutionClientFactory {
     client_id: ClientId,
     account_id: AccountId,
     venue: Venue,
+    oms_type: OmsType,
     handles_all_order_venues: bool,
 }
 
@@ -115,6 +117,7 @@ impl StartupMassStatusExecutionClient {
         client_id: ClientId,
         account_id: AccountId,
         venue: Venue,
+        oms_type: OmsType,
         handles_all_order_venues: bool,
     ) -> Self {
         Self {
@@ -123,6 +126,7 @@ impl StartupMassStatusExecutionClient {
             client_id,
             account_id,
             venue,
+            oms_type,
             handles_all_order_venues,
         }
     }
@@ -145,6 +149,7 @@ impl StartupMassStatusExecutionClientFactory {
             client_id: ClientId::from(StartupMassStatusExecutionClient::CLIENT_ID),
             account_id: AccountId::from("STARTUP-MASS-STATUS-001"),
             venue: crypto_perpetual_ethusdt().id().venue,
+            oms_type: OmsType::Hedging,
             handles_all_order_venues: false,
         }
     }
@@ -163,6 +168,12 @@ impl StartupMassStatusExecutionClientFactory {
 
     pub(crate) fn with_handles_all_order_venues(mut self) -> Self {
         self.handles_all_order_venues = true;
+        self
+    }
+
+    #[allow(dead_code, reason = "only the spec target selects NETTING accounting")]
+    pub(crate) fn with_oms_type(mut self, oms_type: OmsType) -> Self {
+        self.oms_type = oms_type;
         self
     }
 }
@@ -184,6 +195,7 @@ impl ExecutionClientFactory for StartupMassStatusExecutionClientFactory {
             self.client_id,
             self.account_id,
             self.venue,
+            self.oms_type,
             self.handles_all_order_venues,
         )))
     }
@@ -220,7 +232,7 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
     }
 
     fn oms_type(&self) -> OmsType {
-        OmsType::Hedging
+        self.oms_type
     }
 
     fn get_account(&self) -> Option<AccountAny> {

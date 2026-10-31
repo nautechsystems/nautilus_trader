@@ -55,6 +55,7 @@ use nautilus_model::{
 use nautilus_network::{mode::ReconnectRequestOutcome, websocket::TransportBackend};
 use nautilus_okx::{
     common::{
+        consts::OKX_NAUTILUS_BROKER_ID,
         enums::{OKXInstrumentType, OKXTradeMode},
         models::OKXInstrument,
         parse::parse_instrument_any,
@@ -1439,6 +1440,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 None,
                 None,
+                None,
             ),
             (
                 OKXInstrumentType::Margin,
@@ -1453,6 +1455,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 Some(false),
                 Some(true),
+                None,
                 None,
                 None,
                 None,
@@ -1475,6 +1478,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 None,
                 None,
+                None,
             ),
             (
                 OKXInstrumentType::Swap,
@@ -1489,6 +1493,7 @@ async fn test_batch_submit_orders_scope_reduce_only_on_wire() {
                 None,
                 Some(false),
                 Some(true),
+                None,
                 None,
                 None,
                 None,
@@ -1590,6 +1595,7 @@ async fn test_batch_submit_event_order_requires_outcome() {
             None,
             None,
             None,
+            None,
         )])
         .await;
 
@@ -1628,6 +1634,7 @@ async fn test_batch_submit_event_order_omits_speed_bump() {
             Some(Price::from("0.420")),
             None,
             Some(false),
+            None,
             None,
             Some("yes".to_string()),
             None,
@@ -1849,6 +1856,7 @@ async fn test_rpi_websocket_subscription_and_single_batch_order_matrix() {
             None,
             Some(false),
             Some(false),
+            None,
             None,
             Some(true),
             Some(false),
@@ -4250,6 +4258,176 @@ async fn test_submit_usdc_spot_order_serializes_usd_trade_quote_ccy() {
     assert!(arg.get("instId").is_none());
 
     client.close().await.expect("close failed");
+}
+
+#[rstest]
+#[case::buy_base(OrderSide::Buy, Some(false), Some("base_ccy"))]
+#[case::buy_quote(OrderSide::Buy, Some(true), Some("quote_ccy"))]
+#[case::buy_default(OrderSide::Buy, None, None)]
+#[case::sell_base(OrderSide::Sell, Some(false), None)]
+#[case::sell_quote(OrderSide::Sell, Some(true), Some("quote_ccy"))]
+#[case::sell_default(OrderSide::Sell, None, None)]
+#[tokio::test]
+async fn test_spot_market_quantity_units(
+    #[case] side: OrderSide,
+    #[case] quote_quantity: Option<bool>,
+    #[case] target: Option<&str>,
+    #[values(
+        OKXTradeMode::Cash,
+        OKXTradeMode::Cross,
+        OKXTradeMode::Isolated,
+        OKXTradeMode::SpotIsolated
+    )]
+    mode: OKXTradeMode,
+    #[values(false, true)] batch: bool,
+) {
+    let state = Arc::new(TestServerState::default());
+    let addr = start_ws_server(state.clone()).await;
+    let mut client = connect_client(&format!("ws://{addr}/ws"));
+    client.cache_instruments(&load_usdc_spot_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
+    client.connect().await.unwrap();
+    client.wait_until_active(5.0).await.unwrap();
+    let instrument_id = InstrumentId::from("BTC-USDC.OKX");
+    let client_order_id = ClientOrderId::from("OUNITS");
+
+    let quantity = Quantity::from(if quote_quantity == Some(true) {
+        "123.45"
+    } else {
+        "0.01234567"
+    });
+
+    if batch {
+        client
+            .batch_submit_orders(vec![(
+                OKXInstrumentType::Spot,
+                instrument_id,
+                mode,
+                client_order_id,
+                side,
+                None,
+                OrderType::Market,
+                quantity,
+                None,
+                None,
+                Some(false),
+                Some(false),
+                quote_quantity,
+                None,
+                None,
+                None,
+                None,
+            )])
+            .await
+            .unwrap();
+    } else {
+        client
+            .submit_order(
+                TraderId::from("TRADER-001"),
+                StrategyId::from("STRATEGY-001"),
+                instrument_id,
+                mode,
+                client_order_id,
+                side,
+                OrderType::Market,
+                quantity,
+                Some(TimeInForce::Gtc),
+                None,
+                None,
+                Some(false),
+                Some(false),
+                quote_quantity,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+    }
+
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move { !state.order_messages.lock().await.is_empty() }
+        },
+        Duration::from_secs(1),
+    )
+    .await;
+
+    let messages = state.order_messages().await;
+    let mut expected = json!({
+        "instIdCode": 20459, "tdMode": mode.to_string().to_lowercase(),
+        "clOrdId": "OUNITS", "ccy": "USDC", "side": side.to_string().to_lowercase(),
+        "ordType": "market", "sz": quantity.to_string(), "tag": OKX_NAUTILUS_BROKER_ID,
+    });
+
+    if let Some(target) = target {
+        expected["tgtCcy"] = json!(target);
+    }
+
+    assert_eq!(messages.len(), 1);
+    assert_eq!(
+        messages[0]["op"],
+        if batch { "batch-orders" } else { "order" }
+    );
+    assert_eq!(messages[0]["args"], json!([expected]));
+
+    client.close().await.unwrap();
+}
+
+#[rstest]
+#[case::buy_base(
+    OrderSide::Buy,
+    false,
+    "OKXInstrumentType::Margin market BUY orders require quote quantity"
+)]
+#[case::sell_quote(
+    OrderSide::Sell,
+    true,
+    "OKXInstrumentType::Margin market SELL orders require base quantity"
+)]
+#[tokio::test]
+async fn test_margin_market_quantity_rejected_before_send(
+    #[case] side: OrderSide,
+    #[case] quote_quantity: bool,
+    #[case] reason: &str,
+) {
+    let client = connect_client("ws://127.0.0.1:0/ws");
+    client.cache_instruments(&load_margin_instruments());
+    client.cache_inst_id_code(Ustr::from("BTC-USDT"), 123);
+    let error = client
+        .batch_submit_orders(vec![(
+            OKXInstrumentType::Margin,
+            InstrumentId::from("BTC-USDT.OKX"),
+            OKXTradeMode::Cross,
+            ClientOrderId::from("OUNSUPPORTEDUNITS"),
+            side,
+            None,
+            OrderType::Market,
+            Quantity::from("0.01234567"),
+            None,
+            None,
+            Some(false),
+            Some(false),
+            Some(quote_quantity),
+            None,
+            None,
+            None,
+            None,
+        )])
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Client error: VALIDATION_FAILED: {reason}")
+    );
 }
 
 #[tokio::test]

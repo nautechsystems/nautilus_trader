@@ -39,6 +39,7 @@
 //! - `defi`: Enables DeFi (Decentralized Finance) support, including blockchain adapters.
 //! - `extension-module`: Builds as a Python extension module and is automatically enabled by
 //!   `maturin`.
+//! - `finfeed`: Enables the FinFeed adapter and its Python bindings.
 //! - `high-precision`: Uses 128-bit value types throughout the workspace.
 //! - `hypersync`: Enables [`hypersync-client`](https://crates.io/crates/hypersync-client)
 //!   support for the blockchain adapter.
@@ -284,6 +285,14 @@ fn _libnautilus(py: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     {
         let n = "dydx";
         let submodule = pyo3::wrap_pymodule!(nautilus_dydx::python::dydx);
+        m.add_wrapped(submodule)?;
+        sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
+    }
+
+    #[cfg(feature = "finfeed")]
+    {
+        let n = "finfeed";
+        let submodule = pyo3::wrap_pymodule!(nautilus_finfeed::python::finfeed);
         m.add_wrapped(submodule)?;
         sys_modules.set_item(format!("{module_name}.{n}"), m.getattr(n)?)?;
     }

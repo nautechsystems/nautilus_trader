@@ -26,7 +26,7 @@ use nautilus_model::{
         position::snapshot::PositionSnapshot,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, TraderId},
-    instruments::{Instrument, InstrumentAny},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orders::OrderAny,
     position::Position,
     types::Currency,
@@ -46,6 +46,8 @@ use crate::sql::models::{
     orders::{OrderEventAnyRow, OrderFilledRow},
     types::CurrencyRow,
 };
+
+pub(super) const CACHE_DATABASE_KEY_PREFIX: &str = "cache-database:";
 
 #[derive(Debug)]
 pub struct DatabaseQueries;
@@ -67,7 +69,8 @@ impl DatabaseQueries {
     /// Deletes the order, position and account rows of `trader_id` via the provided `pool`.
     ///
     /// Shared reference data (currencies, instruments, instrument closes), market data, the
-    /// general key-value table, signals, custom data and blockchain tables are left untouched.
+    /// user general entries, signals, custom data, and blockchain tables are left untouched.
+    /// This trader's saved component state and heartbeat are removed; shared synthetics remain.
     ///
     /// # Errors
     ///
@@ -92,6 +95,11 @@ impl DatabaseQueries {
                 .map_err(|e| anyhow::anyhow!("Failed to delete rows for {trader_id}: {e}"))?;
         }
 
+        sqlx::query("DELETE FROM general WHERE starts_with(id, $1)")
+            .bind(trader_key_prefix(*trader_id))
+            .execute(&mut *transaction)
+            .await?;
+
         transaction
             .commit()
             .await
@@ -114,6 +122,97 @@ impl DatabaseQueries {
         .await
         .map(|_| ())
         .map_err(|e| anyhow::anyhow!("Failed to insert into general table: {e}"))
+    }
+
+    /// Deletes a raw key-value entry.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the database operation fails.
+    pub async fn delete(pool: &PgPool, key: &str) -> anyhow::Result<()> {
+        sqlx::query("DELETE FROM general WHERE id = $1")
+            .bind(key)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Deletes an order's events, snapshot, and order-position mapping for one trader.
+    /// Position fill histories remain available independently of the order.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any database operation fails. A failure rolls back the deletion.
+    pub async fn delete_order(
+        pool: &PgPool,
+        trader_id: TraderId,
+        client_order_id: ClientOrderId,
+    ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        for statement in [
+            "DELETE FROM order_position_index WHERE trader_id = $1 AND client_order_id = $2",
+            "DELETE FROM order_event WHERE trader_id = $1 AND client_order_id = $2",
+            "DELETE FROM \"order\" WHERE trader_id = $1 AND id = $2",
+        ] {
+            sqlx::query(statement)
+                .bind(trader_id.to_string())
+                .bind(client_order_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    /// Deletes a position's fill history, snapshot, and order-position mappings for one trader.
+    /// Order event histories remain available independently of the position.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if any database operation fails. A failure rolls back the deletion.
+    pub async fn delete_position(
+        pool: &PgPool,
+        trader_id: TraderId,
+        position_id: PositionId,
+    ) -> anyhow::Result<()> {
+        let mut transaction = pool.begin().await?;
+
+        for statement in [
+            "DELETE FROM order_position_index WHERE trader_id = $1 AND position_id = $2",
+            "DELETE FROM position_event WHERE trader_id = $1 AND position_id = $2",
+            "DELETE FROM position WHERE trader_id = $1 AND id = $2",
+        ] {
+            sqlx::query(statement)
+                .bind(trader_id.to_string())
+                .bind(position_id.to_string())
+                .execute(&mut *transaction)
+                .await?;
+        }
+
+        transaction.commit().await?;
+        Ok(())
+    }
+
+    pub(super) async fn load_synthetic(
+        pool: &PgPool,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        let key = format!("{CACHE_DATABASE_KEY_PREFIX}synthetic:{instrument_id}");
+        let value = Self::load_value(pool, &key).await?;
+        value
+            .map(|value| serde_json::from_slice(&value).map_err(Into::into))
+            .transpose()
+    }
+
+    pub(super) async fn load_value(pool: &PgPool, key: &str) -> anyhow::Result<Option<Vec<u8>>> {
+        Ok(
+            sqlx::query_scalar("SELECT value FROM general WHERE id = $1")
+                .bind(key)
+                .fetch_optional(pool)
+                .await?,
+        )
     }
 
     /// Loads all entries from the `general` table via the provided `pool`.
@@ -2059,4 +2158,11 @@ impl DatabaseQueries {
         }
         Ok(results)
     }
+}
+
+pub(super) fn trader_key_prefix(trader_id: TraderId) -> String {
+    format!(
+        "{CACHE_DATABASE_KEY_PREFIX}trader:{}:{trader_id}:",
+        trader_id.as_str().len()
+    )
 }

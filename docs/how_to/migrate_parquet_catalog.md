@@ -102,6 +102,19 @@ encoding, and reject nulls when decoding, naming the field and row. Depth level 
 omits absent levels, and decoding rejects null levels and null values. Invalid values and values outside the
 representable range produce errors.
 
+#### Precision errors
+
+Prices and quantities must be exactly representable at their declared precision. Raw constructors and decoders
+reject extra digits without rounding.
+
+- **Legacy rows**: Built-in rows with extra raw digits fail migration without rounding or repair. Regenerate
+  affected data with correct precision or scaling first.
+- **Dry runs and retries**: The schema-only dry run does not detect these rows. After conversion fails, retry
+  into a new empty destination.
+- **Rust arithmetic**: Quantity multiplication retains the maximum operand precision and can leave finer raw
+  digits. Arrow can write these results, but strict decoding rejects them. Explicitly rescale or round before
+  persistence.
+
 ### Identity and file layout
 
 Every file's schema metadata names its type under `type_name`, for example `QuoteTick`, `OrderFilled`,

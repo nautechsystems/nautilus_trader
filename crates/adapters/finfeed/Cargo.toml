@@ -1,0 +1,96 @@
+[package]
+name = "nautilus-finfeed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+description = "FinFeed market data integration adapter for the Nautilus trading engine"
+categories.workspace = true
+keywords.workspace = true
+documentation.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[lib]
+name = "nautilus_finfeed"
+crate-type = ["rlib"]
+
+[features]
+default = ["high-precision"]
+extension-module = ["python", "pyo3/extension-module"]
+fuzz = ["nautilus-live/fuzz"]
+high-precision = ["nautilus-model/high-precision"]
+python = [
+  "dep:nautilus-system",
+  "dep:pyo3",
+  "dep:pyo3-async-runtimes",
+  "dep:pyo3-stub-gen",
+  "nautilus-model/python",
+  "nautilus-system/python",
+]
+simulation = [
+  "dep:madsim",
+  "nautilus-core/simulation",
+  "nautilus-common/simulation",
+  "nautilus-live/simulation",
+  "nautilus-network/simulation",
+]
+
+[package.metadata]
+cargo-fuzz = true
+
+[package.metadata.docs.rs]
+features = ["high-precision"]
+rustdoc-args = ["--cfg", "docsrs"]
+
+[dependencies]
+nautilus-common = { workspace = true, features = ["live"] }
+nautilus-core = { workspace = true }
+nautilus-live = { workspace = true }
+nautilus-model = { workspace = true }
+nautilus-network = { workspace = true }
+nautilus-system = { workspace = true, optional = true }
+
+anyhow = { workspace = true }
+async-trait = { workspace = true }
+bon = { workspace = true }
+indexmap = { workspace = true }
+jiff = { workspace = true }
+log = { workspace = true }
+parking_lot = { workspace = true }
+rust_decimal = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+url = { workspace = true }
+
+madsim = { workspace = true, optional = true }
+
+pyo3 = { workspace = true, optional = true }
+pyo3-async-runtimes = { workspace = true, optional = true }
+pyo3-stub-gen = { workspace = true, optional = true }
+
+[dev-dependencies]
+nautilus-live = { workspace = true, features = ["node"] }
+nautilus-testkit = { workspace = true, features = ["testers"] }
+
+criterion = { workspace = true }
+rstest = { workspace = true }
+
+[[bench]]
+name = "data"
+harness = false
+
+[[bin]]
+name = "fuzz-rest"
+path = "fuzz/fuzz_targets/fuzz_rest.rs"
+required-features = ["fuzz"]
+test = false
+doc = false
+bench = false

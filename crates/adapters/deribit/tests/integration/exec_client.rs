@@ -20,6 +20,7 @@
 
 use std::{
     cell::RefCell,
+    collections::HashMap,
     net::SocketAddr,
     path::PathBuf,
     rc::Rc,
@@ -37,24 +38,26 @@ use axum::{
         State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
+    http::StatusCode,
     response::{IntoResponse, Json, Response},
     routing::{get, post},
 };
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    clock::VirtualClock,
     live::runner::{replace_system_event_sender, set_exec_event_sender},
     messages::{
         ExecutionEvent, SystemEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GeneratePositionStatusReports,
-            ModifyOrder, SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReport,
+            GeneratePositionStatusReports, ModifyOrder, SubmitOrder, SubmitOrderList,
         },
         system::SocketState,
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_deribit::{
     common::{
         consts::{DERIBIT_CLIENT_ID, DERIBIT_VENUE},
@@ -65,15 +68,22 @@ use nautilus_deribit::{
     http::models::DeribitProductType,
     websocket::enums::DeribitWsMethod,
 };
-use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_live::{
+    ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    execution::manager::{ExecutionManager, ExecutionManagerConfig},
+};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
+    enums::{
+        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
+        TriggerType,
+    },
     events::{AccountState, OrderEventAny},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
     },
-    orders::{Order, OrderAny, OrderList, OrderTestBuilder},
+    orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
+    reports::OrderStatusReport,
     types::{AccountBalance, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
@@ -140,10 +150,12 @@ struct TestServerState {
     command_request_count: Arc<AtomicUsize>,
     command_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
     command_request_texts: Arc<tokio::sync::Mutex<Vec<String>>>,
+    order_lookup_responses: Arc<tokio::sync::Mutex<HashMap<String, (StatusCode, Value)>>>,
+    order_lookup_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 async fn handle_jsonrpc_request(
-    State(_state): State<TestServerState>,
+    State(state): State<TestServerState>,
     Json(request): Json<Value>,
 ) -> impl IntoResponse {
     let method = request.get("method").and_then(|m| m.as_str()).unwrap_or("");
@@ -161,6 +173,32 @@ async fn handle_jsonrpc_request(
             let mut data = load_json("http_get_account_summaries.json");
             data["id"] = json!(id);
             Json(data).into_response()
+        }
+        "private/get_order_state"
+        | "private/get_open_orders"
+        | "private/get_open_orders_by_instrument"
+        | "private/get_order_history_by_instrument"
+        | "private/get_order_history_by_currency" => {
+            state
+                .order_lookup_requests
+                .lock()
+                .await
+                .push(request.clone());
+            let (status, mut response) = state
+                .order_lookup_responses
+                .lock()
+                .await
+                .get(method)
+                .cloned()
+                .unwrap_or_else(|| (StatusCode::OK, json!({"jsonrpc": "2.0", "result": []})));
+
+            if let Some(body) = response.as_str() {
+                return (status, body.to_string()).into_response();
+            }
+
+            response["jsonrpc"] = json!("2.0");
+            response["id"] = json!(id);
+            (status, Json(response)).into_response()
         }
         "private/get_positions" => {
             let mut data = load_json("http_get_positions.json");
@@ -755,6 +793,278 @@ async fn test_exec_client_connect_emits_account_state() {
     );
 
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::venue_valid("valid", true, true, None)]
+#[case::venue_only("venue_only", true, true, None)]
+#[case::venue_missing_label("missing_label", true, true, None)]
+#[case::venue_absent("absent", true, true, None)]
+#[case::venue_auth_failure("auth", true, true, Some("13004"))]
+#[case::venue_unavailable("unavailable", true, true, Some("503"))]
+#[case::venue_malformed("malformed", true, true, Some("JSON error"))]
+#[case::venue_missing_result("missing_result", true, true, Some("neither result nor error"))]
+#[case::venue_uncached("uncached", true, true, Some("not found"))]
+#[case::venue_parse_failure("parse", true, true, Some("Unknown order direction"))]
+#[case::venue_wrong_id("wrong_venue", true, true, Some("venue_order_id=DERIBIT-OTHER"))]
+#[case::venue_wrong_label("wrong_client", true, true, Some("client_order_id=Some(\"O-OTHER\")"))]
+#[case::venue_wrong_instrument(
+    "wrong_instrument",
+    true,
+    true,
+    Some("instrument_id=BTC-27DEC24.DERIBIT")
+)]
+#[case::client_open("valid", false, true, None)]
+#[case::client_closed("closed", false, true, None)]
+#[case::client_unscoped("valid", false, false, None)]
+#[case::client_empty("empty", false, true, Some("inconclusive"))]
+#[case::client_uncached("uncached", false, true, Some("inconclusive"))]
+#[case::client_parse_failure("parse", false, true, Some("inconclusive"))]
+#[case::client_unscoped_uncached("uncached", false, false, Some("inconclusive"))]
+#[case::client_unscoped_parse_failure("parse", false, false, Some("inconclusive"))]
+#[case::client_auth_failure("auth", false, true, Some("13004"))]
+#[case::client_absence_error("absent", false, true, Some("10004"))]
+#[case::client_malformed("malformed", false, true, Some("JSON error"))]
+#[case::client_wrong_instrument(
+    "wrong_instrument",
+    false,
+    true,
+    Some("instrument_id=BTC-27DEC24.DERIBIT")
+)]
+#[tokio::test]
+async fn test_generate_order_status_report(
+    #[case] scenario: &str,
+    #[case] venue_id: bool,
+    #[case] scoped: bool,
+    #[case] error: Option<&str>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::from("O-LOOKUP-17");
+    let venue_order_id = VenueOrderId::from("DERIBIT-ORDER-1");
+    let response = order_lookup_response(scenario, venue_id, client_order_id);
+
+    let first_method = match (venue_id, scoped) {
+        (true, _) => "private/get_order_state",
+        (false, true) => "private/get_open_orders_by_instrument",
+        (false, false) => "private/get_open_orders",
+    };
+
+    let method = if scenario == "closed" {
+        "private/get_order_history_by_instrument"
+    } else {
+        first_method
+    };
+
+    state.order_lookup_responses.lock().await.insert(
+        method.to_string(),
+        (
+            match scenario {
+                "unavailable" => StatusCode::SERVICE_UNAVAILABLE,
+                "absent" => StatusCode::BAD_REQUEST,
+                _ => StatusCode::OK,
+            },
+            response,
+        ),
+    );
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        scoped.then(test_instrument_id),
+        (scenario != "venue_only").then_some(client_order_id),
+        venue_id.then_some(venue_order_id),
+        None,
+        None,
+    );
+
+    let result = client.generate_order_status_report(&cmd).await;
+    let requests = state.order_lookup_requests.lock().await.clone();
+    client.disconnect().await.unwrap();
+
+    let order_status = if scenario == "closed" {
+        OrderStatus::Canceled
+    } else {
+        OrderStatus::Accepted
+    };
+
+    let expected_requests = if scenario == "unavailable" { 2 } else { 1 };
+
+    if let Some(message) = error {
+        assert!(result.unwrap_err().to_string().contains(message));
+    } else if scenario == "absent" {
+        assert_eq!(result.unwrap(), None);
+    } else {
+        let report = result.unwrap().unwrap();
+
+        let expected = OrderStatusReport::new(
+            AccountId::from("DERIBIT-001"),
+            test_instrument_id(),
+            (scenario != "missing_label").then_some(client_order_id),
+            venue_order_id,
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            order_status,
+            Quantity::from("12"),
+            Quantity::from("0"),
+            UnixNanos::from(1_767_978_363_493_000_000),
+            UnixNanos::from(1_767_978_363_493_000_000),
+            report.ts_init,
+            Some(report.report_id),
+        )
+        .with_price(Price::from("54321.5"))
+        .with_post_only(true);
+
+        assert_eq!(report, expected);
+    }
+
+    assert_eq!(requests[0]["method"], first_method);
+
+    if venue_id {
+        assert_eq!(requests.len(), expected_requests);
+        assert_eq!(requests[0]["params"], json!({"order_id": venue_order_id}));
+    } else if scoped && error.is_none() {
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[0]["params"]["instrument_name"], "BTC-PERPETUAL");
+        assert_eq!(
+            requests[1]["method"],
+            "private/get_order_history_by_instrument"
+        );
+        assert_eq!(requests[1]["params"]["include_old"], true);
+        assert_eq!(requests[1]["params"]["include_unfilled"], true);
+    }
+}
+
+fn order_lookup_response(scenario: &str, venue_id: bool, client_order_id: ClientOrderId) -> Value {
+    let mut order = order_message_result(
+        &json!({"params": {"label": client_order_id, "amount": 12, "price": 54321.5}}),
+        CommandOrderState::Open,
+    );
+
+    match scenario {
+        "uncached" => order["instrument_name"] = json!("BTC-UNKNOWN"),
+        "parse" => order["direction"] = json!("invalid"),
+        "wrong_venue" => order["order_id"] = json!("DERIBIT-OTHER"),
+        "wrong_client" => order["label"] = json!("O-OTHER"),
+        "missing_label" => order["label"] = Value::Null,
+        "wrong_instrument" => order["instrument_name"] = json!("BTC-27DEC24"),
+        "closed" => order["order_state"] = json!("cancelled"),
+        _ => {}
+    }
+
+    let result = if venue_id { order } else { json!([order]) };
+
+    match scenario {
+        "absent" => json!({"error": {"code": 10004, "message": "order_not_found"}}),
+        "auth" => json!({"error": {"code": 13004, "message": "invalid_credentials"}}),
+        "unavailable" => json!("service unavailable"),
+        "malformed" => json!({"result": {"unexpected": true}}),
+        "missing_result" => json!({"jsonrpc": "2.0"}),
+        "empty" => json!({"result": []}),
+        _ => json!({"result": result}),
+    }
+}
+
+#[tokio::test]
+async fn test_generate_order_status_report_requires_identifier() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (client, _rx, _cache) = create_test_execution_client(addr);
+
+    let cmd = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(test_instrument_id()),
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let result = client.generate_order_status_report(&cmd).await;
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "Order lookup requires a client order ID or venue order ID"
+    );
+    assert_eq!(state.order_lookup_requests.lock().await.len(), 0);
+}
+
+#[rstest]
+#[case::failed_lookup(13004, None)]
+#[case::definitive_absence(10004, Some(OrderStatus::Rejected))]
+#[tokio::test]
+async fn test_recovery_order_lookup_preserves_failure(
+    #[case] code: i64,
+    #[case] terminal: Option<OrderStatus>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.unwrap();
+    state.order_lookup_responses.lock().await.insert(
+        "private/get_order_state".to_string(),
+        (StatusCode::OK, json!({"error": {"code": code, "message": if code == 10004 { "order_not_found" } else { "invalid_credentials" }}})),
+    );
+    let client_order_id = ClientOrderId::from("O-RECOVERY-23");
+    let venue_order_id = VenueOrderId::from("DERIBIT-ORDER-1");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .client_order_id(client_order_id)
+        .quantity(Quantity::from("12"))
+        .price(Price::from("54321.5"))
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&order, client.account_id());
+    let accepted = TestOrderEventStubs::accepted(&order, client.account_id(), venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(client.client_id()), false)
+        .unwrap();
+    cache.borrow_mut().update_order(&submitted).unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+    let mut manager = ExecutionManager::new(
+        clock,
+        cache.clone(),
+        ExecutionManagerConfig {
+            open_check_threshold_ns: DurationNanos::ZERO,
+            open_check_missing_retries: 1,
+            open_check_open_only: false,
+            single_order_query_delay_ms: 0,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let events = manager.check_open_orders(&[&client]).await;
+    for event in &events {
+        cache.borrow_mut().update_order(event).unwrap();
+    }
+
+    let status = cache.borrow().order(&client_order_id).unwrap().status();
+    let requests = state.order_lookup_requests.lock().await.clone();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(events.len(), usize::from(terminal.is_some()));
+    assert_eq!(status, terminal.unwrap_or(OrderStatus::Accepted));
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|request| request["method"] == "private/get_order_state")
+            .count(),
+        1
+    );
+
+    if let Some(event) = events.first() {
+        assert!(matches!(event, OrderEventAny::Rejected(rejected)
+            if rejected.client_order_id == client_order_id && rejected.reason == "NOT_FOUND_AT_VENUE"));
+    }
 }
 
 #[rstest]

@@ -396,6 +396,14 @@ impl DeriveDataClient {
     }
 
     fn spawn_instrument_refresh(&self) -> anyhow::Result<()> {
+        if let Some(future) = self.instrument_refresh() {
+            self.session_tasks.spawn(future)?;
+        }
+
+        Ok(())
+    }
+
+    fn instrument_refresh(&self) -> Option<impl Future<Output = ()> + Send + 'static> {
         let minutes = self.config.update_instruments_interval_mins;
         let currencies: Vec<_> = self
             .config
@@ -405,7 +413,7 @@ impl DeriveDataClient {
             .collect();
 
         if minutes == 0 || currencies.is_empty() {
-            return Ok(());
+            return None;
         }
 
         let interval = Duration::from_secs(minutes.saturating_mul(60));
@@ -416,7 +424,7 @@ impl DeriveDataClient {
         let sender = self.data_sender.clone();
         let subscription_lock = Arc::clone(&self.subscription_lock);
 
-        self.session_tasks.spawn(async move {
+        Some(async move {
             loop {
                 tokio::select! {
                     biased;
@@ -434,15 +442,21 @@ impl DeriveDataClient {
                     match result {
                         Ok(definitions) => {
                             let loaded = parse_instrument_definitions(definitions);
-                            cache_instruments(loaded, &instruments, &sender, &cancellation, &subscription_lock);
+                            cache_instruments(
+                                loaded,
+                                &instruments,
+                                &sender,
+                                &cancellation,
+                                &subscription_lock,
+                            );
                         }
-                        Err(e) => log::warn!("Failed to refresh Derive instruments for {currency}: {e}"),
+                        Err(e) => {
+                            log::warn!("Failed to refresh Derive instruments for {currency}: {e}");
+                        }
                     }
                 }
             }
-        })?;
-
-        Ok(())
+        })
     }
 
     fn handle_ws_message(message: DeriveWsMessage, ctx: &WsMessageContext) {
@@ -2853,6 +2867,10 @@ fn truncated_payload_snippet(raw: &str) -> String {
 
     format!("{}...(truncated)", &raw[..end])
 }
+
+#[cfg(test)]
+#[path = "../tests/integration/data_client.rs"]
+mod data_client_tests;
 
 #[cfg(test)]
 mod tests {

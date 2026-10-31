@@ -1,0 +1,14 @@
+[
+  {
+    "time_period_start": "2026-10-11T00:03:00Z",
+    "time_period_end": "2026-10-11T00:04:00Z",
+    "time_open": "2026-10-11T00:03:10.0000001Z",
+    "time_close": "2026-10-11T00:03:50.0000003Z",
+    "price_open": 0.2,
+    "price_high": 0.4,
+    "price_low": 0.1,
+    "price_close": 0.3,
+    "volume_traded": 12.5,
+    "trades_count": 2
+  }
+]

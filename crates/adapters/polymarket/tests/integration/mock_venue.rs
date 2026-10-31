@@ -141,7 +141,9 @@ pub(super) struct TestServerState {
     pub(super) version_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) startup_request_paths: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub(super) balance_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
+    pub(super) balance_update_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) balance_response: Arc<tokio::sync::Mutex<Value>>,
+    pub(super) balance_response_gate: Arc<RequestGate>,
     pub(super) order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) order_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
@@ -225,6 +227,8 @@ impl Default for TestServerState {
             version_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             startup_request_paths: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             balance_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            balance_update_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
+            balance_response_gate: Arc::new(RequestGate::default()),
             balance_response: Arc::new(tokio::sync::Mutex::new(load_json(
                 "http_balance_allowance_collateral.json",
             ))),
@@ -445,6 +449,7 @@ async fn handle_get_balance(
     headers: HeaderMap,
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
+    let status = *state.balance_response_status.lock().await;
     state.balance_queries.lock().await.push(query);
     *state.last_path.lock().await = uri.path().to_string();
     state
@@ -456,9 +461,24 @@ async fn handle_get_balance(
         .iter()
         .map(|(k, v)| (k.as_str().to_string(), v.to_str().unwrap_or("").to_string()))
         .collect();
-    let status = *state.balance_response_status.lock().await;
     let response = state.balance_response.lock().await.clone();
+    state.balance_response_gate.wait().await;
     (status, Json(response)).into_response()
+}
+
+async fn handle_update_balance(
+    State(state): State<TestServerState>,
+    uri: Uri,
+    Query(query): Query<HashMap<String, String>>,
+) -> Response {
+    let status = *state.balance_update_status.lock().await;
+    state.balance_queries.lock().await.push(query);
+    state
+        .startup_request_paths
+        .lock()
+        .await
+        .push(uri.path().to_string());
+    (status, Json(json!({}))).into_response()
 }
 
 async fn handle_get_version(State(state): State<TestServerState>, uri: Uri) -> Response {
@@ -929,6 +949,7 @@ fn create_test_router(state: TestServerState) -> Router {
         .route("/data/trades", get(handle_get_trades))
         .route("/version", get(handle_get_version))
         .route("/balance-allowance", get(handle_get_balance))
+        .route("/balance-allowance/update", get(handle_update_balance))
         .route(
             "/order",
             post(handle_post_order).delete(handle_delete_order),

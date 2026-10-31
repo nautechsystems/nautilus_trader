@@ -84,13 +84,13 @@ use super::{
 use crate::common::{
     consts::{
         OKX_NAUTILUS_BROKER_ID, OKX_SUPPORTED_ORDER_TYPES, OKX_SUPPORTED_TIME_IN_FORCE,
-        OKX_WS_PUBLIC_URL, OKX_WS_TOPIC_DELIMITER, okx_reduce_only_wire_value, select_book_channel,
-        spot_trade_quote_ccy_wire_value,
+        OKX_WS_PUBLIC_URL, OKX_WS_TOPIC_DELIMITER, okx_market_target_currency,
+        okx_reduce_only_wire_value, select_book_channel, spot_trade_quote_ccy_wire_value,
     },
     credential::Credential,
     enums::{
         OKXBookChannel, OKXGreeksType, OKXInstrumentType, OKXOrderType, OKXPositionSide,
-        OKXTargetCurrency, OKXTradeMode, OKXVipLevel,
+        OKXTradeMode, OKXVipLevel,
     },
     parse::{
         bar_spec_as_okx_channel, okx_instrument_type, okx_instrument_type_from_symbol,
@@ -836,14 +836,15 @@ impl OKXWebSocketClient {
                         Some(OKXWsMessage::Reconnected) => {
                             let epoch = ws_client.connection_epoch();
 
-                            if signal.load(Ordering::Acquire)
-                                || !ws_client.is_active()
-                                || epoch == reconnect_epoch
-                            {
+                            if !advance_reconnect_epoch(
+                                &mut reconnect_epoch,
+                                epoch,
+                                signal.load(Ordering::Acquire),
+                                ws_client.is_active(),
+                            ) {
                                 continue;
                             }
 
-                            reconnect_epoch = epoch;
                             auth_tracker.invalidate();
                             has_reconnected = true;
 
@@ -2594,27 +2595,11 @@ impl OKXWebSocketClient {
             builder.attach_algo_ords(attach_algo_ords);
         }
 
-        // For SPOT market orders in Cash mode, handle tgtCcy parameter
-        // https://www.okx.com/docs-v5/en/#order-book-trading-trade-post-place-order
-        // OKX API default behavior for SPOT market orders:
-        // - BUY orders default to tgtCcy=quote_ccy (sz represents quote currency amount)
-        // - SELL orders default to tgtCcy=base_ccy (sz represents base currency amount)
-        // Note: tgtCcy is ONLY supported for Cash trading mode, not for margin modes (Cross/Isolated)
-        if instrument_type == OKXInstrumentType::Spot
-            && order_type == OrderType::Market
-            && td_mode == OKXTradeMode::Cash
+        if let Some(tgt_ccy) =
+            okx_market_target_currency(instrument_type, order_side, order_type, quote_quantity)
+                .map_err(|e| OKXWsError::ClientError(e.to_string()))?
         {
-            match quote_quantity {
-                Some(true) => {
-                    builder.tgt_ccy(OKXTargetCurrency::QuoteCcy);
-                }
-                // For BUY orders, must explicitly set to base_ccy to override OKX default
-                Some(false) if order_side == OrderSide::Buy => {
-                    builder.tgt_ccy(OKXTargetCurrency::BaseCcy);
-                }
-                // For SELL orders with quote_quantity=false, omit tgtCcy (OKX defaults to base_ccy correctly)
-                Some(false) | None => {}
-            }
+            builder.tgt_ccy(tgt_ccy);
         }
 
         builder.side(order_side);
@@ -3028,6 +3013,10 @@ impl OKXWebSocketClient {
 
     /// Submits multiple orders.
     ///
+    /// The quantity-unit flag follows `reduce_only` in each tuple. `Some(true)` requests quote
+    /// units and `Some(false)` requests base units for spot market orders.
+    /// `None` uses venue defaults.
+    ///
     /// # Errors
     ///
     /// Returns an error if any batch order parameters are invalid or if the
@@ -3046,6 +3035,7 @@ impl OKXWebSocketClient {
             Quantity,
             Option<Price>,
             Option<Price>,
+            Option<bool>,
             Option<bool>,
             Option<bool>,
             Option<String>,
@@ -3073,6 +3063,7 @@ impl OKXWebSocketClient {
                 tp,
                 post_only,
                 reduce_only,
+                quote_quantity,
                 outcome,
                 rpi,
                 rpi_taker_access,
@@ -3135,6 +3126,9 @@ impl OKXWebSocketClient {
 
                 builder.ord_type(okx_ord_type);
                 builder.sz(qty.to_string());
+                let tgt_ccy =
+                    okx_market_target_currency(inst_type, ord_side, ord_type, quote_quantity)
+                        .map_err(|e| OKXWsError::ClientError(e.to_string()))?;
 
                 if let Some(p) = pr {
                     builder.px(p.to_string());
@@ -3175,9 +3169,11 @@ impl OKXWebSocketClient {
 
                 builder.tag(OKX_NAUTILUS_BROKER_ID);
 
-                let params = builder.build().map_err(|e| {
+                let mut params = builder.build().map_err(|e| {
                     OKXWsError::ClientError(format!("Build order params error: {e}"))
                 })?;
+
+                params.tgt_ccy = tgt_ccy;
                 let val = serde_json::to_value(params)
                     .map_err(|e| OKXWsError::JsonError(e.to_string()))?;
                 args.push(val);
@@ -3493,6 +3489,20 @@ fn subscription_arg_batches(
     args: &[OKXSubscriptionArg],
 ) -> impl Iterator<Item = &[OKXSubscriptionArg]> {
     args.chunks(OKX_WS_SUBSCRIPTION_ARGS_MAX_PER_MESSAGE)
+}
+
+fn advance_reconnect_epoch(
+    reconnect_epoch: &mut u64,
+    epoch: u64,
+    stopping: bool,
+    active: bool,
+) -> bool {
+    if stopping || !active || epoch == *reconnect_epoch {
+        return false;
+    }
+
+    *reconnect_epoch = epoch;
+    true
 }
 
 fn auth_attempt_superseded(error: &Error) -> bool {
@@ -4315,6 +4325,36 @@ mod tests {
         assert_eq!(batches.len(), 2);
         assert_eq!(batches[0].len(), 256);
         assert_eq!(batches[1].len(), 44);
+    }
+
+    #[rstest]
+    #[case::buffered_notifications(false)]
+    #[case::notification_during_install(true)]
+    fn buffered_reconnects_advance_only_the_active_epoch(#[case] install_window: bool) {
+        let mut reconnect_epoch = 0;
+        if install_window {
+            let advanced = advance_reconnect_epoch(&mut reconnect_epoch, 2, false, false);
+            assert!(!advanced);
+            assert_eq!(reconnect_epoch, 0);
+        }
+
+        let first = advance_reconnect_epoch(&mut reconnect_epoch, 2, false, true);
+        let duplicate = advance_reconnect_epoch(&mut reconnect_epoch, 2, false, true);
+        let next = advance_reconnect_epoch(&mut reconnect_epoch, 3, false, true);
+
+        assert!(first);
+        assert!(!duplicate);
+        assert!(next);
+        assert_eq!(reconnect_epoch, 3);
+    }
+
+    #[rstest]
+    fn stopped_reconnect_does_not_advance_the_epoch() {
+        let mut reconnect_epoch = 1;
+        let advanced = advance_reconnect_epoch(&mut reconnect_epoch, 2, true, true);
+
+        assert!(!advanced);
+        assert_eq!(reconnect_epoch, 1);
     }
 
     #[rstest]

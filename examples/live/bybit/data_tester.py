@@ -18,6 +18,8 @@ Stream Bybit market data with the built-in DataTester actor.
 
 Running this example connects to Bybit mainnet and starts subscriptions for the
 configured instrument immediately, logging all received data. No orders are placed.
+API credentials are optional. When omitted, mainnet uses `BYBIT_API_KEY` and
+`BYBIT_API_SECRET`. Public market data does not require them.
 
 """
 

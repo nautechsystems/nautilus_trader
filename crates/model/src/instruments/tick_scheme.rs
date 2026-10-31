@@ -1224,7 +1224,10 @@ mod tests {
 
     #[rstest]
     fn fixed_tick_rejects_fractional_digits_beyond_precision() {
-        let tick = Price::from_raw(1, 2);
+        let tick = Price {
+            raw: 1,
+            precision: 2,
+        };
 
         assert_eq!(
             FixedTickScheme::new(tick),

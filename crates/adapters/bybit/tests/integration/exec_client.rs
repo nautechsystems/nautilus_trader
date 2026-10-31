@@ -20,7 +20,7 @@
 
 use std::{
     cell::RefCell,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     rc::Rc,
     sync::{
@@ -51,6 +51,7 @@ use nautilus_bybit::{
     },
     config::BybitExecutionClientConfig,
     execution::BybitExecutionClient,
+    http::{client::BybitHttpClient, error::BybitCancelOrderError},
 };
 use nautilus_common::{
     cache::Cache,
@@ -74,7 +75,10 @@ use nautilus_model::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce,
         TrailingOffsetType, TriggerType,
     },
-    events::{AccountState, OrderCanceled, OrderDenied, OrderEventAny},
+    events::{
+        AccountState, OrderCanceled, OrderDenied, OrderEventAny,
+        order::spec::OrderPendingCancelSpec,
+    },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
         VenueOrderId,
@@ -93,6 +97,10 @@ use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
+
+#[path = "../../../../network/tests/integration/common/client_logging.rs"]
+#[allow(dead_code, reason = "these tests reuse only the shared log capture")]
+mod client_logging;
 
 #[derive(Clone)]
 struct TestServerState {
@@ -116,6 +124,8 @@ struct TestServerState {
     orders_realtime_requests: Arc<AtomicUsize>,
     cancel_order_ret_code: Arc<AtomicUsize>,
     cancel_order_requests: Arc<AtomicUsize>,
+    cancel_order_reports: Arc<tokio::sync::Mutex<HashMap<String, VecDeque<Value>>>>,
+    orders_history_requests: Arc<AtomicUsize>,
     cancel_all_requests: Arc<AtomicUsize>,
     execution_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     position_requests: Arc<AtomicUsize>,
@@ -149,6 +159,8 @@ impl Default for TestServerState {
             orders_realtime_requests: Arc::new(AtomicUsize::new(0)),
             cancel_order_ret_code: Arc::new(AtomicUsize::new(0)),
             cancel_order_requests: Arc::new(AtomicUsize::new(0)),
+            cancel_order_reports: Arc::default(),
+            orders_history_requests: Arc::default(),
             cancel_all_requests: Arc::new(AtomicUsize::new(0)),
             execution_response: Arc::default(),
             position_requests: Arc::new(AtomicUsize::new(0)),
@@ -323,6 +335,19 @@ async fn handle_get_orders_realtime(
             .into_response();
     }
 
+    if let Some(response) = state
+        .cancel_order_reports
+        .lock()
+        .await
+        .get_mut(query.get("orderId").map_or("", String::as_str))
+        .and_then(VecDeque::pop_front)
+    {
+        state
+            .orders_realtime_requests
+            .fetch_add(1, Ordering::Relaxed);
+        return Json(response).into_response();
+    }
+
     if state.cancel_all_delayed_reports.load(Ordering::Relaxed) {
         let request = state
             .orders_realtime_requests
@@ -442,7 +467,7 @@ async fn handle_post_order(headers: HeaderMap, body: Bytes) -> impl IntoResponse
 async fn handle_cancel_order(
     State(state): State<TestServerState>,
     headers: HeaderMap,
-    _body: Bytes,
+    body: Bytes,
 ) -> impl IntoResponse {
     if !has_auth_headers(&headers) {
         return (
@@ -456,6 +481,9 @@ async fn handle_cancel_order(
         )
             .into_response();
     }
+
+    let request: Value = serde_json::from_slice(&body).unwrap();
+    let order_id = request["orderId"].as_str().unwrap_or("test-order-id-12345");
 
     state.cancel_order_requests.fetch_add(1, Ordering::Relaxed);
 
@@ -475,7 +503,7 @@ async fn handle_cancel_order(
         "retCode": 0,
         "retMsg": "OK",
         "result": {
-            "orderId": "test-order-id-12345",
+            "orderId": order_id,
             "orderLinkId": "test-order"
         },
         "retExtInfo": {},
@@ -838,8 +866,16 @@ async fn handle_get_orders_history(
     State(state): State<TestServerState>,
     headers: HeaderMap,
 ) -> axum::response::Response {
-    if !state.cancel_all_history.load(Ordering::Relaxed) || !has_auth_headers(&headers) {
+    state
+        .orders_history_requests
+        .fetch_add(1, Ordering::Relaxed);
+
+    if !has_auth_headers(&headers) {
         return handle_get_empty_report_list(headers).await.into_response();
+    }
+
+    if !state.cancel_all_history.load(Ordering::Relaxed) {
+        return Json(load_test_data("http_get_orders_history_empty.json")).into_response();
     }
 
     let mut orders = load_test_data("http_get_orders_realtime.json");
@@ -2176,38 +2212,295 @@ async fn test_exec_client_submit_order_list_demo() {
 
 #[rstest]
 #[tokio::test]
-async fn test_exec_client_demo_cancel_post_lookup_failure_does_not_reject() {
+async fn test_exec_client_demo_cancel_confirms_without_order_stream(
+    #[values(false, true)] batch: bool,
+    #[values(false, true)] partial_fill: bool,
+) {
+    let _capture = client_logging::capture_logs().await;
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
+    let account_id = AccountId::from("BYBIT-001");
+    add_test_account_to_cache(&cache, account_id);
+    client.connect().await.unwrap();
+    client.start().unwrap();
+    drain_execution_events(&mut rx).await;
+
+    let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+
+    let count = if batch { 2 } else { 1 };
+    let mut cancels = Vec::new();
+
+    for index in 1..=count {
+        let client_order_id = ClientOrderId::from(format!("client-cancel-{index}"));
+        let venue_order_id = VenueOrderId::from(format!("venue-cancel-{index}"));
+        let strategy_id = StrategyId::from(format!("S-{index}"));
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .strategy_id(strategy_id)
+            .quantity(Quantity::from("0.01"))
+            .price(Price::from("3930.41"))
+            .build();
+        let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+        let pending = OrderPendingCancelSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .account_id(account_id)
+            .venue_order_id(venue_order_id)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*BYBIT_CLIENT_ID), false)
+            .unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::PendingCancel(pending))
+            .unwrap();
+
+        let empty = load_test_data("http_get_orders_history_empty.json");
+        let mut open = load_test_data("http_get_orders_realtime.json");
+        open["result"]["list"].as_array_mut().unwrap().truncate(1);
+        let entry = &mut open["result"]["list"][0];
+        entry["orderId"] = json!(venue_order_id.to_string());
+        entry["orderLinkId"] = json!("");
+        let mut canceled = open.clone();
+        canceled["result"]["list"][0]["orderStatus"] = json!("Cancelled");
+        canceled["result"]["list"][0]["updatedTime"] = json!("1761355906606");
+        if partial_fill {
+            canceled["result"]["list"][0]["orderStatus"] = json!("PartiallyFilledCanceled");
+            canceled["result"]["list"][0]["cumExecQty"] = json!("0.003");
+            canceled["result"]["list"][0]["avgPrice"] = json!("3930.41");
+        }
+
+        state.cancel_order_reports.lock().await.insert(
+            venue_order_id.to_string(),
+            VecDeque::from([empty.clone(), empty, open, canceled]),
+        );
+        cancels.push(CancelOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            Some(venue_order_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ));
+    }
+
+    let history_before = state.orders_history_requests.load(Ordering::Relaxed);
+
+    if batch {
+        client
+            .batch_cancel_orders(BatchCancelOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from("S-1"),
+                instrument_id,
+                cancels.clone(),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+    } else {
+        client.cancel_order(cancels[0].clone()).unwrap();
+    }
+
+    let mut canceled = Vec::new();
+
+    for _ in 0..count {
+        let event = tokio::time::timeout(Duration::from_secs(3), rx.recv())
+            .await
+            .expect("timed out waiting for OrderCanceled")
+            .expect("channel closed");
+
+        match event {
+            ExecutionEvent::Order(OrderEventAny::Canceled(event)) => canceled.push(event),
+            event => panic!("expected OrderCanceled, was {event:?}"),
+        }
+    }
+
+    canceled.sort_by_key(|event| event.client_order_id);
+    let trade_id = TradeId::from("native-partial");
+
+    for (event, cmd) in canceled.iter().zip(&cancels) {
+        let expected = OrderCanceled::new(
+            cmd.trader_id,
+            cmd.strategy_id,
+            instrument_id,
+            cmd.client_order_id,
+            event.event_id,
+            UnixNanos::from(1_761_355_906_606_000_000),
+            event.ts_init,
+            false,
+            cmd.venue_order_id,
+            Some(account_id),
+            None,
+        );
+        assert_eq!(*event, expected);
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::Canceled(*event))
+            .unwrap();
+
+        if partial_fill {
+            let order = cache.borrow().order(&cmd.client_order_id).unwrap().clone();
+            let mut instrument = crypto_perpetual_ethusdt();
+            instrument.id = instrument_id;
+            let filled = TestOrderEventStubs::filled(
+                &order,
+                &instrument.into(),
+                Some(trade_id),
+                None,
+                Some(Price::from("3930.41")),
+                Some(Quantity::from("0.003")),
+                None,
+                None,
+                None,
+                Some(account_id),
+            );
+            cache.borrow_mut().update_order(&filled).unwrap();
+        }
+
+        let cache = cache.borrow();
+        let order = cache.order(&cmd.client_order_id).unwrap();
+        assert_eq!(order.status(), OrderStatus::Canceled);
+        assert_eq!(
+            order.filled_qty(),
+            Quantity::from(if partial_fill { "0.003" } else { "0.000" })
+        );
+        assert_eq!(
+            order.trade_ids(),
+            if partial_fill {
+                vec![&trade_id]
+            } else {
+                vec![]
+            }
+        );
+    }
+
+    assert_eq!(state.cancel_order_requests.load(Ordering::Relaxed), count);
+    assert_eq!(
+        state.orders_history_requests.load(Ordering::Relaxed) - history_before,
+        count * 2
+    );
+    assert!(rx.try_recv().is_err());
+    assert!(
+        !client_logging::messages()
+            .iter()
+            .any(|(_, message)| message.contains("Ambiguous HTTP cancel failure"))
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::missing(true)]
+#[case::open(false)]
+#[tokio::test]
+async fn test_http_cancel_confirmation_timeout(#[case] missing: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    state
+        .empty_orders_realtime
+        .store(missing, Ordering::Relaxed);
+    let client = BybitHttpClient::with_credentials(
+        "test_api_key".to_string(),
+        "test_api_secret".to_string(),
+        Some(format!("http://{addr}")),
+        1,
+        0,
+        10,
+        100,
+        5000,
+        None,
+    )
+    .unwrap();
+    let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+    let mut instrument = crypto_perpetual_ethusdt();
+    instrument.id = instrument_id;
+    client.cache_instrument(instrument.into());
+    let result = tokio::time::timeout(
+        Duration::from_secs(3),
+        client.cancel_order(
+            AccountId::from("BYBIT-001"),
+            BybitProductType::Linear,
+            instrument_id,
+            Some(ClientOrderId::from("client-open-1")),
+            Some(VenueOrderId::from("open-order-1")),
+        ),
+    )
+    .await
+    .expect("cancel confirmation must remain bounded");
+    let error = result.unwrap_err();
+
+    let Some(BybitCancelOrderError::PostCancelLookup { source }) = error.downcast_ref() else {
+        panic!("expected PostCancelLookup, was {error:?}");
+    };
+
+    assert_eq!(
+        source.to_string(),
+        "timed out confirming Bybit order cancellation"
+    );
+    assert_eq!(state.cancel_order_requests.load(Ordering::Relaxed), 1);
+    assert!(state.orders_realtime_requests.load(Ordering::Relaxed) > 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_demo_cancel_filled_confirmation_emits_no_event() {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_demo_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
-
     client.connect().await.unwrap();
     client.start().unwrap();
-
+    drain_execution_events(&mut rx).await;
+    let mut response = load_test_data("http_get_orders_realtime.json");
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    let order = &mut response["result"]["list"][0];
+    order["orderStatus"] = json!("Filled");
+    order["cumExecQty"] = json!("0.010");
+    order["avgPrice"] = json!("3930.41");
+    order["leavesQty"] = json!("0");
+    state
+        .cancel_order_reports
+        .lock()
+        .await
+        .insert("open-order-1".to_string(), VecDeque::from([response]));
+    let before = state.orders_realtime_requests.load(Ordering::Relaxed);
+    client
+        .cancel_order(CancelOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-001"),
+            InstrumentId::from("ETHUSDT-LINEAR.BYBIT"),
+            ClientOrderId::from("client-open-1"),
+            Some(VenueOrderId::from("open-order-1")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
     wait_until_async(
-        || async { state.subscriptions.lock().await.len() >= 4 },
-        Duration::from_secs(10),
+        || async { state.orders_realtime_requests.load(Ordering::Relaxed) > before },
+        Duration::from_secs(3),
     )
     .await;
-    drain_execution_events(&mut rx).await;
-
-    let cmd = CancelOrder::new(
-        TraderId::from("TESTER-001"),
-        Some(*BYBIT_CLIENT_ID),
-        StrategyId::from("S-001"),
-        InstrumentId::new(Symbol::from("ETHUSDT-LINEAR"), *BYBIT_VENUE),
-        ClientOrderId::from("test-cancel-post-lookup-ambiguous"),
-        Some(VenueOrderId::from("test-order-id-12345")),
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
+    let event = tokio::time::timeout(Duration::from_millis(300), rx.recv()).await;
+    assert!(
+        event.is_err(),
+        "filled confirmation must not emit an inferred event: {event:?}"
     );
-
-    client.cancel_order(cmd).unwrap();
-
-    assert_no_cancel_rejected(&mut rx, Duration::from_millis(300)).await;
-
+    assert_eq!(state.cancel_order_requests.load(Ordering::Relaxed), 1);
     client.disconnect().await.unwrap();
 }
 

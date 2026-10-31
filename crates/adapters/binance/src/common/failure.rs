@@ -86,9 +86,9 @@ pub(crate) fn classify_spot_http_failure(error: &BinanceSpotHttpError) -> Comman
     let reason = error.to_string();
 
     match error {
-        BinanceSpotHttpError::MissingCredentials | BinanceSpotHttpError::ValidationError(_) => {
-            CommandFailure::NotSent(reason)
-        }
+        BinanceSpotHttpError::MissingCredentials
+        | BinanceSpotHttpError::ValidationError(_)
+        | BinanceSpotHttpError::RateLimitBlocked => CommandFailure::NotSent(reason),
         BinanceSpotHttpError::BinanceError { code, status, .. } => {
             classify_venue_failure(Some(*code), Some(*status), reason)
         }
@@ -109,7 +109,8 @@ pub(crate) fn classify_futures_http_failure(error: &BinanceFuturesHttpError) -> 
 
     match error {
         BinanceFuturesHttpError::MissingCredentials
-        | BinanceFuturesHttpError::ValidationError(_) => CommandFailure::NotSent(reason),
+        | BinanceFuturesHttpError::ValidationError(_)
+        | BinanceFuturesHttpError::RateLimitBlocked => CommandFailure::NotSent(reason),
         BinanceFuturesHttpError::BinanceError { code, status, .. } => {
             classify_venue_failure(Some(*code), Some(*status), reason)
         }
@@ -273,6 +274,20 @@ mod tests {
         assert_eq!(
             sanitize_reason("Insufficient balance"),
             "Insufficient balance"
+        );
+    }
+
+    #[rstest]
+    fn test_shared_backoff_failure_is_not_sent() {
+        let spot = BinanceSpotHttpError::RateLimitBlocked;
+        let futures = BinanceFuturesHttpError::RateLimitBlocked;
+        assert_eq!(
+            classify_spot_http_failure(&spot),
+            CommandFailure::NotSent(spot.to_string())
+        );
+        assert_eq!(
+            classify_futures_http_failure(&futures),
+            CommandFailure::NotSent(futures.to_string())
         );
     }
 }
