@@ -212,8 +212,26 @@ impl BookLadder {
 
         if let Some(mut level) = reusable_level {
             level.price = book_price;
-            level.orders.clear();
-            level.add(order);
+
+            // Same order ID replaces the value without rehashing, as L1 quote and trade
+            // ticks reuse side-constant IDs so this hits on every steady-state tick.
+            let same_id = level.orders.len() == 1
+                && level
+                    .orders
+                    .get_index(0)
+                    .is_some_and(|(id, _)| *id == order.order_id);
+
+            if same_id {
+                let (_, existing) = level
+                    .orders
+                    .get_index_mut(0)
+                    .expect("single L1 order exists");
+                *existing = order;
+            } else {
+                level.orders.clear();
+                level.add(order);
+            }
+
             self.levels.insert(book_price, level);
         } else {
             self.levels.insert(book_price, BookLevel::from_order(order));
@@ -2120,5 +2138,86 @@ mod tests {
             "Single-delta snapshot clears MBP state: best is 95, not stale 101"
         );
         assert_eq!(ladder.len(), 1);
+    }
+
+    #[rstest]
+    fn test_replace_l1_same_id_updates_price_in_place() {
+        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L1_MBP);
+        let first = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
+        ladder.replace_l1(first);
+        assert_eq!(ladder.len(), 1);
+
+        let second = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(30), 1);
+        ladder.replace_l1(second);
+
+        assert_eq!(ladder.len(), 1);
+        let top = ladder.top().unwrap();
+        assert_eq!(top.price.value, Price::from("11.00"));
+        assert_eq!(top.len(), 1);
+        let orders = top.get_orders();
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].order_id, 1);
+        assert_eq!(orders[0].price, Price::from("11.00"));
+        assert_eq!(orders[0].size, Quantity::from(30));
+        assert_eq!(ladder.cache.len(), 1);
+        assert_eq!(ladder.cache.get(&1).unwrap().value, Price::from("11.00"));
+    }
+
+    #[rstest]
+    fn test_replace_l1_different_id_falls_back_to_clear_and_add() {
+        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L1_MBP);
+        let first = BookOrder::new(OrderSide::Buy, Price::from("10.00"), Quantity::from(20), 1);
+        ladder.replace_l1(first);
+
+        let second = BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(30), 2);
+        ladder.replace_l1(second);
+
+        assert_eq!(ladder.len(), 1);
+        let top = ladder.top().unwrap();
+        assert_eq!(top.price.value, Price::from("11.00"));
+        assert_eq!(top.len(), 1);
+        let orders = top.get_orders();
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].order_id, 2);
+        assert_eq!(ladder.cache.len(), 1);
+        assert!(!ladder.cache.contains_key(&1));
+        assert_eq!(ladder.cache.get(&2).unwrap().value, Price::from("11.00"));
+    }
+
+    #[rstest]
+    fn test_replace_l1_multi_order_level_falls_back_to_clear_and_add() {
+        let mut ladder = BookLadder::new(OrderSide::Buy, BookType::L1_MBP);
+        let price = BookPrice::new(Price::from("10.00"), OrderSide::Buy);
+        let mut level = BookLevel::new(price);
+        level.add(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("10.00"),
+            Quantity::from(20),
+            1,
+        ));
+        level.add(BookOrder::new(
+            OrderSide::Buy,
+            Price::from("10.00"),
+            Quantity::from(25),
+            2,
+        ));
+        ladder.levels.insert(price, level);
+        ladder.cache.insert(1, price);
+        ladder.cache.insert(2, price);
+        assert_eq!(ladder.top().unwrap().len(), 2);
+
+        let replacement =
+            BookOrder::new(OrderSide::Buy, Price::from("11.00"), Quantity::from(30), 1);
+        ladder.replace_l1(replacement);
+
+        assert_eq!(ladder.len(), 1);
+        let top = ladder.top().unwrap();
+        assert_eq!(top.price.value, Price::from("11.00"));
+        assert_eq!(top.len(), 1);
+        let orders = top.get_orders();
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].order_id, 1);
+        assert_eq!(ladder.cache.len(), 1);
+        assert_eq!(ladder.cache.get(&1).unwrap().value, Price::from("11.00"));
     }
 }

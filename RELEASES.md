@@ -94,6 +94,7 @@ Released on TBD (UTC).
 - Improved Docker publishing with temporary digest directories isolated per job
 - Refined Polymarket limit submit responses and venue order ID lookup
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
+- Optimized empty command-queue drains and L1 order-book quote replacement
 - Upgraded `cargo-codspeed` tool to v6.0.0
 - Upgraded `cargo-nextest` tool to v0.9.150
 - Upgraded `socket-cli` tool to v1.11.1
