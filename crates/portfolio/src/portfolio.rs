@@ -65,7 +65,7 @@ struct PortfolioState {
     realized_pnls: IndexMap<InstrumentId, Money>,
     recorded_closed_position_cycles: AHashSet<(PositionId, UnixNanos, Option<[u8; 16]>)>,
     snapshot_sum_per_position: AHashMap<PositionId, Money>,
-    snapshot_last_per_position: AHashMap<PositionId, Money>,
+    snapshot_last_per_position: AHashMap<PositionId, (Money, AHashSet<UUID4>)>,
     snapshot_currency_mismatches: AHashSet<PositionId>,
     snapshot_aggregation_overflows: AHashSet<PositionId>,
     snapshot_processed_counts: AHashMap<PositionId, usize>,
@@ -2613,7 +2613,7 @@ impl Portfolio {
                     .position_snapshots(Some(position_id), None);
 
                 let mut sum_pnl: Option<Money> = None;
-                let mut last_pnl: Option<Money> = None;
+                let mut last_pnl: Option<(Money, AHashSet<UUID4>)> = None;
                 let mut snapshot_account_id: Option<AccountId> = None;
                 let mut currency_mismatch = false;
                 let mut aggregation_overflow = false;
@@ -2634,7 +2634,8 @@ impl Portfolio {
                         } else {
                             sum_pnl = Some(realized_pnl);
                         }
-                        last_pnl = Some(realized_pnl);
+                        let fill_ids = snapshot.events.iter().map(|f| f.event_id).collect();
+                        last_pnl = Some((realized_pnl, fill_ids));
                     }
                 }
 
@@ -2712,7 +2713,7 @@ impl Portfolio {
                     .borrow()
                     .snapshot_last_per_position
                     .get(position_id)
-                    .copied();
+                    .cloned();
                 let mut snapshot_account_id: Option<AccountId> = None;
                 let mut currency_mismatch = self
                     .inner
@@ -2746,7 +2747,8 @@ impl Portfolio {
                         } else {
                             sum_pnl = Some(realized_pnl);
                         }
-                        last_pnl = Some(realized_pnl);
+                        let fill_ids = snapshot.events.iter().map(|f| f.event_id).collect();
+                        last_pnl = Some((realized_pnl, fill_ids));
                     }
                 }
 
@@ -2880,7 +2882,12 @@ impl Portfolio {
                     inner
                         .snapshot_sum_per_position
                         .get(position_id)
-                        .or_else(|| inner.snapshot_last_per_position.get(position_id))
+                        .or_else(|| {
+                            inner
+                                .snapshot_last_per_position
+                                .get(position_id)
+                                .map(|(pnl, _)| pnl)
+                        })
                         .map(|pnl| pnl.currency)
                 })
             })
@@ -2914,18 +2921,26 @@ impl Portfolio {
                 // its last frame and in its own realized PnL, which the loop below adds; drop
                 // the frame here so the cycle lands once.
                 let sum_pnl = if let Some(sum_pnl) = sum_pnl {
-                    let closed_position_pnl = position
-                        .filter(|position| !position.is_open())
-                        .and_then(|position| position.realized_pnl);
-                    let last_pnl = self
+                    let closed_position = position.filter(|position| !position.is_open());
+                    let closed_position_pnl =
+                        closed_position.and_then(|position| position.realized_pnl);
+                    let last_snapshot = self
                         .inner
                         .borrow()
                         .snapshot_last_per_position
                         .get(position_id)
-                        .copied();
+                        .cloned();
 
-                    Some(match (closed_position_pnl, last_pnl) {
-                        (Some(realized_pnl), Some(last_pnl)) if last_pnl == realized_pnl => {
+                    Some(match (closed_position_pnl, last_snapshot) {
+                        (Some(realized_pnl), Some((last_pnl, last_fill_ids)))
+                            if last_pnl == realized_pnl
+                                && !last_fill_ids.is_empty()
+                                && closed_position.is_some_and(|pos| {
+                                    let pos_fill_ids: AHashSet<UUID4> =
+                                        pos.events.iter().map(|f| f.event_id).collect();
+                                    pos_fill_ids == last_fill_ids
+                                }) =>
+                        {
                             match sum_pnl.checked_sub(last_pnl) {
                                 Some(remaining) => remaining,
                                 None => {

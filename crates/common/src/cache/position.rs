@@ -168,6 +168,7 @@ impl Cache {
         if let Some(closed_cycles_pnl) = closed_cycles_pnl {
             let (_, mut settled) = self.build_position_snapshot(position);
             settled.realized_pnl = Some(closed_cycles_pnl);
+            settled.events.clear();
             self.store_position_snapshot(position.id, settled, None);
         }
     }

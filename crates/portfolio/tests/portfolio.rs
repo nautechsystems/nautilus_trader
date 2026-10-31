@@ -7130,6 +7130,84 @@ fn test_realized_pnl_for_closed_cached_netting_position_adds_unsnapshotted_final
 }
 
 #[rstest]
+fn test_realized_pnl_for_closed_cached_netting_position_preserves_equal_consecutive_pnl_cycles(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_state = get_margin_account(None);
+    portfolio.update_account(&account_state);
+
+    let account_id = AccountId::new("SIM-001");
+    let position_id = PositionId::new("P-EQ-CYCLES");
+    let instrument_id = instrument_audusd.id();
+
+    let fill1_open = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("105.00"),
+        position_id,
+    );
+    let mut position1 = Position::new(&instrument_audusd, fill1_open);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position1, OmsType::Netting)
+        .unwrap();
+
+    let fill1_close = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("100"),
+        Price::from("100.00"),
+        position_id,
+    );
+    position1.apply(&fill1_close);
+    assert_eq!(position1.realized_pnl, Some(Money::from("-500.00 USD")));
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .snapshot_position(&position1)
+        .unwrap();
+
+    let fill2_open = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Buy,
+        Quantity::from("100"),
+        Price::from("105.00"),
+        position_id,
+    );
+    let mut position2 = Position::new(&instrument_audusd, fill2_open);
+
+    let fill2_close = make_fill_for_account(
+        &instrument_audusd,
+        account_id,
+        OrderSide::Sell,
+        Quantity::from("100"),
+        Price::from("100.00"),
+        position_id,
+    );
+    position2.apply(&fill2_close);
+    assert_eq!(position2.realized_pnl, Some(Money::from("-500.00 USD")));
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position2, OmsType::Netting)
+        .unwrap();
+
+    let pnl = portfolio
+        .realized_pnl(&instrument_id)
+        .expect("realized_pnl should be Some");
+
+    assert_eq!(pnl, Money::from("-1000.00 USD"));
+}
+
+#[rstest]
 fn test_realized_pnl_for_closed_cached_netting_position_uses_mark_xrate(
     mut simple_cache: Cache,
     clock: VirtualClock,
