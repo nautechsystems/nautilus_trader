@@ -16,15 +16,16 @@
 //! EIP-712 order signing for the Polymarket CTF Exchange.
 //!
 //! Orders on Polymarket are signed typed structured data (EIP-712) against the
-//! CTF Exchange contract on Polygon. Two exchange contracts exist:
+//! exchange contract selected by the market protocol on Polygon. CTF markets use:
 //! - [`CTF_EXCHANGE`]: Standard binary markets.
 //! - [`NEG_RISK_CTF_EXCHANGE`]: Negative-risk (multi-outcome) markets.
 //!
-//! Both share the same EIP-712 domain name and version; only the
-//! `verifyingContract` differs.
+//! CTF exchanges share domain version `2`. Protocol V2 markets use [`EXCHANGE_V3`] and domain
+//! version `3`, irrespective of `neg_risk`. [`OrderSigningContext`] binds this selection for
+//! ordinary signatures, Deposit Wallet signatures, allowance requests, and order IDs.
 //!
-//! This module also owns the CLOB V2 contract identities and ordered on-chain
-//! approval plan ([`approval_plan`]) used by the set-allowances binary.
+//! This module owns Polygon contract identities and the CTF and V2 approval plans
+//! ([`approval_plan`], [`approval_plan_v2`]) used by the set-allowances binary.
 
 use std::str::FromStr;
 
@@ -39,12 +40,15 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
+        consts::MARKET_VERSION_V2,
         credential::EvmPrivateKey,
         enums::{PolymarketOrderSide, PolymarketSignatureType, PolymarketSignerType},
+        parse::validate_data_market_version,
     },
     http::{
         error::{Error, Result},
         models::PolymarketOrder,
+        query::AssetType,
     },
 };
 
@@ -58,6 +62,12 @@ pub const CTF_EXCHANGE: Address = address!("0xE111180000d2663C0091e4f400237545B8
 
 /// Neg Risk CTF Exchange contract address on Polygon mainnet (CLOB V2).
 pub const NEG_RISK_CTF_EXCHANGE: Address = address!("0xe2222d279d744050d28e00520010520000310F59");
+
+/// Protocol V2 exchange contract on Polygon mainnet.
+pub const EXCHANGE_V3: Address = address!("0xe3333700cA9d93003F00f0F71f8515005F6c00Aa");
+
+/// Protocol V2 position ledger on Polygon mainnet.
+pub const POSITION_MANAGER: Address = address!("0x006F54F7f9A22e0000CC2AB60031000000ae9fEF");
 
 /// Standard CTF collateral adapter address on Polygon mainnet.
 pub const CTF_COLLATERAL_ADAPTER: Address = address!("0xAdA100Db00Ca00073811820692005400218FcE1f");
@@ -76,7 +86,7 @@ pub const POLYMARKET_COLLATERAL_TOKEN: Address =
 /// Conditional Tokens Framework contract address on Polygon mainnet.
 pub const CONDITIONAL_TOKENS: Address = address!("0x4D97DCd97eC945f40cF65F87097ACe5EA0476045");
 
-/// Complete spender set requiring collateral approval for Polymarket CLOB V2 orders.
+/// CTF-market spender set requiring pUSD collateral approval.
 pub const COLLATERAL_APPROVAL_TARGETS: &[Address] = &[
     CTF_EXCHANGE,
     NEG_RISK_CTF_EXCHANGE,
@@ -95,18 +105,18 @@ pub enum PolymarketApproval {
         /// Collateral allowance amount.
         amount: U256,
     },
-    /// Enables a contract as an operator for conditional tokens.
+    /// Enables a contract as an operator for a position ledger.
     ConditionalTokens {
-        /// Conditional Tokens contract receiving the operator call.
+        /// Position ledger receiving the operator call.
         contract: Address,
-        /// Contract receiving conditional-token operator authority.
+        /// Contract receiving position-ledger operator authority.
         operator: Address,
         /// Whether operator authority is enabled.
         approved: bool,
     },
 }
 
-/// Returns the ordered approval plan for Polymarket CLOB V2.
+/// Returns the ordered approval plan for CTF (`v1`) markets.
 pub fn approval_plan() -> impl Iterator<Item = PolymarketApproval> {
     COLLATERAL_APPROVAL_TARGETS
         .iter()
@@ -127,8 +137,29 @@ pub fn approval_plan() -> impl Iterator<Item = PolymarketApproval> {
         })
 }
 
+/// Returns the V2 trading approvals for an explicit pUSD limit in six-decimal base units.
+///
+/// The asset holder submits these calls. The collateral limit must cover BUY spend plus fees.
+/// This plan grants neither Router nor AutoRedeemer permission.
+#[must_use]
+pub fn approval_plan_v2(collateral_allowance: U256) -> [PolymarketApproval; 2] {
+    [
+        PolymarketApproval::Collateral {
+            contract: POLYMARKET_COLLATERAL_TOKEN,
+            spender: EXCHANGE_V3,
+            amount: collateral_allowance,
+        },
+        PolymarketApproval::ConditionalTokens {
+            contract: POSITION_MANAGER,
+            operator: EXCHANGE_V3,
+            approved: true,
+        },
+    ]
+}
+
 const DOMAIN_NAME: &str = "Polymarket CTF Exchange";
 const DOMAIN_VERSION: &str = "2";
+const DOMAIN_VERSION_V3: &str = "3";
 const POLYGON_CHAIN_ID: u64 = 137;
 const ORDER_TYPE_STRING: &str = concat!(
     "Order(uint256 salt,address maker,address signer,uint256 tokenId,",
@@ -146,6 +177,49 @@ const DOMAIN_TYPE_STRING: &str =
     "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)";
 const DEPOSIT_WALLET_DOMAIN_NAME: &str = "DepositWallet";
 const DEPOSIT_WALLET_DOMAIN_VERSION: &str = "1";
+
+/// Validated exchange and EIP-712 domain for a market's orders and order IDs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct OrderSigningContext {
+    contract: Address,
+    version: &'static str,
+}
+
+impl OrderSigningContext {
+    /// Selects the exchange from explicit `v1` or `v2` market metadata.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if market metadata is missing or unsupported.
+    pub fn new(market_version: Option<&str>, neg_risk: bool) -> anyhow::Result<Self> {
+        let version = validate_data_market_version(market_version)?;
+        Ok(if version == MARKET_VERSION_V2 {
+            Self {
+                contract: EXCHANGE_V3,
+                version: DOMAIN_VERSION_V3,
+            }
+        } else {
+            Self::ctf(neg_risk)
+        })
+    }
+
+    /// Returns the position ledger's exact CLOB balance/allowance asset type.
+    #[must_use]
+    pub fn position_asset_type(self) -> AssetType {
+        if self.contract == EXCHANGE_V3 {
+            AssetType::ConditionalV2
+        } else {
+            AssetType::Conditional
+        }
+    }
+
+    pub(crate) const fn ctf(neg_risk: bool) -> Self {
+        Self {
+            contract: exchange_contract(neg_risk),
+            version: DOMAIN_VERSION,
+        }
+    }
+}
 
 // EIP-712 ClobAuth struct for L1 API authentication.
 //
@@ -234,8 +308,8 @@ impl OrderSigner {
 
     /// Signs a [`PolymarketOrder`] and returns the hex-encoded ECDSA signature.
     ///
-    /// The `neg_risk` flag selects which exchange contract to use as the
-    /// EIP-712 `verifyingContract`.
+    /// This CTF-only method uses domain version `2`; `neg_risk` selects the CTF exchange.
+    /// Use [`Self::sign_order_with_context`] for a Protocol V2 market.
     ///
     /// # Errors
     ///
@@ -243,6 +317,19 @@ impl OrderSigner {
     /// signer's address, or if a `POLY_1271` order does not use the deposit
     /// wallet for both `maker` and `signer`.
     pub fn sign_order(&self, order: &PolymarketOrder, neg_risk: bool) -> Result<String> {
+        self.sign_order_with_context(order, OrderSigningContext::ctf(neg_risk))
+    }
+
+    /// Signs an order with the validated market's exchange and domain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if signer validation or signing fails; see [`Self::sign_order`].
+    pub fn sign_order_with_context(
+        &self,
+        order: &PolymarketOrder,
+        context: OrderSigningContext,
+    ) -> Result<String> {
         if self.signer_type == PolymarketSignerType::Session
             && order.signature_type != PolymarketSignatureType::Poly1271
         {
@@ -267,27 +354,25 @@ impl OrderSigner {
         }
 
         let eip712_order = build_eip712_order(order)?;
-        let contract = exchange_contract(neg_risk);
-
         if order.signature_type == PolymarketSignatureType::Poly1271 {
-            return self.sign_poly_1271_order(&eip712_order, contract);
+            return self.sign_poly_1271_order(&eip712_order, context);
         }
 
         let domain = eip712_domain! {
             name: DOMAIN_NAME,
-            version: DOMAIN_VERSION,
+            version: context.version,
             chain_id: POLYGON_CHAIN_ID,
-            verifying_contract: contract,
+            verifying_contract: context.contract,
         };
 
         let signing_hash = eip712_order.eip712_signing_hash(&domain);
         self.sign_hash(&signing_hash.0)
     }
 
-    fn sign_poly_1271_order(&self, order: &Order, contract: Address) -> Result<String> {
+    fn sign_poly_1271_order(&self, order: &Order, context: OrderSigningContext) -> Result<String> {
         let contents_hash = poly_1271_contents_hash(order);
         let wallet_struct_hash = poly_1271_wallet_struct_hash(contents_hash, order.signer);
-        let app_domain_separator = ctf_exchange_domain_separator(contract);
+        let app_domain_separator = exchange_domain_separator(context);
         let signing_hash = typed_data_hash(app_domain_separator, wallet_struct_hash);
         let signature = self.sign_hash_b256(&signing_hash)?;
 
@@ -385,17 +470,24 @@ pub struct DepositWalletCall {
 
 /// Computes the EIP-712 signing hash used by Polymarket as the order ID.
 ///
-/// The `neg_risk` flag selects which exchange contract to use as the
-/// EIP-712 `verifyingContract`.
+/// This CTF-only function uses domain version `2`; `neg_risk` selects the CTF exchange.
+/// Use [`order_hash_with_context`] for a Protocol V2 market.
 pub fn order_hash(order: &PolymarketOrder, neg_risk: bool) -> Result<B256> {
+    order_hash_with_context(order, OrderSigningContext::ctf(neg_risk))
+}
+
+/// Computes the order ID with the same validated context used for signing.
+pub fn order_hash_with_context(
+    order: &PolymarketOrder,
+    context: OrderSigningContext,
+) -> Result<B256> {
     let eip712_order = build_eip712_order(order)?;
-    let contract = exchange_contract(neg_risk);
 
     let domain = eip712_domain! {
         name: DOMAIN_NAME,
-        version: DOMAIN_VERSION,
+        version: context.version,
         chain_id: POLYGON_CHAIN_ID,
-        verifying_contract: contract,
+        verifying_contract: context.contract,
     };
 
     Ok(eip712_order.eip712_signing_hash(&domain))
@@ -423,10 +515,6 @@ fn domain_type_hash() -> B256 {
 
 fn domain_name_hash() -> B256 {
     keccak256(DOMAIN_NAME.as_bytes())
-}
-
-fn domain_version_hash() -> B256 {
-    keccak256(DOMAIN_VERSION.as_bytes())
 }
 
 fn deposit_wallet_name_hash() -> B256 {
@@ -468,13 +556,13 @@ fn poly_1271_wallet_struct_hash(contents_hash: B256, deposit_wallet: Address) ->
     keccak256(tuple.abi_encode())
 }
 
-fn ctf_exchange_domain_separator(contract: Address) -> B256 {
+fn exchange_domain_separator(context: OrderSigningContext) -> B256 {
     let tuple = (
         domain_type_hash(),
         domain_name_hash(),
-        domain_version_hash(),
+        keccak256(context.version.as_bytes()),
         U256::from(POLYGON_CHAIN_ID),
-        contract,
+        context.contract,
     );
     keccak256(tuple.abi_encode())
 }
@@ -1261,5 +1349,84 @@ mod tests {
                 vector.signature_chunks.concat()
             );
         }
+    }
+
+    #[rstest]
+    fn test_protocol_signatures_and_order_ids_match_official_sdk() {
+        #[derive(serde::Deserialize)]
+        struct Fixture {
+            private_key: String,
+            vectors: Vec<Vector>,
+        }
+        #[derive(serde::Deserialize)]
+        struct Vector {
+            market_version: String,
+            neg_risk: bool,
+            signer_type: String,
+            exchange: Address,
+            domain_version: String,
+            order: PolymarketOrder,
+            order_hash: B256,
+            signature_chunks: Vec<String>,
+        }
+        let fixture: Fixture =
+            serde_json::from_str(include_str!("../../test_data/protocol_signatures.json")).unwrap();
+        let key = EvmPrivateKey::new(&fixture.private_key).unwrap();
+        assert_eq!(fixture.vectors.len(), 20);
+
+        for vector in fixture.vectors {
+            let context =
+                OrderSigningContext::new(Some(&vector.market_version), vector.neg_risk).unwrap();
+
+            let role = if vector.signer_type == "SESSION_KEY" {
+                PolymarketSignerType::Session
+            } else {
+                PolymarketSignerType::Owner
+            };
+
+            let signer = OrderSigner::new(&key).unwrap().with_signer_type(role);
+            assert_eq!(context.contract, vector.exchange);
+            assert_eq!(context.version, vector.domain_version);
+            assert_eq!(
+                order_hash_with_context(&vector.order, context).unwrap(),
+                vector.order_hash
+            );
+            assert_eq!(
+                signer
+                    .sign_order_with_context(&vector.order, context)
+                    .unwrap(),
+                vector.signature_chunks.concat()
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(None)]
+    #[case(Some(""))]
+    #[case(Some("V2"))]
+    #[case(Some("2"))]
+    #[case(Some("v3"))]
+    fn test_signing_context_refuses_invalid_protocol(#[case] version: Option<&str>) {
+        assert!(OrderSigningContext::new(version, false).is_err());
+    }
+
+    #[rstest]
+    fn test_v2_approval_plan_uses_explicit_limit_and_position_manager() {
+        let amount = U256::from(12_345_678_u64);
+        assert_eq!(
+            approval_plan_v2(amount),
+            [
+                PolymarketApproval::Collateral {
+                    contract: POLYMARKET_COLLATERAL_TOKEN,
+                    spender: EXCHANGE_V3,
+                    amount
+                },
+                PolymarketApproval::ConditionalTokens {
+                    contract: POSITION_MANAGER,
+                    operator: EXCHANGE_V3,
+                    approved: true
+                },
+            ]
+        );
     }
 }

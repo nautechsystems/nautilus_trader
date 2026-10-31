@@ -124,7 +124,7 @@ fn bench_submit_limit(c: &mut Criterion) {
                     dec!(0.50),
                     dec!(100),
                     PolymarketOrderType::GTC,
-                    "0",
+                    None,
                     false,
                     TICK_DECIMALS,
                 )
@@ -197,7 +197,7 @@ fn bench_submit_limit_neg_risk(c: &mut Criterion) {
                     dec!(0.50),
                     dec!(100),
                     PolymarketOrderType::GTC,
-                    "0",
+                    None,
                     true,
                     TICK_DECIMALS,
                 )

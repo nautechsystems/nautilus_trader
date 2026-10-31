@@ -41,8 +41,9 @@ use futures_util::StreamExt;
 use nautilus_common::testing::wait_until_async;
 use nautilus_network::http::HttpClient;
 use nautilus_polymarket::{
-    config::PolymarketExecutionClientConfig, http::models::PolymarketOrder,
-    signing::eip712::order_hash,
+    config::PolymarketExecutionClientConfig,
+    http::models::PolymarketOrder,
+    signing::eip712::{OrderSigningContext, order_hash_with_context},
 };
 use serde_json::{Value, json};
 
@@ -152,6 +153,7 @@ pub(super) struct TestServerState {
     /// reverting to the configured `order_response_status`. Used by retry tests.
     pub(super) order_post_500_remaining: Arc<tokio::sync::Mutex<usize>>,
     pub(super) order_response_uses_request_hash: Arc<AtomicBool>,
+    pub(super) order_market_versions: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
     pub(super) batch_order_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     pub(super) batch_order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) batch_order_post_count: Arc<tokio::sync::Mutex<usize>>,
@@ -238,6 +240,7 @@ impl Default for TestServerState {
             order_post_count: Arc::new(tokio::sync::Mutex::new(0)),
             order_post_500_remaining: Arc::new(tokio::sync::Mutex::new(0)),
             order_response_uses_request_hash: Arc::new(AtomicBool::new(false)),
+            order_market_versions: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             batch_order_response: Arc::new(tokio::sync::Mutex::new(None)),
             batch_order_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             batch_order_post_count: Arc::new(tokio::sync::Mutex::new(0)),
@@ -543,9 +546,14 @@ async fn handle_post_order(
                 .expect("order request body"),
         )
         .expect("valid signed order");
+        let versions = state.order_market_versions.lock().await;
+        let version = versions
+            .get(signed_order.token_id.as_str())
+            .map_or("v1", String::as_str);
+        let context = OrderSigningContext::new(Some(version), false).unwrap();
         body["orderID"] = Value::String(format!(
             "{:#x}",
-            order_hash(&signed_order, false).expect("valid order hash")
+            order_hash_with_context(&signed_order, context).expect("valid order hash")
         ));
     }
 

@@ -46,7 +46,7 @@ use crate::{
         enums::{PolymarketOrderSide, PolymarketOrderType, PolymarketSignatureType},
     },
     http::models::PolymarketOrder,
-    signing::eip712::{OrderSigner, order_hash},
+    signing::eip712::{OrderSigner, OrderSigningContext, order_hash_with_context},
 };
 
 /// Zero `bytes32` used for the `metadata` field (reserved for future use).
@@ -112,8 +112,9 @@ impl PolymarketOrderBuilder {
     /// derived from it, rounded up to the market amount precision so the signed ratio does not
     /// exceed the limit price.
     ///
-    /// `expiration` is a unix-seconds timestamp (`"0"` for non-GTD orders).
-    /// It is carried in the wire body but excluded from the EIP-712 signed hash.
+    /// `expiration` is the GTD expiry, or `None` for no expiry. It is serialized as whole Unix
+    /// seconds (`"0"` when absent), truncating subsecond precision, and excluded from the signed
+    /// hash.
     #[expect(clippy::too_many_arguments)]
     pub fn build_limit_order(
         &self,
@@ -122,8 +123,32 @@ impl PolymarketOrderBuilder {
         price: Decimal,
         quantity: Decimal,
         order_type: PolymarketOrderType,
-        expiration: &str,
+        expiration: Option<UnixNanos>,
         neg_risk: bool,
+        tick_decimals: u32,
+    ) -> anyhow::Result<PolymarketOrder> {
+        self.build_limit_order_with_context(
+            token_id,
+            side,
+            price,
+            quantity,
+            order_type,
+            expiration,
+            OrderSigningContext::ctf(neg_risk),
+            tick_decimals,
+        )
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) fn build_limit_order_with_context(
+        &self,
+        token_id: &str,
+        side: PolymarketOrderSide,
+        price: Decimal,
+        quantity: Decimal,
+        order_type: PolymarketOrderType,
+        expiration: Option<UnixNanos>,
+        context: OrderSigningContext,
         tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
         let (maker_amount, taker_amount) =
@@ -135,7 +160,7 @@ impl PolymarketOrderBuilder {
             maker_amount,
             taker_amount,
             expiration,
-            neg_risk,
+            context,
         )
     }
 
@@ -149,8 +174,8 @@ impl PolymarketOrderBuilder {
         token_id: &str,
         price: Decimal,
         amount: Decimal,
-        expiration: &str,
-        neg_risk: bool,
+        expiration: Option<UnixNanos>,
+        context: OrderSigningContext,
         tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
         anyhow::ensure!(
@@ -182,7 +207,7 @@ impl PolymarketOrderBuilder {
             maker_amount,
             taker_amount,
             expiration,
-            neg_risk,
+            context,
         )
     }
 
@@ -202,6 +227,25 @@ impl PolymarketOrderBuilder {
         neg_risk: bool,
         tick_decimals: u32,
     ) -> anyhow::Result<PolymarketOrder> {
+        self.build_market_order_with_context(
+            token_id,
+            side,
+            price,
+            amount,
+            OrderSigningContext::ctf(neg_risk),
+            tick_decimals,
+        )
+    }
+
+    pub(crate) fn build_market_order_with_context(
+        &self,
+        token_id: &str,
+        side: PolymarketOrderSide,
+        price: Decimal,
+        amount: Decimal,
+        context: OrderSigningContext,
+        tick_decimals: u32,
+    ) -> anyhow::Result<PolymarketOrder> {
         if side == PolymarketOrderSide::Buy && amount.trunc_with_scale(LOT_SIZE_SCALE).is_zero() {
             anyhow::bail!(
                 "Polymarket market BUY amount {} pUSD truncates to zero at {LOT_SIZE_SCALE} decimal places",
@@ -211,7 +255,7 @@ impl PolymarketOrderBuilder {
 
         let (maker_amount, taker_amount) =
             compute_market_maker_taker_amounts(price, amount, side, tick_decimals);
-        self.build_and_sign(token_id, side, maker_amount, taker_amount, "0", neg_risk)
+        self.build_and_sign(token_id, side, maker_amount, taker_amount, None, context)
     }
 
     /// Computes the Polymarket order ID for a signed CLOB V2 order.
@@ -220,7 +264,15 @@ impl PolymarketOrderBuilder {
         order: &PolymarketOrder,
         neg_risk: bool,
     ) -> anyhow::Result<VenueOrderId> {
-        let hash = order_hash(order, neg_risk)
+        self.expected_order_id_with_context(order, OrderSigningContext::ctf(neg_risk))
+    }
+
+    pub(crate) fn expected_order_id_with_context(
+        &self,
+        order: &PolymarketOrder,
+        context: OrderSigningContext,
+    ) -> anyhow::Result<VenueOrderId> {
+        let hash = order_hash_with_context(order, context)
             .map_err(|e| anyhow::anyhow!("Failed to derive order hash: {e}"))?;
         let order_id = format!("{hash:#x}");
         Ok(VenueOrderId::from(order_id.as_str()))
@@ -401,8 +453,8 @@ impl PolymarketOrderBuilder {
         side: PolymarketOrderSide,
         maker_amount: Decimal,
         taker_amount: Decimal,
-        expiration: &str,
-        neg_risk: bool,
+        expiration: Option<UnixNanos>,
+        context: OrderSigningContext,
     ) -> anyhow::Result<PolymarketOrder> {
         let salt = generate_salt();
         let timestamp_ms = self.next_timestamp_ms();
@@ -416,7 +468,7 @@ impl PolymarketOrderBuilder {
             taker_amount,
             side,
             signature_type: self.signature_type,
-            expiration: expiration.to_string(),
+            expiration: expiration.map_or(0, |time| time.as_seconds()).to_string(),
             timestamp: timestamp_ms.to_string(),
             metadata: ZERO_BYTES32.to_string(),
             builder: POLYMARKET_NAUTILUS_BUILDER_CODE.to_string(),
@@ -425,7 +477,7 @@ impl PolymarketOrderBuilder {
 
         let signature = self
             .order_signer
-            .sign_order(&poly_order, neg_risk)
+            .sign_order_with_context(&poly_order, context)
             .map_err(|e| anyhow::anyhow!("EIP-712 signing failed: {e}"))?;
         poly_order.signature = SecretString::from(signature);
 
@@ -1117,7 +1169,7 @@ mod tests {
                     dec!(0.50),
                     dec!(10),
                     PolymarketOrderType::GTC,
-                    "0",
+                    None,
                     false,
                     2,
                 )
@@ -1140,7 +1192,7 @@ mod tests {
                 dec!(0.50),
                 dec!(10),
                 PolymarketOrderType::GTC,
-                "0",
+                None,
                 false,
                 2,
             )
@@ -1171,7 +1223,7 @@ mod tests {
                 dec!(0.50),
                 dec!(10),
                 PolymarketOrderType::GTC,
-                "0",
+                None,
                 false,
                 2,
             )
@@ -1184,21 +1236,46 @@ mod tests {
     }
 
     #[rstest]
-    fn test_build_limit_order_expiration_passthrough() {
+    #[case::none(None, "0")]
+    #[case::zero(Some(UnixNanos::from(0u64)), "0")]
+    #[case::one_second(Some(UnixNanos::from_seconds(1)), "1")]
+    #[case::subsecond_truncates(Some(UnixNanos::from(1_500_000_000u64)), "1")]
+    #[case::typical(Some(UnixNanos::from_seconds(1_735_689_600)), "1735689600")]
+    #[case::maximum(Some(UnixNanos::from(u64::MAX)), "18446744073")]
+    fn test_build_limit_order_expiration(
+        #[values("v1", "v2")] version: &str,
+        #[case] expiration: Option<UnixNanos>,
+        #[case] expected: &str,
+    ) {
         let builder = make_test_builder();
+        let context = OrderSigningContext::new(Some(version), false).unwrap();
+        let token_id =
+            "71321045679252212594626385532706912750332728571942532289631379312455583992563";
         let order = builder
-            .build_limit_order(
-                "71321045679252212594626385532706912750332728571942532289631379312455583992563",
+            .build_limit_order_with_context(
+                token_id,
                 PolymarketOrderSide::Buy,
                 dec!(0.50),
                 dec!(10),
                 PolymarketOrderType::GTD,
-                "1735689600",
-                false,
+                expiration,
+                context,
                 2,
             )
             .unwrap();
-        assert_eq!(order.expiration, "1735689600");
+        let collateral_order = builder
+            .build_limit_order_from_collateral(
+                token_id,
+                dec!(0.50),
+                dec!(5),
+                expiration,
+                context,
+                2,
+            )
+            .unwrap();
+
+        assert_eq!(order.expiration, expected);
+        assert_eq!(collateral_order.expiration, expected);
     }
 
     #[rstest]
@@ -1221,10 +1298,11 @@ mod tests {
             _ => unreachable!(),
         };
         let quantity_amount = to_fixed_decimal(quantity);
+
         let expiration = if order_type == PolymarketOrderType::GTD {
-            "1735689600"
+            Some(UnixNanos::from_seconds(1_735_689_600))
         } else {
-            "0"
+            None
         };
         let builder = make_test_builder();
 
@@ -1279,8 +1357,8 @@ mod tests {
                 "71321045679252212594626385532706912750332728571942532289631379312455583992563",
                 price,
                 amount,
-                "0",
-                false,
+                None,
+                OrderSigningContext::ctf(false),
                 tick_decimals,
             )
             .unwrap();
@@ -1312,8 +1390,8 @@ mod tests {
                 "71321045679252212594626385532706912750332728571942532289631379312455583992563",
                 price,
                 amount,
-                "0",
-                false,
+                None,
+                OrderSigningContext::ctf(false),
                 tick_decimals,
             )
             .unwrap_err();
@@ -1348,7 +1426,7 @@ mod tests {
                 price,
                 quantity,
                 order_type,
-                "0",
+                None,
                 false,
                 tick_decimals,
             )
@@ -1471,7 +1549,7 @@ mod tests {
                 dec!(0.961),
                 dec!(5),
                 order_type,
-                "0",
+                None,
                 false,
                 3,
             )

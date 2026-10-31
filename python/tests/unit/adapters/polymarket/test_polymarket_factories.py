@@ -332,3 +332,19 @@ def test_position_client_preserves_relayer_environment_fallback(
         relayer_api_key_address=SMOKE_FUNDER,
     )
     assert type(client) is PolymarketPositionClient
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("limit", [Decimal(0), Decimal(-1), Decimal("0.0000001")])
+async def test_v2_trading_approvals_reject_invalid_limits(limit: Decimal) -> None:
+    """
+    Reject invalid limits before sending an approval transaction.
+    """
+    client = PolymarketPositionClient(
+        private_key=SMOKE_PRIVATE_KEY,
+        funder="0x1111111111111111111111111111111111111111",
+        relayer_api_key="test-relayer-key",
+        relayer_api_key_address=SMOKE_FUNDER,
+    )
+    with pytest.raises(ValueError, match="pUSD amount must be"):
+        await client.approve_v2_trading(limit)

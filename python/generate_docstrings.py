@@ -163,6 +163,10 @@ METHOD_DOC_SOURCES = {
     ("PyCache", "instrument_statuses"): ("Cache", "instrument_statuses"),
     ("PyCache", "instrument_close"): ("Cache", "instrument_close"),
     ("PyCache", "order_book"): ("Cache", "order_book"),
+    ("PyPolymarketPositionClient", "approve_v2_trading"): (
+        "PolymarketPositionClient",
+        "approve_v2_trading",
+    ),
 }
 
 BANNER_RE = re.compile(r"^-{3,}.*-{3,}$")

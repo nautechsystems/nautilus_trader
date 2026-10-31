@@ -60,7 +60,7 @@ use crate::{
             PolymarketTradeStatus,
         },
         models::is_owned_by_account,
-        parse::validate_market_version,
+        parse::{validate_data_market_version, validate_execution_market},
     },
     http::{
         clob::PolymarketClobHttpClient,
@@ -254,10 +254,11 @@ pub(crate) fn validate_instrument_binding(
         anyhow::bail!("expected Polymarket BinaryOption instrument, found {instrument:?}");
     };
 
-    validate_market_version(
+    validate_execution_market(
         instrument
             .info()
             .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+        instrument.raw_symbol().as_str(),
     )?;
     let instrument_condition = binary
         .info
@@ -1288,10 +1289,11 @@ fn build_reconciliation_position_report(
             ))
         })?;
 
-    validate_market_version(
+    validate_execution_market(
         instrument
             .info()
             .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+        instrument.raw_symbol().as_str(),
     )?;
 
     Ok(build_position_report_from_reportable_position(
@@ -1596,10 +1598,11 @@ pub(crate) async fn filter_unsupported_positions(
 }
 
 fn execution_protocol_supported(instrument: &InstrumentAny) -> bool {
-    match validate_market_version(
+    match validate_execution_market(
         instrument
             .info()
             .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+        instrument.raw_symbol().as_str(),
     ) {
         Ok(()) => true,
         Err(e) => {
@@ -1630,7 +1633,15 @@ async fn unsupported_market_conditions<'a>(
             market.condition_id
         );
 
-        if let Err(e) = validate_market_version(market.version.as_deref()) {
+        let validation = validate_data_market_version(market.version.as_deref()).and_then(|_| {
+            for token in &market.tokens {
+                validate_execution_market(market.version.as_deref(), &token.token_id)?;
+            }
+
+            Ok(())
+        });
+
+        if let Err(e) = validation {
             log::warn!("Unsupported Polymarket condition {condition_id}: {e}");
             unsupported.insert(condition_id.to_string());
         }
@@ -2600,7 +2611,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Some("v2"))]
     #[case(None)]
     #[case(Some("unknown"))]
     fn test_cached_protocol_refuses_execution_evidence(#[case] version: Option<&str>) {
@@ -2618,7 +2628,7 @@ mod tests {
         assert!(
             error
                 .to_string()
-                .contains("Unsupported Polymarket market protocol")
+                .contains("Unsupported Polymarket data protocol")
         );
         let instruments = AtomicMap::new();
         instruments.insert(Ustr::from(TEST_TOKEN_ID), instrument);

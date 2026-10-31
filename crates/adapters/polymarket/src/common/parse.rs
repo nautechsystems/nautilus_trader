@@ -53,6 +53,21 @@ pub(crate) fn validate_data_market_version(version: Option<&str>) -> anyhow::Res
     }
 }
 
+pub(crate) fn validate_execution_market(
+    version: Option<&str>,
+    asset_id: &str,
+) -> anyhow::Result<()> {
+    if validate_data_market_version(version)? == MARKET_VERSION_V2 {
+        let position_id = U256::from_str_radix(asset_id, 10)?;
+        anyhow::ensure!(
+            position_id.to_be_bytes::<32>()[0] != 3,
+            "Unsupported Polymarket Combo execution",
+        );
+    }
+
+    Ok(())
+}
+
 pub(crate) fn validate_outcome_ids(ids: &[String]) -> anyhow::Result<()> {
     anyhow::ensure!(
         ids.len() == 2,
@@ -444,5 +459,40 @@ mod tests {
         let side = PolymarketOrderSide::Sell;
         let id = determine_trade_id("asset-225", side, "0.01", "123.45", "1700000000000");
         assert_eq!(id.as_str(), "007f43ec998548a8");
+    }
+
+    #[rstest]
+    #[case(
+        Some("v1"),
+        "1356938545749799165119972480570561420155507632800475359837393562592731987968",
+        true
+    )]
+    #[case(
+        Some("v2"),
+        "452312848583266388373324160190187140051835877600158453279131187530910662656",
+        true
+    )]
+    #[case(
+        Some("v2"),
+        "904625697166532776746648320380374280103671755200316906558262375061821325312",
+        true
+    )]
+    #[case(
+        Some("v2"),
+        "1356938545749799165119972480570561420155507632800475359837393562592731987968",
+        false
+    )]
+    #[case(Some("v2"), "invalid", false)]
+    #[case(None, "1", false)]
+    #[case(Some("unknown"), "1", false)]
+    fn test_execution_protocol_and_product_boundary(
+        #[case] version: Option<&str>,
+        #[case] asset_id: &str,
+        #[case] supported: bool,
+    ) {
+        assert_eq!(
+            validate_execution_market(version, asset_id).is_ok(),
+            supported
+        );
     }
 }

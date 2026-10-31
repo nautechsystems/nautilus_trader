@@ -32,8 +32,12 @@ use nautilus_network::websocket::proxy::ProxyUrl;
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
 
-use self::calldata::{
-    PositionCall, encode_merge_positions, encode_redeem_positions, encode_split_position,
+use self::{
+    amounts::pusd_to_base_units,
+    calldata::{
+        PositionCall, encode_approval, encode_merge_positions, encode_redeem_positions,
+        encode_split_position,
+    },
 };
 use crate::{
     common::{
@@ -48,7 +52,7 @@ use crate::{
             RelayerWalletSubmit,
         },
     },
-    signing::eip712::{DepositWalletCall, OrderSigner, parse_address},
+    signing::eip712::{DepositWalletCall, OrderSigner, approval_plan_v2, parse_address},
 };
 
 const DEFAULT_HTTP_TIMEOUT_SECS: u64 = 60;
@@ -287,6 +291,29 @@ impl PolymarketPositionClient {
         self.submit_call(call, "Redeem positions").await
     }
 
+    /// Approves ExchangeV3 trading from the Deposit Wallet holding the assets.
+    ///
+    /// `collateral_limit` is an explicit pUSD limit covering BUY spend plus fees. The same batch
+    /// enables ExchangeV3 to transfer V2 positions for SELL orders. It does not redeem positions.
+    /// The Relayer requires unlimited ExchangeV3 approvals and rejects this bounded request.
+    /// V2 trading from a Deposit Wallet therefore requires existing approvals.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the limit is invalid, wallet verification fails, or Relayer submission
+    /// is rejected or ambiguous. A pending wallet submission must be reconciled before retrying.
+    pub async fn approve_v2_trading(
+        &self,
+        collateral_limit: Decimal,
+    ) -> Result<PolymarketPositionTransaction> {
+        let amount = pusd_to_base_units(collateral_limit)?;
+        let calls = approval_plan_v2(amount)
+            .into_iter()
+            .map(encode_approval)
+            .collect::<Vec<_>>();
+        self.submit_calls(&calls, "Approve V2 trading").await
+    }
+
     async fn market_neg_risk(&self, condition_id: &str) -> Result<bool> {
         let market = self.clob.get_market(condition_id).await?;
         validate_market_version(market.version.as_deref())
@@ -301,6 +328,15 @@ impl PolymarketPositionClient {
     async fn submit_call(
         &self,
         call: PositionCall,
+        metadata: &str,
+    ) -> Result<PolymarketPositionTransaction> {
+        self.submit_calls(std::slice::from_ref(&call), metadata)
+            .await
+    }
+
+    async fn submit_calls(
+        &self,
+        calls: &[PositionCall],
         metadata: &str,
     ) -> Result<PolymarketPositionTransaction> {
         let mut submission = self.submission.lock().await;
@@ -335,30 +371,35 @@ impl PolymarketPositionClient {
 
         let deadline = now.saturating_add(U256::from(self.deadline_secs));
 
-        let wallet_call = DepositWalletCall {
-            target: call.target,
-            value: U256::ZERO,
-            data: call.data,
-        };
+        let wallet_calls: Vec<_> = calls
+            .iter()
+            .map(|call| DepositWalletCall {
+                target: call.target,
+                value: U256::ZERO,
+                data: call.data.clone(),
+            })
+            .collect();
 
         let signature = self.signer.sign_deposit_wallet_batch(
             self.deposit_wallet,
             nonce,
             deadline,
-            std::slice::from_ref(&wallet_call),
+            &wallet_calls,
         )?;
         *submission = Some(WalletSubmission {
             nonce,
             transaction_id: None,
         });
 
-        log::info!(
-            "Deposit Wallet submission: wallet={:#x}, nonce={nonce}, deadline={deadline}, operation={metadata}, target={:#x}, value={}, data={}",
-            self.deposit_wallet,
-            wallet_call.target,
-            wallet_call.value,
-            wallet_call.data,
-        );
+        for wallet_call in &wallet_calls {
+            log::info!(
+                "Deposit Wallet submission: wallet={:#x}, nonce={nonce}, deadline={deadline}, operation={metadata}, target={:#x}, value={}, data={}",
+                self.deposit_wallet,
+                wallet_call.target,
+                wallet_call.value,
+                wallet_call.data,
+            );
+        }
 
         let submitted = self
             .relayer
@@ -369,7 +410,7 @@ impl PolymarketPositionClient {
                 deadline,
                 signature: &signature,
                 metadata,
-                calls: std::slice::from_ref(&wallet_call),
+                calls: &wallet_calls,
             })
             .await?;
 

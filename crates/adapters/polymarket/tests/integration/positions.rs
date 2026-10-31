@@ -44,7 +44,8 @@ use nautilus_polymarket::{
     },
     positions::{PolymarketPositionClient, PolymarketPositionOutcome},
     signing::eip712::{
-        CTF_COLLATERAL_ADAPTER, DEPOSIT_WALLET_FACTORY, NEG_RISK_CTF_COLLATERAL_ADAPTER,
+        CTF_COLLATERAL_ADAPTER, DEPOSIT_WALLET_FACTORY, EXCHANGE_V3,
+        NEG_RISK_CTF_COLLATERAL_ADAPTER, POLYMARKET_COLLATERAL_TOKEN, POSITION_MANAGER,
     },
 };
 use rstest::rstest;
@@ -1038,4 +1039,50 @@ async def check():
 asyncio.run(check())";
         py.run(code, Some(&locals), Some(&locals)).unwrap();
     });
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_v2_trading_approvals_use_holder_batch_and_explicit_pusd_limit() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    client.approve_v2_trading(dec!(12.345678)).await.unwrap();
+    let submit = state.last_submit.lock().await.clone().unwrap();
+    assert_eq!(submit["type"], "WALLET");
+    assert_eq!(submit["from"], TEST_SIGNER);
+    assert_eq!(submit["nonce"], "7");
+    assert_eq!(
+        submit["depositWalletParams"]["depositWallet"],
+        wallet_address(&addr)
+    );
+    let calls = submit["depositWalletParams"]["calls"].as_array().unwrap();
+    assert_eq!(
+        calls,
+        &vec![
+            json!({"target": format!("{POLYMARKET_COLLATERAL_TOKEN:#x}"), "value": "0",
+            "data": format!("0x095ea7b3{:0>64}{:064x}", format!("{EXCHANGE_V3:x}"), 12_345_678_u64)}),
+            json!({"target": format!("{POSITION_MANAGER:#x}"), "value": "0",
+            "data": format!("0xa22cb465{:0>64}{:064x}", format!("{EXCHANGE_V3:x}"), 1_u64)}),
+        ]
+    );
+    assert_eq!(state.submit_count.load(Ordering::SeqCst), 1);
+}
+
+#[rstest]
+#[case(dec!(0))]
+#[case(dec!(-1))]
+#[case(dec!(0.0000001))]
+#[tokio::test]
+async fn test_v2_trading_approvals_refuse_invalid_limits_before_submit(
+    #[case] limit: rust_decimal::Decimal,
+) {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let error = position_client(&addr)
+        .approve_v2_trading(limit)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("pUSD amount must be"));
+    assert_eq!(state.submit_count.load(Ordering::SeqCst), 0);
 }

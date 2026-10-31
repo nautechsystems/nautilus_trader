@@ -632,9 +632,7 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) fn get_neg_risk(&self, instrument_id: &InstrumentId) -> bool {
-        self.neg_risk_index
-            .get_cloned(instrument_id)
-            .unwrap_or(false)
+        Self::get_neg_risk_from_snapshot(&self.neg_risk_index.load(), instrument_id)
     }
 
     /// Spawns the task that performs targeted terminal REST reads for quarantined and

@@ -16,7 +16,7 @@ Released on TBD (UTC).
 - Added CoinAPI flat-file support for numeric book update codes
 - Added Deribit `load_ids` so a scoped node can omit other instruments during reconciliation
 - Added Deribit routed spot metadata and local order and market data capability checks
-- Added Polymarket Protocol V2 market data and resolution support; execution remains `v1`-only
+- Added Polymarket Protocol V2 market data, execution, account reporting, and resolution support
 
 ### Breaking Changes
 
@@ -63,6 +63,9 @@ Released on TBD (UTC).
 - Changed Interactive Brokers futures-option IDs and underlyings to match `futures_year_digits`
 - Changed Interactive Brokers provider config literals; add `futures_year_digits: FuturesYearDigits::Two`
 - Changed OKX WebSocket batch order tuples; add `quote_quantity` after `reduce_only`
+- Changed Polymarket `AssetType` with `ConditionalV2`; update exhaustive matches
+- Changed Polymarket `build_limit_order` expiry to `Option<UnixNanos>`; pass `None` for no expiry
+- Changed Polymarket reports to require instruments for in-scope V2 orders and positions; set `load_ids`
 - Changed Polymarket data/execution credentials and funders to reject blanks; omit them for environment fallback
 - Changed Polymarket execution examples to dry run by default; disable `DRY_RUN` for live orders
 - Changed Polymarket `GammaMarket` literals; add `position_ids` and `resolution_status` fields

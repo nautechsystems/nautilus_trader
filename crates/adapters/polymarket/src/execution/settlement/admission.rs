@@ -807,11 +807,15 @@ mod tests {
     use crate::filters::{InstrumentFilter, PredicateFilter};
 
     fn instruments() -> AtomicMap<Ustr, InstrumentAny> {
+        instruments_with_protocol("v1")
+    }
+
+    fn instruments_with_protocol(version: &str) -> AtomicMap<Ustr, InstrumentAny> {
         let instruments = AtomicMap::new();
 
-        for (token, outcome) in [("token-no", "No"), ("token-yes", "Yes")] {
+        for (token, outcome) in [("1000", "No"), ("1001", "Yes")] {
             let info: Params = serde_json::from_value(json!({
-                "market_version": "v1",
+                "market_version": version,
                 "condition_id": "condition",
                 "fee_schedule": {"rate": "0.05", "exponent": "1"},
             }))
@@ -854,7 +858,7 @@ mod tests {
         let mut trade: PolymarketUserTrade =
             serde_json::from_str(include_str!("../../../test_data/ws_user_trade_full.json"))
                 .unwrap();
-        trade.asset_id = Ustr::from("token-no");
+        trade.asset_id = Ustr::from("1000");
         trade.market = Ustr::from("condition");
         trade.outcome = PolymarketOutcome::no();
         trade.size = "40".to_string();
@@ -871,7 +875,7 @@ mod tests {
             .map(|(index, (size, price))| {
                 let mut maker = template.clone();
                 maker.order_id = format!("maker-{index}");
-                maker.asset_id = Ustr::from(if complement { "token-yes" } else { "token-no" });
+                maker.asset_id = Ustr::from(if complement { "1001" } else { "1000" });
                 maker.outcome = if complement {
                     PolymarketOutcome::yes()
                 } else {
@@ -896,11 +900,13 @@ mod tests {
 
     #[rstest]
     fn taker_multilevel_economics(
+        #[values("v1", "v2")] version: &str,
+
         #[values(false, true)] rest: bool,
         #[values(false, true)] complement: bool,
         #[values(false, true)] sell: bool,
     ) {
-        let instruments = instruments();
+        let instruments = instruments_with_protocol(version);
         let ctx = context(&instruments);
         let trade = multilevel_trade(complement, sell);
         let report: PolymarketTradeReport =
@@ -935,11 +941,13 @@ mod tests {
 
     #[rstest]
     fn taker_counterparty_prices_preserve_historical_precision(
+        #[values("v1", "v2")] version: &str,
+
         #[values(false, true)] rest: bool,
         #[values(false, true)] complement: bool,
         #[values(false, true)] sell: bool,
     ) {
-        let instruments = instruments();
+        let instruments = instruments_with_protocol(version);
         let mut trade = multilevel_trade(complement, sell);
         trade.size = "2".to_string();
         trade.price = "0.42".to_string();
@@ -988,8 +996,11 @@ mod tests {
     }
 
     #[rstest]
-    fn taker_counterparty_settlement_rounding_remains_supported(#[values(false, true)] rest: bool) {
-        let instruments = instruments();
+    fn taker_counterparty_settlement_rounding_remains_supported(
+        #[values("v1", "v2")] version: &str,
+        #[values(false, true)] rest: bool,
+    ) {
+        let instruments = instruments_with_protocol(version);
         let mut trade = multilevel_trade(false, false);
         trade.size = "2".to_string();
         trade.price = "0.42".to_string();
@@ -1070,8 +1081,11 @@ mod tests {
     }
 
     #[rstest]
-    fn taker_repeating_average_preserves_cash_precision(#[values(false, true)] rest: bool) {
-        let instruments = instruments();
+    fn taker_repeating_average_preserves_cash_precision(
+        #[values("v1", "v2")] version: &str,
+        #[values(false, true)] rest: bool,
+    ) {
+        let instruments = instruments_with_protocol(version);
         let mut trade = multilevel_trade(true, false);
         trade.size = "45.030125".to_string();
         trade.price = "0.991".to_string();
@@ -1103,12 +1117,14 @@ mod tests {
     #[case::upper_cash_midpoint(dec!(1.999985), dec!(1.000015), dec!(1.000002))]
     #[case::lower_cash_midpoint(dec!(1.999975), dec!(1.000025), dec!(1.000002))]
     fn taker_average_preserves_cash_at_rounding_midpoint(
+        #[values("v1", "v2")] version: &str,
+
         #[case] first_size: Decimal,
         #[case] second_size: Decimal,
         #[case] expected_cash: Decimal,
         #[values(false, true)] rest: bool,
     ) {
-        let instruments = instruments();
+        let instruments = instruments_with_protocol(version);
         let mut trade = multilevel_trade(false, false);
         trade.size = "3".to_string();
         trade.price = "0.3".to_string();
@@ -1205,17 +1221,17 @@ mod tests {
         let instruments = AtomicMap::new();
         let mut trade = multilevel_trade(true, sell);
         if yes {
-            trade.asset_id = Ustr::from("token-yes");
+            trade.asset_id = Ustr::from("1001");
             trade.outcome = PolymarketOutcome::yes();
             for maker in &mut trade.maker_orders {
-                maker.asset_id = Ustr::from("token-no");
+                maker.asset_id = Ustr::from("1000");
                 maker.outcome = PolymarketOutcome::no();
             }
         }
 
         let filter = PredicateFilter::outcome(trade.outcome.as_str());
 
-        for token in ["token-no", "token-yes"] {
+        for token in ["1000", "1001"] {
             let token = Ustr::from(token);
             let instrument = available.get_cloned(&token).unwrap();
             if filter.accept(&instrument) {
@@ -1300,7 +1316,8 @@ mod tests {
     #[rstest]
     fn taker_rejects_counterparty_from_another_condition() {
         let instruments = instruments();
-        let mut instrument = instruments.get_cloned(&Ustr::from("token-yes")).unwrap();
+        let mut instrument = instruments.get_cloned(&Ustr::from("1001")).unwrap();
+
         let InstrumentAny::BinaryOption(binary) = &mut instrument else {
             unreachable!();
         };
@@ -1308,7 +1325,7 @@ mod tests {
         binary.info = Some(
             from_value(json!({"condition_id": "other-condition", "market_version": "v1"})).unwrap(),
         );
-        instruments.insert(Ustr::from("token-yes"), instrument);
+        instruments.insert(Ustr::from("1001"), instrument);
         let trade = multilevel_trade(true, false);
 
         let error = admit_trade_evidence(TradeEvidence::Stream(&trade), &context(&instruments))

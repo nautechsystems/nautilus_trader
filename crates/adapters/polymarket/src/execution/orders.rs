@@ -61,12 +61,13 @@ use crate::{
     common::{
         consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE, MARKET_VERSION_KEY},
         enums::{PolymarketOrderSide, PolymarketOrderType},
-        parse::validate_market_version,
+        parse::validate_execution_market,
     },
     http::{
         error::{Error as HttpError, sanitize_error_text},
         query::GetTradesParams,
     },
+    signing::eip712::OrderSigningContext,
 };
 
 impl PolymarketExecutionClient {
@@ -83,7 +84,7 @@ impl PolymarketExecutionClient {
             return;
         }
 
-        let instrument = match self.resolve_instrument(&order) {
+        let (instrument, signing_context) = match self.resolve_instrument(&order) {
             Some(i) => i,
             None => return,
         };
@@ -95,7 +96,6 @@ impl PolymarketExecutionClient {
             return;
         }
 
-        let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let price = order.price().unwrap();
@@ -113,7 +113,7 @@ impl PolymarketExecutionClient {
             quote_quantity,
             time_in_force: tif,
             post_only,
-            neg_risk,
+            signing_context,
             expire_time,
             tick_decimals,
             size_precision: instrument.size_precision(),
@@ -192,12 +192,11 @@ impl PolymarketExecutionClient {
             return;
         }
 
-        let instrument = match self.resolve_instrument(&order) {
+        let (instrument, signing_context) = match self.resolve_instrument(&order) {
             Some(i) => i,
             None => return,
         };
 
-        let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_size = instrument.price_increment();
         let tick_decimals = u32::from(instrument.min_price_increment_precision());
@@ -277,7 +276,7 @@ impl PolymarketExecutionClient {
                     side,
                     amount,
                     time_in_force,
-                    neg_risk,
+                    signing_context,
                     tick_size,
                     tick_decimals,
                     fee_context,
@@ -447,7 +446,10 @@ impl PolymarketExecutionClient {
         });
     }
 
-    pub(super) fn resolve_instrument(&self, order: &OrderAny) -> Option<InstrumentAny> {
+    pub(super) fn resolve_instrument(
+        &self,
+        order: &OrderAny,
+    ) -> Option<(InstrumentAny, OrderSigningContext)> {
         let instrument = self
             .core
             .cache()
@@ -457,12 +459,18 @@ impl PolymarketExecutionClient {
         match instrument {
             Some(i) => {
                 let version = i.info().and_then(|info| info.get_str(MARKET_VERSION_KEY));
-                if let Err(e) = validate_market_version(version) {
-                    self.emitter.emit_order_denied(order, &e.to_string());
-                    return None;
-                }
+                let context =
+                    validate_execution_market(version, i.raw_symbol().as_str()).and_then(|()| {
+                        OrderSigningContext::new(version, self.get_neg_risk(&order.instrument_id()))
+                    });
 
-                Some(i)
+                match context {
+                    Ok(context) => Some((i, context)),
+                    Err(e) => {
+                        self.emitter.emit_order_denied(order, &e.to_string());
+                        None
+                    }
+                }
             }
             None => {
                 self.emitter.emit_order_denied(
@@ -503,7 +511,6 @@ impl PolymarketExecutionClient {
 
     pub(super) fn submit_order_list_command(&self, cmd: &SubmitOrderList) {
         let mut batch_orders = Vec::with_capacity(cmd.order_inits.len());
-        let neg_risk_index = self.neg_risk_index.load();
         let ts_now = self.clock.get_time_ns();
 
         for order_init in &cmd.order_inits {
@@ -550,7 +557,7 @@ impl PolymarketExecutionClient {
                 continue;
             }
 
-            let instrument = match self.resolve_instrument(&order) {
+            let (instrument, signing_context) = match self.resolve_instrument(&order) {
                 Some(i) => i,
                 None => continue,
             };
@@ -574,10 +581,7 @@ impl PolymarketExecutionClient {
                     quote_quantity: order.is_quote_quantity(),
                     time_in_force: order.time_in_force(),
                     post_only: order.is_post_only(),
-                    neg_risk: Self::get_neg_risk_from_snapshot(
-                        &neg_risk_index,
-                        &order.instrument_id(),
-                    ),
+                    signing_context,
                     expire_time: order.expire_time(),
                     tick_decimals: u32::from(instrument.min_price_increment_precision()),
                     size_precision: instrument.size_precision(),
@@ -879,24 +883,28 @@ impl PolymarketExecutionClient {
             .and_then(|info| info.get_str(MARKET_VERSION_KEY));
 
         let price = cmd.price.or_else(|| order.price()).unwrap();
-
-        let validation = validate_market_version(version)
+        let validation = validate_execution_market(version, instrument.raw_symbol().as_str())
             .and_then(|()| {
+                OrderSigningContext::new(version, self.get_neg_risk(&order.instrument_id()))
+            })
+            .and_then(|context| {
                 PolymarketOrderBuilder::validate_limit_price_value(
                     price,
                     instrument.price_increment(),
                 )
-                .map_err(anyhow::Error::from)
-            })
-            .and_then(|()| {
+                .map_err(anyhow::Error::from)?;
                 PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
-                    .map_err(anyhow::Error::from)
+                    .map_err(anyhow::Error::from)?;
+                Ok(context)
             });
 
-        if let Err(reason) = validation {
-            reject(&reason.to_string());
-            return;
-        }
+        let signing_context = match validation {
+            Ok(context) => context,
+            Err(reason) => {
+                reject(&reason.to_string());
+                return;
+            }
+        };
 
         let target_total_qty = cmd.quantity.unwrap_or_else(|| order.quantity());
         let filled_qty = order.filled_qty();
@@ -1007,7 +1015,6 @@ impl PolymarketExecutionClient {
         let instrument_id = order.instrument_id();
         let token_id = instrument.raw_symbol().to_string();
         let size_precision = instrument.size_precision();
-        let neg_risk = self.get_neg_risk(&instrument_id);
         let signer_type = self.config.signer_type;
         let user_address = self
             .secrets
@@ -1429,7 +1436,7 @@ impl PolymarketExecutionClient {
                 quote_quantity: false,
                 time_in_force: order.time_in_force(),
                 post_only: order.is_post_only(),
-                neg_risk,
+                signing_context,
                 expire_time: order.expire_time(),
                 tick_decimals,
                 size_precision,

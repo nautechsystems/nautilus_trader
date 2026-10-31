@@ -24,11 +24,14 @@ use crate::{
     http::error::Result,
     signing::eip712::{
         CTF_COLLATERAL_ADAPTER, NEG_RISK_CTF_COLLATERAL_ADAPTER, POLYMARKET_COLLATERAL_TOKEN,
-        parse_bytes32,
+        PolymarketApproval, parse_bytes32,
     },
 };
 
 sol! {
+    function approve(address spender, uint256 amount);
+    function setApprovalForAll(address operator, bool approved);
+
     function splitPosition(
         address collateralToken,
         bytes32 parentCollectionId,
@@ -66,6 +69,29 @@ pub struct PositionCall {
     pub target: Address,
     /// ABI-encoded function call.
     pub data: Bytes,
+}
+
+/// Encodes one approval for submission by the asset holder.
+#[must_use]
+pub fn encode_approval(approval: PolymarketApproval) -> PositionCall {
+    match approval {
+        PolymarketApproval::Collateral {
+            contract,
+            spender,
+            amount,
+        } => PositionCall {
+            target: contract,
+            data: Bytes::from(approveCall { spender, amount }.abi_encode()),
+        },
+        PolymarketApproval::ConditionalTokens {
+            contract,
+            operator,
+            approved,
+        } => PositionCall {
+            target: contract,
+            data: Bytes::from(setApprovalForAllCall { operator, approved }.abi_encode()),
+        },
+    }
 }
 
 /// Returns the canonical collateral adapter for a standard or negative-risk market.
