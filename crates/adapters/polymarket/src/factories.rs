@@ -112,7 +112,7 @@ impl PolymarketDataClientFactory {
                 max_delay_ms: 30_000,
                 backoff_factor: 1.5,
                 jitter_ms: 2_000,
-                operation_timeout_ms: Some(30_000),
+                operation_timeout_ms: None,
                 immediate_first: true,
                 max_elapsed_ms: Some(300_000),
             },

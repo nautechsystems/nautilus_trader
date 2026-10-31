@@ -507,6 +507,7 @@ impl PolymarketGammaHttpClient {
     /// Creates a new [`PolymarketGammaHttpClient`].
     ///
     /// `retry_config` controls indexing-lag retries, independently of HTTP retries.
+    /// `retry_config.operation_timeout_ms` is ignored; `timeout_secs` bounds each HTTP attempt.
     ///
     /// # Errors
     ///
@@ -520,6 +521,9 @@ impl PolymarketGammaHttpClient {
     }
 
     /// Creates a new domain client with an optional validated proxy URL.
+    ///
+    /// `retry_config` controls indexing-lag retries, independently of HTTP retries.
+    /// `retry_config.operation_timeout_ms` is ignored; `timeout_secs` bounds each HTTP attempt.
     ///
     /// # Errors
     ///
