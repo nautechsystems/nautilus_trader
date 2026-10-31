@@ -104,6 +104,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 
+- Fixed WebSocket module documentation for backend proxy support and SOCKS fallback
 - Improved Polymarket setup and configuration troubleshooting guidance
 - Updated Kraken Futures Maker Protection rollout and split-amendment guidance
 - Updated Python Polymarket examples with scoped reconciliation, risk checks, and 30-second shutdown waits
