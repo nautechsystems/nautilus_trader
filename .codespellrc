@@ -4,3 +4,18 @@
 [codespell]
 # Comma-separated list of words to ignore
 ignore-words-list = ACN,ALO,Alo,allTime,amountIn,BadAloPx,CapTable,arange,crate,datas,deques,disjointness,FO,hearbeat,HIGHTER,Implementors,intoto,ot,pre,ser,socio-economic,Superseed,SUPERSEED,te,ThirdParty,trough,usIn,zar,zars
+
+# Match the quoted form-field policy in .typos.toml without ignoring neighboring text
+ignore-regex = (?x)
+    "
+    (?:
+        [A-Za-z0-9_.*+-]*%[0-9A-Fa-f]{2}
+        (?:[A-Za-z0-9_.*+-]|%[0-9A-Fa-f]{2})*
+        =
+        (?:[A-Za-z0-9_.*+-]|%[0-9A-Fa-f]{2})*
+      |
+        [A-Za-z0-9_.*+-]+=
+        [A-Za-z0-9_.*+-]*%[0-9A-Fa-f]{2}
+        (?:[A-Za-z0-9_.*+-]|%[0-9A-Fa-f]{2})*
+    )
+    "

@@ -899,6 +899,7 @@ test-scripts:  #-- Run repository script tests
 	$Q python3 -B .pre-commit-hooks/test_check_dependency_features.py
 	$Q bash .pre-commit-hooks/test_check_docs_conventions.sh
 	$Q bash .pre-commit-hooks/test_check_dst_conventions.sh
+	$Q python3 -B .pre-commit-hooks/test_check_encoded_wire_spelling.py
 	$Q bash .pre-commit-hooks/test_check_formatting_py.sh
 	$Q bash .pre-commit-hooks/test_check_formatting_rs.sh
 	$Q bash .pre-commit-hooks/test_check_jiff_features.sh
@@ -942,6 +943,10 @@ test-scripts:  #-- Run repository script tests
 	$Q python3 -B scripts/ci/test_check_test_network.py
 	$Q python3 -B scripts/ci/check_test_network.py
 	@printf "$(GREEN)Script tests passed$(RESET)\n"
+
+.PHONY: test-encoded-wire-spelling
+test-encoded-wire-spelling:  #-- Check wire literals with the pinned spelling tools on PATH
+	$Q python3 -B .pre-commit-hooks/test_check_encoded_wire_spelling.py --integration
 
 .PHONY: test-scripts-quiet
 test-scripts-quiet:
