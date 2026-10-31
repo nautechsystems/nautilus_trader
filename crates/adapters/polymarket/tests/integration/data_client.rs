@@ -19,6 +19,7 @@
 //! Gamma, CLOB public, and Data API endpoints.
 
 use std::{
+    collections::HashMap,
     net::SocketAddr,
     num::NonZeroUsize,
     path::PathBuf,
@@ -32,7 +33,7 @@ use std::{
 use axum::{
     Router,
     extract::{
-        State,
+        Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::StatusCode,
@@ -79,7 +80,7 @@ use nautilus_polymarket::{
 use nautilus_testkit::events::{collect_data_events_until_response, drain_data_events};
 use rstest::rstest;
 use rust_decimal_macros::dec;
-use serde_json::{Value, json};
+use serde_json::{Value, from_str, json, to_string};
 
 const TEST_CONDITION_ID: &str =
     "0x78443f961b9a65869dcb39359de9960165c7e5cbad0904eac7f29cd77872a63b";
@@ -127,11 +128,23 @@ fn gamma_market_request_fixture() -> Value {
     value
 }
 
+fn gamma_market_for_protocol(version: &str) -> Value {
+    let mut market = gamma_market_request_fixture();
+    market["version"] = json!(version);
+    if version == "v2" {
+        market["positionIds"] = from_str(market["clobTokenIds"].as_str().unwrap()).unwrap();
+        market["clobTokenIds"] = json!(to_string(&["101", "202"]).unwrap());
+    }
+
+    market
+}
+
 #[derive(Clone, Default)]
 struct TestServerState {
     gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     gamma_request_count: Arc<AtomicUsize>,
     book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    book_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     trades_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     trades_request_count: Arc<AtomicUsize>,
     trades_error: Arc<AtomicBool>,
@@ -157,7 +170,11 @@ async fn handle_gamma_markets_keyset(State(state): State<TestServerState>) -> Js
     Json(serde_json::json!({"markets": markets}))
 }
 
-async fn handle_book(State(state): State<TestServerState>) -> Json<Value> {
+async fn handle_book(
+    State(state): State<TestServerState>,
+    Query(query): Query<HashMap<String, String>>,
+) -> Json<Value> {
+    state.book_queries.lock().await.push(query);
     let body = state
         .book_response
         .lock()
@@ -1071,11 +1088,14 @@ async fn test_request_instruments_emits_response() {
 }
 
 #[rstest]
+#[case("v1")]
+#[case("v2")]
 #[tokio::test]
-async fn test_request_book_snapshot_returns_book_response() {
+async fn test_request_book_snapshot_returns_book_response(#[case] version: &str) {
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
-    let addr = start_mock_server(state).await;
+    *state.gamma_response.lock().await =
+        Some(serde_json::json!([gamma_market_for_protocol(version)]));
+    let addr = start_mock_server(state.clone()).await;
     let (client, mut rx) = create_test_data_client(addr);
 
     let instrument_id = yes_instrument_id();
@@ -1118,11 +1138,20 @@ async fn test_request_book_snapshot_returns_book_response() {
         book_response_count, 1,
         "request_book_snapshot must send a DataResponse::Book; events were: {events:?}",
     );
+    assert_eq!(
+        *state.book_queries.lock().await,
+        vec![HashMap::from([(
+            "token_id".into(),
+            TEST_TOKEN_ID_YES.into()
+        )])],
+    );
 }
 
 #[rstest]
+#[case("v1")]
+#[case("v2")]
 #[tokio::test]
-async fn test_request_trades_returns_trades_response() {
+async fn test_request_trades_returns_trades_response(#[case] version: &str) {
     let other_token = "0".repeat(76);
     let trades_fixture = serde_json::json!([
         {
@@ -1164,7 +1193,8 @@ async fn test_request_trades_returns_trades_response() {
     ]);
 
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
+    *state.gamma_response.lock().await =
+        Some(serde_json::json!([gamma_market_for_protocol(version)]));
     *state.trades_response.lock().await = Some(trades_fixture);
     let addr = start_mock_server(state).await;
     let (client, mut rx) = create_test_data_client(addr);
@@ -1380,10 +1410,15 @@ async fn test_stop_reconnect_recreates_market_message_receiver() {
 }
 
 #[rstest]
+#[case("v1")]
+#[case("v2")]
 #[tokio::test]
-async fn test_cached_resolution_subscription_replays_after_disconnect_reconnect() {
+async fn test_cached_resolution_subscription_replays_after_disconnect_reconnect(
+    #[case] version: &str,
+) {
     let state = TestServerState::default();
-    *state.gamma_response.lock().await = Some(serde_json::json!([gamma_market_request_fixture()]));
+    *state.gamma_response.lock().await =
+        Some(serde_json::json!([gamma_market_for_protocol(version)]));
     let addr = start_mock_server(state.clone()).await;
     let (mut client, _rx) = create_test_data_client_with_resolution_options(addr, true, false);
     let instrument_id = yes_instrument_id();

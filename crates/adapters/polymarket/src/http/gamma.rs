@@ -49,7 +49,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, value::RawValue};
 
 use crate::{
-    common::{parse::validate_market_version, urls::gamma_api_url},
+    common::{consts::MARKET_VERSION_V2, parse::validate_data_market_version, urls::gamma_api_url},
     filters::set_market_closed,
     http::{
         error::{Error, Result, decode_response},
@@ -404,7 +404,7 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
 }
 
 // Returns parsed instruments alongside condition IDs of markets still in the
-// CLOB hydration window (empty or empty-entry `clob_token_ids`), so callers
+// CLOB hydration window (missing or empty selected outcome IDs), so callers
 // can retry rather than treating them as terminal.
 //
 // This is the single funnel through which live instruments reach the client caches, so Gamma's
@@ -422,12 +422,12 @@ pub(crate) fn parse_markets_with_transient(
     let mut event_metadata = AHashMap::new();
 
     for market in markets {
-        if let Err(e) = validate_market_version(market.version.as_deref()) {
+        if let Err(e) = validate_data_market_version(market.version.as_deref()) {
             log::warn!("Skipping Gamma market {}: {e}", market.condition_id);
             continue;
         }
 
-        if is_transient_clob_token_ids(&market.clob_token_ids) {
+        if is_transient_market(market) {
             transient.push(market.condition_id.clone());
             continue;
         }
@@ -451,11 +451,22 @@ pub(crate) fn parse_markets_with_transient(
 
     if !transient.is_empty() {
         log::debug!(
-            "{} market(s) without usable clob_token_ids deferred as transient (CLOB hydration)",
+            "{} market(s) without usable outcome IDs deferred as transient (CLOB hydration)",
             transient.len(),
         );
     }
     (instruments, transient)
+}
+
+fn is_transient_market(market: &GammaMarket) -> bool {
+    if market.version.as_deref() == Some(MARKET_VERSION_V2) {
+        market
+            .position_ids
+            .as_ref()
+            .is_none_or(|ids| ids.is_empty() || ids.iter().any(String::is_empty))
+    } else {
+        is_transient_clob_token_ids(&market.clob_token_ids)
+    }
 }
 
 // Treats bare empty string, encoded empty array, and arrays with empty entries
@@ -546,6 +557,10 @@ impl PolymarketGammaHttpClient {
             clock: get_atomic_clock_realtime(),
             retry_manager: Arc::new(RetryManager::new(retry_config)),
         })
+    }
+
+    pub(crate) fn retry_manager(&self) -> &RetryManager<Error> {
+        &self.retry_manager
     }
 
     /// Fetches markets from the Gamma API with the given base params, paginating automatically.
@@ -723,7 +738,7 @@ impl PolymarketGammaHttpClient {
                         if parse_markets_to_instruments(&markets, ts_init).is_empty()
                             && (markets.is_empty()
                                 || markets.iter().any(|market| {
-                                    validate_market_version(market.version.as_deref()).is_ok()
+                                    validate_data_market_version(market.version.as_deref()).is_ok()
                                 }))
                         {
                             return Err(Error::exchange(
@@ -810,9 +825,9 @@ impl PolymarketGammaHttpClient {
         Ok(instruments)
     }
 
-    /// Fetches supported instruments and condition IDs awaiting CLOB token IDs.
+    /// Fetches supported instruments and condition IDs awaiting outcome IDs.
     ///
-    /// Only market protocol `v1` enters the transient list. Unlike
+    /// Market protocols `v1` and `v2` enter the transient list. Unlike
     /// [`Self::request_instruments_by_params`], this method errors when every returned
     /// market uses an unsupported protocol.
     ///
@@ -827,9 +842,9 @@ impl PolymarketGammaHttpClient {
         if !markets.is_empty()
             && markets
                 .iter()
-                .all(|market| validate_market_version(market.version.as_deref()).is_err())
+                .all(|market| validate_data_market_version(market.version.as_deref()).is_err())
         {
-            validate_market_version(markets[0].version.as_deref())?;
+            validate_data_market_version(markets[0].version.as_deref())?;
         }
 
         enrich_markets(&mut markets);
@@ -1110,9 +1125,16 @@ mod tests {
     use nautilus_model::instruments::Instrument;
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde_json::from_str;
 
     use super::*;
-    use crate::http::{parse::parse_gamma_market, query::GetGammaMarketsParamsBuilder};
+    use crate::{
+        http::{
+            clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
+            parse::parse_gamma_market, query::GetGammaMarketsParamsBuilder,
+        },
+        resolve::build_strict_resolved_market,
+    };
 
     async fn retry_client(
         router: Router,
@@ -1354,8 +1376,75 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "read-only mainnet market-data validation"]
+    #[tokio::test]
+    async fn test_live_market_protocol_data() {
+        let gamma = PolymarketGammaHttpClient::new(None, 20, RetryConfig::default()).unwrap();
+        let clob = PolymarketClobPublicClient::new(None, 20).unwrap();
+        let data = PolymarketDataApiHttpClient::new(None, 20).unwrap();
+
+        for (id, version) in [(5931597, "v2"), (1557558, "v1")] {
+            let markets = gamma
+                .request_markets_by_params(GetGammaMarketsParams {
+                    id: Some(vec![id]),
+                    closed: Some(true),
+                    max_markets: Some(1),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+
+            assert_eq!(markets.len(), 1);
+            assert_eq!(markets[0].id, id.to_string());
+            assert_eq!(markets[0].version.as_deref(), Some(version));
+
+            if version == "v2" {
+                assert_eq!(markets[0].resolution_status.as_deref(), Some("resolved"));
+                let resolved = build_strict_resolved_market(&markets[0]).expect("strict V2 payout");
+                assert_eq!(resolved.condition_id, markets[0].condition_id);
+                assert_eq!(resolved.winning_asset_id, resolved.asset_ids[0]);
+                assert_eq!(resolved.winning_outcome, resolved.outcomes[0]);
+                eprintln!("Validated V2 finality and exact binary payout for market {id}");
+            }
+
+            let definitions = parse_gamma_market(&markets[0]).unwrap();
+            let instruments = parse_markets_to_instruments(&markets, 1.into());
+            assert_eq!(instruments.len(), 2);
+            let details = clob.get_market(&markets[0].condition_id).await.unwrap();
+            assert_eq!(details.version.as_deref(), Some(version));
+            assert_eq!(details.condition_id, markets[0].condition_id);
+            assert_eq!(details.tokens.len(), definitions.len());
+
+            for definition in &definitions {
+                assert!(details.tokens.iter().any(|token| {
+                    definition.token_id.as_str() == token.token_id
+                        && definition.outcome.as_str() == token.outcome
+                }));
+            }
+
+            let trades = data
+                .request_trade_ticks(
+                    instruments[0].id(),
+                    &markets[0].condition_id,
+                    definitions[0].token_id.as_str(),
+                    definitions[0].price_precision,
+                    6,
+                    None,
+                    None,
+                    Some(1),
+                )
+                .await
+                .unwrap();
+            eprintln!(
+                "Validated {version} market {id}: 2 instruments, matching Gamma/CLOB identity, {} historical trades",
+                trades.len()
+            );
+        }
+    }
+
+    #[rstest]
     #[case(Some("v1"), true)]
-    #[case(Some("v2"), false)]
+    #[case(Some("v2"), true)]
     #[case(None, false)]
     #[case(Some("v3"), false)]
     #[case(Some("V1"), false)]
@@ -1367,8 +1456,10 @@ mod tests {
     ) {
         let mut market = load_fee_market(fixture);
         market.version = version.map(str::to_string);
+        market.position_ids = Some(from_str(&market.clob_token_ids).unwrap());
         if empty_ids {
             market.clob_token_ids = "[]".into();
+            market.position_ids = Some(Vec::new());
         }
 
         let condition_id = market.condition_id.clone();
@@ -1394,15 +1485,15 @@ mod tests {
 
                 assert_eq!(
                     binary.info.as_ref().unwrap().get_str("market_version"),
-                    Some("v1")
+                    version
                 );
             }
         } else if !supported {
-            let error = crate::http::parse::parse_gamma_market(&market).unwrap_err();
+            let error = parse_gamma_market(&market).unwrap_err();
             assert_eq!(
                 error.to_string(),
                 format!(
-                    "Unsupported Polymarket market protocol {}; only v1 CTF markets are supported",
+                    "Unsupported Polymarket data protocol {}; expected v1 or v2",
                     version.unwrap_or("missing"),
                 )
             );

@@ -1254,6 +1254,7 @@ mod tests {
         binary.outcome = Some(Ustr::from(trade.outcome.as_str()));
         binary.info = Some(
             serde_json::from_value(serde_json::json!({
+                "market_version": "v1",
                 "condition_id": trade.market.as_str(),
                 "token_id": trade.asset_id.as_str(),
             }))
@@ -1292,6 +1293,7 @@ mod tests {
         binary.outcome = Some(trade.outcome.inner());
         binary.info = Some(
             serde_json::from_value(serde_json::json!({
+                "market_version": "v1",
                 "condition_id": trade.market.as_str(),
                 "token_id": trade.asset_id.as_str(),
             }))

@@ -19,25 +19,27 @@ use rust_decimal::Decimal;
 
 use crate::{
     common::{
-        consts::POLYMARKET_VENUE,
-        parse::{decimal_from_json, validate_market_version},
+        consts::{MARKET_VERSION_V2, POLYMARKET_VENUE},
+        parse::{
+            decimal_from_json, validate_data_market_version, validate_market_version,
+            validate_outcome_ids, validate_outcomes,
+        },
     },
-    http::models::{ClobMarketResponse, GammaMarket},
+    http::{
+        models::{ClobMarketResponse, GammaMarket},
+        parse::parse_market_outcomes,
+    },
     providers::extract_condition_id,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct StrictResolvedMarket {
+    pub(crate) market_version: String,
     pub(crate) condition_id: String,
     pub(crate) asset_ids: Vec<String>,
+    pub(crate) outcomes: Vec<String>,
     pub(crate) winning_asset_id: String,
     pub(crate) winning_outcome: String,
-}
-
-fn parse_json_string_array(raw: &str) -> Option<Vec<String>> {
-    serde_json::from_str::<Vec<String>>(raw)
-        .ok()
-        .filter(|values| !values.is_empty() && values.iter().all(|value| !value.is_empty()))
 }
 
 fn parse_string_array_param(value: &serde_json::Value) -> Option<Vec<String>> {
@@ -102,25 +104,22 @@ fn strict_winner_index(prices: &[Decimal]) -> Option<usize> {
 }
 
 pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<StrictResolvedMarket> {
-    if let Err(e) = validate_market_version(market.version.as_deref()) {
-        log::warn!(
-            "Skipping Polymarket resolution for condition {}: {e}",
-            market.condition_id
-        );
-        return None;
-    }
+    let (asset_ids, outcomes) = match parse_market_outcomes(market) {
+        Ok(outcomes) => outcomes,
+        Err(e) => {
+            log::warn!(
+                "Ignoring invalid resolution metadata for {}: {e}",
+                market.condition_id
+            );
+            return None;
+        }
+    };
 
-    if market.closed != Some(true) {
-        return None;
-    }
-
-    let asset_ids = parse_json_string_array(&market.clob_token_ids)?;
-    if asset_ids.len() != 2 || asset_ids[0] == asset_ids[1] {
-        return None;
-    }
-
-    let outcomes = parse_json_string_array(&market.outcomes)?;
-    if outcomes.len() != 2 || outcomes[0] == outcomes[1] {
+    if market.version.as_deref() == Some(MARKET_VERSION_V2) {
+        if market.resolution_status.as_deref() != Some("resolved") {
+            return None;
+        }
+    } else if market.closed != Some(true) {
         return None;
     }
 
@@ -128,15 +127,66 @@ pub(crate) fn build_strict_resolved_market(market: &GammaMarket) -> Option<Stric
     if prices.len() != 2 {
         return None;
     }
+
+    if market.version.as_deref() == Some(MARKET_VERSION_V2)
+        && prices
+            .iter()
+            .any(|price| *price != Decimal::ZERO && *price != Decimal::ONE)
+    {
+        return None;
+    }
+
     let winner_idx = strict_winner_index(&prices)?;
     let winning_asset_id = asset_ids.get(winner_idx)?.clone();
     let winning_outcome = outcomes.get(winner_idx)?.clone();
 
     Some(StrictResolvedMarket {
+        market_version: market.version.clone()?,
         condition_id: market.condition_id.clone(),
         asset_ids,
+        outcomes,
         winning_asset_id,
         winning_outcome,
+    })
+}
+
+pub(crate) fn validate_ws_resolution(
+    market: &GammaMarket,
+    condition_id: &str,
+    asset_ids: &[String],
+    winning_asset_id: &str,
+    winning_outcome: &str,
+) -> Option<StrictResolvedMarket> {
+    let version = validate_data_market_version(market.version.as_deref()).ok()?;
+    if market.condition_id != condition_id {
+        return None;
+    }
+
+    let (selected_ids, outcomes) = parse_market_outcomes(market).ok()?;
+    let winner_index = selected_ids.iter().position(|id| id == winning_asset_id)?;
+    if outcomes[winner_index] != winning_outcome
+        || selected_ids.len() != asset_ids.len()
+        || !selected_ids.iter().all(|id| asset_ids.contains(id))
+    {
+        return None;
+    }
+
+    if version == MARKET_VERSION_V2
+        && !build_strict_resolved_market(market).is_some_and(|resolved| {
+            resolved.winning_asset_id == winning_asset_id
+                && resolved.winning_outcome == winning_outcome
+        })
+    {
+        return None;
+    }
+
+    Some(StrictResolvedMarket {
+        market_version: version.to_string(),
+        condition_id: market.condition_id.clone(),
+        asset_ids: selected_ids,
+        outcomes,
+        winning_asset_id: winning_asset_id.to_string(),
+        winning_outcome: winning_outcome.to_string(),
     })
 }
 
@@ -155,9 +205,18 @@ pub(crate) fn build_resolved_market_from_clob_market(
         return None;
     }
 
-    if market.tokens.len() != 2 {
-        return None;
-    }
+    let asset_ids: Vec<_> = market
+        .tokens
+        .iter()
+        .map(|token| token.token_id.clone())
+        .collect();
+    let outcomes: Vec<_> = market
+        .tokens
+        .iter()
+        .map(|token| token.outcome.clone())
+        .collect();
+    validate_outcome_ids(&asset_ids).ok()?;
+    validate_outcomes(&outcomes).ok()?;
 
     let mut winner_idx: Option<usize> = None;
 
@@ -177,12 +236,10 @@ pub(crate) fn build_resolved_market_from_clob_market(
     }
 
     Some(StrictResolvedMarket {
+        market_version: market.version.clone()?,
         condition_id: market.condition_id.clone(),
-        asset_ids: market
-            .tokens
-            .iter()
-            .map(|token| token.token_id.clone())
-            .collect(),
+        asset_ids,
+        outcomes,
         winning_asset_id: winner.token_id.clone(),
         winning_outcome: winner.outcome.clone(),
     })
@@ -264,6 +321,7 @@ mod tests {
     use std::path::PathBuf;
 
     use rstest::rstest;
+    use serde_json::to_string;
 
     use super::*;
 
@@ -334,6 +392,73 @@ mod tests {
     }
 
     #[rstest]
+    #[case::duplicate_id(0)]
+    #[case::nondecimal_id(1)]
+    #[case::empty_loser(2)]
+    #[case::duplicate_outcome(3)]
+    fn test_clob_resolution_rejects_invalid_outcome_mapping(#[case] invalid: usize) {
+        let mut market = load_clob_market_fixture("clob_market_closed_binary_accepting_false.json");
+        assert!(build_resolved_market_from_clob_market(&market).is_some());
+
+        match invalid {
+            0 => market.tokens[1].token_id = market.tokens[0].token_id.clone(),
+            1 => market.tokens[0].token_id = "not-decimal".into(),
+            2 => market.tokens[0].outcome.clear(),
+            3 => market.tokens[1].outcome = market.tokens[0].outcome.clone(),
+            _ => unreachable!(),
+        }
+
+        assert_eq!(build_resolved_market_from_clob_market(&market), None);
+    }
+
+    #[rstest]
+    #[case(None, false)]
+    #[case(Some("inactive"), false)]
+    #[case(Some("active"), false)]
+    #[case(Some("resolved"), true)]
+    #[case(Some("unknown"), false)]
+    fn test_v2_resolution_requires_final_status_and_selected_positions(
+        #[case] status: Option<&str>,
+        #[case] resolved: bool,
+        #[values(false, true)] closed: bool,
+    ) {
+        let mut market = load_gamma_market_fixture("gamma_market_protocol_v2.json");
+        market.position_ids = Some(vec!["101".into(), "202".into()]);
+        market.outcome_prices = Some(to_string(&["0", "1"]).unwrap());
+        market.resolution_status = status.map(str::to_string);
+        market.closed = Some(closed);
+        let result = build_strict_resolved_market(&market);
+
+        if resolved {
+            assert_eq!(
+                result,
+                Some(StrictResolvedMarket {
+                    market_version: "v2".into(),
+                    condition_id: market.condition_id,
+                    asset_ids: vec!["101".into(), "202".into()],
+                    outcomes: vec!["Cayirova".into(), "Bursaspor".into()],
+                    winning_asset_id: "202".into(),
+                    winning_outcome: "Bursaspor".into(),
+                })
+            );
+        } else {
+            assert_eq!(result, None);
+        }
+    }
+
+    #[rstest]
+    #[case(vec!["1", "1"])]
+    #[case(vec!["0", "0"])]
+    #[case(vec!["0.999", "0.001"])]
+    #[case(vec!["1"])]
+    fn test_v2_resolution_requires_binary_payout(#[case] prices: Vec<&str>) {
+        let mut market = load_gamma_market_fixture("gamma_market_protocol_v2.json");
+        market.resolution_status = Some("resolved".into());
+        market.outcome_prices = Some(to_string(&prices).unwrap());
+        assert_eq!(build_strict_resolved_market(&market), None);
+    }
+
+    #[rstest]
     #[case(
         "[0.9989999999999999999999999999,0.0010000000000000000000000001]",
         None
@@ -352,19 +477,19 @@ mod tests {
     fn build_strict_resolved_market_requires_closed_and_binary_resolution_prices() {
         let good = make_gamma_market_with_outcome_prices(
             "0xCOND",
-            "[\"0xYES\",\"0xNO\"]",
+            "[\"101\",\"202\"]",
             Some("[\"1\",\"0\"]"),
             Some(true),
             Some(false),
         );
         let resolved = build_strict_resolved_market(&good).expect("expected resolved market");
         assert_eq!(resolved.condition_id, "0xCOND");
-        assert_eq!(resolved.winning_asset_id, "0xYES");
+        assert_eq!(resolved.winning_asset_id, "101");
         assert_eq!(resolved.winning_outcome, "Yes");
 
         let ambiguous = make_gamma_market_with_outcome_prices(
             "0xCOND",
-            "[\"0xYES\",\"0xNO\"]",
+            "[\"101\",\"202\"]",
             Some("[\"0.7\",\"0.3\"]"),
             Some(true),
             Some(false),
@@ -373,7 +498,7 @@ mod tests {
 
         let malformed_token_count = make_gamma_market_with_outcome_prices(
             "0xCOND",
-            "[\"0xYES\",\"0xNO\",\"0xMAYBE\"]",
+            "[\"101\",\"202\",\"303\"]",
             Some("[\"1\",\"0\",\"0\"]"),
             Some(true),
             Some(false),
@@ -382,7 +507,7 @@ mod tests {
 
         let mut malformed_outcome_count = make_gamma_market_with_outcome_prices(
             "0xCOND",
-            "[\"0xYES\",\"0xNO\"]",
+            "[\"101\",\"202\"]",
             Some("[\"1\",\"0\"]"),
             Some(true),
             Some(false),
@@ -392,18 +517,18 @@ mod tests {
 
         let accepting_true = make_gamma_market_with_outcome_prices(
             "0xCOND",
-            "[\"0xYES\",\"0xNO\"]",
+            "[\"101\",\"202\"]",
             Some("[\"1\",\"0\"]"),
             Some(true),
             Some(true),
         );
         let resolved =
             build_strict_resolved_market(&accepting_true).expect("expected resolved market");
-        assert_eq!(resolved.winning_asset_id, "0xYES");
+        assert_eq!(resolved.winning_asset_id, "101");
 
         let not_final = make_gamma_market_with_outcome_prices(
             "0xCOND",
-            "[\"0xYES\",\"0xNO\"]",
+            "[\"101\",\"202\"]",
             Some("[\"1\",\"0\"]"),
             Some(false),
             Some(true),
@@ -412,11 +537,11 @@ mod tests {
     }
 
     #[rstest]
-    #[case::empty_asset("[\"\",\"0xNO\"]", "[\"1\",\"0\"]")]
-    #[case::duplicate_asset("[\"0xYES\",\"0xYES\"]", "[\"1\",\"0\"]")]
-    #[case::above_one("[\"0xYES\",\"0xNO\"]", "[\"2\",\"0\"]")]
-    #[case::below_zero("[\"0xYES\",\"0xNO\"]", "[\"1\",\"-0.25\"]")]
-    #[case::not_a_number("[\"0xYES\",\"0xNO\"]", "[\"1\",\"NaN\"]")]
+    #[case::empty_asset("[\"\",\"202\"]", "[\"1\",\"0\"]")]
+    #[case::duplicate_asset("[\"101\",\"101\"]", "[\"1\",\"0\"]")]
+    #[case::above_one("[\"101\",\"202\"]", "[\"2\",\"0\"]")]
+    #[case::below_zero("[\"101\",\"202\"]", "[\"1\",\"-0.25\"]")]
+    #[case::not_a_number("[\"101\",\"202\"]", "[\"1\",\"NaN\"]")]
     fn build_strict_resolved_market_rejects_invalid_assets_and_prices(
         #[case] asset_ids: &str,
         #[case] prices: &str,

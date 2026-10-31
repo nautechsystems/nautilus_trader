@@ -52,7 +52,9 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, USDC_DECIMALS},
+        consts::{
+            DUST_POSITION_THRESHOLD, DUST_SNAP_THRESHOLD_DEC, MARKET_VERSION_KEY, USDC_DECIMALS,
+        },
         enums::{
             PolymarketLiquiditySide, PolymarketOrderSide, PolymarketOutcome, PolymarketSignerType,
             PolymarketTradeStatus,
@@ -251,6 +253,12 @@ pub(crate) fn validate_instrument_binding(
     let InstrumentAny::BinaryOption(binary) = instrument else {
         anyhow::bail!("expected Polymarket BinaryOption instrument, found {instrument:?}");
     };
+
+    validate_market_version(
+        instrument
+            .info()
+            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+    )?;
     let instrument_condition = binary
         .info
         .as_ref()
@@ -1268,14 +1276,23 @@ fn build_reconciliation_position_report(
         return Ok(None);
     }
 
-    if !position_instrument_loaded(&position.asset, instrument_id, instruments) {
-        anyhow::bail!(unmapped_in_scope_message(
-            "position",
-            instrument_id,
-            None,
-            collection_load_ids,
-        ));
-    }
+    let instrument = instruments
+        .get_cloned(&Ustr::from(position.asset.as_str()))
+        .filter(|instrument| polymarket_instrument_ids_equivalent(instrument.id(), instrument_id))
+        .ok_or_else(|| {
+            anyhow::anyhow!(unmapped_in_scope_message(
+                "position",
+                instrument_id,
+                None,
+                collection_load_ids,
+            ))
+        })?;
+
+    validate_market_version(
+        instrument
+            .info()
+            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+    )?;
 
     Ok(build_position_report_from_reportable_position(
         position, account_id, ts_init,
@@ -1485,6 +1502,12 @@ pub(crate) async fn filter_unsupported_orders(
     instrument_filter: Option<InstrumentId>,
     load_ids: Option<&[InstrumentId]>,
 ) -> anyhow::Result<()> {
+    orders.retain(|order| {
+        instruments
+            .get_cloned(&order.asset_id)
+            .is_none_or(|instrument| execution_protocol_supported(&instrument))
+    });
+
     let requires_lookup = |order: &PolymarketOpenOrder| {
         let instrument_id =
             instrument_id_from_market_token(order.market.as_str(), order.asset_id.as_str());
@@ -1533,6 +1556,12 @@ pub(crate) async fn filter_unsupported_positions(
 ) -> anyhow::Result<()> {
     let collection_load_ids = instrument_filter.is_none().then_some(load_ids).flatten();
 
+    positions.retain(|position| {
+        instruments
+            .get_cloned(&Ustr::from(position.asset.as_str()))
+            .is_none_or(|instrument| execution_protocol_supported(&instrument))
+    });
+
     let requires_lookup = |position: &DataApiPosition| {
         let instrument_id =
             instrument_id_from_market_token(&position.condition_id, &position.asset);
@@ -1564,6 +1593,23 @@ pub(crate) async fn filter_unsupported_positions(
     });
 
     Ok(())
+}
+
+fn execution_protocol_supported(instrument: &InstrumentAny) -> bool {
+    match validate_market_version(
+        instrument
+            .info()
+            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+    ) {
+        Ok(()) => true,
+        Err(e) => {
+            log::warn!(
+                "Skipping unsupported cached Polymarket instrument {}: {e}",
+                instrument.id()
+            );
+            false
+        }
+    }
 }
 
 async fn unsupported_market_conditions<'a>(
@@ -2258,18 +2304,6 @@ fn unmapped_in_scope_message(
     }
 }
 
-fn position_instrument_loaded(
-    token_id: &str,
-    instrument_id: InstrumentId,
-    instruments: &AtomicMap<Ustr, InstrumentAny>,
-) -> bool {
-    instruments
-        .get_cloned(&Ustr::from(token_id))
-        .is_some_and(|instrument| {
-            polymarket_instrument_ids_equivalent(instrument.id(), instrument_id)
-        })
-}
-
 fn position_is_dust(position: &DataApiPosition) -> bool {
     let is_dust = position.size < DUST_POSITION_THRESHOLD;
 
@@ -2486,6 +2520,7 @@ pub(crate) fn normalize_terminal_order_report_quantity(
 
 #[cfg(test)]
 mod tests {
+    use indexmap::IndexMap;
     use nautilus_core::Params;
     use nautilus_model::{
         data::InstrumentClose,
@@ -2562,6 +2597,43 @@ mod tests {
     fn confirmed_taker_trade() -> PolymarketTradeReport {
         serde_json::from_str(include_str!("../../test_data/http_trade_report.json"))
             .expect("valid trade fixture")
+    }
+
+    #[rstest]
+    #[case(Some("v2"))]
+    #[case(None)]
+    #[case(Some("unknown"))]
+    fn test_cached_protocol_refuses_execution_evidence(#[case] version: Option<&str>) {
+        let InstrumentAny::BinaryOption(mut binary) = test_instrument() else {
+            unreachable!()
+        };
+
+        let mut info = IndexMap::clone(binary.info.as_ref().unwrap());
+        info.insert(MARKET_VERSION_KEY.into(), serde_json::json!(version));
+        binary.info = Some(Params::new(info));
+        let instrument = InstrumentAny::BinaryOption(binary);
+        let error =
+            validate_instrument_binding(&instrument, TEST_CONDITION_ID, PolymarketOutcome::up())
+                .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("Unsupported Polymarket market protocol")
+        );
+        let instruments = AtomicMap::new();
+        instruments.insert(Ustr::from(TEST_TOKEN_ID), instrument);
+        let ctx = test_fill_context();
+        let trade = confirmed_taker_trade();
+        let result = build_fill_reports_from_trades(
+            &[trade],
+            &ctx,
+            &instruments,
+            FillReportScope::new(None, None),
+            UnixNanos::from(1),
+            None,
+            None,
+        );
+        assert!(result.is_err());
     }
 
     #[rstest]

@@ -15,7 +15,7 @@
 
 //! Parsing utilities for the Polymarket adapter.
 
-use alloy_primitives::hex::Buffer;
+use alloy_primitives::{U256, hex::Buffer};
 pub(crate) use nautilus_core::serialization::decimal::parse as parse_decimal_exact;
 pub use nautilus_core::serialization::{
     decimal::{
@@ -29,13 +29,56 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 use serde_json::{Number, value::RawValue};
 
-use crate::common::{consts::SUPPORTED_MARKET_VERSION, enums::PolymarketOrderSide};
+use crate::common::{
+    consts::{MARKET_VERSION_V2, SUPPORTED_MARKET_VERSION},
+    enums::PolymarketOrderSide,
+};
 
 pub(crate) fn validate_market_version(version: Option<&str>) -> anyhow::Result<()> {
     anyhow::ensure!(
         version == Some(SUPPORTED_MARKET_VERSION),
         "Unsupported Polymarket market protocol {}; only {SUPPORTED_MARKET_VERSION} CTF markets are supported",
         version.unwrap_or("missing"),
+    );
+    Ok(())
+}
+
+pub(crate) fn validate_data_market_version(version: Option<&str>) -> anyhow::Result<&str> {
+    match version {
+        Some(version @ (SUPPORTED_MARKET_VERSION | MARKET_VERSION_V2)) => Ok(version),
+        _ => anyhow::bail!(
+            "Unsupported Polymarket data protocol {}; expected v1 or v2",
+            version.unwrap_or("missing"),
+        ),
+    }
+}
+
+pub(crate) fn validate_outcome_ids(ids: &[String]) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        ids.len() == 2,
+        "Expected 2 asset IDs, received {}",
+        ids.len()
+    );
+    let mut parsed = Vec::with_capacity(2);
+
+    for id in ids {
+        anyhow::ensure!(
+            !id.is_empty() && id.bytes().all(|byte| byte.is_ascii_digit()),
+            "Invalid Polymarket asset ID '{id}': expected decimal uint256",
+        );
+        parsed.push(U256::from_str_radix(id, 10)?);
+    }
+
+    anyhow::ensure!(parsed[0] != parsed[1], "Duplicate Polymarket asset IDs");
+    Ok(())
+}
+
+pub(crate) fn validate_outcomes(outcomes: &[String]) -> anyhow::Result<()> {
+    anyhow::ensure!(
+        outcomes.len() == 2
+            && outcomes.iter().all(|outcome| !outcome.trim().is_empty())
+            && outcomes[0] != outcomes[1],
+        "Expected 2 distinct nonempty Polymarket outcomes",
     );
     Ok(())
 }

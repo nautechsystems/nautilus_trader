@@ -24,10 +24,17 @@ use nautilus_model::{
 };
 use parking_lot::{Mutex, RwLock};
 
-use crate::{common::consts::POLYMARKET_VENUE, providers::extract_condition_id};
+use crate::{
+    common::{
+        consts::{MARKET_VERSION_KEY, POLYMARKET_VENUE},
+        parse::validate_data_market_version,
+    },
+    providers::extract_condition_id,
+};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct TrackedInstrument {
+    pub(crate) market_version: String,
     pub(crate) instrument_id: InstrumentId,
     pub(crate) token_id: String,
     pub(crate) price_precision: u8,
@@ -95,11 +102,18 @@ fn binary_option_context(
         return None;
     }
 
+    let market_version = validate_data_market_version(
+        instrument
+            .info()
+            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+    )
+    .ok()?;
     let expiration_ns = instrument.expiration_ns()?;
     let (_, _, condition_id) = instrument_market_context(instrument);
     let condition_id = condition_id.or_else(|| extract_condition_id(&instrument.id()).ok())?;
     let token_id = instrument.raw_symbol().as_str().to_string();
     let tracked = TrackedInstrument {
+        market_version: market_version.into(),
         instrument_id: instrument.id(),
         token_id: token_id.clone(),
         price_precision: instrument.price_precision(),
@@ -464,6 +478,7 @@ mod tests {
                 );
             }
 
+            info.insert("market_version".into(), serde_json::json!("v1"));
             if let Some(condition_id) = seed_ctx.condition_id {
                 info.insert(
                     "condition_id".to_string(),
@@ -894,6 +909,7 @@ mod tests {
         tracked.insert(
             "0xYES".to_string(),
             TrackedInstrument {
+                market_version: "v1".into(),
                 instrument_id: InstrumentId::from("0xCOND-A-0xYES.POLYMARKET"),
                 token_id: "0xYES".to_string(),
                 price_precision: 3,
@@ -904,6 +920,7 @@ mod tests {
         tracked.insert(
             "0xNO".to_string(),
             TrackedInstrument {
+                market_version: "v1".into(),
                 instrument_id: InstrumentId::from("0xCOND-A-0xNO.POLYMARKET"),
                 token_id: "0xNO".to_string(),
                 price_precision: 3,
@@ -953,6 +970,7 @@ mod tests {
                 tracked: ahash::AHashMap::from_iter([(
                     "0xYES".to_string(),
                     TrackedInstrument {
+                        market_version: "v1".into(),
                         instrument_id: InstrumentId::from(
                             "0xCOND-MISSING-EXPIRATION-0xYES.POLYMARKET",
                         ),
@@ -993,6 +1011,7 @@ mod tests {
                 tracked: ahash::AHashMap::from_iter([(
                     "0xYES".to_string(),
                     TrackedInstrument {
+                        market_version: "v1".into(),
                         instrument_id: InstrumentId::from("0xCOND-PAUSED-0xYES.POLYMARKET"),
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
@@ -1011,6 +1030,7 @@ mod tests {
                 tracked: ahash::AHashMap::from_iter([(
                     "0xYES".to_string(),
                     TrackedInstrument {
+                        market_version: "v1".into(),
                         instrument_id: InstrumentId::from("0xCOND-ACTIVE-0xYES.POLYMARKET"),
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
@@ -1043,6 +1063,7 @@ mod tests {
                 tracked: ahash::AHashMap::from_iter([(
                     "0xYES".to_string(),
                     TrackedInstrument {
+                        market_version: "v1".into(),
                         instrument_id: InstrumentId::from("0xCOND-ACTIVE-0xYES.POLYMARKET"),
                         token_id: "0xYES".to_string(),
                         price_precision: 3,

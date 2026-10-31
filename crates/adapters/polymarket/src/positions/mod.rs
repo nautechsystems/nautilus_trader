@@ -485,7 +485,7 @@ mod tests {
             );
             let (instruments, transient) =
                 crate::http::gamma::parse_markets_with_transient(&markets, 1.into());
-            assert_eq!(instruments.len(), if supported { 2 } else { 0 });
+            assert_eq!(instruments.len(), 2);
             assert_eq!(transient, Vec::<String>::new());
             let result = client.market_neg_risk(&market.condition_id).await;
 

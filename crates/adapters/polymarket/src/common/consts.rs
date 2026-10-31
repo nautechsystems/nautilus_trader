@@ -40,6 +40,7 @@ pub const PUSD: &str = "pUSD";
 
 pub(crate) const SUPPORTED_MARKET_VERSION: &str = "v1";
 pub(crate) const MARKET_VERSION_KEY: &str = "market_version";
+pub(crate) const MARKET_VERSION_V2: &str = "v2";
 
 /// Canonical decimal precision for Polymarket prices.
 pub const POLYMARKET_PRICE_PRECISION: u8 = 4;

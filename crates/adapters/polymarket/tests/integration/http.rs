@@ -74,7 +74,7 @@ use nautilus_polymarket::{
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
-use serde_json::{Value, json};
+use serde_json::{Value, from_str, json};
 
 // base64url of b"test_secret_key_32bytes_pad12345"
 const TEST_API_SECRET_B64: &str = "dGVzdF9zZWNyZXRfa2V5XzMyYnl0ZXNfcGFkMTIzNDU=";
@@ -3609,10 +3609,43 @@ async fn test_get_public_search() {
 
 #[rstest]
 #[tokio::test]
-async fn test_request_instruments_by_event_params() {
+async fn test_request_instruments_by_event_params(#[values(false, true)] mixed_protocols: bool) {
     let state = TestServerState::default();
 
-    let event = load_json("gamma_event.json")[0].clone();
+    let mut event = load_json("gamma_event.json")[0].clone();
+    let mut expected = Vec::new();
+
+    for (index, market) in event["markets"]
+        .as_array_mut()
+        .unwrap()
+        .iter_mut()
+        .enumerate()
+    {
+        let ids: Vec<String> = from_str(market["clobTokenIds"].as_str().unwrap()).unwrap();
+        let outcomes: Vec<String> = from_str(market["outcomes"].as_str().unwrap()).unwrap();
+
+        let version = if mixed_protocols && index == 0 {
+            "v2"
+        } else {
+            "v1"
+        };
+
+        market["version"] = json!(version);
+        if version == "v2" {
+            market["positionIds"] = json!(ids);
+            market["clobTokenIds"] = json!("[\"101\",\"202\"]");
+        }
+
+        for (id, outcome) in ids.into_iter().zip(outcomes) {
+            expected.push((
+                market["conditionId"].as_str().unwrap().to_string(),
+                id,
+                outcome,
+                version,
+            ));
+        }
+    }
+
     *state.gamma_events_response.lock().await = Some(json!([event]));
 
     let addr = start_mock_server(state.clone()).await;
@@ -3627,6 +3660,27 @@ async fn test_request_instruments_by_event_params() {
         .unwrap();
 
     assert_eq!(instruments.len(), 4);
+
+    for (instrument, (condition, id, outcome, version)) in instruments.iter().zip(&expected) {
+        assert_eq!(
+            instrument.id().to_string(),
+            format!("{condition}-{id}.POLYMARKET")
+        );
+        assert_eq!(instrument.raw_symbol().as_str(), id);
+        let info = instrument.info().unwrap();
+        assert_eq!(info.get_str("token_id"), Some(id.as_str()));
+        assert_eq!(info.get_str("market_version"), Some(*version));
+
+        let InstrumentAny::BinaryOption(binary) = instrument else {
+            panic!("expected binary option")
+        };
+
+        assert_eq!(
+            binary.outcome.as_ref().map(|value| value.as_str()),
+            Some(outcome.as_str())
+        );
+    }
+
     let shared_event = instruments[0].info().unwrap().get("gamma_event").unwrap();
     assert_eq!(
         serde_json::from_str::<Value>(shared_event.as_str().unwrap()).unwrap(),
@@ -3904,7 +3958,8 @@ async fn test_load_ids_preserves_caller_filters_in_each_chunk() {
 #[tokio::test]
 async fn test_fetch_gamma_markets_paginated_uses_100_per_page() {
     let state = TestServerState::default();
-    let make_page = |prefix: char, n: usize| -> Value {
+
+    let make_page = |prefix: u8, n: usize| -> Value {
         let markets: Vec<Value> = (0..n)
             .map(|i| {
                 gamma_market_with_slug(
@@ -3921,9 +3976,9 @@ async fn test_fetch_gamma_markets_paginated_uses_100_per_page() {
     };
     {
         let mut pages = state.gamma_markets_pages.lock().await;
-        pages.push_back(json!({"markets": make_page('a', 100), "next_cursor": "cursor-1"}));
-        pages.push_back(json!({"markets": make_page('b', 100), "next_cursor": "cursor-2"}));
-        pages.push_back(json!({"markets": make_page('c', 37)}));
+        pages.push_back(json!({"markets": make_page(1, 100), "next_cursor": "cursor-1"}));
+        pages.push_back(json!({"markets": make_page(2, 100), "next_cursor": "cursor-2"}));
+        pages.push_back(json!({"markets": make_page(3, 37)}));
     }
 
     let addr = start_mock_server(state.clone()).await;

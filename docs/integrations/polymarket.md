@@ -12,11 +12,15 @@ execution, signing, and WebSocket operations have the same behavior from Rust an
 The adapter handles order preparation and signing for several wallet configurations. This guide
 covers market data, trade execution, session key administration, and Deposit Wallet position operations.
 
-The adapter supports Conditional Tokens Framework (CTF) markets with market protocol `v1`. This is
-separate from CLOB service version `2` and the `CTFExchangeV2` order format. Markets with protocol `v2`,
-a missing version, or an unknown version are unsupported, even with populated `clobTokenIds`.
-Instrument providers skip these markets; the historical data loader rejects them. Unsupported markets
-are not retried while [waiting for CLOB metadata](#markets-awaiting-clob-metadata). See the
+The adapter supports market data and resolution for Conditional Tokens Framework (CTF) markets with
+protocol `v1` and Protocol V2 markets with protocol `v2`. Execution, account reconciliation, and position
+operations require `v1`. Market protocol is separate from CLOB service version `2` and the
+`CTFExchangeV2` order format.
+
+The market's explicit `version` selects `clobTokenIds` (JSON text) for `v1` or `positionIds` (an array of
+decimal strings) for `v2`, even when both fields exist. Instrument IDs use
+`<condition_id>-<selected_id>.POLYMARKET`. Missing or unknown versions are unsupported: providers skip
+them, loaders reject them, and auto-load does not retry them while [waiting for CLOB metadata](#markets-awaiting-clob-metadata). See the
 [Protocol V2 migration guide](https://docs.polymarket.com/migrate/polymarket-v2/api-integrations).
 
 ## Installation
@@ -685,7 +689,7 @@ Instrument loading also has two common controls:
 | Authentication rejection       | CLOB key, secret, passphrase, and signer   | Use the three credentials created for the signing key.                                                   |
 | Signature rejection            | Wallet type and funder                     | Match `signature_type` to the funding wallet; use the signer address for EOA mode.                       |
 | Balance or allowance rejection | Funding wallet and approvals               | Check pUSD, outcome-token balances for sells, and the required spender approvals.                        |
-| Empty discovery                | Instrument IDs, slugs, and market protocol | Check that IDs and slugs identify existing protocol `v1` CTF markets.                                    |
+| Empty discovery                | Instrument IDs, slugs, and market protocol | Check that IDs and slugs identify existing protocol `v1` or `v2` markets.                                |
 | Unmapped reconciliation record | Execution provider scope                   | Set `load_ids` for the instruments this node should reconcile and share the config with the data client. |
 
 See Polymarket's [error reference](https://docs.polymarket.com/resources/error-codes) for venue errors.
@@ -1464,7 +1468,8 @@ Rust callers can borrow the string with `info.get_str("gamma_event")` and iterat
 Indexing, `&Params` iteration, and the read-only `IndexMap` interface materialize and cache owned values.
 Python values and serialized contents stay the same; deserialization does not retain allocation sharing.
 Normalized metadata includes `market_version`, `token_id`, `condition_id`, `market_id`, and `event_id`
-when known. `market_version` records the accepted market protocol, `v1`.
+when known. `market_version` records the accepted market protocol, `v1` or `v2`. `token_id` contains the
+selected CTF token ID or V2 position ID used for books, historical trades, and subscriptions.
 
 These strings contain the received JSON objects before enrichment. Tick-size updates preserve them. Use the
 instrument's typed price increment for the current tick size. The adapter does not fetch additional related
@@ -1483,8 +1488,8 @@ market = json.loads(instrument.info["gamma_market"], parse_float=Decimal)
 The historical `PolymarketDataLoader` retains these JSON strings under `resolution_metadata["gamma_market"]`
 instead of `instrument.info`. For event loading, it also retains `resolution_metadata["gamma_event"]`. Fetched
 responses can contain terminal outcomes unknown during the historical period, so the loader keeps them in
-resolution metadata. Decode these strings with `json.loads` as above. They precede CLOB enrichment, so the raw
-token IDs and outcome labels can differ from the constructed instrument.
+resolution metadata. Decode these strings with `json.loads` as above. The instrument uses the selected
+Gamma outcome ID and label; CLOB metadata must match that pair.
 
 ## Numeric precision
 
@@ -1870,7 +1875,8 @@ Cached orders do not offset unmapped, unowned maker, or untimestamped trades.
 
 Unsupported-market open orders and holdings are skipped, but confirmed trades still participate in
 these completeness checks. With no `load_ids` scope, an unmapped trade on an unsupported market makes
-the bounded window incomplete.
+the bounded window incomplete. Confirmed trades mapped to cached instruments without explicit `v1`
+metadata fail report construction before these completeness checks.
 
 For an incomplete window, the adapter logs a warning listing each failing condition before the
 engine logs its incomplete-report warning. It emits no additional report for a cached closed order, so
@@ -2580,14 +2586,14 @@ universes match.
 
 #### Markets awaiting CLOB metadata
 
-Gamma can report a newly listed market before usable `clob_token_ids` are available, or omit it from a
-lookup. Auto-load retries these Gamma results and fetch failures with bounded exponential backoff plus
-jitter. It does not query CLOB `GET /markets/{cid}` to classify hydration.
+Gamma can report a newly listed market before usable outcome IDs are available, or omit it from a
+lookup. The selected IDs are `clobTokenIds` for `v1` and `positionIds` for `v2`. Auto-load retries these
+Gamma results and fetch failures with bounded exponential backoff plus jitter. It does not query CLOB
+`GET /markets/{cid}` to classify hydration.
 
-Only market protocol `v1` can enter this retry path. A market with protocol `v2`, a missing version,
-or an unknown version is skipped with a warning. Once identified as unsupported, it receives no further
-retry or closed-market probe. An initial closed-market probe can discover an unsupported market that
-the default Gamma lookup omits.
+Both `v1` and `v2` can enter this retry path. A market with a missing or unknown version is skipped
+with a warning. Once identified as unsupported, it receives no further retry or closed-market probe.
+An initial closed-market probe can discover an unsupported market that the default Gamma lookup omits.
 
 Tune the cadence with `auto_load_max_retries` (default 12), `auto_load_retry_delay_initial_secs` (default
 5.0), and `auto_load_retry_delay_max_secs` (default 15.0). The default retry delays total approximately three
@@ -2642,6 +2648,13 @@ The shipped defaults use polling, without a resolution-only WebSocket subscripti
 polling does not enable WebSocket resolution: that path requires `subscribe_new_markets=true`.
 With both disabled, later recovery requires a manual request.
 
+WebSocket resolution for `v2` and pending instruments requires Gamma verification. Missing or
+nonfinal metadata and retryable request failures use the configured HTTP retry policy. The pending
+resolution blocks ordinary data for that condition until verification completes or exhausts retries.
+If verification still fails, the client keeps the watch without emitting a close. Recovery then depends
+on another resolution event, the expiration-based poll window, or a manual request. Early resolution
+can therefore remain unapplied until the scheduled end if retries exhaust and no further event arrives.
+
 These WebSocket ownership rules apply to the data subscription's token, not the independently
 configured venue-wide discovery feed. Releasing the token does not disconnect that feed. Valid
 resolutions received there still use the shared apply path for existing data and position owners.
@@ -2650,10 +2663,14 @@ resolutions received there still use the shared apply path for existing data and
 
 Resolution uses strict winner inference:
 
-- Gamma must return a closed binary market with exactly two token IDs, two outcomes, and a binary
-  `outcomePrices` shape.
-- If Gamma does not provide a strict result for the condition, the client falls back to CLOB
-  `GET /markets/{condition_id}` and uses `tokens[].winner`.
+- For `v1`, Gamma must return a closed binary market with two distinct token IDs, two distinct outcomes,
+  and binary `outcomePrices`. UMA status alone does not establish a winner.
+- For `v2`, Gamma must report `resolutionStatus="resolved"`, two valid selected position IDs, and exact
+  binary payouts in `outcomePrices`. `inactive` and `active` cannot resolve a market. V2 WebSocket
+  notifications also require matching Gamma status, payout, asset, and winner evidence.
+- If Gamma does not provide a strict CTF result, the client can fall back to CLOB
+  `GET /markets/{condition_id}` and use `tokens[].winner`. CLOB-only evidence cannot resolve a V2 market
+  or override missing, unknown, or conflicting protocol metadata.
 - Non-binary, ambiguous, malformed, or still-unresolved payloads are skipped. They remain on the
   watchlist until the poll window times out or a manual request resolves them.
 
@@ -2679,7 +2696,8 @@ users can redeem winning tokens with [Position operations](#position-operations)
 #### Closure and subscription release
 
 Gamma's positive `closed=true` evidence stops normal quote, trade, and book-delta streams for both outcome
-siblings, even when the payload cannot produce usable instruments. Closure alone does not establish a winner
+siblings, even when the payload cannot produce usable instruments. For `v2`, `resolutionStatus="resolved"`
+also stops these streams when `closed=false`. Closure alone does not establish a winner
 or emit settlement events. Existing resolution owners remain available for polling or manual recovery. An
 enabled, unpaused resolution WebSocket may remain until resolution or timeout. Later live subscriptions cannot
 reopen the closed condition.
@@ -3056,8 +3074,11 @@ only `has_proxy_url`. Configuration `Debug` output and transport diagnostics red
 
 ### Instrument provider options
 
-Pass the same `PolymarketInstrumentProviderConfig` as `instrument_config` on the data client
-config and the execution client config.
+Use the same `PolymarketInstrumentProviderConfig` as `instrument_config` on both clients when they
+operate only on `v1` markets. To observe `v2` data alongside execution, use separate provider configs
+and set execution's `load_ids` to explicit `v1` instruments. Separate provider configs alone do not
+scope reconciliation: both clients can populate the shared cache. An unscoped execution client
+rejects an in-scope V2 fill; V2 orders and positions are skipped with a warning.
 
 Each `load_ids` entry has the form `<condition_id>-<token_id>.POLYMARKET`: the condition ID is a
 `0x`-prefixed 32-byte hex value, and the token ID is a decimal unsigned 256-bit integer. A raw token ID,
@@ -3072,6 +3093,9 @@ For unmapped open orders and positions inside either scope, the adapter checks t
 CLOB after applying account ownership, instrument filters, and position dust and resolved-balance
 exclusions. It skips rows for unsupported markets with a warning. An unmapped market protocol `v1` row
 or a failed version lookup still fails the report request.
+
+Cached open orders and positions without explicit `v1` metadata are skipped with a warning. Confirmed
+trades on those instruments fail fill-report generation. Keep execution discovery scoped to `v1` markets.
 
 `event_slugs`, `market_slugs`, `series_ids`, `filters`, and `event_slug_builder` discover instruments. They do
 not classify unmapped records. A node that scopes discovery with those fields and still wants scoped
@@ -3248,9 +3272,11 @@ is retained as follows:
 | Closed state               | -                      | `closed`                             |
 | Closure time               | -                      | `closedTime`                         |
 | UMA resolution status      | -                      | `umaResolutionStatus`                |
+| V2 resolution status       | -                      | `resolutionStatus`                   |
+| Market protocol            | `market_version`       | `version`                            |
 | Token outcome/winner state | -                      | `tokens` with `outcome` and `winner` |
 
-Read `resolution_metadata` after a backtest or simulation to inspect the lifecycle snapshot:
+For CTF (`v1`) loaders, inspect the CLOB lifecycle snapshot after a backtest or simulation:
 
 ```python
 metadata = loader.resolution_metadata
@@ -3259,6 +3285,9 @@ winner = next(
     None,
 )
 ```
+
+For `v2`, verify `resolutionStatus` and the selected outcomes' binary `outcomePrices` in `gamma_market`
+according to the [resolution rules](#market-resolution-events). CLOB winner flags alone do not establish a V2 winner.
 
 ### Event loading
 
@@ -3271,10 +3300,13 @@ loaders = await PolymarketDataLoader.from_event_slug(
 )
 ```
 
-A negative token index or an index outside a market's token list raises `ValueError`. Construction
-also fails clearly when Gamma has no matching slug or CLOB has not populated usable token IDs.
-Both Gamma and CLOB must identify the market as protocol `v1`. If any market in an event is
-unsupported, the event factory raises `ValueError` and returns no loaders.
+`token_index` selects an outcome in Gamma order, using `clobTokenIds` for `v1` or `positionIds` for `v2`.
+A negative index or an index outside that list raises `ValueError`. Construction also fails when Gamma
+has no matching slug, its selected IDs are missing or invalid, or CLOB has no usable matching tokens.
+Gamma and CLOB must agree on the supported protocol (`v1` or `v2`), condition ID, and each outcome's
+selected ID and label. The loader rejects conflicts instead of replacing Gamma identifiers with CLOB
+identifiers. If any market in an event is unsupported, the event factory raises `ValueError` and returns
+no loaders.
 
 ### Public discovery
 
@@ -3371,8 +3403,9 @@ not the number of requests.
 
 ### Closed market cleanup
 
-Gamma `endDate` is a scheduled end, not proof that trading stopped. The client keeps cached
-instruments while Gamma reports `closed=false` and removes live state after a positive `closed=true`.
+Gamma `endDate` is a scheduled end, not proof that trading stopped. The client removes live state
+after a positive `closed=true` or, for `v2`, `resolutionStatus="resolved"`. A V2 resolved status is terminal
+even when Gamma still reports `closed=false`.
 
 The closure check runs on every resolve-poll tick for expired cached instruments still reported
 open. It retries failed requests on the next tick, so request failures or delayed venue data can

@@ -438,6 +438,7 @@ mod tests {
 
         let info = nautilus_core::Params::new(
             [
+                ("market_version".to_string(), "v1".into()),
                 (
                     "token_id".to_string(),
                     serde_json::Value::String(raw_symbol.to_string()),

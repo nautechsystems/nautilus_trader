@@ -38,10 +38,11 @@ use super::{
     subscriptions::resolve_token_id_from,
 };
 use crate::{
-    common::{consts::GAMMA_CONDITION_IDS_BATCH_SIZE, parse::validate_market_version},
+    common::{consts::GAMMA_CONDITION_IDS_BATCH_SIZE, parse::validate_data_market_version},
     filters::market_closed,
     http::{
-        gamma::parse_markets_with_transient, models::GammaMarket, query::GetGammaMarketsParams,
+        gamma::parse_markets_with_transient, models::GammaMarket, parse::is_market_closed,
+        query::GetGammaMarketsParams,
     },
     providers::extract_condition_id,
     resolve::{
@@ -314,7 +315,7 @@ impl PolymarketDataClient {
                                     markets
                                         .iter()
                                         .filter(|market| {
-                                            validate_market_version(market.version.as_deref())
+                                            validate_data_market_version(market.version.as_deref())
                                                 .is_err()
                                         })
                                         .map(|market| market.condition_id.clone()),
@@ -676,13 +677,13 @@ fn record_auto_load_outcomes(
 ) {
     for market in markets
         .iter()
-        .filter(|market| validate_market_version(market.version.as_deref()).is_err())
+        .filter(|market| validate_data_market_version(market.version.as_deref()).is_err())
     {
         outcomes.insert(market.condition_id.clone(), AutoLoadOutcome::Unsupported);
     }
 
     for market in markets.iter().filter(|market| {
-        market.closed == Some(true) && validate_market_version(market.version.as_deref()).is_ok()
+        is_market_closed(market) && validate_data_market_version(market.version.as_deref()).is_ok()
     }) {
         let incoming = build_strict_resolved_market(market);
         match outcomes

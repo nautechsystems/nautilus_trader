@@ -801,7 +801,7 @@ mod tests {
     use nautilus_model::{enums::AssetClass, identifiers::Symbol, instruments::BinaryOption};
     use rstest::rstest;
     use rust_decimal_macros::dec;
-    use serde_json::json;
+    use serde_json::{from_value, json};
 
     use super::*;
     use crate::filters::{InstrumentFilter, PredicateFilter};
@@ -811,6 +811,7 @@ mod tests {
 
         for (token, outcome) in [("token-no", "No"), ("token-yes", "Yes")] {
             let info: Params = serde_json::from_value(json!({
+                "market_version": "v1",
                 "condition_id": "condition",
                 "fee_schedule": {"rate": "0.05", "exponent": "1"},
             }))
@@ -1303,8 +1304,10 @@ mod tests {
         let InstrumentAny::BinaryOption(binary) = &mut instrument else {
             unreachable!();
         };
-        binary.info =
-            Some(serde_json::from_value(json!({"condition_id": "other-condition"})).unwrap());
+
+        binary.info = Some(
+            from_value(json!({"condition_id": "other-condition", "market_version": "v1"})).unwrap(),
+        );
         instruments.insert(Ustr::from("token-yes"), instrument);
         let trade = multilevel_trade(true, false);
 

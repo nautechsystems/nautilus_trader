@@ -16,6 +16,7 @@ Released on TBD (UTC).
 - Added CoinAPI flat-file support for numeric book update codes
 - Added Deribit `load_ids` so a scoped node can omit other instruments during reconciliation
 - Added Deribit routed spot metadata and local order and market data capability checks
+- Added Polymarket Protocol V2 market data and resolution support; execution remains `v1`-only
 
 ### Breaking Changes
 
@@ -64,6 +65,8 @@ Released on TBD (UTC).
 - Changed OKX WebSocket batch order tuples; add `quote_quantity` after `reduce_only`
 - Changed Polymarket data/execution credentials and funders to reject blanks; omit them for environment fallback
 - Changed Polymarket execution examples to dry run by default; disable `DRY_RUN` for live orders
+- Changed Polymarket `GammaMarket` literals; add `position_ids` and `resolution_status` fields
+- Changed Polymarket loaders to use Gamma outcome order; require matching Gamma/CLOB IDs and labels
 
 ### Security
 

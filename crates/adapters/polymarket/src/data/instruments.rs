@@ -36,7 +36,10 @@ use crate::{
     filters::{
         InstrumentFilter, binary_market_closed, is_expired, market_closed, set_market_closed,
     },
-    http::{gamma::PolymarketGammaHttpClient, models::GammaMarket, query::GetGammaMarketsParams},
+    http::{
+        gamma::PolymarketGammaHttpClient, models::GammaMarket, parse::is_market_closed,
+        query::GetGammaMarketsParams,
+    },
     providers::extract_condition_id,
 };
 
@@ -142,7 +145,7 @@ pub(super) fn cache_instruments_unchecked(
 }
 
 // Applies one instrument while serializing live tick composition, cache mutation,
-// and queued publication; terminal closure remains a separate shared boundary.
+// and queued publication with terminal resolution.
 pub(super) fn apply_live_instrument(
     closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
     instrument_update_state: &Arc<Mutex<InstrumentUpdateState>>,
@@ -187,19 +190,16 @@ pub(super) fn apply_live_instrument_locked(
         }
     };
 
-    // The terminal guard scopes only the closure check and cache write
-    {
-        let terminal_conditions = closed_condition_ids.lock();
-        let is_terminal = extract_condition_id(&instrument.id())
-            .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id));
+    // Resolution validates the cached mapping under this guard through terminal publication
+    let terminal_conditions = closed_condition_ids.lock();
+    let is_terminal = extract_condition_id(&instrument.id())
+        .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id));
 
-        if is_terminal {
-            return false;
-        }
-
-        cache_instrument_unchecked(instruments, token_meta, &instrument);
+    if is_terminal {
+        return false;
     }
 
+    cache_instrument_unchecked(instruments, token_meta, &instrument);
     apply(&instrument);
     true
 }
@@ -304,20 +304,17 @@ pub(super) fn cache_and_publish_instruments(
         }
     }
 
-    {
-        let terminal_conditions = closed_condition_ids.lock();
-        pending.retain(|instrument| {
-            !extract_condition_id(&instrument.id())
-                .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
-        });
+    let terminal_conditions = closed_condition_ids.lock();
+    pending.retain(|instrument| {
+        !extract_condition_id(&instrument.id())
+            .is_ok_and(|condition_id| terminal_conditions.contains(&condition_id))
+    });
 
-        if pending.is_empty() {
-            return 0;
-        }
-
-        cache_instruments_unchecked(instruments_cache, token_meta, &pending);
+    if pending.is_empty() {
+        return 0;
     }
 
+    cache_instruments_unchecked(instruments_cache, token_meta, &pending);
     let total = pending.len();
 
     // Keep the update guard through publication so live tick updates cannot overtake this batch
@@ -401,7 +398,7 @@ pub(super) async fn query_positive_closed_markets(
         .collect())
 }
 
-// Returns the condition IDs Gamma positively reports as `closed=true`.
+// V2 finality can precede closed=true; CTF still requires positive closed evidence
 //
 // Condition IDs the unfiltered lookup does not return are re-queried with `closed=true`, so a
 // market that lookup leaves out is still checked. A condition ID absent from both lookups is left
@@ -422,7 +419,7 @@ async fn probe_closed_condition_ids(
         .collect::<AHashSet<_>>();
     let mut closed_ids = open
         .iter()
-        .filter(|market| market.closed == Some(true))
+        .filter(|market| is_market_closed(market))
         .map(|market| market.condition_id.clone())
         .collect::<Vec<_>>();
     let missing = condition_ids
@@ -1087,6 +1084,7 @@ mod tests {
         let (callback_tx, callback_rx) = std::sync::mpsc::sync_channel(0);
         let (release_tx, release_rx) = std::sync::mpsc::sync_channel(0);
         let thread_state = instrument_update_state.clone();
+        let terminal_conditions = closed_condition_ids.clone();
 
         let apply_thread = std::thread::spawn(move || {
             apply_live_instrument(
@@ -1103,9 +1101,12 @@ mod tests {
         });
 
         callback_rx.recv().expect("callback start signal");
-        assert!(instrument_update_state.try_lock().is_none());
+        let update_locked = instrument_update_state.try_lock().is_none();
+        let terminal_locked = terminal_conditions.try_lock().is_none();
         release_tx.send(()).expect("release callback");
         assert!(apply_thread.join().expect("apply thread"));
+        assert!(update_locked);
+        assert!(terminal_locked);
     }
 
     fn past_end_open_market() -> serde_json::Value {
