@@ -182,24 +182,12 @@ impl CacheDatabaseFactory for PostgresCacheConfig {
         _instance_id: UUID4,
         _config: CacheConfig,
     ) -> anyhow::Result<Box<dyn CacheDatabaseAdapter>> {
-        let database = PostgresCacheDatabase::connect(
-            self.host.clone(),
-            self.port,
-            self.username.clone(),
-            self.password.clone(),
-            self.database.clone(),
-            trader_id,
-        )
-        .await?;
+        let database = PostgresCacheDatabase::connect(self.clone(), trader_id).await?;
         Ok(Box::new(database))
     }
 }
 
 #[derive(Debug)]
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.infrastructure")
-)]
 pub struct PostgresCacheDatabase {
     pub pool: PgPool,
     trader_id: TraderId,
@@ -237,7 +225,7 @@ pub enum DatabaseQuery {
 }
 
 impl PostgresCacheDatabase {
-    /// Connects to the Postgres cache database using the provided connection parameters.
+    /// Connects to the Postgres cache database using the concrete backend configuration.
     ///
     /// Loads, trader-owned writes and flushes are scoped to `trader_id`, and account events are
     /// stamped with it.
@@ -252,15 +240,16 @@ impl PostgresCacheDatabase {
     ///
     /// Panics if the internal Postgres pool connection attempt (`connect_pg`) unwraps on error.
     pub async fn connect(
-        host: Option<String>,
-        port: Option<u16>,
-        username: Option<String>,
-        password: Option<String>,
-        database: Option<String>,
+        config: PostgresCacheConfig,
         trader_id: TraderId,
     ) -> Result<Self, sqlx::Error> {
-        let pg_connect_options =
-            get_postgres_connect_options(host, port, username, password, database);
+        let pg_connect_options = get_postgres_connect_options(
+            config.host,
+            config.port,
+            config.username,
+            config.password,
+            config.database,
+        );
         let pool = connect_pg(pg_connect_options.clone().into()).await.unwrap();
         check_schema_migrated(&pool).await?;
         check_account_ownership(&pool).await?;
@@ -563,16 +552,7 @@ async fn flush_buffer(
 ///
 /// Returns an error if connecting to the database or initializing the cache adapter fails.
 pub async fn get_pg_cache_database(trader_id: TraderId) -> anyhow::Result<PostgresCacheDatabase> {
-    let connect_options = get_postgres_connect_options(None, None, None, None, None);
-    Ok(PostgresCacheDatabase::connect(
-        Some(connect_options.host),
-        Some(connect_options.port),
-        Some(connect_options.username),
-        Some(connect_options.password),
-        Some(connect_options.database),
-        trader_id,
-    )
-    .await?)
+    Ok(PostgresCacheDatabase::connect(PostgresCacheConfig::default(), trader_id).await?)
 }
 
 #[async_trait::async_trait]

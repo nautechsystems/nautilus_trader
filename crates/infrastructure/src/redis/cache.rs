@@ -297,10 +297,6 @@ impl DatabaseCommand {
     }
 }
 
-#[cfg_attr(
-    feature = "python",
-    pyo3::pyclass(module = "nautilus_trader.infrastructure")
-)]
 pub struct RedisCacheDatabase {
     pub con: ConnectionManager,
     pub trader_id: TraderId,
@@ -321,12 +317,11 @@ impl Debug for RedisCacheDatabase {
 }
 
 impl RedisCacheDatabase {
-    /// Creates a new [`RedisCacheDatabase`] instance for the given `trader_id`, `instance_id`, and `config`.
+    /// Creates a Redis cache database from cache behavior and Redis connection settings.
     ///
     /// # Errors
     ///
     /// Returns an error if:
-    /// - The database configuration is missing in `config`.
     /// - Establishing the Redis connection fails.
     /// - The command processing task cannot be spawned.
     pub async fn new(

@@ -129,6 +129,13 @@ When `bar_capacity` is reached, the `Cache` automatically removes the oldest dat
 
 `CacheConfig` controls cache behavior. Set connection details in `RedisCacheConfig` or `PostgresCacheConfig`.
 
+Native backends implement `CacheDatabaseFactory` and `CacheDatabaseAdapter` and own their concrete
+connection settings. Python passes a concrete backend config or registered native factory to
+`LiveNodeBuilder.with_cache_database_factory`.
+
+Custom backend factories must be integrated into NautilusTrader's native extension and use unique
+Python class names. Python does not expose a factory registration API for separately installed packages.
+
 #### Recovery
 
 - Startup restores supported, successfully persisted general data, currencies, instruments,
@@ -238,6 +245,16 @@ finally:
 ```
 
 Use `PostgresCacheConfig` for Postgres. Both configs come from `nautilus_trader.infrastructure`.
+
+Python configures persistence through `LiveNodeBuilder.with_cache_database_factory`.
+Concrete cache database objects and their connection, read, and write methods are not exposed to Python.
+Use the runtime `Cache` API from actors and strategies to access cached data.
+
+Missing `PostgresCacheConfig` fields resolve from Postgres environment variables and then built-in
+defaults. Explicit config fields take precedence over both.
+
+Rust callers pass `PostgresCacheConfig` and `TraderId` to `PostgresCacheDatabase::connect`.
+Direct connections and the factory use the same native configuration path.
 
 #### Startup and shutdown
 

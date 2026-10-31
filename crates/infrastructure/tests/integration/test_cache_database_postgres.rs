@@ -23,13 +23,16 @@ mod serial_tests {
     use bytes::Bytes;
     use indexmap::indexmap;
     use nautilus_common::{
-        cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
+        cache::{
+            Cache, CacheConfig,
+            database::{CacheDatabaseAdapter, CacheDatabaseFactory},
+        },
         signal::Signal,
         testing::{wait_until, wait_until_async},
     };
     use nautilus_core::{Params, UUID4, UnixNanos};
     use nautilus_infrastructure::sql::{
-        cache::{PostgresCacheDatabase, get_pg_cache_database},
+        cache::{PostgresCacheConfig, PostgresCacheDatabase, get_pg_cache_database},
         pg::{connect_pg, get_postgres_connect_options, init_postgres},
         queries::DatabaseQueries,
     };
@@ -113,6 +116,45 @@ mod serial_tests {
                  {e}"
             )),
         }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_cache_factory_connects_with_postgres_config() {
+        let config = PostgresCacheConfig {
+            host: Some("127.0.0.1".to_string()),
+            port: Some(5432),
+            username: Some("nautilus".to_string()),
+            password: Some("pass".to_string()),
+            database: Some("nautilus".to_string()),
+        };
+
+        let trader_id = TraderId::from(format!("TESTER-PG-{}", UUID4::new()));
+        let mut database = config
+            .create(trader_id, UUID4::new(), CacheConfig::default())
+            .await
+            .unwrap();
+        let order_id = ClientOrderId::from(format!("absent-{}", UUID4::new()));
+
+        let loaded = database.load_order(&order_id).await.unwrap();
+
+        database.close().unwrap();
+
+        assert!(loaded.is_none());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_default_cache_connection_preserves_trader() {
+        let trader_id = TraderId::from(format!("TESTER-PG-{}", UUID4::new()));
+        let mut database = get_pg_cache_database(trader_id).await.unwrap();
+        let owner = database.trader_id();
+        let order_id = ClientOrderId::from(format!("absent-{}", UUID4::new()));
+
+        let loaded = database.load_order(&order_id).await.unwrap();
+
+        database.close().unwrap();
+
+        assert_eq!(owner, trader_id);
+        assert!(loaded.is_none());
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
