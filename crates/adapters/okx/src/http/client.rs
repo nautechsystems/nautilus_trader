@@ -121,15 +121,15 @@ use crate::{
         consts::{
             OKX_FIELD_SCODE, OKX_FIELD_SMSG, OKX_HTTP_URL, OKX_NAUTILUS_BROKER_ID,
             OKX_POST_ONLY_CANCEL_REASON, OKX_POST_ONLY_CANCEL_SOURCE, OKX_SUPPORTED_ORDER_TYPES,
-            OKX_SUPPORTED_TIME_IN_FORCE, okx_algo_target_currency, okx_reduce_only_wire_value,
-            spot_trade_quote_ccy_wire_value, validate_algo_trigger_type,
+            OKX_SUPPORTED_TIME_IN_FORCE, okx_algo_target_currency, okx_market_target_currency,
+            okx_reduce_only_wire_value, spot_trade_quote_ccy_wire_value,
+            validate_algo_trigger_type,
         },
         credential::Credential,
         enums::{
             OKXAlgoOrderStatus, OKXAlgoOrderType, OKXEnvironment, OKXInstrumentStatus,
             OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType, OKXPositionMode,
-            OKXPositionSide, OKXSide, OKXTargetCurrency, OKXTradeMode, OKXTriggerType,
-            conditional_order_to_algo_type,
+            OKXPositionSide, OKXSide, OKXTradeMode, OKXTriggerType, conditional_order_to_algo_type,
         },
         models::OKXInstrument,
         parse::{
@@ -6486,18 +6486,9 @@ impl OKXHttpClient {
             }
         });
 
-        let tgt_ccy = if instrument_type == OKXInstrumentType::Spot
-            && order_type == OrderType::Market
-            && td_mode == OKXTradeMode::Cash
-        {
-            match quote_quantity {
-                Some(true) => Some(OKXTargetCurrency::QuoteCcy),
-                Some(false) if order_side == OrderSide::Buy => Some(OKXTargetCurrency::BaseCcy),
-                _ => None,
-            }
-        } else {
-            None
-        };
+        let tgt_ccy =
+            okx_market_target_currency(instrument_type, order_side, order_type, quote_quantity)
+                .map_err(|e| OKXHttpError::ValidationError(e.to_string()))?;
 
         if rpi && order_type != OrderType::Limit {
             return Err(OKXHttpError::ValidationError(
