@@ -122,7 +122,7 @@ pub enum BybitCancelOrderError {
     /// Bybit accepted the request envelope, but did not return an order ID.
     #[error("No order_id in cancel response")]
     MissingOrderId,
-    /// Bybit returned an order ID, but the immediate order lookup failed.
+    /// Bybit returned an order ID, but terminal status confirmation failed or timed out.
     #[error("Order lookup failed after cancellation: {source}")]
     PostCancelLookup {
         /// Source lookup error.

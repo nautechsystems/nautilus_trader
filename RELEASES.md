@@ -61,6 +61,7 @@ Released on TBD (UTC).
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
+- Fixed Bybit demo cancels remaining pending cancel without an order stream update
 - Fixed Coinbase and OKX checks closing positions outside report scope (#5280), thanks for reporting @chaneyka1
 - Fixed Databento statistics decoding with insufficient precision for VWAP, volatility, and delta
 - Fixed Databento statistics Arrow encoding accepting mixed instruments or precisions
