@@ -59,6 +59,7 @@ Released on TBD (UTC).
 
 - Improved R2 publishing credential handling to avoid writing keys to disk
 - Fixed Derive configs and HTTP client exposing endpoint credentials in `Debug` output
+- Fixed `Throttler` timer deadline overflow that could panic during order submission or modification
 
 ### Fixes
 

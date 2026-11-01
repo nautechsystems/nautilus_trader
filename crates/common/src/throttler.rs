@@ -172,17 +172,17 @@ where
     /// Panics if setting the time alert on the internal clock fails.
     #[inline]
     pub(crate) fn set_timer(&self, callback: Option<TimeEventCallback>) {
-        let delta = self.delta_next();
-        self.set_timer_after(delta, callback);
-    }
-
-    #[inline]
-    fn set_timer_after(&self, delta: DurationNanos, callback: Option<TimeEventCallback>) {
         let mut clock = self.clock.borrow_mut();
         if clock.timer_exists(&self.timer_name) {
             clock.cancel_timer(&self.timer_name);
         }
-        let alert_ts = clock.timestamp_ns() + delta;
+
+        let now = clock.timestamp_ns();
+
+        let Some(alert_ts) = now.checked_add(self.delta_next_at(now)) else {
+            // No future deadline is representable, so leave the throttler limiting without a timer
+            return;
+        };
 
         clock
             .set_time_alert_ns(self.timer_name.as_str(), alert_ts, callback, Some(true))
@@ -405,7 +405,7 @@ where
             self.is_limiting = true;
 
             if !delta.is_zero() {
-                self.set_timer_after(delta, Some(throttler_resume::<T, F>(self.actor_id)));
+                self.set_timer(Some(throttler_resume::<T, F>(self.actor_id)));
             }
             return false;
         }
@@ -429,8 +429,7 @@ where
             if !self.is_limiting {
                 log::debug!("Limiting");
                 let cb = Some(ThrottlerProcess::<T, F>::new(self.actor_id).get_timer_callback());
-                let delta = self.delta_next();
-                self.set_timer_after(delta, cb);
+                self.set_timer(cb);
                 self.is_limiting = true;
             }
         } else {
@@ -442,8 +441,7 @@ where
 
             if !self.is_limiting {
                 log::debug!("Limiting");
-                let delta = self.delta_next();
-                self.set_timer_after(delta, Some(throttler_resume::<T, F>(self.actor_id)));
+                self.set_timer(Some(throttler_resume::<T, F>(self.actor_id)));
                 self.is_limiting = true;
             }
         }
@@ -1369,6 +1367,137 @@ mod tests {
         assert_eq!(throttler.sent_count, 4);
         assert_eq!(throttler.used(), 0.8);
         assert!(!throttler.is_limiting);
+    }
+
+    #[rstest]
+    #[case::buffered(false)]
+    #[case::drop(true)]
+    fn test_send_at_unrepresentable_deadline_stays_limited(#[case] drop_mode: bool) {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock
+            .borrow_mut()
+            .advance_time(UnixNanos::new(u64::MAX - 5), true);
+        let sent = Rc::new(RefCell::new(Vec::new()));
+        let dropped = Rc::new(RefCell::new(Vec::new()));
+
+        let output_send = {
+            let sent = Rc::clone(&sent);
+            Box::new(move |msg| sent.borrow_mut().push(msg)) as Box<dyn Fn(u64)>
+        };
+
+        let output_drop = drop_mode.then(|| {
+            let dropped = Rc::clone(&dropped);
+            Box::new(move |msg| dropped.borrow_mut().push(msg)) as Box<dyn Fn(u64)>
+        });
+
+        let mut throttler = Throttler::new(
+            RateLimit::new(1, DurationNanos::new(10)),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            "overflow_send_timer",
+            output_send,
+            output_drop,
+            Ustr::from("overflow-send-actor"),
+        );
+
+        throttler.send(1);
+        throttler.send(2);
+        let events = clock.borrow_mut().advance_time(UnixNanos::max(), true);
+        throttler.send(3);
+
+        assert!(events.is_empty());
+        assert_eq!(*sent.borrow(), vec![1_u64]);
+        assert_eq!(
+            *dropped.borrow(),
+            if drop_mode { vec![2_u64, 3] } else { vec![] }
+        );
+        assert_eq!(throttler.qsize(), if drop_mode { 0 } else { 2 });
+        assert_eq!(throttler.recv_count(), 3);
+        assert_eq!(throttler.sent_count(), 1);
+        assert!(throttler.is_limiting());
+        assert_eq!(clock.borrow().timer_count(), 0);
+    }
+
+    #[rstest]
+    fn test_try_reserve_at_unrepresentable_deadline_stays_limited() {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock
+            .borrow_mut()
+            .advance_time(UnixNanos::new(u64::MAX - 5), true);
+
+        let mut throttler = Throttler::new(
+            RateLimit::new(1, DurationNanos::new(10)),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            "overflow_reserve_timer",
+            Box::new(|_| ()) as Box<dyn Fn(u64)>,
+            None,
+            Ustr::from("overflow-reserve-actor"),
+        );
+
+        assert!(throttler.try_reserve(1));
+        assert!(!throttler.try_reserve(1));
+        let events = clock.borrow_mut().advance_time(UnixNanos::max(), true);
+        assert!(!throttler.try_reserve(1));
+
+        assert!(events.is_empty());
+        assert_eq!(throttler.qsize(), 0);
+        assert_eq!(throttler.recv_count(), 3);
+        assert_eq!(throttler.sent_count(), 1);
+        assert!(throttler.is_limiting());
+        assert_eq!(clock.borrow().timer_count(), 0);
+    }
+
+    #[rstest]
+    #[case::drains(2, 0, false)]
+    #[case::rearm_overflow(3, 1, true)]
+    fn test_buffered_send_at_maximum_representable_deadline(
+        #[case] received: u64,
+        #[case] expected_qsize: usize,
+        #[case] expected_limiting: bool,
+    ) {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        clock
+            .borrow_mut()
+            .advance_time(UnixNanos::new(u64::MAX - 10), true);
+        let sent = Rc::new(RefCell::new(Vec::new()));
+
+        let output_send = {
+            let sent = Rc::clone(&sent);
+            Box::new(move |msg| sent.borrow_mut().push(msg)) as Box<dyn Fn(u64)>
+        };
+
+        let throttler = Throttler::new(
+            RateLimit::new(1, DurationNanos::new(10)),
+            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            "maximum_deadline_timer",
+            output_send,
+            None,
+            Ustr::from("maximum-deadline-actor"),
+        )
+        .to_actor();
+        let throttler = access_shared(&throttler);
+        for msg in 1..=received {
+            throttler.send(msg);
+        }
+
+        let early_events = clock
+            .borrow_mut()
+            .advance_time(UnixNanos::new(u64::MAX - 1), true);
+        let due_events = clock.borrow_mut().advance_time(UnixNanos::max(), true);
+        assert!(early_events.is_empty());
+        assert_eq!(due_events.len(), 1);
+        assert_eq!(due_events[0].ts_event, UnixNanos::max());
+
+        let handlers = clock.borrow().match_handlers(due_events);
+        for handler in handlers {
+            handler.callback.call(handler.event);
+        }
+
+        assert_eq!(*sent.borrow(), vec![1_u64, 2]);
+        assert_eq!(throttler.qsize(), expected_qsize);
+        assert_eq!(throttler.recv_count(), received as usize);
+        assert_eq!(throttler.sent_count(), 2);
+        assert_eq!(throttler.is_limiting(), expected_limiting);
+        assert_eq!(clock.borrow().timer_count(), 0);
     }
 
     #[rstest]
