@@ -18,8 +18,12 @@ Theme registry and built-in themes for tearsheet visualization.
 
 from __future__ import annotations
 
+import re
 from difflib import get_close_matches
 from typing import Any
+
+
+_HEX_COLOR_RE = re.compile(r"^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$")
 
 
 _THEMES: dict[str, dict[str, Any]] = {
@@ -32,6 +36,9 @@ _THEMES: dict[str, dict[str, Any]] = {
             "neutral": "#7f7f7f",
             "background": "#ffffff",
             "grid": "#e0e0e0",
+            "text": "#333333",
+            "muted": "#737373",
+            "table_header": "#d9d9d9",
             "table_section": "#e0e0e0",
             "table_row_odd": "#f0f0f0",
             "table_row_even": "#ffffff",
@@ -47,6 +54,9 @@ _THEMES: dict[str, dict[str, Any]] = {
             "neutral": "#aaaaaa",
             "background": "#111111",
             "grid": "#333333",
+            "text": "#e5e7eb",
+            "muted": "#9ca3af",
+            "table_header": "#383838",
             "table_section": "#2a2a2a",
             "table_row_odd": "#1e1e1e",
             "table_row_even": "#181818",
@@ -56,30 +66,36 @@ _THEMES: dict[str, dict[str, Any]] = {
     "nautilus": {
         "template": "plotly_white",
         "colors": {
-            "primary": "#0066cc",
-            "positive": "#00cc66",
-            "negative": "#cc3300",
-            "neutral": "#666666",
+            "primary": "#0f4c75",
+            "positive": "#2e7d5b",
+            "negative": "#b5462f",
+            "neutral": "#6b7280",
             "background": "#ffffff",
-            "grid": "#e8e8e8",
-            "table_section": "#e8e8e8",
-            "table_row_odd": "#f5f5f5",
+            "grid": "#ececec",
+            "text": "#333333",
+            "muted": "#737373",
+            "table_header": "#e2e6eb",
+            "table_section": "#eef1f5",
+            "table_row_odd": "#f7f9fb",
             "table_row_even": "#ffffff",
-            "table_text": "#000000",
+            "table_text": "#333333",
         },
     },
     "nautilus_dark": {
         "template": "plotly_dark",
         "colors": {
             "primary": "#00cfbe",
-            "positive": "#2fadd7",
+            "positive": "#34d399",
             "negative": "#ff6b6b",
             "neutral": "#a7aab5",
-            "background": "#2a2a2d",
-            "grid": "#202022",
-            "table_section": "#35353a",
-            "table_row_odd": "#2a2a2d",
-            "table_row_even": "#242428",
+            "background": "#1b1e22",
+            "grid": "#2c313a",
+            "text": "#e5e7eb",
+            "muted": "#9ca3af",
+            "table_header": "#31363e",
+            "table_section": "#282d34",
+            "table_row_odd": "#22262c",
+            "table_row_even": "#1b1e22",
             "table_text": "#eeeeee",
         },
     },
@@ -89,6 +105,11 @@ _THEMES: dict[str, dict[str, Any]] = {
 def _require_not_none(value: object, name: str) -> None:
     if value is None:
         raise ValueError(f"{name} must not be None")
+
+
+def _validate_hex_color(value: object, name: str) -> None:
+    if not isinstance(value, str) or not _HEX_COLOR_RE.match(value):
+        raise ValueError(f"Color '{name}' must be a hex code like '#rrggbb', was {value!r}")
 
 
 def get_theme(name: str) -> dict[str, Any]:
@@ -141,13 +162,16 @@ def register_theme(name: str, template: str, colors: dict[str, str]) -> None:
     template : str
         Plotly template name (e.g., "plotly_white", "plotly_dark", "ggplot2").
     colors : dict[str, str]
-        Color palette dictionary. Expected keys: "primary", "positive", "negative",
-        "neutral", "background", "grid". All values should be hex color codes.
+        Color palette dictionary. Required keys: "primary", "positive", "negative",
+        "neutral", "background", "grid". Optional keys: "text", "muted", "table_header",
+        "table_section", "table_row_odd", "table_row_even", "table_text" (defaults are
+        derived when omitted). All values must be hex color codes.
 
     Raises
     ------
     ValueError
-        If name is empty or colors dict is missing required keys.
+        If name is empty, colors dict is missing required keys, or a color value is
+        not a hex code.
 
     Examples
     --------
@@ -178,6 +202,9 @@ def register_theme(name: str, template: str, colors: dict[str, str]) -> None:
         raise ValueError(
             f"Colors dict missing required keys: {missing_keys}. Required keys: {required_keys}",
         )
+
+    for key, value in colors.items():
+        _validate_hex_color(value, key)
 
     _THEMES[name] = {
         "template": template,

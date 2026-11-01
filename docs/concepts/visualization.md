@@ -265,7 +265,10 @@ register_theme(
         "neutral": "#808080",  # Gray
         "background": "#ffffff",  # White
         "grid": "#e5e5e5",  # Light gray
-        # Optional table colors (defaults will be provided if omitted)
+        # Optional text and table colors (defaults will be provided if omitted)
+        "text": "#333333",
+        "muted": "#737373",
+        "table_header": "#d9d9d9",
         "table_section": "#e5e5e5",
         "table_row_odd": "#f8f8f8",
         "table_row_even": "#ffffff",
@@ -277,8 +280,11 @@ register_theme(
 config = TearsheetConfig(theme="corporate")
 ```
 
-The theme system derives default `table_*` colors from the `background` and `grid` colors. These defaults
-preserve compatibility with themes registered before table-specific colors existed.
+The theme system derives default `text`, `muted`, and `table_*` colors from the `background` and `grid`
+colors. These defaults preserve compatibility with themes registered before those colors existed.
+
+Figures use Inter for titles and IBM Plex Mono for data, each with system font fallbacks when those
+families are unavailable (for example in static exports rendered without them installed).
 
 ## Configuration
 
@@ -314,19 +320,19 @@ config = TearsheetConfig(
 
 ### Configuration parameters
 
-| Parameter           | Type                   | Default          | Description                         |
-| ------------------- | ---------------------- | ---------------- | ----------------------------------- |
-| `charts`            | `list[TearsheetChart]` | Built-ins        | Charts to include, in order.        |
-| `theme`             | `str`                  | `"plotly_white"` | Theme name for styling.             |
-| `layout`            | `GridLayout`           | `None`           | Custom subplot grid layout.         |
-| `title`             | `str`                  | Auto-generated   | Tearsheet title.                    |
-| `include_benchmark` | `bool`                 | `True`           | Show benchmark when provided.       |
-| `benchmark_name`    | `str`                  | `"Benchmark"`    | Display name for benchmark.         |
-| `height`            | `int`                  | `1500`           | Total height in pixels.             |
-| `show_logo`         | `bool`                 | `True`           | Reserved for future logo rendering. |
+| Parameter           | Type                   | Default          | Description                          |
+| ------------------- | ---------------------- | ---------------- | ------------------------------------ |
+| `charts`            | `list[TearsheetChart]` | Built-ins        | Charts to include, in order.         |
+| `theme`             | `str`                  | `"plotly_white"` | Theme name for styling.              |
+| `layout`            | `GridLayout`           | `None`           | Custom subplot grid layout.          |
+| `title`             | `str`                  | Auto-generated   | Tearsheet title.                     |
+| `include_benchmark` | `bool`                 | `True`           | Show benchmark when provided.        |
+| `benchmark_name`    | `str`                  | `"Benchmark"`    | Display name for benchmark.          |
+| `height`            | `int`                  | `1500`           | Total height in pixels.              |
+| `show_logo`         | `bool`                 | `True`           | Show NautilusTrader footer branding. |
 
 When `layout` is `None`, the chart count determines the grid dimensions and row heights. The default 8 charts
-use a 4x2 grid with heights `[0.50, 0.22, 0.16, 0.12]`. These heights give more space to the top row tables.
+use a 4x2 grid with heights `[0.40, 0.24, 0.18, 0.18]`. These heights give more space to the top row tables.
 
 ## Custom charts
 
@@ -625,6 +631,7 @@ example, `TearsheetBarsWithFillsChart(bar_type=...)`).
 
 Other individual chart functions include `create_equity_curve`, `create_drawdown_chart`,
 `create_monthly_returns_heatmap`, and more. See the API reference for the complete list.
+All standalone chart functions accept a `theme` name matching the tearsheet themes.
 
 ## Related guides
 
