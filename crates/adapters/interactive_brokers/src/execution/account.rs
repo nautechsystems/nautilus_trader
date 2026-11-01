@@ -108,7 +108,7 @@ pub async fn subscribe_account_summary(
 ///
 /// IB repeats the summary about every 3 minutes on a live `reqAccountSummary` subscription. A
 /// session task delivers one further snapshot per refresh cycle through `on_snapshot`, and
-/// reopens the subscription whenever it ends, also after ibapi reconnects the transport.
+/// reopens the subscription when it ends.
 ///
 /// # Errors
 ///
@@ -164,17 +164,11 @@ where
     Ok(())
 }
 
-/// Drives refresh cycles over `initial`, then over every subscription `open` hands out after
-/// the previous one ended, passing the snapshot `build_snapshot` makes after each cycle to
-/// `on_snapshot`. Returns when `cancel` fires.
+/// Delivers a snapshot per refresh cycle and reopens the subscription when it ends, until
+/// `cancel` fires.
 ///
-/// IB ends the account summary subscription when the transport drops, for example on IB
-/// Gateway's nightly restart, and ibapi does not resubscribe it after reconnecting. An end is
-/// therefore expected while the client is still reconnecting: the loop waits
-/// `delays.after_stream`, then retries a failed open every `delays.after_bind_failure`. ibapi
-/// fails a request with `ConnectionReset` both while it reconnects and after its transport has
-/// shut down, so the loop cannot tell the two apart; the order update loop reports a shutdown,
-/// and `disconnect` cancels the session tasks.
+/// IB ends the subscription when the transport drops and ibapi does not resubscribe it, so
+/// failed opens are retried while ibapi reconnects.
 async fn run_account_summary_stream<S, O, F, T>(
     initial: S,
     mut open: O,
@@ -250,8 +244,7 @@ async fn run_account_summary_stream<S, O, F, T>(
             }
         };
 
-        // The new subscription reports every tag afresh; a row it no longer sends must not
-        // keep its value from before the reconnect.
+        // Drop rows the new subscription no longer reports
         accumulator = AccountSummaryAccumulator::default();
         tracing::info!(
             "IB account summary stream reopened for account: {}",
@@ -1366,7 +1359,6 @@ mod tests {
         after_bind_failure: Duration::from_millis(10),
     };
 
-    /// One refresh cycle reporting `value` as NetLiquidation, then the end of the stream.
     fn ending_stream(value: &str) -> SummaryStream {
         stream::iter([
             Ok(net_liquidation_summary(value)),
@@ -1375,7 +1367,6 @@ mod tests {
         .boxed()
     }
 
-    /// One refresh cycle reporting `value` as NetLiquidation, then no further items.
     fn open_stream(value: &str) -> SummaryStream {
         ending_stream(value).chain(stream::pending()).boxed()
     }

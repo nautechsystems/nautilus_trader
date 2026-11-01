@@ -49,7 +49,7 @@ pub(super) enum OrderUpdateLoopOutcome {
     TransportShutdown,
 }
 
-/// Backoff of the order-update re-bind loop and the account summary reopen loop.
+/// Backoff of the order-update and account summary re-bind loops.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RebindDelays {
     /// After the stream ended or errored, before re-binding.
