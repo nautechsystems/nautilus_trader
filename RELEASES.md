@@ -87,6 +87,7 @@ Released on TBD (UTC).
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
 - Fixed Bybit demo cancels remaining pending cancel without an order stream update
 - Fixed CoinAPI dropping first book snapshots before subscription writes complete
+- Fixed CoinAPI L2 flat-file book loaders accepting unknown update types
 - Fixed Coinbase and OKX checks closing positions outside report scope (#5280), thanks for reporting @chaneyka1
 - Fixed Coinbase live fill IDs differing from REST reconciliation
 - Fixed Coinbase quote-sized fills being interpreted as base quantities

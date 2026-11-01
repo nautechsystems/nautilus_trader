@@ -269,6 +269,9 @@ impl BookDecoder {
         size: Precision,
     ) -> anyhow::Result<()> {
         let action = match row.update_type {
+            UpdateType::Other(update_type) => {
+                anyhow::bail!("unsupported L2 update_type '{update_type}'");
+            }
             UpdateType::Snapshot if row.size.is_zero() => return Ok(()),
             UpdateType::Snapshot => BookAction::Add,
             UpdateType::Delete => BookAction::Delete,
