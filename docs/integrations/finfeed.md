@@ -450,7 +450,11 @@ The client retrieves whole UTC hours within the requested window and shared atte
 supply a snapshot at or before `start`. Retrieval starts at the hour containing `start` without
 looking back. Leading updates are validated and discarded until a seed. A generated replacement
 at `start` initializes the consumer;
-later batches preserve response order and end with `F_LAST` at each exchange timestamp.
+later batches preserve response order and end with `F_LAST` at each exchange-timestamp change and
+each same-time transition between snapshot and incremental records. A snapshot group starts with
+`Clear` followed by zero or more `Add` deltas, all flagged `F_SNAPSHOT`. Each group must leave a valid
+book; a later group at the same timestamp cannot repair an invalid group.
+Depth emits one snapshot per group, so timestamps can repeat.
 Depth defaults to 10 and supports `[1, 10]` levels per side. Delta limits retain whole batches and
 must fit the initial replacement; depth limits count snapshots. Every retrieved level is validated
 before local depth or record limits apply. Current-book polling is unchanged.

@@ -45,15 +45,19 @@ pub(super) fn replay(
         let time = source[offset].time_exchange;
         let ts_event = parse::timestamp(time)?;
         anyhow::ensure!(
-            previous.is_none_or(|prior| prior < time),
+            previous.is_none_or(|prior| prior <= time),
             "FinFeed book timestamps are out of order"
         );
+
         let count = source[offset..]
             .iter()
-            .take_while(|row| row.time_exchange == time)
+            .take_while(|row| {
+                row.time_exchange == time
+                    && (row.update_type == 3) == (source[offset].update_type == 3)
+            })
             .count();
         let rows = &source[offset..offset + count];
-        if offset > 0 {
+        if offset > 0 && previous != Some(time) {
             anyhow::ensure!(
                 source[offset - 1].update_type != 3 || rows[0].update_type != 3,
                 "FinFeed snapshot spans timestamps without a completion marker"
@@ -292,6 +296,7 @@ fn parse_delta(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_live::book::conformance::BookStreamChecker;
     use nautilus_model::orderbook::BookIntegrityError;
     use rstest::rstest;
 
@@ -427,6 +432,150 @@ mod tests {
         );
         assert_eq!(batches[2].deltas[0].action, BookAction::Clear);
         assert_eq!(batches[4].deltas[0].action, BookAction::Clear);
+    }
+
+    #[rstest]
+    #[case::snapshot_update(9..10, 8, 0, 0)]
+    #[case::update_snapshot(8..9, 7, 0, 0)]
+    #[case::multiple(8..10, 7, 0, 0)]
+    #[case::seed(4..10, 0, 0, 3)]
+    #[case::leading_update(4..10, 0, 4, 3)]
+    #[case::only_seed(0..12, 0, 0, 4)]
+    fn same_time_transitions_preserve_contract_ladders_and_limits(
+        #[case] tied: std::ops::Range<usize>,
+        #[case] clock: usize,
+        #[case] discard: usize,
+        #[case] first_ladder: usize,
+    ) {
+        let mut source = events();
+        let instrument = instrument();
+        let time = source[clock].time_exchange;
+        for row in &mut source[tied] {
+            row.time_exchange = time;
+        }
+
+        source.drain(..discard);
+        let start = parse::timestamp(source[0].time_exchange).unwrap();
+        let end = parse::timestamp(source.last().unwrap().time_exchange).unwrap();
+        let batches = replay(&source, &instrument, start, end).unwrap();
+        let expected = [
+            (
+                vec![("0.4", "2"), ("0.3", "5")],
+                vec![("0.6", "3"), ("0.7", "7")],
+            ),
+            (
+                vec![("0.4", "5.25"), ("0.3", "5")],
+                vec![("0.65", "8"), ("0.7", "7")],
+            ),
+            (vec![], vec![("0.8", "9")]),
+            (vec![], vec![]),
+            (vec![("0.2", "6")], vec![("0.9", "10")]),
+        ];
+
+        let expected = &expected[first_ladder..];
+
+        let mut checker = BookStreamChecker::new(BookType::L2_MBP, false);
+        checker.open(instrument.id);
+        assert_eq!(batches.len(), expected.len());
+        let mut count = 0;
+
+        for (batch, (bids, asks)) in batches.iter().zip(expected) {
+            checker.apply(batch).unwrap();
+            let book = checker.book(instrument.id).unwrap();
+
+            for (actual, expected) in [
+                (book.bids_as_map(None), bids),
+                (book.asks_as_map(None), asks),
+            ] {
+                assert_eq!(
+                    actual.into_iter().collect::<Vec<_>>(),
+                    expected
+                        .iter()
+                        .map(|(price, size)| (
+                            price.parse::<Decimal>().unwrap(),
+                            size.parse::<Decimal>().unwrap()
+                        ))
+                        .collect::<Vec<_>>()
+                );
+            }
+
+            for delta in &batch.deltas {
+                assert_eq!(delta.instrument_id, instrument.id);
+                assert_eq!(delta.sequence, 0);
+                assert_eq!(delta.ts_event, batch.ts_event);
+                assert_eq!(delta.ts_init, delta.ts_event);
+            }
+
+            count += batch.deltas.len();
+            let limited = deltas(batches.clone(), NonZeroUsize::new(count)).unwrap();
+            assert_eq!(
+                limited,
+                batches
+                    .iter()
+                    .flat_map(|batch| batch.deltas.iter())
+                    .take(count)
+                    .copied()
+                    .collect::<Vec<_>>()
+            );
+            let partial = NonZeroUsize::new(count - 1);
+            if count == batches[0].deltas.len() {
+                if partial.is_some() {
+                    assert!(deltas(batches.clone(), partial).is_err());
+                }
+            } else {
+                assert_eq!(
+                    deltas(batches.clone(), partial).unwrap().len(),
+                    count - batch.deltas.len()
+                );
+            }
+        }
+
+        if first_ladder == 0 {
+            assert_eq!(batches[2].deltas[0].action, BookAction::Clear);
+            assert_eq!(batches[2].deltas[1].action, BookAction::Add);
+            assert_eq!(batches[3].deltas[0].action, BookAction::Delete);
+        }
+    }
+
+    #[rstest]
+    #[case(0, 4)]
+    #[case(4, 1)]
+    fn tied_end_bounds_keep_every_group_and_seed_the_final_state(
+        #[case] start_row: usize,
+        #[case] count: usize,
+    ) {
+        let mut source = events();
+        source[8].time_exchange = source[7].time_exchange;
+        source[9].time_exchange = source[7].time_exchange;
+        let instrument = instrument();
+        let start = parse::timestamp(source[start_row].time_exchange).unwrap();
+        let end = parse::timestamp(source[9].time_exchange).unwrap();
+        let batches = replay(&source, &instrument, start, end).unwrap();
+        let mut checker = BookStreamChecker::new(BookType::L2_MBP, false);
+        checker.open(instrument.id);
+        for batch in &batches {
+            checker.apply(batch).unwrap();
+        }
+
+        let book = checker.book(instrument.id).unwrap();
+        assert_eq!(batches.len(), count);
+        assert_eq!(batches.last().unwrap().ts_event, end);
+        assert_eq!(book.bids_as_map(None).len(), 0);
+        assert_eq!(book.asks_as_map(None).len(), 0);
+    }
+
+    #[rstest]
+    fn crossed_same_time_group_rejects_replay_before_a_repairing_snapshot() {
+        let mut source = events();
+        source[7].price = "0.35".parse().unwrap();
+        source[8].time_exchange = source[7].time_exchange;
+        let start = parse::timestamp(source[0].time_exchange).unwrap();
+        let end = parse::timestamp(source[11].time_exchange).unwrap();
+        let error = replay(&source, &instrument(), start, end).unwrap_err();
+        assert!(matches!(
+            error.downcast_ref::<BookIntegrityError>(),
+            Some(BookIntegrityError::OrdersCrossed(..))
+        ));
     }
 
     #[rstest]

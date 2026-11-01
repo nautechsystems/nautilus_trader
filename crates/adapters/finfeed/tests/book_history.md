@@ -65,9 +65,12 @@ semantics to REST is an inference. The replay implementation is independently wr
 copy the example's batching or subtraction/clamping behavior. Codes 2, 4, and 5 remain unsupported.
 
 Replay requires a returned seed at or before `start`, retrieving from the hour containing `start`
-without lookback. Leading updates are validated and discarded before the seed. It assumes complete
-same-time replacement groups and continuous uncapped responses. Timestamp-spanning snapshots and
-overlapping hours fail.
+without lookback. Leading updates are validated and discarded before the seed. It assumes each
+contiguous same-time snapshot run is a complete replacement and responses are continuous and uncapped.
+Each contiguous snapshot or incremental run at a timestamp forms a separate `F_LAST` group.
+Every group must leave a valid book, even if a later group shares its timestamp. Applied groups at or
+before `start` contribute to the generated seed.
+Timestamp-spanning snapshots and overlapping hours fail.
 
 Missing receive clocks fall back to exchange time, without a measured-receipt claim. Emitted receive
 clocks must stay ordered inside the requested window because response bounds use `ts_init`;

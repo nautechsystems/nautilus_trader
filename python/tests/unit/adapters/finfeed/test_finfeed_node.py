@@ -49,6 +49,7 @@ from nautilus_trader.live import NodeState
 from nautilus_trader.model import ActorId
 from nautilus_trader.model import AggressorSide
 from nautilus_trader.model import BarType
+from nautilus_trader.model import BookAction
 from nautilus_trader.model import BookType
 from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import OrderBook
@@ -1047,13 +1048,16 @@ def test_public_activity_history_preserves_every_field_and_ties(polling_node, fa
 
 
 @pytest.mark.parametrize(
-    ("receive_rows", "incompatible", "second", "microsecond"),
+    ("receive_rows", "incompatible", "second", "microsecond", "tie_rows"),
     [
-        pytest.param([], False, 6, 0, id="missing"),
-        pytest.param([7], False, 2, 3, id="within"),
-        pytest.param([7], True, 2, 1, id="partial-after-end"),
-        pytest.param([4, 5, 6, 7], True, 2, 1, id="all-after-end"),
-        pytest.param([4], True, 2, 3, id="reversed"),
+        pytest.param([], False, 6, 0, [], id="missing"),
+        pytest.param([], False, 6, 0, [9], id="snapshot-update"),
+        pytest.param([], False, 6, 0, [8], id="update-snapshot"),
+        pytest.param([], False, 6, 0, [8, 9], id="multiple-transitions"),
+        pytest.param([7], False, 2, 3, [], id="within"),
+        pytest.param([7], True, 2, 1, [], id="partial-after-end"),
+        pytest.param([4, 5, 6, 7], True, 2, 1, [], id="all-after-end"),
+        pytest.param([4], True, 2, 3, [], id="reversed"),
     ],
 )
 def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 - One actor lifecycle verifies all clock cases
@@ -1062,6 +1066,7 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
     incompatible: bool,
     second: int,
     microsecond: int,
+    tie_rows: list[int],
 ) -> None:
     """
     Preserve complete historical actor delivery or reject incompatible clocks.
@@ -1070,6 +1075,9 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
     rows = json.loads((TEST_DATA / "book-replay.json").read_bytes())
     for index in receive_rows:
         rows[index]["time_coinapi"] = "2026-10-11T00:00:02.0000030Z"
+
+    for index in tie_rows:
+        rows[index]["time_exchange"] = rows[index - 1]["time_exchange"]
     source = json.dumps(rows).encode()
     start = datetime(2026, 10, 11, 0, 0, 1, 1, tzinfo=UTC)
     end = datetime(2026, 10, 11, 0, 0, second, microsecond, tzinfo=UTC)
@@ -1084,6 +1092,7 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
             super().__init__()
             self.ids = []
             self.ladders = []
+            self.groups = []
             self.deltas = None
             self.depths = None
             self.point = None
@@ -1118,9 +1127,13 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
         def on_historical_book_deltas(self, deltas) -> None:
             self.deltas = deltas
             book = OrderBook(INSTRUMENT_ID, BookType.L2_MBP)
+            group = []
             for delta in deltas:
+                group.append(delta)
                 book.apply_delta(delta)
                 if RecordFlag.F_LAST.matches(delta.flags):
+                    self.groups.append(group)
+                    group = []
                     book.check_integrity()
                     self.ladders.append((book.bids_to_dict(), book.asks_to_dict()))
 
@@ -1180,7 +1193,22 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
             assert consumer.ladders == []
         else:
             assert consumer.ladders == expected[:count]
+            assert [delta for group in consumer.groups for delta in group] == consumer.deltas
+            for group in consumer.groups:
+                snapshot = RecordFlag.F_SNAPSHOT.matches(group[0].flags)
+                assert all(
+                    RecordFlag.F_SNAPSHOT.matches(delta.flags) == snapshot for delta in group
+                )
+
+                if snapshot:
+                    assert group[0].action == BookAction.CLEAR
+                    assert all(delta.action == BookAction.ADD for delta in group[1:])
+                else:
+                    assert all(delta.action != BookAction.CLEAR for delta in group)
             assert len(consumer.depths) == count
+            assert [(depth.ts_event, depth.ts_init) for depth in consumer.depths] == [
+                (group[-1].ts_event, group[-1].ts_init) for group in consumer.groups
+            ]
             assert [
                 (order.price.as_decimal(), order.size.as_decimal())
                 for order in consumer.depths[1].bids
@@ -1193,8 +1221,11 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
             if receive_rows:
                 assert consumer.deltas[-1].ts_init == consumer.deltas[-1].ts_event + 2900
                 assert consumer.depths[-1].ts_init == consumer.deltas[-1].ts_init
-        assert consumer.point.bids_to_dict() == {Decimal(".4"): Decimal("5.25")}
-        assert consumer.point.asks_to_dict() == {Decimal(".65"): Decimal(8)}
+        point_ladder = expected[1]
+        if 8 in tie_rows:
+            point_ladder = expected[3] if 9 in tie_rows else expected[2]
+        assert consumer.point.bids_to_dict() == dict(list(point_ladder[0].items())[:1])
+        assert consumer.point.asks_to_dict() == dict(list(point_ladder[1].items())[:1])
         assert len(requests) == 5
         assert all(
             auth == "node-test-key" and referrer == "nautilus" for _, auth, referrer in requests
