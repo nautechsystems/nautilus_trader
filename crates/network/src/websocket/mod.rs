@@ -84,6 +84,8 @@ pub mod proxy;
 pub mod subscription;
 pub mod types;
 
+mod frame;
+
 // Re-export main types for convenience
 pub use auth::AuthTracker;
 pub use client::{
