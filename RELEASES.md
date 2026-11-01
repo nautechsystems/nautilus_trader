@@ -97,6 +97,7 @@ Released on TBD (UTC).
 - Fixed Bybit data client ignoring environment credentials when config credentials are omitted
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
 - Fixed Bybit demo cancels remaining pending cancel without an order stream update
+- Fixed Bybit HTTP order reports dropping venue reject reasons and `due_post_only`
 - Fixed CoinAPI dropping first book snapshots before subscription writes complete
 - Fixed CoinAPI L2 flat-file book loaders accepting unknown update types
 - Fixed Coinbase and OKX checks closing positions outside report scope (#5280), thanks for reporting @chaneyka1

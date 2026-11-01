@@ -387,6 +387,11 @@ node accepts the reports before finalization updates order identities on the cor
 canceled collections retain the identities needed for pending cancel and amend rejections. Startup
 mass status and direct asynchronous report methods still collect and finalize in one call.
 
+HTTP order reports keep a venue `rejectReason` on `cancel_reason`, except `EC_NoError`. When a
+rejected order has an empty `rejectReason`, the reason is `venue omitted rejectReason` rather than
+`UNKNOWN`. Bybit reports a post-only order that would take liquidity as `Cancelled` with
+`EC_PostOnlyWillTakeLiquidity`; reconciliation emits `OrderRejected` with `due_post_only=true`.
+
 ### Position management
 
 | Feature          | Spot | Linear | Inverse | Option | Notes                                                       |

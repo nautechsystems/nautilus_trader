@@ -1505,6 +1505,10 @@ pub fn parse_bybit_order_type(
 }
 
 /// Parses a Bybit order into a Nautilus OrderStatusReport.
+///
+/// Copies a venue `rejectReason` into `cancel_reason`, except `EC_NoError`. When the mapped
+/// status is `Rejected` and `rejectReason` is empty or `EC_NoError`, the reason is
+/// `venue omitted rejectReason`.
 pub fn parse_order_status_report(
     order: &crate::http::models::BybitOrder,
     instrument: &InstrumentAny,
@@ -1642,7 +1646,25 @@ pub fn parse_order_status_report(
         report = report.with_post_only(true);
     }
 
+    let reject_reason = order.reject_reason.as_str();
+    let report = report_with_reject_reason(report, reject_reason, order_status);
+
     Ok(report)
+}
+
+fn report_with_reject_reason(
+    report: OrderStatusReport,
+    reject_reason: &str,
+    order_status: OrderStatus,
+) -> OrderStatusReport {
+    if !reject_reason.is_empty() && reject_reason != "EC_NoError" {
+        report.with_cancel_reason(reject_reason.to_string())
+    } else if order_status == OrderStatus::Rejected {
+        // Reconciliation substitutes UNKNOWN when cancel_reason is absent
+        report.with_cancel_reason("venue omitted rejectReason".to_string())
+    } else {
+        report
+    }
 }
 
 /// Returns the `marketUnit` parameter for spot market orders.
@@ -2066,6 +2088,7 @@ mod tests {
     use nautilus_model::{
         data::BarSpecification,
         enums::{AggregationSource, BarAggregation, PositionSide, PriceType},
+        orders::OrderAny,
     };
     use rstest::rstest;
     use serde_json::json;
@@ -2611,6 +2634,147 @@ mod tests {
             report.client_order_id.as_ref().unwrap().to_string(),
             "O-20251001-164609-APEX-000-49"
         );
+        assert_eq!(report.cancel_reason.as_deref(), Some("INSUFFICIENT_MARGIN"));
+    }
+
+    // The post-only row is a redacted Bybit demo history capture, and the other rows are
+    // synthetic variants of that envelope, including the reported reduce-only rejection text
+    // and a rejected order whose rejectReason is the EC_NoError sentinel
+    #[rstest]
+    fn replay_rejected_order_history_keeps_venue_reason() {
+        use nautilus_execution::reconciliation::generate_reconciliation_order_events;
+        use nautilus_model::events::OrderEventAny;
+
+        use crate::http::models::BybitOrderHistoryResponse;
+
+        let instrument = linear_instrument();
+        let json = load_test_json("http_get_orders_history_rejected.json");
+        let response: BybitOrderHistoryResponse = serde_json::from_str(&json).unwrap();
+        let orders = &response.result.list;
+
+        let post_only = history_report(orders, &instrument, "post-only-reject");
+        assert_eq!(post_only.order_status, OrderStatus::Rejected);
+        assert!(post_only.post_only);
+        assert_replayed_rejection(
+            &post_only,
+            &instrument,
+            "EC_PostOnlyWillTakeLiquidity",
+            true,
+        );
+
+        let reduce_only = history_report(orders, &instrument, "reduce-only-reject");
+        assert_eq!(reduce_only.order_status, OrderStatus::Rejected);
+        assert_replayed_rejection(
+            &reduce_only,
+            &instrument,
+            "current position is zero, cannot fix reduce-only order qty",
+            false,
+        );
+
+        let omitted = history_report(orders, &instrument, "omitted-reject");
+        assert_eq!(omitted.order_status, OrderStatus::Rejected);
+        assert_replayed_rejection(&omitted, &instrument, "venue omitted rejectReason", false);
+
+        let rejected_no_error = history_report(orders, &instrument, "rejected-no-error");
+        assert_eq!(rejected_no_error.order_status, OrderStatus::Rejected);
+        assert_replayed_rejection(
+            &rejected_no_error,
+            &instrument,
+            "venue omitted rejectReason",
+            false,
+        );
+
+        let filled = history_report(orders, &instrument, "filled-no-error");
+        assert_eq!(filled.order_status, OrderStatus::Filled);
+        assert_eq!(filled.cancel_reason, None);
+
+        let user_cancel = history_report(orders, &instrument, "user-cancel");
+        assert_eq!(user_cancel.order_status, OrderStatus::Canceled);
+        assert_eq!(user_cancel.cancel_reason, None);
+        let order = submitted_limit(&user_cancel, &instrument);
+        let events = generate_reconciliation_order_events(
+            &order,
+            &user_cancel,
+            Some(&instrument),
+            UnixNanos::from(2_000),
+        );
+
+        let canceled = events.iter().find_map(|event| match event {
+            OrderEventAny::Canceled(canceled) => Some(*canceled),
+            _ => None,
+        });
+
+        let canceled = canceled.expect("reconciliation did not emit OrderCanceled");
+        assert_eq!(canceled.reason, None);
+        assert!(
+            !events
+                .iter()
+                .any(|event| matches!(event, OrderEventAny::Rejected(_)))
+        );
+    }
+
+    fn history_report(
+        orders: &[crate::http::models::BybitOrder],
+        instrument: &InstrumentAny,
+        link_id: &str,
+    ) -> OrderStatusReport {
+        let order = orders
+            .iter()
+            .find(|order| order.order_link_id.as_str() == link_id)
+            .unwrap_or_else(|| panic!("missing history row {link_id}"));
+        parse_order_status_report(order, instrument, AccountId::new("BYBIT-001"), TS).unwrap()
+    }
+
+    fn submitted_limit(report: &OrderStatusReport, instrument: &InstrumentAny) -> OrderAny {
+        use nautilus_model::orders::builder::OrderTestBuilder;
+
+        let instrument_id = instrument.id();
+        let client_order_id = report.client_order_id.expect("history row has orderLinkId");
+        let side = report.order_side.expect("history row has a side");
+        let price = report.price.expect("history row has a price");
+        OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(instrument_id)
+            .client_order_id(client_order_id)
+            .side(side)
+            .quantity(report.quantity)
+            .price(price)
+            .submit(true)
+            .build()
+    }
+
+    fn assert_replayed_rejection(
+        report: &OrderStatusReport,
+        instrument: &InstrumentAny,
+        reason: &str,
+        due_post_only: bool,
+    ) {
+        use nautilus_execution::reconciliation::{
+            generate_external_order_status_events, generate_reconciliation_order_events,
+        };
+        use nautilus_model::events::OrderEventAny;
+
+        let order = submitted_limit(report, instrument);
+        let ts_now = UnixNanos::from(2_000);
+        let cached = generate_reconciliation_order_events(&order, report, Some(instrument), ts_now);
+        let external = generate_external_order_status_events(
+            &order,
+            report,
+            &report.account_id,
+            instrument,
+            ts_now,
+        );
+
+        for events in [&cached, &external] {
+            let rejected = events.iter().find_map(|event| match event {
+                OrderEventAny::Rejected(rejected) => Some(*rejected),
+                _ => None,
+            });
+
+            let rejected = rejected.expect("reconciliation did not emit OrderRejected");
+            assert_eq!(rejected.reason.as_str(), reason);
+            assert_eq!(rejected.due_post_only, due_post_only);
+            assert!(rejected.reconciliation);
+        }
     }
 
     #[rstest]
