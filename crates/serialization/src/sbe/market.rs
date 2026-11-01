@@ -21,16 +21,23 @@ mod common;
 mod data_any;
 mod ticks;
 
-use nautilus_model::data::{
-    Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus, MarkPriceUpdate,
-    OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
+use nautilus_model::{
+    data::{
+        Bar, FundingRateUpdate, IndexPriceUpdate, InstrumentClose, InstrumentStatus,
+        MarkPriceUpdate, OptionGreeks, OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick,
+        TradeTick,
+    },
+    types::fixed::FIXED_PRECISION,
 };
 
 use self::common::{HEADER_LENGTH, MessageHeader, decode_header, encode_header, validate_header};
 use super::{SbeCursor, SbeDecodeError, SbeEncodeError, SbeWriter};
 
 pub const MARKET_SCHEMA_ID: u16 = 1;
-pub const MARKET_SCHEMA_VERSION: u16 = 0;
+/// Wire version identifying the model raw scale: 9 for standard precision, 16 for high precision.
+///
+/// Version 0 has no scale discriminator and is rejected in both precision modes.
+pub const MARKET_SCHEMA_VERSION: u16 = FIXED_PRECISION as u16;
 
 pub(super) mod data_any_variant {
     pub(crate) const ORDER_BOOK_DELTA: u16 = 0;

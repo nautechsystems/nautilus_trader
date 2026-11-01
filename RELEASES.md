@@ -25,6 +25,7 @@ Released on TBD (UTC).
 - Changed modify/cancel rejection emitters and factories to take `causation_id`; pass the command ID or `None`
 - Changed `Strategy::mark_order_pending_update` and `mark_order_pending_cancel` to take the command's UUID
 - Changed `Strategy::generate_order_pending_update` and `generate_order_pending_cancel` to take the command's UUID
+- Changed SBE to require matching precision modes and reject version 0; upgrade readers and writers together
 - Changed `PostgresCacheDatabase::connect` to take `PostgresCacheConfig`; replace individual connection arguments
 - Changed Rust `Cache` order/position/account purges to return `Result`; pass `false` for memory only
 - Changed `CacheDatabaseAdapter` Greek and yield-curve defaults to errors; override supported reads and writes

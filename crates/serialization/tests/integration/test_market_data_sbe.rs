@@ -36,7 +36,9 @@ use nautilus_model::{
         OrderSide, PriceType,
     },
     identifiers::InstrumentId,
-    types::{Price, Quantity, price::PRICE_UNDEF, quantity::QUANTITY_UNDEF},
+    types::{
+        Price, Quantity, fixed::FIXED_PRECISION, price::PRICE_UNDEF, quantity::QUANTITY_UNDEF,
+    },
 };
 use nautilus_serialization::sbe::{
     DataAny, FromSbe, FromSbeReuse, MAX_GROUP_SIZE, SbeDecodeError, SbeEncodeError, ToSbe,
@@ -53,11 +55,35 @@ macro_rules! sbe_roundtrip_test {
             let bytes = value.to_sbe().unwrap();
             let decoded = <$ty>::from_sbe(&bytes).unwrap();
             assert_eq!(value, decoded);
+            assert_eq!(&bytes[6..8], &u16::from(FIXED_PRECISION).to_le_bytes());
+
+            for version in [0_u16, 9, 16, 17] {
+                if version == u16::from(FIXED_PRECISION) {
+                    continue;
+                }
+                let mut incompatible = bytes.clone();
+                incompatible[6..8].copy_from_slice(&version.to_le_bytes());
+                assert_eq!(
+                    <$ty>::from_sbe(&incompatible),
+                    Err(SbeDecodeError::VersionMismatch {
+                        expected: u16::from(FIXED_PRECISION),
+                        actual: version,
+                    })
+                );
+            }
         }
     };
 }
 
 sbe_roundtrip_test!(test_quote_tick_roundtrip, sample_quote_tick(), QuoteTick);
+sbe_roundtrip_test!(test_delta_header_roundtrip, stub_delta(), OrderBookDelta);
+sbe_roundtrip_test!(test_deltas_header_roundtrip, stub_deltas(), OrderBookDeltas);
+sbe_roundtrip_test!(test_depth_header_roundtrip, stub_depth10(), OrderBookDepth);
+sbe_roundtrip_test!(
+    test_data_any_header_roundtrip,
+    DataAny::Quote(sample_quote_tick()),
+    DataAny
+);
 sbe_roundtrip_test!(
     test_trade_tick_roundtrip,
     stub_trade_ethusdt_buy(),
@@ -98,7 +124,7 @@ sbe_roundtrip_test!(
 #[case(0, 83, SbeDecodeError::InvalidBlockLength { expected: 84, actual: 83 })]
 #[case(2, 0, SbeDecodeError::UnknownTemplateId(0))]
 #[case(4, 2, SbeDecodeError::SchemaMismatch { expected: 1, actual: 2 })]
-#[case(6, 1, SbeDecodeError::VersionMismatch { expected: 0, actual: 1 })]
+#[case(6, 1, SbeDecodeError::VersionMismatch { expected: FIXED_PRECISION as u16, actual: 1 })]
 fn test_quote_tick_rejects_invalid_header(
     #[case] offset: usize,
     #[case] value: u16,
@@ -147,6 +173,25 @@ fn test_book_order_roundtrip() {
     let decoded = BookOrder::from_sbe(&bytes).unwrap();
 
     assert_book_order_fields(&value, &decoded);
+}
+
+#[rstest]
+fn test_book_order_sentinels_roundtrip() {
+    let value = BookOrder::new(
+        OrderSide::Buy,
+        Price::from_raw(PRICE_UNDEF, 0),
+        Quantity::from_raw(QUANTITY_UNDEF, 0),
+        123_456,
+    );
+    let bytes = value.to_sbe().unwrap();
+
+    let decoded = BookOrder::from_sbe(&bytes).unwrap();
+
+    assert_book_order_fields(&value, &decoded);
+    assert_eq!(decoded.price.raw(), PRICE_UNDEF);
+    assert_eq!(decoded.price.precision, 0);
+    assert_eq!(decoded.size.raw(), QUANTITY_UNDEF);
+    assert_eq!(decoded.size.precision, 0);
 }
 
 #[rstest]
@@ -235,6 +280,27 @@ fn test_order_book_deltas_preserve_delta_instrument_ids() {
     let decoded = OrderBookDeltas::from_sbe(&bytes).unwrap();
 
     assert_order_book_deltas_fields(&value, &decoded);
+}
+
+#[rstest]
+#[case(0)]
+#[case(if FIXED_PRECISION == 9 { 16 } else { 9 })]
+fn test_order_book_deltas_reuse_rejects_precision_version(#[case] version: u16) {
+    let value = stub_deltas();
+    let mut bytes = value.to_sbe().unwrap();
+    bytes[6..8].copy_from_slice(&version.to_le_bytes());
+    let mut scratch = value.deltas.clone();
+
+    let result = OrderBookDeltas::from_sbe_reuse(&bytes, &mut scratch);
+
+    assert_eq!(
+        result,
+        Err(SbeDecodeError::VersionMismatch {
+            expected: u16::from(FIXED_PRECISION),
+            actual: version,
+        })
+    );
+    assert_eq!(scratch, value.deltas);
 }
 
 #[rstest]
