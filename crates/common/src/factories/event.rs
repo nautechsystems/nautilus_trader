@@ -19,9 +19,9 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide},
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEventAny, OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected,
-        OrderSubmitted, OrderTriggered, OrderUpdated,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEventAny, OrderExpired, OrderFilled, OrderModifyDenied,
+        OrderModifyRejected, OrderRejected, OrderSubmitted, OrderTriggered, OrderUpdated,
     },
     identifiers::{AccountId, PositionId, TradeId, TraderId, VenueOrderId},
     orders::{Order, OrderAny},
@@ -191,6 +191,32 @@ impl OrderEventFactory {
         OrderEventAny::Accepted(event)
     }
 
+    /// Generates an order modify denied event for a command proven not sent.
+    #[must_use]
+    pub fn generate_order_modify_denied(
+        &self,
+        order: &OrderAny,
+        reason: &str,
+        causation_id: Option<UUID4>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> OrderEventAny {
+        let mut event = OrderModifyDenied::new(
+            self.trader_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            ts_init,
+            order.venue_order_id(),
+            Some(self.account_id),
+        );
+        event.causation_id = causation_id;
+        OrderEventAny::ModifyDenied(event)
+    }
+
     /// Generates an order modify rejected event.
     #[must_use]
     pub fn generate_order_modify_rejected(
@@ -200,8 +226,9 @@ impl OrderEventFactory {
         reason: &str,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        causation_id: Option<UUID4>,
     ) -> OrderEventAny {
-        let event = OrderModifyRejected::new(
+        let mut event = OrderModifyRejected::new(
             self.trader_id,
             order.strategy_id(),
             order.instrument_id(),
@@ -214,7 +241,34 @@ impl OrderEventFactory {
             venue_order_id,
             Some(self.account_id),
         );
+        event.causation_id = causation_id;
         OrderEventAny::ModifyRejected(event)
+    }
+
+    /// Generates an order cancel denied event for a command proven not sent.
+    #[must_use]
+    pub fn generate_order_cancel_denied(
+        &self,
+        order: &OrderAny,
+        reason: &str,
+        causation_id: Option<UUID4>,
+        ts_event: UnixNanos,
+        ts_init: UnixNanos,
+    ) -> OrderEventAny {
+        let mut event = OrderCancelDenied::new(
+            self.trader_id,
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            ts_init,
+            order.venue_order_id(),
+            Some(self.account_id),
+        );
+        event.causation_id = causation_id;
+        OrderEventAny::CancelDenied(event)
     }
 
     /// Generates an order cancel rejected event.
@@ -226,8 +280,9 @@ impl OrderEventFactory {
         reason: &str,
         ts_event: UnixNanos,
         ts_init: UnixNanos,
+        causation_id: Option<UUID4>,
     ) -> OrderEventAny {
-        let event = OrderCancelRejected::new(
+        let mut event = OrderCancelRejected::new(
             self.trader_id,
             order.strategy_id(),
             order.instrument_id(),
@@ -240,6 +295,7 @@ impl OrderEventFactory {
             venue_order_id,
             Some(self.account_id),
         );
+        event.causation_id = causation_id;
         OrderEventAny::CancelRejected(event)
     }
 
@@ -585,20 +641,27 @@ mod tests {
     }
 
     #[rstest]
+    #[case(false)]
+    #[case(true)]
     fn test_generate_order_modify_rejected_carries_optional_venue_order_id(
         factory: OrderEventFactory,
         order: OrderAny,
+        #[case] with_cause: bool,
     ) {
+        let cause = with_cause.then(UUID4::new);
+
         let OrderEventAny::ModifyRejected(event) = factory.generate_order_modify_rejected(
             &order,
             Some(VenueOrderId::from("V-2")),
             "Unknown order",
             UnixNanos::from(31),
             UnixNanos::from(37),
+            cause,
         ) else {
             panic!("expected a modify rejected event");
         };
 
+        assert_eq!(event.causation_id, cause);
         assert_eq!(event.trader_id, TraderId::from(TRADER_ID));
         assert_eq!(event.client_order_id, order.client_order_id());
         assert_eq!(event.venue_order_id, Some(VenueOrderId::from("V-2")));
@@ -609,20 +672,27 @@ mod tests {
     }
 
     #[rstest]
+    #[case(false)]
+    #[case(true)]
     fn test_generate_order_cancel_rejected_allows_absent_venue_order_id(
         factory: OrderEventFactory,
         order: OrderAny,
+        #[case] with_cause: bool,
     ) {
+        let cause = with_cause.then(UUID4::new);
+
         let OrderEventAny::CancelRejected(event) = factory.generate_order_cancel_rejected(
             &order,
             None,
             "Already closed",
             UnixNanos::from(41),
             UnixNanos::from(43),
+            cause,
         ) else {
             panic!("expected a cancel rejected event");
         };
 
+        assert_eq!(event.causation_id, cause);
         assert_eq!(event.trader_id, TraderId::from(TRADER_ID));
         assert_eq!(event.client_order_id, order.client_order_id());
         assert_eq!(event.venue_order_id, None);
@@ -630,6 +700,56 @@ mod tests {
         assert_eq!(event.reason.as_str(), "Already closed");
         assert_eq!(event.ts_event, UnixNanos::from(41));
         assert_eq!(event.ts_init, UnixNanos::from(43));
+    }
+
+    #[rstest]
+    #[case::modify(false)]
+    #[case::cancel(true)]
+    fn test_generate_order_command_denied_preserves_identity(
+        factory: OrderEventFactory,
+        order: OrderAny,
+        #[case] cancel: bool,
+    ) {
+        let cause = UUID4::new();
+
+        let event = if cancel {
+            factory.generate_order_cancel_denied(
+                &order,
+                "Unsent command",
+                Some(cause),
+                UnixNanos::from(47),
+                UnixNanos::from(53),
+            )
+        } else {
+            factory.generate_order_modify_denied(
+                &order,
+                "Unsent command",
+                Some(cause),
+                UnixNanos::from(47),
+                UnixNanos::from(53),
+            )
+        };
+
+        let (actual_cause, reason, ts_init) = match &event {
+            OrderEventAny::CancelDenied(event) if cancel => {
+                (event.causation_id, event.reason.as_str(), event.ts_init)
+            }
+            OrderEventAny::ModifyDenied(event) if !cancel => {
+                (event.causation_id, event.reason.as_str(), event.ts_init)
+            }
+            _ => panic!("unexpected command outcome {event:?}"),
+        };
+
+        assert_eq!(actual_cause, Some(cause));
+        assert_eq!(reason, "Unsent command");
+        assert_eq!(event.trader_id(), TraderId::from(TRADER_ID));
+        assert_eq!(event.strategy_id(), order.strategy_id());
+        assert_eq!(event.instrument_id(), order.instrument_id());
+        assert_eq!(event.client_order_id(), order.client_order_id());
+        assert_eq!(event.venue_order_id(), order.venue_order_id());
+        assert_eq!(event.account_id(), Some(AccountId::from(ACCOUNT_ID)));
+        assert_eq!(event.ts_event(), UnixNanos::from(47));
+        assert_eq!(ts_init, UnixNanos::from(53));
     }
 
     #[rstest]

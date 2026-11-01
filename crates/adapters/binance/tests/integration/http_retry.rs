@@ -729,9 +729,7 @@ async fn test_http_command_identity_reads_fail_fast(
             Err(if preblocked {
                 blocked.to_string()
             } else {
-                format!(
-                    "Validation error: Order identity lookup failed before submission: {first_cause}"
-                )
+                format!("Order identity lookup failed before submission: {first_cause}")
             }),
             Err(blocked.to_string()),
             Err(blocked.to_string()),

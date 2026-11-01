@@ -38,7 +38,7 @@ use dashmap::DashMap;
 use futures_util::Stream;
 use nautilus_common::live::dst::time;
 use nautilus_core::{
-    AtomicMap, AtomicTime, UnixNanos,
+    AtomicMap, AtomicTime, UUID4, UnixNanos,
     env::{get_env_var, get_or_env_var},
     string::secret::{REDACTED, SecretString},
     time::get_atomic_clock_realtime,
@@ -244,6 +244,7 @@ pub struct OKXWebSocketClient {
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
+    pub(crate) pending_command_ids: Arc<DashMap<String, Vec<(ClientOrderId, UUID4)>>>,
     option_greeks_subs: Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
     /// Per-base-pair refcount for the `index-tickers` channel. Multiple
     /// instruments commonly share one base pair (e.g. `BTC-USDT-SWAP` and
@@ -392,6 +393,7 @@ impl OKXWebSocketClient {
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
+            pending_command_ids: Arc::new(DashMap::new()),
             option_greeks_subs: Arc::new(AtomicMap::new()),
             index_pair_subscribers: Arc::new(DashMap::new()),
             index_pair_transition: Arc::new(tokio::sync::Mutex::new(())),
@@ -2403,6 +2405,7 @@ impl OKXWebSocketClient {
         &self,
         args: Vec<Value>,
         client_order_ids: Vec<ClientOrderId>,
+        causation_ids: Vec<(ClientOrderId, UUID4)>,
     ) -> Result<(), OKXWsError> {
         let request_id = self.generate_unique_request_id();
         let request = OKXWsRequest::<Value> {
@@ -2415,15 +2418,25 @@ impl OKXWebSocketClient {
         let payload = serde_json::to_string(&request)
             .map_err(|e| OKXWsError::JsonError(format!("Failed to serialize batch cancel: {e}")))?;
 
+        if !causation_ids.is_empty() {
+            self.pending_command_ids
+                .insert(request_id.clone(), causation_ids);
+        }
+
         let cmd = HandlerCommand::Send {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_BATCH_CANCEL.to_vec()),
-            request_id: Some(request_id),
+            request_id: Some(request_id.clone()),
             client_order_ids,
             op: Some(super::enums::OKXWsOperation::BatchCancelOrders),
         };
 
-        self.send_cmd(cmd).await
+        let result = self.send_cmd(cmd).await;
+        if result.is_err() {
+            self.pending_command_ids.remove(&request_id);
+        }
+
+        result
     }
 
     /// Amend multiple orders in a single batch via WebSocket.
@@ -2774,6 +2787,39 @@ impl OKXWebSocketClient {
         rpi_taker_access: Option<bool>,
         rpi_px_round: Option<bool>,
     ) -> Result<(), OKXWsError> {
+        self.modify_order_with_causation(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            price,
+            quantity,
+            venue_order_id,
+            new_px_usd,
+            new_px_vol,
+            rpi_taker_access,
+            rpi_px_round,
+            None,
+        )
+        .await
+    }
+
+    #[expect(clippy::too_many_arguments)]
+    pub(crate) async fn modify_order_with_causation(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        price: Option<Price>,
+        quantity: Option<Quantity>,
+        venue_order_id: Option<VenueOrderId>,
+        new_px_usd: Option<String>,
+        new_px_vol: Option<String>,
+        rpi_taker_access: Option<bool>,
+        rpi_px_round: Option<bool>,
+        causation_id: Option<UUID4>,
+    ) -> Result<(), OKXWsError> {
         let mut builder = WsAmendOrderParamsBuilder::default();
 
         let inst_id_code = self
@@ -2839,15 +2885,24 @@ impl OKXWebSocketClient {
         let payload = serde_json::to_string(&request)
             .map_err(|e| OKXWsError::JsonError(format!("Failed to serialize amend: {e}")))?;
 
+        if let (Some(client_order_id), Some(causation_id)) = (client_order_id, causation_id) {
+            self.pending_command_ids
+                .insert(request_id.clone(), vec![(client_order_id, causation_id)]);
+        }
+
         let cmd = HandlerCommand::Send {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_AMEND.to_vec()),
-            request_id: Some(request_id),
+            request_id: Some(request_id.clone()),
             client_order_ids: client_order_id.into_iter().collect(),
             op: Some(super::enums::OKXWsOperation::AmendOrder),
         };
 
         let result = self.send_cmd(cmd).await;
+
+        if result.is_err() {
+            self.pending_command_ids.remove(&request_id);
+        }
 
         if let (Err(_), Some(key)) = (&result, &cl_ord_key) {
             self.pending_amends.remove(key);
@@ -2873,6 +2928,26 @@ impl OKXWebSocketClient {
         instrument_id: InstrumentId,
         client_order_id: Option<ClientOrderId>,
         venue_order_id: Option<VenueOrderId>,
+    ) -> Result<(), OKXWsError> {
+        self.cancel_order_with_causation(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            venue_order_id,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn cancel_order_with_causation(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: Option<ClientOrderId>,
+        venue_order_id: Option<VenueOrderId>,
+        causation_id: Option<UUID4>,
     ) -> Result<(), OKXWsError> {
         let mut builder = WsCancelOrderParamsBuilder::default();
 
@@ -2918,15 +2993,24 @@ impl OKXWebSocketClient {
         let payload = serde_json::to_string(&request)
             .map_err(|e| OKXWsError::JsonError(format!("Failed to serialize cancel: {e}")))?;
 
+        if let (Some(client_order_id), Some(causation_id)) = (client_order_id, causation_id) {
+            self.pending_command_ids
+                .insert(request_id.clone(), vec![(client_order_id, causation_id)]);
+        }
+
         let cmd = HandlerCommand::Send {
             payload,
             rate_limit_keys: Some(OKX_RATE_LIMIT_KEY_CANCEL.to_vec()),
-            request_id: Some(request_id),
+            request_id: Some(request_id.clone()),
             client_order_ids: client_order_id.into_iter().collect(),
             op: Some(super::enums::OKXWsOperation::CancelOrder),
         };
 
         let result = self.send_cmd(cmd).await;
+
+        if result.is_err() {
+            self.pending_command_ids.remove(&request_id);
+        }
 
         if let (Err(_), Some(key)) = (&result, &cl_ord_key) {
             self.pending_cancels.remove(key);
@@ -3277,6 +3361,15 @@ impl OKXWebSocketClient {
         &self,
         orders: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)>,
     ) -> Result<(), OKXWsError> {
+        self.batch_cancel_orders_with_causation(orders, Vec::new())
+            .await
+    }
+
+    pub(crate) async fn batch_cancel_orders_with_causation(
+        &self,
+        orders: Vec<(InstrumentId, Option<ClientOrderId>, Option<VenueOrderId>)>,
+        causation_ids: Vec<(ClientOrderId, UUID4)>,
+    ) -> Result<(), OKXWsError> {
         let client_order_ids: Vec<ClientOrderId> = orders
             .iter()
             .filter_map(|(_, cl_ord_id, _)| *cl_ord_id)
@@ -3313,7 +3406,8 @@ impl OKXWebSocketClient {
             args
         };
 
-        self.ws_batch_cancel_orders(args, client_order_ids).await
+        self.ws_batch_cancel_orders(args, client_order_ids, causation_ids)
+            .await
     }
 
     /// Rejects algo placement on the WebSocket transport; use the HTTP client instead.

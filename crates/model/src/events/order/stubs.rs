@@ -22,16 +22,16 @@ use ustr::Ustr;
 use crate::{
     enums::{ContingencyType, OrderType, TriggerType},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderExpired, OrderFilled, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-        OrderUpdated,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderExpired, OrderFilled, OrderInitialized, OrderModifyDenied,
+        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
+        OrderSubmitted, OrderTriggered, OrderUpdated,
         order::spec::{
-            OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderDeniedSpec,
-            OrderEmulatedSpec, OrderExpiredSpec, OrderFilledSpec, OrderInitializedSpec,
-            OrderModifyRejectedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec,
-            OrderRejectedSpec, OrderReleasedSpec, OrderSubmittedSpec, OrderTriggeredSpec,
-            OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderCancelDeniedSpec, OrderCancelRejectedSpec, OrderCanceledSpec,
+            OrderDeniedSpec, OrderEmulatedSpec, OrderExpiredSpec, OrderFilledSpec,
+            OrderInitializedSpec, OrderModifyDeniedSpec, OrderModifyRejectedSpec,
+            OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderRejectedSpec, OrderReleasedSpec,
+            OrderSubmittedSpec, OrderTriggeredSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -436,6 +436,20 @@ impl Default for OrderCancelRejected {
     }
 }
 
+impl TestDefault for OrderCancelDenied {
+    fn test_default() -> Self {
+        OrderCancelDeniedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
+    }
+}
+
+impl Default for OrderCancelDenied {
+    fn default() -> Self {
+        Self::test_default()
+    }
+}
+
 impl TestDefault for OrderDenied {
     fn test_default() -> Self {
         OrderDeniedSpec::builder()
@@ -501,6 +515,20 @@ impl TestDefault for OrderModifyRejected {
 }
 
 impl Default for OrderModifyRejected {
+    fn default() -> Self {
+        Self::test_default()
+    }
+}
+
+impl TestDefault for OrderModifyDenied {
+    fn test_default() -> Self {
+        OrderModifyDeniedSpec::builder()
+            .event_id(UUID4::default())
+            .build()
+    }
+}
+
+impl Default for OrderModifyDenied {
     fn default() -> Self {
         Self::test_default()
     }

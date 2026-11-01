@@ -61,11 +61,12 @@ use nautilus_model::{
         greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
-        PositionChanged, PositionClosed, PositionEvent, PositionOpened, PositionSnapshot,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
+        OrderInitialized, OrderModifyDenied, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted,
+        OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed,
+        PositionEvent, PositionOpened, PositionSnapshot,
     },
     instruments::{InstrumentAny, NautilusInstrumentType},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -1333,11 +1334,13 @@ impl FeatherWriter {
         try_write!(message, OrderRejected);
         try_write!(message, OrderPendingCancel);
         try_write!(message, OrderCanceled);
+        try_write!(message, OrderCancelDenied);
         try_write!(message, OrderCancelRejected);
         try_write!(message, OrderExpired);
         try_write!(message, OrderTriggered);
         try_write!(message, OrderPendingUpdate);
         try_write!(message, OrderReleased);
+        try_write!(message, OrderModifyDenied);
         try_write!(message, OrderModifyRejected);
         try_write!(message, OrderUpdated);
         try_write!(message, OrderFilled);
@@ -1402,7 +1405,9 @@ impl FeatherWriter {
             OrderEventAny::Triggered(event) => self.write(*event),
             OrderEventAny::PendingUpdate(event) => self.write(*event),
             OrderEventAny::PendingCancel(event) => self.write(*event),
+            OrderEventAny::ModifyDenied(event) => self.write(*event),
             OrderEventAny::ModifyRejected(event) => self.write(*event),
+            OrderEventAny::CancelDenied(event) => self.write(*event),
             OrderEventAny::CancelRejected(event) => self.write(*event),
             OrderEventAny::Updated(event) => self.write(*event),
             OrderEventAny::Filled(event) => self.write(event.clone()),
@@ -2156,6 +2161,117 @@ mod tests {
             writer.next_rotation_times[&path],
             UnixNanos::from(1_767_348_000_000_000_000u64),
         );
+    }
+
+    #[rstest]
+    #[case::modify(true)]
+    #[case::cancel(false)]
+    fn test_command_denied_dynamic_round_trip(
+        #[case] modify: bool,
+        #[values(false, true)] envelope: bool,
+    ) {
+        use nautilus_core::UUID4;
+        use nautilus_model::{
+            events::order::spec::{OrderCancelDeniedSpec, OrderModifyDeniedSpec},
+            identifiers::{AccountId, ClientOrderId, StrategyId, TraderId, VenueOrderId},
+        };
+        use nautilus_serialization::arrow::DecodeTypedFromRecordBatch;
+        let cause = UUID4::new();
+        let trader = TraderId::from("WRITER-017");
+        let strategy = StrategyId::from("S-DENIAL-019");
+        let instrument = InstrumentId::from("ETHUSDT-PERP.BINANCE");
+        let client = ClientOrderId::from("O-DENIAL-023");
+        let venue = VenueOrderId::from("V-DENIAL-029");
+        let account = AccountId::from("BINANCE-031");
+
+        let event = if modify {
+            OrderEventAny::ModifyDenied(
+                OrderModifyDeniedSpec::builder()
+                    .trader_id(trader)
+                    .strategy_id(strategy)
+                    .instrument_id(instrument)
+                    .client_order_id(client)
+                    .venue_order_id(venue)
+                    .account_id(account)
+                    .reason("not sent to modify".into())
+                    .ts_event(37.into())
+                    .ts_init(41.into())
+                    .causation_id(cause)
+                    .build(),
+            )
+        } else {
+            OrderEventAny::CancelDenied(
+                OrderCancelDeniedSpec::builder()
+                    .trader_id(trader)
+                    .strategy_id(strategy)
+                    .instrument_id(instrument)
+                    .client_order_id(client)
+                    .venue_order_id(venue)
+                    .account_id(account)
+                    .reason("not sent to cancel".into())
+                    .ts_event(43.into())
+                    .ts_init(47.into())
+                    .causation_id(cause)
+                    .build(),
+            )
+        };
+
+        let temp = TempDir::new().unwrap();
+        let clock = WriterClock::Test(Arc::new(AtomicU64::new(0)));
+
+        let mut writer = FeatherWriter::new(
+            temp.path().to_path_buf(),
+            clock,
+            RotationConfig::NoRotation,
+            None,
+            None,
+        );
+
+        let written = if envelope {
+            writer.write_any_message(&event).unwrap()
+        } else {
+            match &event {
+                OrderEventAny::ModifyDenied(event) => writer.write_any_message(event).unwrap(),
+                OrderEventAny::CancelDenied(event) => writer.write_any_message(event).unwrap(),
+                _ => unreachable!(),
+            }
+        };
+
+        assert!(written);
+        writer.close().unwrap();
+        let files = feather_files(temp.path(), "feather");
+        assert_eq!(files.len(), 1);
+        let mut recovered = Vec::new();
+
+        for batch in read_feather_batches(&files[0]) {
+            let metadata = batch.schema().metadata().clone();
+            assert_eq!(
+                metadata.get("type_name").unwrap(),
+                if modify {
+                    "OrderModifyDenied"
+                } else {
+                    "OrderCancelDenied"
+                }
+            );
+
+            if modify {
+                recovered.extend(
+                    OrderModifyDenied::decode_typed_batch(&metadata, batch)
+                        .unwrap()
+                        .into_iter()
+                        .map(OrderEventAny::ModifyDenied),
+                );
+            } else {
+                recovered.extend(
+                    OrderCancelDenied::decode_typed_batch(&metadata, batch)
+                        .unwrap()
+                        .into_iter()
+                        .map(OrderEventAny::CancelDenied),
+                );
+            }
+        }
+
+        assert_eq!(recovered, vec![event]);
     }
 
     #[rstest]

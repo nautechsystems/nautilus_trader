@@ -110,6 +110,7 @@ pub(crate) fn classify_futures_http_failure(error: &BinanceFuturesHttpError) -> 
     match error {
         BinanceFuturesHttpError::MissingCredentials
         | BinanceFuturesHttpError::ValidationError(_)
+        | BinanceFuturesHttpError::IdentityLookup(_)
         | BinanceFuturesHttpError::RateLimitBlocked => CommandFailure::NotSent(reason),
         BinanceFuturesHttpError::BinanceError { code, status, .. } => {
             classify_venue_failure(Some(*code), Some(*status), reason)
@@ -211,6 +212,32 @@ mod tests {
             classify_futures_http_failure(&error),
             CommandFailure::VenueRejected(_)
         ));
+    }
+
+    #[rstest]
+    #[case::venue(
+        BinanceFuturesHttpError::BinanceError {
+            code: -2013,
+            message: "Order does not exist".to_string(),
+            status: 400,
+            retry_after: None,
+        },
+        "Order identity lookup failed before submission: Binance error -2013 (HTTP 400): Order does not exist"
+    )]
+    #[case::timeout(
+        BinanceFuturesHttpError::Timeout("lookup timed out".to_string()),
+        "Order identity lookup failed before submission: Timeout: lookup timed out"
+    )]
+    fn test_classify_futures_identity_lookup_is_not_sent(
+        #[case] source: BinanceFuturesHttpError,
+        #[case] reason: &str,
+    ) {
+        let error = BinanceFuturesHttpError::IdentityLookup(Box::new(source));
+
+        assert_eq!(
+            classify_futures_http_failure(&error),
+            CommandFailure::NotSent(reason.to_string())
+        );
     }
 
     #[rstest]

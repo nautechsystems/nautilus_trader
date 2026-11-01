@@ -755,6 +755,9 @@ order expiration by canceling the order at the specified expiry time.
 | Batch Modify | ✓                     | Modify multiple orders in single request. |
 | Batch Cancel | ✓                     | Cancel multiple orders in single request. |
 
+Regular-order batch cancels split repeated targets into separate WebSocket requests so each reply
+identifies one command UUID. Batches with distinct targets use up to 20 orders per request.
+
 ### Cancel-all orders
 
 `Strategy.cancel_all_orders` supports `order_side` in both strategy-only and cross-strategy mode.
@@ -778,8 +781,8 @@ response without a message produces `OKX error <code>` alone, and one that also 
 `subCode` appends it as `(subCode=<code>)`. A conditional order that fails after acceptance
 reports only its code, such as `OKX error 51008`, because OKX sends only a `failCode`.
 
-Rejections the adapter raises before contacting OKX, such as local validation failures, carry
-the adapter's own message and no OKX error code.
+Local modify and cancel refusals proven not sent produce `OrderModifyDenied` or `OrderCancelDenied`.
+They carry the adapter's own message and no OKX error code.
 
 ### Position management
 
@@ -1047,8 +1050,8 @@ The [limits on amendments after restart](#modifying-conditional-orders) also app
 
 :::warning
 Pending amendments require tracked session context. Orders recovered after a restart or without
-that context emit `OrderModifyRejected` locally. Trailing-stop algo amendments also emit
-`OrderModifyRejected` locally.
+that context emit `OrderModifyDenied` locally. Trailing-stop algo amendments also emit
+`OrderModifyDenied` locally.
 :::
 
 #### Trigger price types

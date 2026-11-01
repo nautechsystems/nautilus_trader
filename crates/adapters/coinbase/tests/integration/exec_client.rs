@@ -73,8 +73,8 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::{AccountAny, CashAccount},
-    enums::{AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce},
-    events::{AccountState, OrderEventAny},
+    enums::{AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
+    events::{AccountState, OrderEventAny, OrderPendingCancel},
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
         TradeId, TraderId, VenueOrderId,
@@ -2358,6 +2358,124 @@ async fn test_exec_batch_cancel_partial_failure_uses_child_cancel_identity() {
         }
         other => panic!("Expected CancelRejected event, was {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_batch_cancel_repeated_target_resolves_each_command(#[values(1, 2)] count: usize) {
+    let state = TestState::default();
+    for _ in 0..count {
+        state.enqueue("/orders/batch_cancel", json!({"results": [{
+            "success": false, "failure_reason": "UNKNOWN_CANCEL_FAILURE_REASON", "order_id": "repeat-venue"
+        }]}));
+    }
+
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx) = make_exec_client_with_events(addr, AccountType::Cash);
+    client.start().unwrap();
+    let account = AccountId::from("COINBASE-001");
+    let venue = VenueOrderId::from("repeat-venue");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-REPEAT"))
+        .instrument_id(btc_usd_instrument_id())
+        .client_order_id(ClientOrderId::from("repeated-cancel"))
+        .quantity(Quantity::from("0.125"))
+        .price(Price::from("51000"))
+        .build();
+    order
+        .apply(TestOrderEventStubs::accepted(&order, account, venue))
+        .unwrap();
+
+    let cancels: Vec<_> = (0..count)
+        .map(|_| {
+            make_cancel_order(
+                order.client_order_id(),
+                order.instrument_id(),
+                order.strategy_id(),
+                Some(venue),
+            )
+        })
+        .collect();
+
+    let causes: Vec<_> = cancels.iter().map(|cmd| cmd.command_id).collect();
+    for cause in &causes {
+        let mut pending = OrderPendingCancel::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            Some(account),
+            UUID4::new(),
+            1.into(),
+            1.into(),
+            false,
+            Some(venue),
+        );
+        pending.causation_id = Some(*cause);
+        order.apply(OrderEventAny::PendingCancel(pending)).unwrap();
+    }
+
+    client
+        .batch_cancel_orders(BatchCancelOrders::new(
+            order.trader_id(),
+            Some(*COINBASE_CLIENT_ID),
+            order.strategy_id(),
+            order.instrument_id(),
+            cancels,
+            UUID4::new(),
+            0.into(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    for (index, cause) in causes.iter().enumerate() {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        let ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) = event else {
+            panic!("expected correlated cancel rejection, was {event:?}");
+        };
+
+        assert_eq!(rejected.trader_id, order.trader_id());
+        assert_eq!(rejected.strategy_id, order.strategy_id());
+        assert_eq!(rejected.instrument_id, order.instrument_id());
+        assert_eq!(rejected.client_order_id, order.client_order_id());
+        assert_eq!(rejected.account_id, Some(account));
+        assert_eq!(rejected.venue_order_id, Some(venue));
+        assert_eq!(rejected.causation_id, Some(*cause));
+        assert_eq!(
+            rejected.reason.as_str(),
+            "batch-cancel-rejected: UNKNOWN_CANCEL_FAILURE_REASON"
+        );
+        assert!(!rejected.reconciliation);
+        order
+            .apply(OrderEventAny::CancelRejected(*rejected))
+            .unwrap();
+        assert_eq!(
+            order.status(),
+            if index + 1 == count {
+                OrderStatus::Accepted
+            } else {
+                OrderStatus::PendingCancel
+            }
+        );
+    }
+
+    assert_eq!(order.quantity(), Quantity::from("0.125"));
+    assert_eq!(order.price(), Some(Price::from("51000")));
+    assert_eq!(
+        state
+            .requests_for("/orders/batch_cancel")
+            .iter()
+            .map(|req| req.body.clone())
+            .collect::<Vec<_>>(),
+        vec![Some(json!({"order_ids": ["repeat-venue"]})); count]
+    );
+    assert!(rx.try_recv().is_err());
 }
 
 #[rstest]

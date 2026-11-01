@@ -395,13 +395,14 @@ impl ExecutionClient for PolymarketExecutionClient {
         self.check_not_faulted()?;
 
         if let Err(e) = self.settlement.ensure_submission_allowed() {
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.client_order_id,
                 cmd.venue_order_id,
                 &e.to_string(),
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }

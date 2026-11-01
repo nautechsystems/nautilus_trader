@@ -531,7 +531,7 @@ async fn test_targeted_report_acceptance_cancellation_dispatches_only_before_fat
         OrderStatus::Accepted
     );
     let id = ClientOrderId::from("O-CARRIED-1");
-    node.exec_manager.register_inflight(id);
+    node.exec_manager.register_inflight(id, UUID4::new());
     #[cfg(all(feature = "simulation", madsim))]
     madsim::time::advance(Duration::from_nanos(1));
     #[cfg(not(all(feature = "simulation", madsim)))]

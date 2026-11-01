@@ -992,9 +992,7 @@ impl KrakenFuturesRawHttpClient {
         cli_ord_id: Option<String>,
     ) -> anyhow::Result<FuturesCancelOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for canceling orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let mut params = HashMap::new();
@@ -1059,9 +1057,7 @@ impl KrakenFuturesRawHttpClient {
         batch_items: Vec<KrakenFuturesBatchCancelItem>,
     ) -> anyhow::Result<FuturesBatchCancelResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for batch orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let params = KrakenFuturesBatchOrderParams::new(batch_items);
@@ -1117,9 +1113,7 @@ impl KrakenFuturesRawHttpClient {
         symbol: Option<String>,
     ) -> anyhow::Result<FuturesCancelAllOrdersResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for canceling orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let mut params = HashMap::new();

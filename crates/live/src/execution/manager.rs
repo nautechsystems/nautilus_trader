@@ -262,7 +262,7 @@ impl ExecutionManager {
     ///
     /// Skips filtered orders and preserves an active submission's remaining budget.
     /// Submission identity and duplicate suppression require [`Self::register_submission`].
-    pub fn register_inflight(&mut self, client_order_id: ClientOrderId) {
+    pub fn register_inflight(&mut self, client_order_id: ClientOrderId, command_id: UUID4) {
         self.confirm_submission_outcome(&client_order_id);
 
         if self.submission_recovery_pending(client_order_id)
@@ -272,7 +272,19 @@ impl ExecutionManager {
             return;
         }
 
-        self.start_inflight_check(client_order_id);
+        if self
+            .order_inflight_checks
+            .get(&client_order_id)
+            .is_none_or(|check| check.command_ids.is_empty())
+        {
+            self.start_inflight_check(client_order_id);
+        }
+
+        if let Some(check) = self.order_inflight_checks.get_mut(&client_order_id)
+            && !check.command_ids.contains(&command_id)
+        {
+            check.command_ids.push(command_id);
+        }
     }
 
     /// Registers a submission's identity before execution dispatch or cache insertion.
@@ -316,6 +328,7 @@ impl ExecutionManager {
         self.order_inflight_checks.insert(
             client_order_id,
             InflightCheck {
+                command_ids: Vec::new(),
                 submitted_at: dst::time::Instant::now(),
                 retry_count: 0,
                 last_query_at: None,
@@ -3252,6 +3265,21 @@ impl ExecutionManager {
             OrderEventAny::Filled(fill) => {
                 self.record_position_activity(fill.instrument_id, fill.account_id);
             }
+            OrderEventAny::ModifyDenied(event) => {
+                self.clear_command_tracking(event.client_order_id, event.causation_id);
+            }
+            OrderEventAny::CancelDenied(event) => {
+                self.clear_command_tracking(event.client_order_id, event.causation_id);
+            }
+            OrderEventAny::ModifyRejected(event) if event.causation_id.is_some() => {
+                self.clear_command_tracking(event.client_order_id, event.causation_id);
+            }
+            OrderEventAny::CancelRejected(event) if event.causation_id.is_some() => {
+                self.clear_command_tracking(event.client_order_id, event.causation_id);
+            }
+            OrderEventAny::Updated(event) if event.causation_id.is_some() => {
+                self.clear_command_tracking(event.client_order_id, event.causation_id);
+            }
             OrderEventAny::Accepted(_)
             | OrderEventAny::Rejected(_)
             | OrderEventAny::Canceled(_)
@@ -3266,6 +3294,29 @@ impl ExecutionManager {
         }
 
         self.record_local_activity(event.client_order_id());
+    }
+
+    fn clear_command_tracking(
+        &mut self,
+        client_order_id: ClientOrderId,
+        causation_id: Option<UUID4>,
+    ) {
+        let Some(command_id) = causation_id else {
+            return;
+        };
+
+        let Some(check) = self.order_inflight_checks.get_mut(&client_order_id) else {
+            return;
+        };
+
+        let Some(index) = check.command_ids.iter().position(|id| *id == command_id) else {
+            return;
+        };
+
+        check.command_ids.remove(index);
+        if check.command_ids.is_empty() {
+            self.clear_recon_tracking(&client_order_id, true);
+        }
     }
 
     /// Observes an incoming execution report and updates tracking state.
@@ -5388,7 +5439,10 @@ mod tests {
     use nautilus_model::{
         accounts::AccountAny,
         enums::{LiquiditySide, OmsType, OrderType, PositionSide, TimeInForce},
-        events::order::spec::{OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderUpdatedSpec},
+        events::order::spec::{
+            OrderCancelDeniedSpec, OrderModifyDeniedSpec, OrderPendingCancelSpec,
+            OrderPendingUpdateSpec, OrderUpdatedSpec,
+        },
         identifiers::{Symbol, Venue},
         instruments::{
             CurrencyPair, Instrument,
@@ -6658,6 +6712,46 @@ mod tests {
     }
 
     #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_denial_resolves_only_matching_inflight_commands(#[case] reverse: bool) {
+        let client_order_id = ClientOrderId::from("O-DENIAL-TRACKING");
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let mut manager =
+            ExecutionManager::new(clock, cache, ExecutionManagerConfig::default()).unwrap();
+        let first = UUID4::new();
+        let second = UUID4::new();
+        manager.register_inflight(client_order_id, first);
+        manager.register_inflight(client_order_id, second);
+        let (resolved, remaining) = if reverse {
+            (second, first)
+        } else {
+            (first, second)
+        };
+
+        for cause in [None, Some(UUID4::new()), Some(resolved), Some(resolved)] {
+            let event = OrderEventAny::ModifyDenied(
+                OrderModifyDeniedSpec::builder()
+                    .client_order_id(client_order_id)
+                    .maybe_causation_id(cause)
+                    .build(),
+            );
+            manager.observe_order_event(&event);
+            assert!(manager.order_inflight_checks.contains_key(&client_order_id));
+        }
+
+        let event = OrderEventAny::CancelDenied(
+            OrderCancelDeniedSpec::builder()
+                .client_order_id(client_order_id)
+                .causation_id(remaining)
+                .build(),
+        );
+        manager.observe_order_event(&event);
+        assert!(!manager.order_inflight_checks.contains_key(&client_order_id));
+    }
+
+    #[rstest]
     fn test_register_inflight_skips_filtered_order() {
         let client_order_id = ClientOrderId::from("O-FILTERED-REGISTER");
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
@@ -6673,7 +6767,7 @@ mod tests {
         )
         .expect("valid config");
 
-        manager.register_inflight(client_order_id);
+        manager.register_inflight(client_order_id, UUID4::new());
 
         assert!(!manager.order_inflight_checks.contains_key(&client_order_id));
         assert!(!manager.order_recon_retries.contains_key(&client_order_id));
@@ -6700,7 +6794,7 @@ mod tests {
         )
         .expect("valid config");
 
-        manager.register_inflight(client_order_id);
+        manager.register_inflight(client_order_id, UUID4::new());
         manager
             .config
             .filtered_client_order_ids
@@ -6740,7 +6834,7 @@ mod tests {
         let cache = Rc::new(RefCell::new(Cache::default()));
         let mut manager = ExecutionManager::new(clock, cache, ExecutionManagerConfig::default())
             .expect("valid config");
-        manager.register_inflight(client_order_id);
+        manager.register_inflight(client_order_id, UUID4::new());
         manager.order_query_recency.mark(client_order_id);
         manager.order_coverage_warnings.insert(client_order_id);
         manager.order_coverage_unresolved.insert(client_order_id);
@@ -6853,7 +6947,7 @@ mod tests {
         let mut manager =
             ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default())
                 .expect("valid config");
-        manager.register_inflight(client_order_id);
+        manager.register_inflight(client_order_id, UUID4::new());
         manager.order_query_recency.mark(client_order_id);
         manager.order_coverage_warnings.insert(client_order_id);
         manager.order_coverage_unresolved.insert(client_order_id);

@@ -601,7 +601,8 @@ an update, query result, or reconciliation resolves it.
   `{Accepted, Triggered, PendingUpdate, PartiallyFilled}` and the requested side, then chunks `batch_cancel`
   calls in groups of 100. Per-order venue failures emit `OrderCancelRejected`. Whole-request failures with
   unknown venue outcome leave affected orders pending reconciliation.
-- `batch_cancel_orders` chunks the same way and surfaces explicit per-order
+- `batch_cancel_orders` splits repeated venue order IDs into separate requests so each reply
+  identifies one command UUID. Other chunks contain up to 100 orders. It surfaces explicit per-order
   venue failures as `OrderCancelRejected`. Transport failures with unknown
   venue outcome leave affected orders pending reconciliation.
 

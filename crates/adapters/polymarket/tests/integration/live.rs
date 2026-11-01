@@ -1159,7 +1159,7 @@ async fn reconciliation_applies_missed_terminal_cancel() {
         .await,
         "order did not reach Accepted",
     );
-    h.mark_pending_cancel(&order);
+    h.mark_pending_cancel(&order, None);
     *h.mock_state.orders_response_override.lock().await = Some(crate::mock_venue::load_json(
         "http_canceled_orders_harness.json",
     ));
@@ -2889,13 +2889,13 @@ async fn restart_restores_dust_terminal_after_prior_void() {
 }
 
 // The venue order fills 30 and has 10 more voided when its trade fails. A modify to the 40 they
-// account for, or to less, leaves nothing to replace, so it is rejected while the venue order
+// account for, or to less, leaves nothing to replace, so it is denied while the venue order
 // still works, and a modify to 50 then replaces it with 10.
 #[rstest]
 #[case::equal("40.0000")]
 #[case::below("35.0000")]
 #[tokio::test]
-async fn modify_within_filled_and_voided_is_rejected_before_cancel(#[case] target: &str) {
+async fn modify_within_filled_and_voided_is_denied_before_cancel(#[case] target: &str) {
     let mut h = harness::Harness::build().await;
     let order = harness::limit_order(h.instrument_id(), "O-1");
     submit_until_accepted(&mut h, &order).await;
@@ -2903,11 +2903,11 @@ async fn modify_within_filled_and_voided_is_rejected_before_cancel(#[case] targe
     let before = cached_order(&h, &order);
 
     h.modify_via_risk(&order, None, Some(Quantity::from(target)));
-    let rejected = h
+    let denied = h
         .pump_until(DEADLINE, |cache| {
             cache.order(&order.client_order_id()).is_some_and(|cached| {
                 event_count(&cached, |event| {
-                    matches!(event, OrderEventAny::ModifyRejected(_))
+                    matches!(event, OrderEventAny::ModifyDenied(_))
                 }) == 1
             })
         })
@@ -2919,11 +2919,12 @@ async fn modify_within_filled_and_voided_is_rejected_before_cancel(#[case] targe
         .events()
         .into_iter()
         .filter_map(|event| match event {
-            OrderEventAny::ModifyRejected(event) => Some(event.reason.to_string()),
+            OrderEventAny::ModifyDenied(event) => Some(event.reason.to_string()),
             _ => None,
         })
         .collect();
-    assert!(rejected, "modify was not rejected");
+
+    assert!(denied, "modify was not denied");
     assert_eq!(*h.mock_state.cancel_delete_count.lock().await, 0);
     assert_eq!(
         reasons,

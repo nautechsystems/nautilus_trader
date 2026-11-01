@@ -76,10 +76,11 @@ use crate::{
         PAYLOAD_TYPE_ACCOUNT_STATE, PAYLOAD_TYPE_BARS_RESPONSE,
         PAYLOAD_TYPE_FUNDING_RATES_RESPONSE, PAYLOAD_TYPE_INSTRUMENT_CLOSE,
         PAYLOAD_TYPE_INSTRUMENT_RESPONSE, PAYLOAD_TYPE_INSTRUMENTS_RESPONSE,
-        PAYLOAD_TYPE_ORDER_ACCEPTED, PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
-        PAYLOAD_TYPE_ORDER_CANCELED, PAYLOAD_TYPE_ORDER_DENIED, PAYLOAD_TYPE_ORDER_EMULATED,
-        PAYLOAD_TYPE_ORDER_EXPIRED, PAYLOAD_TYPE_ORDER_FILL_VOIDED, PAYLOAD_TYPE_ORDER_FILLED,
-        PAYLOAD_TYPE_ORDER_INITIALIZED, PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+        PAYLOAD_TYPE_ORDER_ACCEPTED, PAYLOAD_TYPE_ORDER_CANCEL_DENIED,
+        PAYLOAD_TYPE_ORDER_CANCEL_REJECTED, PAYLOAD_TYPE_ORDER_CANCELED, PAYLOAD_TYPE_ORDER_DENIED,
+        PAYLOAD_TYPE_ORDER_EMULATED, PAYLOAD_TYPE_ORDER_EXPIRED, PAYLOAD_TYPE_ORDER_FILL_VOIDED,
+        PAYLOAD_TYPE_ORDER_FILLED, PAYLOAD_TYPE_ORDER_INITIALIZED,
+        PAYLOAD_TYPE_ORDER_MODIFY_DENIED, PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
         PAYLOAD_TYPE_ORDER_PENDING_CANCEL, PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
         PAYLOAD_TYPE_ORDER_REJECTED, PAYLOAD_TYPE_ORDER_RELEASED, PAYLOAD_TYPE_ORDER_SUBMITTED,
         PAYLOAD_TYPE_ORDER_TRIGGERED, PAYLOAD_TYPE_ORDER_UPDATED, PAYLOAD_TYPE_POSITION_ADJUSTED,
@@ -143,7 +144,9 @@ pub(crate) const CACHE_REPLAY_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_ORDER_TRIGGERED,
     PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
     PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
+    PAYLOAD_TYPE_ORDER_MODIFY_DENIED,
     PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+    PAYLOAD_TYPE_ORDER_CANCEL_DENIED,
     PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
     PAYLOAD_TYPE_ORDER_UPDATED,
     PAYLOAD_TYPE_ORDER_FILLED,
@@ -1310,8 +1313,14 @@ fn apply_cache_replay_entry_with_context(
         PAYLOAD_TYPE_ORDER_PENDING_CANCEL => {
             apply_order_event(cache, entry, OrderEventAny::PendingCancel)?;
         }
+        PAYLOAD_TYPE_ORDER_MODIFY_DENIED => {
+            return apply_order_event(cache, entry, OrderEventAny::ModifyDenied);
+        }
         PAYLOAD_TYPE_ORDER_MODIFY_REJECTED => {
             apply_order_event(cache, entry, OrderEventAny::ModifyRejected)?;
+        }
+        PAYLOAD_TYPE_ORDER_CANCEL_DENIED => {
+            return apply_order_event(cache, entry, OrderEventAny::CancelDenied);
         }
         PAYLOAD_TYPE_ORDER_CANCEL_REJECTED => {
             apply_order_event(cache, entry, OrderEventAny::CancelRejected)?;
@@ -1429,13 +1438,22 @@ fn apply_order_event<T>(
     cache: &mut Cache,
     entry: &EventStoreEntry,
     wrap: impl FnOnce(T) -> OrderEventAny,
-) -> Result<(), CacheReplayError>
+) -> Result<bool, CacheReplayError>
 where
     T: DeserializeOwned,
 {
     let event = decode_order_event(entry, wrap)?;
+    if !cache.order_exists(&event.client_order_id())
+        && matches!(
+            event,
+            OrderEventAny::ModifyDenied(_) | OrderEventAny::CancelDenied(_)
+        )
+    {
+        return Ok(false);
+    }
+
     apply_result(entry, cache.update_order(&event))?;
-    Ok(())
+    Ok(true)
 }
 
 fn decode_order_event<T>(
@@ -2201,14 +2219,15 @@ mod tests {
         },
         enums::{
             AggregationSource, AggressorSide, BarAggregation, InstrumentCloseType, OrderSide,
-            OrderStatus, PositionAdjustmentType, PositionSide, PriceType,
+            OrderStatus, OrderType, PositionAdjustmentType, PositionSide, PriceType,
         },
         events::{
             PositionEvent,
             account::stubs::{cash_account_state, cash_account_state_million_usd},
             order::spec::{
-                OrderAcceptedSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderInitializedSpec,
-                OrderSubmittedSpec,
+                OrderAcceptedSpec, OrderCancelDeniedSpec, OrderFillVoidedSpec, OrderFilledSpec,
+                OrderInitializedSpec, OrderModifyDeniedSpec, OrderPendingCancelSpec,
+                OrderPendingUpdateSpec, OrderSubmittedSpec,
             },
         },
         identifiers::{
@@ -2834,7 +2853,9 @@ mod tests {
                 PAYLOAD_TYPE_ORDER_TRIGGERED,
                 PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
                 PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
+                PAYLOAD_TYPE_ORDER_MODIFY_DENIED,
                 PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+                PAYLOAD_TYPE_ORDER_CANCEL_DENIED,
                 PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
                 PAYLOAD_TYPE_ORDER_UPDATED,
                 PAYLOAD_TYPE_ORDER_FILLED,
@@ -4223,6 +4244,139 @@ mod tests {
         assert_eq!(cache.trades(&instrument_id), None);
         assert_eq!(cache.funding_rates(&instrument_id), None);
         assert_eq!(cache.bars(&bar_type), None);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn command_denial_replay_does_not_create_missing_order(#[case] cancel: bool) {
+        let event = if cancel {
+            OrderEventAny::CancelDenied(
+                OrderCancelDeniedSpec::builder()
+                    .causation_id(UUID4::new())
+                    .build(),
+            )
+        } else {
+            OrderEventAny::ModifyDenied(
+                OrderModifyDeniedSpec::builder()
+                    .causation_id(UUID4::new())
+                    .build(),
+            )
+        };
+
+        let reader = reader_with_entries("run-command-only", &[append_order_event(1, &event)]);
+        let mut cache = Cache::default();
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).unwrap();
+        assert!(!cache.order_exists(&event.client_order_id()));
+        assert_eq!(report.applied_entries, 0);
+        assert_eq!(report.ignored_entries, 1);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn command_denial_replay_restores_correlated_pending_state(#[case] cancel_first: bool) {
+        let initialized = OrderInitializedSpec::builder()
+            .instrument_id(audusd_sim().id())
+            .order_type(OrderType::Limit)
+            .quantity(Quantity::from(5))
+            .price(Price::from("0.90000"))
+            .build();
+        let client_order_id = initialized.client_order_id;
+        let submitted = OrderSubmittedSpec::builder()
+            .instrument_id(initialized.instrument_id)
+            .client_order_id(client_order_id)
+            .build();
+        let accepted = OrderAcceptedSpec::builder()
+            .instrument_id(initialized.instrument_id)
+            .client_order_id(client_order_id)
+            .account_id(submitted.account_id)
+            .build();
+        let modify = UUID4::new();
+        let cancel = UUID4::new();
+        let mut pending_modify = OrderPendingUpdateSpec::builder()
+            .instrument_id(initialized.instrument_id)
+            .client_order_id(client_order_id)
+            .account_id(submitted.account_id)
+            .venue_order_id(accepted.venue_order_id)
+            .build();
+        pending_modify.causation_id = Some(modify);
+        let mut pending_cancel = OrderPendingCancelSpec::builder()
+            .instrument_id(initialized.instrument_id)
+            .client_order_id(client_order_id)
+            .account_id(submitted.account_id)
+            .venue_order_id(accepted.venue_order_id)
+            .build();
+        pending_cancel.causation_id = Some(cancel);
+        let modify_denied = OrderEventAny::ModifyDenied(
+            OrderModifyDeniedSpec::builder()
+                .instrument_id(initialized.instrument_id)
+                .client_order_id(client_order_id)
+                .account_id(submitted.account_id)
+                .venue_order_id(accepted.venue_order_id)
+                .causation_id(modify)
+                .build(),
+        );
+        let cancel_denied = OrderEventAny::CancelDenied(
+            OrderCancelDeniedSpec::builder()
+                .instrument_id(initialized.instrument_id)
+                .client_order_id(client_order_id)
+                .account_id(submitted.account_id)
+                .venue_order_id(accepted.venue_order_id)
+                .causation_id(cancel)
+                .build(),
+        );
+
+        let (first, second) = if cancel_first {
+            (cancel_denied, modify_denied)
+        } else {
+            (modify_denied, cancel_denied)
+        };
+
+        let events = [
+            OrderEventAny::Initialized(initialized),
+            OrderEventAny::Submitted(submitted),
+            OrderEventAny::Accepted(accepted),
+            OrderEventAny::PendingUpdate(pending_modify),
+            OrderEventAny::PendingCancel(pending_cancel),
+            first,
+        ];
+        let entries: Vec<_> = events
+            .iter()
+            .enumerate()
+            .map(|(index, event)| append_order_event(index as u64 + 1, event))
+            .collect();
+        let reader = reader_with_entries("run-correlated-denials", &entries);
+        let mut cache = Cache::default();
+        let report = replay_cache_snapshot_tail(&mut cache, &reader).unwrap();
+        let restored = cache.order_owned(&client_order_id).unwrap();
+        assert_eq!(report.applied_entries, 6);
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(
+            restored.status(),
+            if cancel_first {
+                OrderStatus::PendingUpdate
+            } else {
+                OrderStatus::PendingCancel
+            }
+        );
+        assert_eq!(restored.has_pending_cancel_command(), !cancel_first);
+        assert_eq!(restored.has_pending_update_command(), cancel_first);
+        assert_eq!(restored.quantity(), Quantity::from(5));
+        assert_eq!(restored.price(), Some(Price::from("0.90000")));
+        assert_eq!(restored.filled_qty(), Quantity::from(0));
+        let tail = reader_with_entries("run-remaining-denial", &[append_order_event(1, &second)]);
+        let report = replay_cache_snapshot_tail(&mut cache, &tail).unwrap();
+        let restored = cache.order_owned(&client_order_id).unwrap();
+        assert_eq!(report.applied_entries, 1);
+        assert_eq!(report.ignored_entries, 0);
+        assert_eq!(restored.status(), OrderStatus::Accepted);
+        assert!(!restored.has_pending_cancel_command());
+        assert!(!restored.has_pending_update_command());
+        assert_eq!(restored.quantity(), Quantity::from(5));
+        assert_eq!(restored.price(), Some(Price::from("0.90000")));
+        assert_eq!(restored.filled_qty(), Quantity::from(0));
+        assert_eq!(restored.last_event(), &second);
     }
 
     #[rstest]

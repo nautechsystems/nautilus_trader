@@ -17,7 +17,8 @@
 
 use std::sync::Arc;
 
-use ahash::{AHashMap, AHashSet};
+use ahash::AHashMap;
+use nautilus_core::UUID4;
 use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
 use parking_lot::Mutex;
 
@@ -53,13 +54,14 @@ impl PendingSubmitTracker {
 /// known, so the cancel can be issued once the submit response lands.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PendingCancelTracker {
-    client_order_ids: Arc<Mutex<AHashSet<ClientOrderId>>>,
+    client_order_ids: Arc<Mutex<AHashMap<ClientOrderId, Vec<Option<UUID4>>>>>,
 }
 
 impl PendingCancelTracker {
     pub(super) fn venue_order_id_or_defer(
         &self,
         client_order_id: ClientOrderId,
+        causation_id: Option<UUID4>,
         lookup: impl FnOnce() -> Option<VenueOrderId>,
     ) -> Option<VenueOrderId> {
         // Submit registration must not check pending cancels between lookup and insertion
@@ -67,22 +69,54 @@ impl PendingCancelTracker {
         let venue_order_id = lookup();
 
         if venue_order_id.is_none() {
-            guard.insert(client_order_id);
+            Self::record_command(&mut guard, client_order_id, causation_id);
         }
 
         venue_order_id
     }
 
-    pub(crate) fn insert(&self, client_order_id: ClientOrderId) -> bool {
-        self.client_order_ids.lock().insert(client_order_id)
+    pub(super) fn insert(
+        &self,
+        client_order_id: ClientOrderId,
+        causation_id: Option<UUID4>,
+    ) -> bool {
+        Self::record_command(
+            &mut self.client_order_ids.lock(),
+            client_order_id,
+            causation_id,
+        )
+    }
+
+    fn record_command(
+        commands: &mut AHashMap<ClientOrderId, Vec<Option<UUID4>>>,
+        client_order_id: ClientOrderId,
+        causation_id: Option<UUID4>,
+    ) -> bool {
+        let first = !commands.contains_key(&client_order_id);
+        let causes = commands.entry(client_order_id).or_default();
+        if !causes.contains(&causation_id) {
+            causes.push(causation_id);
+        }
+
+        first
+    }
+
+    pub(super) fn take(&self, client_order_id: &ClientOrderId) -> Vec<Option<UUID4>> {
+        self.client_order_ids
+            .lock()
+            .remove(client_order_id)
+            .unwrap_or_default()
     }
 
     pub(crate) fn remove(&self, client_order_id: &ClientOrderId) -> bool {
-        self.client_order_ids.lock().remove(client_order_id)
+        self.client_order_ids
+            .lock()
+            .remove(client_order_id)
+            .is_some()
     }
 
     pub(crate) fn contains(&self, client_order_id: &ClientOrderId) -> bool {
-        self.client_order_ids.lock().contains(client_order_id)
+        self.client_order_ids.lock().contains_key(client_order_id)
     }
 }
 
@@ -112,13 +146,33 @@ mod tests {
         let tracker = PendingCancelTracker::default();
         let client_order_id = ClientOrderId::from("O-CANCEL");
         let other_client_order_id = ClientOrderId::from("O-OTHER");
-        tracker.insert(other_client_order_id);
+        tracker.insert(other_client_order_id, None);
 
-        let result = tracker.venue_order_id_or_defer(client_order_id, || venue_order_id);
+        let result = tracker.venue_order_id_or_defer(client_order_id, None, || venue_order_id);
 
         assert_eq!(result, venue_order_id);
         assert_eq!(tracker.contains(&client_order_id), deferred);
         assert!(tracker.contains(&other_client_order_id));
+    }
+
+    #[rstest]
+    fn test_merged_cancel_deferrals_preserve_each_command_once() {
+        let tracker = PendingCancelTracker::default();
+        let client_order_id = ClientOrderId::from("O-MERGED-CANCEL");
+        let first = UUID4::new();
+        let second = UUID4::new();
+        assert_eq!(
+            tracker.venue_order_id_or_defer(client_order_id, Some(first), || None),
+            None
+        );
+        assert!(!tracker.insert(client_order_id, Some(second)));
+        assert!(!tracker.insert(client_order_id, Some(first)));
+        assert_eq!(
+            tracker.take(&client_order_id),
+            vec![Some(first), Some(second)]
+        );
+        assert!(!tracker.contains(&client_order_id));
+        assert!(tracker.take(&client_order_id).is_empty());
     }
 
     #[rstest]
@@ -148,7 +202,7 @@ mod tests {
                 tracker.contains(&client_order_id)
             });
 
-            let result = tracker.venue_order_id_or_defer(client_order_id, || {
+            let result = tracker.venue_order_id_or_defer(client_order_id, None, || {
                 let stale_venue_order_id = contexts.venue_order_id(&client_order_id);
                 assert_eq!(stale_venue_order_id, None);
                 lookup_tx.send(()).unwrap();

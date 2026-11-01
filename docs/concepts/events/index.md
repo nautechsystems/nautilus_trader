@@ -68,27 +68,62 @@ documented in the full [order state flow](../orders/index.md#order-state-flow).
 | [`OrderPendingUpdate`](order_pending_update.md)   | Accepted -> PendingUpdate                              | `on_order_pending_update`  |
 | [`OrderPendingCancel`](order_pending_cancel.md)   | Accepted -> PendingCancel                              | `on_order_pending_cancel`  |
 | [`OrderUpdated`](order_updated.md)                | PendingUpdate -> previous status                       | `on_order_updated`         |
+| [`OrderModifyDenied`](order_modify_denied.md)     | Preserve order; resolve matching pending update        | `on_order_modify_denied`   |
 | [`OrderModifyRejected`](order_modify_rejected.md) | PendingUpdate -> previous status                       | `on_order_modify_rejected` |
+| [`OrderCancelDenied`](order_cancel_denied.md)     | Preserve order; resolve matching pending cancellation  | `on_order_cancel_denied`   |
 | [`OrderCancelRejected`](order_cancel_rejected.md) | PendingCancel -> previous status                       | `on_order_cancel_rejected` |
 | [`OrderCanceled`](order_canceled.md)              | PendingCancel/Accepted -> Canceled                     | `on_order_canceled`        |
 | [`OrderExpired`](order_expired.md)                | Accepted -> Expired                                    | `on_order_expired`         |
 | [`OrderFilled`](order_filled.md)                  | Accepted -> Filled/PartiallyFilled                     | `on_order_filled`          |
 | [`OrderFillVoided`](order_fill_voided.md)         | Correct known fill or assert terminal for unknown fill | `on_order_fill_voided`     |
 
+### Command refusals
+
+- **Denied**: A local refusal produces `OrderModifyDenied` or `OrderCancelDenied` only when the command
+  is proven not sent.
+- **Rejected**: Venue or simulated matching engine refusals of sent commands produce
+  `OrderModifyRejected` or `OrderCancelRejected`. A definitive cancel-replace failure also produces
+  `OrderModifyRejected` once a leg is sent, even if a later local check prevents replacement.
+- **Ambiguous transport failure**: Neither outcome is proven. The order awaits venue reports and reconciliation.
+
+#### Order state
+
+Denials **do not terminate the order or change its terms**.
+
+- **Command matching**: A denial resolves only a pending command of the same kind with a matching
+  `causation_id`. Missing or unmatched IDs leave pending commands unchanged.
+- **Status restoration**: With no pending command left, the order returns to its prior working status
+  without undoing later fills, amendments, or terminal states.
+- **Rejections**: Status restoration requires an exact pending-command match when `causation_id` is
+  present; otherwise, it retains legacy behavior.
+
+The pipeline does not create a pending event solely to report a refusal.
+
+#### Callback migration
+
+For strategies and execution algorithms:
+
+- Move local-refusal handling from rejected callbacks to `on_order_modify_denied` and `on_order_cancel_denied`.
+- Keep venue-confirmed refusal handling in the rejected callbacks.
+
+A denial emits no companion rejection. Both event families reach `on_order_event`.
+
+**Arrow compatibility**: Older batches without a `causation_id` column decode with `causation_id=None`.
+
 ### Common Python order event fields
 
 Each concrete Python order event exposes these fields:
 
-| Field             | Description                                                  |
-| ----------------- | ------------------------------------------------------------ |
-| `trader_id`       | Trader instance identifier.                                  |
-| `strategy_id`     | Strategy associated with the order.                          |
-| `instrument_id`   | Instrument for the order.                                    |
-| `client_order_id` | Client-assigned order identifier.                            |
-| `event_id`        | Unique event identifier.                                     |
-| `ts_event`        | UNIX timestamp (nanoseconds) when the event occurred.        |
-| `ts_init`         | UNIX timestamp (nanoseconds) when the event was initialized. |
-| `causation_id`    | Source event or report which caused this event, if known.    |
+| Field             | Description                                                        |
+| ----------------- | ------------------------------------------------------------------ |
+| `trader_id`       | Trader instance identifier.                                        |
+| `strategy_id`     | Strategy associated with the order.                                |
+| `instrument_id`   | Instrument for the order.                                          |
+| `client_order_id` | Client-assigned order identifier.                                  |
+| `event_id`        | Unique event identifier.                                           |
+| `ts_event`        | UNIX timestamp (nanoseconds) when the event occurred.              |
+| `ts_init`         | UNIX timestamp (nanoseconds) when the event was initialized.       |
+| `causation_id`    | Source command, event, or report that caused this event, if known. |
 
 Each order event page lists its type-specific fields. These include `venue_order_id`, `account_id`,
 and `reconciliation` only on the Python event classes that expose them. For example,

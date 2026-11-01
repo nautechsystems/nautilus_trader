@@ -821,6 +821,7 @@ fn handle_ws_message(
         }
         BybitWsMessage::Auth(_)
         | BybitWsMessage::OrderResponse(_)
+        | BybitWsMessage::OrderNotSent { .. }
         | BybitWsMessage::AccountOrder(_)
         | BybitWsMessage::AccountExecution(_)
         | BybitWsMessage::AccountExecutionFast(_)

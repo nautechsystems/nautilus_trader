@@ -49,7 +49,7 @@ use nautilus_common::{
         ExecutionEvent,
         execution::{
             BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport, ModifyOrder,
-            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
             report::{GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports},
         },
     },
@@ -70,8 +70,8 @@ use nautilus_model::{
     events::{
         AccountState, OrderEventAny, OrderInitialized, OrderUpdated,
         order::spec::{
-            OrderAcceptedSpec, OrderPendingUpdateSpec, OrderSubmittedSpec, OrderTriggeredSpec,
-            OrderUpdatedSpec,
+            OrderAcceptedSpec, OrderPendingCancelSpec, OrderPendingUpdateSpec, OrderSubmittedSpec,
+            OrderTriggeredSpec, OrderUpdatedSpec,
         },
     },
     identifiers::{
@@ -463,7 +463,7 @@ fn test_ambiguous_batch_submit_send_failure_emits_no_rejections() {
 }
 
 #[rstest]
-fn test_unsent_modify_send_failure_emits_order_modify_rejected() {
+fn test_unsent_modify_send_failure_emits_order_modify_denied() {
     let cid = ClientOrderId::new("O-modify-handler-unavailable");
     let (events, state) = dispatch_send_failed_response(
         OKXWsOperation::AmendOrder,
@@ -474,9 +474,9 @@ fn test_unsent_modify_send_failure_emits_order_modify_rejected() {
     assert!(
         contains_order_event(&events, |event| matches!(
             event,
-            OrderEventAny::ModifyRejected(rejected) if rejected.client_order_id == cid
+            OrderEventAny::ModifyDenied(rejected) if rejected.client_order_id == cid
         )),
-        "unsent modify failure should emit OrderModifyRejected: {events:?}"
+        "unsent modify failure should emit OrderModifyDenied: {events:?}"
     );
     assert!(state.order_identities.contains_key(&cid));
 }
@@ -632,7 +632,7 @@ async fn test_local_submit_validation_failure_emits_order_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_local_modify_validation_failure_emits_order_modify_rejected() {
+async fn test_local_modify_validation_failure_emits_order_modify_denied() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");
     let (mut client, mut rx, cache) = create_test_execution_client(&base_url);
@@ -663,12 +663,12 @@ async fn test_local_modify_validation_failure_emits_order_modify_rejected() {
     match recv_order_event_matching(&mut rx, |event| {
         matches!(
             event,
-            OrderEventAny::ModifyRejected(rejected) if rejected.client_order_id == client_order_id
+            OrderEventAny::ModifyDenied(rejected) if rejected.client_order_id == client_order_id
         )
     })
     .await
     {
-        OrderEventAny::ModifyRejected(rejected) => {
+        OrderEventAny::ModifyDenied(rejected) => {
             assert_eq!(rejected.client_order_id, client_order_id);
             assert!(
                 rejected.reason.contains("No instIdCode cached"),
@@ -676,7 +676,7 @@ async fn test_local_modify_validation_failure_emits_order_modify_rejected() {
                 rejected.reason
             );
         }
-        other => panic!("expected OrderModifyRejected event, was {other:?}"),
+        other => panic!("expected OrderModifyDenied event, was {other:?}"),
     }
 }
 
@@ -2377,6 +2377,7 @@ fn make_algo_cancel_response(
 
 fn make_algo_cancel_context(cid: &str) -> AlgoCancelContext {
     AlgoCancelContext {
+        causation_id: None,
         client_order_id: ClientOrderId::new(cid),
         instrument_id: InstrumentId::from("ETH-USDT-SWAP.OKX"),
         strategy_id: StrategyId::from("STRATEGY-001"),
@@ -2500,6 +2501,128 @@ fn test_algo_cancel_rejection_emits_for_nonzero_scode() {
             assert_eq!(event.reason, Ustr::from("OKX error 51000: Order not found"));
         }
         other => panic!("Expected one OrderCancelRejected, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[case(false)]
+#[case(true)]
+#[tokio::test(start_paused = true)]
+async fn test_algo_cancel_rejection_preserves_other_command(#[case] reverse: bool) {
+    let (emitter, mut rx) = test_emitter();
+    let clock = get_atomic_clock_realtime();
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let context = make_algo_cancel_context("O-OVERLAPPING-ALGO");
+    let account_id = AccountId::from("OKX-001");
+    let venue_order_id = context.venue_order_id.unwrap();
+    let order = OrderTestBuilder::new(OrderType::StopMarket)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(context.strategy_id)
+        .instrument_id(context.instrument_id)
+        .client_order_id(context.client_order_id)
+        .quantity(Quantity::from("2.500"))
+        .trigger_price(Price::from("2317.25"))
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, venue_order_id);
+    cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+
+    let mut manager = ExecutionManager::new(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        Rc::clone(&cache),
+        ExecutionManagerConfig {
+            inflight_threshold_ms: 100,
+            ..Default::default()
+        },
+    )
+    .unwrap();
+
+    let mut causes = [UUID4::new(), UUID4::new()];
+
+    for cause in causes {
+        let mut pending = OrderPendingCancelSpec::builder()
+            .trader_id(TraderId::from("TESTER-001"))
+            .strategy_id(context.strategy_id)
+            .instrument_id(context.instrument_id)
+            .client_order_id(context.client_order_id)
+            .account_id(account_id)
+            .venue_order_id(venue_order_id)
+            .event_id(UUID4::new())
+            .build();
+        pending.causation_id = Some(cause);
+        cache
+            .borrow_mut()
+            .update_order(&OrderEventAny::PendingCancel(pending))
+            .unwrap();
+        manager.register_inflight(context.client_order_id, cause);
+    }
+
+    if reverse {
+        causes.reverse();
+    }
+
+    for (index, cause) in causes.into_iter().enumerate() {
+        let context = AlgoCancelContext {
+            causation_id: Some(cause),
+            ..context.clone()
+        };
+
+        emit_algo_cancel_rejections(
+            &[make_algo_cancel_response(
+                "algo-overlap",
+                "51000",
+                "Order not found",
+            )],
+            std::slice::from_ref(&context),
+            &emitter,
+            clock,
+        );
+        let events = drain_events(&mut rx);
+        assert_eq!(events.len(), 1);
+
+        let ExecutionEvent::Order(event @ OrderEventAny::CancelRejected(rejected)) = &events[0]
+        else {
+            panic!("Expected cancel rejection, was {:?}", events[0]);
+        };
+
+        assert_eq!(rejected.causation_id, Some(cause));
+        assert_eq!(rejected.client_order_id, context.client_order_id);
+        assert_eq!(rejected.venue_order_id, Some(venue_order_id));
+        assert_eq!(rejected.reason, "OKX error 51000: Order not found");
+        cache.borrow_mut().update_order(event).unwrap();
+        manager.observe_order_event(event);
+        tokio::time::advance(Duration::from_millis(101)).await;
+        let result = manager.check_inflight_orders();
+        let cached = cache
+            .borrow()
+            .try_order_owned(&context.client_order_id)
+            .unwrap();
+
+        assert_eq!(cached.quantity(), Quantity::from("2.500"));
+        assert_eq!(cached.trigger_price(), Some(Price::from("2317.25")));
+        assert_eq!(cached.has_pending_cancel_command(), index == 0);
+        assert_eq!(
+            cached.status(),
+            if index == 0 {
+                OrderStatus::PendingCancel
+            } else {
+                OrderStatus::Accepted
+            }
+        );
+        assert!(result.events.is_empty());
+        assert_eq!(result.queries.len(), usize::from(index == 0));
+
+        if index == 0 {
+            let TradingCommand::QueryOrder(query) = &result.queries[0] else {
+                panic!("Expected query for remaining cancel");
+            };
+
+            assert_eq!(query.client_order_id, context.client_order_id);
+            assert_eq!(query.venue_order_id, Some(venue_order_id));
+        }
     }
 }
 

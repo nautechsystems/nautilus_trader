@@ -2802,7 +2802,7 @@ fn submit_order_list_denies_all_orders_when_client_not_ready() {
 }
 
 #[rstest]
-fn modify_order_rejects_when_client_not_ready() {
+fn modify_order_denies_when_client_not_ready() {
     let (client, mut rx, _) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
 
@@ -2822,10 +2822,11 @@ fn modify_order_rejects_when_client_not_ready() {
         None,
     );
 
+    let cause = cmd.command_id;
     client.modify_order(cmd).unwrap();
 
     match next_order_event(&mut rx) {
-        OrderEventAny::ModifyRejected(event) => {
+        OrderEventAny::ModifyDenied(event) => {
             assert_eq!(event.trader_id, client.core.trader_id);
             assert_eq!(event.client_order_id, order.client_order_id());
             assert_eq!(event.instrument_id, order.instrument_id());
@@ -2833,21 +2834,20 @@ fn modify_order_rejects_when_client_not_ready() {
             assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
             assert_eq!(event.account_id, Some(client.core.account_id));
             assert_eq!(event.ts_init, event.ts_event);
-            assert!(!event.reconciliation);
-            assert_eq!(event.causation_id, None);
+            assert_eq!(event.causation_id, Some(cause));
             assert_eq!(
                 event.reason.to_string(),
                 "Interactive Brokers client is not ready; refusing to modify order"
             );
         }
-        event => panic!("Expected OrderModifyRejected, was {event:?}"),
+        event => panic!("Expected OrderModifyDenied, was {event:?}"),
     }
 
     assert!(rx.try_recv().is_err());
 }
 
 #[rstest]
-fn cancel_order_rejects_when_client_not_ready() {
+fn cancel_order_denies_when_client_not_ready() {
     let (client, mut rx, cache) = create_test_execution_client();
     let order = create_test_limit_order(ClientOrderId::from("O-IB-001"));
     let accepted = OrderEventAny::Accepted(OrderAccepted::new(
@@ -2883,10 +2883,11 @@ fn cancel_order_rejects_when_client_not_ready() {
         None,
     );
 
+    let cause = cmd.command_id;
     client.cancel_order(cmd).unwrap();
 
     match next_order_event(&mut rx) {
-        OrderEventAny::CancelRejected(event) => {
+        OrderEventAny::CancelDenied(event) => {
             assert_eq!(event.trader_id, order.trader_id());
             assert_eq!(event.client_order_id, order.client_order_id());
             assert_eq!(event.instrument_id, order.instrument_id());
@@ -2894,16 +2895,54 @@ fn cancel_order_rejects_when_client_not_ready() {
             assert_eq!(event.venue_order_id, Some(VenueOrderId::from("1001")));
             assert_eq!(event.account_id, Some(client.core.account_id));
             assert_eq!(event.ts_init, event.ts_event);
-            assert!(!event.reconciliation);
-            assert_eq!(event.causation_id, None);
+            assert_eq!(event.causation_id, Some(cause));
             assert_eq!(
                 event.reason.to_string(),
                 "Interactive Brokers client is not ready; refusing to cancel order"
             );
         }
-        event => panic!("Expected OrderCancelRejected, was {event:?}"),
+        event => panic!("Expected OrderCancelDenied, was {event:?}"),
     }
 
+    assert!(rx.try_recv().is_err());
+}
+
+#[rstest]
+fn cancel_order_denies_unknown_order_without_caching_it() {
+    let (client, mut rx, cache) = create_test_execution_client();
+    let client_order_id = ClientOrderId::from("O-IB-UNKNOWN-CANCEL");
+    let cause = UUID4::new();
+    let strategy_id = StrategyId::from("S-UNKNOWN");
+    let instrument_id = InstrumentId::from("AAPL.NASDAQ");
+    let venue_order_id = VenueOrderId::from("9012");
+
+    let command = CancelOrder::new(
+        client.core.trader_id,
+        Some(client.core.client_id),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        Some(venue_order_id),
+        cause,
+        UnixNanos::from(17),
+        None,
+        None,
+    );
+    client.cancel_order(command).unwrap();
+
+    let OrderEventAny::CancelDenied(event) = next_order_event(&mut rx) else {
+        panic!("expected cancel denial")
+    };
+
+    assert_eq!(event.trader_id, client.core.trader_id);
+    assert_eq!(event.strategy_id, strategy_id);
+    assert_eq!(event.instrument_id, instrument_id);
+    assert_eq!(event.client_order_id, client_order_id);
+    assert_eq!(event.venue_order_id, Some(venue_order_id));
+    assert_eq!(event.account_id, Some(client.core.account_id));
+    assert_eq!(event.causation_id, Some(cause));
+    assert_eq!(event.ts_event, event.ts_init);
+    assert!(cache.borrow().order(&client_order_id).is_none());
     assert!(rx.try_recv().is_err());
 }
 

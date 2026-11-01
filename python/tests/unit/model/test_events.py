@@ -29,6 +29,7 @@ from nautilus_trader.model import InstrumentId
 from nautilus_trader.model import LiquiditySide
 from nautilus_trader.model import Money
 from nautilus_trader.model import OrderAccepted
+from nautilus_trader.model import OrderCancelDenied
 from nautilus_trader.model import OrderCanceled
 from nautilus_trader.model import OrderCancelRejected
 from nautilus_trader.model import OrderDenied
@@ -37,6 +38,7 @@ from nautilus_trader.model import OrderExpired
 from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderFillVoided
 from nautilus_trader.model import OrderInitialized
+from nautilus_trader.model import OrderModifyDenied
 from nautilus_trader.model import OrderModifyRejected
 from nautilus_trader.model import OrderPendingCancel
 from nautilus_trader.model import OrderPendingUpdate
@@ -359,6 +361,18 @@ def _make_order_events(
 
     return [
         OrderDenied(**common, reason="DENIED"),
+        OrderModifyDenied(
+            **common,
+            venue_order_id=venue_order_id,
+            account_id=account_id,
+            reason="MODIFY_DENIED",
+        ),
+        OrderCancelDenied(
+            **common,
+            venue_order_id=venue_order_id,
+            account_id=account_id,
+            reason="CANCEL_DENIED",
+        ),
         OrderFilled(
             **reconciled,
             trade_id=TradeId("1"),
@@ -425,6 +439,55 @@ def test_order_denied_to_dict_roundtrip(
     restored = OrderDenied.from_dict(event.to_dict())
 
     assert restored == event
+
+
+@pytest.mark.parametrize("event_type", [OrderModifyDenied, OrderCancelDenied])
+@pytest.mark.parametrize("with_metadata", [False, True])
+@pytest.mark.parametrize("with_cause", [False, True])
+def test_command_denied_preserves_all_fields(
+    event_type: type,
+    with_metadata: bool,
+    with_cause: bool,
+    trader_id: TraderId,
+    strategy_id: StrategyId,
+    audusd_id: InstrumentId,
+    account_id: AccountId,
+    client_order_id: ClientOrderId,
+    venue_order_id: VenueOrderId,
+    uuid: UUID4,
+) -> None:
+    """
+    Denied events retain every field through dictionary round trips.
+    """
+    cause = UUID4.from_str("a4f41181-2b03-49f3-a771-bbe98d176c0f") if with_cause else None
+    fields = {
+        "trader_id": trader_id,
+        "strategy_id": strategy_id,
+        "instrument_id": audusd_id,
+        "client_order_id": client_order_id,
+        "reason": "Command was not sent",
+        "event_id": uuid,
+        "ts_event": 11,
+        "ts_init": 29,
+        "venue_order_id": venue_order_id if with_metadata else None,
+        "account_id": account_id if with_metadata else None,
+        "causation_id": cause,
+    }
+    event = event_type(**fields)
+    encoded = {
+        "type": event_type.__name__,
+        **{name: str(value) if value is not None else None for name, value in fields.items()},
+        "ts_event": 11,
+        "ts_init": 29,
+    }
+    restored = event_type.from_dict(encoded)
+
+    assert event.to_dict() == encoded
+    assert restored.to_dict() == encoded
+
+    for name, value in fields.items():
+        assert getattr(event, name) == value
+        assert getattr(restored, name) == value
 
 
 def test_order_submitted(

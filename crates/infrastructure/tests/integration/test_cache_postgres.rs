@@ -608,6 +608,71 @@ mod serial_tests {
         db.close().unwrap();
     }
 
+    #[rstest::rstest]
+    #[case::modify(true)]
+    #[case::cancel(false)]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_command_denied_insert_and_load_preserves_all_fields(
+        #[case] modify: bool,
+        #[values(false, true)] with_metadata: bool,
+        #[values(false, true)] with_cause: bool,
+    ) {
+        use nautilus_model::events::order::spec::{OrderCancelDeniedSpec, OrderModifyDeniedSpec};
+        let mut db = get_test_pg_cache_database()
+            .await
+            .expect("connect disposable test database");
+        let instrument = seed_order_event_dependencies(&db).await;
+        let trader = TraderId::from("TRADER-DENIAL-017");
+        let strategy = StrategyId::from("S-DENIAL-019");
+        let client = ClientOrderId::from(UUID4::new().to_string().as_str());
+        let venue = with_metadata.then(|| VenueOrderId::from("V-DENIAL-023"));
+        let account = with_metadata.then(|| AccountId::from("A-DENIAL-029"));
+        let cause = with_cause.then(UUID4::new);
+
+        let event = if modify {
+            OrderEventAny::ModifyDenied(
+                OrderModifyDeniedSpec::builder()
+                    .trader_id(trader)
+                    .strategy_id(strategy)
+                    .instrument_id(instrument)
+                    .client_order_id(client)
+                    .maybe_venue_order_id(venue)
+                    .maybe_account_id(account)
+                    .reason("local modify refusal".into())
+                    .ts_event(31.into())
+                    .ts_init(37.into())
+                    .maybe_causation_id(cause)
+                    .build(),
+            )
+        } else {
+            OrderEventAny::CancelDenied(
+                OrderCancelDeniedSpec::builder()
+                    .trader_id(trader)
+                    .strategy_id(strategy)
+                    .instrument_id(instrument)
+                    .client_order_id(client)
+                    .maybe_venue_order_id(venue)
+                    .maybe_account_id(account)
+                    .reason("local cancel refusal".into())
+                    .ts_event(41.into())
+                    .ts_init(43.into())
+                    .maybe_causation_id(cause)
+                    .build(),
+            )
+        };
+
+        DatabaseQueries::add_order_event(&db.pool, event.clone().into_boxed(), None)
+            .await
+            .unwrap();
+        let loaded = DatabaseQueries::load_order_events(&db.pool, &client, &trader)
+            .await
+            .unwrap();
+        delete_order_events(&db.pool, &client).await;
+        assert_eq!(loaded, vec![event]);
+        reset_test_database(&db).await;
+        db.close().unwrap();
+    }
+
     /// Seeds the foreign-key dependencies that `order_event` rows require.
     async fn seed_order_event_dependencies(database: &PostgresCacheDatabase) -> InstrumentId {
         let instrument = currency_pair_ethusdt();

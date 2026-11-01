@@ -1492,7 +1492,12 @@ impl ExecutionClient for BybitExecutionClient {
             let req_id = UUID4::new().to_string();
             dispatch_state.pending_requests.insert(
                 req_id.clone(),
-                (vec![client_order_id], vec![None], PendingOperation::Place),
+                (
+                    vec![client_order_id],
+                    vec![None],
+                    PendingOperation::Place,
+                    Vec::new(),
+                ),
             );
 
             if let Err(e) = ws_trade.place_order_with_id(params, req_id.clone()).await {
@@ -1813,7 +1818,7 @@ impl ExecutionClient for BybitExecutionClient {
                 let chunk_voids = vec![None; chunk_cids.len()];
                 dispatch_state.pending_requests.insert(
                     req_id.clone(),
-                    (chunk_cids, chunk_voids, PendingOperation::Place),
+                    (chunk_cids, chunk_voids, PendingOperation::Place, Vec::new()),
                 );
             }
 
@@ -1866,6 +1871,15 @@ impl ExecutionClient for BybitExecutionClient {
                 "Modify command failed local validation for {client_order_id}: {}",
                 "Option params (order_iv) are not supported in demo mode",
             );
+            emitter.emit_order_modify_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                "Option params (order_iv) are not supported in demo mode",
+                clock.get_time_ns(),
+                Some(cmd.command_id),
+            );
             return Ok(());
         }
 
@@ -1901,12 +1915,19 @@ impl ExecutionClient for BybitExecutionClient {
                                 venue_order_id,
                                 &format!("modify-order-error: {reason}"),
                                 ts_event,
+                                Some(cmd.command_id),
                             );
                             anyhow::bail!("modify order rejected: {reason}");
                         }
                         CommandFailure::NotSent(reason) => {
-                            log::warn!(
-                                "HTTP modify command failed local validation for {client_order_id}: {reason}"
+                            emitter.emit_order_modify_denied_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                venue_order_id,
+                                &reason,
+                                clock.get_time_ns(),
+                                Some(cmd.command_id),
                             );
                         }
                         CommandFailure::Ambiguous(reason) => {
@@ -1931,6 +1952,15 @@ impl ExecutionClient for BybitExecutionClient {
                 log::warn!(
                     "Modify command failed local validation for {client_order_id}: {reason}",
                 );
+                emitter.emit_order_modify_denied_event(
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(cmd.command_id),
+                );
                 return Ok(());
             }
         };
@@ -1946,18 +1976,20 @@ impl ExecutionClient for BybitExecutionClient {
                     vec![client_order_id],
                     vec![venue_order_id],
                     PendingOperation::Amend,
+                    vec![Some(cmd.command_id)],
                 ),
             );
 
             if let Err(e) = ws_trade.amend_order_with_id(params, req_id.clone()).await {
                 dispatch_state.pending_requests.remove(&req_id);
-                emitter.emit_order_modify_rejected_event(
+                emitter.emit_order_modify_denied_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     venue_order_id,
                     &e.to_string(),
                     clock.get_time_ns(),
+                    Some(cmd.command_id),
                 );
             }
 
@@ -1990,6 +2022,7 @@ impl ExecutionClient for BybitExecutionClient {
         let mut strategy_ids = Vec::with_capacity(cmd.modifies.len());
         let mut client_order_ids = Vec::with_capacity(cmd.modifies.len());
         let mut venue_order_ids = Vec::with_capacity(cmd.modifies.len());
+        let mut command_ids = Vec::with_capacity(cmd.modifies.len());
 
         for modify in &cmd.modifies {
             match Self::build_ws_amend_params(modify, product_type, raw_symbol) {
@@ -1998,11 +2031,21 @@ impl ExecutionClient for BybitExecutionClient {
                     strategy_ids.push(modify.strategy_id);
                     client_order_ids.push(modify.client_order_id);
                     venue_order_ids.push(modify.venue_order_id);
+                    command_ids.push(modify.command_id);
                 }
                 Err(reason) => {
                     log::warn!(
                         "Modify command failed local validation for {}: {reason}",
                         modify.client_order_id,
+                    );
+                    emitter.emit_order_modify_denied_event(
+                        modify.strategy_id,
+                        instrument_id,
+                        modify.client_order_id,
+                        modify.venue_order_id,
+                        &reason,
+                        clock.get_time_ns(),
+                        Some(modify.command_id),
                     );
                 }
             }
@@ -2019,7 +2062,7 @@ impl ExecutionClient for BybitExecutionClient {
             let req_ids = BybitWebSocketClient::batch_request_ids(product_type, amend_params.len());
             let chunk_limit = batch_send_limit(product_type);
 
-            for (req_id, (chunk_cids, chunk_voids)) in req_ids.iter().zip(
+            for (req_id, ((chunk_cids, chunk_voids), chunk_commands)) in req_ids.iter().zip(
                 client_order_ids
                     .chunks(chunk_limit)
                     .map(|chunk| chunk.to_vec())
@@ -2027,11 +2070,17 @@ impl ExecutionClient for BybitExecutionClient {
                         venue_order_ids
                             .chunks(chunk_limit)
                             .map(|chunk| chunk.to_vec()),
-                    ),
+                    )
+                    .zip(command_ids.chunks(chunk_limit)),
             ) {
                 dispatch_state.pending_requests.insert(
                     req_id.clone(),
-                    (chunk_cids, chunk_voids, PendingOperation::Amend),
+                    (
+                        chunk_cids,
+                        chunk_voids,
+                        PendingOperation::Amend,
+                        chunk_commands.iter().copied().map(Some).collect(),
+                    ),
                 );
             }
 
@@ -2046,18 +2095,20 @@ impl ExecutionClient for BybitExecutionClient {
                 let reason = e.to_string();
                 let ts_event = clock.get_time_ns();
 
-                for ((strategy_id, client_order_id), venue_order_id) in strategy_ids
+                for (((strategy_id, client_order_id), venue_order_id), command_id) in strategy_ids
                     .into_iter()
                     .zip(client_order_ids)
                     .zip(venue_order_ids)
+                    .zip(command_ids)
                 {
-                    emitter.emit_order_modify_rejected_event(
+                    emitter.emit_order_modify_denied_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         venue_order_id,
                         &reason,
                         ts_event,
+                        Some(command_id),
                     );
                 }
             }
@@ -2107,12 +2158,19 @@ impl ExecutionClient for BybitExecutionClient {
                                 venue_order_id,
                                 &format!("cancel-order-error: {reason}"),
                                 ts_event,
+                                Some(cmd.command_id),
                             );
                             anyhow::bail!("cancel order rejected: {reason}");
                         }
                         CommandFailure::NotSent(reason) => {
-                            log::warn!(
-                                "HTTP cancel command failed local validation for {client_order_id}: {reason}"
+                            emitter.emit_order_cancel_denied_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                venue_order_id,
+                                &reason,
+                                clock.get_time_ns(),
+                                Some(cmd.command_id),
                             );
                         }
                         CommandFailure::Ambiguous(reason) => {
@@ -2149,18 +2207,20 @@ impl ExecutionClient for BybitExecutionClient {
                     vec![client_order_id],
                     vec![venue_order_id],
                     PendingOperation::Cancel,
+                    vec![Some(cmd.command_id)],
                 ),
             );
 
             if let Err(e) = ws_trade.cancel_order_with_id(params, req_id.clone()).await {
                 dispatch_state.pending_requests.remove(&req_id);
-                emitter.emit_order_cancel_rejected_event(
+                emitter.emit_order_cancel_denied_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     venue_order_id,
                     &e.to_string(),
                     clock.get_time_ns(),
+                    Some(cmd.command_id),
                 );
             }
 
@@ -2329,6 +2389,7 @@ impl ExecutionClient for BybitExecutionClient {
         let mut cancel_params = Vec::with_capacity(cmd.cancels.len());
         let strategy_ids: Vec<_> = cmd.cancels.iter().map(|c| c.strategy_id).collect();
         let client_order_ids: Vec<_> = cmd.cancels.iter().map(|c| c.client_order_id).collect();
+        let command_ids: Vec<_> = cmd.cancels.iter().map(|c| c.command_id).collect();
         let venue_order_ids: Vec<_> = cmd.cancels.iter().map(|c| c.venue_order_id).collect();
 
         for cancel in &cmd.cancels {
@@ -2348,7 +2409,7 @@ impl ExecutionClient for BybitExecutionClient {
                 BybitWebSocketClient::batch_request_ids(product_type, cancel_params.len());
             let chunk_limit = batch_send_limit(product_type);
 
-            for (req_id, (chunk_cids, chunk_voids)) in req_ids.iter().zip(
+            for (req_id, ((chunk_cids, chunk_voids), chunk_commands)) in req_ids.iter().zip(
                 client_order_ids
                     .chunks(chunk_limit)
                     .map(|chunk| chunk.to_vec())
@@ -2356,11 +2417,17 @@ impl ExecutionClient for BybitExecutionClient {
                         venue_order_ids
                             .chunks(chunk_limit)
                             .map(|chunk| chunk.to_vec()),
-                    ),
+                    )
+                    .zip(command_ids.chunks(chunk_limit)),
             ) {
                 dispatch_state.pending_requests.insert(
                     req_id.clone(),
-                    (chunk_cids, chunk_voids, PendingOperation::Cancel),
+                    (
+                        chunk_cids,
+                        chunk_voids,
+                        PendingOperation::Cancel,
+                        chunk_commands.iter().copied().map(Some).collect(),
+                    ),
                 );
             }
 
@@ -2374,18 +2441,20 @@ impl ExecutionClient for BybitExecutionClient {
                 let reason = e.to_string();
                 let ts_event = clock.get_time_ns();
 
-                for ((strategy_id, client_order_id), venue_order_id) in strategy_ids
+                for (((strategy_id, client_order_id), venue_order_id), command_id) in strategy_ids
                     .into_iter()
                     .zip(client_order_ids)
                     .zip(venue_order_ids)
+                    .zip(command_ids)
                 {
-                    emitter.emit_order_cancel_rejected_event(
+                    emitter.emit_order_cancel_denied_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         venue_order_id,
                         &reason,
                         ts_event,
+                        Some(command_id),
                     );
                 }
             }
@@ -2630,56 +2699,28 @@ mod tests {
         );
     }
 
-    fn assert_next_cancel_rejected(
+    fn assert_next_cancel_denied(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         client_order_id: ClientOrderId,
     ) {
-        let event = rx.try_recv().expect("expected OrderCancelRejected event");
+        let event = rx.try_recv().expect("expected OrderCancelDenied event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
+            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelDenied(ref rejected))
                 if rejected.client_order_id == client_order_id),
-            "expected OrderCancelRejected for {client_order_id}, was {event:?}",
+            "expected OrderCancelDenied for {client_order_id}, was {event:?}",
         );
     }
 
-    fn assert_next_modify_rejected(
+    fn assert_next_modify_denied(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         client_order_id: ClientOrderId,
     ) {
-        let event = rx.try_recv().expect("expected OrderModifyRejected event");
+        let event = rx.try_recv().expect("expected OrderModifyDenied event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyRejected(ref rejected))
+            matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyDenied(ref rejected))
                 if rejected.client_order_id == client_order_id),
-            "expected OrderModifyRejected for {client_order_id}, was {event:?}",
+            "expected OrderModifyDenied for {client_order_id}, was {event:?}",
         );
-    }
-
-    fn assert_no_order_cancel_rejected(
-        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    ) {
-        while let Ok(event) = rx.try_recv() {
-            assert!(
-                !matches!(
-                    event,
-                    ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
-                ),
-                "unexpected OrderCancelRejected event: {event:?}",
-            );
-        }
-    }
-
-    fn assert_no_order_modify_rejected(
-        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    ) {
-        while let Ok(event) = rx.try_recv() {
-            assert!(
-                !matches!(
-                    event,
-                    ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))
-                ),
-                "unexpected OrderModifyRejected event: {event:?}",
-            );
-        }
     }
 
     fn cancel_command(client_order_id: ClientOrderId) -> CancelOrder {
@@ -2792,7 +2833,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_ws_cancel_queue_failure_emits_cancel_rejected() {
+    async fn test_ws_cancel_queue_failure_emits_cancel_denied() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -2804,12 +2845,12 @@ mod tests {
             .unwrap();
         wait_for_spawned_tasks(&client).await;
 
-        assert_next_cancel_rejected(&mut rx, client_order_id);
+        assert_next_cancel_denied(&mut rx, client_order_id);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_ws_modify_queue_failure_emits_modify_rejected() {
+    async fn test_ws_modify_queue_failure_emits_modify_denied() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -2821,12 +2862,12 @@ mod tests {
             .unwrap();
         wait_for_spawned_tasks(&client).await;
 
-        assert_next_modify_rejected(&mut rx, client_order_id);
+        assert_next_modify_denied(&mut rx, client_order_id);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_http_cancel_local_validation_failure_does_not_emit_cancel_rejected() {
+    async fn test_http_cancel_local_validation_failure_emits_cancel_denied() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -2839,12 +2880,12 @@ mod tests {
             .unwrap();
         wait_for_spawned_tasks(&client).await;
 
-        assert_no_order_cancel_rejected(&mut rx);
+        assert_next_cancel_denied(&mut rx, ClientOrderId::from("O-CANCEL-LOCAL-VALIDATION"));
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_modify_local_validation_failure_does_not_emit_modify_rejected() {
+    async fn test_modify_local_validation_failure_emits_modify_denied() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -2859,7 +2900,7 @@ mod tests {
             ))
             .unwrap();
 
-        assert_no_order_modify_rejected(&mut rx);
+        assert_next_modify_denied(&mut rx, ClientOrderId::from("O-MODIFY-LOCAL-VALIDATION"));
     }
 
     #[rstest]
@@ -3359,6 +3400,7 @@ mod tests {
                 vec![client_order_id],
                 vec![Some(report.venue_order_id)],
                 operation,
+                Vec::new(),
             ),
         );
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -4103,12 +4145,12 @@ mod tests {
         let mut actual = Vec::new();
 
         for _ in &expected_indices {
-            let event = rx.try_recv().expect("expected OrderCancelRejected event");
+            let event = rx.try_recv().expect("expected OrderCancelDenied event");
             match event {
-                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                ExecutionEvent::Order(OrderEventAny::CancelDenied(rejected)) => {
                     actual.push((rejected.client_order_id, rejected.strategy_id));
                 }
-                event => panic!("expected OrderCancelRejected, was {event:?}"),
+                event => panic!("expected OrderCancelDenied, was {event:?}"),
             }
         }
 
@@ -4312,22 +4354,32 @@ mod tests {
         let mut actual = Vec::new();
 
         for _ in &cancels {
-            let event = rx.try_recv().expect("expected OrderCancelRejected event");
+            let event = rx.try_recv().expect("expected OrderCancelDenied event");
             match event {
-                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
-                    actual.push((rejected.client_order_id, rejected.strategy_id));
+                ExecutionEvent::Order(OrderEventAny::CancelDenied(rejected)) => {
+                    actual.push((
+                        rejected.client_order_id,
+                        rejected.strategy_id,
+                        rejected.causation_id,
+                    ));
                 }
-                event => panic!("expected OrderCancelRejected, was {event:?}"),
+                event => panic!("expected OrderCancelDenied, was {event:?}"),
             }
         }
 
         let mut expected: Vec<_> = cancels
             .iter()
-            .map(|cancel| (cancel.client_order_id, cancel.strategy_id))
+            .map(|cancel| {
+                (
+                    cancel.client_order_id,
+                    cancel.strategy_id,
+                    Some(cancel.command_id),
+                )
+            })
             .collect();
 
-        actual.sort();
-        expected.sort();
+        actual.sort_by_key(|entry| entry.0);
+        expected.sort_by_key(|entry| entry.0);
 
         assert_eq!(actual, expected);
         assert!(rx.try_recv().is_err());
@@ -4383,22 +4435,34 @@ mod tests {
         let mut actual = Vec::new();
 
         for _ in &modifies {
-            let event = rx.try_recv().expect("expected OrderModifyRejected event");
+            let event = rx.try_recv().expect("expected OrderModifyDenied event");
             match event {
-                ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
-                    actual.push((rejected.client_order_id, rejected.strategy_id));
+                ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) => {
+                    actual.push((
+                        denied.client_order_id,
+                        denied.strategy_id,
+                        denied.venue_order_id,
+                        denied.causation_id,
+                    ));
                 }
-                event => panic!("expected OrderModifyRejected, was {event:?}"),
+                event => panic!("expected OrderModifyDenied, was {event:?}"),
             }
         }
 
         let mut expected: Vec<_> = modifies
             .iter()
-            .map(|modify| (modify.client_order_id, modify.strategy_id))
+            .map(|modify| {
+                (
+                    modify.client_order_id,
+                    modify.strategy_id,
+                    modify.venue_order_id,
+                    Some(modify.command_id),
+                )
+            })
             .collect();
 
-        actual.sort();
-        expected.sort();
+        actual.sort_by_key(|entry| entry.0);
+        expected.sort_by_key(|entry| entry.0);
 
         assert_eq!(actual, expected);
         assert!(rx.try_recv().is_err());
@@ -4406,7 +4470,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_batch_modify_orders_skips_invalid_order_iv_and_rejects_valid_sibling() {
+    async fn test_batch_modify_orders_denies_invalid_order_iv_and_unsent_valid_sibling() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -4454,7 +4518,7 @@ mod tests {
                 Some(*BYBIT_CLIENT_ID),
                 StrategyId::from("S-BATCH"),
                 instrument_id,
-                vec![invalid, valid.clone()],
+                vec![invalid.clone(), valid.clone()],
                 UUID4::new(),
                 UnixNanos::default(),
                 None,
@@ -4463,15 +4527,19 @@ mod tests {
             .unwrap();
         wait_for_spawned_tasks(&client).await;
 
-        let event = rx.try_recv().expect("expected OrderModifyRejected event");
+        for modify in [&invalid, &valid] {
+            let event = rx.try_recv().expect("expected OrderModifyDenied event");
 
-        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event else {
-            panic!("expected OrderModifyRejected, was {event:?}");
-        };
+            let ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) = event else {
+                panic!("expected OrderModifyDenied, was {event:?}");
+            };
 
-        assert_eq!(rejected.client_order_id, valid.client_order_id);
-        assert_eq!(rejected.strategy_id, valid.strategy_id);
-        assert_eq!(rejected.venue_order_id, valid.venue_order_id);
+            assert_eq!(denied.client_order_id, modify.client_order_id);
+            assert_eq!(denied.strategy_id, modify.strategy_id);
+            assert_eq!(denied.venue_order_id, modify.venue_order_id);
+            assert_eq!(denied.causation_id, Some(modify.command_id));
+        }
+
         assert!(rx.try_recv().is_err());
     }
 }

@@ -87,8 +87,8 @@ use nautilus_model::{
         PositionSide, TimeInForce, TriggerType,
     },
     events::{
-        AccountState, OrderAccepted, OrderEventAny, OrderFilled, OrderInitialized, OrderSubmitted,
-        OrderUpdated,
+        AccountState, OrderAccepted, OrderEventAny, OrderEventType, OrderFilled, OrderInitialized,
+        OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
@@ -5269,7 +5269,7 @@ async fn test_modify_order_uses_cached_cloid_target_without_venue_order_id() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_rejects_cloid_target_before_venue_order_id_known() {
+async fn test_modify_order_denies_cloid_target_before_venue_order_id_known() {
     let state = TestServerState::default();
     let exchange_count = state.exchange_request_count.clone();
     let addr = start_mock_server(state).await;
@@ -5295,8 +5295,13 @@ async fn test_modify_order_rejects_cloid_target_before_venue_order_id_known() {
 
     client.modify_order(make_modify_cmd(&order, None)).unwrap();
 
-    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert_eq!(events.len(), 1, "expected one OrderModifyRejected");
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyDenied,
+        Duration::from_millis(250),
+    )
+    .await;
+    assert_eq!(events.len(), 1, "expected one OrderModifyDenied");
     assert_eq!(events[0].0, order.client_order_id());
     assert!(
         events[0].1.contains("cached venue_order_id"),
@@ -5341,7 +5346,7 @@ async fn test_modify_order_falls_back_to_cached_oid_without_cached_cloid() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_rejects_without_venue_id_or_cached_cloid() {
+async fn test_modify_order_denies_without_venue_id_or_cached_cloid() {
     let state = TestServerState::default();
     let exchange_count = state.exchange_request_count.clone();
     let addr = start_mock_server(state).await;
@@ -5359,8 +5364,13 @@ async fn test_modify_order_rejects_without_venue_id_or_cached_cloid() {
 
     client.modify_order(make_modify_cmd(&order, None)).unwrap();
 
-    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert_eq!(events.len(), 1, "expected one OrderModifyRejected");
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyDenied,
+        Duration::from_millis(250),
+    )
+    .await;
+    assert_eq!(events.len(), 1, "expected one OrderModifyDenied");
     assert_eq!(events[0].0, order.client_order_id());
     assert!(
         events[0].1.contains("unique cached CLOID"),
@@ -5431,7 +5441,12 @@ async fn test_modify_order_rejection_does_not_mark_pending_modify() {
         "failed modify must not leave a pending-modify marker",
     );
 
-    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events,
         vec![(
@@ -5498,7 +5513,12 @@ async fn test_modify_order_inner_error_clears_pending_modify() {
         "inner-error modify must not leave a pending-modify marker",
     );
 
-    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events,
         vec![(
@@ -5553,7 +5573,12 @@ async fn test_modify_order_post_error_preserves_pending_modify() {
     )
     .await;
 
-    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         client
             .ws_dispatch_state()
@@ -6096,16 +6121,19 @@ fn make_cancel_entry(coid: ClientOrderId, voi: VenueOrderId) -> CancelOrder {
     )
 }
 
-async fn drain_cancel_rejected_events(
+async fn drain_command_refusals(
     rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    event_type: OrderEventType,
     timeout: Duration,
 ) -> Vec<(ClientOrderId, String)> {
     let mut out = Vec::new();
     let deadline = tokio::time::Instant::now() + timeout;
     loop {
         match tokio::time::timeout_at(deadline, rx.recv()).await {
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::CancelRejected(event)))) => {
-                out.push((event.client_order_id, event.reason.to_string()));
+            Ok(Some(ExecutionEvent::Order(event))) if event.event_type() == event_type => {
+                if let Some(reason) = event.message() {
+                    out.push((event.client_order_id(), reason.to_string()));
+                }
             }
             Ok(Some(_)) => {}
             Ok(None) | Err(_) => break,
@@ -6165,7 +6193,12 @@ async fn test_batch_cancel_orders_per_item_error_emits_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events.len(),
         1,
@@ -6222,7 +6255,12 @@ async fn test_batch_cancel_orders_short_statuses_emit_no_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert!(
         events.is_empty(),
         "short status arrays are ambiguous and should not reject individual cancels: {events:?}",
@@ -6269,7 +6307,12 @@ async fn test_batch_cancel_orders_post_error_emits_no_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert!(
         events.is_empty(),
         "whole-request cancel failure should remain unresolved: {events:?}",
@@ -6280,7 +6323,7 @@ async fn test_batch_cancel_orders_post_error_emits_no_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_missing_asset_index_rejects_only_invalid_entry() {
+async fn test_batch_cancel_orders_missing_asset_index_denies_only_invalid_entry() {
     // No trading action should happen for an entry whose instrument symbol
     // is unknown. The valid entry should still dispatch.
     let state = TestServerState::default();
@@ -6328,7 +6371,12 @@ async fn test_batch_cancel_orders_missing_asset_index_rejects_only_invalid_entry
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelDenied,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events,
         vec![(
@@ -6343,7 +6391,7 @@ async fn test_batch_cancel_orders_missing_asset_index_rejects_only_invalid_entry
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_batch_cancel_orders_invalid_venue_id_rejects_only_invalid_entry() {
+async fn test_batch_cancel_orders_invalid_venue_id_denies_only_invalid_entry() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -6389,7 +6437,12 @@ async fn test_batch_cancel_orders_invalid_venue_id_rejects_only_invalid_entry() 
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelDenied,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events,
         vec![(invalid_coid, "Invalid venue order ID format".to_string())]
@@ -6526,7 +6579,12 @@ async fn test_cancel_all_orders_per_item_error_emits_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events.len(),
         1,
@@ -6579,7 +6637,12 @@ async fn test_cancel_all_orders_short_statuses_emit_no_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert!(
         events.is_empty(),
         "short status arrays are ambiguous and should not reject open orders: {events:?}",
@@ -6617,7 +6680,12 @@ async fn test_cancel_all_orders_post_error_emits_no_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert!(
         events.is_empty(),
         "whole-request cancel-all failure should remain unresolved: {events:?}",
@@ -6628,7 +6696,7 @@ async fn test_cancel_all_orders_post_error_emits_no_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_all_orders_missing_asset_index_rejects_each_order() {
+async fn test_cancel_all_orders_missing_asset_index_denies_each_order() {
     // Instrument symbol is not registered with the asset-index map, so
     // no trading action happens.
     const UNKNOWN_INSTRUMENT: &str = "NOPE-USD-PERP.HYPERLIQUID";
@@ -6721,7 +6789,12 @@ async fn test_cancel_all_orders_missing_asset_index_rejects_each_order() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelDenied,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events,
         vec![
@@ -6775,7 +6848,12 @@ async fn test_cancel_order_post_error_emits_no_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert!(
         events.is_empty(),
         "ambiguous single cancel failure should remain unresolved: {events:?}",
@@ -6787,7 +6865,7 @@ async fn test_cancel_order_post_error_emits_no_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_order_missing_asset_index_emits_cancel_rejected() {
+async fn test_cancel_order_missing_asset_index_emits_cancel_denied() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -6816,7 +6894,12 @@ async fn test_cancel_order_missing_asset_index_emits_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelDenied,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events,
         vec![(
@@ -6831,7 +6914,7 @@ async fn test_cancel_order_missing_asset_index_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_order_invalid_venue_id_emits_cancel_rejected() {
+async fn test_cancel_order_invalid_venue_id_emits_cancel_denied() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -6860,7 +6943,12 @@ async fn test_cancel_order_invalid_venue_id_emits_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelDenied,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events,
         vec![(
@@ -6920,7 +7008,12 @@ async fn test_cancel_order_missing_emits_cancel_rejected() {
     )
     .await;
 
-    let events = drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::CancelRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events.len(),
         1,
@@ -8419,24 +8512,6 @@ async fn drain_rejected_events(
     out
 }
 
-async fn drain_modify_rejected_events(
-    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    timeout: Duration,
-) -> Vec<(ClientOrderId, String)> {
-    let mut out = Vec::new();
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        match tokio::time::timeout_at(deadline, rx.recv()).await {
-            Ok(Some(ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)))) => {
-                out.push((rejected.client_order_id, rejected.reason.to_string()));
-            }
-            Ok(Some(_)) => {}
-            Ok(None) | Err(_) => break,
-        }
-    }
-    out
-}
-
 fn make_limit_order_on_instrument(id: &str, instrument_id: InstrumentId) -> OrderAny {
     OrderAny::Limit(LimitOrder::new(
         TraderId::from("TESTER-001"),
@@ -8763,7 +8838,7 @@ async fn test_submit_order_raw_price_at_decimal_cap_dispatches() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_raw_price_excess_decimals_emits_modify_rejected() {
+async fn test_modify_order_raw_price_excess_decimals_emits_modify_denied() {
     // The modify overwrite applies command prices after the conversion guard,
     // so it must re-validate the effective replacement price: an over-cap
     // modify is rejected locally instead of dispatching an unsignable payload.
@@ -8789,7 +8864,12 @@ async fn test_modify_order_raw_price_excess_decimals_emits_modify_rejected() {
         Duration::from_secs(5),
     )
     .await;
-    let rejected = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let rejected = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyDenied,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(rejected.len(), 1);
     assert_eq!(rejected[0].0, order.client_order_id());
     assert!(
@@ -8834,7 +8914,12 @@ async fn test_modify_order_raw_price_at_decimal_cap_dispatches() {
         Duration::from_secs(5),
     )
     .await;
-    let rejected = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let rejected = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyRejected,
+        Duration::from_millis(250),
+    )
+    .await;
     assert!(rejected.is_empty(), "unexpected rejection: {rejected:?}");
     assert_eq!(*exchange_count.lock().await, 1);
 
@@ -9528,7 +9613,7 @@ async fn test_submit_order_quote_quantity_zero_price_quote_emits_denied() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_quote_quantity_emits_rejected() {
+async fn test_modify_order_quote_quantity_emits_denied() {
     // A modify replaces a base-denominated size, which a quote target cannot
     // reconcile against, so the modify must be rejected locally.
     let state = TestServerState::default();
@@ -9549,8 +9634,13 @@ async fn test_modify_order_quote_quantity_emits_rejected() {
         .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("12345"))))
         .unwrap();
 
-    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert_eq!(events.len(), 1, "expected one OrderModifyRejected");
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyDenied,
+        Duration::from_millis(250),
+    )
+    .await;
+    assert_eq!(events.len(), 1, "expected one OrderModifyDenied");
     assert_eq!(events[0].0, order.client_order_id());
     assert_eq!(
         events[0].1,
@@ -9709,7 +9799,7 @@ fn open_limit_order_with_filled_qty(
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_qty_at_filled_emits_modify_rejected() {
+async fn test_modify_order_qty_at_filled_emits_modify_denied() {
     // Modify command with `target_total <= filled` must be rejected without
     // dispatching any trading action. A regression that drops the guard would amend a
     // venue order to `quantity = 0`, which the venue interprets as a cancel
@@ -9748,8 +9838,13 @@ async fn test_modify_order_qty_at_filled_emits_modify_rejected() {
 
     client.modify_order(cmd).unwrap();
 
-    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
-    assert_eq!(events.len(), 1, "expected one OrderModifyRejected");
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyDenied,
+        Duration::from_millis(250),
+    )
+    .await;
+    assert_eq!(events.len(), 1, "expected one OrderModifyDenied");
     assert_eq!(events[0].0, order.client_order_id());
     assert!(
         events[0].1.contains("not greater than filled"),
@@ -12665,20 +12760,23 @@ async fn test_command_venue_rejection_preserves_reason_once(
             }}})
         });
 
+        let mut expected_causes = Vec::new();
+
         match command {
             "submit" => client.submit_order(make_submit_cmd(&orders[0])).unwrap(),
-            "modify" => client
-                .modify_order(make_modify_cmd(
-                    &orders[0],
-                    Some(VenueOrderId::from("81234")),
-                ))
-                .unwrap(),
-            "cancel" => client
-                .cancel_order(make_cancel_entry(
+            "modify" => {
+                let command = make_modify_cmd(&orders[0], Some(VenueOrderId::from("81234")));
+                expected_causes.push(command.command_id);
+                client.modify_order(command).unwrap();
+            }
+            "cancel" => {
+                let command = make_cancel_entry(
                     orders[0].client_order_id(),
                     orders[0].venue_order_id().unwrap(),
-                ))
-                .unwrap(),
+                );
+                expected_causes.push(command.command_id);
+                client.cancel_order(command).unwrap();
+            }
             "list" => {
                 let order = &orders[0];
                 let list = OrderList::new(
@@ -12706,18 +12804,22 @@ async fn test_command_venue_rejection_preserves_reason_once(
             }
             "batch_cancel" => {
                 let order = &orders[0];
+
+                let cancels: Vec<_> = orders
+                    .iter()
+                    .map(|order| {
+                        make_cancel_entry(order.client_order_id(), order.venue_order_id().unwrap())
+                    })
+                    .collect();
+
+                expected_causes.extend(cancels.iter().map(|command| command.command_id));
                 client
                     .batch_cancel_orders(BatchCancelOrders::new(
                         order.trader_id(),
                         Some(*HYPERLIQUID_CLIENT_ID),
                         order.strategy_id(),
                         order.instrument_id(),
-                        orders
-                            .iter()
-                            .map(|o| {
-                                make_cancel_entry(o.client_order_id(), o.venue_order_id().unwrap())
-                            })
-                            .collect(),
+                        cancels,
                         UUID4::new(),
                         UnixNanos::default(),
                         None,
@@ -12725,12 +12827,11 @@ async fn test_command_venue_rejection_preserves_reason_once(
                     ))
                     .unwrap();
             }
-            "cancel_all" => client
-                .cancel_all_orders(make_cancel_all_cmd(
-                    HYPERLIQUID_TEST_INSTRUMENT,
-                    OrderSide::Buy,
-                ))
-                .unwrap(),
+            "cancel_all" => {
+                let command = make_cancel_all_cmd(HYPERLIQUID_TEST_INSTRUMENT, OrderSide::Buy);
+                expected_causes.extend(orders.iter().map(|_| command.command_id));
+                client.cancel_all_orders(command).unwrap();
+            }
             _ => unreachable!(),
         }
         wait_until_async(
@@ -12753,13 +12854,19 @@ async fn test_command_venue_rejection_preserves_reason_once(
                     OrderEventAny::ModifyRejected(rejected) if command == "modify" => {
                         assert_eq!(rejected.reason.as_str(), reason);
                         assert!(!rejected.reconciliation);
-                        assert_eq!(rejected.causation_id, None);
+                        assert_eq!(
+                            rejected.causation_id,
+                            expected_causes.get(outcomes.len()).copied()
+                        );
                         outcomes.push(OrderEventAny::ModifyRejected(rejected));
                     }
                     OrderEventAny::CancelRejected(rejected) if cancel => {
                         assert_eq!(rejected.reason.as_str(), reason);
                         assert!(!rejected.reconciliation);
-                        assert_eq!(rejected.causation_id, None);
+                        assert_eq!(
+                            rejected.causation_id,
+                            expected_causes.get(outcomes.len()).copied()
+                        );
                         outcomes.push(OrderEventAny::CancelRejected(rejected));
                     }
                     other => panic!("Unexpected event: {other:?}"),
@@ -12792,7 +12899,7 @@ async fn test_command_venue_rejection_preserves_reason_once(
 #[case("batch_cancel")]
 #[case("cancel_all")]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_command_after_stop_emits_rejection(#[case] command: &str) {
+async fn test_command_after_stop_emits_denial(#[case] command: &str) {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -12835,10 +12942,21 @@ async fn test_command_after_stop_emits_rejection(#[case] command: &str) {
             .unwrap(),
         _ => unreachable!(),
     }
+
     let events = if command == "modify" {
-        drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await
+        drain_command_refusals(
+            &mut rx,
+            OrderEventType::ModifyDenied,
+            Duration::from_millis(250),
+        )
+        .await
     } else {
-        drain_cancel_rejected_events(&mut rx, Duration::from_millis(250)).await
+        drain_command_refusals(
+            &mut rx,
+            OrderEventType::CancelDenied,
+            Duration::from_millis(250),
+        )
+        .await
     };
     assert_eq!(
         events,
@@ -12858,7 +12976,7 @@ async fn test_command_after_stop_emits_rejection(#[case] command: &str) {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_modify_order_missing_asset_emits_rejection() {
+async fn test_modify_order_missing_asset_emits_denial() {
     let state = TestServerState::default();
     let addr = start_mock_server(state.clone()).await;
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
@@ -12876,7 +12994,12 @@ async fn test_modify_order_missing_asset_emits_rejection() {
     client
         .modify_order(make_modify_cmd(&order, Some(VenueOrderId::from("92345"))))
         .unwrap();
-    let events = drain_modify_rejected_events(&mut rx, Duration::from_millis(250)).await;
+    let events = drain_command_refusals(
+        &mut rx,
+        OrderEventType::ModifyDenied,
+        Duration::from_millis(250),
+    )
+    .await;
     assert_eq!(
         events,
         vec![(

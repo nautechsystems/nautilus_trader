@@ -680,9 +680,9 @@ credentials are valid and have trading permissions.
   and returns the confirmed replacement's status, including fills or cancellation. It leaves the result
   unresolved when no replacement is confirmed. A cancel before confirmation targets the parent and
   can be rejected; recovery then needs a late stream confirmation, a child fill, or an explicit query.
-  A crossing post-only replacement emits `OrderModifyRejected` with the venue reason
-  and leaves the original order working. The adapter rejects a modification locally if it carries a
-  trigger price, because AX has no field for one, or if the order has no venue order ID yet.
+  The adapter emits `OrderModifyDenied` if a modification carries a trigger price, because AX has no
+  field for one, or if the order has no venue order ID yet. A crossing post-only replacement emits
+  `OrderModifyRejected` with the venue reason and leaves the original order working.
 - **Funding rate polling**: The data client polls `GET /funding-rates` for each subscribed instrument at
   `funding_rate_poll_interval_mins`. It requests a seven-day lookback to find a rate across weekends and
   holidays. It emits the latest rate only when it differs from the last one emitted.

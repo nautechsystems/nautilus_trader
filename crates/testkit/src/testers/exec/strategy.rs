@@ -27,8 +27,9 @@ use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderEventAny,
-        OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEvent, OrderEventAny, OrderExpired, OrderFilled, OrderModifyDenied,
+        OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},
@@ -128,8 +129,17 @@ nautilus_strategy!(ExecTester, {
         self.handle_stop_order_canceled(event);
     }
 
+    fn on_order_modify_denied(&mut self, event: OrderModifyDenied) {
+        self.finish_limit_order_maintenance(event.client_order_id);
+    }
+
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
         self.finish_limit_order_maintenance(event.client_order_id);
+    }
+
+    fn on_order_cancel_denied(&mut self, event: OrderCancelDenied) {
+        self.finish_limit_order_maintenance(event.client_order_id);
+        self.clear_stop_order_replacement(event.client_order_id);
     }
 
     fn on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {

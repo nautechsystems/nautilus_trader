@@ -4604,7 +4604,7 @@ pub(crate) mod serial_tests {
         assert!(state.targeted_order_report_ids.lock().is_empty());
 
         node.exec_manager_mut()
-            .register_inflight(missing_client_order_id);
+            .register_inflight(missing_client_order_id, UUID4::new());
         tokio::time::advance(Duration::from_millis(1)).await;
         let inflight = node.exec_manager_mut().check_inflight_orders();
         assert!(
@@ -4681,7 +4681,8 @@ pub(crate) mod serial_tests {
             &[client_order_id]
         );
 
-        node.exec_manager_mut().register_inflight(client_order_id);
+        node.exec_manager_mut()
+            .register_inflight(client_order_id, UUID4::new());
         tokio::time::advance(Duration::from_millis(1)).await;
         let inflight = node.exec_manager_mut().check_inflight_orders();
         assert!(
@@ -5320,7 +5321,8 @@ pub(crate) mod serial_tests {
             VenueOrderId::from("V-TARGETED-C"),
             client_id,
         );
-        node.exec_manager_mut().register_inflight(order_a);
+        node.exec_manager_mut()
+            .register_inflight(order_a, UUID4::new());
         assert_eq!(
             node.kernel()
                 .cache

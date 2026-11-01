@@ -3171,13 +3171,14 @@ async fn test_exec_client_batch_modify_venue_rejection_uses_amend_correlation() 
                     rejected.strategy_id,
                     rejected.venue_order_id,
                     rejected.reason.to_string(),
+                    rejected.causation_id,
                 ));
             }
             event => panic!("expected OrderModifyRejected, was {event:?}"),
         }
     }
 
-    actual.sort();
+    actual.sort_by_key(|entry| entry.0);
 
     let mut expected: Vec<_> = modifies
         .iter()
@@ -3187,11 +3188,12 @@ async fn test_exec_client_batch_modify_venue_rejection_uses_amend_correlation() 
                 modify.strategy_id,
                 modify.venue_order_id,
                 "Too many visits.".to_string(),
+                Some(modify.command_id),
             )
         })
         .collect();
 
-    expected.sort();
+    expected.sort_by_key(|entry| entry.0);
     assert_eq!(actual, expected);
 
     let payloads = state.trade_order_payloads.lock().await;

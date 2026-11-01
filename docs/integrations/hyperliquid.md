@@ -1068,7 +1068,7 @@ then rounds to the instrument's size increment.
 - The venue executes that base size, so filled notional can differ slightly from the requested quote amount.
 - Venue fills arrive in base units while the order's local quantity stays quote-denominated,
   so these orders reconcile from venue status reports instead of local quantity comparison.
-- Modifying a quote-denominated order is rejected locally, because the venue modify replaces
+- Modifying a quote-denominated order produces `OrderModifyDenied`, because the venue modify replaces
   a base size that cannot be reconciled against a quote target. Cancel and resubmit with a
   new amount instead.
 - The raw HTTP and WebSocket client methods (`submit_order`, `modify_order`) take explicit
@@ -1170,10 +1170,10 @@ are rejected and emit `OrderRejected`.
 Cancels use `cancelByCloid`, falling back to numeric-OID `cancel` when no CLOID is cached. Fast and standard
 cancels form separate batches, so one cancel request can make multiple venue calls.
 
-Definite local failures and authoritative venue rejections emit `OrderCancelRejected` per affected order,
-preserving the venue's error message. A per-order batch error leaves other cancels intact; a whole-request
-rejection applies to every cancel in that action. Transport failures or responses with an unknown venue
-outcome leave orders available for reconciliation after dispatch.
+Local failures proven not sent emit `OrderCancelDenied`. Authoritative venue rejections emit
+`OrderCancelRejected` per affected order, preserving the venue's error message. A per-order batch error
+leaves other cancels intact; a whole-request rejection applies to every cancel in that action. Transport
+failures or responses with an unknown venue outcome leave orders available for reconciliation after dispatch.
 :::
 
 :::info
@@ -1366,7 +1366,8 @@ Before dispatch, the client queues a modify intent. If `CANCELED(old_oid)` arriv
 `ACCEPTED(new_oid)`, the intent holds that cancel even while the request is in flight.
 The subsequent acceptance promotes to `OrderUpdated` and discards the held cancel.
 
-Pre-dispatch failure or venue rejection emits `OrderModifyRejected` and clears only that request's intent.
+A pre-dispatch failure emits `OrderModifyDenied`; a venue rejection emits `OrderModifyRejected`.
+Both clear only that request's intent.
 An unknown outcome after dispatch retains the intent, so a timed-out request still holds an early cancel
 and promotes a later acceptance. Without an intent, detection uses the cached `venue_order_id`, which
 the replacement's acceptance no longer matches. See

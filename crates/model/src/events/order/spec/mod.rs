@@ -22,6 +22,7 @@
 //! Specs are gated behind the `test-support` feature and must not be referenced from production code.
 
 pub mod accepted;
+pub mod cancel_denied;
 pub mod cancel_rejected;
 pub mod canceled;
 pub mod denied;
@@ -30,6 +31,7 @@ pub mod expired;
 pub mod fill_voided;
 pub mod filled;
 pub mod initialized;
+pub mod modify_denied;
 pub mod modify_rejected;
 pub mod pending_cancel;
 pub mod pending_update;
@@ -40,6 +42,7 @@ pub mod triggered;
 pub mod updated;
 
 pub use accepted::OrderAcceptedSpec;
+pub use cancel_denied::OrderCancelDeniedSpec;
 pub use cancel_rejected::OrderCancelRejectedSpec;
 pub use canceled::OrderCanceledSpec;
 pub use denied::OrderDeniedSpec;
@@ -48,6 +51,7 @@ pub use expired::OrderExpiredSpec;
 pub use fill_voided::OrderFillVoidedSpec;
 pub use filled::OrderFilledSpec;
 pub use initialized::OrderInitializedSpec;
+pub use modify_denied::OrderModifyDeniedSpec;
 pub use modify_rejected::OrderModifyRejectedSpec;
 pub use pending_cancel::OrderPendingCancelSpec;
 pub use pending_update::OrderPendingUpdateSpec;

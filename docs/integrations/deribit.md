@@ -687,8 +687,8 @@ This provides several advantages:
 - **Same price**: Keeps queue position.
 - **Increasing quantity or changing price**: Loses queue position (treated as new order).
 
-A modify command must carry the venue order ID and a price. If either is missing, the adapter rejects the
-command locally without reaching Deribit. Quantity is optional and falls back to the cached order's current
+A modify command must carry the venue order ID and a price. If either is missing, the adapter emits
+`OrderModifyDenied` without reaching Deribit. Quantity is optional and falls back to the cached order's current
 quantity.
 
 ### Position management

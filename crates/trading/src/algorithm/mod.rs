@@ -56,11 +56,11 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
     enums::{OrderStatus, TimeInForce, TriggerType},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, PositionId, StrategyId, TraderId,
@@ -259,6 +259,7 @@ pub trait ExecutionAlgorithm: DataActor {
     ///
     /// This generates an internal cancel event and publishes it. The order
     /// is canceled locally without sending a command to the execution engine.
+    /// Unknown or closed orders produce `OrderCancelDenied`.
     ///
     /// # Errors
     ///
@@ -269,17 +270,20 @@ pub trait ExecutionAlgorithm: DataActor {
     {
         let (order, is_pending_cancel) = {
             let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
+            (
+                cache
+                    .order(&command.client_order_id)
+                    .map(|order| order.clone()),
+                cache.is_order_pending_cancel_local(&command.client_order_id),
+            )
+        };
 
-            let Some(order) = cache.order(&command.client_order_id) else {
-                log::warn!(
-                    "Cannot cancel order: {} not found in cache",
-                    command.client_order_id
-                );
-                return Ok(());
-            };
-
-            let is_pending = cache.is_order_pending_cancel_local(&command.client_order_id);
-            (order.clone(), is_pending)
+        let Some(order) = order else {
+            return deny_cancel_command(
+                ExecutionAlgorithmNative::exec_algorithm_core_mut(self),
+                &command,
+                "Order not found in cache",
+            );
         };
 
         if is_pending_cancel {
@@ -287,8 +291,11 @@ pub trait ExecutionAlgorithm: DataActor {
         }
 
         if order.is_closed() {
-            log::warn!("Order already closed for {command}");
-            return Ok(());
+            return deny_cancel_command(
+                ExecutionAlgorithmNative::exec_algorithm_core_mut(self),
+                &command,
+                "Order already closed",
+            );
         }
 
         let event = OrderEventAny::Canceled(self.generate_order_canceled(&order));
@@ -332,39 +339,21 @@ pub trait ExecutionAlgorithm: DataActor {
     where
         Self: ExecutionAlgorithmNative,
     {
-        let (is_closed, is_active_local) = {
-            let cache = ExecutionAlgorithmNative::exec_algorithm_core_mut(self).cache_ref();
+        let core = ExecutionAlgorithmNative::exec_algorithm_core_mut(self);
 
-            let Some(order) = cache.order(&command.client_order_id) else {
-                log::warn!(
-                    "Cannot modify order: {} not found in cache",
-                    command.client_order_id
-                );
-                return Ok(());
-            };
-
-            (order.is_closed(), order.is_active_local())
+        let reason = {
+            let cache = core.cache_ref();
+            match cache.order(&command.client_order_id) {
+                None => "Order not found in cache",
+                Some(order) if order.is_closed() => "Order already closed",
+                Some(order) if order.is_active_local() => {
+                    "Order is being executed by this algorithm"
+                }
+                Some(_) => "Order is not active-local",
+            }
         };
 
-        if is_closed {
-            log::warn!("Order already closed for {command}");
-            return Ok(());
-        }
-
-        if is_active_local {
-            log::warn!(
-                "Cannot modify {}: order is being executed by this algorithm",
-                command.client_order_id
-            );
-            return Ok(());
-        }
-
-        // A venue-active order is routed to the execution path, not here
-        log::warn!(
-            "Cannot modify {}: order is not active-local",
-            command.client_order_id
-        );
-        Ok(())
+        deny_modify_command(core, &command, reason)
     }
 
     /// Generates an `OrderCanceled` event for an order.
@@ -392,7 +381,11 @@ pub trait ExecutionAlgorithm: DataActor {
     }
 
     /// Generates an `OrderPendingUpdate` event for an order.
-    fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate
+    fn generate_order_pending_update(
+        &mut self,
+        order: &OrderAny,
+        command_id: UUID4,
+    ) -> OrderPendingUpdate
     where
         Self: ExecutionAlgorithmNative,
     {
@@ -400,7 +393,7 @@ pub trait ExecutionAlgorithm: DataActor {
             .clock_mut()
             .timestamp_ns();
 
-        OrderPendingUpdate::new(
+        let mut event = OrderPendingUpdate::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -411,11 +404,17 @@ pub trait ExecutionAlgorithm: DataActor {
             ts_now,
             false, // reconciliation
             order.venue_order_id(),
-        )
+        );
+        event.causation_id = Some(command_id);
+        event
     }
 
     /// Generates an `OrderPendingCancel` event for an order.
-    fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel
+    fn generate_order_pending_cancel(
+        &mut self,
+        order: &OrderAny,
+        command_id: UUID4,
+    ) -> OrderPendingCancel
     where
         Self: ExecutionAlgorithmNative,
     {
@@ -423,7 +422,7 @@ pub trait ExecutionAlgorithm: DataActor {
             .clock_mut()
             .timestamp_ns();
 
-        OrderPendingCancel::new(
+        let mut event = OrderPendingCancel::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -434,7 +433,9 @@ pub trait ExecutionAlgorithm: DataActor {
             ts_now,
             false, // reconciliation
             order.venue_order_id(),
-        )
+        );
+        event.causation_id = Some(command_id);
+        event
     }
 
     /// Spawns a market order from a primary order.
@@ -1126,9 +1127,11 @@ pub trait ExecutionAlgorithm: DataActor {
         let trader_id = registered_trader_id(core)?;
         let strategy_id = order.strategy_id();
 
+        let command_id = UUID4::new();
+
         if !order.is_active_local() {
             required_account_id(order, "pending update")?;
-            let event = self.generate_order_pending_update(order);
+            let event = self.generate_order_pending_update(order, command_id);
             let event = OrderEventAny::PendingUpdate(event);
 
             {
@@ -1170,7 +1173,7 @@ pub trait ExecutionAlgorithm: DataActor {
             quantity,
             price,
             trigger_price,
-            UUID4::new(),
+            command_id,
             ts_init,
             None, // params,
             None, // correlation_id
@@ -1315,9 +1318,11 @@ pub trait ExecutionAlgorithm: DataActor {
         let trader_id = registered_trader_id(core)?;
         let strategy_id = order.strategy_id();
 
+        let command_id = UUID4::new();
+
         if !order.is_active_local() {
             required_account_id(order, "pending cancel")?;
-            let event = self.generate_order_pending_cancel(order);
+            let event = self.generate_order_pending_cancel(order, command_id);
             let event = OrderEventAny::PendingCancel(event);
 
             {
@@ -1356,7 +1361,7 @@ pub trait ExecutionAlgorithm: DataActor {
             order.instrument_id(),
             order.client_order_id(),
             order.venue_order_id(),
-            UUID4::new(),
+            command_id,
             ts_init,
             None, // params,
             None, // correlation_id
@@ -1527,7 +1532,9 @@ pub trait ExecutionAlgorithm: DataActor {
             OrderEventAny::Triggered(e) => self.on_order_triggered(*e),
             OrderEventAny::PendingUpdate(e) => self.on_order_pending_update(*e),
             OrderEventAny::PendingCancel(e) => self.on_order_pending_cancel(*e),
+            OrderEventAny::ModifyDenied(e) => self.on_order_modify_denied(*e),
             OrderEventAny::ModifyRejected(e) => self.on_order_modify_rejected(*e),
+            OrderEventAny::CancelDenied(e) => self.on_order_cancel_denied(*e),
             OrderEventAny::CancelRejected(e) => self.on_order_cancel_rejected(*e),
             OrderEventAny::Updated(e) => self.on_order_updated(*e),
             OrderEventAny::Filled(e) => {
@@ -1693,9 +1700,17 @@ pub trait ExecutionAlgorithm: DataActor {
     #[allow(unused_variables)]
     fn on_order_pending_cancel(&mut self, event: OrderPendingCancel) {}
 
+    /// Called when a modify command is proven not sent; the order remains otherwise unchanged.
+    #[allow(unused_variables)]
+    fn on_order_modify_denied(&mut self, event: OrderModifyDenied) {}
+
     /// Called when an order modification is rejected.
     #[allow(unused_variables)]
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {}
+
+    /// Called when a cancel command is proven not sent; the order remains otherwise unchanged.
+    #[allow(unused_variables)]
+    fn on_order_cancel_denied(&mut self, event: OrderCancelDenied) {}
 
     /// Called when an order cancellation is rejected.
     #[allow(unused_variables)]
@@ -1879,6 +1894,91 @@ fn charge_spawn_reduction(
     }
 }
 
+fn deny_modify_command(
+    core: &mut ExecutionAlgorithmCore,
+    command: &ModifyOrder,
+    reason: &str,
+) -> anyhow::Result<()> {
+    registered_trader_id(core)?;
+    let ts_now = core.clock_mut().timestamp_ns();
+    let order = core
+        .cache_ref()
+        .order(&command.client_order_id)
+        .map(|order| order.clone());
+
+    let mut event = OrderModifyDenied::new(
+        order.as_ref().map_or(command.trader_id, Order::trader_id),
+        order
+            .as_ref()
+            .map_or(command.strategy_id, Order::strategy_id),
+        order
+            .as_ref()
+            .map_or(command.instrument_id, Order::instrument_id),
+        order
+            .as_ref()
+            .map_or(command.client_order_id, Order::client_order_id),
+        reason.into(),
+        UUID4::new(),
+        ts_now,
+        ts_now,
+        order
+            .as_ref()
+            .and_then(Order::venue_order_id)
+            .or(command.venue_order_id),
+        order.as_ref().and_then(Order::account_id),
+    );
+    event.causation_id = Some(command.command_id);
+    let event = OrderEventAny::ModifyDenied(event);
+    apply_command_denied(core, &event)
+}
+
+fn deny_cancel_command(
+    core: &mut ExecutionAlgorithmCore,
+    command: &CancelOrder,
+    reason: &str,
+) -> anyhow::Result<()> {
+    registered_trader_id(core)?;
+    let ts_now = core.clock_mut().timestamp_ns();
+    let order = core
+        .cache_ref()
+        .order(&command.client_order_id)
+        .map(|order| order.clone());
+
+    let mut event = OrderCancelDenied::new(
+        order.as_ref().map_or(command.trader_id, Order::trader_id),
+        order
+            .as_ref()
+            .map_or(command.strategy_id, Order::strategy_id),
+        order
+            .as_ref()
+            .map_or(command.instrument_id, Order::instrument_id),
+        command.client_order_id,
+        reason.into(),
+        UUID4::new(),
+        ts_now,
+        ts_now,
+        order
+            .as_ref()
+            .and_then(Order::venue_order_id)
+            .or(command.venue_order_id),
+        order.as_ref().and_then(Order::account_id),
+    );
+    event.causation_id = Some(command.command_id);
+    apply_command_denied(core, &OrderEventAny::CancelDenied(event))
+}
+
+fn apply_command_denied(
+    core: &ExecutionAlgorithmCore,
+    event: &OrderEventAny,
+) -> anyhow::Result<()> {
+    if core.cache_ref().order_exists(&event.client_order_id()) {
+        core.cache_rc().borrow_mut().update_order(event)?;
+    }
+
+    publish_order_event(event);
+    Ok(())
+}
+
 fn publish_order_initialized(order: &OrderAny) {
     let event = OrderEventAny::Initialized(order.init_event().clone());
     publish_order_event(&event);
@@ -1887,6 +1987,18 @@ fn publish_order_initialized(order: &OrderAny) {
 fn publish_order_event(event: &OrderEventAny) {
     let topic = format!("events.order.{}", event.strategy_id());
     msgbus::publish_order_event(topic.into(), event);
+
+    let topic = match event {
+        OrderEventAny::ModifyDenied(_) => {
+            msgbus::switchboard::get_order_modify_denied_topic(event.instrument_id())
+        }
+        OrderEventAny::CancelDenied(_) => {
+            msgbus::switchboard::get_order_cancel_denied_topic(event.instrument_id())
+        }
+        _ => return,
+    };
+
+    msgbus::publish_order_event(topic, event);
 }
 
 fn registered_trader_id(core: &ExecutionAlgorithmCore) -> anyhow::Result<TraderId> {
@@ -3768,6 +3880,91 @@ mod tests {
     }
 
     #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_algorithm_cancel_refusal_publishes_without_changing_lifecycle(#[case] cached: bool) {
+        let mut algo = create_test_algorithm();
+        register_algorithm(&mut algo);
+        let strategy_id = StrategyId::from("STRAT-ALGO-CANCEL-DENY");
+        let mut order = OrderTestBuilder::new(OrderType::Market)
+            .trader_id(TraderId::from("TRADER-001"))
+            .instrument_id(InstrumentId::from("BTC/USDT.BINANCE"))
+            .strategy_id(strategy_id)
+            .client_order_id(ClientOrderId::from("O-ALGO-CANCEL-DENY"))
+            .quantity(Quantity::from("2.5"))
+            .build();
+
+        if cached {
+            let canceled = OrderCanceledSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(strategy_id)
+                .instrument_id(order.instrument_id())
+                .client_order_id(order.client_order_id())
+                .build();
+            order.apply(OrderEventAny::Canceled(canceled)).unwrap();
+            algo.core
+                .cache_rc()
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let (handler, events) = subscribe_order_topic(strategy_id);
+        let cause = UUID4::new();
+
+        let command = CancelOrder::new(
+            order.trader_id(),
+            None,
+            if cached {
+                StrategyId::from("OTHER-REQUESTER")
+            } else {
+                strategy_id
+            },
+            order.instrument_id(),
+            order.client_order_id(),
+            order.venue_order_id(),
+            cause,
+            UnixNanos::from(17),
+            None,
+            None,
+        );
+
+        algo.handle_cancel_order(command).unwrap();
+        msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
+        let events = events.borrow();
+
+        let [OrderEventAny::CancelDenied(event)] = events.as_slice() else {
+            panic!("expected one cancel denial: {events:?}")
+        };
+
+        assert_eq!(event.trader_id, order.trader_id());
+        assert_eq!(event.strategy_id, strategy_id);
+        assert_eq!(event.instrument_id, order.instrument_id());
+        assert_eq!(event.client_order_id, order.client_order_id());
+        assert_eq!(event.venue_order_id, order.venue_order_id());
+        assert_eq!(event.account_id, order.account_id());
+        assert_eq!(event.causation_id, Some(cause));
+        assert_eq!(
+            event.reason,
+            if cached {
+                "Order already closed"
+            } else {
+                "Order not found in cache"
+            }
+        );
+        let cache = algo.cache();
+        if cached {
+            let actual = cache.order(&order.client_order_id()).unwrap();
+            assert_eq!(actual.status(), order.status());
+            assert_eq!(actual.quantity(), order.quantity());
+            assert_eq!(actual.filled_qty(), order.filled_qty());
+            assert_eq!(actual.ts_closed(), order.ts_closed());
+        } else {
+            assert!(!cache.order_exists(&order.client_order_id()));
+        }
+    }
+
+    #[rstest]
     fn test_algorithm_execute_dispatches_modify_order_to_handler() {
         let unique_id = format!("TEST-{}", UUID4::new());
         let config = ExecutionAlgorithmConfig {
@@ -3810,7 +4007,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_algorithm_handle_modify_order_refuses_active_local_order_without_events() {
+    fn test_algorithm_handle_modify_order_denies_active_local_order() {
         let mut algo = create_test_algorithm();
         register_algorithm(&mut algo);
 
@@ -3848,13 +4045,30 @@ mod tests {
             None,
         );
 
+        let command_id = command.command_id;
         algo.execute(TradingCommand::ModifyOrder(command)).unwrap();
 
         msgbus::unsubscribe_order_events(format!("events.order.{strategy_id}").into(), &handler);
         let cached_order = algo.cache().order(&order.client_order_id()).unwrap();
         assert_eq!(cached_order.status(), OrderStatus::Initialized);
         assert_eq!(cached_order.quantity(), Quantity::from("1.0"));
-        assert!(events.borrow().is_empty());
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+
+        let OrderEventAny::ModifyDenied(denied) = &events[0] else {
+            panic!("Expected modify denial");
+        };
+
+        assert_eq!(denied.causation_id, Some(command_id));
+        assert_eq!(denied.client_order_id, order.client_order_id());
+        assert_eq!(denied.strategy_id, strategy_id);
+        assert_eq!(denied.instrument_id, order.instrument_id());
+        assert_eq!(denied.reason, "Order is being executed by this algorithm");
+        assert_eq!(cached_order.price(), order.price());
+        assert_eq!(cached_order.trigger_price(), order.trigger_price());
+        assert_eq!(cached_order.exec_algorithm_id(), order.exec_algorithm_id());
+        assert_eq!(cached_order.exec_spawn_id(), order.exec_spawn_id());
+        assert_eq!(cached_order.ts_closed(), None);
     }
 
     #[rstest]

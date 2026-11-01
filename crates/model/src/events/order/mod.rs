@@ -33,6 +33,7 @@ use crate::{
 pub mod accepted;
 pub mod accepted_batch;
 pub mod any;
+pub mod cancel_denied;
 pub mod cancel_rejected;
 pub mod canceled;
 pub mod canceled_batch;
@@ -43,6 +44,7 @@ pub mod expired;
 pub mod fill_voided;
 pub mod filled;
 pub mod initialized;
+pub mod modify_denied;
 pub mod modify_rejected;
 pub mod pending_cancel;
 pub mod pending_update;
@@ -74,7 +76,9 @@ pub enum OrderEventType {
     Triggered,
     PendingUpdate,
     PendingCancel,
+    ModifyDenied,
     ModifyRejected,
+    CancelDenied,
     CancelRejected,
     Updated,
     PartiallyFilled,

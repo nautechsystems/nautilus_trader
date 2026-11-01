@@ -36,6 +36,7 @@ if TYPE_CHECKING:
     from types import NotImplementedType
 
     from nautilus_trader.common import Clock
+    from nautilus_trader.core import UUID4
     from nautilus_trader.live import BatchCancelOrders
     from nautilus_trader.live import BatchModifyOrders
     from nautilus_trader.live import CancelAllOrders
@@ -489,12 +490,31 @@ class ExecutionClient(_Client):
         """
         self._output.order_accepted(order, venue_order_id, ts_event, self.clock.timestamp_ns())
 
+    def generate_order_modify_denied(
+        self,
+        order: object,
+        reason: str,
+        ts_event: int,
+        causation_id: UUID4 | None = None,
+    ) -> None:
+        """
+        Queue a local modify refusal, using the command ID when known.
+        """
+        self._output.order_modify_denied(
+            order,
+            reason,
+            ts_event,
+            self.clock.timestamp_ns(),
+            causation_id,
+        )
+
     def generate_order_modify_rejected(
         self,
         order: object,
         venue_order_id: VenueOrderId | None,
         reason: str,
         ts_event: int,
+        causation_id: UUID4 | None = None,
     ) -> None:
         """
         Queue the order modify rejected event using the owning clock.
@@ -505,6 +525,25 @@ class ExecutionClient(_Client):
             reason,
             ts_event,
             self.clock.timestamp_ns(),
+            causation_id,
+        )
+
+    def generate_order_cancel_denied(
+        self,
+        order: object,
+        reason: str,
+        ts_event: int,
+        causation_id: UUID4 | None = None,
+    ) -> None:
+        """
+        Queue a local cancel refusal, using the command ID when known.
+        """
+        self._output.order_cancel_denied(
+            order,
+            reason,
+            ts_event,
+            self.clock.timestamp_ns(),
+            causation_id,
         )
 
     def generate_order_cancel_rejected(
@@ -513,6 +552,7 @@ class ExecutionClient(_Client):
         venue_order_id: VenueOrderId | None,
         reason: str,
         ts_event: int,
+        causation_id: UUID4 | None = None,
     ) -> None:
         """
         Queue the order cancel rejected event using the owning clock.
@@ -523,6 +563,7 @@ class ExecutionClient(_Client):
             reason,
             ts_event,
             self.clock.timestamp_ns(),
+            causation_id,
         )
 
     def generate_order_updated(  # noqa: PLR0913, PLR0917 - Preserve the native client and event field contract.

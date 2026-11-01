@@ -3854,6 +3854,7 @@ impl OrderMatchingEngine {
                 Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
                 command.venue_order_id,
                 Some(account_id),
+                Some(command.command_id),
             );
             return;
         }
@@ -3875,6 +3876,7 @@ impl OrderMatchingEngine {
             command.price,
             command.trigger_price,
             None,
+            Some(command.command_id),
         );
 
         if !update_success {
@@ -3935,6 +3937,7 @@ impl OrderMatchingEngine {
                 command.client_order_id,
                 command.venue_order_id,
                 Ustr::from(format!("Order {} not found", command.client_order_id).as_str()),
+                Some(command.command_id),
             );
             return;
         }
@@ -3960,6 +3963,7 @@ impl OrderMatchingEngine {
                 command.client_order_id,
                 command.venue_order_id,
                 Ustr::from(e.to_string().as_str()),
+                Some(command.command_id),
             );
             return;
         }
@@ -5709,7 +5713,14 @@ impl OrderMatchingEngine {
                 }
 
                 if first_price.is_none() {
-                    self.generate_order_updated(order, order.quantity(), Some(fill_px), None, None);
+                    self.generate_order_updated(
+                        order,
+                        order.quantity(),
+                        Some(fill_px),
+                        None,
+                        None,
+                        None,
+                    );
                     first_price = Some(fill_px);
                 }
             }
@@ -5761,7 +5772,7 @@ impl OrderMatchingEngine {
                     .expect("Overflow occurred when adding reduce-only target quantity");
                 reduce_only_target.precision = self.instrument.size_precision();
                 if order.quantity() != reduce_only_target {
-                    self.generate_order_updated(order, reduce_only_target, None, None, None);
+                    self.generate_order_updated(order, reduce_only_target, None, None, None, None);
                 }
             }
 
@@ -5866,7 +5877,14 @@ impl OrderMatchingEngine {
                         .expect("Overflow occurred when adding reduce-only target quantity");
                     reduce_only_target.precision = self.instrument.size_precision();
                     if order.quantity() != reduce_only_target {
-                        self.generate_order_updated(order, reduce_only_target, None, None, None);
+                        self.generate_order_updated(
+                            order,
+                            reduce_only_target,
+                            None,
+                            None,
+                            None,
+                            None,
+                        );
                     }
                 }
             }
@@ -6666,7 +6684,14 @@ impl OrderMatchingEngine {
             order.set_is_quote_quantity(false);
         }
 
-        self.generate_order_updated(order, target, order.price(), order.trigger_price(), None);
+        self.generate_order_updated(
+            order,
+            target,
+            order.price(),
+            order.trigger_price(),
+            None,
+            None,
+        );
         true
     }
 
@@ -6755,6 +6780,7 @@ impl OrderMatchingEngine {
         order: &OrderAny,
         quantity: Quantity,
         price: Price,
+        causation_id: Option<UUID4>,
     ) -> ModifyOutcome {
         if self.core.is_limit_matched(order.order_side(), price) {
             if order.is_post_only() {
@@ -6763,21 +6789,25 @@ impl OrderMatchingEngine {
                     order.strategy_id(),
                     order.instrument_id(),
                     order.client_order_id(),
-                    Ustr::from(format!(
-                        "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
-                        order.order_type(),
-                        order.order_side(),
-                        price,
-                        self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
-                        self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
-                    ).as_str()),
+                    Ustr::from(
+                        format!(
+                            "POST_ONLY {} {} order with new limit px of {} would have been a TAKER: bid={}, ask={}",
+                            order.order_type(),
+                            order.order_side(),
+                            price,
+                            self.core.bid.map_or_else(|| "None".to_string(), |p| p.to_string()),
+                            self.core.ask.map_or_else(|| "None".to_string(), |p| p.to_string())
+                        )
+                        .as_str(),
+                    ),
                     order.venue_order_id(),
                     order.account_id(),
+                    causation_id,
                 );
                 return ModifyOutcome::Rejected;
             }
 
-            self.generate_order_updated(order, quantity, Some(price), None, None);
+            self.generate_order_updated(order, quantity, Some(price), None, None, causation_id);
 
             // Re-read from cache to get the order with events applied
             let client_order_id = order.client_order_id();
@@ -6789,7 +6819,7 @@ impl OrderMatchingEngine {
             return ModifyOutcome::Applied;
         }
 
-        self.generate_order_updated(order, quantity, Some(price), None, None);
+        self.generate_order_updated(order, quantity, Some(price), None, None, causation_id);
         ModifyOutcome::Applied
     }
 
@@ -6798,6 +6828,7 @@ impl OrderMatchingEngine {
         order: &OrderAny,
         quantity: Quantity,
         trigger_price: Price,
+        causation_id: Option<UUID4>,
     ) -> ModifyOutcome {
         if self.core.is_stop_matched_with_trigger_type(
             order.order_side(),
@@ -6826,11 +6857,19 @@ impl OrderMatchingEngine {
                 ),
                 order.venue_order_id(),
                 order.account_id(),
+                causation_id,
             );
             return ModifyOutcome::Rejected;
         }
 
-        self.generate_order_updated(order, quantity, None, Some(trigger_price), None);
+        self.generate_order_updated(
+            order,
+            quantity,
+            None,
+            Some(trigger_price),
+            None,
+            causation_id,
+        );
         ModifyOutcome::Applied
     }
 
@@ -6840,10 +6879,11 @@ impl OrderMatchingEngine {
         quantity: Quantity,
         price: Price,
         trigger_price: Price,
+        causation_id: Option<UUID4>,
     ) -> ModifyOutcome {
         if order.is_triggered().is_some_and(|t| t) {
             if self.core.is_limit_matched(order.order_side(), price) {
-                return self.update_limit_order(order, quantity, price);
+                return self.update_limit_order(order, quantity, price, causation_id);
             }
         } else {
             // Update stop price
@@ -6874,12 +6914,20 @@ impl OrderMatchingEngine {
                     ),
                     order.venue_order_id(),
                     order.account_id(),
+                    causation_id,
                 );
                 return ModifyOutcome::Rejected;
             }
         }
 
-        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price), None);
+        self.generate_order_updated(
+            order,
+            quantity,
+            Some(price),
+            Some(trigger_price),
+            None,
+            causation_id,
+        );
         ModifyOutcome::Applied
     }
 
@@ -6888,6 +6936,7 @@ impl OrderMatchingEngine {
         order: &OrderAny,
         quantity: Quantity,
         trigger_price: Price,
+        causation_id: Option<UUID4>,
     ) -> ModifyOutcome {
         if self.core.is_touch_triggered_with_trigger_type(
             order.order_side(),
@@ -6916,13 +6965,21 @@ impl OrderMatchingEngine {
                 ),
                 order.venue_order_id(),
                 order.account_id(),
+                causation_id,
             );
 
             // Cannot update order
             return ModifyOutcome::Rejected;
         }
 
-        self.generate_order_updated(order, quantity, None, Some(trigger_price), None);
+        self.generate_order_updated(
+            order,
+            quantity,
+            None,
+            Some(trigger_price),
+            None,
+            causation_id,
+        );
         ModifyOutcome::Applied
     }
 
@@ -6932,10 +6989,11 @@ impl OrderMatchingEngine {
         quantity: Quantity,
         price: Price,
         trigger_price: Price,
+        causation_id: Option<UUID4>,
     ) -> ModifyOutcome {
         if order.is_triggered().is_some_and(|t| t) {
             if self.core.is_limit_matched(order.order_side(), price) {
-                return self.update_limit_order(order, quantity, price);
+                return self.update_limit_order(order, quantity, price, causation_id);
             }
         } else {
             // Update trigger price
@@ -6966,12 +7024,20 @@ impl OrderMatchingEngine {
                     ),
                     order.venue_order_id(),
                     order.account_id(),
+                    causation_id,
                 );
                 return ModifyOutcome::Rejected;
             }
         }
 
-        self.generate_order_updated(order, quantity, Some(price), Some(trigger_price), None);
+        self.generate_order_updated(
+            order,
+            quantity,
+            Some(price),
+            Some(trigger_price),
+            None,
+            causation_id,
+        );
         ModifyOutcome::Applied
     }
 
@@ -7000,7 +7066,14 @@ impl OrderMatchingEngine {
             return;
         }
 
-        self.generate_order_updated(order, order.quantity(), new_price, new_trigger_price, None);
+        self.generate_order_updated(
+            order,
+            order.quantity(),
+            new_price,
+            new_trigger_price,
+            None,
+            None,
+        );
     }
 
     fn accept_order(&mut self, order: &mut OrderAny) {
@@ -7188,6 +7261,7 @@ impl OrderMatchingEngine {
         price: Option<Price>,
         trigger_price: Option<Price>,
         update_contingencies: Option<bool>,
+        causation_id: Option<UUID4>,
     ) -> bool {
         if self.inflight_orders.contains(order.client_order_id()) {
             return false;
@@ -7211,6 +7285,7 @@ impl OrderMatchingEngine {
                 )),
                 order.venue_order_id(),
                 order.account_id(),
+                causation_id,
             );
             return false;
         }
@@ -7235,6 +7310,7 @@ impl OrderMatchingEngine {
                 Ustr::from(&reason),
                 order.venue_order_id(),
                 order.account_id(),
+                causation_id,
             );
             return false;
         }
@@ -7253,6 +7329,7 @@ impl OrderMatchingEngine {
                 )),
                 order.venue_order_id(),
                 order.account_id(),
+                causation_id,
             );
             return false;
         }
@@ -7260,25 +7337,31 @@ impl OrderMatchingEngine {
         let outcome = match order {
             OrderAny::Limit(_) | OrderAny::MarketToLimit(_) => {
                 let price = price.unwrap_or(order.price().unwrap());
-                self.update_limit_order(order, quantity, price)
+                self.update_limit_order(order, quantity, price, causation_id)
             }
             OrderAny::StopMarket(_) => {
                 let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
-                self.update_stop_market_order(order, quantity, trigger_price)
+                self.update_stop_market_order(order, quantity, trigger_price, causation_id)
             }
             OrderAny::StopLimit(_) => {
                 let price = price.unwrap_or(order.price().unwrap());
                 let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
-                self.update_stop_limit_order(order, quantity, price, trigger_price)
+                self.update_stop_limit_order(order, quantity, price, trigger_price, causation_id)
             }
             OrderAny::MarketIfTouched(_) => {
                 let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
-                self.update_market_if_touched_order(order, quantity, trigger_price)
+                self.update_market_if_touched_order(order, quantity, trigger_price, causation_id)
             }
             OrderAny::LimitIfTouched(_) => {
                 let price = price.unwrap_or(order.price().unwrap());
                 let trigger_price = trigger_price.unwrap_or(order.trigger_price().unwrap());
-                self.update_limit_if_touched_order(order, quantity, price, trigger_price)
+                self.update_limit_if_touched_order(
+                    order,
+                    quantity,
+                    price,
+                    trigger_price,
+                    causation_id,
+                )
             }
             // A trailing stop that is activated, or activates at the current market, rests as a
             // stop, so its new trigger is validated like one (as on submit). Otherwise it cannot
@@ -7287,10 +7370,17 @@ impl OrderMatchingEngine {
                 Some(trigger_price)
                     if inner.is_activated || self.trailing_stop_activates_now(order) =>
                 {
-                    self.update_stop_market_order(order, quantity, trigger_price)
+                    self.update_stop_market_order(order, quantity, trigger_price, causation_id)
                 }
                 trigger_price => {
-                    self.generate_order_updated(order, quantity, None, trigger_price, None);
+                    self.generate_order_updated(
+                        order,
+                        quantity,
+                        None,
+                        trigger_price,
+                        None,
+                        causation_id,
+                    );
                     ModifyOutcome::Applied
                 }
             },
@@ -7301,10 +7391,23 @@ impl OrderMatchingEngine {
                 (Some(price), Some(trigger_price))
                     if inner.is_activated || self.trailing_stop_activates_now(order) =>
                 {
-                    self.update_stop_limit_order(order, quantity, price, trigger_price)
+                    self.update_stop_limit_order(
+                        order,
+                        quantity,
+                        price,
+                        trigger_price,
+                        causation_id,
+                    )
                 }
                 (price, trigger_price) => {
-                    self.generate_order_updated(order, quantity, price, trigger_price, None);
+                    self.generate_order_updated(
+                        order,
+                        quantity,
+                        price,
+                        trigger_price,
+                        None,
+                        causation_id,
+                    );
                     ModifyOutcome::Applied
                 }
             },
@@ -7628,9 +7731,16 @@ impl OrderMatchingEngine {
         let price = order.price();
         let trigger_price = order.trigger_price();
         if order.instrument_id() == self.instrument.id() {
-            self.update_order(order, Some(quantity), price, trigger_price, Some(false));
+            self.update_order(
+                order,
+                Some(quantity),
+                price,
+                trigger_price,
+                Some(false),
+                None,
+            );
         } else {
-            self.generate_order_updated(order, quantity, price, trigger_price, None);
+            self.generate_order_updated(order, quantity, price, trigger_price, None, None);
         }
     }
 
@@ -7894,6 +8004,7 @@ impl OrderMatchingEngine {
                 child.price(),
                 child.trigger_price(),
                 None,
+                None,
             );
         }
     }
@@ -8145,9 +8256,11 @@ impl OrderMatchingEngine {
         reason: Ustr,
         venue_order_id: Option<VenueOrderId>,
         account_id: Option<AccountId>,
+        causation_id: Option<UUID4>,
     ) {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let event = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
+
+        let mut event = OrderModifyRejected::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -8159,8 +8272,9 @@ impl OrderMatchingEngine {
             false,
             venue_order_id,
             account_id,
-        ));
-        self.dispatch_order_event(event);
+        );
+        event.causation_id = causation_id;
+        self.dispatch_order_event(OrderEventAny::ModifyRejected(event));
     }
 
     #[expect(clippy::too_many_arguments)]
@@ -8173,9 +8287,11 @@ impl OrderMatchingEngine {
         client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
         reason: Ustr,
+        causation_id: Option<UUID4>,
     ) {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let event = OrderEventAny::CancelRejected(OrderCancelRejected::new(
+
+        let mut event = OrderCancelRejected::new(
             trader_id,
             strategy_id,
             instrument_id,
@@ -8187,8 +8303,9 @@ impl OrderMatchingEngine {
             false,
             venue_order_id,
             Some(account_id),
-        ));
-        self.dispatch_order_event(event);
+        );
+        event.causation_id = causation_id;
+        self.dispatch_order_event(OrderEventAny::CancelRejected(event));
     }
 
     fn generate_order_updated(
@@ -8198,10 +8315,11 @@ impl OrderMatchingEngine {
         price: Option<Price>,
         trigger_price: Option<Price>,
         protection_price: Option<Price>,
+        causation_id: Option<UUID4>,
     ) {
         let ts_now = self.clock.borrow().timestamp_ns();
 
-        let event = OrderUpdated::new(
+        let mut event = OrderUpdated::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -8219,6 +8337,7 @@ impl OrderMatchingEngine {
             order.is_quote_quantity(),
         );
 
+        event.causation_id = causation_id;
         self.orders
             .pending_updates
             .borrow_mut()

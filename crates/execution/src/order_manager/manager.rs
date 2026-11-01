@@ -213,8 +213,17 @@ impl OrderManager {
             OrderEventAny::Canceled(event) => self.handle_order_canceled(*event),
             OrderEventAny::Expired(event) => self.handle_order_expired(*event),
             OrderEventAny::Updated(event) => self.handle_order_updated(*event),
-            OrderEventAny::ModifyRejected(event) => {
-                self.oto_target_quantities.remove(&event.client_order_id);
+            OrderEventAny::ModifyDenied(_) | OrderEventAny::ModifyRejected(_) => {
+                let client_order_id = event.client_order_id();
+                if !self
+                    .cache
+                    .borrow()
+                    .order(&client_order_id)
+                    .is_some_and(|order| order.has_pending_update_command())
+                {
+                    self.oto_target_quantities.remove(&client_order_id);
+                }
+
                 Vec::new()
             }
             OrderEventAny::Filled(event) => self.handle_order_filled(event),
@@ -847,8 +856,9 @@ mod tests {
         enums::{ContingencyType, OmsType, OrderSide, OrderStatus, OrderType, TriggerType},
         events::order::spec::{
             OrderAcceptedSpec, OrderCanceledSpec, OrderDeniedSpec, OrderEmulatedSpec,
-            OrderExpiredSpec, OrderModifyRejectedSpec, OrderPendingUpdateSpec, OrderRejectedSpec,
-            OrderReleasedSpec, OrderSubmittedSpec, OrderUpdatedSpec,
+            OrderExpiredSpec, OrderModifyDeniedSpec, OrderModifyRejectedSpec,
+            OrderPendingUpdateSpec, OrderRejectedSpec, OrderReleasedSpec, OrderSubmittedSpec,
+            OrderUpdatedSpec,
         },
         identifiers::{
             AccountId, ClientOrderId, ExecAlgorithmId, InstrumentId, StrategyId, TradeId, TraderId,
@@ -869,8 +879,64 @@ mod tests {
 
     use super::*;
 
-    /// Verifies unhandled order events are no-ops and don't panic.
-    /// Previously, unhandled events would hit a todo!() panic.
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_modify_denial_releases_only_completed_oto_target(#[case] another_pending: bool) {
+        let (clock, cache) = create_test_components();
+        let mut manager = OrderManager::new(clock, cache.clone(), false);
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .quantity(Quantity::from(10))
+            .price(Price::from("1.00000"))
+            .submit(true)
+            .build();
+        order
+            .apply(OrderEventAny::Accepted(
+                OrderAcceptedSpec::builder().build(),
+            ))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, false)
+            .unwrap();
+        let quantity = Quantity::from(15);
+        assert_eq!(manager.sync_oto_quantity(&order, quantity).len(), 1);
+
+        if another_pending {
+            let mut pending = OrderPendingUpdateSpec::builder()
+                .client_order_id(order.client_order_id())
+                .build();
+            pending.causation_id = Some(UUID4::new());
+            cache
+                .borrow_mut()
+                .update_order(&OrderEventAny::PendingUpdate(pending))
+                .unwrap();
+        }
+
+        let event = OrderEventAny::ModifyDenied(
+            OrderModifyDeniedSpec::builder()
+                .client_order_id(order.client_order_id())
+                .causation_id(UUID4::new())
+                .build(),
+        );
+        cache.borrow_mut().update_order(&event).unwrap();
+        assert!(manager.handle_event(&event).is_empty());
+        let cached = cache
+            .borrow()
+            .order_owned(&order.client_order_id())
+            .unwrap();
+        let retried = manager.sync_oto_quantity(&cached, quantity);
+
+        if another_pending {
+            assert!(retried.is_empty());
+        } else {
+            assert!(
+                matches!(retried.as_slice(), [OrderManagerAction::ModifyLocalQuantity { order: retried, quantity: target }] if retried.client_order_id() == order.client_order_id() && *target == quantity)
+            );
+        }
+    }
+
     #[rstest]
     fn test_handle_event_unhandled_events_are_noop() {
         let submitted = OrderEventAny::Submitted(

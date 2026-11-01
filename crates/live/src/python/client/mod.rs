@@ -73,7 +73,7 @@ use nautilus_common::{
     python::clock::PyClock,
 };
 use nautilus_core::{
-    Params, UnixNanos,
+    Params, UUID4, UnixNanos,
     python::{params::pydict_to_params, to_pyruntime_err, to_pytype_err},
 };
 use nautilus_model::{
@@ -688,7 +688,33 @@ impl ClientOutput {
         self.send_exec(ExecutionEvent::Order(event))
     }
 
-    #[pyo3(name = "order_modify_rejected", signature = (order, venue_order_id, reason, ts_event, ts_init))]
+    #[pyo3(name = "order_modify_denied", signature = (order, reason, ts_event, ts_init, causation_id=None))]
+    fn py_order_modify_denied(
+        &self,
+        py: Python<'_>,
+        order: Py<PyAny>,
+        reason: &str,
+        ts_event: u64,
+        ts_init: u64,
+        causation_id: Option<UUID4>,
+    ) -> PyResult<()> {
+        let factory = self.event_factory()?;
+        let order = pyobject_to_order_any(py, order)?;
+        let event = factory.generate_order_modify_denied(
+            &order,
+            reason,
+            causation_id,
+            ts_event.into(),
+            ts_init.into(),
+        );
+        self.send_exec(ExecutionEvent::Order(event))
+    }
+
+    #[pyo3(name = "order_modify_rejected", signature = (order, venue_order_id, reason, ts_event, ts_init, causation_id=None))]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Python event emission retains its optional command correlation"
+    )]
     fn py_order_modify_rejected(
         &self,
         py: Python<'_>,
@@ -697,6 +723,7 @@ impl ClientOutput {
         reason: &str,
         ts_event: u64,
         ts_init: u64,
+        causation_id: Option<UUID4>,
     ) -> PyResult<()> {
         let factory = self.event_factory()?;
         let order = pyobject_to_order_any(py, order)?;
@@ -706,11 +733,38 @@ impl ClientOutput {
             reason,
             ts_event.into(),
             ts_init.into(),
+            causation_id,
         );
         self.send_exec(ExecutionEvent::Order(event))
     }
 
-    #[pyo3(name = "order_cancel_rejected", signature = (order, venue_order_id, reason, ts_event, ts_init))]
+    #[pyo3(name = "order_cancel_denied", signature = (order, reason, ts_event, ts_init, causation_id=None))]
+    fn py_order_cancel_denied(
+        &self,
+        py: Python<'_>,
+        order: Py<PyAny>,
+        reason: &str,
+        ts_event: u64,
+        ts_init: u64,
+        causation_id: Option<UUID4>,
+    ) -> PyResult<()> {
+        let factory = self.event_factory()?;
+        let order = pyobject_to_order_any(py, order)?;
+        let event = factory.generate_order_cancel_denied(
+            &order,
+            reason,
+            causation_id,
+            ts_event.into(),
+            ts_init.into(),
+        );
+        self.send_exec(ExecutionEvent::Order(event))
+    }
+
+    #[pyo3(name = "order_cancel_rejected", signature = (order, venue_order_id, reason, ts_event, ts_init, causation_id=None))]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Python event emission retains its optional command correlation"
+    )]
     fn py_order_cancel_rejected(
         &self,
         py: Python<'_>,
@@ -719,6 +773,7 @@ impl ClientOutput {
         reason: &str,
         ts_event: u64,
         ts_init: u64,
+        causation_id: Option<UUID4>,
     ) -> PyResult<()> {
         let factory = self.event_factory()?;
         let order = pyobject_to_order_any(py, order)?;
@@ -728,6 +783,7 @@ impl ClientOutput {
             reason,
             ts_event.into(),
             ts_init.into(),
+            causation_id,
         );
         self.send_exec(ExecutionEvent::Order(event))
     }
@@ -2718,6 +2774,102 @@ class Runtime:
             receiver.try_recv(),
             Err(tokio::sync::mpsc::error::TryRecvError::Empty)
         ));
+    }
+
+    #[rstest]
+    #[case("order_modify_denied", "OrderModifyDenied", false)]
+    #[case("order_cancel_denied", "OrderCancelDenied", false)]
+    #[case("order_modify_rejected", "OrderModifyRejected", true)]
+    #[case("order_cancel_rejected", "OrderCancelRejected", true)]
+    fn test_python_command_refusal_emission_preserves_fields(
+        execution_output: (
+            ClientOutput,
+            tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        ),
+        #[case] method: &str,
+        #[case] event_type: &str,
+        #[case] rejected: bool,
+        #[values(false, true)] with_cause: bool,
+    ) {
+        use nautilus_model::orders::{Order, OrderTestBuilder, stubs::TestOrderEventStubs};
+        let (output, mut receiver) = execution_output;
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TESTER-001"))
+            .strategy_id(StrategyId::from("S-PY-019"))
+            .client_order_id(ClientOrderId::from("O-PY-023"))
+            .instrument_id(InstrumentId::from("AUD/USD.SIM"))
+            .quantity(Quantity::from(17))
+            .price(Price::from("0.71231"))
+            .build();
+        let account = AccountId::from("SIM-001");
+        let cached_venue = VenueOrderId::from("V-CACHED-029");
+        let explicit_venue = VenueOrderId::from("V-OVERRIDE-031");
+        order
+            .apply(TestOrderEventStubs::accepted(&order, account, cached_venue))
+            .unwrap();
+        let cause = UUID4::new();
+        let reason = "refusal for Python caller";
+
+        let output = Python::attach(|py| {
+            let py_order = order_any_to_pyobject(py, order.clone()).unwrap();
+            let output = Py::new(py, output).unwrap();
+
+            let result = if rejected {
+                if with_cause {
+                    output.call_method1(
+                        py,
+                        method,
+                        (py_order, explicit_venue, reason, 73u64, 79u64, cause),
+                    )
+                } else {
+                    output.call_method1(
+                        py,
+                        method,
+                        (py_order, explicit_venue, reason, 73u64, 79u64),
+                    )
+                }
+            } else if with_cause {
+                output.call_method1(py, method, (py_order, reason, 73u64, 79u64, cause))
+            } else {
+                output.call_method1(py, method, (py_order, reason, 73u64, 79u64))
+            };
+
+            assert!(result.unwrap().is_none(py));
+            output
+        });
+
+        let ExecutionEvent::Order(event) = receiver.try_recv().unwrap() else {
+            panic!("expected command refusal");
+        };
+
+        let value = serde_json::to_value(&event).unwrap();
+        let value = value
+            .get(event_type.strip_prefix("Order").unwrap())
+            .unwrap()
+            .clone();
+        let event_id = value.get("event_id").unwrap().as_str().unwrap();
+        assert_ne!(UUID4::from(event_id), order.init_event().event_id);
+        let mut expected = serde_json::json!({
+            "type":event_type, "trader_id":order.trader_id(), "strategy_id":order.strategy_id(),
+            "instrument_id":order.instrument_id(), "client_order_id":order.client_order_id(),
+            "reason":reason, "event_id":event_id, "ts_event":UnixNanos::from(73), "ts_init":UnixNanos::from(79),
+            "venue_order_id": if rejected { explicit_venue } else { cached_venue }, "account_id":account,
+        });
+
+        if rejected {
+            expected["reconciliation"] = serde_json::json!(false);
+        }
+
+        if with_cause {
+            expected["causation_id"] = serde_json::json!(cause);
+        }
+
+        assert_eq!(value, expected);
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+        drop(output);
     }
 
     #[rstest]

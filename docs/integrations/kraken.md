@@ -456,6 +456,9 @@ time rather than silently coercing them.
 | Batch modify | -    | ✓       | Futures HTTP method only. Execution sends one command. |
 | Batch cancel | ✓    | ✓       | Auto-chunks into batches of 50.                        |
 
+Futures batch cancels split repeated venue or client order IDs into separate requests so each reply
+identifies one command UUID. Other chunks contain up to 50 orders.
+
 :::note
 **Cancel all orders**:
 

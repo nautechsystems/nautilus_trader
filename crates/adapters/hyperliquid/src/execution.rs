@@ -1295,13 +1295,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
             None => {
                 let reason = "order not found in cache";
                 log::warn!("Cannot modify order {client_order_id}: {reason}");
-                self.emitter.emit_order_modify_rejected_event(
+                self.emitter.emit_order_modify_denied_event(
                     cmd.strategy_id,
                     cmd.instrument_id,
                     client_order_id,
                     venue_order_id,
                     reason,
                     self.clock.get_time_ns(),
+                    Some(cmd.command_id),
                 );
                 return Ok(());
             }
@@ -1318,13 +1319,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let reason =
                 "quote-denominated quantity orders cannot be modified; cancel and resubmit";
             log::warn!("Cannot modify order {client_order_id}: {reason}");
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 client_order_id,
                 venue_order_id,
                 reason,
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1336,13 +1338,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 let Some(venue_order_id) = venue_order_id.as_ref() else {
                     let reason = "venue_order_id or unique cached CLOID is required for modify";
                     log::warn!("Cannot modify order {client_order_id}: {reason}");
-                    self.emitter.emit_order_modify_rejected_event(
+                    self.emitter.emit_order_modify_denied_event(
                         cmd.strategy_id,
                         cmd.instrument_id,
                         client_order_id,
                         None,
                         reason,
                         self.clock.get_time_ns(),
+                        Some(cmd.command_id),
                     );
                     return Ok(());
                 };
@@ -1353,13 +1356,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         let reason =
                             format!("Failed to parse venue_order_id '{venue_order_id}': {e}");
                         log::warn!("{reason}");
-                        self.emitter.emit_order_modify_rejected_event(
+                        self.emitter.emit_order_modify_denied_event(
                             cmd.strategy_id,
                             cmd.instrument_id,
                             client_order_id,
                             Some(*venue_order_id),
                             &reason,
                             self.clock.get_time_ns(),
+                            Some(cmd.command_id),
                         );
                         return Ok(());
                     }
@@ -1372,13 +1376,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
         {
             let reason = "cached venue_order_id is required for CLOID modify";
             log::warn!("Cannot modify order {client_order_id}: {reason}");
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 client_order_id,
                 venue_order_id,
                 reason,
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1391,13 +1396,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 format!("modify quantity {target_total_qty} not greater than filled {filled_qty}",);
             log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
 
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 client_order_id,
                 venue_order_id,
                 &reason,
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1611,6 +1617,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         )
         .then_some(true);
         let entry = CancelEntry {
+            command_id: cmd.command_id,
             strategy_id,
             instrument_id,
             client_order_id,
@@ -1715,6 +1722,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let entries: Vec<CancelEntry> = open_orders
             .iter()
             .map(|o| CancelEntry {
+                command_id: cmd.command_id,
                 strategy_id,
                 instrument_id,
                 client_order_id: o.client_order_id(),
@@ -1799,6 +1807,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .cancels
             .iter()
             .map(|c| CancelEntry {
+                command_id: c.command_id,
                 strategy_id: c.strategy_id,
                 instrument_id: c.instrument_id,
                 client_order_id: c.client_order_id,
@@ -3688,6 +3697,7 @@ fn remove_generated_modify_cloid(
 
 #[derive(Clone)]
 struct CancelEntry {
+    command_id: UUID4,
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
@@ -3774,7 +3784,18 @@ fn emit_modify_failure(
     ts_event: UnixNanos,
 ) {
     match failure {
-        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+        CommandFailure::NotSent(reason) => {
+            emitter.emit_order_modify_denied_event(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                venue_order_id,
+                &reason,
+                ts_event,
+                Some(command.command_id),
+            );
+        }
+        CommandFailure::VenueRejected(reason) => {
             emitter.emit_order_modify_rejected_event(
                 command.strategy_id,
                 command.instrument_id,
@@ -3782,6 +3803,7 @@ fn emit_modify_failure(
                 venue_order_id,
                 &reason,
                 ts_event,
+                Some(command.command_id),
             );
         }
         CommandFailure::Ambiguous(reason) => {
@@ -3800,7 +3822,18 @@ fn emit_cancel_failure(
     ts_event: UnixNanos,
 ) {
     match failure {
-        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+        CommandFailure::NotSent(reason) => {
+            emitter.emit_order_cancel_denied_event(
+                entry.strategy_id,
+                entry.instrument_id,
+                entry.client_order_id,
+                entry.venue_order_id,
+                &reason,
+                ts_event,
+                Some(entry.command_id),
+            );
+        }
+        CommandFailure::VenueRejected(reason) => {
             emitter.emit_order_cancel_rejected_event(
                 entry.strategy_id,
                 entry.instrument_id,
@@ -3808,6 +3841,7 @@ fn emit_cancel_failure(
                 entry.venue_order_id,
                 &reason,
                 ts_event,
+                Some(entry.command_id),
             );
         }
         CommandFailure::Ambiguous(reason) => {
@@ -4312,6 +4346,7 @@ fn spawn_active_sibling_cancel(
                         venue_order_id,
                         &error,
                         get_atomic_clock_realtime().get_time_ns(),
+                        None,
                     );
                 }
             }
@@ -5483,6 +5518,7 @@ mod tests {
 
     fn cancel_entry(client_order_id: &str, fast: bool) -> CancelEntry {
         CancelEntry {
+            command_id: UUID4::default(),
             strategy_id: StrategyId::from("S-001"),
             instrument_id: InstrumentId::from(TEST_INSTRUMENT_ID),
             client_order_id: ClientOrderId::from(client_order_id),

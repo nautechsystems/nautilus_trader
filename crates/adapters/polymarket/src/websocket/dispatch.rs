@@ -910,6 +910,7 @@ fn reject_modify_replacement(
         Some(old_venue_order_id),
         &sanitize_error_text(reason),
         ts_event,
+        None,
     );
 
     if let Some(cancel_ts) = cancel_ts {

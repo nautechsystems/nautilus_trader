@@ -891,6 +891,8 @@ fn order_event_kind(event: &OrderEventAny) -> &'static str {
         OrderEventAny::Triggered(_) => "triggered",
         OrderEventAny::PendingUpdate(_) => "pending_update",
         OrderEventAny::PendingCancel(_) => "pending_cancel",
+        OrderEventAny::ModifyDenied(_) => "modify_denied",
+        OrderEventAny::CancelDenied(_) => "cancel_denied",
         OrderEventAny::ModifyRejected(_) => "modify_rejected",
         OrderEventAny::CancelRejected(_) => "cancel_rejected",
         OrderEventAny::Updated(_) => "updated",
@@ -937,14 +939,14 @@ fn drain_order_events(
 
 /// Applies an `OrderPendingCancel` event to `order` in the cache, mirroring the state
 /// `Strategy::cancel_order` / `cancel_orders` establish before their cancel command reaches the
-/// execution client, so a synthesized `CancelRejected` later has a valid FSM transition.
+/// execution client, with a command ID shared by `send_command_through_engine`.
 fn mark_pending_cancel(
     cache: &Rc<RefCell<Cache>>,
     order: &OrderAny,
     trader_id: TraderId,
     ts: UnixNanos,
 ) {
-    let event = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+    let mut event = OrderPendingCancel::new(
         trader_id,
         order.strategy_id(),
         order.instrument_id(),
@@ -955,20 +957,24 @@ fn mark_pending_cancel(
         ts,
         false,
         order.venue_order_id(),
-    ));
-    cache.borrow_mut().update_order(&event).unwrap();
+    );
+    event.causation_id = Some(UUID4::new());
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingCancel(event))
+        .unwrap();
 }
 
 /// Applies an `OrderPendingUpdate` event to `order` in the cache, mirroring the state
 /// `Strategy::modify_order` establishes before its modify command reaches the execution client, so
-/// a synthesized `ModifyRejected` later has a valid FSM transition.
+/// the matching command ID shared by `send_command_through_engine` can resolve it.
 fn mark_pending_update(
     cache: &Rc<RefCell<Cache>>,
     order: &OrderAny,
     trader_id: TraderId,
     ts: UnixNanos,
 ) {
-    let event = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+    let mut event = OrderPendingUpdate::new(
         trader_id,
         order.strategy_id(),
         order.instrument_id(),
@@ -979,8 +985,12 @@ fn mark_pending_update(
         ts,
         false,
         order.venue_order_id(),
-    ));
-    cache.borrow_mut().update_order(&event).unwrap();
+    );
+    event.causation_id = Some(UUID4::new());
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::PendingUpdate(event))
+        .unwrap();
 }
 
 /// The commands deferred by a leg other than the insert leg. `Cancel`, `Modify`, `BatchCancel` and
@@ -1057,14 +1067,20 @@ impl DeferredCommand {
     }
 
     /// Client order IDs this command's rejection event names, in dispatch order.
-    fn rejected_ids(self, events: &[OrderEventAny]) -> Vec<ClientOrderId> {
+    fn refused_ids(self, events: &[OrderEventAny]) -> Vec<ClientOrderId> {
         events
             .iter()
             .filter_map(|event| match (self, event) {
+                (Self::Cancel | Self::BatchCancel, OrderEventAny::CancelDenied(denied)) => {
+                    Some(denied.client_order_id)
+                }
                 (
                     Self::Cancel | Self::BatchCancel | Self::CancelAll,
                     OrderEventAny::CancelRejected(rejected),
                 ) => Some(rejected.client_order_id),
+                (Self::Modify | Self::BatchModify, OrderEventAny::ModifyDenied(denied)) => {
+                    Some(denied.client_order_id)
+                }
                 (Self::Modify | Self::BatchModify, OrderEventAny::ModifyRejected(rejected)) => {
                     Some(rejected.client_order_id)
                 }
@@ -1313,7 +1329,7 @@ fn modify_command(
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        None,
+        order.venue_order_id(),
         None,
         Some(Price::from("99.00")),
         None,
@@ -1337,7 +1353,7 @@ fn cancel_command(
         order.strategy_id(),
         order.instrument_id(),
         order.client_order_id(),
-        None,
+        order.venue_order_id(),
         UUID4::new(),
         ts,
         None,
@@ -1357,7 +1373,7 @@ fn send_command_through_engine(
     let strategy_id = targets[0].strategy_id();
     let client_id = harness.client_id;
 
-    let command = match kind {
+    let mut command = match kind {
         DeferredCommand::Cancel => {
             TradingCommand::CancelOrder(cancel_command(client_id, trader_id, &targets[0], ts))
         }
@@ -1404,6 +1420,40 @@ fn send_command_through_engine(
             None,
         )),
     };
+
+    let pending_cause = |id: ClientOrderId, cancel: bool| {
+        let cache = harness.cache.borrow();
+        let order = cache.order(&id)?;
+        match (cancel, order.last_event()) {
+            (false, OrderEventAny::PendingUpdate(event)) => event.causation_id,
+            (true, OrderEventAny::PendingCancel(event)) => event.causation_id,
+            _ => None,
+        }
+    };
+
+    match &mut command {
+        TradingCommand::ModifyOrder(command) => {
+            command.command_id =
+                pending_cause(command.client_order_id, false).unwrap_or(command.command_id);
+        }
+        TradingCommand::ModifyOrders(command) => {
+            for child in &mut command.modifies {
+                child.command_id =
+                    pending_cause(child.client_order_id, false).unwrap_or(child.command_id);
+            }
+        }
+        TradingCommand::CancelOrder(command) => {
+            command.command_id =
+                pending_cause(command.client_order_id, true).unwrap_or(command.command_id);
+        }
+        TradingCommand::CancelOrders(command) => {
+            for child in &mut command.cancels {
+                child.command_id =
+                    pending_cause(child.client_order_id, true).unwrap_or(child.command_id);
+            }
+        }
+        _ => {}
+    }
 
     msgbus::send_trading_command(MessagingSwitchboard::exec_engine_execute(), command);
 }
@@ -5891,11 +5941,9 @@ fn test_exec_engine_stop_rejects_in_flight_commands_without_reentering(
     );
 }
 
-/// With no latency model configured every command runs inline with no deferral and no alert, the
-/// sender is installed and events take the channel, and a cancel that finds no engine stays the
-/// silent no-op it was: zero behavior change for the default `latency_model = None`.
+/// With no latency model, commands run inline; a missing matching engine denies the command.
 #[rstest]
-fn test_no_latency_model_keeps_the_immediate_path_unchanged(
+fn test_no_latency_model_applies_inline_and_denies_missing_engine(
     trader_id: TraderId,
     account_id: AccountId,
     venue: Venue,
@@ -5920,9 +5968,9 @@ fn test_no_latency_model_keeps_the_immediate_path_unchanged(
             ts,
         ))
         .unwrap();
+    let events = drain_order_events(&mut rx);
     assert!(
-        drain_order_events(&mut rx).is_empty(),
-        "a cancel that finds no engine must keep its pre-feature silent no-op",
+        matches!(events.as_slice(), [OrderEventAny::CancelDenied(event)] if event.client_order_id == unknown.client_order_id())
     );
 
     let order = resting_limit(&instrument, "O-NO-LATENCY-1", "100.00", ts);
@@ -6162,7 +6210,7 @@ fn test_inbound_latency_deferred_command_without_an_engine_is_rejected(
         .map(|order| order.client_order_id())
         .collect();
     assert_eq!(
-        kind.rejected_ids(&events),
+        kind.refused_ids(&events),
         expected,
         "every target of a command that finds no engine must be rejected, not dropped",
     );
@@ -6249,6 +6297,169 @@ fn test_inbound_latency_public_quote_processing_drains_due_commands(
     context.client.stop().unwrap();
 }
 
+#[rstest]
+#[case::modify(DeferredCommand::Modify, false)]
+#[case::batch_modify(DeferredCommand::BatchModify, false)]
+#[case::batch_modify_shared(DeferredCommand::BatchModify, true)]
+#[case::cancel(DeferredCommand::Cancel, false)]
+#[case::batch_cancel(DeferredCommand::BatchCancel, false)]
+#[case::batch_cancel_shared(DeferredCommand::BatchCancel, true)]
+fn test_unsent_commands_emit_correlated_denials(
+    trader_id: TraderId,
+    instrument: InstrumentAny,
+    #[case] kind: DeferredCommand,
+    #[case] shared_cause: bool,
+    #[values(false, true)] stop: bool,
+) {
+    let latency = stop.then(|| static_latency_model(1_000, 1_000_000, 1_000_000));
+    let mut harness = setup_engine_harness(trader_id, &instrument, latency);
+    let cancel = matches!(kind, DeferredCommand::Cancel | DeferredCommand::BatchCancel);
+    let mut expected = Vec::new();
+    let shared_id = shared_cause.then(UUID4::new);
+
+    for index in 0..kind.target_count() {
+        let id = format!("O-UNSENT-{index}");
+        let order = if stop {
+            accept_through_engine(&mut harness, trader_id, &instrument, &id, "99.00", 1_000)
+        } else {
+            let ts = harness.test_clock.borrow().timestamp_ns();
+            uncached_instrument_order(&harness.cache, harness.client_id, &id, ts)
+        };
+
+        let order = harness
+            .cache
+            .borrow()
+            .try_order_owned(&order.client_order_id())
+            .unwrap();
+        let ts = harness.test_clock.borrow().timestamp_ns();
+
+        let cause = shared_id.unwrap_or_else(UUID4::new);
+
+        let event = if cancel {
+            let mut event = OrderPendingCancel::new(
+                trader_id,
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.account_id(),
+                UUID4::new(),
+                ts,
+                ts,
+                false,
+                order.venue_order_id(),
+            );
+            event.causation_id = Some(cause);
+            OrderEventAny::PendingCancel(event)
+        } else {
+            let mut event = OrderPendingUpdate::new(
+                trader_id,
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.account_id(),
+                UUID4::new(),
+                ts,
+                ts,
+                false,
+                order.venue_order_id(),
+            );
+            event.causation_id = Some(cause);
+            OrderEventAny::PendingUpdate(event)
+        };
+
+        harness.cache.borrow_mut().update_order(&event).unwrap();
+        expected.push((order, cause));
+    }
+
+    let ts = harness.test_clock.borrow().timestamp_ns();
+    let targets = expected
+        .iter()
+        .map(|(order, _)| order.clone())
+        .collect::<Vec<_>>();
+    send_command_through_engine(&harness, trader_id, kind, &targets, ts);
+
+    if stop {
+        assert!(harness.settle().is_empty());
+        harness.engine.borrow_mut().stop();
+    }
+
+    let events = harness.settle();
+    assert_eq!(events.len(), expected.len());
+
+    let expected_reason = if stop {
+        "Client stopped before the command was sent"
+    } else {
+        "No matching engine for instrument"
+    };
+
+    for (event, (original, cause)) in events.iter().zip(expected) {
+        let (id, instrument_id, strategy_id, actual_cause, reason, event_id, ts_event, ts_init) =
+            match event {
+                OrderEventAny::ModifyDenied(event) if !cancel => (
+                    event.client_order_id,
+                    event.instrument_id,
+                    event.strategy_id,
+                    event.causation_id,
+                    event.reason,
+                    event.event_id,
+                    event.ts_event,
+                    event.ts_init,
+                ),
+                OrderEventAny::CancelDenied(event) if cancel => (
+                    event.client_order_id,
+                    event.instrument_id,
+                    event.strategy_id,
+                    event.causation_id,
+                    event.reason,
+                    event.event_id,
+                    event.ts_event,
+                    event.ts_init,
+                ),
+                other => panic!("expected local command denial, was {other:?}"),
+            };
+
+        assert_eq!(
+            (id, instrument_id, strategy_id, actual_cause),
+            (
+                original.client_order_id(),
+                original.instrument_id(),
+                original.strategy_id(),
+                Some(cause)
+            )
+        );
+        assert_eq!(event.trader_id(), trader_id);
+        assert_eq!(event.venue_order_id(), original.venue_order_id());
+        assert_eq!(
+            event.account_id(),
+            Some(AccountId::from(format!("{}-001", instrument.id().venue)))
+        );
+        assert_eq!((ts_event, ts_init), (ts, ts));
+        assert_ne!(event_id, original.init_event().event_id);
+        assert_eq!(reason.as_str(), expected_reason);
+        let cache = harness.cache.borrow();
+        let order = cache.order(&id).unwrap();
+        assert_eq!(
+            (
+                order.status(),
+                order.quantity(),
+                order.price(),
+                order.filled_qty(),
+                order.account_id(),
+                order.venue_order_id()
+            ),
+            (
+                original.status(),
+                original.quantity(),
+                original.price(),
+                original.filled_qty(),
+                original.account_id(),
+                original.venue_order_id()
+            )
+        );
+        assert_eq!(order.event_count(), original.event_count() + 2);
+    }
+}
+
 /// Commands discarded by `stop()` never reached the venue, so their orders are terminalized
 /// through the channel: the sandbox emits no status reports to resolve them later.
 #[rstest]
@@ -6310,7 +6521,7 @@ fn test_stop_terminalizes_commands_still_in_flight(trader_id: TraderId, instrume
     );
     assert!(
         events.iter().any(
-            |event| matches!(event, OrderEventAny::CancelRejected(rejected)
+            |event| matches!(event, OrderEventAny::CancelDenied(rejected)
             if rejected.client_order_id == resting.client_order_id())
         ),
         "a cancel discarded at stop must release the order from PENDING_CANCEL",
@@ -6323,7 +6534,7 @@ fn test_stop_terminalizes_commands_still_in_flight(trader_id: TraderId, instrume
     assert_eq!(
         cached_status(&harness.cache, &resting),
         OrderStatus::Accepted,
-        "the FSM must accept the synthesized cancel-rejected, restoring the pre-cancel status",
+        "the FSM must accept the synthesized cancel-denied, restoring the pre-cancel status",
     );
 
     // Discarded means gone, not merely rejected: a restart must not resurrect the queue and apply
@@ -6634,7 +6845,7 @@ fn test_stop_unwinds_stacked_pending_commands_without_refused_events(
             std::slice::from_ref(&order),
             ts,
         );
-        "modify_rejected"
+        "modify_denied"
     } else {
         mark_pending_cancel(&harness.cache, &order, trader_id, ts);
         send_command_through_engine(
@@ -6644,7 +6855,7 @@ fn test_stop_unwinds_stacked_pending_commands_without_refused_events(
             std::slice::from_ref(&order),
             ts,
         );
-        "cancel_rejected"
+        "cancel_denied"
     };
 
     // The clock has not advanced, so all three commands are still in flight
@@ -6658,9 +6869,8 @@ fn test_stop_unwinds_stacked_pending_commands_without_refused_events(
         .collect();
     assert_eq!(
         kinds,
-        vec![last_rejection, "rejected"],
-        "the pending state is released once, by the last command issued, before the submit is \
-         rejected: {kinds:?}",
+        vec![last_rejection, "modify_denied", "rejected"],
+        "each pending command is denied before the submit is rejected: {kinds:?}",
     );
     // The real engine only logs an event the FSM refuses: one it published is one it applied
     {
@@ -8172,13 +8382,11 @@ fn test_inbound_latency_cancel_leaves_in_transit_contingent_unaffected(
     );
 }
 
-/// A modify or cancel still in flight at `stop()` whose order closed meanwhile raises no
-/// rejection: the fill already resolved the pending status the rejection would release, and the
-/// FSM has no transition from `FILLED`.
+/// An unsent command is denied even after its order fills, preserving the authoritative fill.
 #[rstest]
 #[case::cancel(DeferredCommand::Cancel)]
 #[case::modify(DeferredCommand::Modify)]
-fn test_stop_raises_no_rejection_for_an_order_closed_in_flight(
+fn test_stop_preserves_closed_order_and_denies_unsent_command(
     trader_id: TraderId,
     instrument: InstrumentAny,
     #[case] kind: DeferredCommand,
@@ -8227,10 +8435,14 @@ fn test_stop_raises_no_rejection_for_an_order_closed_in_flight(
         .iter()
         .map(|event| (order_event_kind(event), event.client_order_id()))
         .collect();
-    assert!(
-        at_stop.is_empty(),
-        "a command discarded at stop must raise no rejection for a closed order: {at_stop:?}",
-    );
+
+    let expected = match kind {
+        DeferredCommand::Modify => "modify_denied",
+        DeferredCommand::Cancel => "cancel_denied",
+        _ => unreachable!(),
+    };
+
+    assert_eq!(at_stop, vec![(expected, order.client_order_id())]);
     assert_eq!(
         cached_status(&harness.cache, &order),
         OrderStatus::Filled,

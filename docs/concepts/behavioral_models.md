@@ -142,8 +142,8 @@ Callback errors, invalid delays, and arrival-time overflow have these effects:
   before the next run.
 - **`BacktestNode`**: the node logs the error and omits that run's result by default. With `raise_exception=True`
   in `BacktestRunConfig`, it raises the error instead.
-- **Sandbox**: the client rejects failed submits and emits modify or cancel rejections for targets that remain
-  open. It logs and discards a failed `CancelAllOrders`.
+- **Sandbox**: the client rejects failed submits and denies failed modify or cancel commands with
+  `OrderModifyDenied` or `OrderCancelDenied`. It logs and discards a failed `CancelAllOrders`.
 
 ## Model family structure
 

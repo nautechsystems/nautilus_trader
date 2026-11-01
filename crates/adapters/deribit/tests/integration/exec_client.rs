@@ -1620,7 +1620,7 @@ async fn test_modify_sends_exact_number_tokens() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_sends_or_rejects_unrepresentable_amount() {
+async fn test_modify_sends_or_denies_unrepresentable_amount() {
     let (addr, state) = start_test_server().await.unwrap();
     let request_count = state.command_request_count.clone();
     let command_request_texts = state.command_request_texts.clone();
@@ -1653,7 +1653,7 @@ async fn test_modify_sends_or_rejects_unrepresentable_amount() {
         );
 
         match recv_until(&mut rx, |event| matches!(event, ExecutionEvent::Order(_))).await {
-            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+            ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) => {
                 assert_eq!(event.client_order_id, client_order_id);
                 assert_eq!(
                     event.venue_order_id,
@@ -1661,7 +1661,7 @@ async fn test_modify_sends_or_rejects_unrepresentable_amount() {
                 );
                 assert_eq!(event.reason.as_str(), UNREPRESENTABLE_PARAMS_REASON);
             }
-            other => panic!("Expected ModifyRejected event, was {other:?}"),
+            other => panic!("Expected ModifyDenied event, was {other:?}"),
         }
 
         assert_eq!(request_count.load(Ordering::Relaxed), 0);
@@ -1886,7 +1886,7 @@ async fn test_explicit_venue_modify_rejection_emits_modify_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_local_modify_validation_failure_emits_modify_rejected() {
+async fn test_local_modify_validation_failure_emits_modify_denied() {
     let (client, mut rx, cache, _request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
@@ -1899,23 +1899,23 @@ async fn test_local_modify_validation_failure_emits_modify_rejected() {
     match recv_until(&mut rx, |event| {
         matches!(
             event,
-            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+            ExecutionEvent::Order(OrderEventAny::ModifyDenied(event))
                 if event.client_order_id == client_order_id
         )
     })
     .await
     {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
             assert!(event.reason.contains("venue_order_id required"));
         }
-        other => panic!("Expected ModifyRejected event, was {other:?}"),
+        other => panic!("Expected ModifyDenied event, was {other:?}"),
     }
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_local_modify_missing_price_emits_modify_rejected() {
+async fn test_local_modify_missing_price_emits_modify_denied() {
     let (client, mut rx, cache, _request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
@@ -1928,23 +1928,23 @@ async fn test_local_modify_missing_price_emits_modify_rejected() {
     match recv_until(&mut rx, |event| {
         matches!(
             event,
-            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+            ExecutionEvent::Order(OrderEventAny::ModifyDenied(event))
                 if event.client_order_id == client_order_id
         )
     })
     .await
     {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
             assert!(event.reason.contains("price required"));
         }
-        other => panic!("Expected ModifyRejected event, was {other:?}"),
+        other => panic!("Expected ModifyDenied event, was {other:?}"),
     }
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_local_modify_missing_cached_order_emits_modify_rejected() {
+async fn test_local_modify_missing_cached_order_emits_modify_denied() {
     let (client, mut rx, _cache, _request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
@@ -1956,17 +1956,17 @@ async fn test_local_modify_missing_cached_order_emits_modify_rejected() {
     match recv_until(&mut rx, |event| {
         matches!(
             event,
-            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+            ExecutionEvent::Order(OrderEventAny::ModifyDenied(event))
                 if event.client_order_id == client_order_id
         )
     })
     .await
     {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
             assert!(event.reason.contains("Order not found"));
         }
-        other => panic!("Expected ModifyRejected event, was {other:?}"),
+        other => panic!("Expected ModifyDenied event, was {other:?}"),
     }
 }
 

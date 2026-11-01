@@ -958,6 +958,10 @@ mod tests {
             None,
         );
 
+        let cause = command.command_id;
+        let timers_before = algo.clock().timer_names();
+        let remaining_before = algo.scheduled_orders[&primary_id].remaining_sizes.clone();
+        let primary_before = algo.cache().order(&primary_id).unwrap();
         algo.handle_modify_order(command).unwrap();
 
         let primary_quantity = algo.cache().order(&primary_id).unwrap().quantity();
@@ -967,6 +971,24 @@ mod tests {
             .fold(Decimal::ZERO, |total, quantity| {
                 total + quantity.as_decimal()
             });
+
+        let cached = algo.cache().order(&primary_id).unwrap();
+
+        let OrderEventAny::ModifyDenied(event) = cached.last_event() else {
+            panic!("expected local modify denial");
+        };
+
+        assert_eq!(event.causation_id, Some(cause));
+        assert_eq!(event.client_order_id, primary_id);
+        assert_eq!(event.strategy_id, primary_before.strategy_id());
+        assert_eq!(event.instrument_id, primary_before.instrument_id());
+        assert_eq!(cached.status(), primary_before.status());
+        assert_eq!(cached.filled_qty(), primary_before.filled_qty());
+        assert_eq!(algo.clock().timer_names(), timers_before);
+        assert_eq!(
+            algo.scheduled_orders[&primary_id].remaining_sizes,
+            remaining_before
+        );
         assert_eq!(primary_quantity.as_decimal(), scheduled_quantity);
         assert_eq!(primary_quantity, Quantity::from("0.8"));
     }

@@ -28,7 +28,8 @@
 pub enum CommandFailure {
     /// A deterministic local failure proves the command was never transmitted.
     ///
-    /// A terminal rejection event is valid for this evidence.
+    /// After `OrderSubmitted`, submit emits `OrderRejected`; modify and cancel emit their
+    /// corresponding denied event.
     NotSent(String),
     /// The venue outcome is undefined; the command may still have been applied.
     ///
@@ -37,7 +38,7 @@ pub enum CommandFailure {
     Ambiguous(String),
     /// The venue explicitly declared the command rejected.
     ///
-    /// A terminal rejection event is valid for this evidence.
+    /// Emit the corresponding rejected event. Modify and cancel preserve the working order.
     VenueRejected(String),
 }
 

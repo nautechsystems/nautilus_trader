@@ -489,6 +489,12 @@ impl DeribitDataClient {
                     "Data client received OrderUpdated message (should be handled by execution client): {order:?}"
                 );
             }
+            NautilusWsMessage::OrderModifyDenied(order) => {
+                log::warn!("Data client received order modify denial: {order:?}");
+            }
+            NautilusWsMessage::OrderCancelDenied(order) => {
+                log::warn!("Data client received order cancel denial: {order:?}");
+            }
             NautilusWsMessage::OrderCancelRejected(order) => {
                 log::warn!(
                     "Data client received OrderCancelRejected message (should be handled by execution client): {order:?}"

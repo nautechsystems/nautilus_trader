@@ -1049,9 +1049,7 @@ impl KrakenSpotRawHttpClient {
         params: &KrakenSpotCancelOrderParams,
     ) -> anyhow::Result<SpotCancelOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for canceling orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let param_string = serde_urlencoded::to_string(params)
@@ -1073,11 +1071,10 @@ impl KrakenSpotRawHttpClient {
         &self,
         params: &KrakenSpotCancelOrderBatchParams,
     ) -> anyhow::Result<SpotCancelOrderBatchResponse, KrakenHttpError> {
-        let credential = self.credential.as_ref().ok_or_else(|| {
-            KrakenHttpError::AuthenticationError(
-                "API credentials required for canceling orders".to_string(),
-            )
-        })?;
+        let credential = self
+            .credential
+            .as_ref()
+            .ok_or(KrakenHttpError::MissingCredentials)?;
 
         // Serialize authenticated requests to ensure nonces arrive at Kraken in order
         let _guard = self.auth_mutex.lock().await;
@@ -1101,7 +1098,7 @@ impl KrakenSpotRawHttpClient {
 
         let signature = credential
             .sign_spot_json(endpoint, nonce, &json_str)
-            .map_err(|e| KrakenHttpError::AuthenticationError(format!("Failed to sign: {e}")))?;
+            .map_err(|e| KrakenHttpError::RequestNotStarted(format!("Failed to sign: {e}")))?;
 
         let mut headers = Self::default_headers();
         headers.insert("API-Key".to_string(), credential.api_key().to_string());
@@ -1166,9 +1163,7 @@ impl KrakenSpotRawHttpClient {
         &self,
     ) -> anyhow::Result<SpotCancelOrderResponse, KrakenHttpError> {
         if self.credential.is_none() {
-            return Err(KrakenHttpError::AuthenticationError(
-                "API credentials required for canceling orders".to_string(),
-            ));
+            return Err(KrakenHttpError::MissingCredentials);
         }
 
         let response: KrakenResponse<SpotCancelOrderResponse> = self

@@ -352,6 +352,14 @@ class _ClientOutput:
     def order_accepted(
         self, order: typing.Any, venue_order_id: model.VenueOrderId, ts_event: int, ts_init: int
     ) -> None: ...
+    def order_modify_denied(
+        self,
+        order: typing.Any,
+        reason: str,
+        ts_event: int,
+        ts_init: int,
+        causation_id: core.UUID4 | None = None,
+    ) -> None: ...
     def order_modify_rejected(
         self,
         order: typing.Any,
@@ -359,6 +367,15 @@ class _ClientOutput:
         reason: str,
         ts_event: int,
         ts_init: int,
+        causation_id: core.UUID4 | None = None,
+    ) -> None: ...
+    def order_cancel_denied(
+        self,
+        order: typing.Any,
+        reason: str,
+        ts_event: int,
+        ts_init: int,
+        causation_id: core.UUID4 | None = None,
     ) -> None: ...
     def order_cancel_rejected(
         self,
@@ -367,6 +384,7 @@ class _ClientOutput:
         reason: str,
         ts_event: int,
         ts_init: int,
+        causation_id: core.UUID4 | None = None,
     ) -> None: ...
     def order_updated(
         self,

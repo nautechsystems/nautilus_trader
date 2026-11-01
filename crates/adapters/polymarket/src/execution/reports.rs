@@ -876,6 +876,7 @@ impl PolymarketExecutionClient {
                         Some(old_venue_order_id),
                         "Replacement order rejected during reconciliation",
                         report.ts_last,
+                        None,
                     );
 
                     if let Some(cancel_ts) = cancel_ts {

@@ -3403,7 +3403,7 @@ async fn test_unknown_ban_rejects_submit_without_transmission() {
 #[case::cancel(false)]
 #[case::modify(true)]
 #[tokio::test]
-async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] modify: bool) {
+async fn test_cooldown_denies_pending_command_without_closing_order(#[case] modify: bool) {
     let (addr, request_count) =
         start_exec_test_server_with_command_responses(CommandResponses::default()).await;
     let url = format!("http://{addr}");
@@ -3459,54 +3459,56 @@ async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] mod
         ))
         .unwrap();
 
+    let command_id = nautilus_core::UUID4::new();
+
     let pending = if modify {
-        OrderEventAny::PendingUpdate(
-            OrderPendingUpdateSpec::builder()
-                .trader_id(order.trader_id())
-                .strategy_id(order.strategy_id())
-                .instrument_id(order.instrument_id())
-                .client_order_id(client_order_id)
-                .account_id(account_id)
-                .venue_order_id(venue_order_id)
-                .build(),
-        )
+        let mut event = OrderPendingUpdateSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(client_order_id)
+            .account_id(account_id)
+            .venue_order_id(venue_order_id)
+            .build();
+        event.causation_id = Some(command_id);
+        OrderEventAny::PendingUpdate(event)
     } else {
-        OrderEventAny::PendingCancel(
-            OrderPendingCancelSpec::builder()
-                .trader_id(order.trader_id())
-                .strategy_id(order.strategy_id())
-                .instrument_id(order.instrument_id())
-                .client_order_id(client_order_id)
-                .account_id(account_id)
-                .venue_order_id(venue_order_id)
-                .build(),
-        )
+        let mut event = OrderPendingCancelSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(client_order_id)
+            .account_id(account_id)
+            .venue_order_id(venue_order_id)
+            .build();
+        event.causation_id = Some(command_id);
+        OrderEventAny::PendingCancel(event)
     };
 
     cache.borrow_mut().update_order(&pending).unwrap();
-    manager.register_inflight(client_order_id);
-
+    manager.register_inflight(client_order_id, command_id);
     if modify {
-        client
-            .modify_order(modify_order_command(client_order_id))
-            .unwrap();
+        let mut command = modify_order_command(client_order_id);
+        command.command_id = command_id;
+        client.modify_order(command).unwrap();
     } else {
-        client
-            .cancel_order(cancel_order_command(client_order_id))
-            .unwrap();
+        let mut command = cancel_order_command(client_order_id);
+        command.command_id = command_id;
+        client.cancel_order(command).unwrap();
     }
 
-    let rejected = tokio::time::timeout(Duration::from_millis(250), recv_until(&mut rx, |event| matches!(event,
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) if event.client_order_id == client_order_id
+    let denied = tokio::time::timeout(Duration::from_millis(250), recv_until(&mut rx, |event| matches!(event,
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) if event.client_order_id == client_order_id
     ) || matches!(event,
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) if event.client_order_id == client_order_id
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) if event.client_order_id == client_order_id
     ))).await.unwrap();
 
-    let ExecutionEvent::Order(rejected) = rejected else {
-        panic!("expected command rejection")
+    let ExecutionEvent::Order(denied) = denied else {
+        panic!("expected command denial")
     };
 
-    cache.borrow_mut().update_order(&rejected).unwrap();
+    cache.borrow_mut().update_order(&denied).unwrap();
+    manager.observe_order_event(&denied);
     let before_expiry = request_count.load(Ordering::Relaxed);
     tokio::time::sleep(Duration::from_millis(600)).await;
     let exhausted = manager.check_inflight_orders();
@@ -3525,8 +3527,9 @@ async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] mod
     assert_eq!(cached.price(), Some(Price::from("50000.00")));
     assert_eq!(cached.quantity(), Quantity::from("0.001"));
 
-    match rejected {
-        OrderEventAny::ModifyRejected(event) if modify => {
+    match denied {
+        OrderEventAny::ModifyDenied(event) if modify => {
+            assert_eq!(event.causation_id, Some(command_id));
             assert_eq!(event.client_order_id, client_order_id);
             assert_eq!(event.instrument_id, order.instrument_id());
             assert_eq!(event.strategy_id, order.strategy_id());
@@ -3535,7 +3538,8 @@ async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] mod
                 "modify-order-error: Request not sent: Binance cooldown or local quota blocks admission; wait for capacity or expiry, or verify clearance and restart if expiry is unknown"
             );
         }
-        OrderEventAny::CancelRejected(event) if !modify => {
+        OrderEventAny::CancelDenied(event) if !modify => {
+            assert_eq!(event.causation_id, Some(command_id));
             assert_eq!(event.client_order_id, client_order_id);
             assert_eq!(event.instrument_id, order.instrument_id());
             assert_eq!(event.strategy_id, order.strategy_id());
@@ -3544,7 +3548,7 @@ async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] mod
                 "cancel-order-error: Request not sent: Binance cooldown or local quota blocks admission; wait for capacity or expiry, or verify clearance and restart if expiry is unknown"
             );
         }
-        event => panic!("unexpected rejection: {event:?}"),
+        event => panic!("unexpected denial: {event:?}"),
     }
 }
 
@@ -4848,7 +4852,7 @@ async fn test_explicit_venue_modify_rejection_emits_modify_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_local_modify_failure_emits_modify_rejected() {
+async fn test_local_modify_failure_emits_modify_denied() {
     let (client, mut rx, cache, _request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
@@ -4876,17 +4880,17 @@ async fn test_local_modify_failure_emits_modify_rejected() {
     match recv_until(&mut rx, |event| {
         matches!(
             event,
-            ExecutionEvent::Order(OrderEventAny::ModifyRejected(event))
+            ExecutionEvent::Order(OrderEventAny::ModifyDenied(event))
                 if event.client_order_id == client_order_id
         )
     })
     .await
     {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
             assert!(event.reason.contains("venue_order_id required"));
         }
-        other => panic!("Expected ModifyRejected event, was {other:?}"),
+        other => panic!("Expected ModifyDenied event, was {other:?}"),
     }
 }
 
@@ -5786,7 +5790,7 @@ fn test_instrument_id() -> InstrumentId {
 
 #[rstest]
 #[tokio::test]
-async fn test_tagged_lookup_failure_is_rejected_before_submission(
+async fn test_tagged_lookup_failure_is_denied_before_submission(
     #[values(false, true)] websocket: bool,
     #[values(false, true)] modify: bool,
     #[values(false, true)] invalid_response: bool,
@@ -5849,10 +5853,10 @@ async fn test_tagged_lookup_failure_is_rejected_before_submission(
     }
 
     let event = recv_until(&mut rx, |event| match event {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) => {
             modify && event.client_order_id == client_order_id
         }
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) => {
             !modify && event.client_order_id == client_order_id
         }
         _ => false,
@@ -5863,13 +5867,13 @@ async fn test_tagged_lookup_failure_is_rejected_before_submission(
     server.abort();
 
     let (actual_id, reason) = match event {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) => {
             (event.client_order_id, event.reason)
         }
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) => {
             (event.client_order_id, event.reason)
         }
-        _ => panic!("Expected rejection"),
+        _ => panic!("Expected denial"),
     };
 
     assert_eq!(actual_id, client_order_id);

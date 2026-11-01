@@ -872,9 +872,9 @@ so it can be slightly lower than the requested target.
 ##### Size checks
 
 Before canceling, the adapter subtracts filled quantity and quantity voided without reopening from
-the target. It rejects a replacement below 0.01 shares.
+the target. A replacement below 0.01 shares produces `OrderModifyDenied`.
 
-When cached instrument `info["min_order_size"]` is present, the adapter also rejects the modify if:
+When cached instrument `info["min_order_size"]` is present, the adapter also emits `OrderModifyDenied` if:
 
 - The value is not a positive decimal string.
 - The signed replacement share quantity is below that minimum.
@@ -886,16 +886,18 @@ derived from the cent-truncated pUSD budget.
 After cancellation, the adapter repeats the size checks on the remaining quantity. It uses the
 market minimum captured at modify start, without a fresh order-book read.
 
-Fills during cancellation can leave an undersized remainder. The adapter does not post it: the
-modify is rejected and the order closes as canceled. A marketable replacement can still be rejected
-below 1 pUSD after cancellation.
+Fills during cancellation can leave an undersized remainder. The adapter does not post it: it emits
+`OrderModifyRejected`, and the order closes as canceled. A marketable replacement below 1 pUSD also
+produces `OrderModifyRejected` after cancellation. These failures are rejections because the cancel leg
+was already sent.
 
 ##### Ambiguous outcomes
 
 The adapter submits no replacement unless the cancel response, canceled order state, and confirmed
 trade totals agree.
 
-- **Ambiguous cancel**: Emits `OrderModifyRejected`.
+- **Ambiguous cancel**: Retains the pending modification for venue reports or reconciliation.
+  This includes a response that omits the target from both `canceled` and `not_canceled`.
 - **Ambiguous replacement**: Stays in flight under its deterministic signed order hash. A later
   order update, fill, or reconciliation can establish it without a second `OrderAccepted`.
   Later modify and cancel commands remain blocked until then.
@@ -939,9 +941,13 @@ Confirmed cancellations override conflicting rejection reasons for the same ID.
 
 If a chunk fails, results from earlier completed chunks still apply. For the remaining orders:
 
-- **Failed chunk**: Definitive failures emit `OrderCancelRejected`; ambiguous failures leave cancels in flight.
+- **Failed chunk**: Failures proven not sent emit `OrderCancelDenied`; venue rejections emit
+  `OrderCancelRejected`. Ambiguous failures leave cancels in flight.
 - **Beyond the failed chunk**: Cancels stay in flight if an earlier, larger attempt included those orders.
-- **Never attempted**: Orders receive `OrderCancelRejected` with a local not-sent reason.
+- **Never attempted**: Orders receive `OrderCancelDenied` with the actual command ID and a local not-sent reason.
+
+Each batch command retains its own UUID, including repeated targets. An unattempted command receives
+a denial even if an earlier command for the same order has an unknown outcome.
 
 In-flight cancels await reconciliation. See [Retry classification](#retry-classification).
 
@@ -2778,7 +2784,7 @@ version-query failure.
 
 This service version is separate from the market protocol. Before submitting or modifying an order,
 the client requires instrument metadata `info["market_version"]` to be `"v1"`. Otherwise it emits
-`OrderDenied` for a submission or `OrderModifyRejected` for a modification. Reload instruments from
+`OrderDenied` for a submission or `OrderModifyDenied` for a modification. Reload instruments from
 discovery if cached instruments lack that metadata.
 
 The execution adapter subscribes once to an account-wide `user` channel for order and trade events.

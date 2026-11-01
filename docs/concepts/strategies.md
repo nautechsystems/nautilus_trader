@@ -172,6 +172,7 @@ from typing import Any
 
 from nautilus_trader.model import OrderAccepted
 from nautilus_trader.model import OrderCanceled
+from nautilus_trader.model import OrderCancelDenied
 from nautilus_trader.model import OrderCancelRejected
 from nautilus_trader.model import OrderDenied
 from nautilus_trader.model import OrderEmulated
@@ -179,6 +180,7 @@ from nautilus_trader.model import OrderExpired
 from nautilus_trader.model import OrderFilled
 from nautilus_trader.model import OrderFillVoided
 from nautilus_trader.model import OrderInitialized
+from nautilus_trader.model import OrderModifyDenied
 from nautilus_trader.model import OrderModifyRejected
 from nautilus_trader.model import OrderPendingCancel
 from nautilus_trader.model import OrderPendingUpdate
@@ -200,6 +202,8 @@ def on_order_expired(self, event: OrderExpired) -> None:
 def on_order_triggered(self, event: OrderTriggered) -> None:
 def on_order_pending_update(self, event: OrderPendingUpdate) -> None:
 def on_order_pending_cancel(self, event: OrderPendingCancel) -> None:
+def on_order_modify_denied(self, event: OrderModifyDenied) -> None:
+def on_order_cancel_denied(self, event: OrderCancelDenied) -> None:
 def on_order_modify_rejected(self, event: OrderModifyRejected) -> None:
 def on_order_cancel_rejected(self, event: OrderCancelRejected) -> None:
 def on_order_updated(self, event: OrderUpdated) -> None:
@@ -969,14 +973,17 @@ order if it is not already *closed*.
 On start, the strategy also reinstates alerts for its open GTD orders held in the cache, and cancels
 any whose expiry has already passed.
 
-When a cancel request is rejected, a running strategy preserves existing alerts. For an open or inflight GTD
-order with a missing expiry alert:
+When a cancel request is rejected or denied, a running strategy preserves existing alerts. If another
+cancel command remains pending, it takes no timer action. For an open or inflight GTD order with a
+missing expiry alert:
 
-- If expiry has already passed, it immediately retries the cancel.
-- Otherwise, it restores the expiry alert.
+- After `OrderCancelDenied`, if expiry has passed, it logs a warning and leaves the order open without retrying.
+- After `OrderCancelRejected`, if expiry has passed, it immediately retries the cancel.
+- If expiry has not passed, it restores the expiry alert.
 
-This runs before `on_order_cancel_rejected`, so an immediate retry can return the order to `PENDING_CANCEL`
-before the callback runs. A stopped strategy does not restore alerts or retry cancels on rejection.
+This runs before `on_order_cancel_rejected` or `on_order_cancel_denied`. An immediate retry can return
+the order to `PENDING_CANCEL` before the rejected callback runs. A stopped strategy does not restore
+alerts or retry cancels on rejection or denial.
 
 Some venues (such as Binance Futures) support the GTD time in force, so to avoid conflicts when using
 `manage_gtd_expiry` you should set `use_gtd=False` for your execution client config.

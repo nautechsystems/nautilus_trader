@@ -277,6 +277,7 @@ impl ReconciliationFillQueue {
 /// Information about an inflight order check.
 #[derive(Debug, Clone)]
 pub(super) struct InflightCheck {
+    pub command_ids: Vec<UUID4>,
     pub submitted_at: dst::time::Instant,
     pub retry_count: u32,
     // `Instant` debug output is runtime-specific and intentionally only useful

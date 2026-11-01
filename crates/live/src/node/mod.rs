@@ -2736,6 +2736,28 @@ impl LiveNode {
     }
 
     fn observe_exec_command_before_dispatch(&mut self, cmd: &TradingCommand) {
+        if matches!(
+            cmd,
+            TradingCommand::ModifyOrder(_)
+                | TradingCommand::ModifyOrders(_)
+                | TradingCommand::CancelOrder(_)
+                | TradingCommand::CancelOrders(_)
+        ) {
+            let engine = self.kernel.exec_engine.borrow();
+            let no_route = engine.find_client_for_command(cmd).is_none()
+                && cmd.client_id().is_none_or(|client_id| {
+                    engine
+                        .config()
+                        .external_clients
+                        .as_ref()
+                        .is_none_or(|clients| !clients.contains(&client_id))
+                });
+
+            if no_route {
+                return;
+            }
+        }
+
         let submission_client_id = if matches!(
             cmd,
             TradingCommand::SubmitOrder(_) | TradingCommand::SubmitOrderList(_)
@@ -2763,19 +2785,23 @@ impl LiveNode {
                 }
             }
             TradingCommand::ModifyOrder(modify) => {
-                self.exec_manager.register_inflight(modify.client_order_id);
+                self.exec_manager
+                    .register_inflight(modify.client_order_id, modify.command_id);
             }
             TradingCommand::ModifyOrders(modify) => {
                 for child in &modify.modifies {
-                    self.exec_manager.register_inflight(child.client_order_id);
+                    self.exec_manager
+                        .register_inflight(child.client_order_id, child.command_id);
                 }
             }
             TradingCommand::CancelOrder(cancel) => {
-                self.exec_manager.register_inflight(cancel.client_order_id);
+                self.exec_manager
+                    .register_inflight(cancel.client_order_id, cancel.command_id);
             }
             TradingCommand::CancelOrders(cancel) => {
                 for child in &cancel.cancels {
-                    self.exec_manager.register_inflight(child.client_order_id);
+                    self.exec_manager
+                        .register_inflight(child.client_order_id, child.command_id);
                 }
             }
             _ => {}
@@ -6485,6 +6511,22 @@ mod tests {
         let account_id = AccountId::from("TEST-001");
         let instrument = crypto_perpetual_ethusdt();
         let instrument_id = instrument.id();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(StubExecutionClient::new(
+                ClientId::from("STUB"),
+                account_id,
+                instrument_id.venue,
+                OmsType::Netting,
+                None,
+            )))
+            .unwrap();
+        node.kernel
+            .exec_engine
+            .borrow_mut()
+            .set_default_client(ClientId::from("STUB"))
+            .unwrap();
         let child_ids = [
             ClientOrderId::from("O-BATCH-CANCEL-1"),
             ClientOrderId::from("O-BATCH-CANCEL-2"),
@@ -6658,6 +6700,265 @@ mod tests {
         );
         assert!(result.events.is_empty());
         assert!(result.queries.is_empty());
+    }
+
+    #[rstest]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_external_cancel_command_still_registers_inflight() {
+        use nautilus_common::messages::execution::CancelOrder;
+        let external = ClientId::from("EXTERNAL");
+
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: true,
+                inflight_check_threshold_ms: 100,
+                inflight_check_retries: 2,
+                external_clients: Some(vec![external]),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("ExternalCancelNode".to_string(), Some(config)).unwrap();
+        let instrument = crypto_perpetual_ethusdt();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(node.trader_id())
+            .strategy_id(StrategyId::from("S-EXTERNAL"))
+            .instrument_id(instrument.id())
+            .quantity(Quantity::from("9.003"))
+            .price(Price::from("113.47"))
+            .build();
+        let venue = VenueOrderId::from("V-EXTERNAL");
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                AccountId::from("SIM-001"),
+                venue,
+            ))
+            .unwrap();
+        let id = order.client_order_id();
+        let command = TradingCommand::CancelOrder(CancelOrder::new(
+            order.trader_id(),
+            Some(external),
+            order.strategy_id(),
+            order.instrument_id(),
+            id,
+            Some(venue),
+            UUID4::new(),
+            17.into(),
+            None,
+            None,
+        ));
+        {
+            let mut cache = node.kernel.cache.borrow_mut();
+            cache.add_instrument(instrument.into()).unwrap();
+            cache
+                .add_order(order.clone(), None, Some(external), false)
+                .unwrap();
+        }
+
+        node.process_exec_command(
+            TradingCommandMessage::new(MessagingSwitchboard::exec_engine_execute(), command).into(),
+        );
+        advance_clock(Duration::from_millis(101)).await;
+        let result = node.exec_manager.check_inflight_orders();
+
+        let [TradingCommand::QueryOrder(query)] = result.queries.as_slice() else {
+            panic!("expected external query");
+        };
+
+        assert_eq!(
+            (query.client_order_id, query.venue_order_id, query.client_id),
+            (id, Some(venue), Some(external))
+        );
+        assert!(result.events.is_empty());
+        assert_eq!(
+            serde_json::to_value(node.kernel.cache.borrow().order(&id).unwrap().clone()).unwrap(),
+            serde_json::to_value(&order).unwrap()
+        );
+    }
+
+    #[rstest]
+    #[case::modify(false, false)]
+    #[case::batch_modify(false, true)]
+    #[case::cancel(true, false)]
+    #[case::batch_cancel(true, true)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    async fn test_native_command_denial_does_not_leave_inflight_tracking(
+        #[case] cancel: bool,
+        #[case] batch: bool,
+        #[values(false, true)] old_pending: bool,
+    ) {
+        use nautilus_common::messages::execution::{
+            BatchCancelOrders, BatchModifyOrders, CancelOrder, ModifyOrder,
+        };
+        use nautilus_model::events::order::spec::{OrderModifyDeniedSpec, OrderPendingUpdateSpec};
+
+        let config = LiveNodeConfig {
+            exec_engine: crate::config::LiveExecutionEngineConfig {
+                reconciliation: true,
+                inflight_check_threshold_ms: 100,
+                inflight_check_retries: 2,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        let mut node = LiveNode::build("LocalDenialNode".to_string(), Some(config)).unwrap();
+        let instrument = crypto_perpetual_ethusdt();
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(node.trader_id())
+            .strategy_id(StrategyId::from("S-LOCAL-DENIED"))
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("9.003"))
+            .price(Price::from("113.47"))
+            .build();
+        let account_id = AccountId::from("SIM-001");
+        let venue_id = VenueOrderId::from("V-LOCAL-DENIED");
+        order
+            .apply(TestOrderEventStubs::accepted(&order, account_id, venue_id))
+            .unwrap();
+        let id = order.client_order_id();
+        let old_cause = UUID4::new();
+
+        if old_pending {
+            let mut marker = OrderPendingUpdateSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(id)
+                .venue_order_id(venue_id)
+                .account_id(account_id)
+                .build();
+            marker.causation_id = Some(old_cause);
+            order.apply(OrderEventAny::PendingUpdate(marker)).unwrap();
+            node.exec_manager.register_inflight(id, old_cause);
+        }
+
+        let expected_status = order.status();
+        let events_before = order.event_count();
+        {
+            let mut cache = node.kernel.cache.borrow_mut();
+            cache.add_instrument(instrument.into()).unwrap();
+            cache.add_order(order.clone(), None, None, false).unwrap();
+        }
+
+        let cause = UUID4::new();
+
+        let command = if cancel {
+            let command = CancelOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                id,
+                Some(venue_id),
+                cause,
+                17.into(),
+                None,
+                None,
+            );
+
+            if batch {
+                TradingCommand::CancelOrders(BatchCancelOrders::new(
+                    order.trader_id(),
+                    None,
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    vec![command],
+                    UUID4::new(),
+                    19.into(),
+                    None,
+                    None,
+                ))
+            } else {
+                TradingCommand::CancelOrder(command)
+            }
+        } else {
+            let command = ModifyOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                id,
+                Some(venue_id),
+                Some(Quantity::from("8.001")),
+                None,
+                None,
+                cause,
+                17.into(),
+                None,
+                None,
+            );
+
+            if batch {
+                TradingCommand::ModifyOrders(BatchModifyOrders::new(
+                    order.trader_id(),
+                    None,
+                    order.strategy_id(),
+                    order.instrument_id(),
+                    vec![command],
+                    UUID4::new(),
+                    19.into(),
+                    None,
+                    None,
+                ))
+            } else {
+                TradingCommand::ModifyOrder(command)
+            }
+        };
+
+        node.process_exec_command(
+            TradingCommandMessage::new(MessagingSwitchboard::exec_engine_execute(), command).into(),
+        );
+        {
+            let cache = node.kernel.cache.borrow();
+            let cached = cache.order(&id).unwrap();
+            match cached.last_event() {
+                OrderEventAny::ModifyDenied(event) if !cancel => {
+                    assert_eq!(event.causation_id, Some(cause));
+                }
+                OrderEventAny::CancelDenied(event) if cancel => {
+                    assert_eq!(event.causation_id, Some(cause));
+                }
+                other => panic!("expected native command denial, was {other:?}"),
+            }
+
+            assert_eq!(cached.status(), expected_status);
+            assert_eq!(cached.quantity(), order.quantity());
+            assert_eq!(cached.price(), order.price());
+            assert_eq!(cached.filled_qty(), order.filled_qty());
+            assert_eq!(cached.event_count(), events_before + 1);
+        }
+
+        advance_clock(Duration::from_millis(101)).await;
+        let result = node.exec_manager.check_inflight_orders();
+        assert_eq!(result.queries.len(), usize::from(old_pending));
+        assert!(result.events.is_empty());
+
+        if old_pending {
+            let refusal = OrderModifyDeniedSpec::builder()
+                .trader_id(order.trader_id())
+                .strategy_id(order.strategy_id())
+                .instrument_id(order.instrument_id())
+                .client_order_id(id)
+                .venue_order_id(venue_id)
+                .account_id(account_id)
+                .causation_id(old_cause)
+                .build();
+            node.process_exec_event(ExecutionEvent::Order(OrderEventAny::ModifyDenied(refusal)));
+        }
+
+        assert_eq!(node.exec_manager.recon_check_retry_count(&id), 0);
     }
 
     #[rstest]
@@ -7534,7 +7835,9 @@ mod tests {
                         )
                     };
                     node.process_exec_event(ExecutionEvent::Order(pending));
-                    node.exec_manager.register_inflight(order.client_order_id());
+                    node.exec_manager
+                        .register_inflight(order.client_order_id(), UUID4::new());
+
                     if first_fill {
                         let cached = node
                             .kernel
@@ -11104,7 +11407,8 @@ mod tests {
                 .account_id(account_id)
                 .build(),
         )));
-        node.exec_manager.register_inflight(client_order_id);
+        node.exec_manager
+            .register_inflight(client_order_id, UUID4::new());
         advance_clock(Duration::from_millis(101)).await;
         assert_eq!(node.exec_manager.check_inflight_orders().queries.len(), 1);
         let report = ExecutionReport::Order(Box::new(
@@ -11165,7 +11469,8 @@ mod tests {
             )
         };
         node.process_exec_event(ExecutionEvent::Order(pending));
-        node.exec_manager.register_inflight(client_order_id);
+        node.exec_manager
+            .register_inflight(client_order_id, UUID4::new());
 
         if repeated_report {
             node.process_exec_event(ExecutionEvent::Report(report));
@@ -12371,14 +12676,7 @@ mod tests {
             .borrow()
             .order_owned(&client_order_id)
             .unwrap();
-        assert_eq!(
-            cached.status(),
-            if invalid == "local_update" {
-                OrderStatus::Submitted
-            } else {
-                OrderStatus::PendingCancel
-            }
-        );
+        assert_eq!(cached.status(), OrderStatus::PendingCancel);
         let diagnostics = node.exec_manager.take_submission_recovery_exhaustions();
         assert_eq!(diagnostics.len(), 1);
         assert_eq!(diagnostics[0].client_order_id, client_order_id);
@@ -12702,7 +13000,8 @@ mod tests {
             })
         };
         node.process_exec_event(event);
-        let expected_status = if evidence == "updated" {
+
+        let expected_status = if evidence == "updated" && status != OrderStatus::PendingCancel {
             OrderStatus::Submitted
         } else if status == OrderStatus::Submitted {
             OrderStatus::Accepted

@@ -1359,13 +1359,16 @@ pub enum BatchOrderResult {
     Error(BatchOrderError),
 }
 
-/// Error in a batch order response.
+/// Error for an individual batch operation.
 #[derive(Clone, Debug, Deserialize)]
 pub struct BatchOrderError {
     /// Error code from Binance.
     pub code: i64,
     /// Error message.
     pub msg: String,
+    /// Whether a local identity lookup prevented submitting this item.
+    #[serde(skip)]
+    pub not_sent: bool,
 }
 
 /// Listen key response from user data stream endpoints.
@@ -1841,6 +1844,22 @@ mod tests {
 
     use super::*;
     use crate::common::testing::load_fixture_string;
+
+    #[rstest]
+    fn test_batch_error_cannot_deserialize_local_send_provenance(
+        #[values(false, true)] include_not_sent: bool,
+    ) {
+        let mut value = serde_json::json!({"code": -2011, "msg": "Unknown order"});
+        if include_not_sent {
+            value["not_sent"] = true.into();
+        }
+
+        let error: BatchOrderError = serde_json::from_value(value).unwrap();
+
+        assert_eq!(error.code, -2011);
+        assert_eq!(error.msg, "Unknown order");
+        assert!(!error.not_sent);
+    }
 
     fn assert_zeroize_on_drop<T: ZeroizeOnDrop>() {}
 

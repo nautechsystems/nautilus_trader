@@ -449,6 +449,14 @@ impl Order for StopMarketOrder {
         self.ts_last
     }
 
+    fn has_pending_update_command(&self) -> bool {
+        self.core.has_pending_update_command()
+    }
+
+    fn has_pending_cancel_command(&self) -> bool {
+        self.core.has_pending_cancel_command()
+    }
+
     fn events(&self) -> Vec<&OrderEventAny> {
         self.events.iter().collect()
     }

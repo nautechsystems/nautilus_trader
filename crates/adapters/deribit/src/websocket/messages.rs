@@ -32,8 +32,9 @@ use nautilus_model::{
         option_chain::OptionGreeks,
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderExpired, OrderFilled,
-        OrderModifyRejected, OrderRejected, OrderUpdated,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderExpired, OrderFilled, OrderModifyDenied, OrderModifyRejected, OrderRejected,
+        OrderUpdated,
     },
     instruments::InstrumentAny,
     reports::{FillReport, OrderStatusReport},
@@ -930,8 +931,12 @@ pub enum NautilusWsMessage {
     OrderExpired(OrderExpired),
     /// Order rejected by venue.
     OrderRejected(OrderRejected),
+    /// A cancel command fails before transmission.
+    OrderCancelDenied(OrderCancelDenied),
     /// Cancel request rejected by venue.
     OrderCancelRejected(OrderCancelRejected),
+    /// A modify command fails before transmission.
+    OrderModifyDenied(OrderModifyDenied),
     /// Modify request rejected by venue.
     OrderModifyRejected(OrderModifyRejected),
     /// Order updated (price/quantity amended).

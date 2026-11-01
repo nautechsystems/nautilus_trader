@@ -73,11 +73,11 @@ venue delivery exactly once.
 
 Execution commands resolve according to the evidence available:
 
-| Evidence                 | Meaning                                                         | Result                                                                                          |
-| ------------------------ | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| Definitive local failure | Validation proves that the command was not sent.                | Denies a submit or rejects a modify or cancel when the failure is attributable to that command. |
-| Definitive venue result  | The matching engine or venue explicitly confirms the outcome.   | Applies the corresponding accepted, updated, canceled, or rejected event.                       |
-| Unknown live outcome     | The command may have reached the venue, but no result is known. | Keeps the command in flight for stream updates, polling, queries, or reconciliation.            |
+| Evidence                 | Meaning                                                         | Result                                                                               |
+| ------------------------ | --------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Definitive local failure | Validation proves that the command was not sent.                | Emits the local failure event for the command's execution stage, when attributable.  |
+| Definitive venue result  | The matching engine or venue explicitly confirms the outcome.   | Applies the corresponding accepted, updated, canceled, or rejected event.            |
+| Unknown live outcome     | The command may have reached the venue, but no result is known. | Keeps the command in flight for stream updates, polling, queries, or reconciliation. |
 
 The failure event depends on the command and when the failure becomes definitive:
 
@@ -85,8 +85,10 @@ The failure event depends on the command and when the failure becomes definitive
 | ----------------------------------- | --------------------- | --------------------------------------------------------------- |
 | Submit or submit order list         | `OrderDenied`         | Local checks prevent submission. No `OrderSubmitted` event.     |
 | Submit or submit order list         | `OrderRejected`       | The submit entered execution and was later proven unsuccessful. |
-| Modify                              | `OrderModifyRejected` | The requested modification was proven unsuccessful.             |
-| Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The requested cancellation was proven unsuccessful.             |
+| Modify                              | `OrderModifyDenied`   | Local checks prove the command was not sent.                    |
+| Cancel, cancel-all, or batch cancel | `OrderCancelDenied`   | Local checks prove the command was not sent.                    |
+| Modify                              | `OrderModifyRejected` | The sent modification definitively failed.                      |
+| Cancel, cancel-all, or batch cancel | `OrderCancelRejected` | The venue or matching engine refused the command.               |
 
 A submit command is evaluated only against eligible orders. A cached order is ineligible once it has left
 `INITIALIZED` or `RELEASED`. It is also ineligible between dispatch to an execution client and application of
@@ -103,7 +105,7 @@ The **dispatch record is process-local**: a reset clears it, and it is absent af
 a still-`INITIALIZED` dispatched order is treated like any other unrouted order. This continues until the
 client's events or a venue cancel or expiry report resolve it.
 
-For modify or cancel preparation, NautilusTrader emits the matching rejection only when the
+For modify or cancel preparation, NautilusTrader emits the matching denial only when the
 failure is attributable to that command and proves it was not sent. Otherwise, it logs the failure
 without inventing an outcome.
 

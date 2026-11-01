@@ -484,9 +484,17 @@ define_switchboard! {
     get_order_pending_cancel_topic(instrument_id: InstrumentId) -> instrument_id,
     "events.order_pending_cancel.{}", instrument_id;
 
+    order_modify_denied_topics: InstrumentId,
+    get_order_modify_denied_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_modify_denied.{}", instrument_id;
+
     order_modify_rejected_topics: InstrumentId,
     get_order_modify_rejected_topic(instrument_id: InstrumentId) -> instrument_id,
     "events.order_modify_rejected.{}", instrument_id;
+
+    order_cancel_denied_topics: InstrumentId,
+    get_order_cancel_denied_topic(instrument_id: InstrumentId) -> instrument_id,
+    "events.order_cancel_denied.{}", instrument_id;
 
     order_cancel_rejected_topics: InstrumentId,
     get_order_cancel_rejected_topic(instrument_id: InstrumentId) -> instrument_id,
@@ -718,7 +726,9 @@ define_wrappers! {
     get_order_rejected_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_pending_update_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_pending_cancel_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_modify_denied_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_modify_rejected_topic(instrument_id: InstrumentId) -> MStr<Topic>,
+    get_order_cancel_denied_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_cancel_rejected_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_canceled_topic(instrument_id: InstrumentId) -> MStr<Topic>,
     get_order_filled_topic(instrument_id: InstrumentId) -> MStr<Topic>,
@@ -1081,7 +1091,9 @@ mod tests {
     #[case::rejected(MessagingSwitchboard::get_order_rejected_topic as OrderEventTopicFn)]
     #[case::pending_update(MessagingSwitchboard::get_order_pending_update_topic as OrderEventTopicFn)]
     #[case::pending_cancel(MessagingSwitchboard::get_order_pending_cancel_topic as OrderEventTopicFn)]
+    #[case::modify_denied(MessagingSwitchboard::get_order_modify_denied_topic as OrderEventTopicFn)]
     #[case::modify_rejected(MessagingSwitchboard::get_order_modify_rejected_topic as OrderEventTopicFn)]
+    #[case::cancel_denied(MessagingSwitchboard::get_order_cancel_denied_topic as OrderEventTopicFn)]
     #[case::cancel_rejected(MessagingSwitchboard::get_order_cancel_rejected_topic as OrderEventTopicFn)]
     #[case::canceled(MessagingSwitchboard::get_order_canceled_topic as OrderEventTopicFn)]
     #[case::filled(MessagingSwitchboard::get_order_filled_topic as OrderEventTopicFn)]

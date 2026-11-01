@@ -254,11 +254,10 @@ fn command_failure_from_futures_batch_item(
 fn command_failure_from_cancel_error(error: KrakenHttpError) -> CommandFailure {
     match error {
         KrakenHttpError::RequestNotStarted(message) => CommandFailure::not_sent(message),
-        KrakenHttpError::AuthenticationError(message) => CommandFailure::not_sent(message),
         KrakenHttpError::MissingCredentials => CommandFailure::not_sent("Missing credentials"),
-        KrakenHttpError::NetworkError(message) | KrakenHttpError::ParseError(message) => {
-            CommandFailure::ambiguous(message)
-        }
+        KrakenHttpError::NetworkError(message)
+        | KrakenHttpError::ParseError(message)
+        | KrakenHttpError::AuthenticationError(message) => CommandFailure::ambiguous(message),
         KrakenHttpError::ApiError(message) => {
             CommandFailure::ambiguous(format_cancel_api_errors(&message))
         }
@@ -302,6 +301,33 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case::missing_credentials(
+        KrakenHttpError::MissingCredentials,
+        CommandFailure::NotSent("Missing credentials".to_string())
+    )]
+    #[case::local_authentication(
+        KrakenHttpError::RequestNotStarted("Failed to sign request".to_string()),
+        CommandFailure::NotSent("Failed to sign request".to_string())
+    )]
+    #[case::http_authentication(
+        KrakenHttpError::AuthenticationError("HTTP error 401: Unauthorized".to_string()),
+        CommandFailure::Ambiguous("HTTP error 401: Unauthorized".to_string())
+    )]
+    fn test_cancel_failure_preserves_authentication_phase(
+        #[case] error: KrakenHttpError,
+        #[case] expected: CommandFailure,
+        #[values(false, true)] spot: bool,
+    ) {
+        let actual = if spot {
+            command_failure_from_spot_cancel_error(error)
+        } else {
+            command_failure_from_cancel_error(error)
+        };
+
+        assert_eq!(actual, expected);
+    }
 
     #[rstest]
     fn test_post_submit_phase_overrides_nested_not_sent_error() {

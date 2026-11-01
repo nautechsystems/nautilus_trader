@@ -318,7 +318,7 @@ matching engine. Thus, they do not blindly retry after a timeout, network failur
 response. Retrying could create a duplicate order or apply a second amendment.
 
 - Local submit validation emits `OrderDenied` before submission. Local modify validation emits
-  `OrderModifyRejected`. A definitive venue rejection emits the matching rejection event.
+  `OrderModifyDenied`. A definitive venue rejection emits the matching rejection event.
 - An ambiguous transport result remains inflight and is resolved by the private stream or REST
   reconciliation. The adapter does not emit a false rejection while the venue outcome is unknown.
 - A Futures algo cancel may fall back from the pre-trigger algo endpoint to the regular-order endpoint. This

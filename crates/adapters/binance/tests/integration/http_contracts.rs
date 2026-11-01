@@ -507,6 +507,7 @@ async fn test_encoded_batch_preserves_missing_order_result(#[values(false, true)
         BatchOrderResult::Error(error) => {
             assert_eq!(error.code, -2013);
             assert_eq!(error.msg, "Order does not exist");
+            assert!(error.not_sent);
         }
         other => panic!("Expected missing-order error, received {other:?}"),
     }

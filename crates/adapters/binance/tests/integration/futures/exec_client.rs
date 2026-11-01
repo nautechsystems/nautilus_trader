@@ -1832,7 +1832,7 @@ async fn test_unknown_ban_rejects_submit_without_transmission() {
 #[case::cancel(false)]
 #[case::modify(true)]
 #[tokio::test]
-async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] modify: bool) {
+async fn test_cooldown_denies_pending_command_without_closing_order(#[case] modify: bool) {
     let (addr, request_count) =
         start_exec_test_server_with_command_responses(CommandResponses::default()).await;
     let url = format!("http://{addr}");
@@ -1895,54 +1895,56 @@ async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] mod
         ))
         .unwrap();
 
+    let command_id = nautilus_core::UUID4::new();
+
     let pending = if modify {
-        OrderEventAny::PendingUpdate(
-            OrderPendingUpdateSpec::builder()
-                .trader_id(order.trader_id())
-                .strategy_id(order.strategy_id())
-                .instrument_id(order.instrument_id())
-                .client_order_id(client_order_id)
-                .account_id(account_id)
-                .venue_order_id(venue_order_id)
-                .build(),
-        )
+        let mut event = OrderPendingUpdateSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(client_order_id)
+            .account_id(account_id)
+            .venue_order_id(venue_order_id)
+            .build();
+        event.causation_id = Some(command_id);
+        OrderEventAny::PendingUpdate(event)
     } else {
-        OrderEventAny::PendingCancel(
-            OrderPendingCancelSpec::builder()
-                .trader_id(order.trader_id())
-                .strategy_id(order.strategy_id())
-                .instrument_id(order.instrument_id())
-                .client_order_id(client_order_id)
-                .account_id(account_id)
-                .venue_order_id(venue_order_id)
-                .build(),
-        )
+        let mut event = OrderPendingCancelSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(client_order_id)
+            .account_id(account_id)
+            .venue_order_id(venue_order_id)
+            .build();
+        event.causation_id = Some(command_id);
+        OrderEventAny::PendingCancel(event)
     };
 
     cache.borrow_mut().update_order(&pending).unwrap();
-    manager.register_inflight(client_order_id);
-
+    manager.register_inflight(client_order_id, command_id);
     if modify {
-        client
-            .modify_order(modify_order_command(client_order_id))
-            .unwrap();
+        let mut command = modify_order_command(client_order_id);
+        command.command_id = command_id;
+        client.modify_order(command).unwrap();
     } else {
-        client
-            .cancel_order(cancel_order_command(client_order_id))
-            .unwrap();
+        let mut command = cancel_order_command(client_order_id);
+        command.command_id = command_id;
+        client.cancel_order(command).unwrap();
     }
 
-    let rejected = tokio::time::timeout(Duration::from_millis(250), recv_until(&mut rx, |event| matches!(event,
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) if event.client_order_id == client_order_id
+    let denied = tokio::time::timeout(Duration::from_millis(250), recv_until(&mut rx, |event| matches!(event,
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) if event.client_order_id == client_order_id
     ) || matches!(event,
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) if event.client_order_id == client_order_id
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) if event.client_order_id == client_order_id
     ))).await.unwrap();
 
-    let ExecutionEvent::Order(rejected) = rejected else {
-        panic!("expected command rejection")
+    let ExecutionEvent::Order(denied) = denied else {
+        panic!("expected command denial")
     };
 
-    cache.borrow_mut().update_order(&rejected).unwrap();
+    cache.borrow_mut().update_order(&denied).unwrap();
+    manager.observe_order_event(&denied);
     let before_expiry = request_count.load(Ordering::Relaxed);
     tokio::time::sleep(Duration::from_millis(600)).await;
     let exhausted = manager.check_inflight_orders();
@@ -1961,8 +1963,9 @@ async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] mod
     assert_eq!(cached.price(), Some(Price::from("50000.00")));
     assert_eq!(cached.quantity(), Quantity::from("0.001"));
 
-    match rejected {
-        OrderEventAny::ModifyRejected(event) if modify => {
+    match denied {
+        OrderEventAny::ModifyDenied(event) if modify => {
+            assert_eq!(event.causation_id, Some(command_id));
             assert_eq!(event.client_order_id, client_order_id);
             assert_eq!(event.instrument_id, order.instrument_id());
             assert_eq!(event.strategy_id, order.strategy_id());
@@ -1971,7 +1974,8 @@ async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] mod
                 "modify-order-error: Request not sent: Binance cooldown or local quota blocks admission; wait for capacity or expiry, or verify clearance and restart if expiry is unknown"
             );
         }
-        OrderEventAny::CancelRejected(event) if !modify => {
+        OrderEventAny::CancelDenied(event) if !modify => {
+            assert_eq!(event.causation_id, Some(command_id));
             assert_eq!(event.client_order_id, client_order_id);
             assert_eq!(event.instrument_id, order.instrument_id());
             assert_eq!(event.strategy_id, order.strategy_id());
@@ -1980,7 +1984,7 @@ async fn test_cooldown_rejects_pending_command_without_closing_order(#[case] mod
                 "cancel-order-error: Request not sent: Binance cooldown or local quota blocks admission; wait for capacity or expiry, or verify clearance and restart if expiry is unknown"
             );
         }
-        event => panic!("unexpected rejection: {event:?}"),
+        event => panic!("unexpected denial: {event:?}"),
     }
 }
 
@@ -2038,8 +2042,9 @@ async fn test_algo_cancel_keeps_throttle_outcome_when_fallback_blocked(
 
 #[rstest]
 #[tokio::test]
-async fn test_algo_cancel_keeps_venue_error_when_fallback_lookup_blocked(
+async fn test_algo_cancel_keeps_venue_error_when_fallback_not_sent(
     #[values(-2011_i64, -2013)] code: i64,
+    #[values(false, true)] block_fallback: bool,
 ) {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr = listener.local_addr().unwrap();
@@ -2082,17 +2087,28 @@ async fn test_algo_cancel_keeps_venue_error_when_fallback_lookup_blocked(
             }
 
             if path == "/fapi/v1/algoOrder" && request.method() == Method::DELETE {
-                let error = throttle
-                    .post::<(), serde_json::Value>("throttle", None, None, false, false)
-                    .await
-                    .unwrap_err();
-                assert_eq!(
-                    error.to_string(),
-                    "Binance error -1003 (HTTP 429): test throttle"
-                );
+                if block_fallback {
+                    let error = throttle
+                        .post::<(), serde_json::Value>("throttle", None, None, false, false)
+                        .await
+                        .unwrap_err();
+                    assert_eq!(
+                        error.to_string(),
+                        "Binance error -1003 (HTTP 429): test throttle"
+                    );
+                }
+
                 return (
                     StatusCode::BAD_REQUEST,
                     axum::Json(json!({"code":code,"msg":"algo missing"})),
+                )
+                    .into_response();
+            }
+
+            if path == "/fapi/v1/order" && request.method() == Method::GET {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    axum::Json(json!({"code": -2013, "msg": "regular lookup missing"})),
                 )
                     .into_response();
             }
@@ -2154,14 +2170,20 @@ async fn test_algo_cancel_keeps_venue_error_when_fallback_lookup_blocked(
         event.reason.as_str(),
         format!("cancel-order-error: Binance error {code} (HTTP 400): algo missing")
     );
-    assert_eq!(
-        *requests.lock(),
-        [
-            (Method::GET, "/fapi/v1/algoOrder".to_string()),
-            (Method::GET, "/fapi/v1/algoOrder".to_string()),
-            (Method::DELETE, "/fapi/v1/algoOrder".to_string())
-        ]
-    );
+    let mut expected_requests = vec![
+        (Method::GET, "/fapi/v1/algoOrder".to_string()),
+        (Method::GET, "/fapi/v1/algoOrder".to_string()),
+        (Method::DELETE, "/fapi/v1/algoOrder".to_string()),
+    ];
+
+    if !block_fallback {
+        expected_requests.extend([
+            (Method::GET, "/fapi/v1/order".to_string()),
+            (Method::GET, "/fapi/v1/order".to_string()),
+        ]);
+    }
+
+    assert_eq!(*requests.lock(), expected_requests);
     assert_eq!(
         cache.borrow().order(&client_order_id).unwrap().status(),
         OrderStatus::Accepted
@@ -9352,7 +9374,7 @@ async fn test_tagged_ws_mutations_use_known_venue_identity(#[values(false, true)
 #[case::algo(false, true, false)]
 #[case::batch(false, false, true)]
 #[tokio::test]
-async fn test_tagged_lookup_failure_is_rejected_before_submission(
+async fn test_tagged_lookup_failure_denies_before_submission(
     #[case] modify: bool,
     #[case] algo: bool,
     #[case] batch: bool,
@@ -9429,25 +9451,34 @@ async fn test_tagged_lookup_failure_is_rejected_before_submission(
         add_limit_order_to_cache(&cache, client_order_id);
     }
 
+    let command_id = nautilus_core::UUID4::new();
+
     if modify {
         let mut command = modify_order_command(client_order_id);
+        command.command_id = command_id;
         command.venue_order_id = None;
         client.modify_order(command).unwrap();
     } else if batch {
+        let mut command = cancel_order_command_without_venue_id(client_order_id);
+        command.command_id = command_id;
         client
-            .batch_cancel_orders(batch_cancel_order_command_from_cancels(vec![
-                cancel_order_command_without_venue_id(client_order_id),
-            ]))
+            .batch_cancel_orders(batch_cancel_order_command_from_cancels(vec![command]))
             .unwrap();
     } else {
-        client
-            .cancel_order(cancel_order_command_without_venue_id(client_order_id))
-            .unwrap();
+        let mut command = cancel_order_command_without_venue_id(client_order_id);
+        command.command_id = command_id;
+        client.cancel_order(command).unwrap();
     }
 
     let event = recv_until(&mut rx, |event| match event {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) => {
+            modify && event.client_order_id == client_order_id
+        }
         ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
             modify && event.client_order_id == client_order_id
+        }
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) => {
+            !modify && event.client_order_id == client_order_id
         }
         ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
             !modify && event.client_order_id == client_order_id
@@ -9459,16 +9490,23 @@ async fn test_tagged_lookup_failure_is_rejected_before_submission(
     client.disconnect().await.unwrap();
     server.abort();
 
-    let (actual_id, reason, venue_id) = match event {
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) => {
-            (event.client_order_id, event.reason, event.venue_order_id)
-        }
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
-            (event.client_order_id, event.reason, event.venue_order_id)
-        }
-        _ => panic!("Expected rejection"),
+    let (actual_id, reason, venue_id, cause) = match event {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) if modify => (
+            event.client_order_id,
+            event.reason,
+            event.venue_order_id,
+            event.causation_id,
+        ),
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) if !modify => (
+            event.client_order_id,
+            event.reason,
+            event.venue_order_id,
+            event.causation_id,
+        ),
+        _ => panic!("Expected matching command refusal, was {event:?}"),
     };
 
+    assert_eq!(cause, Some(command_id));
     assert_eq!(actual_id, client_order_id);
     assert_eq!(venue_id, None);
 

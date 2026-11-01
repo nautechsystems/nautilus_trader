@@ -1281,11 +1281,12 @@ mod tests {
                 PositionSide, TimeInForce,
             },
             events::{
-                OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-                OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-                OrderPendingUpdate, OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted,
-                OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed,
-                PositionOpened, PositionSnapshot,
+                OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+                OrderEmulated, OrderExpired, OrderInitialized, OrderModifyDenied,
+                OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
+                OrderReleased, OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated,
+                PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
+                PositionSnapshot,
                 account::stubs::cash_account_state,
                 order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
             },
@@ -1369,11 +1370,17 @@ mod tests {
         promote!(OrderRejected::test_default());
         promote!(OrderPendingCancel::test_default());
         promote!(OrderCanceled::test_default());
+        let mut cancel_denied = OrderCancelDenied::test_default();
+        cancel_denied.causation_id = Some(UUID4::new());
+        promote!(cancel_denied);
         promote!(OrderCancelRejected::test_default());
         promote!(OrderExpired::test_default());
         promote!(OrderTriggered::test_default());
         promote!(OrderPendingUpdate::test_default());
         promote!(OrderReleased::test_default());
+        let mut modify_denied = OrderModifyDenied::test_default();
+        modify_denied.causation_id = Some(UUID4::new());
+        promote!(modify_denied);
         promote!(OrderModifyRejected::test_default());
         promote!(OrderUpdated::test_default());
         promote!(OrderFillVoidedSpec::builder().is_reopened(true).build());

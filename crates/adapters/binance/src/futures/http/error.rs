@@ -63,6 +63,8 @@ pub enum BinanceFuturesHttpError {
         /// Venue-advertised minimum retry delay from the `Retry-After` header.
         retry_after: Option<Duration>,
     },
+    /// Order identity lookup failed before submission.
+    IdentityLookup(Box<Self>),
 }
 
 impl BinanceFuturesHttpError {
@@ -126,11 +128,24 @@ impl Display for BinanceFuturesHttpError {
             Self::UnexpectedStatus { status, body, .. } => {
                 write!(f, "Unexpected status {status}: {body}")
             }
+            Self::IdentityLookup(source) => {
+                write!(
+                    f,
+                    "Order identity lookup failed before submission: {source}"
+                )
+            }
         }
     }
 }
 
-impl std::error::Error for BinanceFuturesHttpError {}
+impl std::error::Error for BinanceFuturesHttpError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::IdentityLookup(source) => Some(source.as_ref()),
+            _ => None,
+        }
+    }
+}
 
 impl From<serde_json::Error> for BinanceFuturesHttpError {
     fn from(err: serde_json::Error) -> Self {

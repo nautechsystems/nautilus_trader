@@ -183,6 +183,7 @@ pub struct WsDispatchState {
     pub(crate) pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
+    pub(crate) pending_command_ids: Arc<DashMap<String, Vec<(ClientOrderId, UUID4)>>>,
     accepted_venue_order_ids: Mutex<FifoCacheMap<ClientOrderId, VenueOrderId, DEDUP_CAPACITY>>,
     triggered_orders: DedupCache<ClientOrderId>,
     filled_orders: DedupCache<ClientOrderId>,
@@ -209,6 +210,7 @@ impl Default for WsDispatchState {
             pending_orders: Arc::new(DashMap::new()),
             pending_cancels: Arc::new(DashMap::new()),
             pending_amends: Arc::new(DashMap::new()),
+            pending_command_ids: Arc::new(DashMap::new()),
             accepted_venue_order_ids: Mutex::new(FifoCacheMap::new()),
             triggered_orders: DedupCache::new(),
             filled_orders: DedupCache::new(),
@@ -229,11 +231,13 @@ impl WsDispatchState {
         pending_orders: Arc<DashMap<String, PendingOrderInfo>>,
         pending_cancels: Arc<DashMap<String, PendingOrderInfo>>,
         pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
+        pending_command_ids: Arc<DashMap<String, Vec<(ClientOrderId, UUID4)>>>,
     ) -> Self {
         Self {
             pending_orders,
             pending_cancels,
             pending_amends,
+            pending_command_ids,
             ..Default::default()
         }
     }
@@ -311,6 +315,11 @@ impl WsDispatchState {
     }
 
     pub(crate) fn remove_order_tracking(&self, client_order_id: ClientOrderId) {
+        self.pending_command_ids.retain(|_, commands| {
+            commands.retain(|(id, _)| *id != client_order_id);
+            !commands.is_empty()
+        });
+
         let pending = self.pending_linked_children.lock();
         let removed_context = self.order_contexts.remove(&client_order_id);
         self.order_identities.remove(&client_order_id);
@@ -635,6 +644,11 @@ pub fn dispatch_ws_message(
             msg,
             data,
         } => {
+            let command_ids = id
+                .as_ref()
+                .and_then(|id| state.pending_command_ids.remove(id))
+                .map(|(_, ids)| ids)
+                .unwrap_or_default();
             let ts_init = clock.get_time_ns();
 
             for item in &data {
@@ -742,6 +756,10 @@ pub fn dispatch_ws_message(
                             venue_order_id,
                             &reason,
                             ts_init,
+                            command_ids
+                                .iter()
+                                .find(|(id, _)| *id == client_order_id)
+                                .map(|(_, cause)| *cause),
                         );
                     }
                     OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders => {
@@ -753,6 +771,10 @@ pub fn dispatch_ws_message(
                             venue_order_id,
                             &reason,
                             ts_init,
+                            command_ids
+                                .iter()
+                                .find(|(id, _)| *id == client_order_id)
+                                .map(|(_, cause)| *cause),
                         );
                     }
                     _ => {
@@ -776,56 +798,15 @@ pub fn dispatch_ws_message(
             op,
             error,
         } => {
-            let failure = classify_okx_ws_failure(&error);
-            let is_ambiguous = matches!(failure, CommandFailure::Ambiguous(_));
-            log::warn!(
-                "WebSocket send failed without structured venue response: \
-                 request_id={request_id}, client_order_ids={client_order_ids:?}, \
-                 op={op:?}, {failure:?}"
+            dispatch_send_failure(
+                &request_id,
+                client_order_ids,
+                op.as_ref(),
+                &error,
+                emitter,
+                state,
+                clock,
             );
-
-            for client_order_id in client_order_ids {
-                let key = client_order_id.as_str();
-
-                match op {
-                    Some(
-                        OKXWsOperation::Order
-                        | OKXWsOperation::BatchOrders
-                        | OKXWsOperation::OrderAlgo,
-                    ) => {
-                        if !is_ambiguous {
-                            state.pending_orders.remove(key);
-                        }
-                        emit_send_failed_submit(&failure, state, emitter, clock, client_order_id);
-                    }
-                    Some(
-                        OKXWsOperation::CancelOrder
-                        | OKXWsOperation::BatchCancelOrders
-                        | OKXWsOperation::MassCancel
-                        | OKXWsOperation::CancelAlgos,
-                    ) => {
-                        if !is_ambiguous {
-                            state.pending_cancels.remove(key);
-                        }
-
-                        emit_send_failed_cancel(
-                            &failure,
-                            state,
-                            emitter,
-                            clock,
-                            client_order_id,
-                            None,
-                        );
-                    }
-                    Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
-                        if !is_ambiguous {
-                            state.pending_amends.remove(key);
-                        }
-                        emit_send_failed_modify(&failure, state, emitter, clock, client_order_id);
-                    }
-                    _ => {}
-                }
-            }
         }
         OKXWsMessage::ChannelData { channel, .. } => {
             log::debug!("Ignoring data channel message on execution client: {channel:?}");
@@ -865,6 +846,94 @@ pub fn dispatch_ws_message(
         }
         OKXWsMessage::Authenticated => {
             log::debug!("Websocket authenticated");
+        }
+    }
+}
+
+fn dispatch_send_failure(
+    request_id: &str,
+    client_order_ids: Vec<ClientOrderId>,
+    op: Option<&OKXWsOperation>,
+    error: &crate::websocket::error::OKXWsError,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    clock: &AtomicTime,
+) {
+    let failure = classify_okx_ws_failure(error);
+    let is_ambiguous = matches!(failure, CommandFailure::Ambiguous(_));
+
+    let command_ids = if is_ambiguous {
+        state
+            .pending_command_ids
+            .get(request_id)
+            .map(|entry| entry.clone())
+            .unwrap_or_default()
+    } else {
+        state
+            .pending_command_ids
+            .remove(request_id)
+            .map(|(_, ids)| ids)
+            .unwrap_or_default()
+    };
+
+    log::warn!(
+        "WebSocket send failed without structured venue response: \
+                 request_id={request_id}, client_order_ids={client_order_ids:?}, \
+                 op={op:?}, {failure:?}"
+    );
+
+    for client_order_id in client_order_ids {
+        let key = client_order_id.as_str();
+        let causation_id = command_ids
+            .iter()
+            .find(|(id, _)| *id == client_order_id)
+            .map(|(_, cause)| *cause);
+
+        match op {
+            Some(
+                OKXWsOperation::Order | OKXWsOperation::BatchOrders | OKXWsOperation::OrderAlgo,
+            ) => {
+                if !is_ambiguous {
+                    state.pending_orders.remove(key);
+                }
+
+                emit_send_failed_submit(&failure, state, emitter, clock, client_order_id);
+            }
+            Some(
+                OKXWsOperation::CancelOrder
+                | OKXWsOperation::BatchCancelOrders
+                | OKXWsOperation::MassCancel
+                | OKXWsOperation::CancelAlgos,
+            ) => {
+                if !is_ambiguous {
+                    state.pending_cancels.remove(key);
+                }
+
+                emit_send_failed_cancel(
+                    &failure,
+                    state,
+                    emitter,
+                    clock,
+                    client_order_id,
+                    None,
+                    causation_id,
+                );
+            }
+            Some(OKXWsOperation::AmendOrder | OKXWsOperation::BatchAmendOrders) => {
+                if !is_ambiguous {
+                    state.pending_amends.remove(key);
+                }
+
+                emit_send_failed_modify(
+                    &failure,
+                    state,
+                    emitter,
+                    clock,
+                    client_order_id,
+                    causation_id,
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -2564,6 +2633,7 @@ fn emit_send_failed_modify(
     emitter: &ExecutionEventEmitter,
     clock: &AtomicTime,
     client_order_id: ClientOrderId,
+    causation_id: Option<UUID4>,
 ) {
     let (CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason)) = failure else {
         return;
@@ -2572,14 +2642,27 @@ fn emit_send_failed_modify(
         return;
     };
 
-    emitter.emit_order_modify_rejected_event(
-        ident.strategy_id,
-        ident.instrument_id,
-        client_order_id,
-        None,
-        reason,
-        clock.get_time_ns(),
-    );
+    if matches!(failure, CommandFailure::NotSent(_)) {
+        emitter.emit_order_modify_denied_event(
+            ident.strategy_id,
+            ident.instrument_id,
+            client_order_id,
+            None,
+            reason,
+            clock.get_time_ns(),
+            causation_id,
+        );
+    } else {
+        emitter.emit_order_modify_rejected_event(
+            ident.strategy_id,
+            ident.instrument_id,
+            client_order_id,
+            None,
+            reason,
+            clock.get_time_ns(),
+            causation_id,
+        );
+    }
 }
 
 pub(crate) fn emit_send_failed_cancel(
@@ -2589,6 +2672,7 @@ pub(crate) fn emit_send_failed_cancel(
     clock: &AtomicTime,
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
+    causation_id: Option<UUID4>,
 ) {
     let (CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason)) = failure else {
         return;
@@ -2603,18 +2687,32 @@ pub(crate) fn emit_send_failed_cancel(
         .map(|(venue_order_id, _)| venue_order_id)
         .or(venue_order_id);
 
-    emitter.emit_order_cancel_rejected_event(
-        ident.strategy_id,
-        ident.instrument_id,
-        client_order_id,
-        venue_order_id,
-        reason,
-        clock.get_time_ns(),
-    );
+    if matches!(failure, CommandFailure::NotSent(_)) {
+        emitter.emit_order_cancel_denied_event(
+            ident.strategy_id,
+            ident.instrument_id,
+            client_order_id,
+            venue_order_id,
+            reason,
+            clock.get_time_ns(),
+            causation_id,
+        );
+    } else {
+        emitter.emit_order_cancel_rejected_event(
+            ident.strategy_id,
+            ident.instrument_id,
+            client_order_id,
+            venue_order_id,
+            reason,
+            clock.get_time_ns(),
+            causation_id,
+        );
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct AlgoCancelContext {
+    pub causation_id: Option<UUID4>,
     pub client_order_id: ClientOrderId,
     pub instrument_id: InstrumentId,
     pub strategy_id: StrategyId,
@@ -2668,6 +2766,7 @@ pub fn emit_algo_cancel_rejections(
                 ctx.venue_order_id,
                 &reason,
                 ts,
+                ctx.causation_id,
             );
         } else {
             log::warn!(
@@ -4518,6 +4617,7 @@ mod tests {
 
     #[rstest]
     fn cancel_send_failure_prefers_current_venue_binding() {
+        let cause = UUID4::new();
         let state = WsDispatchState::default();
         let client_order_id = ClientOrderId::from("O-rebound-cancel");
         let identity = test_algo_context(client_order_id).identity;
@@ -4532,15 +4632,17 @@ mod tests {
             get_atomic_clock_realtime(),
             client_order_id,
             Some(VenueOrderId::from("stale-venue")),
+            Some(cause),
         );
         let events = drain_execution_events(&mut receiver);
 
         assert_eq!(events.len(), 1);
 
-        let ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) = &events[0] else {
+        let ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) = &events[0] else {
             panic!("Expected cancel rejection, received {:?}", events[0]);
         };
 
+        assert_eq!(event.causation_id, Some(cause));
         assert_eq!(event.client_order_id, client_order_id);
         assert_eq!(
             event.venue_order_id,
@@ -4576,6 +4678,11 @@ mod tests {
         let instrument_id = InstrumentId::from("ETH-USDT-SWAP.OKX");
         let strategy_id = StrategyId::from("S-CANCEL-FAILURE");
         let reason = error.to_string();
+        let causes = [UUID4::new(), UUID4::new()];
+        state.pending_command_ids.insert(
+            "cancel-failure".to_string(),
+            client_order_ids.into_iter().zip(causes).collect(),
+        );
 
         for (index, client_order_id) in client_order_ids.into_iter().enumerate() {
             state.order_identities.insert(
@@ -4633,6 +4740,10 @@ mod tests {
         );
 
         let events = drain_execution_events(&mut receiver);
+        assert_eq!(
+            state.pending_command_ids.contains_key("cancel-failure"),
+            ambiguous
+        );
 
         assert_eq!(events.len(), if ambiguous { 0 } else { 2 });
 
@@ -4660,7 +4771,7 @@ mod tests {
                 continue;
             }
 
-            let ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) = &events[index] else {
+            let ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) = &events[index] else {
                 panic!("Expected cancel rejection, received {:?}", events[index]);
             };
 
@@ -4676,8 +4787,64 @@ mod tests {
             assert_eq!(event.reason.as_str(), reason);
             assert_eq!(event.ts_event, UnixNanos::from(123_456));
             assert_eq!(event.ts_init, UnixNanos::from(123_456));
-            assert_eq!(event.causation_id, None);
-            assert!(!event.reconciliation);
+            assert_eq!(event.causation_id, Some(causes[index]));
+        }
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn modify_send_failures_preserve_request_causation(#[case] reverse: bool) {
+        let state = WsDispatchState::default();
+        let client_order_id = ClientOrderId::from("O-OVERLAPPING-MODIFY");
+        let identity = test_algo_context(client_order_id).identity;
+        state.order_identities.insert(client_order_id, identity);
+        let first = UUID4::new();
+        let second = UUID4::new();
+        state
+            .pending_command_ids
+            .insert("modify-first".to_string(), vec![(client_order_id, first)]);
+        state
+            .pending_command_ids
+            .insert("modify-second".to_string(), vec![(client_order_id, second)]);
+        let (emitter, mut receiver) = test_execution_emitter();
+        let mut requests = [("modify-first", first), ("modify-second", second)];
+        if reverse {
+            requests.reverse();
+        }
+
+        for (index, (request_id, cause)) in requests.into_iter().enumerate() {
+            dispatch_test_message(
+                OKXWsMessage::SendFailed {
+                    request_id: request_id.to_string(),
+                    client_order_ids: vec![client_order_id],
+                    op: Some(OKXWsOperation::AmendOrder),
+                    error: OKXWsError::NoActiveClient,
+                },
+                &emitter,
+                &state,
+                &AtomicMap::new(),
+            );
+
+            let events = drain_execution_events(&mut receiver);
+
+            let [ExecutionEvent::Order(OrderEventAny::ModifyDenied(event))] = events.as_slice()
+            else {
+                panic!("expected one modify denial: {events:?}")
+            };
+
+            assert_eq!(event.client_order_id, client_order_id);
+            assert_eq!(event.strategy_id, identity.strategy_id);
+            assert_eq!(event.instrument_id, identity.instrument_id);
+            assert_eq!(event.trader_id, TraderId::from("TRADER-001"));
+            assert_eq!(event.account_id, Some(AccountId::from("OKX-001")));
+            assert_eq!(event.venue_order_id, None);
+            assert_eq!(
+                event.reason.as_str(),
+                OKXWsError::NoActiveClient.to_string()
+            );
+            assert_eq!(event.causation_id, Some(cause));
+            assert_eq!(state.pending_command_ids.len(), 1 - index);
         }
     }
 

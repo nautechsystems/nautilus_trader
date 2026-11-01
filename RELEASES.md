@@ -9,6 +9,7 @@ Released on TBD (UTC).
 - Added `LiveExecutionEngineConfig.purge_from_database` support in Python and live nodes
 - Added `HttpClient` certificate support through `certs_dir`
 - Added Postgres cache support for actor and strategy state, synthetics, heartbeat writes, and entity deletion
+- Added `OrderModifyDenied` and `OrderCancelDenied` events and strategy and execution algorithm callbacks
 - Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`
 - Added CoinAPI flat-file support for numeric book update codes
@@ -19,6 +20,10 @@ Released on TBD (UTC).
 
 - Removed Python `RedisCacheDatabase` and `PostgresCacheDatabase`; configure cache persistence through node factories
 - Removed Python `RedisMessageBusBacking`; configure external message bus backing through node factories
+- Changed local modify/cancel refusals to denied events; handle `on_order_modify_denied` and `on_order_cancel_denied`
+- Changed modify/cancel rejection emitters and factories to take `causation_id`; pass the command ID or `None`
+- Changed `Strategy::mark_order_pending_update` and `mark_order_pending_cancel` to take the command's UUID
+- Changed `Strategy::generate_order_pending_update` and `generate_order_pending_cancel` to take the command's UUID
 - Changed `PostgresCacheDatabase::connect` to take `PostgresCacheConfig`; replace individual connection arguments
 - Changed Rust `Cache` order/position/account purges to return `Result`; pass `false` for memory only
 - Changed `CacheDatabaseAdapter` Greek and yield-curve defaults to errors; override supported reads and writes
@@ -71,6 +76,7 @@ Released on TBD (UTC).
 - Fixed Redis order and position deletion leaving routine snapshots and restoring purged positions
 - Fixed `Cache` indexing closed positions as open and excluding them from purging after insertion
 - Fixed managed order book subscriptions reusing a cached book of a different type
+- Fixed command refusals clearing unrelated pending operations or rolling back later order state
 - Fixed mixed-key market data batches being cached under the first row's instrument or bar type
 - Fixed historical time bar boundary assignment for ticks sharing a timestamp
 - Fixed queued timer callbacks logging missing-actor errors or targeting reused actor IDs after retirement

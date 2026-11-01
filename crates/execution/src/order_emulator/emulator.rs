@@ -42,7 +42,8 @@ use nautilus_model::{
     data::{OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce, TriggerType},
     events::{
-        OrderCanceled, OrderEmulated, OrderEventAny, OrderInitialized, OrderReleased, OrderUpdated,
+        OrderCancelDenied, OrderCanceled, OrderEmulated, OrderEventAny, OrderInitialized,
+        OrderModifyDenied, OrderReleased, OrderUpdated,
     },
     identifiers::{ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId},
     instruments::Instrument,
@@ -818,112 +819,117 @@ impl OrderEmulator {
             .order(&command.client_order_id)
             .map(|order| order.clone());
 
-        if let Some(order) = order {
-            let price = match command.price {
-                Some(price) => Some(price),
-                None => order.price(),
-            };
+        let Some(order) = order else {
+            self.deny_modify_command(command, "Order not found in cache");
+            return;
+        };
 
-            let trigger_price = match command.trigger_price {
-                Some(trigger_price) => Some(trigger_price),
-                None => order.trigger_price(),
-            };
+        if order.is_closed() {
+            self.deny_modify_command(command, "Order already closed");
+            return;
+        }
 
-            let ts_now = self.clock.borrow().timestamp_ns();
-            let event = OrderUpdated::new(
-                order.trader_id(),
-                order.strategy_id(),
-                order.instrument_id(),
+        let price = match command.price {
+            Some(price) => Some(price),
+            None => order.price(),
+        };
+
+        let trigger_price = match command.trigger_price {
+            Some(trigger_price) => Some(trigger_price),
+            None => order.trigger_price(),
+        };
+
+        let ts_now = self.clock.borrow().timestamp_ns();
+
+        let event = OrderUpdated::new(
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id(),
+            command.quantity.unwrap_or(order.quantity()),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            false,
+            order.venue_order_id(),
+            order.account_id(),
+            price,
+            trigger_price,
+            None,
+            order.is_quote_quantity(),
+        );
+
+        let event = OrderEventAny::Updated(event);
+
+        // Apply locally as for cancels, sending to the execution engine would re-enter it
+        // when a strategy modifies from an order or position event handler.
+        self.apply_order_event(&event);
+
+        // A synchronous event handler may supersede this update before dispatch returns
+        let order = self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .filter(|order| order.last_event() == &event)
+            .map(|order| order.clone());
+
+        let Some(order) = order else {
+            return;
+        };
+
+        if !self
+            .manager
+            .get_submit_order_commands()
+            .contains_key(&command.client_order_id)
+        {
+            return;
+        }
+
+        let trigger_instrument_id = order
+            .trigger_instrument_id()
+            .unwrap_or_else(|| order.instrument_id());
+        let (action, match_info) = if let Some(matching_core) =
+            self.matching_cores.get_mut(&trigger_instrument_id)
+        {
+            if let Err(e) = matching_core.delete_order(order.client_order_id()) {
+                log::debug!("Cannot update order match info: {e:?}");
+            }
+
+            let is_activated = is_order_activated(&order);
+            let match_info = RestingOrder::new_with_trigger_type(
                 order.client_order_id(),
-                command.quantity.unwrap_or(order.quantity()),
-                UUID4::new(),
-                ts_now,
-                ts_now,
-                false,
-                order.venue_order_id(),
-                order.account_id(),
-                price,
-                trigger_price,
-                None,
-                order.is_quote_quantity(),
+                order.order_side(),
+                order.order_type(),
+                order.emulation_trigger(),
+                if is_activated {
+                    order.trigger_price()
+                } else {
+                    None
+                },
+                if is_activated { order.price() } else { None },
+                is_activated,
             );
 
-            let event = OrderEventAny::Updated(event);
-
-            // Apply locally as for cancels, sending to the execution engine would re-enter it
-            // when a strategy modifies from an order or position event handler.
-            self.apply_order_event(&event);
-
-            // A synchronous event handler may supersede this update before dispatch returns
-            let order = self
-                .cache
-                .borrow()
-                .order(&command.client_order_id)
-                .filter(|order| order.last_event() == &event)
-                .map(|order| order.clone());
-
-            let Some(order) = order else {
-                return;
-            };
-
-            if !self
-                .manager
-                .get_submit_order_commands()
-                .contains_key(&command.client_order_id)
-            {
-                return;
-            }
-
-            let trigger_instrument_id = order
-                .trigger_instrument_id()
-                .unwrap_or_else(|| order.instrument_id());
-
-            let (action, match_info) = if let Some(matching_core) =
-                self.matching_cores.get_mut(&trigger_instrument_id)
-            {
-                if let Err(e) = matching_core.delete_order(order.client_order_id()) {
-                    log::debug!("Cannot update order match info: {e:?}");
-                }
-
-                let is_activated = is_order_activated(&order);
-
-                let match_info = RestingOrder::new_with_trigger_type(
-                    order.client_order_id(),
-                    order.order_side(),
-                    order.order_type(),
-                    order.emulation_trigger(),
-                    if is_activated {
-                        order.trigger_price()
-                    } else {
-                        None
-                    },
-                    if is_activated { order.price() } else { None },
-                    is_activated,
-                );
-
-                (matching_core.match_order(&match_info), match_info)
-            } else {
-                log::error!(
-                    "Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}"
-                );
-                return;
-            };
-
-            if let Some(action) = action {
-                self.dispatch_match_action(action);
-            }
-
-            // Hold in matching core unless the match released the order
-            if self
-                .manager
-                .get_submit_order_commands()
-                .contains_key(&command.client_order_id)
-                && let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id)
-            {
-                matching_core.add_order(match_info);
-            }
+            (matching_core.match_order(&match_info), match_info)
         } else {
-            log::error!("Cannot modify order: {} not found", command.client_order_id);
+            log::error!(
+                "Cannot handle `ModifyOrder`: no matching core for trigger instrument {trigger_instrument_id}"
+            );
+            return;
+        };
+
+        if let Some(action) = action {
+            self.dispatch_match_action(action);
+        }
+
+        // Hold in matching core unless the match released the order
+        if self
+            .manager
+            .get_submit_order_commands()
+            .contains_key(&command.client_order_id)
+            && let Some(matching_core) = self.matching_cores.get_mut(&trigger_instrument_id)
+        {
+            matching_core.add_order(match_info);
         }
     }
 
@@ -934,12 +940,21 @@ impl OrderEmulator {
     }
 
     pub fn handle_cancel_order(&mut self, command: CancelOrder) {
-        let order = if let Some(order) = self.cache.borrow().order(&command.client_order_id) {
-            order.clone()
-        } else {
-            log::error!("Cannot cancel order: {} not found", command.client_order_id);
+        let order = self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .map(|order| order.clone());
+
+        let Some(order) = order else {
+            self.deny_cancel_command(&command, "Order not found in cache");
             return;
         };
+
+        if order.is_closed() {
+            self.deny_cancel_command(&command, "Order already closed");
+            return;
+        }
 
         let trigger_instrument_id = order
             .trigger_instrument_id()
@@ -1848,6 +1863,76 @@ impl OrderEmulator {
         let endpoint = MessagingSwitchboard::data_engine_queue_execute();
         msgbus::send_data_command(endpoint, command);
     }
+
+    fn deny_modify_command(&self, command: &ModifyOrder, reason: &str) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let order = self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .map(|order| order.clone());
+
+        let mut event = OrderModifyDenied::new(
+            order.as_ref().map_or(command.trader_id, Order::trader_id),
+            order
+                .as_ref()
+                .map_or(command.strategy_id, Order::strategy_id),
+            order
+                .as_ref()
+                .map_or(command.instrument_id, Order::instrument_id),
+            command.client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            order
+                .as_ref()
+                .and_then(Order::venue_order_id)
+                .or(command.venue_order_id),
+            order.as_ref().and_then(Order::account_id),
+        );
+        event.causation_id = Some(command.command_id);
+        self.apply_command_denied(&OrderEventAny::ModifyDenied(event));
+    }
+
+    fn deny_cancel_command(&self, command: &CancelOrder, reason: &str) {
+        let ts_now = self.clock.borrow().timestamp_ns();
+        let order = self
+            .cache
+            .borrow()
+            .order(&command.client_order_id)
+            .map(|order| order.clone());
+
+        let mut event = OrderCancelDenied::new(
+            order.as_ref().map_or(command.trader_id, Order::trader_id),
+            order
+                .as_ref()
+                .map_or(command.strategy_id, Order::strategy_id),
+            order
+                .as_ref()
+                .map_or(command.instrument_id, Order::instrument_id),
+            command.client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_now,
+            ts_now,
+            order
+                .as_ref()
+                .and_then(Order::venue_order_id)
+                .or(command.venue_order_id),
+            order.as_ref().and_then(Order::account_id),
+        );
+        event.causation_id = Some(command.command_id);
+        self.apply_command_denied(&OrderEventAny::CancelDenied(event));
+    }
+
+    fn apply_command_denied(&self, event: &OrderEventAny) {
+        if self.cache.borrow().order_exists(&event.client_order_id()) {
+            self.apply_order_event(event);
+        } else {
+            publish_order_event(event);
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -1858,10 +1943,18 @@ enum ReleaseType {
 
 fn publish_order_event(event: &OrderEventAny) {
     msgbus::publish_order_event(get_event_order_topic(event.strategy_id()), event);
+    let topic = match event {
+        OrderEventAny::Canceled(_) => get_order_canceled_topic(event.instrument_id()),
+        OrderEventAny::ModifyDenied(_) => {
+            msgbus::switchboard::get_order_modify_denied_topic(event.instrument_id())
+        }
+        OrderEventAny::CancelDenied(_) => {
+            msgbus::switchboard::get_order_cancel_denied_topic(event.instrument_id())
+        }
+        _ => return,
+    };
 
-    if let OrderEventAny::Canceled(_) = event {
-        msgbus::publish_order_event(get_order_canceled_topic(event.instrument_id()), event);
-    }
+    msgbus::publish_order_event(topic, event);
 }
 
 fn is_order_activated(order: &OrderAny) -> bool {
@@ -1909,6 +2002,7 @@ mod tests {
         },
         identifiers::{
             AccountId, ClientId, ClientOrderId, OrderListId, StrategyId, Symbol, TradeId, TraderId,
+            VenueOrderId,
         },
         instruments::{
             CryptoPerpetual, Instrument, InstrumentAny, SyntheticInstrument,
@@ -2108,6 +2202,111 @@ mod tests {
             None,
         );
         (handler, events)
+    }
+
+    #[rstest]
+    #[case::modify(false)]
+    #[case::cancel(true)]
+    fn test_command_refusal_preserves_closed_or_absent_order(
+        #[case] cancel: bool,
+        #[values(false, true)] cached: bool,
+        instrument: CryptoPerpetual,
+    ) {
+        let (_clock, cache, emulator) = create_emulator();
+        let mut order = create_stop_market_order(&instrument, TriggerType::BidAsk);
+
+        if cached {
+            let event = TestOrderEventStubs::canceled(
+                &order,
+                AccountId::from("SIM-001"),
+                Some(VenueOrderId::from("V-CLOSED")),
+            );
+            order.apply(event).unwrap();
+            cache
+                .borrow_mut()
+                .add_order(order.clone(), None, None, false)
+                .unwrap();
+        }
+
+        let (handler, events) = subscribe_order_topic(order.strategy_id());
+        let cause = UUID4::new();
+
+        if cancel {
+            emulator.borrow_mut().handle_cancel_order(CancelOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.venue_order_id(),
+                cause,
+                UnixNanos::from(17),
+                None,
+                None,
+            ));
+        } else {
+            emulator.borrow_mut().handle_modify_order(&ModifyOrder::new(
+                order.trader_id(),
+                None,
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.venue_order_id(),
+                Some(Quantity::from(2)),
+                None,
+                None,
+                cause,
+                UnixNanos::from(17),
+                None,
+                None,
+            ));
+        }
+
+        msgbus::unsubscribe_order_events(
+            format!("events.order.{}", order.strategy_id()).into(),
+            &handler,
+        );
+        let events = events.borrow();
+        assert_eq!(events.len(), 1);
+
+        let (actual_cause, reason) = match &events[0] {
+            OrderEventAny::ModifyDenied(event) if !cancel => {
+                (event.causation_id, event.reason.as_str())
+            }
+            OrderEventAny::CancelDenied(event) if cancel => {
+                (event.causation_id, event.reason.as_str())
+            }
+            event => panic!("unexpected command outcome {event:?}"),
+        };
+
+        assert_eq!(actual_cause, Some(cause));
+        assert_eq!(
+            reason,
+            if cached {
+                "Order already closed"
+            } else {
+                "Order not found in cache"
+            }
+        );
+        assert_eq!(events[0].trader_id(), order.trader_id());
+        assert_eq!(events[0].strategy_id(), order.strategy_id());
+        assert_eq!(events[0].instrument_id(), order.instrument_id());
+        assert_eq!(events[0].client_order_id(), order.client_order_id());
+        assert_eq!(events[0].venue_order_id(), order.venue_order_id());
+        assert_eq!(events[0].account_id(), order.account_id());
+
+        if cached {
+            let cache = cache.borrow();
+            let actual = cache.order(&order.client_order_id()).unwrap();
+            assert_eq!(actual.status(), order.status());
+            assert_eq!(actual.quantity(), order.quantity());
+            assert_eq!(actual.filled_qty(), order.filled_qty());
+            assert_eq!(actual.price(), order.price());
+            assert_eq!(actual.trigger_price(), order.trigger_price());
+            assert_eq!(actual.ts_closed(), order.ts_closed());
+        } else {
+            assert!(!cache.borrow().order_exists(&order.client_order_id()));
+        }
     }
 
     #[rstest]

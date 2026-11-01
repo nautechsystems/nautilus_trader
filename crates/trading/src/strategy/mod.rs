@@ -43,11 +43,11 @@ use nautilus_execution::order_manager::OrderManagerAction;
 use nautilus_model::{
     enums::{OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, ExecAlgorithmId, InstrumentId, PositionId, StrategyId,
@@ -407,7 +407,9 @@ pub trait Strategy: DataActor {
             return Ok(());
         }
 
-        if !self.mark_order_pending_update(&order)? {
+        let command_id = UUID4::new();
+
+        if !self.mark_order_pending_update(&order, command_id)? {
             return Ok(());
         }
 
@@ -421,7 +423,7 @@ pub trait Strategy: DataActor {
             quantity,
             price,
             trigger_price,
-            UUID4::new(),
+            command_id,
             StrategyNative::strategy_core_mut(self)
                 .clock_mut()
                 .timestamp_ns(),
@@ -550,7 +552,8 @@ pub trait Strategy: DataActor {
         let mut modifies = Vec::with_capacity(orders.len());
 
         for (order, (_, quantity, price, trigger_price)) in orders.into_iter().zip(updates) {
-            if !self.mark_order_pending_update(&order)? {
+            let command_id = UUID4::new();
+            if !self.mark_order_pending_update(&order, command_id)? {
                 continue;
             }
 
@@ -564,7 +567,7 @@ pub trait Strategy: DataActor {
                 quantity,
                 price,
                 trigger_price,
-                UUID4::new(),
+                command_id,
                 ts_init,
                 params.clone(),
                 None, // correlation_id
@@ -626,7 +629,9 @@ pub trait Strategy: DataActor {
             .try_order_owned(&client_order_id)
             .map_err(|e| anyhow::anyhow!("Cannot cancel order: {e}"))?;
 
-        if !self.mark_order_pending_cancel(&order)? {
+        let command_id = UUID4::new();
+
+        if !self.mark_order_pending_cancel(&order, command_id)? {
             return Ok(());
         }
 
@@ -637,7 +642,7 @@ pub trait Strategy: DataActor {
             order.instrument_id(),
             order.client_order_id(),
             order.venue_order_id(),
-            UUID4::new(),
+            command_id,
             ts_init,
             params,
             None, // correlation_id
@@ -657,6 +662,9 @@ pub trait Strategy: DataActor {
 
         if StrategyNative::strategy_core(self).config.manage_gtd_expiry
             && order.time_in_force() == TimeInForce::Gtd
+            && StrategyNative::strategy_core(self)
+                .cache_ref()
+                .is_order_pending_cancel_local(&order.client_order_id())
             && self.has_gtd_expiry_timer(&order.client_order_id())
         {
             self.cancel_gtd_expiry(&order.client_order_id());
@@ -726,7 +734,8 @@ pub trait Strategy: DataActor {
         let mut cancels = Vec::with_capacity(orders.len());
 
         for order in orders {
-            if !self.mark_order_pending_cancel(&order)? {
+            let command_id = UUID4::new();
+            if !self.mark_order_pending_cancel(&order, command_id)? {
                 continue;
             }
 
@@ -737,7 +746,7 @@ pub trait Strategy: DataActor {
                 instrument_id,
                 order.client_order_id(),
                 order.venue_order_id(),
-                UUID4::new(),
+                command_id,
                 ts_init,
                 params.clone(),
                 None, // correlation_id
@@ -770,17 +779,22 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if applying the pending update event to the cache fails.
-    fn mark_order_pending_update(&mut self, order: &OrderAny) -> anyhow::Result<bool>
+    fn mark_order_pending_update(
+        &mut self,
+        order: &OrderAny,
+        command_id: UUID4,
+    ) -> anyhow::Result<bool>
     where
         Self: StrategyNative,
     {
-        if order.is_active_local() || order.is_pending_update() {
+        if order.is_active_local() {
             return Ok(true);
         }
 
         let strategy_id = order.strategy_id();
         required_account_id(order, "pending update")?;
-        let event = OrderEventAny::PendingUpdate(self.generate_order_pending_update(order));
+        let event =
+            OrderEventAny::PendingUpdate(self.generate_order_pending_update(order, command_id));
 
         {
             let cache_rc = StrategyNative::strategy_core_mut(self).cache_rc();
@@ -815,7 +829,11 @@ pub trait Strategy: DataActor {
     /// # Errors
     ///
     /// Returns an error if applying the pending cancel event to the cache fails.
-    fn mark_order_pending_cancel(&mut self, order: &OrderAny) -> anyhow::Result<bool>
+    fn mark_order_pending_cancel(
+        &mut self,
+        order: &OrderAny,
+        command_id: UUID4,
+    ) -> anyhow::Result<bool>
     where
         Self: StrategyNative,
     {
@@ -833,7 +851,8 @@ pub trait Strategy: DataActor {
 
         let strategy_id = order.strategy_id();
         required_account_id(order, "pending cancel")?;
-        let event = OrderEventAny::PendingCancel(self.generate_order_pending_cancel(order));
+        let event =
+            OrderEventAny::PendingCancel(self.generate_order_pending_cancel(order, command_id));
 
         {
             let cache_rc = StrategyNative::strategy_core_mut(self).cache_rc();
@@ -865,7 +884,11 @@ pub trait Strategy: DataActor {
     }
 
     /// Generates an `OrderPendingUpdate` event for an order.
-    fn generate_order_pending_update(&mut self, order: &OrderAny) -> OrderPendingUpdate
+    fn generate_order_pending_update(
+        &mut self,
+        order: &OrderAny,
+        command_id: UUID4,
+    ) -> OrderPendingUpdate
     where
         Self: StrategyNative,
     {
@@ -873,7 +896,7 @@ pub trait Strategy: DataActor {
             .clock_mut()
             .timestamp_ns();
 
-        OrderPendingUpdate::new(
+        let mut event = OrderPendingUpdate::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -884,11 +907,17 @@ pub trait Strategy: DataActor {
             ts_now,
             false,
             order.venue_order_id(),
-        )
+        );
+        event.causation_id = Some(command_id);
+        event
     }
 
     /// Generates an `OrderPendingCancel` event for an order.
-    fn generate_order_pending_cancel(&mut self, order: &OrderAny) -> OrderPendingCancel
+    fn generate_order_pending_cancel(
+        &mut self,
+        order: &OrderAny,
+        command_id: UUID4,
+    ) -> OrderPendingCancel
     where
         Self: StrategyNative,
     {
@@ -896,7 +925,7 @@ pub trait Strategy: DataActor {
             .clock_mut()
             .timestamp_ns();
 
-        OrderPendingCancel::new(
+        let mut event = OrderPendingCancel::new(
             order.trader_id(),
             order.strategy_id(),
             order.instrument_id(),
@@ -907,7 +936,9 @@ pub trait Strategy: DataActor {
             ts_now,
             false,
             order.venue_order_id(),
-        )
+        );
+        event.causation_id = Some(command_id);
+        event
     }
 
     /// Cancels all open orders for the given instrument.
@@ -1353,6 +1384,8 @@ pub trait Strategy: DataActor {
                     !event.due_post_only || core.config.log_rejected_due_post_only_as_warning
                 }
                 OrderEventAny::Denied(_)
+                | OrderEventAny::ModifyDenied(_)
+                | OrderEventAny::CancelDenied(_)
                 | OrderEventAny::CancelRejected(_)
                 | OrderEventAny::ModifyRejected(_) => true,
                 _ => false,
@@ -1398,37 +1431,7 @@ pub trait Strategy: DataActor {
             return;
         }
 
-        if matches!(&event, OrderEventAny::CancelRejected(_)) {
-            let order = StrategyNative::strategy_core_mut(self)
-                .cache_ref()
-                .order(&client_order_id)
-                .map(|order| order.clone());
-            if let Some(order) = order
-                && (order.is_open() || order.is_inflight())
-                && !self.has_gtd_expiry_timer(&client_order_id)
-                && let Err(e) = self.set_gtd_expiry(&order)
-            {
-                log::error!(
-                    "Failed to restore GTD expiry for cancel-rejected order {client_order_id}: {e}"
-                );
-            }
-        }
-
-        if matches!(&event, OrderEventAny::FillVoided(event) if event.is_reopened) {
-            let order = StrategyNative::strategy_core_mut(self)
-                .cache_ref()
-                .order(&client_order_id)
-                .map(|order| order.clone());
-            if let Some(order) = order
-                && order.is_open()
-                && !self.has_gtd_expiry_timer(&client_order_id)
-                && let Err(e) = self.set_gtd_expiry(&order)
-            {
-                log::error!(
-                    "Failed to restore GTD expiry for reopened order {client_order_id}: {e}"
-                );
-            }
-        }
+        restore_gtd_timer(self, &event);
 
         let manager_actions = {
             let core = StrategyNative::strategy_core_mut(self);
@@ -1455,7 +1458,9 @@ pub trait Strategy: DataActor {
             OrderEventAny::Triggered(e) => self.on_order_triggered(*e),
             OrderEventAny::PendingUpdate(e) => self.on_order_pending_update(*e),
             OrderEventAny::PendingCancel(e) => self.on_order_pending_cancel(*e),
+            OrderEventAny::ModifyDenied(e) => self.on_order_modify_denied(*e),
             OrderEventAny::ModifyRejected(e) => self.on_order_modify_rejected(*e),
+            OrderEventAny::CancelDenied(e) => self.on_order_cancel_denied(*e),
             OrderEventAny::CancelRejected(e) => self.on_order_cancel_rejected(*e),
             OrderEventAny::Updated(e) => self.on_order_updated(*e),
             OrderEventAny::Filled(e) => self.on_order_filled(e),
@@ -1653,11 +1658,19 @@ pub trait Strategy: DataActor {
     #[allow(unused_variables)]
     fn on_order_pending_cancel(&mut self, event: OrderPendingCancel) {}
 
+    /// Called when a modify command is proven not sent; the order remains otherwise unchanged.
+    #[allow(unused_variables)]
+    fn on_order_modify_denied(&mut self, event: OrderModifyDenied) {}
+
     /// Called when an order modification is rejected.
     ///
     /// Override this method to implement custom logic when an order modification is rejected.
     #[allow(unused_variables)]
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {}
+
+    /// Called when a cancel command is proven not sent; the order remains otherwise unchanged.
+    #[allow(unused_variables)]
+    fn on_order_cancel_denied(&mut self, event: OrderCancelDenied) {}
 
     /// Called when an order cancellation is rejected.
     ///
@@ -2445,6 +2458,60 @@ where
     Ok(())
 }
 
+fn restore_gtd_timer<T: Strategy + StrategyNative + ?Sized>(
+    strategy: &mut T,
+    event: &OrderEventAny,
+) {
+    match event {
+        OrderEventAny::CancelDenied(_) | OrderEventAny::CancelRejected(_) => {}
+        OrderEventAny::FillVoided(event) if event.is_reopened => {}
+        _ => return,
+    }
+
+    let client_order_id = event.client_order_id();
+    let order = StrategyNative::strategy_core_mut(strategy)
+        .cache_ref()
+        .order(&client_order_id)
+        .map(|order| order.clone());
+
+    let Some(order) = order else {
+        return;
+    };
+
+    match event {
+        OrderEventAny::CancelDenied(_) | OrderEventAny::CancelRejected(_) => {
+            if !(order.is_open() || order.is_inflight()) || order.has_pending_cancel_command() {
+                return;
+            }
+        }
+        OrderEventAny::FillVoided(event) if event.is_reopened => {
+            if !order.is_open() {
+                return;
+            }
+        }
+        _ => return,
+    }
+
+    if strategy.has_gtd_expiry_timer(&client_order_id) {
+        return;
+    }
+
+    let now = StrategyNative::strategy_core_mut(strategy)
+        .clock_mut()
+        .timestamp_ns();
+
+    if matches!(event, OrderEventAny::CancelDenied(_))
+        && order.expire_time().is_some_and(|expiry| expiry <= now)
+    {
+        log::warn!("GTD cancel denied for expired order {client_order_id}; order remains open");
+        return;
+    }
+
+    if let Err(e) = strategy.set_gtd_expiry(&order) {
+        log::error!("Failed to restore GTD expiry for {client_order_id}: {e}");
+    }
+}
+
 fn publish_order_initialized(order: &OrderAny) {
     let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
     let event = OrderEventAny::Initialized(order.init_event().clone());
@@ -2575,9 +2642,9 @@ mod tests {
         events::{
             OrderAccepted, OrderCanceled, OrderFilled, OrderRejected, PositionAdjusted,
             order::spec::{
-                OrderAcceptedSpec, OrderCancelRejectedSpec, OrderCanceledSpec, OrderEmulatedSpec,
-                OrderExpiredSpec, OrderFillVoidedSpec, OrderFilledSpec, OrderModifyRejectedSpec,
-                OrderRejectedSpec, OrderUpdatedSpec,
+                OrderAcceptedSpec, OrderCancelDeniedSpec, OrderCancelRejectedSpec,
+                OrderCanceledSpec, OrderEmulatedSpec, OrderExpiredSpec, OrderFillVoidedSpec,
+                OrderFilledSpec, OrderModifyRejectedSpec, OrderRejectedSpec, OrderUpdatedSpec,
             },
         },
         identifiers::{
@@ -2875,6 +2942,20 @@ mod tests {
                 .account_id(AccountId::from("ACC-001"))
                 .reason("Test rejection".into())
                 .event_id(UUID4::default())
+                .build(),
+        )
+    }
+
+    fn make_cancel_denied(client_order_id: ClientOrderId) -> OrderEventAny {
+        OrderEventAny::CancelDenied(
+            OrderCancelDeniedSpec::builder()
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("TEST-001"))
+                .instrument_id(InstrumentId::from("BTCUSDT.BINANCE"))
+                .client_order_id(client_order_id)
+                .reason("Test denial".into())
+                .venue_order_id(VenueOrderId::from(client_order_id.as_str()))
+                .account_id(AccountId::from("ACC-001"))
                 .build(),
         )
     }
@@ -3520,7 +3601,7 @@ mod tests {
         msgbus::unsubscribe_order_events(order_topic.into(), &order_handler);
 
         let order_events = order_events.get_messages();
-        assert_eq!(order_events.len(), 3);
+        assert_eq!(order_events.len(), 4);
         assert!(matches!(
             &order_events[0],
             OrderEventAny::Initialized(event)
@@ -3536,6 +3617,30 @@ mod tests {
             OrderEventAny::PendingUpdate(event)
                 if event.client_order_id == modify_order.client_order_id()
         ));
+        assert!(matches!(
+            &order_events[3],
+            OrderEventAny::PendingUpdate(event)
+                if event.client_order_id == modify_order.client_order_id()
+        ));
+
+        let pending_ids: Vec<_> = order_events
+            .iter()
+            .filter_map(|event| match event {
+                OrderEventAny::PendingUpdate(event) => event.causation_id,
+                _ => None,
+            })
+            .collect();
+
+        let dispatched_ids: Vec<_> = risk_messages
+            .get_messages()
+            .iter()
+            .filter_map(|command| match command {
+                TradingCommand::ModifyOrder(command) => Some(command.command_id),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(pending_ids, dispatched_ids);
         assert!(matches!(
             emulator_messages.get_messages().as_slice(),
             [TradingCommand::SubmitOrder(command)]
@@ -5126,6 +5231,17 @@ mod tests {
         let commands = risk_messages.get_messages();
         assert_eq!(commands.len(), 2);
 
+        let causes: Vec<_> = commands
+            .iter()
+            .map(|command| {
+                let TradingCommand::ModifyOrder(command) = command else {
+                    panic!("expected modify command");
+                };
+
+                command.command_id
+            })
+            .collect();
+
         for (command, quantity, price) in [
             (&commands[0], 30, "52000.00"),
             (&commands[1], 20, "51000.00"),
@@ -5157,27 +5273,27 @@ mod tests {
 
         let topic = msgbus::switchboard::get_event_order_topic(order.strategy_id());
         msgbus::subscribe_order_events(topic.into(), handler.clone(), None);
-        engine.process(&OrderEventAny::Updated(
-            OrderUpdatedSpec::builder()
-                .trader_id(order.trader_id())
-                .strategy_id(order.strategy_id())
-                .instrument_id(order.instrument_id())
-                .client_order_id(order.client_order_id())
-                .venue_order_id(VenueOrderId::from("V-AMENDED-001"))
-                .account_id(account_id)
-                .quantity(Quantity::from(20))
-                .price(Price::from("51000.00"))
-                .build(),
-        ));
+        let mut updated = OrderUpdatedSpec::builder()
+            .trader_id(order.trader_id())
+            .strategy_id(order.strategy_id())
+            .instrument_id(order.instrument_id())
+            .client_order_id(order.client_order_id())
+            .venue_order_id(VenueOrderId::from("V-AMENDED-001"))
+            .account_id(account_id)
+            .quantity(Quantity::from(20))
+            .price(Price::from("51000.00"))
+            .build();
+        updated.causation_id = Some(causes[1]);
+        engine.process(&OrderEventAny::Updated(updated));
         assert_eq!(
             cache
                 .borrow()
                 .order(&order.client_order_id())
                 .unwrap()
                 .status(),
-            OrderStatus::Submitted
+            OrderStatus::PendingUpdate
         );
-        let rejection = OrderModifyRejectedSpec::builder()
+        let mut rejection = OrderModifyRejectedSpec::builder()
             .trader_id(order.trader_id())
             .strategy_id(order.strategy_id())
             .instrument_id(order.instrument_id())
@@ -5188,6 +5304,7 @@ mod tests {
             .ts_event(UnixNanos::from(123))
             .ts_init(UnixNanos::from(456))
             .build();
+        rejection.causation_id = Some(causes[0]);
         engine.process(&OrderEventAny::ModifyRejected(rejection));
         msgbus::unsubscribe_order_events(topic.into(), &handler);
 
@@ -5206,7 +5323,16 @@ mod tests {
             cached.venue_order_id(),
             Some(VenueOrderId::from("V-AMENDED-001"))
         );
-        assert_eq!(cached.events().len(), 5);
+        assert_eq!(cached.events().len(), 6);
+
+        for (event, cause) in cached.events()[2..4].iter().zip(causes) {
+            let OrderEventAny::PendingUpdate(event) = event else {
+                panic!("expected command marker");
+            };
+
+            assert_eq!(event.causation_id, Some(cause));
+        }
+
         assert_eq!(
             cached.last_event(),
             &OrderEventAny::ModifyRejected(rejection)
@@ -6193,7 +6319,38 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_cancel_rejected_restores_future_gtd_timer() {
+    fn test_cancel_denied_after_expiry_does_not_resubmit_cancel() {
+        let mut strategy = create_gtd_managed_strategy();
+        let clock = register_gtd_strategy(&mut strategy);
+        start_strategy(&mut strategy);
+        clock.borrow_mut().set_time(UnixNanos::from(1_000_000_000));
+        let (exec_handler, exec_messages): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
+            get_typed_into_message_saving_handler(Some(Ustr::from("ExecEngine.queue_execute")));
+        msgbus::register_trading_command_endpoint(
+            MessagingSwitchboard::exec_engine_queue_execute(),
+            exec_handler,
+        );
+        let order = make_accepted_gtd_limit_order("O-001", UnixNanos::from(1));
+        let client_order_id = order.client_order_id();
+        add_order_to_cache(&strategy, &order);
+        strategy.handle_order_event(make_cancel_denied(client_order_id));
+        assert!(exec_messages.get_messages().is_empty());
+        assert!(!strategy.has_gtd_expiry_timer(&client_order_id));
+        assert_eq!(
+            strategy
+                .core
+                .cache_ref()
+                .order(&client_order_id)
+                .unwrap()
+                .status(),
+            OrderStatus::Accepted
+        );
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_handle_cancel_refusal_restores_future_gtd_timer(#[case] denied: bool) {
         let mut strategy = create_gtd_managed_strategy();
         let clock = register_gtd_strategy(&mut strategy);
         start_strategy(&mut strategy);
@@ -6203,7 +6360,11 @@ mod tests {
         let client_order_id = order.client_order_id();
         add_order_to_cache(&strategy, &order);
 
-        strategy.handle_order_event(make_cancel_rejected(client_order_id));
+        strategy.handle_order_event(if denied {
+            make_cancel_denied(client_order_id)
+        } else {
+            make_cancel_rejected(client_order_id)
+        });
 
         assert_eq!(
             strategy.core.gtd_timers.get(&client_order_id),

@@ -17,13 +17,14 @@ use nautilus_core::python::to_pyvalue_err;
 use pyo3::{IntoPyObjectExt, Py, PyAny, PyResult, Python};
 
 use crate::events::{
-    OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated, OrderEventAny,
-    OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized, OrderModifyRejected,
-    OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted,
-    OrderTriggered, OrderUpdated,
+    OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+    OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+    OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
+    OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
 };
 
 pub mod accepted;
+pub mod cancel_denied;
 pub mod cancel_rejected;
 pub mod canceled;
 pub mod denied;
@@ -32,6 +33,7 @@ pub mod expired;
 pub mod fill_voided;
 pub mod filled;
 pub mod initialized;
+pub mod modify_denied;
 pub mod modify_rejected;
 pub mod pending_cancel;
 pub mod pending_update;
@@ -61,7 +63,9 @@ pub fn order_event_to_pyobject(py: Python, order_event: OrderEventAny) -> PyResu
         OrderEventAny::Triggered(event) => event.into_py_any(py),
         OrderEventAny::PendingUpdate(event) => event.into_py_any(py),
         OrderEventAny::PendingCancel(event) => event.into_py_any(py),
+        OrderEventAny::ModifyDenied(event) => event.into_py_any(py),
         OrderEventAny::ModifyRejected(event) => event.into_py_any(py),
+        OrderEventAny::CancelDenied(event) => event.into_py_any(py),
         OrderEventAny::CancelRejected(event) => event.into_py_any(py),
         OrderEventAny::Updated(event) => event.into_py_any(py),
         OrderEventAny::Filled(event) => event.into_py_any(py),
@@ -81,6 +85,9 @@ pub fn pyobject_to_order_event(py: Python, order_event: Py<PyAny>) -> PyResult<O
         stringify!(OrderAccepted) => Ok(OrderEventAny::Accepted(
             order_event.extract::<OrderAccepted>(py)?,
         )),
+        stringify!(OrderCancelDenied) => Ok(OrderEventAny::CancelDenied(
+            order_event.extract::<OrderCancelDenied>(py)?,
+        )),
         stringify!(OrderCancelRejected) => Ok(OrderEventAny::CancelRejected(
             order_event.extract::<OrderCancelRejected>(py)?,
         )),
@@ -89,6 +96,9 @@ pub fn pyobject_to_order_event(py: Python, order_event: Py<PyAny>) -> PyResult<O
         )),
         stringify!(OrderDenied) => Ok(OrderEventAny::Denied(
             order_event.extract::<OrderDenied>(py)?,
+        )),
+        stringify!(OrderModifyDenied) => Ok(OrderEventAny::ModifyDenied(
+            order_event.extract::<OrderModifyDenied>(py)?,
         )),
         stringify!(OrderEmulated) => Ok(OrderEventAny::Emulated(
             order_event.extract::<OrderEmulated>(py)?,

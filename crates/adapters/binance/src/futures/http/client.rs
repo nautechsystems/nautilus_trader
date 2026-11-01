@@ -1471,19 +1471,14 @@ impl BinanceRawFuturesHttpClient {
                             item.order_id = Some(order_id);
                             item.orig_client_order_id = None;
                         }
-                        Err(BinanceFuturesHttpError::BinanceError {
-                            code: BINANCE_NO_SUCH_ORDER_CODE,
-                            message,
-                            ..
-                        }) => {
-                            results.push(Some(BatchOrderResult::Error(BatchOrderError {
-                                code: BINANCE_NO_SUCH_ORDER_CODE,
-                                msg: message,
-                            })));
+                        Err(e) => {
+                            if let Some(error) = missing_order_lookup_error(&e) {
+                                results.push(Some(BatchOrderResult::Error(error)));
+                                continue;
+                            }
 
-                            continue;
+                            return Err(e);
                         }
-                        Err(e) => return Err(e),
                     }
                 }
 
@@ -1596,17 +1591,13 @@ impl BinanceRawFuturesHttpClient {
                         ));
                         results.push(None);
                     }
-                    Err(BinanceFuturesHttpError::BinanceError {
-                        code: BINANCE_NO_SUCH_ORDER_CODE,
-                        message,
-                        ..
-                    }) => {
-                        results.push(Some(BatchOrderResult::Error(BatchOrderError {
-                            code: BINANCE_NO_SUCH_ORDER_CODE,
-                            msg: message,
-                        })));
+                    Err(e) => {
+                        if let Some(error) = missing_order_lookup_error(&e) {
+                            results.push(Some(BatchOrderResult::Error(error)));
+                        } else {
+                            return Err(e);
+                        }
                     }
-                    Err(e) => return Err(e),
                 }
             }
 
@@ -3692,16 +3683,28 @@ impl BinanceFuturesHttpClient {
 }
 
 fn identity_lookup_error(error: BinanceFuturesHttpError) -> BinanceFuturesHttpError {
-    // Preserve admission failures and missing-order codes across cancellation fallback
     match error {
-        BinanceFuturesHttpError::RateLimitBlocked
-        | BinanceFuturesHttpError::BinanceError {
-            code: -2011 | BINANCE_NO_SUCH_ORDER_CODE,
+        BinanceFuturesHttpError::RateLimitBlocked => error,
+        _ => BinanceFuturesHttpError::IdentityLookup(Box::new(error)),
+    }
+}
+
+fn missing_order_lookup_error(error: &BinanceFuturesHttpError) -> Option<BatchOrderError> {
+    let BinanceFuturesHttpError::IdentityLookup(source) = error else {
+        return None;
+    };
+
+    match source.as_ref() {
+        BinanceFuturesHttpError::BinanceError {
+            code: BINANCE_NO_SUCH_ORDER_CODE,
+            message,
             ..
-        } => error,
-        _ => BinanceFuturesHttpError::ValidationError(format!(
-            "Order identity lookup failed before submission: {error}"
-        )),
+        } => Some(BatchOrderError {
+            code: BINANCE_NO_SUCH_ORDER_CODE,
+            msg: message.clone(),
+            not_sent: true,
+        }),
+        _ => None,
     }
 }
 

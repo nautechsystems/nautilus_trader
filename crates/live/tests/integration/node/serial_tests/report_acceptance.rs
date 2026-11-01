@@ -756,7 +756,7 @@ async fn test_targeted_report_acceptance_carries_status_across_fill_failure(
 
     for index in 0..2 {
         let id = ClientOrderId::from(format!("O-CARRIED-{index}"));
-        node.exec_manager_mut().register_inflight(id);
+        node.exec_manager_mut().register_inflight(id, UUID4::new());
     }
 
     dst::time::sleep(Duration::from_millis(1)).await;

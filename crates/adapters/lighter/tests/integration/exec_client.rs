@@ -4731,7 +4731,7 @@ async fn test_cancel_all_orders_batches_selected_open_orders() {
 
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
-async fn test_cancel_all_orders_venue_rejection_suppresses_cancel_rejected_for_open_order() {
+async fn test_cancel_all_orders_venue_rejection_preserves_open_order() {
     let (addr, state) = start_server().await;
     let (mut client, mut rx, cache) = build_client(addr);
     client.connect().await.expect("connect");
@@ -4765,16 +4765,37 @@ async fn test_cancel_all_orders_venue_rejection_suppresses_cancel_rejected_for_o
         None,
         None,
     );
+    let cause = cancel_all.command_id;
     client
         .cancel_all_orders(cancel_all)
         .expect("cancel_all_orders");
 
     await_send_tx_count(&state, baseline + 1).await;
-    assert!(
-        next_order_event(&mut rx, Duration::from_millis(250))
-            .await
-            .is_none(),
-        "cancel-all venue rejection for an open order must not emit an invalid cancel rejection",
+    let event = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .unwrap();
+
+    let OrderEventAny::CancelRejected(event) = event else {
+        panic!("expected venue rejection");
+    };
+
+    assert_eq!(
+        event.client_order_id,
+        ClientOrderId::from("O-CXLALL-REJECT")
+    );
+    assert_eq!(event.causation_id, Some(cause));
+    assert_eq!(event.reason, "LIGHTER_21727: order is not cancelable");
+    cache
+        .borrow_mut()
+        .update_order(&OrderEventAny::CancelRejected(event))
+        .unwrap();
+    assert_eq!(
+        cache
+            .borrow()
+            .order(&event.client_order_id)
+            .unwrap()
+            .status(),
+        OrderStatus::Accepted
     );
 
     client.disconnect().await.expect("disconnect");
@@ -4833,20 +4854,42 @@ async fn test_cancel_all_orders_preserves_live_updates(#[case] failed: bool) {
         "orders": {"0": [entry]},
     }));
 
-    match next_order_event(&mut rx, Duration::from_secs(2))
-        .await
-        .expect("live update after cancel-all")
-    {
-        OrderEventAny::Updated(event) => {
-            assert_eq!(event.client_order_id, id);
-            assert_eq!(event.venue_order_id, Some(venue_id));
-            assert_eq!(event.instrument_id, eth_perp_id());
-            assert_eq!(event.strategy_id, strategy_id());
-            assert_eq!(event.price, Some(Price::from("2362.31")));
-            assert_eq!(event.quantity, Quantity::from("0.0050"));
+    let mut updated = 0;
+    let mut rejected = 0;
+
+    for _ in 0..if failed { 2 } else { 1 } {
+        match next_order_event(&mut rx, Duration::from_secs(2))
+            .await
+            .expect("live update after cancel-all")
+        {
+            OrderEventAny::Updated(event) => {
+                updated += 1;
+                assert_eq!(event.client_order_id, id);
+                assert_eq!(event.venue_order_id, Some(venue_id));
+                assert_eq!(event.instrument_id, eth_perp_id());
+                assert_eq!(event.strategy_id, strategy_id());
+                assert_eq!(event.price, Some(Price::from("2362.31")));
+                assert_eq!(event.quantity, Quantity::from("0.0050"));
+            }
+            OrderEventAny::CancelRejected(event) if failed => {
+                assert_eq!(event.client_order_id, id);
+                assert!(event.causation_id.is_some());
+                assert_eq!(
+                    event.reason,
+                    "Lighter cancel transaction failed: invalid client order index"
+                );
+                cache
+                    .borrow_mut()
+                    .update_order(&OrderEventAny::CancelRejected(event))
+                    .unwrap();
+                rejected += 1;
+            }
+            other => panic!("expected update or attributable venue rejection, was {other:?}"),
         }
-        other => panic!("expected update without an invalid cancel rejection, was {other:?}"),
     }
+
+    assert_eq!(updated, 1);
+    assert_eq!(rejected, usize::from(failed));
 
     assert!(
         next_order_event(&mut rx, Duration::from_millis(100))
@@ -9421,8 +9464,8 @@ async fn test_order_batches_chunk_commands(
             .await
             .unwrap();
 
-        let OrderEventAny::CancelRejected(e) = event else {
-            panic!("expected CancelRejected, was {event:?}");
+        let OrderEventAny::CancelDenied(e) = event else {
+            panic!("expected CancelDenied, was {event:?}");
         };
 
         assert_eq!(e.client_order_id, invalid_cancel_id);
@@ -9827,10 +9870,14 @@ async fn assert_chunked_modify_events(
                 assert_eq!(e.trigger_price, None);
                 updated.push(e.client_order_id);
             }
-            OrderEventAny::ModifyRejected(e) => {
+            OrderEventAny::ModifyDenied(e) => {
                 assert_eq!(
                     Some(e.client_order_id),
                     invalid_modify.map(|i| modifies[i].client_order_id)
+                );
+                assert_eq!(
+                    e.causation_id,
+                    invalid_modify.map(|i| modifies[i].command_id)
                 );
                 assert!(e.reason.contains("below Lighter min_quote_amount"));
                 rejected.push(e.client_order_id);
@@ -10190,10 +10237,11 @@ async fn test_modify_echo_and_overlap_wait_for_transaction_result(
             .await
             .unwrap();
 
-        let OrderEventAny::ModifyRejected(event) = event else {
-            panic!("expected overlap rejection");
+        let OrderEventAny::ModifyDenied(event) = event else {
+            panic!("expected overlap denial");
         };
 
+        assert_eq!(event.causation_id, Some(next.command_id));
         assert_eq!(event.client_order_id, id);
         assert_eq!(event.venue_order_id, Some(venue));
         assert_eq!(
@@ -10527,7 +10575,7 @@ async fn test_acknowledged_modify_ignores_delayed_terminal_report() {
         .await
         .unwrap();
 
-    let OrderEventAny::ModifyRejected(overlap) = overlap else {
+    let OrderEventAny::ModifyDenied(overlap) = overlap else {
         panic!("expected overlapping amendment rejection");
     };
 

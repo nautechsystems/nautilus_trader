@@ -32,7 +32,7 @@ use arc_swap::ArcSwap;
 use futures_util::{FutureExt, Stream, StreamExt, stream::FuturesUnordered};
 use nautilus_common::{enums::LogColor, log_debug};
 use nautilus_core::{
-    AtomicMap, AtomicSet, env::get_or_env_var_opt, string::secret::SecretString,
+    AtomicMap, AtomicSet, UUID4, env::get_or_env_var_opt, string::secret::SecretString,
     time::get_atomic_clock_realtime,
 };
 use nautilus_live::{SocketControl, task::TaskGroup};
@@ -1663,6 +1663,26 @@ impl DeribitWebSocketClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
     ) -> DeribitWsResult<()> {
+        self.modify_order_with_causation(
+            params,
+            client_order_id,
+            trader_id,
+            strategy_id,
+            instrument_id,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn modify_order_with_causation(
+        &self,
+        params: DeribitEditParams,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        causation_id: Option<UUID4>,
+    ) -> DeribitWsResult<()> {
         if !self.is_authenticated() {
             return Err(DeribitWsError::Authentication(
                 "Modify order requires authentication. Call authenticate_session() first."
@@ -1679,6 +1699,7 @@ impl DeribitWebSocketClient {
 
         self.command_sender()
             .send(HandlerCommand::Edit {
+                causation_id,
                 params,
                 client_order_id,
                 trader_id,
@@ -1708,6 +1729,26 @@ impl DeribitWebSocketClient {
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
     ) -> DeribitWsResult<()> {
+        self.cancel_order_with_causation(
+            order_id,
+            client_order_id,
+            trader_id,
+            strategy_id,
+            instrument_id,
+            None,
+        )
+        .await
+    }
+
+    pub(crate) async fn cancel_order_with_causation(
+        &self,
+        order_id: &str,
+        client_order_id: ClientOrderId,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        causation_id: Option<UUID4>,
+    ) -> DeribitWsResult<()> {
         if !self.is_authenticated() {
             return Err(DeribitWsError::Authentication(
                 "Cancel order requires authentication. Call authenticate_session() first."
@@ -1723,6 +1764,7 @@ impl DeribitWebSocketClient {
 
         self.command_sender()
             .send(HandlerCommand::Cancel {
+                causation_id,
                 params,
                 client_order_id,
                 trader_id,

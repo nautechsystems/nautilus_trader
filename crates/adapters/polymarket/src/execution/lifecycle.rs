@@ -377,6 +377,7 @@ impl PolymarketExecutionClient {
                 Some(venue_order_id),
                 "Polymarket modification was interrupted during shutdown",
                 ts_event,
+                None,
             );
 
             if let Some(cancel_ts) = cancel_ts
@@ -3943,12 +3944,15 @@ mod tests {
             None,
             None,
         );
+        let cause = modify.command_id;
         client.modify_order(modify).unwrap();
         let rejected = rx.try_recv().unwrap();
 
-        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = rejected else {
-            panic!("Expected ModifyRejected, was {rejected:?}");
+        let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = rejected else {
+            panic!("Expected ModifyDenied, was {rejected:?}");
         };
+
+        assert_eq!(rejected.causation_id, Some(cause));
 
         let cancel = CancelAllOrders::new(
             order.trader_id(),

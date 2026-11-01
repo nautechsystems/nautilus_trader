@@ -4054,10 +4054,7 @@ impl Cache {
             self.index.orders_closed.insert(client_order_id);
         }
 
-        // A cancel rejection resolves the outstanding cancel request
-        if matches!(order.last_event(), OrderEventAny::CancelRejected(_)) {
-            self.index.orders_pending_cancel.remove(&client_order_id);
-        }
+        self.refresh_order_pending_cancel(order);
 
         // Update emulation index
         if order.emulation_trigger().is_some() && !order.is_closed() {
@@ -4092,6 +4089,18 @@ impl Cache {
         }
 
         Ok(())
+    }
+
+    fn refresh_order_pending_cancel(&mut self, order: &OrderAny) {
+        if matches!(
+            order.last_event(),
+            OrderEventAny::CancelDenied(_) | OrderEventAny::CancelRejected(_)
+        ) && !order.has_pending_cancel_command()
+        {
+            self.index
+                .orders_pending_cancel
+                .remove(&order.client_order_id());
+        }
     }
 
     /// Updates the `order` as pending cancel locally.

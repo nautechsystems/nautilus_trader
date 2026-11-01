@@ -41,11 +41,11 @@ use nautilus_model::{
     data::{CustomData, DataType},
     enums::{TimeInForce, TriggerType},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{ActorId, ClientId, ExecAlgorithmId, PositionId, TraderId},
     orders::{LimitOrder, MarketOrder, MarketToLimitOrder, Order, OrderAny, OrderList},
@@ -531,6 +531,14 @@ impl ExecutionAlgorithm for PyExecutionAlgorithm {
             .log_callback_error("on_order_pending_cancel", result);
     }
 
+    fn on_order_modify_denied(&mut self, event: OrderModifyDenied) {
+        let result =
+            self.dispatch_order_event("on_order_modify_denied", OrderEventAny::ModifyDenied(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_modify_denied", result);
+    }
+
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
         let result = self.dispatch_order_event(
             "on_order_modify_rejected",
@@ -539,6 +547,14 @@ impl ExecutionAlgorithm for PyExecutionAlgorithm {
         self.inner()
             .logger
             .log_callback_error("on_order_modify_rejected", result);
+    }
+
+    fn on_order_cancel_denied(&mut self, event: OrderCancelDenied) {
+        let result =
+            self.dispatch_order_event("on_order_cancel_denied", OrderEventAny::CancelDenied(event));
+        self.inner()
+            .logger
+            .log_callback_error("on_order_cancel_denied", result);
     }
 
     fn on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {
@@ -1278,10 +1294,6 @@ impl PyExecutionAlgorithm {
     fn py_on_order_accepted(_slf: &Bound<'_, Self>, event: OrderAccepted) {}
 
     #[allow(unused_variables)]
-    #[pyo3(name = "on_order_canceled")]
-    fn py_on_order_canceled(_slf: &Bound<'_, Self>, event: OrderCanceled) {}
-
-    #[allow(unused_variables)]
     #[pyo3(name = "on_order_expired")]
     fn py_on_order_expired(_slf: &Bound<'_, Self>, event: OrderExpired) {}
 
@@ -1298,8 +1310,16 @@ impl PyExecutionAlgorithm {
     fn py_on_order_pending_cancel(_slf: &Bound<'_, Self>, event: OrderPendingCancel) {}
 
     #[allow(unused_variables)]
+    #[pyo3(name = "on_order_modify_denied")]
+    fn py_on_order_modify_denied(_slf: &Bound<'_, Self>, event: OrderModifyDenied) {}
+
+    #[allow(unused_variables)]
     #[pyo3(name = "on_order_modify_rejected")]
     fn py_on_order_modify_rejected(_slf: &Bound<'_, Self>, event: OrderModifyRejected) {}
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_order_cancel_denied")]
+    fn py_on_order_cancel_denied(_slf: &Bound<'_, Self>, event: OrderCancelDenied) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_cancel_rejected")]
@@ -1308,6 +1328,10 @@ impl PyExecutionAlgorithm {
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_updated")]
     fn py_on_order_updated(_slf: &Bound<'_, Self>, event: OrderUpdated) {}
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_order_canceled")]
+    fn py_on_order_canceled(_slf: &Bound<'_, Self>, event: OrderCanceled) {}
 
     #[allow(unused_variables, clippy::needless_pass_by_value)]
     #[pyo3(name = "on_order_filled")]
@@ -2007,7 +2031,9 @@ class OrderListTracker:
     #[case("on_order_triggered")]
     #[case("on_order_pending_update")]
     #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_denied")]
     #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_denied")]
     #[case("on_order_cancel_rejected")]
     #[case("on_order_updated")]
     #[case("on_order_filled")]
@@ -2083,9 +2109,17 @@ class OrderListTracker:
                     &mut algorithm,
                     OrderPendingCancel::default(),
                 ),
+                "on_order_modify_denied" => ExecutionAlgorithm::on_order_modify_denied(
+                    &mut algorithm,
+                    OrderModifyDenied::default(),
+                ),
                 "on_order_modify_rejected" => ExecutionAlgorithm::on_order_modify_rejected(
                     &mut algorithm,
                     OrderModifyRejected::default(),
+                ),
+                "on_order_cancel_denied" => ExecutionAlgorithm::on_order_cancel_denied(
+                    &mut algorithm,
+                    OrderCancelDenied::default(),
                 ),
                 "on_order_cancel_rejected" => ExecutionAlgorithm::on_order_cancel_rejected(
                     &mut algorithm,
@@ -2249,7 +2283,9 @@ class CallbackAlgorithm:
     #[case("on_order_triggered")]
     #[case("on_order_pending_update")]
     #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_denied")]
     #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_denied")]
     #[case("on_order_cancel_rejected")]
     #[case("on_order_updated")]
     #[case("on_order_filled")]
@@ -2314,8 +2350,14 @@ class CallbackAlgorithm:
                 "on_order_pending_cancel" => {
                     Some(OrderPendingCancel::default().into_py_any(py).unwrap())
                 }
+                "on_order_modify_denied" => {
+                    Some(OrderModifyDenied::default().into_py_any(py).unwrap())
+                }
                 "on_order_modify_rejected" => {
                     Some(OrderModifyRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_cancel_denied" => {
+                    Some(OrderCancelDenied::default().into_py_any(py).unwrap())
                 }
                 "on_order_cancel_rejected" => {
                     Some(OrderCancelRejected::default().into_py_any(py).unwrap())

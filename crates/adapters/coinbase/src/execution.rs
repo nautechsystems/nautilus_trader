@@ -47,6 +47,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControl,
+    execution::failure::CommandFailure,
     task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
@@ -1071,25 +1072,27 @@ impl ExecutionClient for CoinbaseExecutionClient {
         let ts_event = self.clock.get_time_ns();
 
         let Some(venue_order_id) = cmd.venue_order_id else {
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.client_order_id,
                 None,
                 "modify-order requires venue_order_id",
                 ts_event,
+                Some(cmd.command_id),
             );
             return Ok(());
         };
 
         if cmd.price.is_none() && cmd.quantity.is_none() && cmd.trigger_price.is_none() {
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.client_order_id,
                 Some(venue_order_id),
                 "modify-order requires price, quantity, or trigger_price",
                 ts_event,
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1164,18 +1167,38 @@ impl ExecutionClient for CoinbaseExecutionClient {
                             Some(venue_order_id),
                             &format!("modify-order-rejected: {reason}"),
                             ts_event,
+                            Some(cmd.command_id),
                         );
                     }
                 }
                 Err(e) => {
-                    if is_coinbase_ambiguous_command_failure(&e) {
-                        log::warn!(
+                    match classify_coinbase_command_failure(&e) {
+                        Some(CommandFailure::NotSent(reason)) => emitter
+                            .emit_order_modify_denied_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                Some(venue_order_id),
+                                &reason,
+                                clock.get_time_ns(),
+                                Some(cmd.command_id),
+                            ),
+                        Some(CommandFailure::VenueRejected(reason)) => emitter
+                            .emit_order_modify_rejected_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                Some(venue_order_id),
+                                &reason,
+                                clock.get_time_ns(),
+                                Some(cmd.command_id),
+                            ),
+                        Some(CommandFailure::Ambiguous(_)) => log::warn!(
                             "Ambiguous modify failure for {client_order_id}, awaiting reconciliation: {e}"
-                        );
-                    } else {
-                        log::warn!(
+                        ),
+                        None => log::warn!(
                             "Modify command failed without venue-declared outcome for {client_order_id}: {e}"
-                        );
+                        ),
                     }
                     return Err(e.context("modify order failed"));
                 }
@@ -1189,9 +1212,14 @@ impl ExecutionClient for CoinbaseExecutionClient {
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
         let Some(venue_order_id) = cmd.venue_order_id else {
-            log::warn!(
-                "Cancel command failed local validation for {}: venue_order_id required",
-                cmd.client_order_id
+            self.emitter.emit_order_cancel_denied_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                None,
+                "cancel-order requires venue_order_id",
+                self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         };
@@ -1217,11 +1245,32 @@ impl ExecutionClient for CoinbaseExecutionClient {
                             Some(venue_order_id),
                             &format!("cancel-order-rejected: {}", result.failure_reason),
                             ts_event,
+                            Some(cmd.command_id),
                         );
                     }
                 }
                 Err(e) => {
-                    if is_coinbase_ambiguous_command_failure(&e) {
+                    if is_coinbase_local_command_failure(&e) {
+                        emitter.emit_order_cancel_denied_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &e.to_string(),
+                            clock.get_time_ns(),
+                            Some(cmd.command_id),
+                        );
+                    } else if is_coinbase_explicit_command_rejection(&e) {
+                        emitter.emit_order_cancel_rejected_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &e.to_string(),
+                            clock.get_time_ns(),
+                            Some(cmd.command_id),
+                        );
+                    } else if is_coinbase_ambiguous_command_failure(&e) {
                         log::warn!(
                             "Ambiguous cancel failure for {client_order_id}, awaiting reconciliation: {e}"
                         );
@@ -1273,7 +1322,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
             // it includes `PendingCancel`, and re-cancelling a `CANCEL_QUEUED`
             // order risks `CancelRejected` flipping the order back to its prior
             // working status.
-            let filtered: Vec<(Option<ClientOrderId>, VenueOrderId)> = reports
+            let filtered: Vec<CancelRequest> = reports
                 .into_iter()
                 .filter(|r| {
                     matches!(
@@ -1285,54 +1334,16 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     )
                 })
                 .filter(|r| side_filter.is_none_or(|side| r.order_side == side.into()))
-                .map(|r| (r.client_order_id, r.venue_order_id))
+                .map(|r| CancelRequest {
+                    strategy_id,
+                    instrument_id,
+                    client_order_id: r.client_order_id,
+                    venue_order_id: r.venue_order_id,
+                    command_id: cmd.command_id,
+                })
                 .collect();
 
-            if filtered.is_empty() {
-                return Ok(());
-            }
-
-            for chunk in filtered.chunks(BATCH_CANCEL_CHUNK) {
-                let venue_ids: Vec<VenueOrderId> = chunk.iter().map(|(_, v)| *v).collect();
-                match http_client.cancel_orders(&venue_ids).await {
-                    Ok(resp) => {
-                        for result in &resp.results {
-                            if result.success {
-                                continue;
-                            }
-                            let matching = chunk
-                                .iter()
-                                .find(|(_, vid)| vid.as_str() == result.order_id);
-                            if let Some((cid_opt, vid)) = matching
-                                && let Some(cid) = cid_opt
-                            {
-                                let ts_event = clock.get_time_ns();
-                                emitter.emit_order_cancel_rejected_event(
-                                    strategy_id,
-                                    instrument_id,
-                                    *cid,
-                                    Some(*vid),
-                                    &format!("cancel-all-rejected: {}", result.failure_reason),
-                                    ts_event,
-                                );
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        if is_coinbase_ambiguous_command_failure(&e) {
-                            log::warn!(
-                                "Ambiguous cancel-all failure for {} orders on {instrument_id}, awaiting reconciliation: {e}",
-                                chunk.len()
-                            );
-                        } else {
-                            log::warn!(
-                                "Cancel-all command failed without venue-declared outcome for {} orders on {instrument_id}: {e}",
-                                chunk.len()
-                            );
-                        }
-                    }
-                }
-            }
+            cancel_order_batches(&http_client, &emitter, clock, &filtered, "cancel-all").await;
             Ok(())
         });
 
@@ -1347,85 +1358,169 @@ impl ExecutionClient for CoinbaseExecutionClient {
         let http_client = self.http_client.clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        // Preserve each child cancel's identity for per-order venue failures.
-        let entries: Vec<(
-            StrategyId,
-            InstrumentId,
-            ClientOrderId,
-            Option<VenueOrderId>,
-        )> = cmd
-            .cancels
-            .iter()
-            .map(|c| {
-                (
-                    c.strategy_id,
-                    c.instrument_id,
-                    c.client_order_id,
-                    c.venue_order_id,
-                )
-            })
-            .collect();
+
+        let cancels = cmd.cancels;
 
         self.spawn_task("batch_cancel_orders", async move {
-            let venue_order_ids: Vec<VenueOrderId> =
-                entries.iter().filter_map(|(_, _, _, v)| *v).collect();
+            let mut requests = Vec::new();
 
-            for (_, _, cid, vid_opt) in &entries {
-                if vid_opt.is_none() {
-                    log::warn!(
-                        "Batch cancel command failed local validation for {cid}: venue_order_id required"
+            for cancel in cancels {
+                let Some(venue_order_id) = cancel.venue_order_id else {
+                    emitter.emit_order_cancel_denied_event(
+                        cancel.strategy_id,
+                        cancel.instrument_id,
+                        cancel.client_order_id,
+                        None,
+                        "cancel-order requires venue_order_id",
+                        clock.get_time_ns(),
+                        Some(cancel.command_id),
                     );
-                }
+                    continue;
+                };
+
+                requests.push(CancelRequest {
+                    strategy_id: cancel.strategy_id,
+                    instrument_id: cancel.instrument_id,
+                    client_order_id: Some(cancel.client_order_id),
+                    venue_order_id,
+                    command_id: cancel.command_id,
+                });
             }
 
-            for chunk in venue_order_ids.chunks(BATCH_CANCEL_CHUNK) {
-                match http_client.cancel_orders(chunk).await {
-                    Ok(resp) => {
-                        for result in &resp.results {
-                            if !result.success {
-                                let vid = VenueOrderId::new(&result.order_id);
-                                let matching = entries
-                                    .iter()
-                                    .find(|(_, _, _, v)| {
-                                        v.is_some_and(|id| id.as_str() == result.order_id)
-                                    });
-
-                                if let Some((strategy_id, instrument_id, cid, _)) = matching {
-                                    let ts_event = clock.get_time_ns();
-                                    emitter.emit_order_cancel_rejected_event(
-                                        *strategy_id,
-                                        *instrument_id,
-                                        *cid,
-                                        Some(vid),
-                                        &format!(
-                                            "batch-cancel-rejected: {}",
-                                            result.failure_reason
-                                        ),
-                                        ts_event,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        if is_coinbase_ambiguous_command_failure(&e) {
-                            log::warn!(
-                                "Ambiguous batch cancel failure for {} orders, awaiting reconciliation: {e}",
-                                chunk.len()
-                            );
-                        } else {
-                            log::warn!(
-                                "Batch cancel command failed without venue-declared outcome for {} orders: {e}",
-                                chunk.len()
-                            );
-                        }
-                    }
-                }
-            }
+            cancel_order_batches(&http_client, &emitter, clock, &requests, "batch-cancel").await;
             Ok(())
         });
 
         Ok(())
+    }
+}
+
+struct CancelRequest {
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: Option<ClientOrderId>,
+    venue_order_id: VenueOrderId,
+    command_id: UUID4,
+}
+
+async fn cancel_order_batches(
+    http: &CoinbaseHttpClient,
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+    requests: &[CancelRequest],
+    task_name: &str,
+) {
+    let mut offset = 0;
+    while offset < requests.len() {
+        let end = offset + cancel_batch_len(&requests[offset..]);
+        let chunk = &requests[offset..end];
+        offset = end;
+        let venue_ids: Vec<_> = chunk.iter().map(|request| request.venue_order_id).collect();
+        match http.cancel_orders(&venue_ids).await {
+            Ok(response) => {
+                for result in response.results {
+                    if result.success {
+                        continue;
+                    }
+
+                    let Some(request) = chunk
+                        .iter()
+                        .find(|request| request.venue_order_id.as_str() == result.order_id)
+                    else {
+                        continue;
+                    };
+
+                    let Some(client_order_id) = request.client_order_id else {
+                        continue;
+                    };
+
+                    emitter.emit_order_cancel_rejected_event(
+                        request.strategy_id,
+                        request.instrument_id,
+                        client_order_id,
+                        Some(request.venue_order_id),
+                        &format!("{task_name}-rejected: {}", result.failure_reason),
+                        clock.get_time_ns(),
+                        Some(request.command_id),
+                    );
+                }
+            }
+            Err(e) => emit_batch_cancel_failure(emitter, clock, chunk, task_name, &e),
+        }
+    }
+}
+
+fn cancel_batch_len(requests: &[CancelRequest]) -> usize {
+    let mut targets = AHashSet::new();
+    requests
+        .iter()
+        .take(BATCH_CANCEL_CHUNK)
+        .take_while(|request| targets.insert(request.venue_order_id))
+        .count()
+}
+
+fn emit_batch_cancel_failure(
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+    requests: &[CancelRequest],
+    task_name: &str,
+    error: &anyhow::Error,
+) {
+    match classify_coinbase_command_failure(error) {
+        Some(CommandFailure::NotSent(reason)) => {
+            for request in requests {
+                let Some(client_order_id) = request.client_order_id else {
+                    continue;
+                };
+
+                emitter.emit_order_cancel_denied_event(
+                    request.strategy_id,
+                    request.instrument_id,
+                    client_order_id,
+                    Some(request.venue_order_id),
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(request.command_id),
+                );
+            }
+        }
+        Some(CommandFailure::VenueRejected(reason)) => {
+            for request in requests {
+                let Some(client_order_id) = request.client_order_id else {
+                    continue;
+                };
+
+                emitter.emit_order_cancel_rejected_event(
+                    request.strategy_id,
+                    request.instrument_id,
+                    client_order_id,
+                    Some(request.venue_order_id),
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(request.command_id),
+                );
+            }
+        }
+        Some(CommandFailure::Ambiguous(_)) => log::warn!(
+            "Ambiguous {task_name} failure for {} orders, awaiting reconciliation: {error}",
+            requests.len()
+        ),
+        None => log::warn!(
+            "{task_name} command failed without venue-declared outcome for {} orders: {error}",
+            requests.len()
+        ),
+    }
+}
+
+fn classify_coinbase_command_failure(error: &anyhow::Error) -> Option<CommandFailure> {
+    if is_coinbase_local_command_failure(error) {
+        Some(CommandFailure::not_sent(error.to_string()))
+    } else if is_coinbase_explicit_command_rejection(error) {
+        Some(CommandFailure::venue_rejected(error.to_string()))
+    } else if is_coinbase_ambiguous_command_failure(error) {
+        Some(CommandFailure::ambiguous(error.to_string()))
+    } else {
+        None
     }
 }
 
@@ -1454,7 +1549,7 @@ fn handle_coinbase_submit_failure(
     client_order_id: ClientOrderId,
     ts_event: UnixNanos,
 ) {
-    if is_coinbase_local_submit_failure(err) {
+    if is_coinbase_local_command_failure(err) {
         order_contexts.lock().remove(client_order_id.as_str());
         emitter.emit_order_rejected_event(
             strategy_id,
@@ -1464,7 +1559,7 @@ fn handle_coinbase_submit_failure(
             ts_event,
             false,
         );
-    } else if is_coinbase_explicit_submit_rejection(err) {
+    } else if is_coinbase_explicit_command_rejection(err) {
         order_contexts.lock().remove(client_order_id.as_str());
         emitter.emit_order_rejected_event(
             strategy_id,
@@ -1486,7 +1581,7 @@ fn handle_coinbase_submit_failure(
     }
 }
 
-fn is_coinbase_local_submit_failure(err: &anyhow::Error) -> bool {
+fn is_coinbase_local_command_failure(err: &anyhow::Error) -> bool {
     match coinbase_http_error(err) {
         None => true,
         Some(CoinbaseHttpError::Auth(message)) => !message.starts_with("HTTP "),
@@ -1494,7 +1589,7 @@ fn is_coinbase_local_submit_failure(err: &anyhow::Error) -> bool {
     }
 }
 
-fn is_coinbase_explicit_submit_rejection(err: &anyhow::Error) -> bool {
+fn is_coinbase_explicit_command_rejection(err: &anyhow::Error) -> bool {
     match coinbase_http_error(err) {
         Some(CoinbaseHttpError::Auth(message) | CoinbaseHttpError::BadRequest(message)) => {
             message.starts_with("HTTP ")
@@ -2285,6 +2380,119 @@ mod tests {
     };
 
     #[rstest]
+    #[case::limit(101, false, 100)]
+    #[case::repeated(3, true, 1)]
+    fn test_cancel_batch_len(
+        #[case] count: usize,
+        #[case] repeated: bool,
+        #[case] expected: usize,
+    ) {
+        let requests: Vec<_> = (0..count)
+            .map(|index| CancelRequest {
+                strategy_id: StrategyId::from("S-BATCH"),
+                instrument_id: InstrumentId::from("BTC-USD.COINBASE"),
+                client_order_id: Some(ClientOrderId::from(format!("C-{index}"))),
+                venue_order_id: VenueOrderId::from(format!(
+                    "V-{}",
+                    if repeated { 0 } else { index }
+                )),
+                command_id: UUID4::new(),
+            })
+            .collect();
+
+        assert_eq!(cancel_batch_len(&requests), expected);
+    }
+
+    #[rstest]
+    #[case::not_sent(CoinbaseHttpError::auth("No credentials configured"), Some(false))]
+    #[case::venue_rejected(
+        CoinbaseHttpError::bad_request("HTTP 400: invalid cancellation"),
+        Some(true)
+    )]
+    #[case::ambiguous(CoinbaseHttpError::Timeout, None)]
+    #[case::unclassified(CoinbaseHttpError::rate_limit(None), None)]
+    fn test_batch_cancel_failure_preserves_child_identity(
+        #[case] error: CoinbaseHttpError,
+        #[case] rejected: Option<bool>,
+    ) {
+        let (emitter, mut receiver) = make_emitter();
+        let clock = AtomicTime::new(false, UnixNanos::from(53));
+
+        let requests = [0, 1, 2].map(|index| CancelRequest {
+            strategy_id: StrategyId::from(format!("S-BATCH-{index}")),
+            instrument_id: InstrumentId::from(if index == 0 {
+                "BTC-USD.COINBASE"
+            } else {
+                "ETH-USD.COINBASE"
+            }),
+            client_order_id: (index != 1).then(|| ClientOrderId::from(format!("O-BATCH-{index}"))),
+            venue_order_id: VenueOrderId::from(format!("V-BATCH-{index}")),
+            command_id: UUID4::new(),
+        });
+
+        let error = anyhow::Error::new(error);
+        emit_batch_cancel_failure(&emitter, &clock, &requests, "batch_cancel_orders", &error);
+        if let Some(rejected) = rejected {
+            for request in requests
+                .iter()
+                .filter(|request| request.client_order_id.is_some())
+            {
+                let ExecutionEvent::Order(event) = receiver.try_recv().unwrap() else {
+                    panic!("expected cancellation outcome");
+                };
+
+                let (strategy, instrument, client, venue, cause, reason, ts_event) = match event {
+                    OrderEventAny::CancelDenied(event) if !rejected => (
+                        event.strategy_id,
+                        event.instrument_id,
+                        event.client_order_id,
+                        event.venue_order_id,
+                        event.causation_id,
+                        event.reason,
+                        event.ts_event,
+                    ),
+                    OrderEventAny::CancelRejected(event) if rejected => (
+                        event.strategy_id,
+                        event.instrument_id,
+                        event.client_order_id,
+                        event.venue_order_id,
+                        event.causation_id,
+                        event.reason,
+                        event.ts_event,
+                    ),
+                    other => panic!("unexpected cancellation outcome {other:?}"),
+                };
+
+                assert_eq!(
+                    (
+                        strategy,
+                        instrument,
+                        client,
+                        venue,
+                        cause,
+                        reason.as_str(),
+                        ts_event
+                    ),
+                    (
+                        request.strategy_id,
+                        request.instrument_id,
+                        request.client_order_id.unwrap(),
+                        Some(request.venue_order_id),
+                        Some(request.command_id),
+                        error.to_string().as_str(),
+                        UnixNanos::from(53)
+                    )
+                );
+            }
+        }
+
+        assert!(matches!(
+            receiver.try_recv(),
+            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+        ));
+    }
+
+    #[rstest]
     #[case::cash(AccountType::Cash, true, false)]
     #[case::margin_cached(AccountType::Margin, true, true)]
     #[case::margin_uncached(AccountType::Margin, false, false)]
@@ -2350,8 +2558,8 @@ mod tests {
     fn test_submit_local_command_failure_classification() {
         let err = anyhow::anyhow!("Unsupported Coinbase order configuration");
 
-        assert!(is_coinbase_local_submit_failure(&err));
-        assert!(!is_coinbase_explicit_submit_rejection(&err));
+        assert!(is_coinbase_local_command_failure(&err));
+        assert!(!is_coinbase_explicit_command_rejection(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
     }
 
@@ -2360,8 +2568,8 @@ mod tests {
         let err = anyhow::Error::new(CoinbaseHttpError::exchange("HTTP 500: unavailable"))
             .context("failed to submit order");
 
-        assert!(!is_coinbase_local_submit_failure(&err));
-        assert!(!is_coinbase_explicit_submit_rejection(&err));
+        assert!(!is_coinbase_local_command_failure(&err));
+        assert!(!is_coinbase_explicit_command_rejection(&err));
         assert!(is_coinbase_ambiguous_command_failure(&err));
     }
 
@@ -2370,8 +2578,8 @@ mod tests {
         let err = anyhow::Error::new(CoinbaseHttpError::bad_request("HTTP 400: bad request"))
             .context("failed to submit order");
 
-        assert!(!is_coinbase_local_submit_failure(&err));
-        assert!(is_coinbase_explicit_submit_rejection(&err));
+        assert!(!is_coinbase_local_command_failure(&err));
+        assert!(is_coinbase_explicit_command_rejection(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
     }
 
@@ -2384,8 +2592,8 @@ mod tests {
         )))
         .context("failed to submit order");
 
-        assert!(!is_coinbase_local_submit_failure(&err));
-        assert!(is_coinbase_explicit_submit_rejection(&err));
+        assert!(!is_coinbase_local_command_failure(&err));
+        assert!(is_coinbase_explicit_command_rejection(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
     }
 
@@ -2394,8 +2602,8 @@ mod tests {
         let err = anyhow::Error::new(CoinbaseHttpError::rate_limit(None))
             .context("failed to submit order");
 
-        assert!(!is_coinbase_local_submit_failure(&err));
-        assert!(!is_coinbase_explicit_submit_rejection(&err));
+        assert!(!is_coinbase_local_command_failure(&err));
+        assert!(!is_coinbase_explicit_command_rejection(&err));
         assert!(is_coinbase_ambiguous_submit_failure(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
     }
@@ -2505,8 +2713,8 @@ mod tests {
         let err = anyhow::Error::new(CoinbaseHttpError::http(409, "conflict"))
             .context("failed to submit order");
 
-        assert!(!is_coinbase_local_submit_failure(&err));
-        assert!(!is_coinbase_explicit_submit_rejection(&err));
+        assert!(!is_coinbase_local_command_failure(&err));
+        assert!(!is_coinbase_explicit_command_rejection(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
     }
 
@@ -2515,8 +2723,8 @@ mod tests {
         let err = anyhow::Error::new(CoinbaseHttpError::auth("No credentials configured"))
             .context("failed to submit order");
 
-        assert!(is_coinbase_local_submit_failure(&err));
-        assert!(!is_coinbase_explicit_submit_rejection(&err));
+        assert!(is_coinbase_local_command_failure(&err));
+        assert!(!is_coinbase_explicit_command_rejection(&err));
         assert!(!is_coinbase_ambiguous_command_failure(&err));
     }
 

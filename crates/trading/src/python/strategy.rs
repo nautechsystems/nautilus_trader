@@ -75,11 +75,11 @@ use nautilus_model::{
     },
     enums::{BookType, OmsType, OrderSide, PositionSide, TimeInForce},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-        OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged, PositionClosed,
-        PositionEvent, PositionOpened,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PositionChanged, PositionClosed, PositionEvent, PositionOpened,
     },
     identifiers::{
         AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, OptionSeriesId, PositionId,
@@ -546,12 +546,32 @@ impl PyStrategyInner {
         Ok(())
     }
 
+    fn dispatch_on_order_modify_denied(&self, event: OrderModifyDenied) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_order_modify_denied", (event.into_py_any(py)?,))
+            })?;
+        }
+
+        Ok(())
+    }
+
     fn dispatch_on_order_modify_rejected(&self, event: OrderModifyRejected) -> PyResult<()> {
         if let Some(py_self) = self.python_instance()? {
             Python::attach(|py| {
                 py_self.call_method1(py, "on_order_modify_rejected", (event.into_py_any(py)?,))
             })?;
         }
+        Ok(())
+    }
+
+    fn dispatch_on_order_cancel_denied(&self, event: OrderCancelDenied) -> PyResult<()> {
+        if let Some(py_self) = self.python_instance()? {
+            Python::attach(|py| {
+                py_self.call_method1(py, "on_order_cancel_denied", (event.into_py_any(py)?,))
+            })?;
+        }
+
         Ok(())
     }
 
@@ -1047,10 +1067,24 @@ impl Strategy for PyStrategyInner {
         );
     }
 
+    fn on_order_modify_denied(&mut self, event: OrderModifyDenied) {
+        self.logger.log_callback_error(
+            "on_order_modify_denied",
+            self.dispatch_on_order_modify_denied(event),
+        );
+    }
+
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
         self.logger.log_callback_error(
             "on_order_modify_rejected",
             self.dispatch_on_order_modify_rejected(event),
+        );
+    }
+
+    fn on_order_cancel_denied(&mut self, event: OrderCancelDenied) {
+        self.logger.log_callback_error(
+            "on_order_cancel_denied",
+            self.dispatch_on_order_cancel_denied(event),
         );
     }
 
@@ -2453,8 +2487,16 @@ impl PyStrategy {
     fn py_on_order_pending_cancel(_slf: &Bound<'_, Self>, event: OrderPendingCancel) {}
 
     #[allow(unused_variables)]
+    #[pyo3(name = "on_order_modify_denied")]
+    fn py_on_order_modify_denied(_slf: &Bound<'_, Self>, event: OrderModifyDenied) {}
+
+    #[allow(unused_variables)]
     #[pyo3(name = "on_order_modify_rejected")]
     fn py_on_order_modify_rejected(_slf: &Bound<'_, Self>, event: OrderModifyRejected) {}
+
+    #[allow(unused_variables)]
+    #[pyo3(name = "on_order_cancel_denied")]
+    fn py_on_order_cancel_denied(_slf: &Bound<'_, Self>, event: OrderCancelDenied) {}
 
     #[allow(unused_variables)]
     #[pyo3(name = "on_order_cancel_rejected")]
@@ -4268,10 +4310,11 @@ mod tests {
             OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
         },
         events::{
-            OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEmulated,
-            OrderEventAny, OrderExpired, OrderInitialized, OrderModifyRejected, OrderPendingCancel,
-            OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
-            OrderUpdated, PositionChanged, PositionClosed, PositionEvent, PositionOpened,
+            OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+            OrderEmulated, OrderEventAny, OrderExpired, OrderInitialized, OrderModifyDenied,
+            OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected,
+            OrderReleased, OrderSubmitted, OrderTriggered, OrderUpdated, PositionChanged,
+            PositionClosed, PositionEvent, PositionOpened,
             order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
         },
         identifiers::{
@@ -4352,7 +4395,9 @@ class TrackingStrategy:
         "on_order_triggered",
         "on_order_pending_update",
         "on_order_pending_cancel",
+        "on_order_modify_denied",
         "on_order_modify_rejected",
+        "on_order_cancel_denied",
         "on_order_cancel_rejected",
         "on_order_updated",
         "on_order_canceled",
@@ -6772,7 +6817,9 @@ class IndicatorEventStrategy:
     #[case("on_order_triggered")]
     #[case("on_order_pending_update")]
     #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_denied")]
     #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_denied")]
     #[case("on_order_cancel_rejected")]
     #[case("on_order_updated")]
     #[case("on_order_canceled")]
@@ -6871,10 +6918,24 @@ class IndicatorEventStrategy:
                         );
                         Ok(())
                     }
+                    "on_order_modify_denied" => {
+                        Strategy::on_order_modify_denied(
+                            rust_strategy.inner_mut(),
+                            OrderModifyDenied::default(),
+                        );
+                        Ok(())
+                    }
                     "on_order_modify_rejected" => {
                         Strategy::on_order_modify_rejected(
                             rust_strategy.inner_mut(),
                             OrderModifyRejected::default(),
+                        );
+                        Ok(())
+                    }
+                    "on_order_cancel_denied" => {
+                        Strategy::on_order_cancel_denied(
+                            rust_strategy.inner_mut(),
+                            OrderCancelDenied::default(),
                         );
                         Ok(())
                     }
@@ -7109,7 +7170,9 @@ class IndicatorEventStrategy:
     #[case("on_order_triggered")]
     #[case("on_order_pending_update")]
     #[case("on_order_pending_cancel")]
+    #[case("on_order_modify_denied")]
     #[case("on_order_modify_rejected")]
+    #[case("on_order_cancel_denied")]
     #[case("on_order_cancel_rejected")]
     #[case("on_order_updated")]
     #[case("on_order_canceled")]
@@ -7171,8 +7234,14 @@ class IndicatorEventStrategy:
                 "on_order_pending_cancel" => {
                     Some(OrderPendingCancel::default().into_py_any(py).unwrap())
                 }
+                "on_order_modify_denied" => {
+                    Some(OrderModifyDenied::default().into_py_any(py).unwrap())
+                }
                 "on_order_modify_rejected" => {
                     Some(OrderModifyRejected::default().into_py_any(py).unwrap())
+                }
+                "on_order_cancel_denied" => {
+                    Some(OrderCancelDenied::default().into_py_any(py).unwrap())
                 }
                 "on_order_cancel_rejected" => {
                     Some(OrderCancelRejected::default().into_py_any(py).unwrap())

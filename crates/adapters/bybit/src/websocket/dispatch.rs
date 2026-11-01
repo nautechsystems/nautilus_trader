@@ -101,6 +101,7 @@ pub type PendingRequestData = (
     Vec<ClientOrderId>,
     Vec<Option<VenueOrderId>>,
     PendingOperation,
+    Vec<Option<UUID4>>,
 );
 
 /// Snapshot of an order's price, quantity, and trigger price at last dispatch.
@@ -274,6 +275,9 @@ pub fn dispatch_ws_message(
                     Err(e) => log::error!("Failed to parse position status report: {e}"),
                 }
             }
+        }
+        BybitWsMessage::OrderNotSent { request_id, reason } => {
+            dispatch_order_not_sent(request_id, reason, emitter, state, clock.get_time_ns());
         }
         BybitWsMessage::OrderResponse(resp) => {
             let ts_init = clock.get_time_ns();
@@ -857,7 +861,7 @@ fn dispatch_order_response(
             .and_then(|rid| state.pending_requests.remove(rid))
             .map(|(_, v)| v);
 
-        if let Some((cids, voids, pending_op)) = pending {
+        if let Some((cids, voids, pending_op, command_ids)) = pending {
             let batch_errors = resp.extract_batch_errors();
             let data_array = resp.data.as_array();
 
@@ -909,6 +913,7 @@ fn dispatch_order_response(
                     emitter,
                     state,
                     ts_init,
+                    command_ids.get(idx).copied().flatten(),
                 );
             }
         }
@@ -923,11 +928,13 @@ fn dispatch_order_response(
         .map(|(_, v)| v);
 
     let is_batch_response = is_batch_order_op(resp.op.as_str())
-        || pending.as_ref().is_some_and(|(cids, _, _)| cids.len() > 1);
+        || pending
+            .as_ref()
+            .is_some_and(|(cids, _, _, _)| cids.len() > 1);
 
     if is_batch_response {
         if is_bybit_ambiguous_order_error_code(resp.ret_code) {
-            let order_count = pending.as_ref().map_or(0, |(cids, _, _)| cids.len());
+            let order_count = pending.as_ref().map_or(0, |(cids, _, _, _)| cids.len());
             log::warn!(
                 "Ambiguous batch order response failure for {order_count} orders: op={}, ret_code={}, ret_msg={}; awaiting reconciliation",
                 resp.op,
@@ -937,7 +944,7 @@ fn dispatch_order_response(
             return;
         }
 
-        let Some((client_order_ids, venue_order_ids, pending_op)) = pending else {
+        let Some((client_order_ids, venue_order_ids, pending_op, command_ids)) = pending else {
             log::warn!(
                 "Batch order response error without correlation: op={}, ret_code={}, ret_msg={}, req_id={:?}",
                 resp.op,
@@ -970,6 +977,7 @@ fn dispatch_order_response(
                 emitter,
                 state,
                 ts_init,
+                command_ids.get(index).copied().flatten(),
             );
         }
         return;
@@ -987,7 +995,7 @@ fn dispatch_order_response(
 
     let effective_op = pending
         .as_ref()
-        .map(|(_, _, op)| *op)
+        .map(|(_, _, op, _)| *op)
         .or_else(|| pending_op_from_str(resp.op.as_str()))
         .unwrap_or_else(|| {
             log::warn!("Unknown order operation '{}', defaulting to Place", resp.op);
@@ -998,12 +1006,12 @@ fn dispatch_order_response(
     let client_order_id = extract_order_link_id_from_data(&resp.data).or_else(|| {
         pending
             .as_ref()
-            .and_then(|(cids, _, _)| cids.first().copied())
+            .and_then(|(cids, _, _, _)| cids.first().copied())
     });
 
     let stored_venue_order_id = pending
         .as_ref()
-        .and_then(|(_, voids, _)| voids.first().and_then(|v| *v));
+        .and_then(|(_, voids, _, _)| voids.first().and_then(|v| *v));
 
     let Some(client_order_id) = client_order_id else {
         log::warn!(
@@ -1039,7 +1047,72 @@ fn dispatch_order_response(
         emitter,
         state,
         ts_init,
+        pending.as_ref().and_then(|(cids, _, _, command_ids)| {
+            cids.iter()
+                .position(|id| *id == client_order_id)
+                .and_then(|index| command_ids.get(index).copied().flatten())
+        }),
     );
+}
+
+fn dispatch_order_not_sent(
+    request_id: &str,
+    reason: &str,
+    emitter: &ExecutionEventEmitter,
+    state: &WsDispatchState,
+    ts_init: UnixNanos,
+) {
+    let Some((_, (client_order_ids, venue_order_ids, operation, command_ids))) =
+        state.pending_requests.remove(request_id)
+    else {
+        log::warn!("Unsent order command has no request correlation: {request_id}");
+        return;
+    };
+
+    for (index, client_order_id) in client_order_ids.into_iter().enumerate() {
+        let Some(identity) = state
+            .order_identities
+            .get(&client_order_id)
+            .map(|entry| entry.clone())
+        else {
+            continue;
+        };
+
+        let venue_order_id = venue_order_ids.get(index).copied().flatten();
+        let causation_id = command_ids.get(index).copied().flatten();
+
+        match operation {
+            PendingOperation::Place => emit_rejection_for_op(
+                &operation,
+                client_order_id,
+                &identity,
+                venue_order_id,
+                reason,
+                emitter,
+                state,
+                ts_init,
+                causation_id,
+            ),
+            PendingOperation::Amend => emitter.emit_order_modify_denied_event(
+                identity.strategy_id,
+                identity.instrument_id,
+                client_order_id,
+                venue_order_id,
+                reason,
+                ts_init,
+                causation_id,
+            ),
+            PendingOperation::Cancel => emitter.emit_order_cancel_denied_event(
+                identity.strategy_id,
+                identity.instrument_id,
+                client_order_id,
+                venue_order_id,
+                reason,
+                ts_init,
+                causation_id,
+            ),
+        }
+    }
 }
 
 /// Emits the appropriate rejection event based on the pending operation type.
@@ -1053,6 +1126,7 @@ fn emit_rejection_for_op(
     emitter: &ExecutionEventEmitter,
     state: &WsDispatchState,
     ts_init: UnixNanos,
+    causation_id: Option<UUID4>,
 ) {
     match pending_op {
         PendingOperation::Place => {
@@ -1075,6 +1149,7 @@ fn emit_rejection_for_op(
                 venue_order_id,
                 reason,
                 ts_init,
+                causation_id,
             );
         }
         PendingOperation::Amend => {
@@ -1085,6 +1160,7 @@ fn emit_rejection_for_op(
                 venue_order_id,
                 reason,
                 ts_init,
+                causation_id,
             );
         }
     }
@@ -2592,6 +2668,7 @@ mod tests {
             &ctx.emitter,
             &ctx.state,
             UnixNanos::from(1u64),
+            None,
         );
 
         assert!(!ctx.state.order_identities.contains_key(&cid));
@@ -2625,18 +2702,15 @@ mod tests {
         ctx.state.order_identities.insert(cid, default_identity());
         ctx.state.pending_requests.insert(
             "req-not-sent".to_string(),
-            (vec![cid], vec![None], PendingOperation::Place),
+            (vec![cid], vec![None], PendingOperation::Place, Vec::new()),
         );
-        let response = order_response(
-            BYBIT_OP_ORDER_CREATE,
-            -1,
-            "Order command was not written",
+        dispatch_order_not_sent(
             "req-not-sent",
-            serde_json::json!({}),
-            None,
+            "Order command was not written",
+            &ctx.emitter,
+            &ctx.state,
+            UnixNanos::from(1u64),
         );
-
-        dispatch_order_response(&response, &ctx.emitter, &ctx.state, UnixNanos::from(1u64));
 
         let event = ctx.rx.try_recv().expect("expected OrderRejected event");
         assert!(
@@ -2650,8 +2724,73 @@ mod tests {
     }
 
     #[rstest]
+    #[case::modify(PendingOperation::Amend)]
+    #[case::cancel(PendingOperation::Cancel)]
+    fn test_dispatch_local_refusal_preserves_each_command(#[case] operation: PendingOperation) {
+        let mut ctx = DispatchTestContext::new();
+        let first = ClientOrderId::from("O-LOCAL-FIRST");
+        let second = ClientOrderId::from("O-LOCAL-SECOND");
+        let first_cause = UUID4::new();
+        let second_cause = UUID4::new();
+        let venue_order_id = VenueOrderId::from("V-LOCAL-FIRST");
+        ctx.state.order_identities.insert(first, default_identity());
+        ctx.state
+            .order_identities
+            .insert(second, default_identity());
+        ctx.state.pending_requests.insert(
+            "req-local".to_string(),
+            (
+                vec![first, second],
+                vec![Some(venue_order_id), None],
+                operation,
+                vec![Some(first_cause), Some(second_cause)],
+            ),
+        );
+        dispatch_order_not_sent(
+            "req-local",
+            "Command was not written",
+            &ctx.emitter,
+            &ctx.state,
+            UnixNanos::from(17),
+        );
+
+        for (client_order_id, cause, venue) in [
+            (first, first_cause, Some(venue_order_id)),
+            (second, second_cause, None),
+        ] {
+            let ExecutionEvent::Order(event) = ctx.rx.try_recv().unwrap() else {
+                panic!("expected order outcome")
+            };
+
+            let (actual_cause, reason) = match (operation, &event) {
+                (PendingOperation::Amend, OrderEventAny::ModifyDenied(event)) => {
+                    (event.causation_id, event.reason.as_str())
+                }
+                (PendingOperation::Cancel, OrderEventAny::CancelDenied(event)) => {
+                    (event.causation_id, event.reason.as_str())
+                }
+                _ => panic!("unexpected refusal {event:?}"),
+            };
+
+            assert_eq!(actual_cause, Some(cause));
+            assert_eq!(reason, "Command was not written");
+            assert_eq!(event.client_order_id(), client_order_id);
+            assert_eq!(event.venue_order_id(), venue);
+            assert_eq!(event.strategy_id(), default_identity().strategy_id);
+            assert_eq!(event.instrument_id(), default_identity().instrument_id);
+            assert_eq!(event.ts_event(), UnixNanos::from(17));
+        }
+
+        assert!(ctx.rx.try_recv().is_err());
+        assert!(!ctx.state.pending_requests.contains_key("req-local"));
+        assert!(ctx.state.order_identities.contains_key(&first));
+        assert!(ctx.state.order_identities.contains_key(&second));
+    }
+
+    #[rstest]
     fn test_dispatch_single_cancel_rejection_emits_cancel_rejected() {
         let mut ctx = DispatchTestContext::new();
+        let cause = UUID4::new();
         let cid = ClientOrderId::from("cancel-reject-1");
         let venue_order_id = VenueOrderId::from("venue-cancel-1");
         ctx.state.order_identities.insert(cid, default_identity());
@@ -2661,6 +2800,7 @@ mod tests {
                 vec![cid],
                 vec![Some(venue_order_id)],
                 PendingOperation::Cancel,
+                vec![Some(cause)],
             ),
         );
 
@@ -2680,7 +2820,7 @@ mod tests {
 
         let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) if rejected.client_order_id == cid),
+            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) if rejected.client_order_id == cid && rejected.causation_id == Some(cause)),
             "Expected CancelRejected for {cid}, found {event:?}"
         );
         assert!(
@@ -2692,6 +2832,7 @@ mod tests {
     #[rstest]
     fn test_dispatch_single_modify_rejection_emits_modify_rejected() {
         let mut ctx = DispatchTestContext::new();
+        let cause = UUID4::new();
         let cid = ClientOrderId::from("modify-reject-1");
         let venue_order_id = VenueOrderId::from("venue-modify-1");
         ctx.state.order_identities.insert(cid, default_identity());
@@ -2701,6 +2842,7 @@ mod tests {
                 vec![cid],
                 vec![Some(venue_order_id)],
                 PendingOperation::Amend,
+                vec![Some(cause)],
             ),
         );
 
@@ -2720,7 +2862,7 @@ mod tests {
 
         let event = ctx.rx.try_recv().expect("expected ModifyRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyRejected(ref rejected)) if rejected.client_order_id == cid),
+            matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyRejected(ref rejected)) if rejected.client_order_id == cid && rejected.causation_id == Some(cause)),
             "Expected ModifyRejected for {cid}, found {event:?}"
         );
         assert!(
@@ -2741,6 +2883,7 @@ mod tests {
                 vec![cid],
                 vec![Some(venue_order_id)],
                 PendingOperation::Cancel,
+                Vec::new(),
             ),
         );
 
@@ -2779,6 +2922,7 @@ mod tests {
                 vec![cid],
                 vec![Some(venue_order_id)],
                 PendingOperation::Amend,
+                Vec::new(),
             ),
         );
 
@@ -2819,6 +2963,7 @@ mod tests {
                     Some(VenueOrderId::from("venue-batch-2")),
                 ],
                 PendingOperation::Cancel,
+                Vec::new(),
             ),
         );
 
@@ -2852,6 +2997,7 @@ mod tests {
                 vec![cid],
                 vec![Some(VenueOrderId::from("venue-batch-single"))],
                 PendingOperation::Cancel,
+                Vec::new(),
             ),
         );
 
@@ -2888,6 +3034,7 @@ mod tests {
                 vec![cid_1, cid_2],
                 vec![Some(venue_1), Some(venue_2)],
                 PendingOperation::Cancel,
+                Vec::new(),
             ),
         );
 
@@ -2915,10 +3062,18 @@ mod tests {
     }
 
     #[rstest]
-    fn test_dispatch_batch_cancel_per_item_error_emits_only_failed_item() {
+    fn test_dispatch_batch_cancel_per_item_error_emits_only_failed_item(
+        #[values(false, true)] repeated: bool,
+    ) {
         let mut ctx = DispatchTestContext::new();
         let cid_1 = ClientOrderId::from("batch-cancel-ok");
-        let cid_2 = ClientOrderId::from("batch-cancel-reject");
+        let cid_2 = if repeated {
+            cid_1
+        } else {
+            ClientOrderId::from("batch-cancel-reject")
+        };
+
+        let causes = [UUID4::new(), UUID4::new()];
         ctx.state.order_identities.insert(cid_1, default_identity());
         ctx.state.order_identities.insert(cid_2, default_identity());
         ctx.state.pending_requests.insert(
@@ -2930,6 +3085,7 @@ mod tests {
                     Some(VenueOrderId::from("venue-batch-reject")),
                 ],
                 PendingOperation::Cancel,
+                causes.into_iter().map(Some).collect(),
             ),
         );
 
@@ -2956,7 +3112,7 @@ mod tests {
 
         let event = ctx.rx.try_recv().expect("expected CancelRejected event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) if rejected.client_order_id == cid_2),
+            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected)) if rejected.client_order_id == cid_2 && rejected.causation_id == Some(causes[1])),
             "Expected CancelRejected for failed batch item {cid_2}, found {event:?}"
         );
         assert!(
@@ -2977,6 +3133,7 @@ mod tests {
                 vec![cid],
                 vec![Some(venue_order_id)],
                 PendingOperation::Cancel,
+                Vec::new(),
             ),
         );
 
