@@ -184,6 +184,7 @@ async fn run_account_summary_stream<S, O, F, T>(
     F: Future<Output = anyhow::Result<S>>,
 {
     let mut subscription = initial;
+    let mut quiet = Some(ACCOUNT_SUMMARY_QUIET);
 
     loop {
         loop {
@@ -193,13 +194,15 @@ async fn run_account_summary_stream<S, O, F, T>(
                     &mut subscription,
                     ib_account,
                     &mut accumulator,
-                    Some(ACCOUNT_SUMMARY_QUIET),
+                    quiet,
                 ) => refreshed,
             };
 
             if !refreshed {
                 break;
             }
+
+            quiet = Some(ACCOUNT_SUMMARY_QUIET);
 
             let snapshot = tokio::select! {
                 () = cancel.cancelled() => return,
@@ -246,6 +249,7 @@ async fn run_account_summary_stream<S, O, F, T>(
 
         // Drop rows the new subscription no longer reports
         accumulator = AccountSummaryAccumulator::default();
+        quiet = None;
         tracing::info!(
             "IB account summary stream reopened for account: {}",
             ib_account
@@ -950,10 +954,11 @@ mod tests {
     use tokio_util::sync::CancellationToken;
 
     use super::{
-        AccountSummaryAccumulator, AccountSummaryTags, check_external_position_change,
-        create_position_tracker, finalize_account_summary_balances, ib_account_code,
-        merge_account_summary_balance, merge_account_summary_margin, merge_account_value,
-        parse_currency, read_account_summary_cycle, record_own_fill, run_account_summary_stream,
+        ACCOUNT_SUMMARY_QUIET, AccountSummaryAccumulator, AccountSummaryTags,
+        check_external_position_change, create_position_tracker, finalize_account_summary_balances,
+        ib_account_code, merge_account_summary_balance, merge_account_summary_margin,
+        merge_account_value, parse_currency, read_account_summary_cycle, record_own_fill,
+        run_account_summary_stream,
     };
     use crate::execution::updates::RebindDelays;
 
@@ -1413,6 +1418,101 @@ mod tests {
 
         assert_eq!(seen, vec![Decimal::new(100050, 2), Decimal::new(110025, 2)]);
         assert_eq!(open_calls, 2);
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_run_account_summary_stream_waits_for_reopened_snapshot_end() {
+        let reopened = stream::iter([
+            net_liquidation_summary("1100.25"),
+            AccountSummaryResult::Summary(margin_summary(
+                AccountSummaryTags::AVAILABLE_FUNDS,
+                "700.10",
+                "USD",
+            )),
+            AccountSummaryResult::Summary(margin_summary(
+                AccountSummaryTags::INIT_MARGIN_REQ,
+                "250.20",
+                "USD",
+            )),
+            AccountSummaryResult::Summary(margin_summary(
+                AccountSummaryTags::MAINT_MARGIN_REQ,
+                "150.30",
+                "USD",
+            )),
+            AccountSummaryResult::End,
+            AccountSummaryResult::Summary(margin_summary(
+                AccountSummaryTags::AVAILABLE_FUNDS,
+                "650.05",
+                "USD",
+            )),
+        ])
+        .then(|row| async move {
+            tokio::time::sleep(ACCOUNT_SUMMARY_QUIET * 2).await;
+            Ok(row)
+        })
+        .chain(stream::pending())
+        .boxed();
+
+        let mut reopened = Some(reopened);
+        let open = || {
+            let next = reopened.take().expect("unexpected open");
+            async move { Ok(next) }
+        };
+
+        let cancel = CancellationToken::new();
+        let started = tokio::time::Instant::now();
+        let mut seen = Vec::new();
+        let on_snapshot = |snapshot| {
+            seen.push((started.elapsed(), snapshot));
+            if seen.len() == 2 {
+                cancel.cancel();
+            }
+        };
+
+        run_account_summary_stream(
+            stream::empty().boxed(),
+            open,
+            async |accumulator: &AccountSummaryAccumulator| {
+                let balances = finalize_account_summary_balances(accumulator.balances.clone())?;
+                Ok((balances, accumulator.margins.clone()))
+            },
+            on_snapshot,
+            AccountSummaryAccumulator::default(),
+            ustr::Ustr::from("DU123"),
+            cancel.clone(),
+            TEST_DELAYS,
+        )
+        .await;
+
+        let margin = MarginBalance::new(Money::from("250.20 USD"), Money::from("150.30 USD"), None);
+        assert_eq!(
+            seen,
+            vec![
+                (
+                    TEST_DELAYS.after_stream + ACCOUNT_SUMMARY_QUIET * 10,
+                    (
+                        vec![AccountBalance::new(
+                            Money::from("1100.25 USD"),
+                            Money::from("400.15 USD"),
+                            Money::from("700.10 USD"),
+                        )],
+                        vec![margin],
+                    ),
+                ),
+                (
+                    TEST_DELAYS.after_stream + ACCOUNT_SUMMARY_QUIET * 13,
+                    (
+                        vec![AccountBalance::new(
+                            Money::from("1100.25 USD"),
+                            Money::from("450.20 USD"),
+                            Money::from("650.05 USD"),
+                        )],
+                        vec![margin],
+                    ),
+                ),
+            ],
+        );
     }
 
     #[rstest]
