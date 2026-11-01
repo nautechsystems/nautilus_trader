@@ -42,6 +42,7 @@ use axum::{
 use nautilus_common::{
     cache::Cache,
     clients::ExecutionClient,
+    clock::{Clock, VirtualClock},
     live::runner::set_exec_event_sender,
     messages::{
         ExecutionEvent,
@@ -58,14 +59,23 @@ use nautilus_kraken::{
     common::{
         consts::{KRAKEN_CLIENT_ID, KRAKEN_VENUE},
         enums::{KrakenEnvironment, KrakenProductType},
+        parse::{parse_spot_instrument, parse_tokenized_instrument},
     },
     config::KrakenExecutionClientConfig,
     execution::{KrakenFuturesExecutionClient, KrakenSpotExecutionClient},
+    http::spot::models::{AssetPairInfo, AssetPairsResponse, KrakenResponse},
 };
-use nautilus_live::ExecutionClientCore;
+use nautilus_live::{
+    ExecutionClientCore,
+    manager::{ExecutionManager, ExecutionManagerConfig},
+    testing::ExecutionHarness,
+};
 use nautilus_model::{
     accounts::{AccountAny, CashAccount, MarginAccount},
-    enums::{AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, TimeInForce},
+    enums::{
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce,
+    },
     events::{
         AccountState, OrderAccepted, OrderDenied, OrderEventAny, OrderFilled, OrderPendingCancel,
         OrderRejected, OrderSubmitted,
@@ -74,17 +84,20 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, Symbol,
         TradeId, TraderId, VenueOrderId,
     },
-    instruments::{CurrencyPair, InstrumentAny},
+    instruments::{CurrencyPair, Instrument, InstrumentAny},
     orders::{
         LimitOrder, Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs,
     },
     position::Position,
-    reports::OrderStatusReport,
+    reports::{ExecutionMassStatus, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
+use rust_decimal::Decimal;
+use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 #[derive(Debug, Clone, Copy, Default)]
 enum SingleCancelResponse {
@@ -158,6 +171,8 @@ struct TestServerState {
     futures_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// When set, `/0/private/OpenOrders` returns this JSON instead of `http_open_orders.json`.
     spot_open_orders_json: Arc<tokio::sync::Mutex<Option<String>>>,
+    /// When set, `/0/private/Balance` returns this JSON instead of `http_spot_balance.json`.
+    spot_balance_json: Arc<tokio::sync::Mutex<Option<String>>>,
     /// Served by `/derivatives/api/v3/openorders` one per request, ahead of the override.
     futures_open_orders_sequence: Arc<tokio::sync::Mutex<VecDeque<String>>>,
     /// When set, `/derivatives/api/v3/openpositions` returns this JSON.
@@ -211,6 +226,7 @@ impl Default for TestServerState {
             fills_response: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
             spot_open_orders_json: Arc::new(tokio::sync::Mutex::new(None)),
+            spot_balance_json: Arc::new(tokio::sync::Mutex::new(None)),
             futures_open_orders_sequence: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
             futures_open_positions_json: Arc::new(tokio::sync::Mutex::new(None)),
             futures_order_history_json: Arc::new(tokio::sync::Mutex::new(None)),
@@ -619,7 +635,14 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
         "/0/private/TradeBalance" => {
             json_response(load_test_data("http_spot_trade_balance.json"))
         }
-        "/0/private/Balance" => json_response(load_test_data("http_spot_balance.json")),
+        "/0/private/Balance" => {
+            let response = state.spot_balance_json.lock().await;
+            json_response(
+                response
+                    .clone()
+                    .unwrap_or_else(|| load_test_data("http_spot_balance.json")),
+            )
+        }
         "/0/private/BalanceEx" => json_response(load_test_data("http_spot_balance_ex.json")),
         "/0/private/AddOrder" => {
             state.submit_request_count.fetch_add(1, Ordering::Relaxed);
@@ -986,6 +1009,18 @@ fn create_test_spot_wallet_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_spot_wallet_execution_client_with(addr, |_| {})
+}
+
+/// As [`create_test_spot_wallet_execution_client`], with `configure` applied to the config.
+fn create_test_spot_wallet_execution_client_with(
+    addr: SocketAddr,
+    configure: impl FnOnce(&mut KrakenExecutionClientConfig),
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let cache = Rc::new(RefCell::new(Cache::default()));
     let core = ExecutionClientCore::new(
         test_trader_id(),
@@ -997,10 +1032,11 @@ fn create_test_spot_wallet_execution_client(
         None,
         cache.clone(),
     );
-    let config = KrakenExecutionClientConfig {
+    let mut config = KrakenExecutionClientConfig {
         use_spot_position_reports: true,
         ..create_test_spot_exec_config(addr)
     };
+    configure(&mut config);
 
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     set_exec_event_sender(tx);
@@ -1319,6 +1355,1747 @@ async fn test_spot_bulk_position_coverage_follows_the_wallet_read() {
     assert!(
         !cash.provides_bulk_position_coverage(InstrumentId::from("BTC/USDT.KRAKEN")),
         "cash mode without `use_spot_position_reports` reports no positions at all"
+    );
+}
+
+const EMPTY_SPOT_OPEN_ORDERS: &str = r#"{"error":[],"result":{"open":{}}}"#;
+const CACHED_SELL_TXID: &str = "OCLOSE-AAAAA-AAAAAA";
+
+fn spot_balance_json(rows: &[(&str, &str)]) -> String {
+    let entries: Vec<String> = rows
+        .iter()
+        .map(|(key, amount)| format!(r#""{key}":"{amount}""#))
+        .collect();
+    format!(r#"{{"error":[],"result":{{{}}}}}"#, entries.join(","))
+}
+
+/// One open XBTUSDT order on `side` at the venue in Kraken status `status`.
+fn spot_open_order_json(side: OrderSide, status: &str) -> String {
+    let mut value: Value = serde_json::from_str(&load_test_data("http_open_orders.json")).unwrap();
+    let mut order = value["result"]["open"]["O26VBY-ISGAE-JP5TLU"].clone();
+    order["status"] = json!(status);
+    order["descr"]["type"] = json!(match side {
+        OrderSide::Sell => "sell",
+        _ => "buy",
+    });
+    value["result"]["open"] = json!({ "OOPEN-BBBBB-BBBBBB": order });
+    value.to_string()
+}
+
+/// One filled XBTUSDT SELL in `ClosedOrders`, under `txid`.
+fn spot_closed_sell_json(txid: &str) -> String {
+    let mut value: Value = serde_json::from_str(&spot_closed_orders_json(&["XBTUSDT"])).unwrap();
+    let mut order = value["result"]["closed"]["OCLOSED-0"].clone();
+    order["descr"]["type"] = json!("sell");
+    value["result"]["closed"] = json!({ txid: order });
+    value.to_string()
+}
+
+fn asset_pair_definition(fixture: &str, pair: &str) -> AssetPairInfo {
+    let response: KrakenResponse<AssetPairsResponse> =
+        serde_json::from_str(&load_test_data(fixture)).unwrap();
+    response.result.unwrap()[pair].clone()
+}
+
+/// `BTC/USDT` as the adapter parses it, so the engine and HTTP caches agree on precision.
+fn btcusdt_spot_instrument() -> InstrumentAny {
+    let definition = asset_pair_definition("http_asset_pairs.json", "XBTUSDT");
+    parse_spot_instrument(
+        "XBTUSDT",
+        &definition,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+    .unwrap()
+}
+
+fn aaplx_usd_tokenized_instrument() -> InstrumentAny {
+    let definition = asset_pair_definition("http_asset_pairs_tokenized.json", "AAPLxUSD");
+    parse_tokenized_instrument(
+        "AAPLxUSD",
+        &definition,
+        UnixNanos::default(),
+        UnixNanos::default(),
+    )
+    .unwrap()
+}
+
+/// Caches a netting position of 0.5 on `instrument` for the test strategy, opened by one filled
+/// order at 29000 with a 2.90 commission in the quote currency.
+fn add_retained_spot_position(
+    cache: &Rc<RefCell<Cache>>,
+    instrument: &InstrumentAny,
+    account_id: AccountId,
+    side: OrderSide,
+) -> Position {
+    let strategy_id = test_strategy_id();
+    let position_id = PositionId::from(format!("{}-{strategy_id}", instrument.id()));
+    let quantity = Quantity::from_decimal_dp(dec!(0.5), instrument.size_precision()).unwrap();
+    let opening = OrderTestBuilder::new(OrderType::Market)
+        .trader_id(test_trader_id())
+        .strategy_id(strategy_id)
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("O-OPEN"))
+        .side(side)
+        .quantity(quantity)
+        .build();
+    let fill = TestOrderEventStubs::filled(
+        &opening,
+        instrument,
+        Some(TradeId::from("T-OPEN")),
+        Some(position_id),
+        Some(Price::from_decimal_dp(dec!(29000.0), instrument.price_precision()).unwrap()),
+        Some(quantity),
+        Some(LiquiditySide::Taker),
+        Some(Money::from_decimal(dec!(2.90), instrument.quote_currency()).unwrap()),
+        Some(UnixNanos::from(1_000_000_000)),
+        Some(account_id),
+    );
+    let accepted = TestOrderEventStubs::accepted(
+        &opening,
+        account_id,
+        VenueOrderId::from("OOPEN-AAAAA-AAAAAA"),
+    );
+    let position = Position::new(instrument, fill.clone().into());
+    let mut cache = cache.borrow_mut();
+    cache.add_position(&position, OmsType::Netting).unwrap();
+    cache
+        .add_order(opening, None, Some(*KRAKEN_CLIENT_ID), false)
+        .unwrap();
+    cache.update_order(&accepted).unwrap();
+    cache.update_order(&fill).unwrap();
+    position
+}
+
+/// Caches `BTC/USDT` in the engine and a retained LONG on it for the test account.
+fn add_retained_btcusdt_long(cache: &Rc<RefCell<Cache>>) -> InstrumentId {
+    let instrument = btcusdt_spot_instrument();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    add_retained_spot_position(cache, &instrument, test_account_id(), OrderSide::Buy);
+    instrument.id()
+}
+
+/// Starts the mock venue with no open orders and an unconnected wallet client whose engine cache
+/// holds the account.
+async fn wallet_startup_client(
+    configure: impl FnOnce(&mut KrakenExecutionClientConfig),
+) -> (
+    KrakenSpotExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+    TestServerState,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.spot_open_orders_json.lock().await = Some(EMPTY_SPOT_OPEN_ORDERS.to_string());
+    let (client, rx, cache) = create_test_spot_wallet_execution_client_with(addr, configure);
+    add_test_spot_account_to_cache(&cache);
+    (client, rx, cache, state)
+}
+
+async fn connect_and_generate_mass_status(
+    client: &mut KrakenSpotExecutionClient,
+) -> anyhow::Result<ExecutionMassStatus> {
+    client.connect().await.unwrap();
+    Ok(client
+        .generate_mass_status(Some(60))
+        .await?
+        .expect("mass status available"))
+}
+
+/// Runs the startup mass status over `balance` with a retained `BTC/USDT` LONG.
+async fn wallet_startup_mass_status(
+    balance: &[(&str, &str)],
+) -> (ExecutionMassStatus, InstrumentId) {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    let instrument_id = add_retained_btcusdt_long(&cache);
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(balance));
+
+    let mass_status = connect_and_generate_mass_status(&mut client).await.unwrap();
+    (mass_status, instrument_id)
+}
+
+fn assert_flat_report(mass_status: &ExecutionMassStatus, instrument_id: InstrumentId) {
+    let reports = mass_status.position_reports();
+    let reports = reports
+        .get(&instrument_id)
+        .unwrap_or_else(|| panic!("no position report for {instrument_id}: {reports:?}"));
+    assert_eq!(reports.len(), 1, "{reports:?}");
+    let report = &reports[0];
+    assert_eq!(report.account_id, test_account_id());
+    assert_eq!(report.instrument_id, instrument_id);
+    assert_eq!(report.position_side, PositionSide::Flat);
+    assert_eq!(report.quantity, Quantity::zero(8));
+    assert_eq!(report.signed_decimal_qty, Decimal::ZERO);
+    assert_eq!(report.avg_px_open, None);
+    assert_eq!(report.venue_position_id, None);
+    assert_eq!(report.ts_last, report.ts_init);
+}
+
+fn assert_no_position_report(mass_status: &ExecutionMassStatus, instrument_id: InstrumentId) {
+    let reports = mass_status.position_reports();
+    assert!(
+        !reports.contains_key(&instrument_id),
+        "unexpected position report for {instrument_id}: {reports:?}"
+    );
+}
+
+/// What the startup wallet read reports for the retained `BTC/USDT` LONG.
+#[derive(Clone, Copy, Debug)]
+enum WalletOutcome {
+    Flat,
+    Long(&'static str),
+    NoReport,
+}
+
+fn assert_wallet_outcome(
+    mass_status: &ExecutionMassStatus,
+    instrument_id: InstrumentId,
+    expected: WalletOutcome,
+) {
+    match expected {
+        WalletOutcome::Flat => assert_flat_report(mass_status, instrument_id),
+        WalletOutcome::NoReport => assert_no_position_report(mass_status, instrument_id),
+        WalletOutcome::Long(quantity) => {
+            let reports = mass_status.position_reports();
+            let reports = &reports[&instrument_id];
+            assert_eq!(reports.len(), 1, "{reports:?}");
+            assert_eq!(reports[0].position_side, PositionSide::Long);
+            assert_eq!(reports[0].quantity, Quantity::from(quantity));
+        }
+    }
+}
+
+/// A cached LONG is reported FLAT when its base rounds to zero at the instrument's size
+/// precision, whether the row is absent, zero or dust, and LONG while the wallet holds a lot.
+#[rstest]
+#[case::held(&[("XXBT", "0.5")], WalletOutcome::Long("0.50000000"))]
+#[case::absent(&[("ZUSD", "1.0")], WalletOutcome::Flat)]
+#[case::listed_zero(&[("XXBT", "0.0000000000")], WalletOutcome::Flat)]
+#[case::dust_below_half(&[("XXBT", "0.000000004")], WalletOutcome::Flat)]
+#[case::dust_exactly_half(&[("XXBT", "0.000000005")], WalletOutcome::Flat)]
+#[case::dust_above_half(&[("XXBT", "0.000000006")], WalletOutcome::Long("0.00000001"))]
+#[case::empty_balance(&[], WalletOutcome::Flat)]
+#[tokio::test]
+async fn test_spot_startup_flat_report_follows_the_wallet_balance(
+    #[case] balance: &[(&str, &str)],
+    #[case] expected: WalletOutcome,
+) {
+    let (mass_status, instrument_id) = wallet_startup_mass_status(balance).await;
+
+    assert_wallet_outcome(&mass_status, instrument_id, expected);
+}
+
+/// Every spelling of the base counts toward the holding, so no FLAT goes out while the spellings
+/// together hold a lot.
+#[rstest]
+#[case::nonzero_then_zero(&[("XXBT", "0.5"), ("XBT", "0")], WalletOutcome::Long("0.50000000"))]
+#[case::zero_then_nonzero(&[("XBT", "0"), ("XXBT", "0.5")], WalletOutcome::Long("0.50000000"))]
+#[case::nonzero_then_dust(&[("XBT", "0.5"), ("XXBT", "0.000000004")], WalletOutcome::NoReport)]
+#[tokio::test]
+async fn test_spot_startup_flat_report_reads_every_spelling_of_the_base(
+    #[case] balance: &[(&str, &str)],
+    #[case] expected: WalletOutcome,
+) {
+    let (mass_status, instrument_id) = wallet_startup_mass_status(balance).await;
+
+    assert_wallet_outcome(&mass_status, instrument_id, expected);
+}
+
+/// Suffixed, staked and term-staked rows of the base count toward the holding, summed with the
+/// base row before rounding, so they withhold the FLAT unless the sum is dust.
+#[rstest]
+#[case::xbt_f_held(&[("XBT.F", "0.5")], WalletOutcome::NoReport)]
+#[case::xxbt_f_held(&[("XXBT.F", "0.5")], WalletOutcome::NoReport)]
+#[case::staked_held(&[("XBT.S", "0.5")], WalletOutcome::NoReport)]
+#[case::staked_term_held(&[("XBT21.S", "0.5")], WalletOutcome::NoReport)]
+#[case::suffixed_dust(&[("XBT.F", "0.000000004")], WalletOutcome::Flat)]
+#[case::split_dust_sums_to_a_lot(
+    &[("XXBT", "0.000000004"), ("XBT.F", "0.000000004")],
+    WalletOutcome::NoReport
+)]
+#[tokio::test]
+async fn test_spot_startup_flat_report_respects_suffixed_balances(
+    #[case] balance: &[(&str, &str)],
+    #[case] expected: WalletOutcome,
+) {
+    let (mass_status, instrument_id) = wallet_startup_mass_status(balance).await;
+
+    assert_wallet_outcome(&mass_status, instrument_id, expected);
+}
+
+/// A row that counts toward the base of a retained position must parse and be non-negative, or
+/// the startup read fails, since the FLAT decision for that position rests on it.
+#[rstest]
+#[case::base(&[("XXBT", "abc")], "XXBT")]
+#[case::suffixed(&[("XBT.F", "abc")], "XBT.F")]
+#[case::staked_term(&[("XBT21.S", "abc")], "XBT21.S")]
+#[case::negative_suffixed(&[("XBT.F", "-0.5")], "XBT.F")]
+#[case::negative_offsets_held(&[("XXBT", "0.5"), ("XBT.F", "-0.5")], "XBT.F")]
+#[tokio::test]
+async fn test_spot_startup_fails_on_an_invalid_balance_of_a_retained_base(
+    #[case] balance: &[(&str, &str)],
+    #[case] key: &str,
+) {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    add_retained_btcusdt_long(&cache);
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(balance));
+
+    let error = connect_and_generate_mass_status(&mut client)
+        .await
+        .expect_err("an invalid balance of a retained base must fail the startup read");
+
+    assert!(format!("{error:#}").contains(key), "{error:#}");
+}
+
+/// An invalid row that no FLAT decision rests on keeps being skipped: a row of an asset no
+/// instrument covers, or of a covered base with no retained position.
+#[rstest]
+#[case::fee_credit(&[("KFEE", "abc")], true)]
+#[case::base_without_position(&[("XXBT", "abc")], false)]
+#[case::negative_suffixed_without_position(&[("XBT.F", "-0.5")], false)]
+#[tokio::test]
+async fn test_spot_startup_skips_an_invalid_balance_no_flat_rests_on(
+    #[case] balance: &[(&str, &str)],
+    #[case] retained: bool,
+) {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    let instrument_id = if retained {
+        add_retained_btcusdt_long(&cache)
+    } else {
+        btcusdt_spot_instrument().id()
+    };
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(balance));
+
+    let mass_status = connect_and_generate_mass_status(&mut client).await.unwrap();
+
+    if retained {
+        assert_flat_report(&mass_status, instrument_id);
+    } else {
+        assert_no_position_report(&mass_status, instrument_id);
+    }
+}
+
+/// A failed `Balance` read fails the startup mass status, so no FLAT goes out on it.
+#[rstest]
+#[tokio::test]
+async fn test_spot_startup_failed_balance_read_reports_nothing() {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    add_retained_btcusdt_long(&cache);
+    *state.spot_balance_json.lock().await =
+        Some(r#"{"error":["EGeneral:Internal error"]}"#.to_string());
+
+    let result = connect_and_generate_mass_status(&mut client).await;
+
+    assert!(result.is_err(), "{result:?}");
+}
+
+/// Where an order on the instrument stands when the startup reads run.
+#[derive(Clone, Copy, Debug)]
+enum Placement {
+    /// In `OpenOrders`, in this Kraken status.
+    Venue(&'static str),
+    CachedUnreported,
+    CachedReportedFilled,
+    CachedInflight,
+}
+
+/// A SELL on the instrument the startup reads show working, or a cached SELL they cannot place,
+/// withholds the FLAT. A cached SELL they report filled, and a BUY in any of those places, do not.
+#[rstest]
+#[case::open_venue_sell(OrderSide::Sell, Placement::Venue("open"), WalletOutcome::NoReport)]
+#[case::pending_venue_sell(OrderSide::Sell, Placement::Venue("pending"), WalletOutcome::NoReport)]
+#[case::cached_sell_without_report(
+    OrderSide::Sell,
+    Placement::CachedUnreported,
+    WalletOutcome::NoReport
+)]
+#[case::cached_sell_reported_filled(
+    OrderSide::Sell,
+    Placement::CachedReportedFilled,
+    WalletOutcome::Flat
+)]
+#[case::cached_inflight_sell(OrderSide::Sell, Placement::CachedInflight, WalletOutcome::NoReport)]
+#[case::open_venue_buy(OrderSide::Buy, Placement::Venue("open"), WalletOutcome::Flat)]
+#[case::cached_buy_without_report(OrderSide::Buy, Placement::CachedUnreported, WalletOutcome::Flat)]
+#[case::cached_inflight_buy(OrderSide::Buy, Placement::CachedInflight, WalletOutcome::Flat)]
+#[tokio::test]
+async fn test_spot_startup_withholds_flat_for_an_unplaced_sell(
+    #[case] side: OrderSide,
+    #[case] placement: Placement,
+    #[case] expected: WalletOutcome,
+) {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    let instrument_id = add_retained_btcusdt_long(&cache);
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(&[("ZUSD", "1.0")]));
+
+    match placement {
+        Placement::Venue(status) => {
+            *state.spot_open_orders_json.lock().await = Some(spot_open_order_json(side, status));
+        }
+        Placement::CachedUnreported | Placement::CachedReportedFilled => {
+            let order = add_spot_limit_order_with_side_to_cache(
+                &cache,
+                ClientOrderId::from("O-CACHED"),
+                instrument_id,
+                side,
+            );
+            mark_cached_order_submitted(&cache, &order);
+            set_venue_order_id_on_cached_order(&cache, &order, CACHED_SELL_TXID);
+
+            if matches!(placement, Placement::CachedReportedFilled) {
+                *state.closed_orders_json.lock().await =
+                    Some(spot_closed_sell_json(CACHED_SELL_TXID));
+            }
+        }
+        Placement::CachedInflight => {
+            let order = add_spot_limit_order_with_side_to_cache(
+                &cache,
+                ClientOrderId::from("O-CACHED"),
+                instrument_id,
+                side,
+            );
+            mark_cached_order_submitted(&cache, &order);
+        }
+    }
+
+    let mass_status = connect_and_generate_mass_status(&mut client).await.unwrap();
+
+    assert_wallet_outcome(&mass_status, instrument_id, expected);
+}
+
+/// A covered instrument missing from the engine cache gets no FLAT, since the engine would stop
+/// startup on its report.
+#[rstest]
+#[tokio::test]
+async fn test_spot_startup_withholds_flat_for_an_instrument_missing_from_cache() {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    let instrument = btcusdt_spot_instrument();
+    add_retained_spot_position(&cache, &instrument, test_account_id(), OrderSide::Buy);
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(&[("ZUSD", "1.0")]));
+
+    let mass_status = connect_and_generate_mass_status(&mut client).await.unwrap();
+
+    assert_no_position_report(&mass_status, instrument.id());
+    assert!(client.provides_bulk_position_coverage(instrument.id()));
+}
+
+/// A cached position, or its absence, outside what the startup FLAT may cover.
+#[derive(Clone, Copy, Debug)]
+enum FlatScope {
+    NoCachedPosition,
+    OtherAccount,
+    OutsideQuoteFilter,
+    WalletReportsDisabled,
+    Tokenized,
+}
+
+/// Startup FLATs are limited to this account's cached open positions on instruments the wallet
+/// read covers, excluding tokenized assets, whose rows are not parsed for the decision.
+#[rstest]
+#[case::no_cached_position(FlatScope::NoCachedPosition)]
+#[case::other_account(FlatScope::OtherAccount)]
+#[case::outside_quote_filter(FlatScope::OutsideQuoteFilter)]
+#[case::wallet_reports_disabled(FlatScope::WalletReportsDisabled)]
+#[case::tokenized(FlatScope::Tokenized)]
+#[tokio::test]
+async fn test_spot_startup_flat_report_is_scoped_to_cached_covered_positions(
+    #[case] scope: FlatScope,
+) {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|config| match scope {
+        FlatScope::OutsideQuoteFilter | FlatScope::Tokenized => {
+            config.spot_positions_quote_currency = "USD".to_string();
+        }
+        FlatScope::WalletReportsDisabled => config.use_spot_position_reports = false,
+        FlatScope::NoCachedPosition | FlatScope::OtherAccount => {}
+    })
+    .await;
+    let balance: &[(&str, &str)] = match scope {
+        FlatScope::Tokenized => &[("ZUSD", "1.0"), ("AAPLx", "abc")],
+        _ => &[("ZUSD", "1.0")],
+    };
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(balance));
+
+    let instrument = match scope {
+        FlatScope::Tokenized => aaplx_usd_tokenized_instrument(),
+        _ => btcusdt_spot_instrument(),
+    };
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+
+    match scope {
+        FlatScope::NoCachedPosition => {}
+        FlatScope::OtherAccount => {
+            add_retained_spot_position(
+                &cache,
+                &instrument,
+                AccountId::from("KRAKEN-002"),
+                OrderSide::Buy,
+            );
+        }
+        _ => {
+            add_retained_spot_position(&cache, &instrument, test_account_id(), OrderSide::Buy);
+        }
+    }
+
+    let mass_status = connect_and_generate_mass_status(&mut client).await.unwrap();
+
+    assert_no_position_report(&mass_status, instrument.id());
+    assert_eq!(
+        client.provides_bulk_position_coverage(instrument.id()),
+        matches!(
+            scope,
+            FlatScope::NoCachedPosition | FlatScope::OtherAccount | FlatScope::Tokenized
+        ),
+        "only the configuration cells leave the instrument uncovered"
+    );
+
+    if matches!(scope, FlatScope::WalletReportsDisabled) {
+        assert!(mass_status.position_reports().is_empty());
+    }
+}
+
+/// A zero wallet says nothing about a cached SHORT, which cash mode cannot hold at the venue, so
+/// it gets no FLAT.
+#[rstest]
+#[tokio::test]
+async fn test_spot_startup_flat_report_skips_a_cash_short() {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    let instrument = btcusdt_spot_instrument();
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    add_retained_spot_position(&cache, &instrument, test_account_id(), OrderSide::Sell);
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(&[("ZUSD", "1.0")]));
+
+    let mass_status = connect_and_generate_mass_status(&mut client).await.unwrap();
+
+    assert_no_position_report(&mass_status, instrument.id());
+    assert!(client.provides_bulk_position_coverage(instrument.id()));
+}
+
+/// An incomplete report window does not veto the FLAT.
+#[rstest]
+#[tokio::test]
+async fn test_spot_startup_flat_report_survives_an_incomplete_window() {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    let instrument_id = add_retained_btcusdt_long(&cache);
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(&[("ZUSD", "1.0")]));
+    *state.closed_orders_json.lock().await = Some(spot_closed_orders_json(&["DELISTEDPAIR"]));
+
+    let mass_status = connect_and_generate_mass_status(&mut client).await.unwrap();
+
+    assert!(!mass_status.reports_complete());
+    assert_flat_report(&mass_status, instrument_id);
+}
+
+/// Periodic position checks get no FLAT, since an absent report already means flat for a
+/// covered instrument there.
+#[rstest]
+#[tokio::test]
+async fn test_spot_periodic_position_reports_add_no_flat() {
+    let (mut client, _rx, cache, state) = wallet_startup_client(|_| {}).await;
+    let instrument_id = add_retained_btcusdt_long(&cache);
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(&[("ZUSD", "1.0")]));
+    client.connect().await.unwrap();
+
+    let reports = client
+        .generate_position_status_reports(&GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        ))
+        .await
+        .unwrap();
+
+    assert!(
+        reports
+            .iter()
+            .all(|report| report.instrument_id != instrument_id),
+        "{reports:?}"
+    );
+}
+
+const SOLD_OUT_BALANCE: &[(&str, &str)] = &[("ZUSD", "0.0000"), ("USDT", "15003.00000000")];
+const SOLD_OUT_LISTED_ZERO_BALANCE: &[(&str, &str)] = &[
+    ("ZUSD", "0.0000"),
+    ("USDT", "15003.00000000"),
+    ("XXBT", "0.0000000000"),
+];
+const CLOSE_TRADE_IDS: [&str; 2] = ["TCLOSE-AAAAA-000001", "TCLOSE-AAAAA-000002"];
+
+/// A fill of the offline close: `(trade txid, price, vol, cost, fee, time in Unix seconds)`.
+type CloseFill = (
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    &'static str,
+    u64,
+);
+
+fn now_secs() -> u64 {
+    get_atomic_clock_realtime().get_time_ns().as_u64() / 1_000_000_000
+}
+
+/// The two fills of the offline close, 0.2 at 30000.0 and 0.3 at 30010.0 with 3.00 USDT fees in
+/// all, inside the startup window.
+fn offline_close_fills(now: u64) -> [CloseFill; 2] {
+    [
+        (
+            CLOSE_TRADE_IDS[0],
+            "30000.0",
+            "0.20000000",
+            "6000.00000",
+            "1.20000",
+            now - 300,
+        ),
+        (
+            CLOSE_TRADE_IDS[1],
+            "30010.0",
+            "0.30000000",
+            "9003.00000",
+            "1.80000",
+            now - 240,
+        ),
+    ]
+}
+
+/// The offline close in `ClosedOrders`: a SELL limit of 0.5 at 30000.0 under `CACHED_SELL_TXID`,
+/// filled at an average of 30006.0 for 3.00 USDT in fees.
+fn offline_close_order_json(opentm: u64, closetm: u64) -> String {
+    json!({
+        "error": [],
+        "result": {
+            "closed": {
+                CACHED_SELL_TXID: {
+                    "refid": null,
+                    "userref": 0,
+                    "status": "closed",
+                    "reason": null,
+                    "opentm": opentm,
+                    "closetm": closetm,
+                    "starttm": 0,
+                    "expiretm": 0,
+                    "descr": {
+                        "pair": "XBTUSDT",
+                        "type": "sell",
+                        "ordertype": "limit",
+                        "price": "30000.0",
+                        "price2": "0",
+                        "leverage": "none",
+                        "order": "sell 0.50000000 XBTUSDT @ limit 30000.0",
+                        "close": ""
+                    },
+                    "vol": "0.50000000",
+                    "vol_exec": "0.50000000",
+                    "cost": "15003.00000",
+                    "fee": "3.00000",
+                    "price": "30006.0",
+                    "stopprice": "0.00000",
+                    "limitprice": "0.00000",
+                    "misc": "",
+                    "oflags": "fciq"
+                }
+            },
+            "count": 1
+        }
+    })
+    .to_string()
+}
+
+/// One `TradesHistory` page holding `fills` of the offline close.
+fn offline_close_trades_json(fills: &[CloseFill]) -> String {
+    let trades: serde_json::Map<String, Value> = fills
+        .iter()
+        .zip(2001..)
+        .map(|((txid, price, vol, cost, fee, time), trade_id)| {
+            let trade = json!({
+                "ordertxid": CACHED_SELL_TXID,
+                "postxid": "TKH2SE-M7IF5-CFI7LT",
+                "pair": "XBTUSDT",
+                "time": time,
+                "type": "sell",
+                "ordertype": "limit",
+                "price": price,
+                "cost": cost,
+                "fee": fee,
+                "vol": vol,
+                "margin": "0.00000",
+                "misc": "",
+                "trade_id": trade_id,
+                "maker": true,
+                "ledgers": [format!("LCLOSE-AAAAA-{trade_id}")]
+            });
+            ((*txid).to_string(), trade)
+        })
+        .collect();
+    json!({ "error": [], "result": { "trades": trades, "count": fills.len() } }).to_string()
+}
+
+/// Arms one venue snapshot: no open orders, the given closed orders and fills, and `balance`.
+/// The mock serves the closed order and fill pages once, so arm again before every later read.
+async fn arm_venue_snapshot(
+    state: &TestServerState,
+    balance: &[(&str, &str)],
+    closed_orders: Option<String>,
+    trades: Option<String>,
+) {
+    *state.spot_open_orders_json.lock().await = Some(EMPTY_SPOT_OPEN_ORDERS.to_string());
+    *state.closed_orders_json.lock().await = closed_orders;
+    *state.trades_history_json.lock().await = trades;
+    *state.spot_balance_json.lock().await = Some(spot_balance_json(balance));
+}
+
+/// Arms the offline close inside the startup window: the filled SELL, its two fills, and
+/// `balance`.
+async fn arm_offline_close(state: &TestServerState, balance: &[(&str, &str)]) {
+    let now = now_secs();
+    arm_venue_snapshot(
+        state,
+        balance,
+        Some(offline_close_order_json(now - 600, now - 240)),
+        Some(offline_close_trades_json(&offline_close_fills(now))),
+    )
+    .await;
+}
+
+/// Arms a snapshot with no orders or fills since the position opened, and `balance`.
+async fn arm_no_activity(state: &TestServerState, balance: &[(&str, &str)]) {
+    arm_venue_snapshot(state, balance, None, None).await;
+}
+
+/// The engine of a node trading `instrument`, with the spot cash account cached as a node
+/// restores it and Netting registered for the test strategy.
+fn spot_harness(instrument: &InstrumentAny) -> ExecutionHarness {
+    let harness = ExecutionHarness::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        test_account_id(),
+        instrument.clone(),
+    );
+    let account = AccountAny::from_events(&[test_spot_account_state()]).unwrap();
+    harness.cache().borrow_mut().add_account(account).unwrap();
+    harness
+        .exec_engine()
+        .borrow_mut()
+        .register_oms_type(test_strategy_id(), OmsType::Netting);
+    harness
+}
+
+/// Connects an unthrottled wallet-report client over the harness cache and registers it with
+/// the harness engine, leaving the harness's event sender in place.
+async fn connect_spot_wallet_client(harness: &ExecutionHarness, addr: SocketAddr) {
+    let core = ExecutionClientCore::new(
+        test_trader_id(),
+        *KRAKEN_CLIENT_ID,
+        *KRAKEN_VENUE,
+        OmsType::Netting,
+        test_account_id(),
+        AccountType::Cash,
+        None,
+        harness.cache().clone(),
+    );
+    let config = KrakenExecutionClientConfig {
+        use_spot_position_reports: true,
+        max_requests_per_second: Some(100_000),
+        ..create_test_spot_exec_config(addr)
+    };
+    let mut client = KrakenSpotExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    harness.register_client(Box::new(client)).unwrap();
+}
+
+/// Generates the startup mass status through the registered client, as the node does.
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "single-threaded test only runs mock venue tasks during the await"
+)]
+async fn spot_mass_status(
+    harness: &ExecutionHarness,
+    lookback_mins: Option<u64>,
+) -> ExecutionMassStatus {
+    harness
+        .exec_engine()
+        .borrow_mut()
+        .generate_mass_status(&KRAKEN_CLIENT_ID, lookback_mins)
+        .await
+        .unwrap()
+        .expect("mass status available")
+}
+
+/// A manager whose clock reads the wall time the mock venue stamps its rows with.
+fn spot_manager(harness: &ExecutionHarness, config: ExecutionManagerConfig) -> ExecutionManager {
+    let mut clock = VirtualClock::new();
+    clock.advance_time(get_atomic_clock_realtime().get_time_ns(), true);
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(clock));
+    ExecutionManager::new(clock, harness.cache().clone(), config).unwrap()
+}
+
+fn startup_manager_config(
+    generate_missing_orders: bool,
+    lookback_mins: Option<u64>,
+) -> ExecutionManagerConfig {
+    ExecutionManagerConfig {
+        generate_missing_orders,
+        lookback_mins,
+        ..Default::default()
+    }
+}
+
+/// Runs the periodic position check against the registered client.
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "single-threaded test only runs mock venue tasks during the await"
+)]
+async fn check_positions_once(
+    manager: &mut ExecutionManager,
+    harness: &ExecutionHarness,
+) -> Vec<OrderEventAny> {
+    let engine = harness.exec_engine().borrow();
+    let clients = engine.get_all_clients();
+    manager.check_positions_consistency(&clients).await
+}
+
+/// Caches `O-CLOSE`, a SELL limit of 0.5 at 30000.0 working at the venue as `CACHED_SELL_TXID`
+/// and linked to `position_id`.
+fn add_cached_closing_order(
+    cache: &Rc<RefCell<Cache>>,
+    instrument: &InstrumentAny,
+    position_id: PositionId,
+) -> ClientOrderId {
+    let client_order_id = ClientOrderId::from("O-CLOSE");
+    let closing = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(test_trader_id())
+        .strategy_id(test_strategy_id())
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from_decimal_dp(dec!(0.5), instrument.size_precision()).unwrap())
+        .price(Price::from_decimal_dp(dec!(30000.0), instrument.price_precision()).unwrap())
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+    let submitted = TestOrderEventStubs::submitted(&closing, test_account_id());
+    let accepted = TestOrderEventStubs::accepted(
+        &closing,
+        test_account_id(),
+        VenueOrderId::from(CACHED_SELL_TXID),
+    );
+    let mut cache = cache.borrow_mut();
+    cache
+        .add_order(closing, Some(position_id), Some(*KRAKEN_CLIENT_ID), false)
+        .unwrap();
+    cache.update_order(&submitted).unwrap();
+    cache.update_order(&accepted).unwrap();
+    client_order_id
+}
+
+/// How a restarted node's database holds the position the first node closed.
+#[derive(Clone, Copy, Debug)]
+enum PersistedPosition {
+    Closed,
+    OpenBeforeClose,
+}
+
+/// Loads `from`'s orders and positions into `to` and rebuilds its indexes, as a restarted node
+/// does from its cache database: each order replayed from its events, each position from its
+/// fills in time order.
+fn restore_execution_state(
+    from: &Rc<RefCell<Cache>>,
+    to: &Rc<RefCell<Cache>>,
+    persisted_position: PersistedPosition,
+) {
+    let from = from.borrow();
+    let mut to = to.borrow_mut();
+
+    for order in from.orders(None, None, None, None, None) {
+        let client_order_id = order.client_order_id();
+        let events = order.events().into_iter().cloned().collect();
+        to.add_order(
+            OrderAny::from_events(events).unwrap(),
+            from.position_id(&client_order_id).copied(),
+            from.client_id(&client_order_id).copied(),
+            false,
+        )
+        .unwrap();
+    }
+
+    for position in from.positions(None, None, None, None, None) {
+        let instrument = from.instrument(&position.instrument_id).unwrap();
+        let mut fills = position.events.clone();
+        fills.sort_by_key(|fill| fill.ts_event);
+
+        if matches!(persisted_position, PersistedPosition::OpenBeforeClose) {
+            fills.truncate(1);
+        }
+        let (first, rest) = fills.split_first().unwrap();
+        let mut restored = Position::new(instrument, first.clone());
+
+        for fill in rest {
+            restored.apply(fill);
+        }
+        to.add_position(&restored, OmsType::Netting).unwrap();
+    }
+
+    to.build_index();
+}
+
+fn reconciliation_orders(cache: &Cache, instrument_id: InstrumentId) -> Vec<OrderAny> {
+    cache
+        .orders(None, Some(&instrument_id), None, None, None)
+        .iter()
+        .filter(|order| {
+            order
+                .tags()
+                .is_some_and(|tags| tags.contains(&Ustr::from("RECONCILIATION")))
+        })
+        .map(|order| (**order).clone())
+        .collect()
+}
+
+/// The offline close recorded once on `position_id`, with the fills' realized PnL and fees.
+fn assert_close_recorded_once(
+    cache: &Cache,
+    instrument: &InstrumentAny,
+    position_id: PositionId,
+    closing_order_id: ClientOrderId,
+) {
+    let position = cache.position(&position_id).expect("cached position");
+    let mut trade_ids: Vec<String> = position
+        .trade_ids()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    trade_ids.sort();
+
+    assert!(position.is_closed(), "{position:?}");
+    assert_eq!(
+        position.quantity,
+        Quantity::zero(instrument.size_precision())
+    );
+    assert_eq!(position.strategy_id, test_strategy_id());
+    assert_eq!(position.closing_order_id, Some(closing_order_id));
+    assert_eq!(position.realized_pnl, Some(Money::from("497.10 USDT")));
+    assert_eq!(position.commissions(), vec![Money::from("5.90 USDT")]);
+    assert_eq!(position.avg_px_close, Some(dec!(30006.0)));
+    assert_eq!(
+        trade_ids,
+        ["T-OPEN", CLOSE_TRADE_IDS[0], CLOSE_TRADE_IDS[1]]
+    );
+
+    let closing_order = cache.order(&closing_order_id).expect("closing order");
+    assert_eq!(closing_order.status(), OrderStatus::Filled);
+    assert_eq!(closing_order.filled_qty(), Quantity::from("0.50000000"));
+    assert_eq!(
+        closing_order
+            .commissions()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![Money::from("3.00 USDT")]
+    );
+
+    assert!(reconciliation_orders(cache, instrument.id()).is_empty());
+    let position_ids: Vec<PositionId> = cache
+        .positions(None, Some(&instrument.id()), None, None, None)
+        .iter()
+        .map(|position| position.id)
+        .collect();
+    assert_eq!(position_ids, vec![position_id]);
+    assert!(
+        cache
+            .positions_open(None, None, None, Some(&test_account_id()), None)
+            .is_empty()
+    );
+}
+
+/// Which order closed the cached LONG at the venue during node downtime.
+#[derive(Clone, Copy, Debug)]
+enum OfflineClose {
+    CachedOrder,
+    ClaimedExternalOrder,
+}
+
+/// A node whose cache holds the open LONG on `BTC/USDT`, and for `CachedOrder` its working
+/// closing order, with the client connected to the mock venue.
+struct SpotNode {
+    state: TestServerState,
+    addr: SocketAddr,
+    instrument: InstrumentAny,
+    harness: ExecutionHarness,
+    position_id: PositionId,
+}
+
+/// Starts a node holding the cached LONG whose venue shows the offline close and `balance`.
+async fn offline_close_node(close: OfflineClose, balance: &[(&str, &str)]) -> SpotNode {
+    let node = spot_node().await;
+
+    if matches!(close, OfflineClose::CachedOrder) {
+        add_cached_closing_order(node.harness.cache(), &node.instrument, node.position_id);
+    }
+    arm_offline_close(&node.state, balance).await;
+    connect_spot_wallet_client(&node.harness, node.addr).await;
+    node
+}
+
+/// Starts a node holding the cached LONG whose venue shows no activity since it opened and
+/// `balance`.
+async fn no_activity_node(balance: &[(&str, &str)]) -> SpotNode {
+    let node = spot_node().await;
+    arm_no_activity(&node.state, balance).await;
+    connect_spot_wallet_client(&node.harness, node.addr).await;
+    node
+}
+
+async fn spot_node() -> SpotNode {
+    let (addr, state) = start_test_server().await.unwrap();
+    let instrument = btcusdt_spot_instrument();
+    let harness = spot_harness(&instrument);
+    let position = add_retained_spot_position(
+        harness.cache(),
+        &instrument,
+        test_account_id(),
+        OrderSide::Buy,
+    );
+    SpotNode {
+        state,
+        addr,
+        instrument,
+        harness,
+        position_id: position.id,
+    }
+}
+
+/// A startup manager that, when `claimed`, claims the instrument's external orders for the test
+/// strategy.
+fn claiming_manager(
+    harness: &ExecutionHarness,
+    claimed: bool,
+    generate_missing_orders: bool,
+    lookback_mins: Option<u64>,
+) -> ExecutionManager {
+    let mut manager = spot_manager(
+        harness,
+        startup_manager_config(generate_missing_orders, lookback_mins),
+    );
+
+    if claimed {
+        manager
+            .claim_external_orders(test_spot_instrument_id(), test_strategy_id())
+            .unwrap();
+    }
+    manager
+}
+
+fn venue_closing_order_id(cache: &Cache) -> ClientOrderId {
+    *cache
+        .client_order_id(&VenueOrderId::from(CACHED_SELL_TXID))
+        .expect("closing order cached under its venue order ID")
+}
+
+/// Every position and order field reconciliation can change, for before-and-after comparison.
+fn ledger_snapshot(cache: &Cache) -> Vec<String> {
+    let mut ledger: Vec<String> = cache
+        .positions(None, None, None, None, None)
+        .iter()
+        .map(|position| {
+            let mut trade_ids: Vec<String> = position
+                .trade_ids()
+                .iter()
+                .map(ToString::to_string)
+                .collect();
+            trade_ids.sort();
+            format!(
+                "{} {} {:?} {} {:?} {:?} {:?} {:?} {trade_ids:?}",
+                position.id,
+                position.strategy_id,
+                position.side,
+                position.signed_qty,
+                position.realized_pnl,
+                position.commissions(),
+                position.avg_px_close,
+                position.closing_order_id,
+            )
+        })
+        .chain(
+            cache
+                .orders(None, None, None, None, None)
+                .iter()
+                .map(|order| {
+                    format!(
+                        "{} {} {:?} {} {:?} {:?}",
+                        order.client_order_id(),
+                        order.strategy_id(),
+                        order.status(),
+                        order.filled_qty(),
+                        order.avg_px(),
+                        order.commissions(),
+                    )
+                }),
+        )
+        .collect();
+    ledger.sort();
+    ledger
+}
+
+fn signed_open_qty(cache: &Cache, instrument_id: InstrumentId) -> Decimal {
+    cache
+        .positions_open(
+            None,
+            Some(&instrument_id),
+            None,
+            Some(&test_account_id()),
+            None,
+        )
+        .iter()
+        .map(|position| position.signed_qty)
+        .sum()
+}
+
+fn summed_realized_pnl(cache: &Cache, instrument_id: InstrumentId) -> Decimal {
+    cache
+        .positions(None, Some(&instrument_id), None, None, None)
+        .iter()
+        .filter_map(|position| position.realized_pnl)
+        .map(|pnl| pnl.as_decimal())
+        .sum()
+}
+
+fn summed_commissions(cache: &Cache, instrument_id: InstrumentId) -> Decimal {
+    cache
+        .positions(None, Some(&instrument_id), None, None, None)
+        .iter()
+        .flat_map(|position| position.commissions())
+        .map(|commission| commission.as_decimal())
+        .sum()
+}
+
+/// A cached LONG whose cached closing order filled during node downtime closes with the
+/// fills' realized PnL and fees, under a bounded or an unbounded startup window.
+#[rstest]
+#[case::bounded_absent_row(SOLD_OUT_BALANCE, Some(60))]
+#[case::bounded_listed_zero(SOLD_OUT_LISTED_ZERO_BALANCE, Some(60))]
+#[case::unbounded(SOLD_OUT_BALANCE, None)]
+#[tokio::test]
+async fn test_spot_startup_closes_cached_position_from_cached_closing_order(
+    #[case] balance: &[(&str, &str)],
+    #[case] lookback_mins: Option<u64>,
+) {
+    let node = offline_close_node(OfflineClose::CachedOrder, balance).await;
+    let mut manager = claiming_manager(&node.harness, false, true, lookback_mins);
+
+    let mass_status = spot_mass_status(&node.harness, lookback_mins).await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+
+    assert_eq!(
+        mass_status.lookback_start().is_some(),
+        lookback_mins.is_some()
+    );
+    assert!(mass_status.reports_complete());
+    assert_flat_report(&mass_status, node.instrument.id());
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert!(result.external_orders.is_empty());
+    assert_close_recorded_once(
+        &node.harness.cache().borrow(),
+        &node.instrument,
+        node.position_id,
+        ClientOrderId::from("O-CLOSE"),
+    );
+}
+
+/// A cached LONG closed offline by an order placed outside the node closes with the fills'
+/// realized PnL and fees when the strategy claims the instrument's external orders, under a
+/// bounded or an unbounded startup window.
+#[rstest]
+#[case::bounded(Some(60))]
+#[case::unbounded(None)]
+#[tokio::test]
+async fn test_spot_startup_closes_cached_position_from_claimed_external_order(
+    #[case] lookback_mins: Option<u64>,
+) {
+    let node = offline_close_node(OfflineClose::ClaimedExternalOrder, SOLD_OUT_BALANCE).await;
+    let mut manager = claiming_manager(&node.harness, true, true, lookback_mins);
+
+    let mass_status = spot_mass_status(&node.harness, lookback_mins).await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+
+    assert_eq!(
+        mass_status.lookback_start().is_some(),
+        lookback_mins.is_some()
+    );
+    assert!(mass_status.reports_complete());
+    assert_flat_report(&mass_status, node.instrument.id());
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_eq!(result.external_orders.len(), 1);
+    let cache = node.harness.cache().borrow();
+    let closing_order_id = venue_closing_order_id(&cache);
+    let closing_order = cache.order(&closing_order_id).unwrap();
+    assert_eq!(closing_order.strategy_id(), test_strategy_id());
+    assert_eq!(closing_order.tags(), None);
+    drop(closing_order);
+    assert_close_recorded_once(&cache, &node.instrument, node.position_id, closing_order_id);
+}
+
+/// What the startup reconciled before the periodic position check runs.
+#[derive(Clone, Copy, Debug)]
+enum ReconciledAtStartup {
+    OfflineClose(OfflineClose),
+    Withdrawal { claimed: bool },
+}
+
+/// The periodic position check after startup reconciled an offline close or a withdrawal
+/// records nothing: no events, and the positions and orders stay as startup left them.
+#[rstest]
+#[case::cached_order(ReconciledAtStartup::OfflineClose(OfflineClose::CachedOrder))]
+#[case::claimed_external_order(ReconciledAtStartup::OfflineClose(
+    OfflineClose::ClaimedExternalOrder
+))]
+#[case::claimed_withdrawal(ReconciledAtStartup::Withdrawal { claimed: true })]
+#[case::unclaimed_withdrawal(ReconciledAtStartup::Withdrawal { claimed: false })]
+#[tokio::test]
+async fn test_spot_periodic_position_check_after_startup_records_nothing(
+    #[case] reconciled: ReconciledAtStartup,
+) {
+    let (node, claimed) = match reconciled {
+        ReconciledAtStartup::OfflineClose(close) => (
+            offline_close_node(close, SOLD_OUT_BALANCE).await,
+            matches!(close, OfflineClose::ClaimedExternalOrder),
+        ),
+        ReconciledAtStartup::Withdrawal { claimed } => {
+            (no_activity_node(SOLD_OUT_BALANCE).await, claimed)
+        }
+    };
+    let mut manager = claiming_manager(&node.harness, claimed, true, Some(60));
+    let mass_status = spot_mass_status(&node.harness, Some(60)).await;
+    let startup = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+    assert_flat_report(&mass_status, node.instrument.id());
+    assert!(startup.unresolved_positions.is_empty());
+    let ledger = ledger_snapshot(&node.harness.cache().borrow());
+    let reconciliation_order_count =
+        reconciliation_orders(&node.harness.cache().borrow(), node.instrument.id()).len();
+
+    arm_no_activity(&node.state, SOLD_OUT_BALANCE).await;
+    let events = check_positions_once(&mut manager, &node.harness).await;
+
+    assert!(events.is_empty(), "{events:?}");
+    let cache = node.harness.cache().borrow();
+    assert_eq!(ledger_snapshot(&cache), ledger);
+    assert_eq!(
+        reconciliation_orders(&cache, node.instrument.id()).len(),
+        reconciliation_order_count
+    );
+}
+
+/// A node restarted from the persisted state of a reconciled offline close reconciles the same
+/// venue state without recording the close again.
+#[rstest]
+#[case::cached_order(OfflineClose::CachedOrder)]
+#[case::claimed_external_order(OfflineClose::ClaimedExternalOrder)]
+#[tokio::test]
+async fn test_spot_restart_after_reconciled_offline_close_records_it_once(
+    #[case] close: OfflineClose,
+) {
+    let claimed = matches!(close, OfflineClose::ClaimedExternalOrder);
+    let node = offline_close_node(close, SOLD_OUT_BALANCE).await;
+    let mut manager = claiming_manager(&node.harness, claimed, true, Some(60));
+    let mass_status = spot_mass_status(&node.harness, Some(60)).await;
+    let startup = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+    assert!(startup.unresolved_positions.is_empty());
+    let closing_order_id = venue_closing_order_id(&node.harness.cache().borrow());
+    assert_close_recorded_once(
+        &node.harness.cache().borrow(),
+        &node.instrument,
+        node.position_id,
+        closing_order_id,
+    );
+
+    let restarted = spot_harness(&node.instrument);
+    restore_execution_state(
+        node.harness.cache(),
+        restarted.cache(),
+        PersistedPosition::Closed,
+    );
+    arm_offline_close(&node.state, SOLD_OUT_BALANCE).await;
+    connect_spot_wallet_client(&restarted, node.addr).await;
+    let mut restarted_manager = claiming_manager(&restarted, claimed, true, Some(60));
+    let restart_status = spot_mass_status(&restarted, Some(60)).await;
+    let restart =
+        restarted_manager.reconcile_execution_mass_status(&restart_status, restarted.exec_engine());
+
+    let venue_order_id = VenueOrderId::from(CACHED_SELL_TXID);
+    assert_eq!(
+        restart_status.order_reports()[&venue_order_id].order_status,
+        OrderStatus::Filled
+    );
+    let mut restart_trade_ids: Vec<String> = restart_status.fill_reports()[&venue_order_id]
+        .iter()
+        .map(|fill| fill.trade_id.to_string())
+        .collect();
+    restart_trade_ids.sort();
+    assert_eq!(restart_trade_ids, CLOSE_TRADE_IDS);
+    assert_no_position_report(&restart_status, node.instrument.id());
+    assert!(restart.events.is_empty(), "{:?}", restart.events);
+    assert!(restart.external_orders.is_empty());
+    assert!(restart.unresolved_positions.is_empty());
+    assert_close_recorded_once(
+        &restarted.cache().borrow(),
+        &node.instrument,
+        node.position_id,
+        closing_order_id,
+    );
+}
+
+/// A cached LONG whose asset left the wallet without a trade closes at its cached entry when the
+/// strategy claims the instrument, with no closing fee, so the opening fee is the only realized
+/// PnL. The reconciliation flag does not tell this adjustment from recovered fills, which carry
+/// it too; the zero closing PnL and the single commission do.
+#[rstest]
+#[case::bounded(Some(60))]
+#[case::unbounded(None)]
+#[tokio::test]
+async fn test_spot_startup_withdrawal_closes_claimed_position_at_entry_without_closing_pnl(
+    #[case] lookback_mins: Option<u64>,
+) {
+    let node = no_activity_node(SOLD_OUT_BALANCE).await;
+    let mut manager = claiming_manager(&node.harness, true, true, lookback_mins);
+
+    let mass_status = spot_mass_status(&node.harness, lookback_mins).await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+
+    assert_flat_report(&mass_status, node.instrument.id());
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    let cache = node.harness.cache().borrow();
+    let position = cache.position(&node.position_id).unwrap();
+    assert!(position.is_closed());
+    assert_eq!(position.strategy_id, test_strategy_id());
+    assert_eq!(position.avg_px_close, Some(dec!(29000.0)));
+    assert_eq!(position.realized_pnl, Some(Money::from("-2.90 USDT")));
+    assert_eq!(position.commissions(), vec![Money::from("2.90 USDT")]);
+    let trade_ids = position.trade_ids();
+    assert_eq!(trade_ids.len(), 2);
+    assert!(trade_ids.contains(&TradeId::from("T-OPEN")));
+    assert!(
+        trade_ids
+            .iter()
+            .all(|trade_id| !CLOSE_TRADE_IDS.contains(&trade_id.as_str())),
+        "{trade_ids:?}"
+    );
+
+    let closing_order = cache.order(&position.closing_order_id.unwrap()).unwrap();
+    assert_eq!(
+        closing_order.tags(),
+        Some([Ustr::from("RECONCILIATION")].as_slice())
+    );
+    assert_eq!(closing_order.order_type(), OrderType::Market);
+    assert!(closing_order.commissions().is_empty());
+    assert!(closing_order.init_event().reconciliation);
+    let OrderEventAny::Filled(fill) = closing_order.last_event() else {
+        panic!("closing order last event: {:?}", closing_order.last_event());
+    };
+    assert_eq!(fill.commission, None);
+    assert_eq!(fill.last_px, Price::from("29000.0"));
+    assert!(fill.reconciliation);
+}
+
+/// Without a claim, the withdrawal adjustment nets the instrument flat at the cached entry with
+/// no closing fee. Which position takes the offsetting fill is the engine's attribution and is
+/// not pinned here.
+#[rstest]
+#[case::bounded(Some(60))]
+#[case::unbounded(None)]
+#[tokio::test]
+async fn test_spot_startup_withdrawal_nets_unclaimed_position_flat_at_entry(
+    #[case] lookback_mins: Option<u64>,
+) {
+    let node = no_activity_node(SOLD_OUT_BALANCE).await;
+    let mut manager = claiming_manager(&node.harness, false, true, lookback_mins);
+
+    let mass_status = spot_mass_status(&node.harness, lookback_mins).await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+
+    assert_flat_report(&mass_status, node.instrument.id());
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    let cache = node.harness.cache().borrow();
+    let instrument_id = node.instrument.id();
+    assert_eq!(signed_open_qty(&cache, instrument_id), Decimal::ZERO);
+    let adjustments = reconciliation_orders(&cache, instrument_id);
+    assert!(!adjustments.is_empty());
+
+    for order in &adjustments {
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.avg_px(), Some(dec!(29000.0)));
+        assert!(order.commissions().is_empty());
+    }
+    assert_eq!(summed_realized_pnl(&cache, instrument_id), dec!(-2.90));
+    assert_eq!(summed_commissions(&cache, instrument_id), dec!(2.90));
+}
+
+/// With `generate_missing_orders` disabled, a cached LONG whose asset left the wallet is reported
+/// unresolved, which stops node startup, and the cache is left as it was.
+#[rstest]
+#[case::bounded(Some(60))]
+#[case::unbounded(None)]
+#[tokio::test]
+async fn test_spot_startup_withdrawal_is_unresolved_when_missing_orders_are_disabled(
+    #[case] lookback_mins: Option<u64>,
+) {
+    let node = no_activity_node(SOLD_OUT_BALANCE).await;
+    let mut manager = claiming_manager(&node.harness, false, false, lookback_mins);
+    let ledger = ledger_snapshot(&node.harness.cache().borrow());
+
+    let mass_status = spot_mass_status(&node.harness, lookback_mins).await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+
+    assert_flat_report(&mass_status, node.instrument.id());
+    let flat = &mass_status.position_reports()[&node.instrument.id()][0];
+    assert_eq!(
+        result.unresolved_positions,
+        vec![format!(
+            "account={}, instrument={}, venue_position_id=None, venue_quantity={}: generate_missing_orders is disabled",
+            flat.account_id, flat.instrument_id, flat.signed_decimal_qty,
+        )]
+    );
+    assert!(result.events.is_empty(), "{:?}", result.events);
+    assert!(result.external_orders.is_empty());
+    let cache = node.harness.cache().borrow();
+    assert_eq!(ledger_snapshot(&cache), ledger);
+    let position = cache.position(&node.position_id).unwrap();
+    assert_eq!(position.signed_qty, dec!(0.5));
+    assert_eq!(position.realized_pnl, Some(Money::from("-2.90 USDT")));
+}
+
+/// An offline close by an unclaimed external order inside the window nets the instrument flat
+/// with each venue fill applied once and no adjustment order. Which position takes the fills is
+/// the engine's attribution and is not pinned here.
+#[rstest]
+#[tokio::test]
+async fn test_spot_startup_unclaimed_offline_close_nets_the_instrument_flat() {
+    let node = offline_close_node(OfflineClose::ClaimedExternalOrder, SOLD_OUT_BALANCE).await;
+    let mut manager = claiming_manager(&node.harness, false, true, Some(60));
+
+    let mass_status = spot_mass_status(&node.harness, Some(60)).await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+
+    assert_flat_report(&mass_status, node.instrument.id());
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    let cache = node.harness.cache().borrow();
+    let instrument_id = node.instrument.id();
+    assert_eq!(signed_open_qty(&cache, instrument_id), Decimal::ZERO);
+    let applied: Vec<TradeId> = cache
+        .positions(None, Some(&instrument_id), None, None, None)
+        .iter()
+        .flat_map(|position| position.trade_ids())
+        .collect();
+
+    for trade_id in CLOSE_TRADE_IDS {
+        assert_eq!(
+            applied
+                .iter()
+                .filter(|applied| applied.as_str() == trade_id)
+                .count(),
+            1,
+            "{trade_id} in {applied:?}"
+        );
+    }
+    assert!(reconciliation_orders(&cache, instrument_id).is_empty());
+}
+
+/// A restart whose database holds the filled closing order but the position as it stood before
+/// the close gets a FLAT for the stale LONG. The order's fills are not applied again, so the
+/// engine offsets the LONG at its entry with no fee, or with `generate_missing_orders` disabled
+/// reports it unresolved and leaves the cache as restored.
+#[rstest]
+#[case::missing_orders_generated(true)]
+#[case::missing_orders_disabled(false)]
+#[tokio::test]
+async fn test_spot_restart_with_close_persisted_on_the_order_only_reports_the_stale_long(
+    #[case] generate_missing_orders: bool,
+) {
+    let node = offline_close_node(OfflineClose::CachedOrder, SOLD_OUT_BALANCE).await;
+    let mut manager = claiming_manager(&node.harness, false, true, Some(60));
+    let mass_status = spot_mass_status(&node.harness, Some(60)).await;
+    let startup = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+    assert!(startup.unresolved_positions.is_empty());
+
+    let restarted = spot_harness(&node.instrument);
+    restore_execution_state(
+        node.harness.cache(),
+        restarted.cache(),
+        PersistedPosition::OpenBeforeClose,
+    );
+    let restored = ledger_snapshot(&restarted.cache().borrow());
+    arm_offline_close(&node.state, SOLD_OUT_BALANCE).await;
+    connect_spot_wallet_client(&restarted, node.addr).await;
+    let mut restarted_manager =
+        claiming_manager(&restarted, false, generate_missing_orders, Some(60));
+    let restart_status = spot_mass_status(&restarted, Some(60)).await;
+    let restart =
+        restarted_manager.reconcile_execution_mass_status(&restart_status, restarted.exec_engine());
+
+    assert_flat_report(&restart_status, node.instrument.id());
+    let cache = restarted.cache().borrow();
+    let position = cache.position(&node.position_id).unwrap();
+    assert_eq!(position.signed_qty, dec!(0.5));
+    assert_eq!(position.realized_pnl, Some(Money::from("-2.90 USDT")));
+    assert_eq!(position.trade_ids(), vec![TradeId::from("T-OPEN")]);
+    drop(position);
+    let closing_order = cache.order(&ClientOrderId::from("O-CLOSE")).unwrap();
+    assert_eq!(closing_order.status(), OrderStatus::Filled);
+    assert_eq!(
+        closing_order
+            .commissions()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        vec![Money::from("3.00 USDT")]
+    );
+    drop(closing_order);
+
+    if generate_missing_orders {
+        assert!(
+            restart.unresolved_positions.is_empty(),
+            "{:?}",
+            restart.unresolved_positions
+        );
+        assert_eq!(signed_open_qty(&cache, node.instrument.id()), Decimal::ZERO);
+        let adjustments = reconciliation_orders(&cache, node.instrument.id());
+        assert_eq!(adjustments.len(), 1);
+        assert_eq!(adjustments[0].status(), OrderStatus::Filled);
+        assert_eq!(adjustments[0].avg_px(), Some(dec!(29000.0)));
+        assert!(adjustments[0].commissions().is_empty());
+    } else {
+        let flat = &restart_status.position_reports()[&node.instrument.id()][0];
+        assert_eq!(
+            restart.unresolved_positions,
+            vec![format!(
+                "account={}, instrument={}, venue_position_id=None, venue_quantity={}: generate_missing_orders is disabled",
+                flat.account_id, flat.instrument_id, flat.signed_decimal_qty,
+            )]
+        );
+        assert!(restart.events.is_empty(), "{:?}", restart.events);
+        assert_eq!(ledger_snapshot(&cache), restored);
+    }
+}
+
+/// The closed position, its realized PnL and fees, after the engine inferred the part of the
+/// close the fill reports did not carry.
+struct InferredClose {
+    realized_pnl: &'static str,
+    commissions: &'static str,
+    closing_order_commissions: &'static [&'static str],
+    venue_trade_ids: &'static [&'static str],
+    inferred_qty: &'static str,
+    inferred_px: &'static str,
+}
+
+/// The cached LONG closed by `O-CLOSE`, with the venue fills applied once and the remainder of
+/// the order filled by one inferred fill without a commission.
+fn assert_close_with_inferred_fill(
+    cache: &Cache,
+    instrument: &InstrumentAny,
+    position_id: PositionId,
+    expected: &InferredClose,
+) {
+    let position = cache.position(&position_id).expect("cached position");
+    assert!(position.is_closed(), "{position:?}");
+    assert_eq!(
+        position.quantity,
+        Quantity::zero(instrument.size_precision())
+    );
+    assert_eq!(
+        position.closing_order_id,
+        Some(ClientOrderId::from("O-CLOSE"))
+    );
+    assert_eq!(position.avg_px_close, Some(dec!(30006.0)));
+    assert_eq!(
+        position.realized_pnl,
+        Some(Money::from(expected.realized_pnl))
+    );
+    assert_eq!(
+        position.commissions(),
+        vec![Money::from(expected.commissions)]
+    );
+    drop(position);
+
+    let closing_order = cache.order(&ClientOrderId::from("O-CLOSE")).unwrap();
+    assert_eq!(closing_order.status(), OrderStatus::Filled);
+    assert_eq!(closing_order.filled_qty(), Quantity::from("0.50000000"));
+    assert_eq!(
+        closing_order
+            .commissions()
+            .values()
+            .copied()
+            .collect::<Vec<_>>(),
+        expected
+            .closing_order_commissions
+            .iter()
+            .map(|commission| Money::from(*commission))
+            .collect::<Vec<_>>()
+    );
+    let (venue_fills, inferred_fills): (Vec<OrderFilled>, Vec<OrderFilled>) = closing_order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill.clone()),
+            _ => None,
+        })
+        .partition(|fill| CLOSE_TRADE_IDS.contains(&fill.trade_id.as_str()));
+    let mut venue_trade_ids: Vec<String> = venue_fills
+        .iter()
+        .map(|fill| fill.trade_id.to_string())
+        .collect();
+    venue_trade_ids.sort();
+    assert_eq!(venue_trade_ids, expected.venue_trade_ids);
+    assert_eq!(inferred_fills.len(), 1, "{inferred_fills:?}");
+    assert_eq!(
+        inferred_fills[0].last_qty,
+        Quantity::from(expected.inferred_qty)
+    );
+    assert_eq!(inferred_fills[0].last_px, Price::from(expected.inferred_px));
+    assert_eq!(inferred_fills[0].commission, None);
+    assert!(reconciliation_orders(cache, instrument.id()).is_empty());
+}
+
+/// When the closing order's fill rows cannot all be parsed, the FLAT still goes out and the
+/// engine fills the remainder of the reported FILLED order with an inferred fill at the price
+/// that keeps the order's average, without a commission.
+#[rstest]
+#[case::one_row_unparsable(
+    false,
+    InferredClose {
+        realized_pnl: "498.90 USDT",
+        commissions: "4.10 USDT",
+        closing_order_commissions: &["1.20 USDT"],
+        venue_trade_ids: &[CLOSE_TRADE_IDS[0]],
+        inferred_qty: "0.30000000",
+        inferred_px: "30010.0",
+    }
+)]
+#[case::all_rows_unparsable(
+    true,
+    InferredClose {
+        realized_pnl: "500.10 USDT",
+        commissions: "2.90 USDT",
+        closing_order_commissions: &[],
+        venue_trade_ids: &[],
+        inferred_qty: "0.50000000",
+        inferred_px: "30006.0",
+    }
+)]
+#[tokio::test]
+async fn test_spot_startup_closes_cached_position_with_incomplete_closing_fills(
+    #[case] all_rows_unparsable: bool,
+    #[case] expected: InferredClose,
+) {
+    let node = spot_node().await;
+    add_cached_closing_order(node.harness.cache(), &node.instrument, node.position_id);
+    let now = now_secs();
+    let mut fills = offline_close_fills(now);
+    fills[1].2 = "not_a_number";
+
+    if all_rows_unparsable {
+        fills[0].2 = "not_a_number";
+    }
+    arm_venue_snapshot(
+        &node.state,
+        SOLD_OUT_BALANCE,
+        Some(offline_close_order_json(now - 600, now - 240)),
+        Some(offline_close_trades_json(&fills)),
+    )
+    .await;
+    connect_spot_wallet_client(&node.harness, node.addr).await;
+    let mut manager = claiming_manager(&node.harness, false, true, Some(60));
+
+    let mass_status = spot_mass_status(&node.harness, Some(60)).await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+
+    assert!(!mass_status.reports_complete());
+    assert_flat_report(&mass_status, node.instrument.id());
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_close_with_inferred_fill(
+        &node.harness.cache().borrow(),
+        &node.instrument,
+        node.position_id,
+        &expected,
+    );
+}
+
+/// A closing order whose first fill predates the lookback cutoff closes the cached LONG with the
+/// in-window fill and its fee, and an inferred fill without a commission for the part before the
+/// cutoff.
+#[rstest]
+#[tokio::test]
+async fn test_spot_startup_closes_cached_position_with_a_fill_before_the_lookback() {
+    let node = spot_node().await;
+    add_cached_closing_order(node.harness.cache(), &node.instrument, node.position_id);
+    let now = now_secs();
+    let in_window_fills = &offline_close_fills(now)[1..];
+    arm_venue_snapshot(
+        &node.state,
+        SOLD_OUT_BALANCE,
+        Some(offline_close_order_json(now - 4000, now - 240)),
+        Some(offline_close_trades_json(in_window_fills)),
+    )
+    .await;
+    connect_spot_wallet_client(&node.harness, node.addr).await;
+    let mut manager = claiming_manager(&node.harness, false, true, Some(60));
+
+    let mass_status = spot_mass_status(&node.harness, Some(60)).await;
+    let result = manager.reconcile_execution_mass_status(&mass_status, node.harness.exec_engine());
+
+    assert!(mass_status.reports_complete());
+    assert_flat_report(&mass_status, node.instrument.id());
+    assert!(
+        result.unresolved_positions.is_empty(),
+        "{:?}",
+        result.unresolved_positions
+    );
+    assert_close_with_inferred_fill(
+        &node.harness.cache().borrow(),
+        &node.instrument,
+        node.position_id,
+        &InferredClose {
+            realized_pnl: "498.30 USDT",
+            commissions: "4.70 USDT",
+            closing_order_commissions: &["1.80 USDT"],
+            venue_trade_ids: &[CLOSE_TRADE_IDS[1]],
+            inferred_qty: "0.20000000",
+            inferred_px: "30000.0",
+        },
     );
 }
 
@@ -4444,7 +6221,12 @@ fn add_test_account_to_cache(cache: &Rc<RefCell<Cache>>) {
 }
 
 fn add_test_spot_account_to_cache(cache: &Rc<RefCell<Cache>>) {
-    let account_state = AccountState::new(
+    let account = AccountAny::Cash(CashAccount::new(test_spot_account_state(), true, false));
+    cache.borrow_mut().add_account(account).unwrap();
+}
+
+fn test_spot_account_state() -> AccountState {
+    AccountState::new(
         test_account_id(),
         AccountType::Cash,
         vec![
@@ -4465,10 +6247,7 @@ fn add_test_spot_account_to_cache(cache: &Rc<RefCell<Cache>>) {
         UnixNanos::default(),
         UnixNanos::default(),
         None,
-    );
-
-    let account = AccountAny::Cash(CashAccount::new(account_state, true, false));
-    cache.borrow_mut().add_account(account).unwrap();
+    )
 }
 
 fn add_limit_order_to_cache(
