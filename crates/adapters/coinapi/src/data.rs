@@ -70,7 +70,7 @@ use ustr::Ustr;
 use crate::{
     book::{
         recovery::{spawn_recovery_monitor, spawn_recovery_task, start_recovery},
-        sync::{BookFrame, BookSubscription, BookSubscriptions},
+        sync::{BookFrame, BookSubscription, BookSubscriptions, BookWrite},
     },
     common::{consts::COINAPI, credential::resolve_api_key},
     config::{CoinApiDataClientConfig, CoinApiInstrumentSelection},
@@ -80,7 +80,7 @@ use crate::{
         query::{BookQuery, HistoryRange},
     },
     websocket::{
-        client::CoinApiWebSocketClient,
+        client::{CoinApiWebSocketClient, StreamMessage},
         messages::{Channel, CoinApiWsMessage, DataType, Ohlcv, ScopeChange, Subscription},
         parse::{
             bar_spec_to_period_id, parse_bar, parse_book_depth, parse_quote_tick, parse_trade_tick,
@@ -559,7 +559,7 @@ impl DataClient for CoinApiDataClient {
             }
         }
 
-        let (mut ws, rx) =
+        let (mut ws, _rx) =
             CoinApiWebSocketClient::new(self.api_key.clone(), self.config.websocket_config())?;
 
         self.books = Arc::new(BookSubscriptions {
@@ -567,7 +567,7 @@ impl DataClient for CoinApiDataClient {
             ..BookSubscriptions::default()
         });
 
-        ws.bind_books(Arc::clone(&self.books));
+        let rx = ws.bind_books(Arc::clone(&self.books));
         let ws = Arc::new(ws);
 
         let books = BookStreams {
@@ -990,7 +990,7 @@ struct SubscriptionCommand {
     book_active: Option<Arc<AtomicBool>>,
 }
 
-// Opens a book's snapshot gate once its subscribing hello is written, then starts its deadline
+// Carries the snapshot gate to the writer and signals the deadline task after the write commits
 #[derive(Debug)]
 struct SnapshotWait {
     gate: SnapshotGate,
@@ -1039,6 +1039,17 @@ async fn run_subscriptions(
             .iter()
             .map(|command| command.book_active.clone())
             .collect();
+
+        let gates: Vec<_> = batch
+            .iter()
+            .map(|command| {
+                command
+                    .snapshot
+                    .as_ref()
+                    .map(|snapshot| snapshot.gate.clone())
+            })
+            .collect();
+
         let mut delay = SUBSCRIPTION_RETRY_DELAY_INITIAL;
 
         // The engine records the change once queued, so a transport failure must not drop it
@@ -1046,7 +1057,7 @@ async fn run_subscriptions(
             let result = tokio::select! {
                 biased;
                 () = cancellation.cancelled() => return,
-                result = ws.apply_registered(&changes, &registrations) => result,
+                result = ws.apply_registered(&changes, &registrations, &gates) => result,
             };
 
             match result {
@@ -1076,7 +1087,6 @@ async fn run_subscriptions(
                 .iter()
                 .all(|(rejected, _)| *rejected != command.change)
             {
-                snapshot.gate.open();
                 let _ = snapshot.written.send(());
             }
         }
@@ -1314,7 +1324,7 @@ fn parse_history<T, D>(
 }
 
 async fn run_stream(
-    mut rx: tokio::sync::mpsc::UnboundedReceiver<CoinApiWsMessage>,
+    mut rx: tokio::sync::mpsc::UnboundedReceiver<StreamMessage>,
     cancellation: CancellationToken,
     sender: EventSender<DataEvent>,
     instruments: Arc<InstrumentIndex>,
@@ -1332,12 +1342,33 @@ async fn run_stream(
             },
         };
 
-        handle_message(message, &sender, &instruments, &books, &ohlcv, clock);
+        if let Some(write) = &message.write {
+            let committed = tokio::select! {
+                biased;
+                () = cancellation.cancelled() => break,
+                committed = write.committed() => committed,
+            };
+
+            if !committed {
+                continue;
+            }
+        }
+
+        handle_message(
+            message.message,
+            message.write.as_ref(),
+            &sender,
+            &instruments,
+            &books,
+            &ohlcv,
+            clock,
+        );
     }
 }
 
 fn handle_message(
     message: CoinApiWsMessage,
+    write: Option<&Arc<BookWrite>>,
     sender: &EventSender<DataEvent>,
     instruments: &InstrumentIndex,
     books: &BookStreams,
@@ -1353,6 +1384,7 @@ fn handle_message(
             if book.data_type == DataType::Book {
                 return handle_book_frame(
                     BookFrame::Levels(&book),
+                    write,
                     &instrument,
                     books,
                     ohlcv,
@@ -1385,7 +1417,14 @@ fn handle_message(
                 return log_unknown_symbol(book.symbol_id);
             };
 
-            return handle_book_frame(BookFrame::Orders(&book), &instrument, books, ohlcv, sender);
+            return handle_book_frame(
+                BookFrame::Orders(&book),
+                write,
+                &instrument,
+                books,
+                ohlcv,
+                sender,
+            );
         }
         CoinApiWsMessage::Quote(quote) => {
             let Some(instrument) = instruments.instrument(quote.symbol_id) else {
@@ -1440,18 +1479,25 @@ fn handle_message(
 
 fn handle_book_frame(
     frame: BookFrame<'_>,
+    write: Option<&Arc<BookWrite>>,
     instrument: &InstrumentAny,
     books: &BookStreams,
     ohlcv: &Arc<Mutex<OhlcvCache>>,
     sender: &EventSender<DataEvent>,
 ) {
+    let Some(write) = write else {
+        return;
+    };
+
     let instrument_id = instrument.id();
 
-    match books
-        .subscriptions
-        .sync
-        .apply(instrument_id, frame, instrument, time::Instant::now())
-    {
+    match books.subscriptions.sync.apply_received(
+        instrument_id,
+        frame,
+        instrument,
+        time::Instant::now(),
+        write,
+    ) {
         (BookSequenceOutcome::Accept, Some(deltas)) => {
             if let Err(e) = sender.send(DataEvent::Data(Data::BookDeltas(Box::new(deltas)))) {
                 log::error!("Failed to send CoinAPI data: {e}");
@@ -1505,10 +1551,284 @@ fn close_period(cache: &mut OhlcvCache, update: Ohlcv) -> Option<Ohlcv> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use futures_util::{SinkExt, StreamExt};
     use nautilus_model::types::Price;
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    use nautilus_network::websocket::TransportBackend;
     use rstest::rstest;
 
     use super::*;
+
+    #[cfg(not(all(feature = "simulation", madsim)))]
+    #[rstest]
+    #[case(BookType::L2_MBP, 0)]
+    #[case(BookType::L2_MBP, 1)]
+    #[case(BookType::L3_MBO, 0)]
+    #[case(BookType::L3_MBO, 1)]
+    #[tokio::test]
+    async fn first_snapshot_waits_for_write_completion(
+        #[case] book_type: BookType,
+        #[case] timeout_secs: u64,
+    ) {
+        tokio::time::timeout(Duration::from_secs(10), async {
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let (sender, _unused) = tokio::sync::mpsc::unbounded_channel();
+            nautilus_common::live::runner::replace_data_event_sender(sender);
+
+            let mut client = CoinApiDataClient::new(
+                ClientId::from("COINAPI"),
+                CoinApiDataClientConfig {
+                    api_key: Some("test-key".into()),
+                    base_url_ws: Some(format!("ws://{}", listener.local_addr().unwrap())),
+                    transport_backend: TransportBackend::Tungstenite,
+                    book_snapshot_timeout_secs: timeout_secs,
+                    ..CoinApiDataClientConfig::default()
+                },
+            )
+            .unwrap();
+
+            let symbols: Vec<crate::http::models::Symbol> =
+                serde_json::from_str(include_str!("../test_data/symbols.json")).unwrap();
+            let (loaded, _) = http_parse::parse_instruments(&symbols, UnixNanos::default());
+            client.instruments.begin_stream(&loaded);
+            let instrument_id = InstrumentId::from("BTC-USD.COINBASE");
+            let instrument = client.loaded(instrument_id).unwrap().1;
+            let (mut ws_client, _public) = CoinApiWebSocketClient::new(
+                client.api_key.clone(),
+                client.config.websocket_config(),
+            )
+            .unwrap();
+            let mut received = ws_client.bind_books(Arc::clone(&client.books));
+            let ws_client = Arc::new(ws_client);
+            client.ws = Some(Arc::clone(&ws_client));
+            let (commands, queued) = tokio::sync::mpsc::unbounded_channel();
+            client.subscription_tx = Some(commands);
+            let cancel = CancellationToken::new();
+            let producer = run_subscriptions(Arc::clone(&ws_client), queued, cancel.clone());
+            tokio::pin!(producer);
+
+            client
+                .subscribe_trades(SubscribeTrades::new(
+                    instrument_id,
+                    Some(client.client_id),
+                    None,
+                    nautilus_core::UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+            client
+                .subscribe_book_deltas(SubscribeBookDeltas::new(
+                    instrument_id,
+                    book_type,
+                    Some(client.client_id),
+                    None,
+                    nautilus_core::UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    false,
+                    None,
+                    None,
+                ))
+                .unwrap();
+
+            let peer = tokio::spawn(async move {
+                let (socket, _) = listener.accept().await.unwrap();
+                let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+                let hello = socket.next().await.unwrap().unwrap();
+                assert!(hello.is_text());
+                socket
+            });
+
+            std::future::poll_fn(|context| {
+                assert!(producer.as_mut().poll(context).is_pending());
+
+                if client.books.sync.receipts().is_empty() {
+                    std::task::Poll::Pending
+                } else {
+                    std::task::Poll::Ready(())
+                }
+            })
+            .await;
+
+            let mut socket = peer.await.unwrap();
+
+            let mut frame: serde_json::Value = serde_json::from_str(match book_type {
+                BookType::L2_MBP => include_str!("../test_data/ws_book.json"),
+                BookType::L3_MBO => include_str!("../test_data/book_l3.json"),
+                _ => unreachable!(),
+            })
+            .unwrap();
+
+            frame["type"] = match book_type {
+                BookType::L2_MBP => "book",
+                _ => "book_l3",
+            }
+            .into();
+
+            frame["symbol_id"] = "COINBASE_SPOT_BTC_USD".into();
+            frame["sequence"] = 1.into();
+            frame["is_snapshot"] = true.into();
+            let text = frame.to_string();
+
+            let expected = match book_type {
+                BookType::L2_MBP => crate::websocket::parse::parse_book_deltas(
+                    &serde_json::from_str(&text).unwrap(),
+                    &instrument,
+                )
+                .unwrap()
+                .unwrap(),
+                BookType::L3_MBO => {
+                    crate::book::orders::OrderIndex::snapshot(
+                        &serde_json::from_str(&text).unwrap(),
+                        &instrument,
+                    )
+                    .unwrap()
+                    .1
+                }
+                _ => unreachable!(),
+            };
+
+            socket
+                .send(tokio_tungstenite::tungstenite::Message::text(text.clone()))
+                .await
+                .unwrap();
+            socket
+                .send(tokio_tungstenite::tungstenite::Message::text(include_str!(
+                    "../test_data/ws_trade.json"
+                )))
+                .await
+                .unwrap();
+
+            // Hold the producer after its hello reaches the peer, and drive the real consumer
+            let (input, rx) = tokio::sync::mpsc::unbounded_channel();
+            input.send(received.recv().await.unwrap()).unwrap();
+            input.send(received.recv().await.unwrap()).unwrap();
+            let (output, mut events) = tokio::sync::mpsc::unbounded_channel();
+
+            let books = BookStreams {
+                subscriptions: Arc::clone(&client.books),
+                ws: Arc::clone(&ws_client),
+                tasks: client.session_tasks.spawner().unwrap(),
+                snapshot_timeout: client.book_snapshot_timeout(),
+            };
+
+            let consumer = run_stream(
+                rx,
+                cancel.clone(),
+                output.into(),
+                Arc::clone(&client.instruments),
+                books,
+                Arc::clone(&client.ohlcv),
+                client.clock,
+            );
+            tokio::pin!(consumer);
+            assert!(futures_util::poll!(&mut consumer).is_pending());
+            assert!(matches!(
+                events.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ));
+
+            let first = tokio::select! {
+                () = &mut producer => panic!("subscription task ended"),
+                () = &mut consumer => panic!("stream task ended"),
+                first = events.recv() => first.unwrap(),
+            };
+
+            let DataEvent::Data(Data::BookDeltas(deltas)) = first else {
+                panic!("first valid snapshot was suppressed");
+            };
+
+            assert_eq!(*deltas, expected);
+            let trade = tokio::select! {
+                () = &mut consumer => panic!("stream task ended"),
+                trade = events.recv() => trade.unwrap(),
+            };
+            let expected_trade = crate::websocket::parse::parse_trade_tick(
+                &serde_json::from_str(include_str!("../test_data/ws_trade.json")).unwrap(),
+                &instrument,
+            )
+            .unwrap();
+            assert!(
+                matches!(trade, DataEvent::Data(Data::Trade(trade)) if trade == expected_trade)
+            );
+
+            let previous = Arc::clone(client.books.sync.receipts().values().next().unwrap());
+            let (recovery, subscription) = client.books.sync.claim_recovery(instrument_id).unwrap();
+            assert!(recovery.begin_replacement());
+            let restart = ws_client.resubscribe_book(subscription, || {}, recovery.gate.clone());
+            tokio::pin!(restart);
+            tokio::join!(
+                std::future::poll_fn(|context| {
+                    assert!(restart.as_mut().poll(context).is_pending());
+                    let receipts = client.books.sync.receipts();
+                    if Arc::ptr_eq(receipts.values().next().unwrap(), &previous) {
+                        std::task::Poll::Pending
+                    } else {
+                        std::task::Poll::Ready(())
+                    }
+                }),
+                async {
+                    // Heartbeats prevent idle reconnects while the two paced hellos wait
+                    for _ in 0..2 {
+                        socket
+                            .send(tokio_tungstenite::tungstenite::Message::text(include_str!(
+                                "../test_data/ws_heartbeat.json"
+                            )))
+                            .await
+                            .unwrap();
+                        assert!(socket.next().await.unwrap().unwrap().is_text());
+                    }
+                }
+            );
+
+            socket
+                .send(tokio_tungstenite::tungstenite::Message::text(text))
+                .await
+                .unwrap();
+            input.send(received.recv().await.unwrap()).unwrap();
+            assert!(futures_util::poll!(&mut consumer).is_pending());
+            assert!(matches!(
+                events.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ));
+            let writes = restart.await.unwrap();
+            assert!(futures_util::poll!(&mut consumer).is_pending());
+            assert!(matches!(
+                events.try_recv(),
+                Err(tokio::sync::mpsc::error::TryRecvError::Empty)
+            ));
+
+            if let Some(writes) = writes {
+                writes.commit();
+            }
+
+            let first = tokio::select! {
+                () = &mut consumer => panic!("stream task ended"),
+                first = events.recv() => first.unwrap(),
+            };
+
+            let DataEvent::Data(Data::BookDeltas(deltas)) = first else {
+                panic!("first recovery snapshot was suppressed");
+            };
+
+            let mut expected = expected;
+            for delta in &mut expected.deltas {
+                delta.sequence += 1;
+            }
+
+            expected.sequence += 1;
+            assert_eq!(*deltas, expected);
+            assert!(recovery.is_accepted());
+
+            cancel.cancel();
+            client.disconnect().await.unwrap();
+        })
+        .await
+        .unwrap();
+    }
 
     #[cfg(not(all(feature = "simulation", madsim)))]
     #[rstest]

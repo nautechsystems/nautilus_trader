@@ -20,6 +20,11 @@
 //! accepted at any sequence; an update is accepted only at the sequence after the last accepted
 //! message. A book's position is that last sequence.
 //!
+//! The reader captures each book frame's subscription-write identity before queuing it. The
+//! consumer waits for that write to commit, and the tracker rejects identities replaced or removed
+//! since the frame arrived. `BookWrites` opens snapshot gates at commit and aborts pending writes
+//! on drop, so cancellation wakes waiting consumers without admitting their frames.
+//!
 //! CoinAPI restarts a pair's sequence at one whenever it restarts the pair or the connection, and
 //! a managed `OrderBook` keeps its sequence as a high-water mark across snapshots. Emitted deltas
 //! therefore carry the venue sequence plus a per-book offset, set at each accepted snapshot so the
@@ -95,6 +100,56 @@ pub(crate) struct BookSubscriptions {
 }
 
 impl BookSubscriptions {
+    pub(crate) fn begin_writes(
+        &self,
+        snapshots: &[(Subscription, Option<Arc<AtomicBool>>, SnapshotGate)],
+    ) -> BookWrites {
+        let _write = self.writes.lock();
+        let entries = self.entries.load();
+        let mut books = self.sync.books.lock();
+        let mut receipts = (**self.sync.receipts.load()).clone();
+        let mut pending = Vec::new();
+
+        for (subscription, registration, gate) in snapshots {
+            let Some((instrument_id, state)) = books
+                .iter_mut()
+                .find(|(_, state)| state.subscription == *subscription)
+            else {
+                continue;
+            };
+
+            let Some(current) = entries.get(instrument_id) else {
+                continue;
+            };
+
+            if registration
+                .as_ref()
+                .is_some_and(|registration| !Arc::ptr_eq(registration, &current.active))
+            {
+                continue;
+            }
+
+            let write = Arc::new(BookWrite {
+                gate: gate.clone(),
+                outcome: tokio::sync::watch::channel(None).0,
+            });
+
+            if let Some(previous) = state.write.replace(Arc::clone(&write)) {
+                previous.abort();
+            }
+
+            receipts.insert(*subscription, Arc::clone(&write));
+            pending.push((*instrument_id, write));
+        }
+
+        self.sync.receipts.store(receipts);
+
+        BookWrites {
+            tracker: self.sync.clone(),
+            pending,
+        }
+    }
+
     pub(crate) fn clear(&self) {
         let _write = self.writes.lock();
         self.sync.clear();
@@ -124,6 +179,7 @@ struct BookState {
     orders: OrderIndex,
     // Added to the venue sequence of each delta emitted in the current snapshot episode
     offset: u64,
+    write: Option<Arc<BookWrite>>,
 }
 
 /// Sequence, snapshot, and recovery state of each subscribed book.
@@ -137,6 +193,7 @@ pub struct BookSyncTracker {
     emitted: Arc<Mutex<AHashMap<InstrumentId, u64>>>,
     // Last venue and emitted sequence of each depth stream
     depths: Arc<Mutex<AHashMap<InstrumentId, (u64, u64)>>>,
+    receipts: Arc<AtomicMap<Subscription, Arc<BookWrite>>>,
 }
 
 impl BookSyncTracker {
@@ -156,18 +213,55 @@ impl BookSyncTracker {
             sync,
             orders: OrderIndex::default(),
             offset: 0,
+            write: None,
         };
 
-        self.books.lock().insert(instrument_id, state);
+        let mut books = self.books.lock();
+        if let Some(previous) = books.insert(instrument_id, state) {
+            self.receipts.remove(&previous.subscription);
+            if let Some(write) = previous.write {
+                write.abort();
+            }
+        }
+
         cancel
     }
 
     pub(crate) fn remove(&self, instrument_id: InstrumentId) {
-        self.books.lock().remove(&instrument_id);
+        let mut books = self.books.lock();
+        if let Some(state) = books.remove(&instrument_id) {
+            self.receipts.remove(&state.subscription);
+            if let Some(write) = state.write {
+                write.abort();
+            }
+        }
     }
 
     pub(crate) fn clear(&self) {
-        self.books.lock().clear();
+        let mut books = self.books.lock();
+        for state in books.values() {
+            if let Some(write) = &state.write {
+                write.abort();
+            }
+        }
+
+        books.clear();
+        self.receipts.store(AHashMap::new());
+    }
+
+    pub(crate) fn receipts(&self) -> BookReceipts {
+        Arc::clone(&self.receipts.load())
+    }
+
+    pub(crate) fn apply_received(
+        &self,
+        instrument_id: InstrumentId,
+        frame: BookFrame<'_>,
+        instrument: &InstrumentAny,
+        now: Instant,
+        write: &Arc<BookWrite>,
+    ) -> (BookSequenceOutcome, Option<OrderBookDeltas>) {
+        self.apply_frame(instrument_id, frame, instrument, now, Some(write))
     }
 
     /// Validates a message and converts it once accepted.
@@ -181,11 +275,31 @@ impl BookSyncTracker {
         instrument: &InstrumentAny,
         now: Instant,
     ) -> (BookSequenceOutcome, Option<OrderBookDeltas>) {
+        self.apply_frame(instrument_id, frame, instrument, now, None)
+    }
+
+    fn apply_frame(
+        &self,
+        instrument_id: InstrumentId,
+        frame: BookFrame<'_>,
+        instrument: &InstrumentAny,
+        now: Instant,
+        write: Option<&Arc<BookWrite>>,
+    ) -> (BookSequenceOutcome, Option<OrderBookDeltas>) {
         let mut books = self.books.lock();
 
         let Some(state) = books.get_mut(&instrument_id) else {
             return (BookSequenceOutcome::Suppress, None);
         };
+
+        if let Some(write) = write
+            && !state
+                .write
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, write))
+        {
+            return (BookSequenceOutcome::Suppress, None);
+        }
 
         // Frames before the subscribing write belong to a scope that did not include the book
         if state.sync.is_send_pending() {
@@ -336,6 +450,70 @@ impl BookSyncTracker {
     }
 }
 
+pub(crate) type BookReceipts = Arc<AHashMap<Subscription, Arc<BookWrite>>>;
+
+#[derive(Debug)]
+pub(crate) struct BookWrite {
+    gate: SnapshotGate,
+    outcome: tokio::sync::watch::Sender<Option<bool>>,
+}
+
+impl BookWrite {
+    pub(crate) async fn committed(&self) -> bool {
+        if let Some(committed) = *self.outcome.borrow() {
+            return committed;
+        }
+
+        let mut outcome = self.outcome.subscribe();
+        outcome.wait_for(|outcome| outcome.is_some()).await.is_ok()
+            && *outcome.borrow() == Some(true)
+    }
+
+    fn abort(&self) {
+        self.outcome.send_if_modified(|outcome| {
+            if outcome.is_none() {
+                *outcome = Some(false);
+                true
+            } else {
+                false
+            }
+        });
+    }
+}
+
+pub(crate) struct BookWrites {
+    tracker: BookSyncTracker,
+    pending: Vec<(InstrumentId, Arc<BookWrite>)>,
+}
+
+impl BookWrites {
+    pub(crate) fn commit(&self) {
+        let books = self.tracker.books.lock();
+        for (instrument_id, write) in &self.pending {
+            let current = books.get(instrument_id).is_some_and(|state| {
+                state
+                    .write
+                    .as_ref()
+                    .is_some_and(|current| Arc::ptr_eq(current, write))
+            });
+
+            if current {
+                write.gate.open();
+            }
+
+            write.outcome.send_replace(Some(current));
+        }
+    }
+}
+
+impl Drop for BookWrites {
+    fn drop(&mut self) {
+        for (_, write) in &self.pending {
+            write.abort();
+        }
+    }
+}
+
 fn offset(mut deltas: OrderBookDeltas, offset: u64) -> OrderBookDeltas {
     for delta in &mut deltas.deltas {
         delta.sequence += offset;
@@ -454,6 +632,219 @@ mod tests {
             tracker.apply(instrument_id(), BookFrame::Levels(book), &instrument(), now);
         let actions = deltas.map(|deltas| deltas.deltas.iter().map(|d| d.action).collect());
         (outcome, actions)
+    }
+
+    fn registered() -> BookSubscriptions {
+        let books = BookSubscriptions::default();
+        let gate = SnapshotGate::default();
+        books.sync.record_subscription(
+            instrument_id(),
+            subscription(DataType::Book),
+            Instant::now(),
+            gate,
+        );
+        books.entries.insert(
+            instrument_id(),
+            BookSubscription {
+                data_type: DataType::Book,
+                depth: None,
+                active: Arc::new(AtomicBool::new(false)),
+            },
+        );
+
+        books
+    }
+
+    #[tokio::test]
+    async fn scope_change_keeps_unaffected_book_receipt() {
+        let books = registered();
+        let initial =
+            books.begin_writes(&[(subscription(DataType::Book), None, SnapshotGate::default())]);
+        initial.commit();
+        let receipt = Arc::clone(&books.sync.receipts()[&subscription(DataType::Book)]);
+        let other = books.begin_writes(&[]);
+        other.commit();
+        let result = books.sync.apply_received(
+            instrument_id(),
+            BookFrame::Levels(&levels(1, true)),
+            &instrument(),
+            Instant::now(),
+            &receipt,
+        );
+        assert!(Arc::ptr_eq(
+            &books.sync.receipts()[&subscription(DataType::Book)],
+            &receipt
+        ));
+        assert_eq!(result.0, BookSequenceOutcome::Accept);
+    }
+
+    #[tokio::test]
+    async fn old_registration_cannot_admit_replacement_frames() {
+        let books = registered();
+        let registration = books.entries.get_cloned(&instrument_id()).unwrap().active;
+        let first = books.begin_writes(&[(
+            subscription(DataType::Book),
+            Some(registration.clone()),
+            SnapshotGate::default(),
+        )]);
+        first.commit();
+        let previous = Arc::clone(&books.sync.receipts()[&subscription(DataType::Book)]);
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        books.sync.record_subscription(
+            instrument_id(),
+            subscription(DataType::Book),
+            Instant::now(),
+            gate.clone(),
+        );
+        let replacement = Arc::new(AtomicBool::new(false));
+        books.entries.insert(
+            instrument_id(),
+            BookSubscription {
+                data_type: DataType::Book,
+                depth: None,
+                active: replacement.clone(),
+            },
+        );
+
+        let stale = books.begin_writes(&[(
+            subscription(DataType::Book),
+            Some(registration),
+            gate.clone(),
+        )]);
+        stale.commit();
+        assert!(books.sync.receipts().is_empty());
+        assert!(gate.lock().is_closed());
+        let current =
+            books.begin_writes(&[(subscription(DataType::Book), Some(replacement), gate)]);
+        current.commit();
+        let frame = levels(1, true);
+        let now = Instant::now();
+        let stale = books.sync.apply_received(
+            instrument_id(),
+            BookFrame::Levels(&frame),
+            &instrument(),
+            now,
+            &previous,
+        );
+        let accepted = books.sync.apply_received(
+            instrument_id(),
+            BookFrame::Levels(&frame),
+            &instrument(),
+            now,
+            &books.sync.receipts()[&subscription(DataType::Book)],
+        );
+        assert_eq!(stale, (BookSequenceOutcome::Suppress, None));
+        assert_eq!(accepted.0, BookSequenceOutcome::Accept);
+        assert_eq!(accepted.1.unwrap().sequence, 1);
+    }
+
+    #[rstest]
+    #[case::initial(false)]
+    #[case::recovery(true)]
+    #[tokio::test]
+    async fn received_snapshot_keeps_its_write_identity(#[case] recovery: bool) {
+        let books = registered();
+        let now = Instant::now();
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        let initial = books.begin_writes(&[(subscription(DataType::Book), None, gate)]);
+        let old = Arc::clone(&books.sync.receipts()[&subscription(DataType::Book)]);
+        initial.commit();
+        let first = books.sync.apply_received(
+            instrument_id(),
+            BookFrame::Levels(&levels(8, true)),
+            &instrument(),
+            now,
+            &old,
+        );
+        assert_eq!(first.0, BookSequenceOutcome::Accept);
+
+        let recovery_owner = recovery.then(|| {
+            assert_eq!(
+                apply(&books.sync, &levels(10, false), now).0,
+                BookSequenceOutcome::Recover
+            );
+            let (owner, _) = books.sync.claim_recovery(instrument_id()).unwrap();
+            assert!(owner.begin_replacement());
+            owner
+        });
+
+        let gate = recovery_owner
+            .as_ref()
+            .map_or_else(SnapshotGate::default, |owner| owner.gate.clone());
+        gate.lock().close();
+        let replacement = books.begin_writes(&[(subscription(DataType::Book), None, gate)]);
+        let current = Arc::clone(&books.sync.receipts()[&subscription(DataType::Book)]);
+        let waiting = current.committed();
+        tokio::pin!(waiting);
+        assert!(futures_util::poll!(&mut waiting).is_pending());
+        replacement.commit();
+        assert!(waiting.await);
+        let stale = books.sync.apply_received(
+            instrument_id(),
+            BookFrame::Levels(&levels(1, true)),
+            &instrument(),
+            now,
+            &old,
+        );
+        let accepted = books.sync.apply_received(
+            instrument_id(),
+            BookFrame::Levels(&levels(1, true)),
+            &instrument(),
+            now,
+            &current,
+        );
+        assert_eq!(stale, (BookSequenceOutcome::Suppress, None));
+        assert_eq!(accepted.0, BookSequenceOutcome::Accept);
+        assert_eq!(accepted.1.unwrap().sequence, 9);
+
+        if let Some(owner) = recovery_owner {
+            assert!(owner.is_accepted());
+        }
+    }
+
+    #[rstest]
+    #[case::failed(false)]
+    #[case::unsubscribed(true)]
+    #[tokio::test]
+    async fn abandoned_write_wakes_received_snapshot(#[case] unsubscribe: bool) {
+        let books = registered();
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        let pending = books.begin_writes(&[(subscription(DataType::Book), None, gate.clone())]);
+        let write = Arc::clone(&books.sync.receipts()[&subscription(DataType::Book)]);
+        let waiting = write.committed();
+        tokio::pin!(waiting);
+        assert!(futures_util::poll!(&mut waiting).is_pending());
+
+        if unsubscribe {
+            books.sync.remove(instrument_id());
+        } else {
+            drop(pending);
+        }
+
+        assert!(
+            !tokio::time::timeout(std::time::Duration::from_secs(1), waiting)
+                .await
+                .unwrap()
+        );
+        assert!(gate.lock().is_closed());
+    }
+
+    #[tokio::test]
+    async fn old_completion_cannot_open_replacement_gate() {
+        let books = registered();
+        let gate = SnapshotGate::default();
+        gate.lock().close();
+        let old = books.begin_writes(&[(subscription(DataType::Book), None, gate.clone())]);
+        let old_write = Arc::clone(&books.sync.receipts()[&subscription(DataType::Book)]);
+        let current = books.begin_writes(&[(subscription(DataType::Book), None, gate.clone())]);
+        old.commit();
+        assert!(!old_write.committed().await);
+        assert!(gate.lock().is_closed());
+        current.commit();
+        assert!(!gate.lock().is_closed());
     }
 
     #[rstest]

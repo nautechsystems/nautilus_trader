@@ -33,6 +33,7 @@ use std::{
 };
 
 use nautilus_core::string::secret::SecretString;
+use nautilus_live::book::snapshot::SnapshotGate;
 use nautilus_network::{
     Message, RECONNECTED, dst,
     websocket::{
@@ -49,7 +50,7 @@ use super::{
     messages::{Channel, CoinApiWsMessage, DataType, Frame, Hello, ScopeChange, Subscription},
 };
 use crate::{
-    book::sync::BookSubscriptions,
+    book::sync::{BookReceipts, BookSubscriptions, BookWrite, BookWrites},
     common::{consts::COINAPI_NAUTILUS_REFERRER, credential::is_valid_api_key},
 };
 
@@ -109,7 +110,7 @@ pub struct CoinApiWebSocketClient {
     hello_at: Arc<Mutex<Option<dst::time::Instant>>>,
     next_connection_id: AtomicU64,
     books: Option<Arc<BookSubscriptions>>,
-    out_tx: tokio::sync::mpsc::UnboundedSender<CoinApiWsMessage>,
+    out_tx: StreamSender,
 }
 
 impl CoinApiWebSocketClient {
@@ -156,7 +157,7 @@ impl CoinApiWebSocketClient {
             hello_at: Arc::new(Mutex::new(None)),
             next_connection_id: AtomicU64::new(0),
             books: None,
-            out_tx,
+            out_tx: StreamSender::Public(out_tx),
         };
 
         Ok((client, out_rx))
@@ -198,24 +199,35 @@ impl CoinApiWebSocketClient {
     ///
     /// Returns an error if connecting or sending fails; every change in the batch is reverted.
     pub async fn apply(&self, changes: &[ScopeChange]) -> Result<Vec<(ScopeChange, Error)>, Error> {
-        self.apply_registered(changes, &[]).await
+        self.apply_registered(changes, &[], &[]).await
     }
 
-    pub(crate) fn bind_books(&mut self, books: Arc<BookSubscriptions>) {
+    pub(crate) fn bind_books(
+        &mut self,
+        books: Arc<BookSubscriptions>,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<StreamMessage> {
+        let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
         self.books = Some(books);
+        self.out_tx = StreamSender::Bound(sender);
+        receiver
     }
 
     pub(crate) async fn apply_registered(
         &self,
         changes: &[ScopeChange],
         registrations: &[Option<Arc<AtomicBool>>],
+        gates: &[Option<SnapshotGate>],
     ) -> Result<Vec<(ScopeChange, Error)>, Error> {
         let mut rejected = Vec::new();
         let mut valid = Vec::with_capacity(changes.len());
 
         for (index, change) in changes.iter().enumerate() {
             match change.subscription().validate() {
-                Ok(()) => valid.push((*change, registrations.get(index).cloned().flatten())),
+                Ok(()) => valid.push((
+                    *change,
+                    registrations.get(index).cloned().flatten(),
+                    gates.get(index).cloned().flatten(),
+                )),
                 Err(e) => rejected.push((*change, e)),
             }
         }
@@ -226,7 +238,7 @@ impl CoinApiWebSocketClient {
         if fresh
             && !valid
                 .iter()
-                .any(|(change, _)| matches!(change, ScopeChange::Subscribe(_)))
+                .any(|(change, _, _)| matches!(change, ScopeChange::Subscribe(_)))
         {
             return Ok(rejected);
         }
@@ -282,6 +294,27 @@ impl CoinApiWebSocketClient {
         subscription: Subscription,
         paused: impl FnOnce(),
     ) -> Result<(), Error> {
+        self.resubscribe_inner(subscription, paused, None)
+            .await
+            .map(|_| ())
+    }
+
+    pub(crate) async fn resubscribe_book(
+        &self,
+        subscription: Subscription,
+        paused: impl FnOnce(),
+        gate: SnapshotGate,
+    ) -> Result<Option<BookWrites>, Error> {
+        self.resubscribe_inner(subscription, paused, Some(gate))
+            .await
+    }
+
+    async fn resubscribe_inner(
+        &self,
+        subscription: Subscription,
+        paused: impl FnOnce(),
+        gate: Option<SnapshotGate>,
+    ) -> Result<Option<BookWrites>, Error> {
         subscription.validate()?;
 
         if !subscription.channel.data_type.is_book() {
@@ -321,7 +354,11 @@ impl CoinApiWebSocketClient {
             paused();
         }
 
-        send_paced(connection, &scope).await
+        let snapshots = gate
+            .map(|gate| (subscription, None, gate))
+            .into_iter()
+            .collect::<Vec<_>>();
+        send_paced_books(connection, &scope, &snapshots).await
     }
 
     /// Closes the connection and forgets its subscriptions; repeated calls are safe.
@@ -360,8 +397,10 @@ impl CoinApiWebSocketClient {
             .map_err(|e| Error::Validation(e.to_string()))?;
 
         let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let books = self.books.clone();
         let handler: MessageHandler = Arc::new(move |message| {
-            let _ = raw_tx.send(message);
+            let receipts = books.as_ref().map(|books| books.sync.receipts());
+            let _ = raw_tx.send((message, receipts));
         });
 
         let client = WebSocketClient::builder()
@@ -397,11 +436,12 @@ impl CoinApiWebSocketClient {
             task,
             hello_at: Arc::clone(&self.hello_at),
             restarted_at: None,
+            books: self.books.clone(),
         })
     }
 }
 
-type RegisteredChange = (ScopeChange, Option<Arc<AtomicBool>>);
+type RegisteredChange = (ScopeChange, Option<Arc<AtomicBool>>, Option<SnapshotGate>);
 
 struct Connection {
     id: u64,
@@ -411,6 +451,7 @@ struct Connection {
     task: dst::task::JoinHandle<()>,
     hello_at: Arc<Mutex<Option<dst::time::Instant>>>,
     restarted_at: Option<dst::time::Instant>,
+    books: Option<Arc<BookSubscriptions>>,
 }
 
 impl Debug for Connection {
@@ -440,18 +481,40 @@ impl Connection {
             return Ok(true);
         }
 
-        if let Err(e) = send_paced(self, &scope).await {
-            revert(&self.subscriptions, &applied);
-            return Err(e);
-        }
+        let snapshots = changes
+            .iter()
+            .filter_map(|(change, registration, gate)| {
+                if let ScopeChange::Subscribe(subscription) = change
+                    && applied.contains(change)
+                    && let Some(gate) = gate
+                {
+                    Some((*subscription, registration.clone(), gate.clone()))
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>();
+
+        let writes = match send_paced_books(self, &scope, &snapshots).await {
+            Ok(writes) => writes,
+            Err(e) => {
+                revert(&self.subscriptions, &applied);
+                return Err(e);
+            }
+        };
 
         self.commit_scope(changes, &applied);
+
+        if let Some(writes) = writes {
+            writes.commit();
+        }
+
         Ok(true)
     }
 
     fn commit_scope(&self, changes: &[RegisteredChange], applied: &[ScopeChange]) {
         // Retirement takes this same connection lock, so it observes every committed registration
-        for (change, registration) in changes {
+        for (change, registration, _) in changes {
             if matches!(change, ScopeChange::Subscribe(_))
                 && applied.contains(change)
                 && let Some(registration) = registration
@@ -474,7 +537,7 @@ impl Connection {
     ) -> Vec<ScopeChange> {
         let mut applied = Vec::with_capacity(changes.len());
 
-        for (change, _) in changes {
+        for (change, _, _) in changes {
             let change = *change;
             let topic = topic(change.subscription());
 
@@ -512,6 +575,35 @@ impl Drop for Connection {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct StreamMessage {
+    pub(crate) message: CoinApiWsMessage,
+    pub(crate) write: Option<Arc<BookWrite>>,
+}
+
+#[derive(Debug, Clone)]
+enum StreamSender {
+    Public(tokio::sync::mpsc::UnboundedSender<CoinApiWsMessage>),
+    Bound(tokio::sync::mpsc::UnboundedSender<StreamMessage>),
+}
+
+impl StreamSender {
+    fn send(&self, message: CoinApiWsMessage, receipts: Option<&BookReceipts>) {
+        match self {
+            Self::Public(sender) => {
+                let _ = sender.send(message);
+            }
+            Self::Bound(sender) => {
+                let write = message.subscription().and_then(|subscription| {
+                    receipts.and_then(|receipts| receipts.get(&subscription).cloned())
+                });
+
+                let _ = sender.send(StreamMessage { message, write });
+            }
+        }
+    }
+}
+
 // Holds the slot weakly so dropping the public client drops the connection and aborts this task
 struct ConnectionHandler {
     id: u64,
@@ -519,14 +611,17 @@ struct ConnectionHandler {
     subscriptions: SubscriptionState,
     auth: AuthTracker,
     connection: Weak<tokio::sync::Mutex<Option<Connection>>>,
-    out_tx: tokio::sync::mpsc::UnboundedSender<CoinApiWsMessage>,
+    out_tx: StreamSender,
     api_key: SecretString,
     books: Option<Arc<BookSubscriptions>>,
 }
 
 impl ConnectionHandler {
-    async fn run(self, mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>) {
-        while let Some(message) = raw_rx.recv().await {
+    async fn run(
+        self,
+        mut raw_rx: tokio::sync::mpsc::UnboundedReceiver<(Message, Option<BookReceipts>)>,
+    ) {
+        while let Some((message, receipts)) = raw_rx.recv().await {
             let Message::Text(bytes) = message else {
                 continue;
             };
@@ -537,7 +632,7 @@ impl ConnectionHandler {
             }
 
             match Frame::decode(&bytes) {
-                Ok(Frame::Data(message)) => self.route(message),
+                Ok(Frame::Data(message)) => self.route(message, receipts.as_ref()),
                 Ok(Frame::Heartbeat) => self.confirm_session(),
                 Ok(Frame::Reconnect(notice)) => {
                     log::info!(
@@ -563,7 +658,7 @@ impl ConnectionHandler {
         }
     }
 
-    fn route(&self, message: CoinApiWsMessage) {
+    fn route(&self, message: CoinApiWsMessage, receipts: Option<&BookReceipts>) {
         let Some(subscription) = message.subscription() else {
             return;
         };
@@ -576,7 +671,7 @@ impl ConnectionHandler {
 
         self.subscriptions.confirm_subscribe(&topic(&subscription));
         self.confirm_session();
-        let _ = self.out_tx.send(message);
+        self.out_tx.send(message, receipts);
     }
 
     fn confirm_session(&self) {
@@ -602,7 +697,7 @@ impl ConnectionHandler {
         // A change in flight can reach the replacement socket first, so the replay waits its turn
         match send_paced(connection, &scope(&self.subscriptions)).await {
             Ok(()) => {
-                let _ = self.out_tx.send(CoinApiWsMessage::Reconnected);
+                self.out_tx.send(CoinApiWsMessage::Reconnected, None);
             }
             Err(e) => log::error!("Failed to replay CoinAPI scope: {e}"),
         }
@@ -627,7 +722,7 @@ impl ConnectionHandler {
             books.retire();
         }
 
-        let _ = self.out_tx.send(CoinApiWsMessage::Error(message));
+        self.out_tx.send(CoinApiWsMessage::Error(message), None);
 
         // Dropping the owned connection aborts this task, so nothing may await after it
         if guard
@@ -641,6 +736,14 @@ impl ConnectionHandler {
 
 // Waits out the client's `hello` interval, then sends `scope`
 async fn send_paced(connection: &Connection, scope: &[Subscription]) -> Result<(), Error> {
+    send_paced_books(connection, scope, &[]).await.map(|_| ())
+}
+
+async fn send_paced_books(
+    connection: &Connection,
+    scope: &[Subscription],
+    snapshots: &[(Subscription, Option<Arc<AtomicBool>>, SnapshotGate)],
+) -> Result<Option<BookWrites>, Error> {
     let hello_at = *connection.hello_at.lock();
     if let Some(hello_at) = hello_at {
         dst::time::sleep_until(hello_at + HELLO_INTERVAL_MIN).await;
@@ -648,10 +751,16 @@ async fn send_paced(connection: &Connection, scope: &[Subscription]) -> Result<(
 
     // A caller cancelled during the write leaves the queued hello to the writer, so the interval
     // starts before the write as well as after it
+    let writes = connection
+        .books
+        .as_ref()
+        .map(|books| books.begin_writes(snapshots));
     *connection.hello_at.lock() = Some(dst::time::Instant::now());
     let result = send_scope(&connection.client, scope).await;
     *connection.hello_at.lock() = Some(dst::time::Instant::now());
-    result
+
+    result?;
+    Ok(writes)
 }
 
 // Restores the subscription state from before a batch whose `hello` failed
