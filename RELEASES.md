@@ -128,6 +128,7 @@ Released on TBD (UTC).
 - Fixed Hyperliquid account state staying stale after fills (#5449), thanks for reporting @dxwil
 - Fixed Hyperliquid instrument caching stalling node startup (#5354), thanks for reporting @Karrenbelt
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
+- Fixed OKX order status reports accepting incomplete active coverage and discarding valid partial history
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects
 - Fixed OKX spot market base/quote sizing for margin-mode accounts and batch submissions

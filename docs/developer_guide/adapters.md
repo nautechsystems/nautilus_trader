@@ -1175,6 +1175,13 @@ endpoint supports and complete the rest locally:
 Log report counts at the command's `log_receipt_level` so periodic checks stay at debug while mass
 status logs at info.
 
+Fail report requests when a required active-order source fails or an in-scope active row cannot be parsed
+or mapped. Apply this rule to startup mass status and to periodic checks with either value of
+`open_check_open_only`. Active rows remain authoritative when a history endpoint returns them.
+
+Periodic full-history checks may preserve successful reports after a historical failure only when active-order
+coverage succeeds. Log the historical failure because these results carry no completeness marker.
+
 If a periodic check request fails, the engine marks that client failed for the cycle. It stops inferring
 absence for the orders and positions that the client covers. Returning an error is therefore safer than
 returning an empty set.
@@ -1302,9 +1309,11 @@ Set `reports_complete=true` only when both conditions hold:
 - All sources necessary to interpret the bounded history completed.
 - All required records were parsed, mapped, and linked to their orders.
 
-A failed required source, required row that cannot be parsed or mapped, or historical fill without its
-required order report makes the set incomplete. Preserve successful legs and authoritative active orders, but
-do not represent a failed historical query as a successful empty result.
+Require complete [active-order coverage](#bulk-report-filters) even when bounded history is incomplete.
+If active-order coverage succeeds, a failed required historical source, historical row that cannot be parsed
+or mapped, or historical fill without its required order report makes the bounded history incomplete.
+Preserve successful legs and authoritative active orders, but do not represent a failed
+historical query as a successful empty result.
 
 Commission construction is an exception to partial bounded history. Follow
 [commission failure handling](#commission-failure-handling) and fail the report request instead of
