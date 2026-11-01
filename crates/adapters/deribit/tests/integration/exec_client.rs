@@ -50,8 +50,9 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, SystemEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateOrderStatusReport,
-            GeneratePositionStatusReports, ModifyOrder, SubmitOrder, SubmitOrderList,
+            BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, GenerateFillReports,
+            GenerateOrderStatusReport, GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
+            SubmitOrderList,
         },
         system::SocketState,
     },
@@ -65,7 +66,10 @@ use nautilus_deribit::{
     },
     config::DeribitExecutionClientConfig,
     execution::DeribitExecutionClient,
-    http::models::DeribitProductType,
+    http::{
+        client::DeribitHttpClient,
+        models::{DeribitCurrency, DeribitProductType},
+    },
     websocket::enums::DeribitWsMethod,
 };
 use nautilus_live::{
@@ -75,16 +79,17 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
-        AccountType, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TimeInForce,
-        TriggerType,
+        AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
+        TimeInForce, TriggerType,
     },
     events::{AccountState, OrderEventAny},
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TraderId, VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, StrategyId, TradeId, TraderId,
+        VenueOrderId,
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
-    reports::OrderStatusReport,
-    types::{AccountBalance, Money, Price, Quantity},
+    reports::{FillReport, OrderStatusReport},
+    types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use nautilus_network::http::HttpClient;
 use rstest::rstest;
@@ -152,6 +157,7 @@ struct TestServerState {
     command_request_texts: Arc<tokio::sync::Mutex<Vec<String>>>,
     order_lookup_responses: Arc<tokio::sync::Mutex<HashMap<String, (StatusCode, Value)>>>,
     order_lookup_requests: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    user_trades_result: Arc<tokio::sync::Mutex<Value>>,
 }
 
 async fn handle_jsonrpc_request(
@@ -204,6 +210,10 @@ async fn handle_jsonrpc_request(
             let mut data = load_json("http_get_positions.json");
             data["id"] = json!(id);
             Json(data).into_response()
+        }
+        "private/get_user_trades_by_instrument_and_time"
+        | "private/get_user_trades_by_currency_and_time" => {
+            Json(user_trades_response(&state, method, id, params).await).into_response()
         }
         _ => Json(json!({
             "jsonrpc": "2.0",
@@ -576,6 +586,58 @@ fn order_message_result(request: &Value, order_state: CommandOrderState) -> Valu
         "average_price": 0.0,
         "order_state": order_state.as_str(),
         "order_type": "limit",
+    })
+}
+
+async fn user_trades_response(
+    state: &TestServerState,
+    method: &str,
+    id: u64,
+    params: Option<Value>,
+) -> Value {
+    let stored = state.user_trades_result.lock().await.clone();
+    let mut result = if stored.get("trades").is_some() {
+        stored
+    } else {
+        json!({"has_more": false, "trades": []})
+    };
+
+    if let Some(trades) = result
+        .get_mut("trades")
+        .and_then(|value| value.as_array_mut())
+    {
+        if method.ends_with("by_instrument_and_time") {
+            let instrument_name = params
+                .as_ref()
+                .and_then(|value| value.get("instrument_name"))
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            trades.retain(|trade| {
+                trade
+                    .get("instrument_name")
+                    .and_then(|value| value.as_str())
+                    == Some(instrument_name)
+            });
+        } else if let Some(currency) = params
+            .as_ref()
+            .and_then(|value| value.get("currency"))
+            .and_then(|value| value.as_str())
+        {
+            let prefix = format!("{currency}-");
+            trades.retain(|trade| {
+                trade
+                    .get("instrument_name")
+                    .and_then(|value| value.as_str())
+                    .is_some_and(|name| name.starts_with(&prefix))
+            });
+        }
+    }
+
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": result,
+        "testnet": true,
     })
 }
 
@@ -2223,4 +2285,322 @@ where
     })
     .await
     .expect("Timed out waiting for execution event")
+}
+
+const UNREPRESENTABLE_FEE: &str = "79228162514264337593543950335";
+const CORRECTED_FEE: &str = "0.00036801";
+
+#[expect(clippy::too_many_arguments)]
+fn user_trade(
+    trade_id: &str,
+    order_id: &str,
+    instrument_name: &str,
+    direction: &str,
+    price: &str,
+    amount: &str,
+    fee: &str,
+    liquidity: &str,
+    label: &str,
+) -> Value {
+    json!({
+        "trade_id": trade_id,
+        "order_id": order_id,
+        "instrument_name": instrument_name,
+        "direction": direction,
+        "price": price,
+        "amount": amount,
+        "fee": fee,
+        "fee_currency": "BTC",
+        "timestamp": 1_700_000_000_000_u64,
+        "trade_seq": 1,
+        "liquidity": liquidity,
+        "order_type": "limit",
+        "index_price": "50100",
+        "mark_price": "50110",
+        "tick_direction": 1,
+        "state": "filled",
+        "label": label,
+        "reduce_only": false,
+        "post_only": false,
+        "profit_loss": "0.1",
+    })
+}
+
+fn valid_btc_trade() -> Value {
+    user_trade(
+        "BTC-VALID",
+        "BTC-ORDER-VALID",
+        "BTC-PERPETUAL",
+        "buy",
+        "50000.0",
+        "10",
+        "0.00010000",
+        "T",
+        "O-VALID",
+    )
+}
+
+fn bad_btc_trade(fee: &str) -> Value {
+    user_trade(
+        "BTC-BAD",
+        "BTC-ORDER-BAD",
+        "BTC-PERPETUAL",
+        "sell",
+        "50123.5",
+        "30",
+        fee,
+        "M",
+        "O-BAD",
+    )
+}
+
+fn uncached_eth_trade() -> Value {
+    user_trade(
+        "ETH-BAD",
+        "ETH-ORDER-BAD",
+        "ETH-PERPETUAL",
+        "buy",
+        "2000.0",
+        "1",
+        UNREPRESENTABLE_FEE,
+        "T",
+        "O-ETH",
+    )
+}
+
+fn trades_result(trades: &[Value]) -> Value {
+    json!({"has_more": false, "trades": trades})
+}
+
+fn fill_command(
+    instrument_id: Option<InstrumentId>,
+    venue_order_id: Option<VenueOrderId>,
+) -> GenerateFillReports {
+    GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument_id,
+        venue_order_id,
+        None,
+        None,
+        None,
+        None,
+    )
+}
+
+fn assert_commission_failure(error: &anyhow::Error) {
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("failed to parse trade BTC-BAD for BTC-PERPETUAL"),
+        "error was: {message}"
+    );
+    assert!(
+        message.contains("Overflow when scaling mantissa to fixed precision")
+            || message.contains("exceeds MoneyRaw range"),
+        "error was: {message}"
+    );
+}
+
+fn assert_corrected_fill(report: &FillReport) {
+    assert_eq!(
+        report.instrument_id,
+        InstrumentId::from("BTC-PERPETUAL.DERIBIT")
+    );
+    assert_eq!(report.venue_order_id, VenueOrderId::from("BTC-ORDER-BAD"));
+    assert_eq!(report.trade_id, TradeId::from("BTC-BAD"));
+    assert_eq!(report.client_order_id, Some(ClientOrderId::from("O-BAD")));
+    assert_eq!(report.order_side, OrderSide::Sell);
+    assert_eq!(report.last_qty, Quantity::from("30"));
+    assert_eq!(report.last_px, Price::from("50123.5"));
+    assert_eq!(report.commission, Money::from("0.00036801 BTC"));
+    assert_eq!(report.commission.currency, Currency::BTC());
+    assert_eq!(report.liquidity_side, LiquiditySide::Maker);
+}
+
+fn assert_valid_fill(report: &FillReport) {
+    assert_eq!(
+        report.instrument_id,
+        InstrumentId::from("BTC-PERPETUAL.DERIBIT")
+    );
+    assert_eq!(report.venue_order_id, VenueOrderId::from("BTC-ORDER-VALID"));
+    assert_eq!(report.trade_id, TradeId::from("BTC-VALID"));
+    assert_eq!(report.client_order_id, Some(ClientOrderId::from("O-VALID")));
+    assert_eq!(report.order_side, OrderSide::Buy);
+    assert_eq!(report.last_qty, Quantity::from("10"));
+    assert_eq!(report.last_px, Price::from("50000.0"));
+    assert_eq!(report.commission, Money::from("0.00010000 BTC"));
+    assert_eq!(report.commission.currency, Currency::BTC());
+    assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+}
+
+async fn cached_http_client(addr: SocketAddr) -> DeribitHttpClient {
+    let client = DeribitHttpClient::new_with_env(
+        Some("test_api_key".to_string()),
+        Some("test_api_secret".to_string()),
+        Some(format!("http://{addr}/api/v2")),
+        DeribitEnvironment::Testnet,
+        10,
+        1,
+        100,
+        1000,
+        None,
+    )
+    .expect("HTTP client");
+    let instruments = client
+        .request_instruments(DeribitCurrency::ANY, Some(DeribitProductType::Future))
+        .await
+        .expect("instruments");
+    client.cache_instruments(&instruments);
+    client
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_fill_reports_preserves_empty_history_and_out_of_scope_trades() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let client = cached_http_client(addr).await;
+    let account_id = AccountId::from("DERIBIT-001");
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+
+    let scoped_empty = client
+        .request_fill_reports(account_id, Some(instrument_id), None, None)
+        .await
+        .expect("empty instrument history");
+    let unscoped_empty = client
+        .request_fill_reports(account_id, None, None, None)
+        .await
+        .expect("empty currency history");
+
+    assert!(scoped_empty.is_empty());
+    assert!(unscoped_empty.is_empty());
+
+    *state.user_trades_result.lock().await =
+        trades_result(&[valid_btc_trade(), uncached_eth_trade()]);
+
+    let unscoped = client
+        .request_fill_reports(account_id, None, None, None)
+        .await
+        .expect("uncached commission failure stays out of scope");
+    let scoped = client
+        .request_fill_reports(account_id, Some(instrument_id), None, None)
+        .await
+        .expect("cached instrument request");
+    let uncached = client
+        .request_fill_reports(
+            account_id,
+            Some(InstrumentId::from("ETH-PERPETUAL.DERIBIT")),
+            None,
+            None,
+        )
+        .await
+        .expect("uncached instrument request");
+
+    assert_eq!(unscoped.len(), 1);
+    assert_valid_fill(&unscoped[0]);
+    assert_eq!(scoped.len(), 1);
+    assert_valid_fill(&scoped[0]);
+    assert!(uncached.is_empty());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_commission_failure_fails_direct_targeted_and_mass_status_then_recovers() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.user_trades_result.lock().await =
+        trades_result(&[valid_btc_trade(), bad_btc_trade(UNREPRESENTABLE_FEE)]);
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
+    client.connect().await.expect("connect");
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(10),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+    let bad_order = VenueOrderId::from("BTC-ORDER-BAD");
+    let direct_error = client
+        .generate_fill_reports(fill_command(Some(instrument_id), None))
+        .await
+        .expect_err("direct fill request must fail as a unit");
+    let targeted_other = client
+        .generate_fill_reports(fill_command(
+            Some(instrument_id),
+            Some(VenueOrderId::from("BTC-ORDER-VALID")),
+        ))
+        .await
+        .expect("an unrelated commission failure must not fail a targeted request");
+    let targeted_error = client
+        .generate_fill_reports(fill_command(Some(instrument_id), Some(bad_order)))
+        .await
+        .expect_err("targeted fill request must not omit the failed fill");
+    let mass_error = client
+        .generate_mass_status(None)
+        .await
+        .expect_err("mass status must not omit the failed fill");
+
+    assert_eq!(targeted_other.len(), 1);
+    assert_valid_fill(&targeted_other[0]);
+
+    for error in [direct_error, targeted_error, mass_error] {
+        assert_commission_failure(&error);
+    }
+
+    while let Ok(event) = rx.try_recv() {
+        let is_fill = matches!(
+            &event,
+            ExecutionEvent::Report(ExecutionReport::Fill(_))
+                | ExecutionEvent::Order(OrderEventAny::Filled(_))
+        );
+        assert!(
+            !is_fill,
+            "commission failure must not emit a fallback fill, was {event:?}"
+        );
+    }
+
+    *state.user_trades_result.lock().await =
+        trades_result(&[valid_btc_trade(), bad_btc_trade(CORRECTED_FEE)]);
+    let recovered = client
+        .generate_fill_reports(fill_command(Some(instrument_id), None))
+        .await
+        .expect("corrected direct request");
+    let targeted = client
+        .generate_fill_reports(fill_command(Some(instrument_id), Some(bad_order)))
+        .await
+        .expect("corrected targeted request");
+    let mass_status = client
+        .generate_mass_status(None)
+        .await
+        .expect("corrected mass status")
+        .expect("mass status present");
+
+    assert_eq!(recovered.len(), 2);
+    assert_valid_fill(
+        recovered
+            .iter()
+            .find(|report| report.trade_id.as_str() == "BTC-VALID")
+            .unwrap(),
+    );
+    assert_corrected_fill(
+        recovered
+            .iter()
+            .find(|report| report.trade_id.as_str() == "BTC-BAD")
+            .unwrap(),
+    );
+    assert_eq!(targeted.len(), 1);
+    assert_corrected_fill(&targeted[0]);
+    let fills = mass_status.fill_reports();
+    assert_eq!(fills.get(&bad_order).expect("corrected mass fill").len(), 1);
+    assert_corrected_fill(&fills[&bad_order][0]);
+    assert_eq!(
+        fills
+            .get(&VenueOrderId::from("BTC-ORDER-VALID"))
+            .expect("valid mass fill")
+            .len(),
+        1
+    );
+
+    client.disconnect().await.expect("disconnect");
 }

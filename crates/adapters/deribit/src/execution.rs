@@ -694,17 +694,15 @@ impl ExecutionClient for DeribitExecutionClient {
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        let mut reports = self
-            .http_client
-            .request_fill_reports(self.core.account_id, cmd.instrument_id, cmd.start, cmd.end)
-            .await?;
-
-        // Filter by venue_order_id if provided
-        if let Some(venue_order_id) = &cmd.venue_order_id {
-            reports.retain(|r| r.venue_order_id == *venue_order_id);
-        }
-
-        Ok(reports)
+        self.http_client
+            .request_fill_reports_scoped(
+                self.core.account_id,
+                cmd.instrument_id,
+                cmd.start,
+                cmd.end,
+                cmd.venue_order_id.as_ref(),
+            )
+            .await
     }
 
     async fn generate_position_status_reports(

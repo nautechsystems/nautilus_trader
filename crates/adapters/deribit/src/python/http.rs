@@ -421,13 +421,19 @@ impl DeribitHttpClient {
     /// Fetches user trades from Deribit and converts them to Nautilus `FillReport`.
     /// Automatically paginates through all results using time-cursor advancement.
     ///
+    /// Trades whose instruments are not in the client's instrument cache are omitted. A trade
+    /// for a cached instrument that cannot be parsed, including a commission outside the
+    /// representable money range, fails the request. No fill reports are returned.
+    ///
     /// # Strategy
     /// - Uses `/private/get_user_trades_by_instrument_and_time` when instrument is provided
     /// - Otherwise iterates over currencies using `/private/get_user_trades_by_currency_and_time`
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or parsing fails.
+    /// Returns an error if:
+    /// - The request fails.
+    /// - A trade for a cached instrument cannot be parsed.
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None))]
     fn py_request_fill_reports<'py>(
