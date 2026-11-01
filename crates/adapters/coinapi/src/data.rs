@@ -72,7 +72,7 @@ use crate::{
         recovery::{spawn_recovery_monitor, spawn_recovery_task, start_recovery},
         sync::{BookFrame, BookSubscription, BookSubscriptions, BookWrite},
     },
-    common::{consts::COINAPI, credential::resolve_api_key},
+    common::{consts::COINAPI, credential::resolve_api_key, enums::OhlcvPeriod},
     config::{CoinApiDataClientConfig, CoinApiInstrumentSelection},
     http::{
         client::{CoinApiHttpClient, HistoryPages},
@@ -115,6 +115,7 @@ const BOOK_DEPTH_CHANNELS: [(DataType, usize); 3] = [
 /// book channel per connection, so every book subscription must use the same channel.
 #[derive(Debug)]
 pub struct CoinApiDataClient {
+    clock: &'static AtomicTime,
     client_id: ClientId,
     config: CoinApiDataClientConfig,
     api_key: SecretString,
@@ -128,7 +129,6 @@ pub struct CoinApiDataClient {
     instruments: Arc<InstrumentIndex>,
     books: Arc<BookSubscriptions>,
     ohlcv: Arc<Mutex<OhlcvCache>>,
-    clock: &'static AtomicTime,
 }
 
 impl CoinApiDataClient {
@@ -154,6 +154,7 @@ impl CoinApiDataClient {
         CoinApiWebSocketClient::new(api_key.clone(), config.websocket_config())?;
 
         Ok(Self {
+            clock: get_atomic_clock_realtime(),
             client_id,
             config,
             api_key,
@@ -167,7 +168,6 @@ impl CoinApiDataClient {
             instruments: Arc::new(InstrumentIndex::default()),
             books: Arc::new(BookSubscriptions::default()),
             ohlcv: Arc::new(Mutex::new(OhlcvCache::new())),
-            clock: get_atomic_clock_realtime(),
         })
     }
 
@@ -949,7 +949,7 @@ impl DataClient for CoinApiDataClient {
         let clock = self.clock;
 
         self.spawn_command("CoinAPI bars request", async move {
-            let mut pages = http.get_ohlcv_range(&symbol_id, &period_id, &range).await?;
+            let mut pages = http.get_ohlcv_range(&symbol_id, period_id, &range).await?;
 
             // A period still in progress, or closing after the window, is not a complete bar
             let closed_by = range.time_end.min(clock.get_time_ns().to_datetime_utc());
@@ -1103,7 +1103,7 @@ struct BookStreams {
 }
 
 // Latest update for each (symbol_id, period_id) OHLCV stream
-pub(crate) type OhlcvCache = AHashMap<(Ustr, Ustr), Ohlcv>;
+pub(crate) type OhlcvCache = AHashMap<(Ustr, OhlcvPeriod), Ohlcv>;
 
 #[derive(Debug, Default)]
 struct InstrumentIndex {
@@ -1271,7 +1271,7 @@ async fn load_instruments(
     Ok(selected)
 }
 
-fn channel(data_type: DataType, period_id: Option<Ustr>) -> Channel {
+fn channel(data_type: DataType, period_id: Option<OhlcvPeriod>) -> Channel {
     Channel {
         data_type,
         period_id,

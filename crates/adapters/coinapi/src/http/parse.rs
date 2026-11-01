@@ -81,7 +81,7 @@ pub fn parse_instruments(
     let mut errors = Vec::new();
 
     for symbol in symbols {
-        if CoinApiSymbolType::from_str(&symbol.symbol_type).is_err() {
+        if CoinApiSymbolType::from_str(symbol.symbol_type.as_ref()).is_err() {
             continue;
         }
 
@@ -140,7 +140,7 @@ pub fn parse_instrument(
         Ok(value)
     };
 
-    let symbol_type = CoinApiSymbolType::from_str(&symbol.symbol_type).map_err(|_| {
+    let symbol_type = CoinApiSymbolType::from_str(symbol.symbol_type.as_ref()).map_err(|_| {
         field(
             "symbol_type",
             &format!("unsupported {}", symbol.symbol_type),

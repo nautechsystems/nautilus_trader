@@ -46,7 +46,9 @@ use super::{
         SymbolsQuery, TradesQuery, provider_time,
     },
 };
-use crate::common::{consts::COINAPI_NAUTILUS_REFERRER, credential::is_valid_api_key};
+use crate::common::{
+    consts::COINAPI_NAUTILUS_REFERRER, credential::is_valid_api_key, enums::OhlcvPeriod,
+};
 
 /// Primary CoinAPI Market Data REST endpoint, including its version prefix.
 pub const REST_URL: &str = "https://rest.coinapi.io/v1/";
@@ -110,17 +112,17 @@ pub struct HistoryPages<T> {
 /// Requests return raw protocol models. The single-page historical methods fetch exactly one
 /// page; callers must not infer completeness from a full page. The range methods page through a
 /// whole window.
+/// Range requests run serially so each sizes its pages after earlier ranges settle their credits.
 #[derive(Debug)]
 pub struct CoinApiHttpClient {
-    client: HttpClient,
-    base_url: Url,
     api_key: SecretString,
+    base_url: Url,
+    client: HttpClient,
     concurrency: tokio::sync::Semaphore,
-    // Serializes range requests so each sizes its pages after earlier ranges settle their credits
     ranges: tokio::sync::Mutex<()>,
-    credits_remaining: AtomicU64,
     retry: RetryManager<Error>,
     cancellation: CancellationToken,
+    credits_remaining: AtomicU64,
 }
 
 impl CoinApiHttpClient {
@@ -195,14 +197,14 @@ impl CoinApiHttpClient {
             ])
             .build()?;
         Ok(Self {
-            client,
-            base_url,
             api_key,
+            base_url,
+            client,
             concurrency: tokio::sync::Semaphore::new(config.max_concurrent_requests),
             ranges: tokio::sync::Mutex::new(()),
-            credits_remaining: AtomicU64::new(config.credit_budget),
             retry: RetryManager::new(config.retry),
             cancellation: CancellationToken::new(),
+            credits_remaining: AtomicU64::new(config.credit_budget),
         })
     }
 
@@ -426,7 +428,7 @@ impl CoinApiHttpClient {
         query: &OhlcvQuery,
     ) -> Result<Vec<Ohlcv>, Error> {
         query.range.validate()?;
-        if query.period_id.trim().is_empty() {
+        if query.period_id.as_ref().trim().is_empty() {
             return Err(Error::Validation("period_id must not be empty".into()));
         }
 
@@ -445,7 +447,7 @@ impl CoinApiHttpClient {
     pub async fn get_ohlcv_range(
         &self,
         symbol_id: &str,
-        period_id: &str,
+        period_id: OhlcvPeriod,
         range: &HistoryRange,
     ) -> Result<HistoryPages<Ohlcv>, Error> {
         self.get_range(
@@ -453,7 +455,7 @@ impl CoinApiHttpClient {
             |ohlcv: &Ohlcv| ohlcv.time_period_start,
             |page| async move {
                 let query = OhlcvQuery {
-                    period_id: period_id.to_owned(),
+                    period_id,
                     range: page,
                 };
 

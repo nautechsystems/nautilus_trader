@@ -20,6 +20,7 @@
 //! Rows with an `order_id` change resting orders (L3): `ADD` adds one, `SET` gives its absolute
 //! size, `MATCH` and `SUB` subtract a filled size, and `DELETE` removes it. A fill to zero removes
 //! the order without a `DELETE`, and a venue can reuse an identifier after its `DELETE`.
+//! Numeric update codes also select the corresponding named operation.
 
 use ahash::AHashMap;
 use csv::StringRecord;
@@ -45,6 +46,7 @@ const HALF_DAY_NANOS: u64 = DAY_NANOS / 2;
 ///
 /// Each event ends with an `F_LAST` delta: the opening snapshot, which starts with a clear, is one
 /// event, and so is each run of updates sharing a `time_exchange`.
+/// Pending events are keyed by snapshot status and their first exchange timestamp.
 #[derive(Debug)]
 pub(crate) struct BookDecoder {
     instrument_id: InstrumentId,
@@ -56,10 +58,8 @@ pub(crate) struct BookDecoder {
     entry_px: usize,
     entry_sx: usize,
     order_id: usize,
-    // Resting L3 orders by venue identifier, as last emitted
     orders: AHashMap<String, BookOrder>,
     order_id_last: u64,
-    // Deltas of the event in progress, and whether it is a snapshot with its first timestamp
     event: Vec<OrderBookDelta>,
     event_key: Option<(bool, UnixNanos)>,
 }
@@ -85,8 +85,8 @@ impl Decode for BookDecoder {
         size: &mut Precision,
         out: &mut Vec<OrderBookDelta>,
     ) -> anyhow::Result<()> {
-        let update_type = text(record, self.update_type)?;
-        let is_snapshot = update_type == "SNAPSHOT";
+        let update_type = UpdateType::from(text(record, self.update_type)?);
+        let is_snapshot = update_type == UpdateType::Snapshot;
         let ts_event = time_on(
             self.date,
             text(record, self.time_exchange)?,
@@ -149,7 +149,7 @@ impl Decode for BookDecoder {
         // A limit can stop inside the snapshot, so read ahead to the first update to date it
         if matches!(self.event_key, Some((true, _))) {
             while let Some(record) = rows.next()? {
-                if text(record, self.update_type)? != "SNAPSHOT" {
+                if UpdateType::from(text(record, self.update_type)?) != UpdateType::Snapshot {
                     let first_update = time_on(
                         self.date,
                         text(record, self.time_exchange)?,
@@ -269,9 +269,9 @@ impl BookDecoder {
         size: Precision,
     ) -> anyhow::Result<()> {
         let action = match row.update_type {
-            "SNAPSHOT" if row.size.is_zero() => return Ok(()),
-            "SNAPSHOT" => BookAction::Add,
-            "DELETE" => BookAction::Delete,
+            UpdateType::Snapshot if row.size.is_zero() => return Ok(()),
+            UpdateType::Snapshot => BookAction::Add,
+            UpdateType::Delete => BookAction::Delete,
             _ if row.size.is_zero() => BookAction::Delete,
             _ => BookAction::Update,
         };
@@ -293,11 +293,17 @@ impl BookDecoder {
         size: Precision,
     ) -> anyhow::Result<()> {
         let (resting, remaining) = match (row.update_type, self.orders.get(order_id).copied()) {
-            ("SNAPSHOT" | "ADD", None) => return self.add_order(order_id, row, price, size),
-            ("SNAPSHOT" | "ADD" | "SET", Some(resting)) => (resting, row.size),
-            ("MATCH" | "SUB", Some(resting)) => (resting, resting.size.as_decimal() - row.size),
-            ("DELETE", Some(resting)) => (resting, Decimal::ZERO),
-            ("DELETE", None) => return Ok(()),
+            (UpdateType::Snapshot | UpdateType::Add, None) => {
+                return self.add_order(order_id, row, price, size);
+            }
+            (UpdateType::Snapshot | UpdateType::Add | UpdateType::Set, Some(resting)) => {
+                (resting, row.size)
+            }
+            (UpdateType::Match | UpdateType::Sub, Some(resting)) => {
+                (resting, resting.size.as_decimal() - row.size)
+            }
+            (UpdateType::Delete, Some(resting)) => (resting, Decimal::ZERO),
+            (UpdateType::Delete, None) => return Ok(()),
             (update_type, _) => {
                 log::warn!("Skipping CoinAPI {update_type} for unknown order {order_id}");
                 return Ok(());
@@ -390,11 +396,38 @@ impl BookDecoder {
 
 // The fields of one limit book row
 struct Row<'a> {
-    update_type: &'a str,
+    update_type: UpdateType<'a>,
     side: OrderSide,
     price: Decimal,
     size: Decimal,
     flags: u8,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, strum::Display)]
+#[strum(serialize_all = "SCREAMING_SNAKE_CASE")]
+enum UpdateType<'a> {
+    Snapshot,
+    Add,
+    Sub,
+    Set,
+    Delete,
+    Match,
+    #[strum(transparent)]
+    Other(&'a str),
+}
+
+impl<'a> From<&'a str> for UpdateType<'a> {
+    fn from(value: &'a str) -> Self {
+        match value {
+            "SNAPSHOT" => Self::Snapshot,
+            "ADD" | "0" => Self::Add,
+            "SUB" | "1" => Self::Sub,
+            "SET" | "2" => Self::Set,
+            "DELETE" | "3" => Self::Delete,
+            "MATCH" | "4" => Self::Match,
+            other => Self::Other(other),
+        }
+    }
 }

@@ -10,6 +10,7 @@ Released on TBD (UTC).
 - Added `HttpClient` certificate support through `certs_dir`
 - Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`
+- Added CoinAPI flat-file support for numeric book update codes
 - Added Deribit routed spot metadata and local order and market data capability checks
 
 ### Breaking Changes
@@ -29,6 +30,8 @@ Released on TBD (UTC).
 - Changed Binance HTTP error enums to add `RateLimitBlocked`; update exhaustive matches
 - Changed Binance REST to block on 418 without `Retry-After`; confirm the ban has ended before restarting
 - Changed Bybit HTTP `modify_order` to take `trigger_price`; pass `None` when unchanged
+- Changed CoinAPI OHLCV fields and APIs to `OhlcvPeriod`; convert string literals with `.into()`
+- Changed CoinAPI symbol type and taker side APIs to `SymbolType` and `TakerSide`; use enum variants
 - Changed Coinbase live fills to use polled REST history; raise `retry_delay_max_ms` to reduce REST usage
 - Changed Databento and Interactive Brokers futures year settings to `FuturesYearDigits`; Python keeps `1`/`2`
 - Changed Databento futures IDs to two-digit years by default; `futures_year_digits=1` keeps old IDs, thanks @faysou
@@ -103,7 +106,6 @@ Released on TBD (UTC).
 
 - Added NETTING startup reconciliation scenarios for flat accounts and recovered positions
 - Improved Docker publishing with temporary digest directories isolated per job
-- Refined Polymarket limit submit responses and venue order ID lookup
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Optimized empty command-queue drains and L1 order-book quote replacement
 - Upgraded `cargo-codspeed` tool to v6.0.0

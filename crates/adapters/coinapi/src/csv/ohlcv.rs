@@ -31,6 +31,7 @@ use ustr::Ustr;
 
 use super::rows::{Precision, Rows, date_time, number, text};
 use crate::{
+    common::enums::OhlcvPeriod,
     http::{models::Symbol, parse::parse_instruments},
     websocket::parse::{period_id_to_bar_spec, price_at, quantity_at},
 };
@@ -105,7 +106,7 @@ impl CoinApiOhlcvLoader {
             })?,
         };
 
-        let spec = period_id_to_bar_spec(Ustr::from(period_id))
+        let spec = period_id_to_bar_spec(OhlcvPeriod::from(period_id))
             .ok_or_else(|| anyhow::anyhow!("unsupported period {period_id}"))?;
 
         let mut rows = Rows::open(path)?;

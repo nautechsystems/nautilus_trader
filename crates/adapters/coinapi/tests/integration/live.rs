@@ -369,7 +369,7 @@ async fn bounded_websocket_smoke() {
 
     let ohlcv = Channel {
         data_type: DataType::Ohlcv,
-        period_id: Some(Ustr::from("1SEC")),
+        period_id: Some("1SEC".into()),
     };
 
     let btc = Ustr::from("COINBASE_SPOT_BTC_USD");
@@ -394,7 +394,7 @@ async fn bounded_websocket_smoke() {
 
     client.subscribe(subscription(ohlcv, btc)).await.unwrap();
     next_matching(&mut rx, |m| {
-        matches!(m, CoinApiWsMessage::Ohlcv(bar) if bar.symbol_id == btc && bar.period_id == "1SEC")
+        matches!(m, CoinApiWsMessage::Ohlcv(bar) if bar.symbol_id == btc && bar.period_id.as_ref() == "1SEC")
     })
     .await;
 

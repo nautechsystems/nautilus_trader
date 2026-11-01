@@ -377,7 +377,7 @@ fn futures_fixture_parses_complete_futures() {
 fn unmapped_symbols_are_rejected_and_other_types_skipped() {
     let mut symbols = load(include_str!("../../test_data/symbols_rejected.json"));
     let mut option = load(include_str!("../../test_data/symbols_spot.json")).remove(0);
-    option.symbol_type = Ustr::from("OPTION");
+    option.symbol_type = "OPTION".into();
     symbols.push(option);
 
     let (instruments, errors) = parse_instruments(&symbols, TS_INIT);
@@ -522,7 +522,8 @@ fn futures_symbol() -> Symbol {
 #[case::missing_quote(|s: &mut Symbol| s.asset_id_quote = None, "asset_id_quote", "missing")]
 #[case::missing_base_exchange(|s: &mut Symbol| s.asset_id_base_exchange = None, "asset_id_base_exchange", "missing")]
 #[case::missing_quote_exchange(|s: &mut Symbol| s.asset_id_quote_exchange = None, "asset_id_quote_exchange", "missing")]
-#[case::unknown_type(|s: &mut Symbol| s.symbol_type = Ustr::from("INDEX"), "symbol_type", "unsupported INDEX")]
+#[case::unsupported_type(|s: &mut Symbol| s.symbol_type = "INDEX".into(), "symbol_type", "unsupported INDEX")]
+#[case::unknown_type(|s: &mut Symbol| s.symbol_type = "NEW_TYPE".into(), "symbol_type", "unsupported NEW_TYPE")]
 #[case::missing_delivery(|s: &mut Symbol| s.future_delivery_time = None, "future_delivery_time", "missing")]
 #[case::missing_price(|s: &mut Symbol| s.price_precision = None, "price_precision", "missing")]
 #[case::zero_price(|s: &mut Symbol| s.price_precision = Some(Decimal::ZERO), "price_precision", "0 is not positive")]
@@ -572,7 +573,7 @@ fn invalid_values_fail_with_field(#[case] mutate: fn(&mut Symbol), #[case] field
 #[rstest]
 fn spot_symbol_type_mismatch_is_unresolved() {
     let mut symbol = futures_symbol();
-    symbol.symbol_type = Ustr::from("SPOT");
+    symbol.symbol_type = "SPOT".into();
 
     let result = parse_instrument(&symbol, TS_INIT);
 

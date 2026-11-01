@@ -50,7 +50,6 @@ use tokio_tungstenite::{
         handshake::server::{Request, Response},
     },
 };
-use ustr::Ustr;
 
 type Socket = WebSocketStream<TcpStream>;
 
@@ -105,7 +104,7 @@ fn ohlcv_message(bytes: &str) -> CoinApiWsMessage {
 fn ohlcv(period_id: &str) -> Channel {
     Channel {
         data_type: DataType::Ohlcv,
-        period_id: Some(Ustr::from(period_id)),
+        period_id: Some(period_id.into()),
     }
 }
 
@@ -575,7 +574,7 @@ async fn routes_each_message_family(
 
         let channel = Channel {
             data_type,
-            period_id: period_id.map(Ustr::from),
+            period_id: period_id.map(Into::into),
         };
 
         client

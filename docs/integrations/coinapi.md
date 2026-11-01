@@ -655,9 +655,10 @@ hold one symbol under
 `T-{SCHEMA}/D-{YYYYMMDD|YYYYMMDDHH}/E-{EXCHANGE}/IDDI-{ID}+SC-{SYMBOL_ID}+S-{EXCHANGE_SYMBOL}.csv.gz`.
 Pass an explicit `instrument_id` for each file.
 
-CoinAPI also documents export variants with comma delimiters, full date-time book timestamps, or numeric book
-update types. These loaders require semicolon delimiters, time-of-day book timestamps, and named book updates
-such as `SNAPSHOT`, `ADD`, and `SET`. Convert other layouts before loading them. See the
+The loaders accept named book updates and numeric codes: `0=ADD`, `1=SUB`, `2=SET`, `3=DELETE`, and
+`4=MATCH`. Snapshots require the named `SNAPSHOT` update. CoinAPI also documents export variants with comma
+delimiters or full date-time book timestamps. These loaders require semicolon delimiters and time-of-day
+book timestamps. Convert other layouts before loading them. See the
 [full-book dataset guide](https://www.coinapi.io/products/flat-files/docs/datasets/limitbook?ref=nautilus).
 
 #### Buckets and retention

@@ -109,8 +109,8 @@ pub struct CoinApiWebSocketClient {
     connection: Arc<tokio::sync::Mutex<Option<Connection>>>,
     hello_at: Arc<Mutex<Option<dst::time::Instant>>>,
     next_connection_id: AtomicU64,
-    books: Option<Arc<BookSubscriptions>>,
     out_tx: StreamSender,
+    books: Option<Arc<BookSubscriptions>>,
 }
 
 impl CoinApiWebSocketClient {
@@ -156,8 +156,8 @@ impl CoinApiWebSocketClient {
             connection: Arc::new(tokio::sync::Mutex::new(None)),
             hello_at: Arc::new(Mutex::new(None)),
             next_connection_id: AtomicU64::new(0),
-            books: None,
             out_tx: StreamSender::Public(out_tx),
+            books: None,
         };
 
         Ok((client, out_rx))
@@ -417,12 +417,12 @@ impl CoinApiWebSocketClient {
 
         let handler = ConnectionHandler {
             id,
-            client: Arc::clone(&client),
-            subscriptions: subscriptions.clone(),
-            auth: auth.clone(),
-            connection: Arc::downgrade(&self.connection),
-            out_tx: self.out_tx.clone(),
             api_key: self.api_key.clone(),
+            client: Arc::clone(&client),
+            connection: Arc::downgrade(&self.connection),
+            auth: auth.clone(),
+            subscriptions: subscriptions.clone(),
+            out_tx: self.out_tx.clone(),
             books: self.books.clone(),
         };
 
@@ -431,11 +431,11 @@ impl CoinApiWebSocketClient {
         Ok(Connection {
             id,
             client,
-            subscriptions,
             auth,
-            task,
+            subscriptions,
             hello_at: Arc::clone(&self.hello_at),
             restarted_at: None,
+            task,
             books: self.books.clone(),
         })
     }
@@ -446,11 +446,11 @@ type RegisteredChange = (ScopeChange, Option<Arc<AtomicBool>>, Option<SnapshotGa
 struct Connection {
     id: u64,
     client: Arc<WebSocketClient>,
-    subscriptions: SubscriptionState,
     auth: AuthTracker,
-    task: dst::task::JoinHandle<()>,
+    subscriptions: SubscriptionState,
     hello_at: Arc<Mutex<Option<dst::time::Instant>>>,
     restarted_at: Option<dst::time::Instant>,
+    task: dst::task::JoinHandle<()>,
     books: Option<Arc<BookSubscriptions>>,
 }
 
@@ -458,8 +458,8 @@ impl Debug for Connection {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(Connection))
             .field("id", &self.id)
-            .field("subscriptions", &self.subscriptions)
             .field("auth", &self.auth.auth_state())
+            .field("subscriptions", &self.subscriptions)
             .finish_non_exhaustive()
     }
 }
@@ -607,12 +607,12 @@ impl StreamSender {
 // Holds the slot weakly so dropping the public client drops the connection and aborts this task
 struct ConnectionHandler {
     id: u64,
-    client: Arc<WebSocketClient>,
-    subscriptions: SubscriptionState,
-    auth: AuthTracker,
-    connection: Weak<tokio::sync::Mutex<Option<Connection>>>,
-    out_tx: StreamSender,
     api_key: SecretString,
+    client: Arc<WebSocketClient>,
+    connection: Weak<tokio::sync::Mutex<Option<Connection>>>,
+    auth: AuthTracker,
+    subscriptions: SubscriptionState,
+    out_tx: StreamSender,
     books: Option<Arc<BookSubscriptions>>,
 }
 
@@ -881,7 +881,7 @@ fn parse_topic(topic: &str) -> Option<Subscription> {
     let (channel, symbol_id) = split_topic(topic, TOPIC_DELIMITER);
 
     let (data_type, period_id) = match channel.split_once(PERIOD_DELIMITER) {
-        Some((data_type, period)) => (data_type, Some(Ustr::from(period))),
+        Some((data_type, period)) => (data_type, Some(period.into())),
         None => (channel, None),
     };
 

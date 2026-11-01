@@ -486,12 +486,12 @@ fn key(symbol_id: &str) -> String {
     format!("book:{symbol_id}")
 }
 
+/// Checks each book with a fixed emitted-minus-venue sequence offset per snapshot episode.
 struct CoinApi {
     wire: CoinApiWire,
     snapshot_timeout: Duration,
     expected_epoch: usize,
     epochs: HashMap<InstrumentId, usize>,
-    // Emitted minus venue sequence for each book's current snapshot episode
     offsets: HashMap<InstrumentId, u64>,
 }
 
@@ -675,14 +675,13 @@ impl StressVenue for CoinApi {
     }
 }
 
+/// Records each book's latest `(epoch, sequence, snapshot flag)` for failure reports, recent
+/// snapshot `(sequence, timestamp)` pairs, and scope-exit times across all connections.
 #[derive(Clone, Default)]
 struct CoinApiWire {
     views: WireViews,
-    // Epoch, sequence, and snapshot flag of each book's latest frame, for failure reports
     latest: Arc<Mutex<HashMap<String, (usize, u64, bool)>>>,
-    // Recent snapshot frames of each book as (sequence, timestamp)
     snapshots: Arc<Mutex<HashMap<String, VecDeque<(u64, u64)>>>>,
-    // Times each book left the session scope, across every connection
     restarts: Arc<Mutex<HashMap<String, Vec<Instant>>>>,
 }
 
@@ -698,12 +697,12 @@ impl WireCodec for CoinApiWire {
     }
 }
 
+/// Tracks book fault keys from the latest adapter hello as the connection's scope.
 struct CoinApiConnection {
     wire: CoinApiWire,
     route: &'static str,
     epoch: usize,
     books: HashMap<String, WireBook>,
-    // Book fault keys the latest adapter hello listed
     scope: HashSet<String>,
 }
 

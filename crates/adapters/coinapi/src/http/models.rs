@@ -21,6 +21,8 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use ustr::Ustr;
 
+use crate::common::enums::{SymbolType, TakerSide};
+
 /// Exchange identity and metadata.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Exchange {
@@ -43,7 +45,7 @@ pub struct Exchange {
 pub struct Symbol {
     pub symbol_id: Ustr,
     pub exchange_id: Ustr,
-    pub symbol_type: Ustr,
+    pub symbol_type: SymbolType,
     pub asset_id_base: Option<Ustr>,
     pub asset_id_quote: Option<Ustr>,
     pub asset_id_unit: Option<Ustr>,
@@ -140,7 +142,7 @@ pub struct Trade {
     pub price: Decimal,
     #[serde(deserialize_with = "decimal::deserialize_json")]
     pub size: Decimal,
-    pub taker_side: Ustr,
+    pub taker_side: TakerSide,
     pub id_trade: Option<String>,
 }
 

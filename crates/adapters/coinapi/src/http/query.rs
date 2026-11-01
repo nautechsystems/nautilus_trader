@@ -21,6 +21,7 @@ use jiff::{RoundMode, Timestamp, TimestampRound, Unit};
 use serde::{Deserialize, Serialize, Serializer};
 
 use super::error::Error;
+use crate::common::enums::OhlcvPeriod;
 
 /// Largest documented historical page size.
 pub const HISTORY_LIMIT_MAX: u32 = 100_000;
@@ -120,7 +121,7 @@ pub struct TradesQuery {
 /// Historical OHLCV for a provider period identifier.
 #[derive(Debug, Clone, Serialize)]
 pub struct OhlcvQuery {
-    pub period_id: String,
+    pub period_id: OhlcvPeriod,
     #[serde(flatten)]
     pub range: HistoryQuery,
 }

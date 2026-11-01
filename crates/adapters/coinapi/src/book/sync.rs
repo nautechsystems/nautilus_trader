@@ -172,28 +172,29 @@ impl BookSubscriptions {
     }
 }
 
+/// Emitted sequences use a fixed offset from venue sequences within each snapshot episode.
 #[derive(Debug)]
 struct BookState {
     subscription: Subscription,
     sync: BookSync<CoinApiBookError, u64>,
-    orders: OrderIndex,
-    // Added to the venue sequence of each delta emitted in the current snapshot episode
-    offset: u64,
     write: Option<Arc<BookWrite>>,
+    orders: OrderIndex,
+    offset: u64,
 }
 
 /// Sequence, snapshot, and recovery state of each subscribed book.
 ///
 /// A book accepts messages only after [`Self::record_subscription`] registers it; [`Self::apply`]
 /// suppresses messages for any other book.
+///
+/// Emitted sequences persist across subscriptions and connections. Depth streams track both the
+/// last venue sequence and the last emitted sequence.
 #[derive(Debug, Clone, Default)]
 pub struct BookSyncTracker {
     books: Arc<Mutex<AHashMap<InstrumentId, BookState>>>,
-    // Last emitted sequence of each book, kept across subscriptions and connections
-    emitted: Arc<Mutex<AHashMap<InstrumentId, u64>>>,
-    // Last venue and emitted sequence of each depth stream
-    depths: Arc<Mutex<AHashMap<InstrumentId, (u64, u64)>>>,
     receipts: Arc<AtomicMap<Subscription, Arc<BookWrite>>>,
+    emitted: Arc<Mutex<AHashMap<InstrumentId, u64>>>,
+    depths: Arc<Mutex<AHashMap<InstrumentId, (u64, u64)>>>,
 }
 
 impl BookSyncTracker {
@@ -211,9 +212,9 @@ impl BookSyncTracker {
         let state = BookState {
             subscription,
             sync,
+            write: None,
             orders: OrderIndex::default(),
             offset: 0,
-            write: None,
         };
 
         let mut books = self.books.lock();
