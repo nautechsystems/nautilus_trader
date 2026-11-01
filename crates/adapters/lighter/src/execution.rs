@@ -6404,63 +6404,12 @@ impl ExecutionClient for LighterExecutionClient {
                     return Ok(());
                 }
 
-                Some(report)
+                Some((order.client_order_index, report))
             } else {
                 None
             };
 
-            let events = dispatch.order_events.lock();
-            if dispatch
-                .terminals_pending
-                .lock()
-                .contains_key(&cmd.client_order_id)
-                || events.get(&cmd.client_order_id).is_some_and(|deferred| {
-                    deferred
-                        .order
-                        .as_ref()
-                        .is_some_and(|order| order.status.is_terminal())
-                })
-                || dispatch
-                    .order_identity(&cmd.client_order_id)
-                    .is_some_and(|identity| {
-                        position_fills_pending(&identity, &events, &dispatch)
-                            || dispatch.any_order_identity(|_, other, _| {
-                                other.strategy_id == identity.strategy_id
-                                    && other.instrument_id == identity.instrument_id
-                                    && other.has_publication()
-                            })
-                    })
-                || dispatch.has_pending_modify(&cmd.client_order_id)
-                || dispatch
-                    .order_identity(&cmd.client_order_id)
-                    .is_some_and(|identity| identity.has_publication())
-            {
-                return Ok(());
-            }
-
-            match report {
-                Some(report) => {
-                    if dispatch
-                        .order_identity(&cmd.client_order_id)
-                        .is_some_and(|identity| !identity.report_fills_covered(&report, &[]))
-                    {
-                        return Ok(());
-                    }
-
-                    log::debug!(
-                        "Lighter query_order returning report for {}",
-                        cmd.client_order_id
-                    );
-                    dispatch.seed_accepted_from_report(&report);
-                    emitter.send_order_status_report(report);
-                }
-                None => {
-                    log::warn!(
-                        "Lighter query_order: no order found for {}",
-                        cmd.client_order_id,
-                    );
-                }
-            }
+            dispatch_query_order_report(report, &cmd, &dispatch, &emitter);
             Ok(())
         });
         Ok(())
@@ -6522,45 +6471,53 @@ impl ExecutionClient for LighterExecutionClient {
                 );
 
                 let report = collected
-                    .map(|(lookup, order)| -> anyhow::Result<OrderStatusReport> {
-                        let parsed = lookup.parse(
-                            &order,
-                            &registry,
-                            account_id,
-                            clock.get_time_ns(),
-                            &dispatch,
-                        )?;
-                        let report = &parsed.0;
-                        let pending = core
-                            .cache()
-                            .client_order_id(&report.venue_order_id)
-                            .copied()
-                            .is_some_and(|cloid| dispatch.has_pending_modify(&cloid));
-
-                        if !pending {
-                            restore_reconciled_order(
-                                &core,
+                    .map(
+                        |(lookup, order)| -> anyhow::Result<Option<OrderStatusReport>> {
+                            let parsed = lookup.parse(
+                                &order,
+                                &registry,
+                                account_id,
+                                clock.get_time_ns(),
                                 &dispatch,
-                                report.venue_order_id,
-                                order.client_order_index,
-                                report.order_status.is_closed(),
-                            );
-                            dispatch.record_order_reduction(
-                                order.client_order_index,
-                                report.venue_order_id,
-                                order.initial_base_amount - report.quantity.as_decimal(),
-                            );
-                        }
+                            )?;
+                            let report = &parsed.0;
+                            let pending = core
+                                .cache()
+                                .client_order_id(&report.venue_order_id)
+                                .copied()
+                                .is_some_and(|cloid| dispatch.has_pending_modify(&cloid));
 
-                        let report = lookup.finish(&dispatch, parsed);
-                        if let Some(context) = &child_context {
-                            request_child_recovery(&core, context, &report);
-                        }
+                            if !pending {
+                                restore_reconciled_order(
+                                    &core,
+                                    &dispatch,
+                                    report.venue_order_id,
+                                    order.client_order_index,
+                                    report.order_status.is_closed(),
+                                );
+                                dispatch.record_order_reduction(
+                                    order.client_order_index,
+                                    report.venue_order_id,
+                                    order.initial_base_amount - report.quantity.as_decimal(),
+                                );
+                            }
 
-                        ensure_order_report_ready(&core, &dispatch, &report)?;
-                        Ok(report)
-                    })
-                    .transpose()?;
+                            let report = lookup.finish(&dispatch, parsed);
+                            if is_unowned_child_cancel(&dispatch, order.client_order_index, &report)
+                            {
+                                return Ok(None);
+                            }
+
+                            if let Some(context) = &child_context {
+                                request_child_recovery(&core, context, &report);
+                            }
+
+                            ensure_order_report_ready(&core, &dispatch, &report)?;
+                            Ok(Some(report))
+                        },
+                    )
+                    .transpose()?
+                    .flatten();
 
                 if let Some(report) = &report {
                     dispatch.seed_accepted_from_report(report);
@@ -6738,6 +6695,10 @@ impl ExecutionClient for LighterExecutionClient {
             }
 
             let report = lookup.finish(&self.dispatch, parsed);
+            if is_unowned_child_cancel(&self.dispatch, order.client_order_index, &report) {
+                return Ok(None);
+            }
+
             if let Some(context) = self.child_probe_context() {
                 request_child_recovery(&self.core, &context, &report);
             }
@@ -7881,6 +7842,70 @@ fn execution_instruments_pending(
     pending
 }
 
+fn dispatch_query_order_report(
+    report: Option<(i64, OrderStatusReport)>,
+    cmd: &QueryOrder,
+    dispatch: &WsDispatchState,
+    emitter: &ExecutionEventEmitter,
+) {
+    let events = dispatch.order_events.lock();
+    if dispatch
+        .terminals_pending
+        .lock()
+        .contains_key(&cmd.client_order_id)
+        || events.get(&cmd.client_order_id).is_some_and(|deferred| {
+            deferred
+                .order
+                .as_ref()
+                .is_some_and(|order| order.status.is_terminal())
+        })
+        || dispatch
+            .order_identity(&cmd.client_order_id)
+            .is_some_and(|identity| {
+                position_fills_pending(&identity, &events, dispatch)
+                    || dispatch.any_order_identity(|_, other, _| {
+                        other.strategy_id == identity.strategy_id
+                            && other.instrument_id == identity.instrument_id
+                            && other.has_publication()
+                    })
+            })
+        || dispatch.has_pending_modify(&cmd.client_order_id)
+        || dispatch
+            .order_identity(&cmd.client_order_id)
+            .is_some_and(|identity| identity.has_publication())
+    {
+        return;
+    }
+
+    match report {
+        Some((index, report)) => {
+            if is_unowned_child_cancel(dispatch, index, &report) {
+                return;
+            }
+
+            if dispatch
+                .order_identity(&cmd.client_order_id)
+                .is_some_and(|identity| !identity.report_fills_covered(&report, &[]))
+            {
+                return;
+            }
+
+            log::debug!(
+                "Lighter query_order returning report for {}",
+                cmd.client_order_id
+            );
+            dispatch.seed_accepted_from_report(&report);
+            emitter.send_order_status_report(report);
+        }
+        None => {
+            log::warn!(
+                "Lighter query_order: no order found for {}",
+                cmd.client_order_id,
+            );
+        }
+    }
+}
+
 fn finish_order_reports(
     core: &ExecutionClientCore,
     dispatch: &WsDispatchState,
@@ -7930,6 +7955,10 @@ fn finish_order_reports(
 
         let report = dispatch.translate_order_cloid(report);
         let report = dispatch.preserve_pending_order_status(report);
+        if is_unowned_child_cancel(dispatch, client_order_index, &report) {
+            continue;
+        }
+
         if report
             .client_order_id
             .as_ref()
@@ -7948,20 +7977,19 @@ fn finish_order_reports(
         reports.push(report);
     }
 
-    if let Some(error) = sweep.error {
-        return Err(if sweep.partial {
-            incomplete_order_reports(reports, error.to_string(), withheld)
-        } else {
-            error
-        });
-    }
-
-    if !withheld.is_empty() {
-        return Err(incomplete_order_reports(
-            reports,
-            "Lighter execution confirmation is pending".to_string(),
-            withheld,
-        ));
+    match sweep.error {
+        Some(e) if sweep.partial => {
+            return Err(incomplete_order_reports(reports, e.to_string(), withheld));
+        }
+        Some(e) => return Err(e),
+        None if !withheld.is_empty() => {
+            return Err(incomplete_order_reports(
+                reports,
+                "Lighter execution confirmation is pending".to_string(),
+                withheld,
+            ));
+        }
+        None => {}
     }
 
     LighterExecutionClient::log_report_receipt(
@@ -7970,6 +7998,22 @@ fn finish_order_reports(
         cmd.log_receipt_level,
     );
     Ok(reports)
+}
+
+fn is_unowned_child_cancel(
+    dispatch: &WsDispatchState,
+    client_order_index: i64,
+    report: &OrderStatusReport,
+) -> bool {
+    // Unactivated children carry no reconstructible quantity after their parent is canceled
+    report.order_status == OrderStatus::Canceled
+        && report.cancel_reason.as_deref() == LighterOrderStatus::CanceledChild.as_cancel_reason()
+        && report.parent_order_id.is_some()
+        && report.quantity.is_zero()
+        && report.filled_qty.is_zero()
+        && dispatch
+            .resolve_client_order_index_for_venue(client_order_index, report.venue_order_id)
+            .is_none()
 }
 
 fn finish_fill_reports(
@@ -8838,6 +8882,10 @@ fn dispatch_unowned_order(
             report = dispatch.apply_order_contingencies(order, report);
             report = dispatch.translate_order_cloid(report);
             report = dispatch.preserve_pending_order_status(report);
+            if is_unowned_child_cancel(dispatch, order.client_order_index, &report) {
+                return;
+            }
+
             if report
                 .client_order_id
                 .and_then(|id| dispatch.order_identity(&id))
@@ -13333,6 +13381,470 @@ mod tests {
             activated.linked_order_ids,
             Some(vec![orders[2].client_order_id()])
         );
+    }
+
+    #[rstest]
+    #[case::unactivated(LighterOrderStatus::CanceledChild, "0.0000", "0.0000", true, true)]
+    #[case::activated(LighterOrderStatus::CanceledChild, "0.0400", "0.0000", true, false)]
+    #[case::filled(LighterOrderStatus::CanceledChild, "0.0000", "0.0200", true, false)]
+    #[case::no_parent(LighterOrderStatus::CanceledChild, "0.0000", "0.0000", false, false)]
+    #[case::other_cancel(LighterOrderStatus::CanceledOco, "0.0000", "0.0000", true, false)]
+    fn unowned_child_cancel_filters_only_unactivated_children(
+        #[case] status: LighterOrderStatus,
+        #[case] initial: &str,
+        #[case] filled: &str,
+        #[case] has_parent: bool,
+        #[case] filtered: bool,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        register_test_instrument(&client, &cache);
+        let mut raw = reconciliation_raw_order(42, VenueOrderId::from("281477004"), status);
+        raw.order_type = LighterOrderKind::StopLossLimit;
+        raw.initial_base_amount = Decimal::from_str(initial).unwrap();
+        raw.remaining_base_amount = Decimal::ZERO;
+        raw.filled_base_amount = Decimal::from_str(filled).unwrap();
+        raw.parent_order_id = if has_parent { "281477001" } else { "0" }.to_string();
+        raw.to_cancel_order_id_0 = "281477005".to_string();
+        let report = parse_http_order_to_report(
+            &raw,
+            &client.registry,
+            account_id(),
+            UnixNanos::from(2),
+            &client.dispatch,
+        )
+        .unwrap();
+
+        let cmd = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::from(3),
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let reports = finish_order_reports(
+            &client.core,
+            &client.dispatch,
+            OrderReportSweep {
+                orders: vec![(raw.client_order_index, report)],
+                ..Default::default()
+            },
+            &cmd,
+            Some(&[]),
+        )
+        .unwrap();
+
+        dispatch_lighter_order(
+            &raw,
+            &client.dispatch,
+            &client.emitter,
+            &client.registry,
+            account_id(),
+            trader_id(),
+            UnixNanos::from(4),
+        );
+        let events = drain_events(&mut rx);
+        assert_eq!(reports.len(), usize::from(!filtered));
+        assert_eq!(events.len(), usize::from(!filtered));
+
+        if !filtered {
+            let report = &reports[0];
+            assert_eq!(
+                report.quantity.as_decimal(),
+                Decimal::from_str(initial).unwrap()
+            );
+            assert_eq!(
+                report.filled_qty.as_decimal(),
+                Decimal::from_str(filled).unwrap()
+            );
+            assert_eq!(report.order_status, OrderStatus::Canceled);
+            assert_eq!(report.cancel_reason.as_deref(), status.as_cancel_reason());
+            assert_eq!(
+                report.parent_order_id,
+                has_parent.then(|| ClientOrderId::from("281477001"))
+            );
+            assert_eq!(
+                report.linked_order_ids,
+                Some(vec![ClientOrderId::from("281477005")])
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::normal_index(42)]
+    #[case::zero_index(0)]
+    fn unowned_child_cancel_preserves_known_children(#[case] index: i64) {
+        let (client, cache, _rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let orders = test_native_group(
+            instrument,
+            LighterGroupingType::OneTriggersOneCancelsTheOther,
+        );
+        let child = orders[1].clone();
+        let venue = VenueOrderId::from("281477004");
+        cache_accepted_order(&cache, child.clone(), venue, Some(client_id()));
+        let mut raw = reconciliation_raw_order(index, venue, LighterOrderStatus::CanceledChild);
+        raw.order_type = LighterOrderKind::StopLossLimit;
+        raw.initial_base_amount = Decimal::ZERO;
+        raw.remaining_base_amount = Decimal::ZERO;
+        raw.parent_order_id = "281477001".to_string();
+        raw.to_cancel_order_id_0 = "281477005".to_string();
+        let report = parse_http_order_to_report(
+            &raw,
+            &client.registry,
+            account_id(),
+            UnixNanos::from(2),
+            &client.dispatch,
+        )
+        .unwrap();
+
+        let cmd = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::from(3),
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let reports = finish_order_reports(
+            &client.core,
+            &client.dispatch,
+            OrderReportSweep {
+                orders: vec![(index, report)],
+                ..Default::default()
+            },
+            &cmd,
+            Some(&[]),
+        )
+        .unwrap();
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].venue_order_id, venue);
+        assert_eq!(reports[0].order_status, OrderStatus::Canceled);
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_client_order_index_for_venue(index, venue),
+            Some(child.client_order_id()),
+        );
+
+        if index != 0 {
+            assert_eq!(reports[0].quantity, child.quantity());
+            assert_eq!(reports[0].client_order_id, Some(child.client_order_id()));
+            assert_eq!(
+                reports[0].parent_order_id,
+                Some(orders[0].client_order_id())
+            );
+            assert_eq!(
+                reports[0].linked_order_ids,
+                Some(vec![orders[2].client_order_id()])
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn native_group_canceled_children_do_not_reappear_after_restart() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument_id = register_test_instrument(&client, &cache);
+        let orders = test_native_group(
+            instrument_id,
+            LighterGroupingType::OneTriggersOneCancelsTheOther,
+        );
+        let venues = [
+            VenueOrderId::from("281477001"),
+            VenueOrderId::from("281477002"),
+            VenueOrderId::from("281477003"),
+        ];
+        let history = native_group_canceled_orders(&orders, &venues);
+        for (i, (order, raw)) in orders.iter().zip(&history).enumerate() {
+            cache_accepted_order(&cache, order.clone(), venues[i], Some(client_id()));
+            let cached = cache
+                .borrow()
+                .order_owned(&order.client_order_id())
+                .unwrap();
+            client
+                .dispatch
+                .restore_reconciled_order(&cached, raw.client_order_index, venues[i], false)
+                .unwrap();
+
+            for _ in 0..2 {
+                dispatch_lighter_order(
+                    raw,
+                    &client.dispatch,
+                    &client.emitter,
+                    &client.registry,
+                    account_id(),
+                    trader_id(),
+                    UnixNanos::from(2),
+                );
+            }
+        }
+
+        let events = drain_events(&mut rx);
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::default()));
+        let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+        let applied = Rc::new(RefCell::new(Vec::new()));
+        let captured = applied.clone();
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            captured.borrow_mut().push(event.clone());
+        });
+
+        msgbus::subscribe_order_events(ORDER_EVENTS_PATTERN.into(), handler.clone(), None);
+        let subscription = AppliedFillSubscription(handler);
+
+        for event in events {
+            match event {
+                ExecutionEvent::Order(event) => engine.process(&event),
+                ExecutionEvent::Report(report) => engine.reconcile_execution_report(&report),
+                other => panic!("unexpected cancellation event: {other:?}"),
+            }
+        }
+
+        let applied = applied.take();
+        assert_eq!(applied.len(), 3, "applied cancellation events: {applied:?}");
+
+        for (event, order) in applied.iter().zip(&orders) {
+            assert_eq!(event.client_order_id(), order.client_order_id());
+            assert!(matches!(event, OrderEventAny::Canceled(_)));
+            assert_eq!(
+                cache
+                    .borrow()
+                    .order(&order.client_order_id())
+                    .unwrap()
+                    .status(),
+                OrderStatus::Canceled
+            );
+        }
+
+        drop(subscription);
+
+        let (mut fresh, fresh_cache, mut fresh_rx) = create_execution_client();
+        register_test_instrument(&fresh, &fresh_cache);
+        fresh.dispatch.note_active_market(TEST_MARKET_INDEX);
+        fresh.dispatch.replace_position_snapshot(&[], &[], &[]);
+
+        for raw in &history[1..] {
+            dispatch_lighter_order(
+                raw,
+                &fresh.dispatch,
+                &fresh.emitter,
+                &fresh.registry,
+                account_id(),
+                trader_id(),
+                UnixNanos::from(3),
+            );
+        }
+
+        let app = Router::new()
+            .route(
+                "/api/v1/accountActiveOrders",
+                get(|| async { axum::Json(serde_json::json!({"code":200,"orders":[]})) }),
+            )
+            .route(
+                "/api/v1/accountInactiveOrders",
+                get(move || {
+                    let history = history.clone();
+                    async move { axum::Json(serde_json::json!({"code":200,"orders":history})) }
+                }),
+            )
+            .route(
+                "/api/v1/trades",
+                get(|| async { axum::Json(serde_json::json!({"code":200,"trades":[]})) }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, app).await.unwrap();
+        });
+
+        fresh.http_client = LighterHttpClient::new(
+            LighterEnvironment::Testnet,
+            Some(format!("http://{addr}")),
+            1,
+            None,
+        )
+        .unwrap();
+        let first = fresh.generate_mass_status(None).await.unwrap().unwrap();
+        let second = fresh.generate_mass_status(None).await.unwrap().unwrap();
+
+        let parent_cmd = GenerateOrderStatusReport::new(
+            UUID4::new(),
+            UnixNanos::from(4),
+            Some(instrument_id),
+            None,
+            Some(venues[0]),
+            None,
+            None,
+        );
+        let parent_report = fresh
+            .generate_order_status_report(&parent_cmd)
+            .await
+            .unwrap()
+            .unwrap();
+
+        for venue in &venues[1..] {
+            let cmd = GenerateOrderStatusReport::new(
+                UUID4::new(),
+                UnixNanos::from(4),
+                Some(instrument_id),
+                None,
+                Some(*venue),
+                None,
+                None,
+            );
+            assert_eq!(
+                fresh.generate_order_status_report(&cmd).await.unwrap(),
+                None
+            );
+            let task = fresh.generate_order_status_report_task(&cmd).unwrap();
+            task.collection.await;
+            assert_eq!((task.finish)().unwrap(), None);
+            fresh
+                .query_order(QueryOrder::new(
+                    trader_id(),
+                    Some(client_id()),
+                    strategy_id(),
+                    instrument_id,
+                    ClientOrderId::from(venue.as_str()),
+                    Some(*venue),
+                    UUID4::new(),
+                    UnixNanos::from(5),
+                    None,
+                    None,
+                ))
+                .unwrap();
+        }
+
+        fresh.pending_tasks.begin_shutdown();
+        fresh
+            .pending_tasks
+            .finish_shutdown(Duration::from_secs(2), DISCONNECT_TIMEOUT)
+            .await
+            .unwrap();
+        server.abort();
+        let _ = server.await;
+        let mut expected_parent = first.order_reports()[&venues[0]].clone();
+        expected_parent.report_id = parent_report.report_id;
+        expected_parent.ts_init = parent_report.ts_init;
+        assert_eq!(parent_report, expected_parent);
+
+        for mass in [&first, &second] {
+            assert!(mass.reports_complete());
+            assert_eq!(mass.order_reports().len(), 1);
+            let parent = &mass.order_reports()[&venues[0]];
+            assert_eq!(parent.order_status, OrderStatus::Canceled);
+            assert_eq!(parent.quantity, orders[0].quantity());
+            assert_eq!(parent.filled_qty, Quantity::from("0.0000"));
+            assert_eq!(
+                parent.linked_order_ids,
+                Some(vec![
+                    ClientOrderId::from("281477002"),
+                    ClientOrderId::from("281477003")
+                ])
+            );
+            assert!(mass.fill_reports().is_empty());
+            assert!(mass.position_reports().is_empty());
+        }
+
+        let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::default()));
+        let mut engine = ExecutionEngine::new(clock.clone(), fresh_cache.clone(), None);
+        engine.register_client(Box::new(fresh)).unwrap();
+        let engine = Rc::new(RefCell::new(engine));
+        let mut manager = ExecutionManager::new(
+            clock,
+            fresh_cache.clone(),
+            ExecutionManagerConfig::default(),
+        )
+        .unwrap();
+        let applied = Rc::new(RefCell::new(Vec::new()));
+        let captured = applied.clone();
+
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            if matches!(event, OrderEventAny::Canceled(_) | OrderEventAny::Filled(_)) {
+                captured.borrow_mut().push(event.clone());
+            }
+        });
+
+        msgbus::subscribe_order_events(ORDER_EVENTS_PATTERN.into(), handler.clone(), None);
+        let subscription = AppliedFillSubscription(handler);
+        manager.reconcile_execution_mass_status(&first, &engine);
+        manager.reconcile_execution_mass_status(&second, &engine);
+        drop(subscription);
+        let applied = applied.take();
+        assert_eq!(applied.len(), 1, "fresh reconciliation events: {applied:?}");
+
+        let OrderEventAny::Canceled(canceled) = &applied[0] else {
+            panic!("expected the parent cancellation");
+        };
+
+        assert_eq!(
+            canceled.client_order_id,
+            ClientOrderId::from(venues[0].as_str())
+        );
+        assert_eq!(canceled.venue_order_id, Some(venues[0]));
+        assert_eq!(
+            fresh_cache
+                .borrow()
+                .orders_total_count(None, None, None, None, None),
+            1
+        );
+        assert!(drain_events(&mut fresh_rx).is_empty());
+    }
+
+    fn native_group_canceled_orders(
+        orders: &[OrderAny],
+        venues: &[VenueOrderId; 3],
+    ) -> Vec<LighterOrder> {
+        let mut history = Vec::new();
+
+        for (i, order) in orders.iter().enumerate() {
+            let mut raw = reconciliation_raw_order(
+                42 + i as i64,
+                venues[i],
+                LighterOrderStatus::CanceledChild,
+            );
+
+            raw.initial_base_amount = Decimal::ZERO;
+            raw.remaining_base_amount = Decimal::ZERO;
+            raw.price = order.price().unwrap().as_decimal();
+            raw.trigger_price = order
+                .trigger_price()
+                .map_or(Decimal::ZERO, |price| price.as_decimal());
+            raw.is_ask = i > 0;
+            raw.side = Some(if i == 0 {
+                LighterOrderSide::Buy
+            } else {
+                LighterOrderSide::Sell
+            });
+
+            raw.reduce_only = i > 0;
+            if i == 0 {
+                raw.status = LighterOrderStatus::Canceled;
+                raw.initial_base_amount = order.quantity().as_decimal();
+                raw.to_trigger_order_id_0 = venues[1].to_string();
+                raw.to_trigger_order_id_1 = venues[2].to_string();
+            } else {
+                raw.order_type = if i == 1 {
+                    LighterOrderKind::StopLossLimit
+                } else {
+                    LighterOrderKind::TakeProfitLimit
+                };
+
+                raw.parent_order_id = venues[0].to_string();
+                raw.to_cancel_order_id_0 = venues[3 - i].to_string();
+            }
+
+            history.push(raw);
+        }
+
+        history
     }
 
     #[rstest]
@@ -24727,7 +25239,8 @@ mod tests {
         assert_eq!(identity.filled_qty(), Decimal::ZERO);
         cache
             .borrow_mut()
-            .purge_closed_orders(UnixNanos::from(u64::MAX), 0);
+            .purge_closed_orders(UnixNanos::from(u64::MAX), 0, false)
+            .unwrap();
         assert!(cache.borrow().order(&rig.cloid).is_none());
         assert!(execution_instruments_pending(&client.core, &client.dispatch).is_empty());
         server.abort();

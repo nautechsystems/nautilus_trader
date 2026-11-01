@@ -190,11 +190,9 @@ changes, or closes. Set `snapshot_positions_interval_secs` independently to add 
 of every open position. Redis and Postgres cache backings persist both paths. Without backing, the
 snapshots remain available on the in-process message bus but are not persisted.
 
-`with_load_state` and `with_save_state` control actor and strategy state persistence, which requires
-a Redis backing. The Postgres adapter backs cache state only: with registered actors or strategies,
-`with_load_state(True)` fails when the trader starts, while `with_save_state(True)` fails when the
-node stops or is disposed. On startup the kernel passes non-empty persisted state to `on_load`; when
-stopping or disposing the node it persists whatever `on_save` returns.
+`with_load_state` and `with_save_state` control actor and strategy state persistence with a Redis or
+Postgres backing. On startup the kernel passes non-empty persisted state to `on_load`; when stopping
+or disposing the node it persists whatever `on_save` returns.
 
 :::warning
 State persistence is not continuous checkpointing. The kernel saves state at most once per run, so a
@@ -406,16 +404,18 @@ and caveats, see [Runtime checks](../concepts/execution/reconciliation.md#runtim
 ### Memory management
 
 Periodically purges closed orders, closed positions, and account events from the
-in-memory cache, keeping memory bounded during long-running or HFT sessions.
+in-memory cache, keeping memory bounded during long-running or HFT sessions. Deleting persisted closed
+orders and positions is optional.
 
-| Setting                                | Default | Description                                                                        |
-| -------------------------------------- | ------- | ---------------------------------------------------------------------------------- |
-| `purge_closed_orders_interval_mins`    | None    | How often (minutes) to purge closed orders from memory. Recommended: 10-15 min.    |
-| `purge_closed_orders_buffer_mins`      | None    | How long (minutes) an order must be closed before purging. Recommended: 60 min.    |
-| `purge_closed_positions_interval_mins` | None    | How often (minutes) to purge closed positions from memory. Recommended: 10-15 min. |
-| `purge_closed_positions_buffer_mins`   | None    | How long (minutes) a position must be closed before purging. Recommended: 60 min.  |
-| `purge_account_events_interval_mins`   | None    | How often (minutes) to purge account events from memory. Recommended: 10-15 min.   |
-| `purge_account_events_lookback_mins`   | None    | How old (minutes) an account event must be before purging. Recommended: 60 min.    |
+| Setting                                | Default | Description                                                                                         |
+| -------------------------------------- | ------- | --------------------------------------------------------------------------------------------------- |
+| `purge_closed_orders_interval_mins`    | None    | How often (minutes) to purge closed orders from memory. Recommended: 10-15 min.                     |
+| `purge_closed_orders_buffer_mins`      | None    | How long (minutes) an order must be closed before purging. Recommended: 60 min.                     |
+| `purge_closed_positions_interval_mins` | None    | How often (minutes) to purge closed positions from memory. Recommended: 10-15 min.                  |
+| `purge_closed_positions_buffer_mins`   | None    | How long (minutes) a position must be closed before purging. Recommended: 60 min.                   |
+| `purge_account_events_interval_mins`   | None    | How often (minutes) to purge account events from memory. Recommended: 10-15 min.                    |
+| `purge_account_events_lookback_mins`   | None    | How old (minutes) an account event must be before purging. Recommended: 60 min.                     |
+| `purge_from_database`                  | False   | Also delete persisted closed orders and positions. Redis and Postgres retain account-event history. |
 
 Setting an interval enables the purge loop; leaving it unset disables scheduling and deletion.
 Each loop delegates to the cache APIs described in

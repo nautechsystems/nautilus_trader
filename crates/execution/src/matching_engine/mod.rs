@@ -158,7 +158,9 @@ pub struct OrderMatchingEngine {
     last_quote_ask: Option<Price>,
     precision_mismatch_streak: u32,
     instrument_close: Option<InstrumentClose>,
-    pending_resolution: bool,
+
+    // Retains the venue status while expiration blocks trading pending resolution
+    pending_resolution: Option<MarketStatus>,
     expiration_processed: bool,
     option_settlement_failed: bool,
     option_settlement_warning: Option<&'static str>,
@@ -255,7 +257,7 @@ impl OrderMatchingEngine {
             last_quote_ask: None,
             precision_mismatch_streak: 0,
             instrument_close: None,
-            pending_resolution: false,
+            pending_resolution: None,
             expiration_processed: false,
             option_settlement_failed: false,
             option_settlement_warning: None,
@@ -337,7 +339,7 @@ impl OrderMatchingEngine {
         self.precision_mismatch_streak = 0;
         self.instrument_close = None;
         self.market_status = MarketStatus::Open;
-        self.pending_resolution = false;
+        self.pending_resolution = None;
         self.expiration_processed = false;
         self.option_settlement_failed = false;
         self.option_settlement_warning = None;
@@ -1491,6 +1493,18 @@ impl OrderMatchingEngine {
                 self.instrument.id(),
                 instrument.id()
             );
+        }
+
+        if self.requires_pending_resolution()
+            && instrument.expiration_ns() != self.instrument.expiration_ns()
+            && !self.expiration_processed
+            && self.instrument_close.is_none()
+            && instrument.expiration_ns().is_none_or(|ns| {
+                ns == UnixNanos::default() || ns > self.clock.borrow().timestamp_ns()
+            })
+            && let Some(status) = self.pending_resolution.take()
+        {
+            self.market_status = status;
         }
 
         let changed = instrument.price_increment() != self.instrument.price_increment()
@@ -2671,26 +2685,30 @@ impl OrderMatchingEngine {
     /// Processes a market status action to update the market state.
     pub fn process_status(&mut self, action: MarketStatusAction) {
         log::debug!("Processing {action}");
+        let market_status = self
+            .pending_resolution
+            .as_mut()
+            .unwrap_or(&mut self.market_status);
 
         match action {
             MarketStatusAction::Trading | MarketStatusAction::PreOpen
                 if matches!(
-                    self.market_status,
+                    *market_status,
                     MarketStatus::Closed | MarketStatus::Paused | MarketStatus::Suspended
                 ) =>
             {
-                self.market_status = MarketStatus::Open;
+                *market_status = MarketStatus::Open;
             }
-            MarketStatusAction::Pause if self.market_status == MarketStatus::Open => {
-                self.market_status = MarketStatus::Paused;
+            MarketStatusAction::Pause if *market_status == MarketStatus::Open => {
+                *market_status = MarketStatus::Paused;
             }
-            MarketStatusAction::Suspend if self.market_status == MarketStatus::Open => {
-                self.market_status = MarketStatus::Suspended;
+            MarketStatusAction::Suspend if *market_status == MarketStatus::Open => {
+                *market_status = MarketStatus::Suspended;
             }
             MarketStatusAction::Halt | MarketStatusAction::Close
-                if self.market_status == MarketStatus::Open =>
+                if *market_status == MarketStatus::Open =>
             {
-                self.market_status = MarketStatus::Closed;
+                *market_status = MarketStatus::Closed;
             }
             _ => {}
         }
@@ -2774,11 +2792,11 @@ impl OrderMatchingEngine {
     }
 
     fn enter_pending_resolution(&mut self, excluded: &[ClientOrderId]) {
-        if self.pending_resolution {
+        if self.pending_resolution.is_some() {
             return;
         }
 
-        self.pending_resolution = true;
+        self.pending_resolution = Some(self.market_status);
         self.market_status = MarketStatus::Closed;
         self.cancel_open_orders_for_expiration(excluded);
         log::info!(
@@ -2800,7 +2818,7 @@ impl OrderMatchingEngine {
         let timestamp_triggered = self
             .instrument
             .expiration_ns()
-            .is_some_and(|ns| timestamp_ns >= ns);
+            .is_some_and(|ns| ns != UnixNanos::default() && timestamp_ns >= ns);
 
         if !timestamp_triggered && self.instrument_close.is_none() {
             return;
@@ -2837,7 +2855,7 @@ impl OrderMatchingEngine {
             match self.process_option_expiry(timestamp_ns) {
                 Ok(true) => {
                     self.expiration_processed = true;
-                    self.pending_resolution = false;
+                    self.pending_resolution = None;
                     self.instrument_close.take();
                     self.option_settlement_warning = None;
                     log::info!("{} reached expiration", self.instrument.id());
@@ -2856,7 +2874,7 @@ impl OrderMatchingEngine {
         }
 
         self.expiration_processed = true;
-        self.pending_resolution = false;
+        self.pending_resolution = None;
         let close = self.instrument_close.take();
         log::info!("{} reached expiration", self.instrument.id());
 
@@ -3342,7 +3360,7 @@ impl OrderMatchingEngine {
             // Index identifiers
             self.account_ids.insert(order.trader_id(), account_id);
 
-            if self.pending_resolution {
+            if self.pending_resolution.is_some() {
                 break 'validate Some(
                     format!(
                         "Contract {} has expired and is pending resolution",

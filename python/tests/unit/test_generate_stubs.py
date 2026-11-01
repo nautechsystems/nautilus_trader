@@ -2638,6 +2638,22 @@ def _concrete_stub_defaults(method: ast.FunctionDef | ast.AsyncFunctionDef) -> o
     return defaults
 
 
+def test_infrastructure_stub_exposes_configs_and_factories() -> None:
+    """
+    Keep generated bindings limited to configuration and factory entry points.
+    """
+    stub = ast.parse((STUB_ROOT / "infrastructure" / "__init__.pyi").read_text(encoding="utf-8"))
+    classes = {node.name for node in stub.body if isinstance(node, ast.ClassDef)}
+
+    assert classes == {
+        "PostgresCacheConfig",
+        "PostgresConnectOptions",
+        "RedisCacheConfig",
+        "RedisMessageBusConfig",
+        "RedisMessageBusFactory",
+    }
+
+
 def test_generated_config_stubs_include_signature_defaults() -> None:
     """
     Test generated config stubs include signature defaults.
@@ -3557,3 +3573,40 @@ def _module_name_from_stub_path(relative_package: Path) -> str:
         return "nautilus_trader"
 
     return f"nautilus_trader.{'.'.join(relative_package.parts)}"
+
+
+def test_injected_model_constant_imports_its_annotation_namespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Keep constant annotations resolvable when no class imports the model module.
+    """
+    stub = tmp_path / "adapters" / "finfeed" / "__init__.pyi"
+    stub.parent.mkdir(parents=True)
+    stub.write_text(
+        '__all__ = ["FinFeedDataClientFactory"]\nclass FinFeedDataClientFactory: ...\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        generate_stubs,
+        "collect_module_constants",
+        lambda _: {
+            "adapters.finfeed": [
+                generate_stubs.ModuleConstant("FINFEED_CLIENT_ID", "model.ClientId"),
+            ],
+        },
+    )
+
+    generate_stubs.inject_module_constants(tmp_path, tmp_path)
+    content = stub.read_text(encoding="utf-8")
+    tree = ast.parse(content)
+    imports = [node for node in tree.body if isinstance(node, ast.ImportFrom)]
+    assert [
+        (node.module, [(name.name, name.asname) for name in node.names]) for node in imports
+    ] == [
+        ("nautilus_trader", [("model", None)]),
+    ]
+    assert "FINFEED_CLIENT_ID: model.ClientId" in content
+    generate_stubs.inject_module_constants(tmp_path, tmp_path)
+    assert stub.read_text(encoding="utf-8") == content

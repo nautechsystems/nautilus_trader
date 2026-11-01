@@ -13,6 +13,7 @@ members = [
   "crates/adapters/deribit",
   "crates/adapters/derive",
   "crates/adapters/dydx",
+  "crates/adapters/finfeed",
   "crates/adapters/hyperliquid",
   "crates/adapters/interactive_brokers",
   "crates/adapters/kraken",
@@ -104,6 +105,7 @@ nautilus-databento = { path = "crates/adapters/databento", version = "0.68.0", d
 nautilus-deribit = { path = "crates/adapters/deribit", version = "0.68.0", default-features = false }
 nautilus-derive = { path = "crates/adapters/derive", version = "0.68.0", default-features = false }
 nautilus-dydx = { path = "crates/adapters/dydx", version = "0.68.0", default-features = false }
+nautilus-finfeed = { path = "crates/adapters/finfeed", version = "0.68.0", default-features = false }
 nautilus-hyperliquid = { path = "crates/adapters/hyperliquid", version = "0.68.0", default-features = false }
 nautilus-interactive-brokers = { path = "crates/adapters/interactive_brokers", version = "0.68.0" }
 nautilus-kraken = { path = "crates/adapters/kraken", version = "0.68.0", default-features = false }
@@ -127,7 +129,7 @@ alloy-primitives = { version = "1.7.3", default-features = false, features = [
 anyhow = "1.0.104"
 arc-swap = "1.9.3"
 arraydeque = "0.5.1"
-arrow = { version = "59.3.1", default-features = false, features = [
+arrow = { version = "59.3.2", default-features = false, features = [
   "ipc",
   "ffi",
 ] }
@@ -205,7 +207,7 @@ object_store = { version = "0.13.2", default-features = false, features = [
   "fs",
 ] }
 parking_lot = "0.13.0"
-parquet = { version = "59.3.1", default-features = false, features = [
+parquet = { version = "59.3.2", default-features = false, features = [
   "arrow",
   "arrow_canonical_extension_types",
   "async",
@@ -392,9 +394,8 @@ pyo3-stub-gen = { path = "patches/pyo3-stub-gen" }
 # Tools (for cargo install, used by Makefile and CI)
 # -----------------------------------------------------------------------------
 [workspace.metadata.tools]
-cargo-codspeed = "5.0.3"
+cargo-codspeed = "6.0.0"
 cargo-fuzz = "0.13.2"
-cargo-hawk = "0.1.15"
 cargo-machete = "0.9.2"
 cbindgen = "0.29.4"
 flamegraph = "0.6.14"

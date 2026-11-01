@@ -178,14 +178,9 @@ impl DataEngine {
             let has_live_handlers =
                 state.update_subscriptions && self.bar_aggregator_handlers.contains_key(&key);
 
-            let keep_running = if has_live_handlers {
-                // Replay live data held back during the request before going live
-                if let Some(warmup) = self.bar_aggregator_warmups.remove(&key)
-                    && let Some(aggregator) = self.bar_aggregators.get(&key)
-                {
-                    warmup.release(aggregator.borrow_mut().as_mut());
-                }
+            self.finish_historical_bar_aggregator(&key, has_live_handlers);
 
+            let keep_running = if has_live_handlers {
                 match self.setup_bar_aggregator(bar_type, false, aggregator_request_id) {
                     Ok(()) => true,
                     Err(e) => {
@@ -211,6 +206,28 @@ impl DataEngine {
         }
 
         true
+    }
+
+    fn finish_historical_bar_aggregator(
+        &mut self,
+        key: &BarAggregatorKey,
+        has_live_handlers: bool,
+    ) {
+        // Replay buffered updates before closing their last historical interval
+        if has_live_handlers
+            && let Some(warmup) = self.bar_aggregator_warmups.remove(key)
+            && let Some(aggregator) = self.bar_aggregators.get(key)
+        {
+            warmup.release(aggregator.borrow_mut().as_mut());
+        }
+
+        if let Some(aggregator) = self.bar_aggregators.get(key) {
+            let mut aggregator = aggregator.borrow_mut();
+
+            if let Some(aggregator) = aggregator.as_any_mut().downcast_mut::<TimeBarAggregator>() {
+                aggregator.flush_pending_historical_bar();
+            }
+        }
     }
 
     pub(super) fn process_request_bar_aggregation_response(

@@ -380,6 +380,7 @@ deribit nautilus_deribit::python::deribit
 derive nautilus_derive::python::derive
 dydx nautilus_dydx::python::dydx
 execution nautilus_execution::python::execution
+finfeed nautilus_finfeed::python::finfeed
 hyperliquid nautilus_hyperliquid::python::hyperliquid
 indicators nautilus_indicators::python::indicators
 infrastructure nautilus_infrastructure::python::infrastructure
@@ -414,13 +415,13 @@ if [ -f "$PYO3_LIB" ]; then
       t = substr($0, RSTART, RLENGTH); gsub(/wrap_pymodule!\(|\)/, "", t)
       print name " " t; name = ""
     }
-  ' | sort)
+  ' | LC_ALL=C sort)
 
-  expected_pairs=$(echo "$EXPECTED_PYO3_MODULES" | sed '/^$/d' | sort)
+  expected_pairs=$(echo "$EXPECTED_PYO3_MODULES" | sed '/^$/d' | LC_ALL=C sort)
 
   # comm returns zero for differences, so a failed comparison must stop the check
-  added=$(comm -13 <(echo "$expected_pairs") <(echo "$actual_pairs"))
-  removed=$(comm -23 <(echo "$expected_pairs") <(echo "$actual_pairs"))
+  added=$(LC_ALL=C comm -13 <(echo "$expected_pairs") <(echo "$actual_pairs"))
+  removed=$(LC_ALL=C comm -23 <(echo "$expected_pairs") <(echo "$actual_pairs"))
 
   if [[ -n "$added" ]]; then
     while IFS= read -r pair; do

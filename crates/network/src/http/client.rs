@@ -403,7 +403,13 @@ impl HttpClient {
             .await
     }
 
-    pub(crate) async fn await_rate_limits(&self, keys: Option<&[Ustr]>) {
+    /// Acquires quota for the supplied keys before a caller prepares a request.
+    ///
+    /// Waits without a timeout and consumes quota atomically across the configured limiters.
+    /// Dropping a pending future consumes no quota. Callers must bound the wait when needed.
+    /// The next request must omit rate-limit keys to avoid consuming quota twice.
+    /// Passing no keys acquires no quota.
+    pub async fn await_rate_limits(&self, keys: Option<&[Ustr]>) {
         RateLimiter::await_limiters_ready(&self.rate_limiters, keys).await;
     }
 

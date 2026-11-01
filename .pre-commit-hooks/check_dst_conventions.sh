@@ -66,6 +66,11 @@ IN_SCOPE_CRATES=(
 # configuration/credential/signing-context resolvers, and WebSocket context
 # container carry no async/time/RNG boundary. Python bindings stay excluded.
 #
+# FinFeed excludes module declarations, identity constants, credential resolution,
+# factories.rs (construction wiring), common/symbol.rs (pure symbol mapping),
+# http/parse.rs (pure instrument parsing with caller-provided timestamps), and
+# pure error classification.
+#
 # The following exclusions apply to OKX:
 # - Module declarations: lib.rs and the common/http/websocket mod.rs files.
 # - Pure venue types: common/enums.rs, websocket/enums.rs, both error.rs
@@ -109,6 +114,16 @@ ADAPTER_PATHS=(
   "crates/adapters/derive/src/websocket/handler.rs"
   "crates/adapters/derive/src/websocket/messages.rs"
   "crates/adapters/derive/src/websocket/parse.rs"
+
+  "crates/adapters/finfeed/src/config.rs"
+  "crates/adapters/finfeed/src/data.rs"
+  "crates/adapters/finfeed/src/data/history.rs"
+  "crates/adapters/finfeed/src/data/parse.rs"
+  "crates/adapters/finfeed/src/data/poll.rs"
+  "crates/adapters/finfeed/src/http/client.rs"
+  "crates/adapters/finfeed/src/http/models.rs"
+  "crates/adapters/finfeed/src/http/query.rs"
+  "crates/adapters/finfeed/src/instruments.rs"
 
   "crates/adapters/okx/src/book/mod.rs"
   "crates/adapters/okx/src/book/recovery.rs"

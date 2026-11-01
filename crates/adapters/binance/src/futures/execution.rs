@@ -891,6 +891,7 @@ impl BinanceFuturesExecutionClient {
                         &params.symbol,
                         &mut params.order_id,
                         &mut params.orig_client_order_id,
+                        false,
                     )
                     .await
                     .inspect_err(|e| {
@@ -935,26 +936,9 @@ impl BinanceFuturesExecutionClient {
         let http_client = self.http_client.clone();
 
         self.spawn_task("cancel_order", async move {
-            let result = if use_algo_cancel {
-                // Try algo cancel first; if it fails, the order may have been triggered
-                // before this session started, so fall back to regular cancel
-                match http_client.cancel_algo_order(client_order_id).await {
-                    Ok(()) => Ok(()),
-                    Err(algo_err) if !should_retry_regular_cancel(client_order_id, &algo_err) => Err(algo_err),
-                    Err(algo_err) => {
-                        log::debug!("Algo cancel failed, trying regular cancel: {algo_err}");
-                        http_client
-                            .cancel_order(instrument_id, venue_order_id, Some(client_order_id))
-                            .await
-                            .map(|_| ())
-                    }
-                }
-            } else {
-                http_client
-                    .cancel_order(instrument_id, venue_order_id, Some(client_order_id))
-                    .await
-                    .map(|_| ())
-            };
+            let result = cancel_order_http(
+                &http_client, instrument_id, venue_order_id, client_order_id, use_algo_cancel,
+            ).await;
 
             match result {
                 Ok(()) => {
@@ -3627,6 +3611,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                         &params.symbol,
                         &mut params.order_id,
                         &mut params.orig_client_order_id,
+                        true,
                     )
                     .await
                     .inspect_err(|e| {
@@ -4152,6 +4137,49 @@ fn user_trades_complete_start(ts_init: UnixNanos, ts_now: UnixNanos) -> UnixNano
     ts_init
         .max(oldest_reference)
         .saturating_sub(USER_TRADES_COMPLETE_INTERVAL)
+}
+
+async fn cancel_order_http(
+    http_client: &BinanceFuturesHttpClient,
+    instrument_id: InstrumentId,
+    venue_order_id: Option<VenueOrderId>,
+    client_order_id: ClientOrderId,
+    use_algo_cancel: bool,
+) -> anyhow::Result<()> {
+    if !use_algo_cancel {
+        return http_client
+            .cancel_order(instrument_id, venue_order_id, Some(client_order_id))
+            .await
+            .map(|_| ());
+    }
+
+    // The algo may have triggered before this session, so a regular cancel can still be needed
+    let algo_err = match http_client.cancel_algo_order(client_order_id).await {
+        Ok(()) => return Ok(()),
+        Err(e) => e,
+    };
+
+    if !should_retry_regular_cancel(client_order_id, &algo_err) {
+        return Err(algo_err);
+    }
+
+    log::debug!("Algo cancel failed, trying regular cancel: {algo_err}");
+
+    match http_client
+        .cancel_order(instrument_id, venue_order_id, Some(client_order_id))
+        .await
+        .map(|_| ())
+    {
+        Err(e)
+            if matches!(
+                e.downcast_ref::<BinanceFuturesHttpError>(),
+                Some(BinanceFuturesHttpError::RateLimitBlocked)
+            ) =>
+        {
+            Err(algo_err)
+        }
+        result => result,
+    }
 }
 
 fn should_retry_regular_cancel(client_order_id: ClientOrderId, error: &anyhow::Error) -> bool {

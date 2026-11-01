@@ -1970,6 +1970,7 @@ fn dispatch_subscribe(
     let client_id = Some(*DERIBIT_CLIENT_ID);
     let cmd_id = UUID4::new();
     let ts = UnixNanos::default();
+    let book_params = Params::new([("interval".to_string(), json!("100ms"))].into());
 
     match kind {
         SubscribeKind::Quotes => client.subscribe_quotes(SubscribeQuotes::new(
@@ -2000,7 +2001,7 @@ fn dispatch_subscribe(
             None,
             false,
             None,
-            None,
+            Some(book_params),
         )),
         SubscribeKind::BookDepth => client.subscribe_book_depth(SubscribeBookDepth::new(
             instrument_id,
@@ -2012,7 +2013,7 @@ fn dispatch_subscribe(
             None,
             false,
             None,
-            None,
+            Some(book_params),
         )),
         SubscribeKind::MarkPrices => client.subscribe_mark_prices(SubscribeMarkPrices::new(
             instrument_id,

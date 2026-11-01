@@ -205,7 +205,8 @@ CORE_SELECTED_FEATURES := $(subst $(space),$(comma),$(strip $(CORE_SELECTED_FEAT
 STANDARD_PRECISION_ARGS := --workspace --exclude nautilus-blockchain --no-default-features --lib --tests --features "ffi,python"
 SIM_PACKAGES := -p nautilus-common -p nautilus-core -p nautilus-event-store \
 	-p nautilus-network -p nautilus-execution -p nautilus-live
-SIM_ADAPTER_PACKAGES := -p nautilus-okx -p nautilus-coinapi -p nautilus-derive
+SIM_ADAPTER_PACKAGES := -p nautilus-okx -p nautilus-coinapi -p nautilus-derive -p nautilus-finfeed
+SIM_ADAPTER_FILTERSET := test(dst::) + package(nautilus-finfeed)
 SIM_FILTERSET := package(nautilus-common) + package(nautilus-event-store) + \
 	package(nautilus-network) + \
 	package(nautilus-execution) + \
@@ -284,7 +285,7 @@ CORE_CRATES := nautilus-analysis nautilus-backtest nautilus-common nautilus-core
 ADAPTER_CRATES := nautilus-architect-ax nautilus-betfair nautilus-binance \
     nautilus-blockchain nautilus-bybit nautilus-cli \
     nautilus-coinapi nautilus-coinbase nautilus-databento nautilus-deribit nautilus-derive \
-    nautilus-dydx nautilus-hyperliquid nautilus-interactive-brokers \
+    nautilus-dydx nautilus-finfeed nautilus-hyperliquid nautilus-interactive-brokers \
     nautilus-kraken nautilus-lighter nautilus-okx nautilus-polymarket nautilus-pyo3 \
     nautilus-sandbox nautilus-tardis
 
@@ -834,7 +835,7 @@ check-hawk-installed:  #-- Verify the pinned cargo-hawk version is installed
 	fi
 	@INSTALLED=$$(cargo hawk --version | awk '{print $$3}'); \
 	if [ "$$INSTALLED" != "$(CARGO_HAWK_VERSION)" ]; then \
-		printf "$(RED)cargo-hawk version mismatch: installed %s, expected %s (from Cargo.toml)$(RESET)\n" \
+		printf "$(RED)cargo-hawk version mismatch: installed %s, expected %s (from the shared tool catalog)$(RESET)\n" \
 			"$$INSTALLED" "$(CARGO_HAWK_VERSION)"; \
 		exit 1; \
 	fi
@@ -894,6 +895,7 @@ test-scripts:  #-- Run repository script tests
 	$(info $(M) Running script tests...)
 	$Q bash .pre-commit-hooks/test_cargo_machete.sh
 	$Q bash .pre-commit-hooks/test_check_cargo_conventions.sh
+	$Q bash .pre-commit-hooks/test_check_comparison_locale.bash
 	$Q bash .pre-commit-hooks/test_check_copyright_year.bash
 	$Q python3 -B .pre-commit-hooks/test_check_dependency_features.py
 	$Q bash .pre-commit-hooks/test_check_docs_conventions.sh
@@ -1069,10 +1071,10 @@ endif
 # gate without a separate build. Feature-coherent runs execute every test that
 # is sim-compatible today: all of nautilus-common, nautilus-event-store,
 # nautilus-network, and nautilus-execution, plus the audited adapters' integration dst
-# tests without the crate's default high-precision feature. Transport-bound and
-# thread-blocking tests are gated out at the source. The lane also runs the
-# LiveNode startup reconciliation timeout regression and the cross-crate seam
-# pinning tests in nautilus-core.
+# tests and FinFeed's library and integration tests without adapter default features.
+# Transport-bound and thread-blocking tests are gated out at the source. The lane
+# also runs the LiveNode startup reconciliation timeout regression and the
+# cross-crate seam pinning tests in nautilus-core.
 # Precision-sensitive common and execution tests also run under `high-precision`,
 # so the seam-routed code paths are exercised under both `QuantityRaw` /
 # `PriceRaw` widths (u64 vs u128). See docs/concepts/dst.md for the full
@@ -1085,7 +1087,7 @@ cargo-test-sim:  #-- Run DST simulation smoke tests (cfg madsim + simulation fea
 	$(info $(M) Running in-scope DST tests under simulation...)
 	cargo nextest run --locked $(SIM_PACKAGES) --lib --tests --features simulation -E '$(SIM_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 	$(info $(M) Running adapter DST integration tests under simulation...)
-	cargo nextest run --locked $(SIM_ADAPTER_PACKAGES) --lib --test integration --no-default-features --features simulation -E 'test(dst::)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
+	cargo nextest run --locked $(SIM_ADAPTER_PACKAGES) --lib --test integration --no-default-features --features simulation -E '$(SIM_ADAPTER_FILTERSET)' $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 	$(info $(M) Running precision-sensitive DST tests under simulation + high-precision...)
 	cargo nextest run --locked $(SIM_HIGH_PRECISION_PACKAGES) --lib --tests --features "simulation,high-precision" $(FAIL_FAST_FLAG) --profile $(NEXTEST_PROFILE) --cargo-profile $(CARGO_CI_PROFILE) $(NEXTEST_OUTPUT_ARGS)
 

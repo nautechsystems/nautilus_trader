@@ -71,7 +71,7 @@ use ustr::Ustr;
 use crate::{
     book::{
         BinanceBookError,
-        pacing::SnapshotPacer,
+        pacing::{SnapshotPacer, SnapshotPermit},
         recovery::spawn_recovery,
         sync::{BookSyncTracker, DepthSequencing, DepthSnapshot, DepthUpdate},
     },
@@ -689,8 +689,14 @@ impl BinanceSpotDataClient {
             instrument_id,
             recovery,
             book_sync.clone(),
-            move || {
-                Self::fetch_depth_snapshot(http.clone(), instruments.clone(), instrument_id, clock)
+            move |permit| {
+                Self::fetch_depth_snapshot(
+                    http.clone(),
+                    instruments.clone(),
+                    instrument_id,
+                    clock,
+                    permit,
+                )
             },
             depth_request_weight(SNAPSHOT_DEPTH),
             snapshot_timeout,
@@ -723,6 +729,7 @@ impl BinanceSpotDataClient {
         instruments: Arc<AtomicMap<InstrumentId, InstrumentAny>>,
         instrument_id: InstrumentId,
         clock: &'static AtomicTime,
+        permit: SnapshotPermit,
     ) -> Result<DepthSnapshot, BinanceBookError> {
         let params = DepthParams {
             symbol: instrument_id.symbol.as_str().to_uppercase(),
@@ -731,7 +738,7 @@ impl BinanceSpotDataClient {
 
         let depth = http
             .inner()
-            .depth(&params)
+            .depth_paced(&params, permit)
             .await
             .map_err(|e| depth_snapshot_error(instrument_id, &e))?;
 
@@ -1878,9 +1885,12 @@ impl DataClient for BinanceSpotDataClient {
         self.spawn_command(async move {
             // The venue applies a 100-level limit when none is given
             let weight = depth_request_weight(depth.unwrap_or(100));
-            book_sync.pacer().acquire(weight).await;
+            let permit = book_sync.pacer().acquire(weight).await;
 
-            match http.request_book_snapshot(instrument_id, depth).await {
+            match http
+                .request_book_snapshot_with_permit(instrument_id, depth, Some(permit))
+                .await
+            {
                 Ok(book) => {
                     let response = DataResponse::Book(BookResponse::new(
                         request_id,

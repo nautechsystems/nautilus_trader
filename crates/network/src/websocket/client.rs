@@ -1006,7 +1006,11 @@ fn tungstenite_protocol_config(
 
 #[cfg(feature = "transport-sockudo")]
 fn sockudo_protocol_config(limits: InboundSizeLimits) -> SockudoConfig {
-    let mut config = SockudoConfig::default();
+    let mut config = SockudoConfig::builder()
+        .auto_ping(false)
+        .idle_timeout(0)
+        .build();
+
     if let Some(size) = limits.max_message_size_bytes {
         config.max_message_size = size;
     }
@@ -1295,6 +1299,8 @@ mod connection_error_tests {
             let default = SockudoConfig::default();
             assert_eq!(config.max_message_size, default.max_message_size);
             assert_eq!(config.max_frame_size, default.max_frame_size);
+            assert!(!config.auto_ping);
+            assert_eq!(config.idle_timeout, 0);
         }
     }
 
@@ -1317,6 +1323,8 @@ mod connection_error_tests {
             let default = SockudoConfig::default();
             assert_eq!(config.max_message_size, 32);
             assert_eq!(config.max_frame_size, default.max_frame_size);
+            assert!(!config.auto_ping);
+            assert_eq!(config.idle_timeout, 0);
         }
     }
 }

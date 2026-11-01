@@ -30,22 +30,24 @@ use axum::{
     Router,
     body::Body,
     extract::{
-        RawQuery, State,
+        Query, RawQuery, State,
         ws::{Message, WebSocket},
     },
     http::{StatusCode, header},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use nautilus_binance::{
     common::{
         bar::BinanceBar,
         consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
+        enums::BinanceEnvironment,
     },
     config::{BinanceDataClientConfig, BinanceSpotMarketDataMode},
     data_types::BinanceSpotTicker,
     spot::{
         BinanceSpotDataClient,
+        http::client::BinanceRawSpotHttpClient,
         sbe::{
             generated::symbol_status::SymbolStatus,
             spot::{SBE_SCHEMA_ID, SBE_SCHEMA_VERSION},
@@ -109,6 +111,7 @@ struct DataTestServerConfig {
     depth_diff_delay: Duration,
     depth_snapshot_last_update_ids: Vec<i64>,
     depth_requests: Arc<AtomicUsize>,
+    depth_request_times: Arc<Mutex<Vec<tokio::time::Instant>>>,
     json_ws_streams: bool,
     reconnect_signals_remaining: Arc<AtomicUsize>,
     subscriptions: Arc<Mutex<Vec<Vec<String>>>>,
@@ -129,6 +132,7 @@ impl Default for DataTestServerConfig {
             depth_diff_delay: Duration::from_millis(50),
             depth_snapshot_last_update_ids: vec![100],
             depth_requests: Arc::new(AtomicUsize::new(0)),
+            depth_request_times: Arc::default(),
             json_ws_streams: false,
             reconnect_signals_remaining: Arc::new(AtomicUsize::new(0)),
             subscriptions: Arc::new(Mutex::new(Vec::new())),
@@ -736,6 +740,10 @@ async fn send_depth_diffs(socket: &mut WebSocket, config: &DataTestServerConfig,
 }
 
 async fn handle_depth(State(config): State<DataTestServerConfig>) -> Response {
+    config
+        .depth_request_times
+        .lock()
+        .push(tokio::time::Instant::now());
     let request = config.depth_requests.fetch_add(1, Ordering::Relaxed);
     let last_update_id = config
         .depth_snapshot_last_update_ids
@@ -813,6 +821,20 @@ fn create_data_test_router(config: DataTestServerConfig) -> Router {
             }),
         )
         .route("/api/v3/depth", get(handle_depth))
+        .route(
+            "/api/v3/cooldown",
+            post(|Query(query): Query<HashMap<String, String>>| async move {
+                if let Some(hold) = query.get("hold") {
+                    tokio::time::sleep(Duration::from_secs(hold.parse().unwrap())).await;
+                }
+
+                (
+                    StatusCode::TOO_MANY_REQUESTS,
+                    [("Retry-After", query["seconds"].clone())],
+                    json!({"code": -1003, "msg": "test cooldown"}).to_string(),
+                )
+            }),
+        )
         .route("/api/v3/aggTrades", get(handle_agg_trades))
         .route("/api/v3/klines", get(handle_klines))
         .route("/ws", get(handle_ws))
@@ -2083,6 +2105,88 @@ async fn test_request_book_snapshot_paces_requests_by_weight() {
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     assert_eq!(depth_requests.load(Ordering::Relaxed), 6);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown() {
+    let config = DataTestServerConfig::default();
+    let times = config.depth_request_times.clone();
+    let addr = start_data_test_server_with_config(config).await;
+    let url = format!("http://{addr}");
+    let (mut client, mut rx) = create_test_data_client(url.clone(), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let throttle = BinanceRawSpotHttpClient::new_with_json_responses(
+        BinanceEnvironment::Live,
+        Some("test-key".into()),
+        Some("test-secret".into()),
+        Some(url),
+        None,
+        None,
+        None,
+        true,
+    )
+    .unwrap();
+
+    let started = tokio::time::Instant::now();
+
+    let initial_and_queue = async {
+        let initial = throttle
+            .post_signed("cooldown", Some(&HashMap::from([("seconds", 11)])))
+            .await;
+
+        for _ in 0..14 {
+            client
+                .request_book_snapshot(RequestBookSnapshot::new(
+                    InstrumentId::from("BTCUSDT.BINANCE"),
+                    Some(NonZeroUsize::new(5000).unwrap()),
+                    Some(*BINANCE_CLIENT_ID),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        }
+
+        initial
+    };
+
+    let extension_params = HashMap::from([("seconds", 16), ("hold", 5)]);
+    let extension = throttle.post_signed("cooldown", Some(&extension_params));
+    let (initial, extension) = tokio::join!(initial_and_queue, extension);
+    tokio::time::sleep(Duration::from_secs(105)).await;
+    let times = times.lock().clone();
+    let responses = std::iter::from_fn(|| rx.try_recv().ok())
+        .filter(|event| matches!(event, DataEvent::Response(DataResponse::Book(_))))
+        .count();
+
+    assert!(initial.is_err());
+    assert!(extension.is_err());
+    assert_eq!(times.len(), 14);
+    assert_eq!(responses, 14);
+    assert!(
+        times
+            .iter()
+            .all(|time| *time >= started + Duration::from_secs(21))
+    );
+    assert_eq!(
+        times
+            .iter()
+            .filter(|time| **time < started + Duration::from_secs(30))
+            .count(),
+        6
+    );
+
+    for start in &times {
+        let weight = times
+            .iter()
+            .filter(|time| **time >= *start && **time < *start + Duration::from_secs(60))
+            .count()
+            * 250;
+        assert!(weight <= 3_000, "snapshot weight exceeded budget: {weight}");
+    }
 }
 
 #[rstest]

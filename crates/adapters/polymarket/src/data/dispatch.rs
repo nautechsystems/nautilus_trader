@@ -10385,11 +10385,11 @@ mod tests {
         );
         let state = ScriptedAutoLoadServerState::new(
             vec![ScriptedAutoLoadReply::ok(serde_json::json!([open_market]))],
-            vec![ScriptedAutoLoadReply::failed()],
+            vec![ScriptedAutoLoadReply::failed(); 4],
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (mut client, _data_rx) = create_test_client(addr);
-        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_debounce_ms = 100;
         client.config.auto_load_max_retries = 0;
 
         let open_id = fixture_instrument_id(OPEN_CONDITION, OPEN_TOKEN);
@@ -10409,21 +10409,13 @@ mod tests {
         }
 
         wait_until_async(
-            || {
-                let state = state.clone();
-                async move { state.queries.lock().len() >= 2 }
-            },
-            StdDuration::from_secs(3),
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(15),
         )
         .await;
-        wait_until_async(
-            || {
-                let client = &client;
-                async move { client.instruments.load().contains_key(&open_id) }
-            },
-            StdDuration::from_secs(3),
-        )
-        .await;
+
+        assert_eq!(state.completed_replies.load(Ordering::SeqCst), 5);
+        assert!(state.closed_replies.lock().is_empty());
 
         assert!(client.subscriptions.active_quote_subs.contains(&open_id));
         assert!(client.instruments.load().contains_key(&open_id));
@@ -10937,26 +10929,15 @@ mod tests {
             "88888888888888888888888888888888888888888888888888888888888888889",
             false,
         );
-        let state = if normal_query_failure {
-            ScriptedAutoLoadServerState::new(
-                vec![
-                    ScriptedAutoLoadReply::ok(serde_json::json!([first_market])),
-                    ScriptedAutoLoadReply::failed(),
-                ],
-                vec![ScriptedAutoLoadReply::ok(serde_json::json!([]))],
-            )
+        let mut open_replies = vec![ScriptedAutoLoadReply::ok(serde_json::json!([first_market]))];
+        let closed_replies = if normal_query_failure {
+            open_replies.extend(vec![ScriptedAutoLoadReply::failed(); 4]);
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([]))]
         } else {
-            ScriptedAutoLoadServerState::new(
-                vec![
-                    ScriptedAutoLoadReply::ok(serde_json::json!([first_market])),
-                    ScriptedAutoLoadReply::ok(serde_json::json!([last_market])),
-                ],
-                vec![
-                    ScriptedAutoLoadReply::failed(),
-                    ScriptedAutoLoadReply::ok(serde_json::json!([])),
-                ],
-            )
+            open_replies.push(ScriptedAutoLoadReply::ok(serde_json::json!([last_market])));
+            vec![ScriptedAutoLoadReply::failed(); 4]
         };
+        let state = ScriptedAutoLoadServerState::new(open_replies, closed_replies);
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (mut client, _data_rx) = create_test_client(addr);
         client.config.auto_load_debounce_ms = 0;
@@ -10985,20 +10966,14 @@ mod tests {
         client.queue_pending_load(first_id);
 
         wait_until_async(
-            || {
-                let client = &client;
-                async move {
-                    client.instruments.load().contains_key(&first_id)
-                        && client.subscriptions.active_quote_subs.contains(&first_id)
-                        && client.subscriptions.active_quote_subs.contains(&last_id)
-                        && (normal_query_failure
-                            || client.instruments.load().contains_key(&last_id))
-                }
-            },
-            StdDuration::from_secs(3),
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(15),
         )
         .await;
 
+        assert_eq!(state.completed_replies.load(Ordering::SeqCst), 6);
+        assert!(state.open_replies.lock().is_empty());
+        assert!(state.closed_replies.lock().is_empty());
         assert!(client.instruments.load().contains_key(&first_id));
         assert!(client.subscriptions.active_quote_subs.contains(&first_id));
         assert!(client.subscriptions.active_quote_subs.contains(&last_id));

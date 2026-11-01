@@ -18,6 +18,132 @@ use indexmap::IndexMap;
 use super::*;
 
 #[rstest]
+fn test_continuous_future_time_bars_preserve_boundary_ticks_across_segments(
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let clock = data_engine_clock_at(14_000_000_000);
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let pre_id = add_es_contract(&cache, "ESH24.GLBX", "ESH24");
+    let post_id = add_es_contract(&cache, "ESM24.GLBX", "ESM24");
+    let mut engine = DataEngine::new(clock, Rc::clone(&cache), None);
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    let client_clock = Rc::new(RefCell::new(VirtualClock::new()));
+    register_mock_client(
+        client_clock,
+        Rc::clone(&cache),
+        client_id,
+        Venue::from("GLBX"),
+        None,
+        &recorder,
+        &mut engine,
+    );
+    let bar_type = BarType::from("ES.GLBX-1-SECOND-LAST-INTERNAL");
+    let parent_id = UUID4::new();
+    let params = params_from_json(json!({
+        "continuous_future_adjustment_mode": "BACKWARD_SPREAD",
+        "continuous_future_transitions": [{
+            "transition_time_ns": 11_500_000_000_u64,
+            "pre_instrument_id": pre_id.to_string(),
+            "post_instrument_id": post_id.to_string(),
+            "pre_price": "100.00",
+            "post_price": "95.00"
+        }]
+    }));
+    let (handler, saver) = get_response_saving_handler::<BarsResponse>(None);
+    msgbus::register_response_handler(&parent_id, handler);
+
+    let request = RequestBars::new(
+        bar_type,
+        Some(UnixNanos::from(10_500_000_000).to_datetime_utc()),
+        Some(UnixNanos::from(12_000_000_000).to_datetime_utc()),
+        None,
+        Some(client_id),
+        parent_id,
+        UnixNanos::from(14_000_000_000),
+        Some(params),
+    );
+    engine
+        .execute_request(RequestCommand::Bars(request))
+        .unwrap();
+    let child = recorded_trades_request(&recorder, 0);
+    let trades = vec![
+        make_trade(pre_id, "100.00", 2, "pre-open", 10_500_000_000),
+        make_trade(pre_id, "101.00", 3, "pre-close", 11_000_000_000),
+    ];
+    engine.response(DataResponse::Trades(TradesResponse::new(
+        child.request_id,
+        client_id,
+        pre_id,
+        trades,
+        None,
+        None,
+        UnixNanos::from(11_000_000_000),
+        child.params,
+    )));
+    assert_eq!(cache.borrow().bars(&bar_type), None);
+    assert_eq!(saver.get_messages().len(), 0);
+
+    let first = Bar::new(
+        bar_type,
+        Price::from("95.00"),
+        Price::from("96.00"),
+        Price::from("95.00"),
+        Price::from("96.00"),
+        Quantity::from(5),
+        UnixNanos::from(11_000_000_000),
+        UnixNanos::from(11_000_000_000),
+    );
+    let child = recorded_trades_request(&recorder, 1);
+    let trade = make_trade(post_id, "98.00", 5, "post-first", 12_000_000_000);
+    engine.response_envelope(DataResponseEnvelope::new(
+        DataResponse::Trades(TradesResponse::new(
+            child.request_id,
+            client_id,
+            post_id,
+            vec![trade],
+            None,
+            None,
+            UnixNanos::from(12_000_000_000),
+            child.params.clone(),
+        )),
+        false,
+        None,
+    ));
+    assert_eq!(cache.borrow().bars(&bar_type), Some(vec![first]));
+    assert_eq!(saver.get_messages().len(), 0);
+
+    let trade = make_trade(post_id, "99.00", 7, "post-last", 12_000_000_000);
+    engine.response(DataResponse::Trades(TradesResponse::new(
+        child.request_id,
+        client_id,
+        post_id,
+        vec![trade],
+        None,
+        None,
+        UnixNanos::from(12_000_000_000),
+        child.params,
+    )));
+
+    let last = Bar::new(
+        bar_type,
+        Price::from("98.00"),
+        Price::from("99.00"),
+        Price::from("98.00"),
+        Price::from("99.00"),
+        Quantity::from(12),
+        UnixNanos::from(12_000_000_000),
+        UnixNanos::from(12_000_000_000),
+    );
+    let responses = saver.get_messages();
+    assert_eq!(cache.borrow().bars(&bar_type), Some(vec![last, first]));
+    assert_eq!(responses.len(), 1);
+    assert_eq!(responses[0].correlation_id, parent_id);
+    assert_eq!(response_data_count(&responses[0]), Some(4));
+}
+
+#[rstest]
 fn test_continuous_future_request_adjusts_external_bars_across_transitions(
     stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,

@@ -534,7 +534,14 @@ Building fails when a factory is combined with separately injected egress or ing
 installs egress and creates ingress only when `external_streams` is non-empty.
 
 Python exposes the same builder method. Its only supported built-in backing config is `RedisMessageBusConfig`.
-The existing `RedisMessageBusFactory` wrapper stays supported. Python does not accept arbitrary factory classes.
+The existing `RedisMessageBusFactory` wrapper stays supported. Native backends implement
+`MessageBusBackingFactory` and `MessageBusBacking` and own their concrete connection settings.
+Python accepts registered native factory types; it does not accept arbitrary Python factory classes.
+Custom backend factories have the same [native integration requirements](cache.md#database-configuration)
+as cache backends.
+
+Python configures external message bus backing through `LiveNodeBuilder.with_external_msgbus_factory`.
+The concrete Redis backing and its connection, publish, and stream methods are not exposed to Python.
 
 :::warning
 The built-in Redis ingress starts each configured stream at the current timestamp, so entries that already

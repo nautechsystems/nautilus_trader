@@ -25,6 +25,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
 use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
@@ -36,7 +37,7 @@ use nautilus_model::{
     data::{Bar, BarType, TradeTick},
     enums::{AggregationSource, BarAggregation},
     events::AccountState,
-    identifiers::{AccountId, InstrumentId, Symbol},
+    identifiers::{AccountId, InstrumentId, Symbol, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
@@ -1756,19 +1757,48 @@ impl DeribitHttpClient {
     /// Fetches user trades from Deribit and converts them to Nautilus [`FillReport`].
     /// Automatically paginates through all results using time-cursor advancement.
     ///
+    /// Trades whose instruments are not in the client's instrument cache are omitted. A trade
+    /// for a cached instrument that cannot be parsed, including a commission outside the
+    /// representable money range, fails the request. No fill reports are returned.
+    ///
     /// # Strategy
     /// - Uses `/private/get_user_trades_by_instrument_and_time` when instrument is provided
     /// - Otherwise iterates over currencies using `/private/get_user_trades_by_currency_and_time`
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or parsing fails.
+    /// Returns an error if:
+    /// - The request fails.
+    /// - A trade for a cached instrument cannot be parsed.
     pub async fn request_fill_reports(
         &self,
         account_id: AccountId,
         instrument_id: Option<InstrumentId>,
         start: Option<UnixNanos>,
         end: Option<UnixNanos>,
+    ) -> anyhow::Result<Vec<FillReport>> {
+        self.request_fill_reports_scoped(account_id, instrument_id, start, end, None)
+            .await
+    }
+
+    /// Requests fill reports, optionally limited to one venue order.
+    ///
+    /// When `venue_order_id` is set, trades for other orders are omitted before trade parsing.
+    /// A trade-parse failure for an omitted order does not fail the request. A response that
+    /// cannot be decoded still fails the request.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The request fails.
+    /// - A requested cached trade cannot be parsed.
+    pub(crate) async fn request_fill_reports_scoped(
+        &self,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        start: Option<UnixNanos>,
+        end: Option<UnixNanos>,
+        venue_order_id: Option<&VenueOrderId>,
     ) -> anyhow::Result<Vec<FillReport>> {
         let ts_init = self.generate_ts_init();
         let now_ms = Timestamp::now().as_millisecond();
@@ -1778,20 +1808,22 @@ impl DeribitHttpClient {
         let end_ms = end.map_or(now_ms, |ns| nanos_to_millis(ns.as_u64()) as i64);
         let mut reports = Vec::new();
 
-        let mut parse_and_add = |trade: &DeribitUserTradeMsg| {
+        let mut parse_and_add = |trade: &DeribitUserTradeMsg| -> anyhow::Result<()> {
+            if venue_order_id.is_some_and(|order_id| trade.order_id != order_id.as_str()) {
+                return Ok(());
+            }
+
             let symbol = trade.instrument_name;
             if let Some(instrument) = self.get_instrument(&symbol) {
-                match parse_user_trade_msg(trade, &instrument, account_id, ts_init) {
-                    Ok(report) => reports.push(report),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to parse trade {} for {}: {}",
-                            trade.trade_id,
-                            trade.instrument_name,
-                            e
-                        );
-                    }
-                }
+                let report = parse_user_trade_msg(trade, &instrument, account_id, ts_init)
+                    .with_context(|| {
+                        format!(
+                            "failed to parse trade {} for {}",
+                            trade.trade_id, trade.instrument_name
+                        )
+                    })?;
+
+                reports.push(report);
             } else {
                 log::debug!(
                     "Skipping trade {} - instrument {} not in cache",
@@ -1799,6 +1831,8 @@ impl DeribitHttpClient {
                     trade.instrument_name
                 );
             }
+
+            Ok(())
         };
 
         let mut paginator = TradePaginator::new(start_ms, end_ms);
@@ -1827,7 +1861,7 @@ impl DeribitHttpClient {
                 };
 
                 for i in &new_indices {
-                    parse_and_add(&data.trades[*i]);
+                    parse_and_add(&data.trades[*i])?;
                 }
 
                 if !data.has_more || paginator.is_exhausted() {
@@ -1864,7 +1898,7 @@ impl DeribitHttpClient {
                     };
 
                     for i in &new_indices {
-                        parse_and_add(&data.trades[*i]);
+                        parse_and_add(&data.trades[*i])?;
                     }
 
                     if !data.has_more || paginator.is_exhausted() {

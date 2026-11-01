@@ -2316,6 +2316,7 @@ impl ExecutionClient for OKXExecutionClient {
                 context.trigger_price,
                 Some(context.is_post_only),
                 Some(context.is_reduce_only),
+                Some(context.is_quote_quantity),
                 outcome.clone(),
                 rpi,
                 rpi_taker_access,
@@ -4109,9 +4110,12 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::{
-        consts::OKX_CLIENT_ID, enums::OKXEnvironment, models::OKXInstrument,
-        parse::parse_instrument_any,
+    use crate::{
+        common::{
+            consts::OKX_CLIENT_ID, enums::OKXEnvironment, models::OKXInstrument,
+            parse::parse_instrument_any,
+        },
+        websocket::enums::OKXWsOperation,
     };
 
     struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
@@ -7353,6 +7357,263 @@ mod tests {
             assert_eq!(body["sz"], "2");
         }
 
+        client.disconnect().await.unwrap();
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::accepted("0", OKXTradeMode::Cross, "0")]
+    #[case::accepted_isolated("0", OKXTradeMode::Isolated, "0")]
+    #[case::accepted_spot_isolated("0", OKXTradeMode::SpotIsolated, "0")]
+    #[case::rejected("51000", OKXTradeMode::Cash, "1")]
+    #[case::ambiguous("50004", OKXTradeMode::Cross, "1")]
+    #[tokio::test]
+    async fn test_spot_market_submission_preserves_quantity_intent(
+        #[case] response_code: &str,
+        #[case] trade_mode: OKXTradeMode,
+        #[case] overall_code: &str,
+        #[values(
+            (OrderSide::Buy, false, Some("base_ccy"), "0.12345"),
+            (OrderSide::Buy, true, Some("quote_ccy"), "12.34500"),
+            (OrderSide::Sell, false, None, "0.12345"),
+            (OrderSide::Sell, true, Some("quote_ccy"), "12.34500")
+        )]
+        sizing: (OrderSide, bool, Option<&str>, &str),
+        #[values(false, true)] batch: bool,
+    ) {
+        let (side, quote_quantity, target, quantity) = sizing;
+
+        let (operation, wire_operation) = if batch {
+            (OKXWsOperation::BatchOrders, "batch-orders")
+        } else {
+            (OKXWsOperation::Order, "order")
+        };
+
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (barrier_tx, mut barrier_rx) = tokio::sync::mpsc::unbounded_channel();
+        let ws_tx = request_tx.clone();
+        let router = Router::new().route("/ws", get(move |ws: WebSocketUpgrade| {
+            let tx = ws_tx.clone();
+            let barrier_tx = barrier_tx.clone();
+            async move { ws.on_upgrade(move |mut socket| async move {
+                while let Some(Ok(Message::Text(text))) = socket.next().await {
+                    let request: Value = serde_json::from_str(&text).unwrap();
+                    match request["op"].as_str() {
+                        Some("login") => {
+                            let response = serde_json::json!({"event":"login", "code":"0", "msg":"", "connId":"test"});
+                            socket.send(Message::Text(response.to_string().into())).await.unwrap();
+                        }
+                        Some("subscribe") => {
+                            let response = serde_json::json!({"event":"subscribe", "arg":request["args"][0], "connId":"test"});
+                            socket.send(Message::Text(response.to_string().into())).await.unwrap();
+                            barrier_tx.send(()).unwrap();
+                        }
+                        _ => tx.send(request).unwrap(),
+                    }
+                }
+            }) }
+        })).route("/api/v5/trade/order", post(move |Json(request): Json<Value>| {
+            let tx = request_tx.clone();
+            async move {
+                tx.send(request).unwrap();
+                let response = serde_json::from_str::<Value>(include_str!("../test_data/http_place_order_response.json")).unwrap();
+                Json(serde_json::json!({"code":"0", "msg":"", "data":[response]}))
+            }
+        }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (mut client, cache) = build_test_exec_client_with_cache();
+
+        client.http_client = OKXHttpClient::with_credentials(
+            Some("key".into()),
+            Some("secret".into()),
+            Some("pass".into()),
+            Some(format!("http://{address}")),
+            5,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        client.ws_private = OKXWebSocketClient::with_credentials(
+            Some(format!("ws://{address}/ws")),
+            Some("key".into()),
+            Some("secret".into()),
+            Some("pass".into()),
+            Some(client.core.account_id),
+            None,
+            None,
+            client.config.transport_backend,
+            None,
+        )
+        .unwrap();
+        let raw: Value = serde_json::from_str(include_str!(
+            "../test_data/http_get_instruments_spot_usdc.json"
+        ))
+        .unwrap();
+        let raw: OKXInstrument = serde_json::from_value(raw["data"][0].clone()).unwrap();
+        let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
+            .unwrap()
+            .unwrap();
+        let instrument_id = instrument.id();
+        client.on_instrument(instrument);
+        client
+            .ws_private
+            .cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
+        client.ws_private.connect().await.unwrap();
+        client.ws_private.wait_until_active(5.0).await.unwrap();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+
+        let quantity = Quantity::from(quantity);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("OSPOTUNITS"))
+            .side(side)
+            .quantity(quantity)
+            .quote_quantity(quote_quantity)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+
+        let params = Params::new(
+            [(
+                "td_mode".into(),
+                Value::from(trade_mode.to_string().to_lowercase()),
+            )]
+            .into(),
+        );
+
+        if batch {
+            let list = OrderList::new(
+                OrderListId::from("OL-UNITS"),
+                instrument_id,
+                order.strategy_id(),
+                vec![order.client_order_id()],
+                UnixNanos::default(),
+            );
+            client
+                .submit_order_list(SubmitOrderList::new(
+                    client.core.trader_id,
+                    Some(*OKX_CLIENT_ID),
+                    order.strategy_id(),
+                    list,
+                    vec![OrderInitialized::from(&order)],
+                    None,
+                    None,
+                    Some(params),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        } else {
+            let mut command = SubmitOrder::from_order(
+                &order,
+                client.core.trader_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            );
+            command.params = Some(params);
+            client.submit_order(command).unwrap();
+        }
+
+        let request = tokio::time::timeout(Duration::from_secs(5), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+        let mut snapshots = AHashMap::new();
+
+        let message = OKXWsMessage::OrderResponse {
+            id: Some("quantity-response".into()),
+            op: operation,
+            code: overall_code.into(),
+            msg: String::new(),
+            data: vec![serde_json::json!({
+                "clOrdId": "OSPOTUNITS", "ordId": "98765",
+                "sCode": response_code, "sMsg": "Parameter tdMode error",
+            })],
+        };
+
+        dispatch_ws_message(
+            message,
+            &client.emitter,
+            &client.ws_dispatch_state,
+            client.core.account_id,
+            client.core.account_type,
+            &client.ws_private.instruments_cache_arc(),
+            &mut fee_cache,
+            &mut filled_qty_cache,
+            &mut snapshots,
+            client.clock,
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) =
+            event_rx.try_recv().unwrap()
+        else {
+            panic!("expected submitted event")
+        };
+
+        assert_eq!(submitted.client_order_id, order.client_order_id());
+        assert_eq!(submitted.instrument_id, instrument_id);
+        assert_eq!(submitted.strategy_id, order.strategy_id());
+        assert_eq!(submitted.account_id, client.core.account_id);
+        assert_eq!(request["op"], wire_operation);
+        assert_eq!(
+            request["args"][0]["tdMode"],
+            trade_mode.to_string().to_lowercase()
+        );
+        assert_eq!(request["args"][0]["sz"], quantity.to_string());
+        assert_eq!(
+            request["args"][0].get("tgtCcy").and_then(Value::as_str),
+            target
+        );
+
+        if response_code == "51000" {
+            let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) =
+                event_rx.try_recv().unwrap()
+            else {
+                panic!("expected rejection")
+            };
+
+            assert_eq!(rejected.client_order_id, order.client_order_id());
+            assert_eq!(rejected.instrument_id, instrument_id);
+            assert_eq!(
+                rejected.reason.as_str(),
+                "OKX error 51000: Parameter tdMode error"
+            );
+        }
+
+        wait_until_async(
+            || async { client.pending_tasks.is_empty() },
+            Duration::from_secs(1),
+        )
+        .await;
+
+        // Wait for a later frame so the absence check includes queued order sends
+        client
+            .ws_private
+            .subscribe_orders(OKXInstrumentType::Spot)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), barrier_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(event_rx.try_recv().is_err());
+        assert!(request_rx.try_recv().is_err());
         client.disconnect().await.unwrap();
         server.abort();
     }
