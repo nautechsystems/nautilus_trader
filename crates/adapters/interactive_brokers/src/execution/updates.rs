@@ -49,7 +49,7 @@ pub(super) enum OrderUpdateLoopOutcome {
     TransportShutdown,
 }
 
-/// Backoff of the order-update re-bind loop.
+/// Backoff of the order-update and account summary re-bind loops.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct RebindDelays {
     /// After the stream ended or errored, before re-binding.
@@ -68,7 +68,7 @@ impl RebindDelays {
 }
 
 /// Sleeps for `delay` unless `cancel` fires first; returns whether the sleep completed.
-async fn sleep_or_cancel(delay: Duration, cancel: &CancellationToken) -> bool {
+pub(super) async fn sleep_or_cancel(delay: Duration, cancel: &CancellationToken) -> bool {
     tokio::select! {
         () = cancel.cancelled() => false,
         () = tokio::time::sleep(delay) => true,
