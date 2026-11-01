@@ -1918,6 +1918,31 @@ impl HyperliquidWebSocketClient {
         Ok(())
     }
 
+    /// Subscribes to perp account state and spot balances for a user address.
+    pub(crate) async fn subscribe_account_state(
+        &self,
+        user: &str,
+        is_portfolio_margin: bool,
+    ) -> anyhow::Result<()> {
+        let cmd_tx = self.cmd_tx.read().await;
+        self.send_subscription(
+            &cmd_tx,
+            SubscriptionRequest::ClearinghouseState {
+                user: user.to_string(),
+            },
+        )?;
+
+        self.send_subscription(
+            &cmd_tx,
+            SubscriptionRequest::SpotState {
+                user: user.to_string(),
+                is_portfolio_margin,
+            },
+        )?;
+
+        Ok(())
+    }
+
     /// Subscribe to user fills for a specific user address.
     ///
     /// Note: This channel is redundant with `userEvents` which already includes fills.
@@ -2728,6 +2753,19 @@ fn subscription_from_topic(topic: &str) -> anyhow::Result<SubscriptionRequest> {
         HyperliquidWsChannel::WebData2 => Ok(SubscriptionRequest::WebData2 {
             user: rest.context("Missing user")?.to_string(),
         }),
+        HyperliquidWsChannel::ClearinghouseState => Ok(SubscriptionRequest::ClearinghouseState {
+            user: rest.context("Missing user")?.to_string(),
+        }),
+        HyperliquidWsChannel::SpotState => {
+            let (user, is_portfolio_margin) = rest
+                .context("Missing spot state params")?
+                .rsplit_once(':')
+                .context("Missing portfolio margin flag")?;
+            Ok(SubscriptionRequest::SpotState {
+                user: user.to_string(),
+                is_portfolio_margin: is_portfolio_margin.parse()?,
+            })
+        }
         HyperliquidWsChannel::Candle => {
             // Format: candle:{coin}:{interval} - interval is last segment
             let rest = rest.context("Missing candle params")?;
@@ -3356,6 +3394,9 @@ mod tests {
     #[case(SubscriptionRequest::Bbo { coin: "BTC".into() }, "bbo:BTC")]
     #[case(SubscriptionRequest::OrderUpdates { user: "0x123".to_string() }, "orderUpdates:0x123")]
     #[case(SubscriptionRequest::UserEvents { user: "0xabc".to_string() }, "userEvents:0xabc")]
+    #[case(SubscriptionRequest::ClearinghouseState { user: "0xabc".to_string() }, "clearinghouseState:0xabc")]
+    #[case(SubscriptionRequest::SpotState { user: "0xabc".to_string(), is_portfolio_margin: false }, "spotState:0xabc:false")]
+    #[case(SubscriptionRequest::SpotState { user: "0xabc".to_string(), is_portfolio_margin: true }, "spotState:0xabc:true")]
     fn test_subscription_topic_generation(
         #[case] subscription: SubscriptionRequest,
         #[case] expected_topic: &str,
@@ -3379,6 +3420,9 @@ mod tests {
     #[case(SubscriptionRequest::Bbo { coin: "ETH".into() })]
     #[case(SubscriptionRequest::Candle { coin: "SOL".into(), interval: HyperliquidBarInterval::OneHour })]
     #[case(SubscriptionRequest::OrderUpdates { user: "0x123".to_string() })]
+    #[case(SubscriptionRequest::ClearinghouseState { user: "0x123".to_string() })]
+    #[case(SubscriptionRequest::SpotState { user: "0x123".to_string(), is_portfolio_margin: false })]
+    #[case(SubscriptionRequest::SpotState { user: "0x123".to_string(), is_portfolio_margin: true })]
     #[case(SubscriptionRequest::Trades { coin: "vntls:vCURSOR".into() })]
     #[case(SubscriptionRequest::L2Book { coin: "vntls:vCURSOR".into(), mantissa: None, n_sig_figs: None })]
     #[case(SubscriptionRequest::Candle { coin: "vntls:vCURSOR".into(), interval: HyperliquidBarInterval::OneHour })]

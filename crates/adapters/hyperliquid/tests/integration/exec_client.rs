@@ -97,7 +97,7 @@ use nautilus_model::{
     instruments::{CryptoPerpetual, InstrumentAny},
     orders::{LimitOrder, MarketOrder, Order, OrderAny, OrderList, StopMarketOrder},
     reports::{FillReport, OrderStatusReport},
-    types::{AccountBalance, Currency, Money, Price, Quantity},
+    types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
 use nautilus_network::{
     http::{HttpClient, Method},
@@ -969,13 +969,20 @@ async fn send_ws_subscription_response(
         return true;
     }
 
-    let response = json!({
-        "channel": "subscriptionResponse",
-        "data": {
-            "method": "subscribe",
-            "subscription": payload["subscription"],
-        },
-    });
+    let response = if payload["subscription"]["type"] == "spotState" {
+        let mut response =
+            load_json("ws_account_states.json")["spot_subscription_response"].clone();
+        response["data"]["subscription"]["user"] = payload["subscription"]["user"].clone();
+        response
+    } else {
+        json!({
+            "channel": "subscriptionResponse",
+            "data": {
+                "method": "subscribe",
+                "subscription": payload["subscription"],
+            },
+        })
+    };
 
     if socket
         .send(Message::Text(response.to_string().into()))
@@ -4804,6 +4811,337 @@ async fn test_connect_fails_when_user_abstraction_unreadable() {
             "no AccountState must be emitted when connect fails; got {event:?}",
         );
     }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_state_stream_updates_without_query(
+    #[values("disabled", "unifiedAccount", "portfolioMargin")] abstraction: &str,
+    #[values(false, true)] reconnect: bool,
+) {
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!(abstraction));
+    let addr = start_mock_server(state.clone()).await;
+    let registry = SocketReconnectRegistry::default();
+    let (mut client, mut rx, cache) = registry.scope(|| create_test_execution_client(addr));
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let initial = rx.recv().await.unwrap();
+    assert!(matches!(initial, ExecutionEvent::Account(_)));
+
+    wait_until_async(
+        || async { state.ws_subscriptions.lock().await.len() == 4 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    if reconnect {
+        request_user_streams_reconnect(&registry);
+        wait_until_async(
+            || async { state.ws_subscriptions.lock().await.len() == 8 },
+            Duration::from_secs(5),
+        )
+        .await;
+    }
+
+    let subscriptions = state.ws_subscriptions.lock().await.clone();
+    let spot_subscriptions: Vec<_> = subscriptions
+        .iter()
+        .filter(|subscription| subscription["type"] == "spotState")
+        .collect();
+    assert_eq!(spot_subscriptions.len(), if reconnect { 2 } else { 1 });
+    assert_eq!(
+        spot_subscriptions
+            .iter()
+            .map(|subscription| subscription["isPortfolioMargin"].clone())
+            .collect::<Vec<_>>(),
+        vec![json!(abstraction == "portfolioMargin"); spot_subscriptions.len()],
+    );
+
+    let account_requests = |requests: &[Value]| {
+        requests
+            .iter()
+            .filter(|request| {
+                matches!(
+                    request["type"].as_str(),
+                    Some("clearinghouseState" | "spotClearinghouseState" | "userAbstraction")
+                )
+            })
+            .cloned()
+            .collect::<Vec<_>>()
+    };
+
+    let requests_before = account_requests(&state.info_requests.lock().await);
+    let frames = load_json("ws_account_states.json");
+    for (channel, has_spot) in [("perp", false), ("spot", true), ("perp", true)] {
+        state.stream_frames.send(frames[channel].clone()).unwrap();
+        let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+            .await
+            .expect("account stream must emit without QueryAccount")
+            .unwrap();
+
+        let ExecutionEvent::Account(account) = event else {
+            panic!("expected account state, was {event:?}");
+        };
+
+        let usdc = account
+            .balances
+            .iter()
+            .find(|b| b.currency == Currency::USDC())
+            .unwrap();
+        let spot_collateral = abstraction != "disabled";
+
+        let (total, locked, free, margin) = match (has_spot, spot_collateral) {
+            (false, true) => (dec!(0), dec!(0), dec!(0), None),
+            (true, true) => (dec!(456.78), dec!(23.45), dec!(433.33), Some(dec!(23.45))),
+            (_, false) => (dec!(1229.34), dec!(73.68), dec!(1155.66), Some(dec!(78.9))),
+        };
+
+        assert_eq!(account.account_id, AccountId::from("HYPERLIQUID-001"));
+        assert_eq!(account.account_type, AccountType::Margin);
+        assert_eq!(account.base_currency, None);
+        assert!(account.is_reported);
+        assert_eq!(usdc.total.as_decimal(), total);
+        assert_eq!(usdc.locked.as_decimal(), locked);
+        assert_eq!(usdc.free.as_decimal(), free);
+        assert_eq!(account.margins.len(), usize::from(margin.is_some()));
+
+        if let Some(margin) = margin {
+            assert_eq!(account.margins[0].initial.as_decimal(), margin);
+            assert_eq!(account.margins[0].maintenance.as_decimal(), margin);
+            assert_eq!(account.margins[0].currency, Currency::USDC());
+            assert_eq!(account.margins[0].instrument_id, None);
+        }
+
+        assert_eq!(account.balances.len(), if has_spot { 2 } else { 1 });
+
+        if has_spot {
+            let hype = account
+                .balances
+                .iter()
+                .find(|b| b.currency.code == "HYPE")
+                .unwrap();
+            assert_eq!(hype.total.as_decimal(), dec!(6.54));
+            assert_eq!(hype.locked.as_decimal(), dec!(1.23));
+            assert_eq!(hype.free.as_decimal(), dec!(5.31));
+        }
+
+        cache.borrow_mut().update_account_state(&account).unwrap();
+        let cache = cache.borrow();
+        let cached = cache.account(&account.account_id).unwrap();
+        assert_eq!(cached.balances()[&Currency::USDC()], *usdc);
+    }
+
+    assert_eq!(
+        account_requests(&state.info_requests.lock().await),
+        requests_before
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_state_stream_clears_zero_spot_balances(
+    #[values("disabled", "unifiedAccount", "portfolioMargin")] abstraction: &str,
+) {
+    let frames = load_json("ws_account_states.json");
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!(abstraction));
+    *state.perp_clearinghouse_response.lock().await =
+        Some(frames["perp"]["data"]["clearinghouseState"].clone());
+    *state.spot_clearinghouse_response.lock().await =
+        Some(frames["spot"]["data"]["spotState"].clone());
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let ExecutionEvent::Account(initial) = rx.recv().await.unwrap() else {
+        panic!("expected initial account state");
+    };
+
+    cache.borrow_mut().update_account_state(&initial).unwrap();
+
+    state
+        .stream_frames
+        .send(frames["spot_zero"].clone())
+        .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .expect("zero spot balances must emit an account update")
+        .unwrap();
+
+    let ExecutionEvent::Account(account) = event else {
+        panic!("expected account state, was {event:?}");
+    };
+
+    let usdc = if abstraction == "disabled" {
+        AccountBalance::new(
+            Money::from("1229.34 USDC"),
+            Money::from("73.68 USDC"),
+            Money::from("1155.66 USDC"),
+        )
+    } else {
+        let zero = Money::zero(Currency::USDC());
+        AccountBalance::new(zero, zero, zero)
+    };
+
+    let hype_zero = Money::from("0 HYPE");
+    let hype = AccountBalance::new(hype_zero, hype_zero, hype_zero);
+
+    let margins = if abstraction == "disabled" {
+        let margin = Money::from("78.9 USDC");
+        vec![MarginBalance::new(margin, margin, None)]
+    } else {
+        vec![]
+    };
+
+    assert_eq!(account.balances, vec![usdc, hype]);
+    assert_eq!(account.margins, margins);
+    cache.borrow_mut().update_account_state(&account).unwrap();
+    let balances = cache
+        .borrow()
+        .account(&account.account_id)
+        .unwrap()
+        .balances();
+    assert_eq!(balances[&Currency::USDC()], usdc);
+    assert_eq!(balances[&hype.currency], hype);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_account_state_stream_accepts_empty_spot_balances() {
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!("unifiedAccount"));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    assert!(matches!(
+        rx.recv().await.unwrap(),
+        ExecutionEvent::Account(_)
+    ));
+
+    let mut frame = load_json("ws_account_states.json")["spot"].clone();
+    frame["data"]["spotState"]["balances"]
+        .as_array_mut()
+        .unwrap()
+        .clear();
+    state.stream_frames.send(frame).unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .expect("an explicitly empty balance list must emit an account update")
+        .unwrap();
+
+    let ExecutionEvent::Account(account) = event else {
+        panic!("expected account state, was {event:?}");
+    };
+
+    let zero = Money::zero(Currency::USDC());
+    let balance = AccountBalance::new(zero, zero, zero);
+
+    assert_eq!(account.balances, vec![balance]);
+    assert_eq!(account.margins, vec![]);
+    cache.borrow_mut().update_account_state(&account).unwrap();
+    assert_eq!(
+        cache
+            .borrow()
+            .account(&account.account_id)
+            .unwrap()
+            .balances()[&Currency::USDC()],
+        balance
+    );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::invalid_spot_decimal("spot", "unifiedAccount", "/data/spotState/balances/0/total", Some(json!("not-a-decimal")))]
+#[case::missing_spot_balances("spot", "unifiedAccount", "/data/spotState/balances", None)]
+#[case::spot_conversion_failure("spot", "unifiedAccount", "/data/spotState/balances/0/total", Some(json!("99999999999999999999.99")))]
+#[case::perp_conversion_failure("perp", "disabled", "/data/clearinghouseState/crossMarginSummary/totalRawUsd", Some(json!("99999999999999999999.99")))]
+#[case::empty_perp_state("perp", "disabled", "/data/clearinghouseState", Some(json!({})))]
+#[case::missing_cross_summary(
+    "perp",
+    "disabled",
+    "/data/clearinghouseState/crossMarginSummary",
+    None
+)]
+#[case::null_cross_summary(
+    "perp",
+    "disabled",
+    "/data/clearinghouseState/crossMarginSummary",
+    Some(Value::Null)
+)]
+#[case::missing_withdrawable("perp", "disabled", "/data/clearinghouseState/withdrawable", None)]
+#[case::null_withdrawable(
+    "perp",
+    "disabled",
+    "/data/clearinghouseState/withdrawable",
+    Some(Value::Null)
+)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_state_stream_retains_valid_snapshots(
+    #[case] channel: &str,
+    #[case] abstraction: &str,
+    #[case] pointer: &str,
+    #[case] invalid_value: Option<Value>,
+) {
+    let frames = load_json("ws_account_states.json");
+    let state = TestServerState::default();
+    *state.user_abstraction_response.lock().await = Some(json!(abstraction));
+    *state.perp_clearinghouse_response.lock().await =
+        Some(frames["perp"]["data"]["clearinghouseState"].clone());
+    *state.spot_clearinghouse_response.lock().await =
+        Some(frames["spot"]["data"]["spotState"].clone());
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let ExecutionEvent::Account(initial) = rx.recv().await.unwrap() else {
+        panic!("expected initial account state");
+    };
+
+    let mut invalid = frames[channel].clone();
+    if let Some(value) = invalid_value {
+        *invalid.pointer_mut(pointer).unwrap() = value;
+    } else {
+        let (parent, field) = pointer.rsplit_once('/').unwrap();
+        invalid
+            .pointer_mut(parent)
+            .unwrap()
+            .as_object_mut()
+            .unwrap()
+            .remove(field);
+    }
+
+    let next_channel = if channel == "perp" { "spot" } else { "perp" };
+
+    state.stream_frames.send(invalid).unwrap();
+    state
+        .stream_frames
+        .send(frames[next_channel].clone())
+        .unwrap();
+    let event = tokio::time::timeout(Duration::from_secs(2), rx.recv())
+        .await
+        .expect("stream must continue after an invalid snapshot")
+        .unwrap();
+
+    let ExecutionEvent::Account(account) = event else {
+        panic!("expected account state, was {event:?}");
+    };
+
+    assert_eq!(account.balances, initial.balances);
+    assert_eq!(account.margins, initial.margins);
+    assert_ne!(account.event_id, initial.event_id);
+    assert!(rx.try_recv().is_err());
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]
@@ -12509,7 +12847,7 @@ async fn test_get_account_address_uses_explicit_account_address(#[case] explicit
         .clone()
         .expect("clearinghouseState request must have been issued during connect");
     wait_until_async(
-        || async { subscriptions.lock().await.len() == 2 },
+        || async { subscriptions.lock().await.len() == 4 },
         Duration::from_secs(5),
     )
     .await;
@@ -12520,6 +12858,8 @@ async fn test_get_account_address_uses_explicit_account_address(#[case] explicit
         vec![
             json!({"type": "orderUpdates", "user": captured}),
             json!({"type": "userEvents", "user": captured}),
+            json!({"type": "clearinghouseState", "user": captured}),
+            json!({"type": "spotState", "user": captured, "isPortfolioMargin": false}),
         ],
     );
 

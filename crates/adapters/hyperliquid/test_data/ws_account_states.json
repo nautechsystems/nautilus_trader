@@ -1,0 +1,80 @@
+{
+  "perp": {
+    "channel": "clearinghouseState",
+    "data": {
+      "dex": "",
+      "user": "0x0000000000000000000000000000000000000001",
+      "clearinghouseState": {
+        "assetPositions": [],
+        "crossMarginSummary": {
+          "accountValue": "1234.56",
+          "totalNtlPos": "250.12",
+          "totalRawUsd": "1229.34",
+          "totalMarginUsed": "78.9"
+        },
+        "crossMaintenanceMarginUsed": "12.34",
+        "withdrawable": "1155.66",
+        "time": 1700000000123
+      }
+    }
+  },
+  "spot": {
+    "channel": "spotState",
+    "data": {
+      "user": "0x0000000000000000000000000000000000000001",
+      "spotState": {
+        "balances": [
+          {
+            "coin": "USDC",
+            "token": 0,
+            "total": "456.78",
+            "hold": "23.45",
+            "entryNtl": "0"
+          },
+          {
+            "coin": "HYPE",
+            "token": 150,
+            "total": "6.54",
+            "hold": "1.23",
+            "entryNtl": "98.76"
+          }
+        ]
+      }
+    }
+  },
+  "spot_zero": {
+    "channel": "spotState",
+    "data": {
+      "user": "0x0000000000000000000000000000000000000001",
+      "spotState": {
+        "balances": [
+          {
+            "coin": "USDC",
+            "token": 0,
+            "total": "0",
+            "hold": "0",
+            "entryNtl": "0"
+          },
+          {
+            "coin": "HYPE",
+            "token": 150,
+            "total": "0",
+            "hold": "0",
+            "entryNtl": "98.76"
+          }
+        ]
+      }
+    }
+  },
+  "spot_subscription_response": {
+    "channel": "subscriptionResponse",
+    "data": {
+      "method": "subscribe",
+      "subscription": {
+        "type": "spotState",
+        "user": "0x0000000000000000000000000000000000000001",
+        "ignorePortfolioMargin": false
+      }
+    }
+  }
+}

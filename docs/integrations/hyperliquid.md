@@ -1520,17 +1520,23 @@ and output format.
 
 ## Account and position management
 
-`AccountState` merges perp margin and spot balances according to the `userAbstraction` account mode:
+On connect, the execution client seeds account state from REST and subscribes to `clearinghouseState`
+and `spotState`. Each snapshot updates cached balances and margins using the latest known perp and
+spot state and the account mode fetched on connect, without `QueryAccount`. Subscriptions resume
+after a WebSocket reconnect.
 
-- **Unified or portfolio margin**: All balances and holds come from `spotClearinghouseState`.
+`AccountState` merges perp margin and spot balances according to the `userAbstraction` account mode.
+Spot state comes from `spotClearinghouseState` over REST and `spotState` over WebSocket:
+
+- **Unified or portfolio margin**: All balances and holds come from spot state.
   Spot USDC `hold` is the account-wide margin.
 - **Other modes**: Perp margin and cross-margin usage come from `clearinghouseState`; non-zero spot holdings
-  come from `spotClearinghouseState`, including USDC, USDH, HYPE, vault tokens, and HIP-4 side tokens.
+  come from spot state, including USDC, USDH, HYPE, vault tokens, and HIP-4 side tokens.
   USDC uses the perp summary when collateral, margin, or withdrawable balance is non-zero, otherwise spot USDC.
   Unknown modes log a warning and use this path.
 
 Zero spot entries clear sold-out or withdrawn balances, and an account with no USDC reports zero USDC.
-Outside unified and portfolio margin, both zero-balance cases require a perp summary in the response;
+Outside unified and portfolio margin, both zero-balance cases require a perp summary in the snapshot;
 without it, previous balances remain.
 
 Failure to fetch or read the account mode fails both the account-state request and connect.
@@ -1636,8 +1642,8 @@ target them without cycling the containing client.
 ### Execution recovery after reconnect
 
 Resubscribing to `orderUpdates` and `userEvents` provides no snapshot, so the stream never delivers outage
-events. After reconnect, the execution client waits for both subscription confirmations, then reads the
-account's `historicalOrders` followed by `userFills` over REST.
+events. After reconnect, the execution client waits for all pending subscription confirmations, then
+reads the account's `historicalOrders` followed by `userFills` over REST.
 
 A reconnect reuses any pending recovery window. Otherwise, it opens a window 30 seconds before the venue
 time of the last delivered report, or before stream start if none has arrived. Recovery processes fills and
