@@ -120,6 +120,7 @@ Released on TBD (UTC).
 - Fixed Deribit fill report requests returning partial results when a required trade fails to parse
 - Fixed Deribit reconciliation omitting in-scope orders, fills, and positions when the instrument is not cached
 - Fixed Hyperliquid account state staying stale after fills (#5449), thanks for reporting @dxwil
+- Fixed Hyperliquid instrument caching stalling node startup (#5354), thanks for reporting @Karrenbelt
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects

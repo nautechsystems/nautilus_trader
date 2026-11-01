@@ -2499,6 +2499,54 @@ async fn test_execution_info_retry_configuration(
     assert_eq!(attempts, expected_attempts);
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_exec_client_fetches_instruments_once_across_reconnect() {
+    let state = TestServerState::default();
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("HYPERLIQUID-001"));
+
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    client.disconnect().await.unwrap();
+    *state.frame_after_user_events_ack.lock().await = Some(json!({
+        "channel": "user",
+        "data": {"fills": [user_fill("BTC", 101)]},
+    }));
+    client.connect().await.unwrap();
+
+    let fill = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            if let ExecutionEvent::Report(ExecutionReport::Fill(fill)) = rx.recv().await.unwrap() {
+                break fill;
+            }
+        }
+    })
+    .await
+    .expect("reconnected WebSocket must resolve fills from its retained instruments");
+
+    client.disconnect().await.unwrap();
+    let requests = state.info_requests.lock().await;
+
+    assert_eq!(
+        fill.instrument_id,
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)
+    );
+    assert_eq!(fill.venue_order_id, VenueOrderId::from("101"));
+    assert_eq!(fill.last_px, Price::from("100.0"));
+    assert_eq!(fill.last_px.precision, 1);
+    assert_eq!(fill.last_qty, Quantity::from("0.10000"));
+    assert_eq!(fill.last_qty.precision, 5);
+
+    for kind in ["allPerpMetas", "spotMeta", "outcomeMeta"] {
+        assert_eq!(
+            requests.iter().filter(|r| r["type"] == kind).count(),
+            1,
+            "{kind}"
+        );
+    }
+}
+
 #[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_exec_client_connect_disconnect() {
@@ -12493,6 +12541,40 @@ async fn test_generate_mass_status_leaves_other_filled_shortfalls_unclamped(
     assert_eq!(report.filled_qty, Quantity::from(expected_filled));
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_generate_mass_status_uses_instruments_before_connect() {
+    let state = TestServerState::default();
+    *state.frontend_open_orders_response.lock().await = Some(json!([frontend_order("BTC", 101)]));
+    *state.user_fills_response.lock().await = Some(json!([user_fill("BTC", 101)]));
+    *state.perp_clearinghouse_response.lock().await = Some(clearinghouse_position("BTC"));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument_id = InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT);
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument);
+
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    let orders = mass.order_reports();
+    let fills = mass.fill_reports();
+    let positions = mass.position_reports();
+    let venue_order_id = VenueOrderId::from("101");
+
+    assert!(!client.is_connected());
+    assert!(mass.reports_complete());
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[&venue_order_id].instrument_id, instrument_id);
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[&venue_order_id].len(), 1);
+    assert_eq!(fills[&venue_order_id][0].instrument_id, instrument_id);
+    assert_eq!(fills[&venue_order_id][0].last_px.precision, 2);
+    assert_eq!(fills[&venue_order_id][0].last_qty.precision, 5);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[&instrument_id].len(), 1);
+    assert_eq!(positions[&instrument_id][0].instrument_id, instrument_id);
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+}
+
 #[rstest]
 #[case::unbounded(None)]
 #[case::bounded(Some(60u64))]
@@ -13840,6 +13922,56 @@ async fn test_order_report_task_defers_cached_older_triggered_leg() {
     assert!(rx.try_recv().is_err());
     drop(requests);
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_report_task_uses_instruments_before_connect(#[values(false, true)] worker: bool) {
+    let state = TestServerState::default();
+    *state.user_fills_response.lock().await = Some(json!([user_fill("BTC", 101)]));
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_perp_instrument_to_cache(&cache);
+    let instrument = cache
+        .borrow()
+        .instrument(&InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT))
+        .unwrap()
+        .clone();
+    client.on_instrument(instrument);
+
+    let command = GenerateFillReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    );
+
+    let reports = generate_fills(&client, command, worker).await.unwrap();
+
+    assert!(!client.is_connected());
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[0].instrument_id,
+        InstrumentId::from(HYPERLIQUID_TEST_INSTRUMENT)
+    );
+    assert_eq!(reports[0].venue_order_id, VenueOrderId::from("101"));
+    assert_eq!(reports[0].last_px, Price::from("100.00"));
+    assert_eq!(reports[0].last_px.precision, 2);
+    assert_eq!(reports[0].last_qty, Quantity::from("0.10000"));
+    assert_eq!(reports[0].last_qty.precision, 5);
+    assert_eq!(state.ws_connections.load(Ordering::Relaxed), 0);
+    let requests = state.info_requests.lock().await;
+    assert_eq!(
+        requests
+            .iter()
+            .filter(|r| r["type"] == "allPerpMetas")
+            .count(),
+        0
+    );
 }
 
 #[rstest]

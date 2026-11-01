@@ -118,6 +118,7 @@ pub struct HyperliquidExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: HyperliquidHttpClient,
     ws_client: HyperliquidWebSocketClient,
+    instruments_pending: Vec<InstrumentAny>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
@@ -480,6 +481,7 @@ impl HyperliquidExecutionClient {
             emitter,
             http_client,
             ws_client,
+            instruments_pending: Vec::new(),
             session_tasks,
             pending_tasks,
             shutdown_errors: Vec::new(),
@@ -489,7 +491,7 @@ impl HyperliquidExecutionClient {
         })
     }
 
-    async fn ensure_instruments_initialized_async(&self) -> anyhow::Result<()> {
+    async fn ensure_instruments_initialized_async(&mut self) -> anyhow::Result<()> {
         if self.core.instruments_initialized() {
             return Ok(());
         }
@@ -506,9 +508,13 @@ impl HyperliquidExecutionClient {
             );
         } else {
             log::debug!("Initialized {} instruments", instruments.len());
-
-            self.http_client.merge_instruments(&instruments);
         }
+
+        // Preserve arrival order for spot aliases, then let fetched definitions replace updates
+        let mut pending = std::mem::take(&mut self.instruments_pending);
+        pending.extend(instruments);
+        self.http_client.merge_instruments(&pending);
+        self.ws_client.merge_instruments(&pending);
 
         self.core.set_instruments_initialized();
         Ok(())
@@ -610,6 +616,9 @@ impl HyperliquidExecutionClient {
     }
 
     fn report_client(&self) -> anyhow::Result<HyperliquidReportClient> {
+        // Reports can be collected before connect() initializes the transport caches
+        self.http_client
+            .merge_instruments(&self.instruments_pending);
         Ok(HyperliquidReportClient {
             http_client: self.http_client.clone(),
             account_address: self.get_account_address()?,
@@ -881,10 +890,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
     /// Registers an instrument published by the data client so a market listed
     /// after this client bootstrapped becomes submittable without a restart.
     ///
+    /// Before bootstrap, updates are buffered for batch caching.
+    ///
     /// The HTTP client takes the venue asset index from the instrument's `info`
     /// map. WebSocket submissions sign through `&self.http_client`, so that one
     /// write serves both submission paths.
     fn on_instrument(&mut self, instrument: InstrumentAny) {
+        if !self.core.instruments_initialized() {
+            // Batch the startup drain to avoid cloning growing caches for every instrument
+            self.instruments_pending.push(instrument);
+            return;
+        }
+
         // this is the only step that makes a market listed after our bootstrap
         // submittable, so it is traceable rather than silent
         log::debug!(
@@ -2249,6 +2266,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_init = self.clock.get_time_ns();
         let account_address = self.get_account_address()?;
+        self.http_client
+            .merge_instruments(&self.instruments_pending);
 
         let lookback_start = lookback_mins
             .map(DurationNanos::try_from_mins)
@@ -2709,14 +2728,6 @@ impl HyperliquidExecutionClient {
         let subscription_address = self.get_account_address()?;
 
         let mut ws_client = self.ws_client.clone();
-
-        let instruments = self
-            .http_client
-            .request_instruments()
-            .await
-            .unwrap_or_default();
-
-        ws_client.merge_instruments(&instruments);
 
         let ts_start = self.clock.get_time_ns();
         ws_client.connect().await?;
@@ -4920,7 +4931,7 @@ mod tests {
             AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
             VenueOrderId,
         },
-        instruments::{CryptoPerpetual, InstrumentAny},
+        instruments::{CryptoPerpetual, Instrument, InstrumentAny},
         orders::{Order, OrderAny, limit::LimitOrder, stop_market::StopMarketOrder},
         reports::{FillReport, OrderStatusReport},
         types::{AccountBalance, Currency, Money, Price, Quantity},
@@ -5051,10 +5062,223 @@ mod tests {
     }
 
     #[rstest]
+    fn test_on_instrument_defers_caching_until_bootstrap() {
+        let mut client = make_execution_client();
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+
+        for def in &defs {
+            let instrument = create_instrument_from_def(def, UnixNanos::from(123)).unwrap();
+            client.on_instrument(instrument);
+        }
+
+        for def in &defs {
+            assert_eq!(
+                client.http_client.get_asset_index(def.symbol.as_str()),
+                None
+            );
+            assert_eq!(
+                client.http_client.get_price_precision(def.symbol.as_str()),
+                None
+            );
+        }
+
+        assert!(client.ws_client.instruments_cache().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_bootstrap_merges_buffered_instruments(
+        #[values(false, true)] empty_universe: bool,
+        #[values(false, true)] fail_initial: bool,
+    ) {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let buffered_meta: PerpMeta = serde_json::from_value(json!({"universe": [
+            {"name": "NEW", "szDecimals": 3, "maxLeverage": 10},
+            {"name": "BTC", "szDecimals": 4, "maxLeverage": 20},
+        ]}))
+        .unwrap();
+        let mut buffered_defs = parse_perp_instruments(&buffered_meta, 0).unwrap();
+        buffered_defs[0].asset_index = 42;
+        buffered_defs[1].asset_index = 73;
+        let buffered: Vec<_> = buffered_defs
+            .iter()
+            .map(|def| create_instrument_from_def(def, UnixNanos::from(123)).unwrap())
+            .collect();
+        let failing = Arc::new(std::sync::atomic::AtomicBool::new(fail_initial));
+        let failing_request = failing.clone();
+        let app = Router::new().route(
+            "/info",
+            post(move |Json(request): Json<Value>| {
+                let failing = failing_request.clone();
+                let meta = serde_json::to_value(&meta).unwrap();
+                async move {
+                    Json(match request["type"].as_str().unwrap() {
+                        "spotMeta" => json!({"universe": [], "tokens": []}),
+                        "allPerpMetas" if failing.load(std::sync::atomic::Ordering::Relaxed) => {
+                            json!([{"universe": [], "collateralToken": 999}])
+                        }
+                        "allPerpMetas" if empty_universe => json!([{"universe": []}]),
+                        "allPerpMetas" => json!([meta]),
+                        _ => json!([]),
+                    })
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut client = make_execution_client();
+        client
+            .http_client
+            .set_base_info_url(format!("http://{address}/info"));
+        client.on_instrument(buffered[0].clone());
+        client.on_instrument(buffered[1].clone());
+        let refreshed =
+            create_instrument_from_def(&buffered_defs[0], UnixNanos::from(456)).unwrap();
+        client.on_instrument(refreshed.clone());
+        if fail_initial {
+            let error = client
+                .ensure_instruments_initialized_async()
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "failed to request Hyperliquid instruments"
+            );
+            assert!(!client.core.instruments_initialized());
+            assert_eq!(client.instruments_pending.len(), 3);
+            assert!(client.ws_client.instruments_cache().is_empty());
+            failing.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        client.ensure_instruments_initialized_async().await.unwrap();
+
+        let (btc_asset_index, btc_price_precision, btc_size_precision) = if empty_universe {
+            (73, 2, 4)
+        } else {
+            (0, 1, 5)
+        };
+
+        let cache = client.ws_client.instruments_cache();
+        let snapshot = cache.load();
+        let btc = snapshot.get(&Ustr::from("BTC")).unwrap();
+
+        assert!(client.core.instruments_initialized());
+        assert!(client.instruments_pending.is_empty());
+        assert_eq!(snapshot.len(), if empty_universe { 2 } else { 4 });
+        assert_eq!(client.http_client.get_asset_index("NEW-USD-PERP"), Some(42));
+        assert_eq!(
+            client.http_client.get_price_precision("NEW-USD-PERP"),
+            Some(3)
+        );
+        assert_eq!(
+            serde_json::to_value(snapshot.get(&Ustr::from("NEW")).unwrap()).unwrap(),
+            serde_json::to_value(refreshed).unwrap()
+        );
+        assert_eq!(
+            client.http_client.get_asset_index("BTC-USD-PERP"),
+            Some(btc_asset_index)
+        );
+        assert_eq!(
+            client.http_client.get_price_precision("BTC-USD-PERP"),
+            Some(btc_price_precision)
+        );
+        assert_eq!(btc.price_precision(), btc_price_precision);
+        assert_eq!(btc.size_precision(), btc_size_precision);
+        server.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "requires explicit live testnet bootstrap validation"]
+    async fn test_live_testnet_execution_bootstrap() {
+        let source = HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 30, None).unwrap();
+        let mut client = make_execution_client();
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::set_exec_event_sender(sender);
+        client.start().unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(60), async {
+            let instruments = source.request_instruments().await.unwrap();
+            assert!(!instruments.is_empty());
+            let count = instruments.len();
+            for instrument in &instruments {
+                client.on_instrument(instrument.clone());
+            }
+
+            assert!(client.ws_client.instruments_cache().is_empty());
+
+            let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+            assert!(mass.reports_complete());
+            assert!(mass.order_reports().is_empty());
+            assert!(mass.fill_reports().is_empty());
+            assert!(mass.position_reports().is_empty());
+
+            let started = std::time::Instant::now();
+            client.ensure_instruments_initialized_async().await.unwrap();
+            client.start_ws_stream().await.unwrap();
+            let cache = client.ws_client.instruments_cache();
+            let snapshot = cache.load();
+            for instrument in &instruments {
+                let cached = snapshot.get(&instrument.raw_symbol().inner()).unwrap();
+                assert_eq!(cached.id(), instrument.id());
+                assert_eq!(
+                    client
+                        .http_client
+                        .get_price_precision(cached.symbol().as_str()),
+                    Some(cached.price_precision()),
+                );
+            }
+
+            let btc = snapshot.get(&Ustr::from("BTC")).unwrap();
+            let mut fill = btc_user_fill(
+                101,
+                "0xabc",
+                1_700_000_000_000,
+                "0x0000000000000000000000000000000a",
+            );
+            fill.sz = btc.size_increment().as_decimal();
+            let parsed = client
+                .http_client
+                .fill_reports_from_response(vec![fill.clone()], None)
+                .unwrap();
+            let ws_fill = serde_json::from_value(serde_json::to_value(&fill).unwrap()).unwrap();
+            let report = crate::websocket::parse::parse_ws_fill_report(
+                &ws_fill,
+                btc,
+                client.core.account_id,
+                client.clock.get_time_ns(),
+            )
+            .unwrap();
+
+            assert!(client.core.instruments_initialized());
+            assert!(client.instruments_pending.is_empty());
+            assert!(client.ws_client.is_active());
+            assert!(parsed.complete);
+            assert_eq!(parsed.reports.len(), 1);
+            assert_eq!(parsed.reports[0].instrument_id, btc.id());
+            assert_eq!(report.instrument_id, btc.id());
+            assert_eq!(report.last_qty, btc.size_increment());
+            assert_eq!(parsed.reports[0].last_qty, report.last_qty);
+            assert_eq!(parsed.reports[0].last_px, report.last_px);
+            println!(
+                "Testnet: {count} instruments, fills parsed, elapsed={:?}",
+                started.elapsed()
+            );
+        })
+        .await;
+
+        client.disconnect().await.unwrap();
+        result.expect("live testnet bootstrap must complete within 60 seconds");
+    }
+
+    #[rstest]
     fn test_on_instrument_registers_asset_index_for_a_new_market() {
         // A market listed after the client bootstrapped arrives through the
         // message bus, and must become submittable without a restart.
         let mut client = make_execution_client();
+        client.core.set_instruments_initialized();
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
         let defs = parse_perp_instruments(&meta, 0).unwrap();
         let def = &defs[1];
@@ -5076,6 +5300,7 @@ mod tests {
     #[rstest]
     fn test_on_instrument_replaces_asset_index_and_precision() {
         let mut client = make_execution_client();
+        client.core.set_instruments_initialized();
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
         let mut defs = parse_perp_instruments(&meta, 0).unwrap();
         let def = &mut defs[0];
