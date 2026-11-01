@@ -366,6 +366,11 @@ Ingress yields the same `BusMessage { topic, payload_type, encoding, payload, so
 `republish_external_message` decodes supported inbound messages and republishes them internally
 without forwarding the message back out. Normal internal republishing requires the inbound payload
 type to be registered for streaming and skips unregistered types without decoding.
+When the `DataEngine` registers its handlers, external data-client registrations in its cache enable
+built-in market-data processing. Messages whose inbound topic exactly matches the engine's topic for
+that payload use normal cache updates, publication, and managed-book maintenance.
+See [external streams](#external-streams) for configuration.
+Custom data, DeFi data, other topics, and buses without a registered engine retain direct republishing.
 Inbound `AccountState` messages go through Portfolio's account endpoint rather than directly to the
 inbound topic. Portfolio must be registered; it updates the cache before publishing accepted states
 on `events.account.{account_id}`. Rejected account updates are not published.
@@ -684,8 +689,10 @@ Set `LiveDataEngineConfig.external_clients` to the list of `client_id`s represen
 clients. The `DataEngine` filters out subscription commands for these clients because external streaming
 supplies their subscription data.
 
-When the Rust `DataEngine` skips an external-client subscription, it registers the corresponding streaming
-payload type for inbound republishing on the message bus.
+External-client subscriptions register the corresponding streaming payload type for inbound processing.
+Managed delta and depth subscriptions also maintain local order books through `BookUpdater`.
+External book subscriptions use the same source-conflict checks as local subscriptions.
+The external stream must deliver a book snapshot before incremental deltas.
 :::
 
 ### Example configuration
@@ -728,8 +735,8 @@ node.run().await?;
 We configure the `MessageBus` of the consumer node to receive messages from the same `"binance"`
 stream. A `RedisMessageBusConfig` creates ingress from `external_streams`, and `LiveNode::run`
 publishes the received messages onto the node's internal message bus. We declare the client ID
-`"BINANCE_EXT"` as an external client so the `DataEngine` does not attempt to send data commands to
-this client ID.
+`"BINANCE_EXT"` as an external data client so the `DataEngine` forwards its data commands externally
+and processes inbound market data on matching topics for cache and managed book updates.
 
 ```rust
 let data_engine = LiveDataEngineConfig {

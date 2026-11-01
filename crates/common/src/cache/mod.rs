@@ -433,6 +433,12 @@ impl Cache {
         self.external_data_clients.contains(client_id)
     }
 
+    /// Returns whether any external data clients are registered.
+    #[must_use]
+    pub fn has_external_data_clients(&self) -> bool {
+        !self.external_data_clients.is_empty()
+    }
+
     /// Registers `client_id` as an external data client.
     ///
     /// Registrations survive [`Self::clear_index`] and [`Self::reset`].

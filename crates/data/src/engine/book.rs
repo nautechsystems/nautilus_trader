@@ -85,7 +85,9 @@ impl DataEngine {
         cmd: &SubscribeBookDeltas,
     ) -> anyhow::Result<bool> {
         let instrument_id = cmd.single_instrument_id()?;
-        if instrument_id.is_synthetic() {
+        if instrument_id.is_synthetic()
+            && !cmd.client_id.is_some_and(|id| self.is_external_client(id))
+        {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDelta` data");
         }
 
@@ -104,7 +106,9 @@ impl DataEngine {
         cmd: &SubscribeBookDepth,
     ) -> anyhow::Result<bool> {
         let instrument_id = cmd.single_instrument_id()?;
-        if instrument_id.is_synthetic() {
+        if instrument_id.is_synthetic()
+            && !cmd.client_id.is_some_and(|id| self.is_external_client(id))
+        {
             anyhow::bail!("Cannot subscribe for synthetic instrument `OrderBookDepth` data");
         }
 
@@ -316,9 +320,14 @@ impl DataEngine {
             vec![instrument_id]
         };
 
-        let client_id = self
-            .get_command_client(command.client_id(), command.venue())
-            .map(|client| client.client_id);
+        let client_id = if let Some(client_id) = command.client_id()
+            && self.is_external_client(*client_id)
+        {
+            Some(*client_id)
+        } else {
+            self.get_command_client(command.client_id(), command.venue())
+                .map(|client| client.client_id)
+        };
 
         let subscription = Rc::new(BookSubscriptionOwner {
             command,

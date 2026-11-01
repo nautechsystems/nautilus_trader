@@ -1898,6 +1898,7 @@ fn test_external_client_subscribe_registers_streamable_payload_types(
         data_engine.execute(DataCommand::Subscribe(cmd));
 
         assert_only_streaming_type(&stub_msgbus.borrow(), expected, name);
+        data_engine.reset();
     }
 }
 

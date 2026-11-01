@@ -1646,7 +1646,7 @@ mod tests {
         msgbus::{
             BusMessage, BusTap, MessageBusConfig, MessageBusExternalEgress, MessagingSwitchboard,
             SuppressExternalGuard, clear_bus_tap, set_bus_tap, set_message_bus,
-            stubs::get_call_check_handler,
+            stubs::get_call_check_handler, switchboard::get_quotes_topic,
         },
     };
 
@@ -1826,11 +1826,16 @@ mod tests {
         reset_message_bus();
     }
 
-    fn assert_quote_round_trips(encoding: SerializationEncoding) {
+    fn assert_quote_round_trips(
+        encoding: SerializationEncoding,
+        with_data_endpoint: bool,
+        external_data_ingress: bool,
+    ) {
         let publications = install_capturing_external_egress(encoding);
         let quote = QuoteTick::default();
+        let topic = get_quotes_topic(quote.instrument_id);
 
-        publish_quote("data.quotes.TEST".into(), &quote);
+        publish_quote(topic, &quote);
 
         let bus_message = {
             let publications = publications.borrow();
@@ -1853,12 +1858,39 @@ mod tests {
         });
         subscribe_quotes("data.quotes.*".into(), handler, None);
 
+        let processed = Rc::new(RefCell::new(Vec::new()));
+        if with_data_endpoint {
+            let processed = Rc::clone(&processed);
+            register_data_endpoint(
+                MessagingSwitchboard::data_engine_process_data(),
+                TypedIntoHandler::from(move |data: Data| {
+                    let Data::Quote(quote) = data else {
+                        panic!("expected quote data");
+                    };
+
+                    processed.borrow_mut().push(quote);
+                    publish_quote(topic, &quote);
+                }),
+            );
+        }
+
+        get_message_bus()
+            .borrow_mut()
+            .set_external_data_ingress(external_data_ingress);
         get_message_bus()
             .borrow_mut()
             .add_streaming_type(BusPayloadType::QuoteTick);
         republish_external_message(&bus_message).unwrap();
 
         assert_eq!(*received.borrow(), vec![quote]);
+        assert_eq!(
+            *processed.borrow(),
+            if with_data_endpoint && external_data_ingress {
+                vec![quote]
+            } else {
+                vec![]
+            }
+        );
         assert!(
             publications.borrow().is_empty(),
             "republished message must not be forwarded back out externally"
@@ -1869,14 +1901,25 @@ mod tests {
     #[rstest]
     #[case(SerializationEncoding::Json)]
     #[case(SerializationEncoding::MsgPack)]
-    fn republish_external_message_round_trips_quote(#[case] encoding: SerializationEncoding) {
-        assert_quote_round_trips(encoding);
+    fn republish_external_message_round_trips_quote(
+        #[case] encoding: SerializationEncoding,
+        #[values(false, true)] with_data_endpoint: bool,
+        #[values(false, true)] external_data_ingress: bool,
+    ) {
+        assert_quote_round_trips(encoding, with_data_endpoint, external_data_ingress);
     }
 
     #[cfg(feature = "sbe")]
     #[rstest]
-    fn republish_external_message_round_trips_quote_sbe() {
-        assert_quote_round_trips(SerializationEncoding::Sbe);
+    fn republish_external_message_round_trips_quote_sbe(
+        #[values(false, true)] with_data_endpoint: bool,
+        #[values(false, true)] external_data_ingress: bool,
+    ) {
+        assert_quote_round_trips(
+            SerializationEncoding::Sbe,
+            with_data_endpoint,
+            external_data_ingress,
+        );
     }
 
     fn assert_typed_external_round_trips<T>(

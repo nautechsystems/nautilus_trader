@@ -6,6 +6,7 @@ Released on TBD (UTC).
 
 - Added FinFeedAPI prediction market data adapter with REST access, historical requests, and polling
 - Added `Cache` lazy instrument and synthetic loads, saved component-state deletion, and explicit heartbeat writes
+- Added `DataEngine` processing and managed books for external data clients (#5520), thanks @nicezic
 - Added `LiveExecutionEngineConfig.purge_from_database` support in Python and live nodes
 - Added `HttpClient` certificate support through `certs_dir`
 - Added Postgres cache support for actor and strategy state, synthetics, heartbeat writes, and entity deletion
