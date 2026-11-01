@@ -24,6 +24,7 @@ Released on TBD (UTC).
 - Changed `Price.from_decimal` and `Quantity.from_decimal` to round excess decimal places half even
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
+- Changed Architect AX `AxWhoAmI.is_onboarded` and `is_frozen` to `Option<bool>`; handle missing flags as `None`
 - Changed Binance non-GET REST requests to fail at quota gates; retry `RateLimitBlocked` when quota is available
 - Changed Binance HTTP error enums to add `RateLimitBlocked`; update exhaustive matches
 - Changed Binance REST to block on 418 without `Retry-After`; confirm the ban has ended before restarting
@@ -68,6 +69,7 @@ Released on TBD (UTC).
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed exchange-rate conversions failing on overflow despite a representable route or returning zero on underflow
 - Fixed Sockudo WebSocket timeouts overriding the client heartbeat and idle policy
+- Fixed Architect AX clients failing to connect when `/whoami` omits onboarding and frozen states
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Binance REST requests ignoring 429 and 418 cooldowns from other requests
 - Fixed Binance cancellations and COIN-M modifications consuming order-count quota

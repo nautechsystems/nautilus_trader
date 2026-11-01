@@ -339,8 +339,9 @@ and output format.
 - Open-order, historical-order, fill, and position report requests resolve an uncached symbol
   through `GET /instrument` and cache the result. An instrument request or parse failure fails that
   entire report request instead of dropping venue state.
-- `GET /transactions` requires `start_timestamp_ns` and `end_timestamp_ns` with a range no wider
-  than 7 days. The low-level client exposes its cursor and account selectors.
+- `GET /transactions` accepts optional `start_timestamp_ns` and `end_timestamp_ns` filters. When both
+  are supplied, `end_timestamp_ns` must be greater than `start_timestamp_ns`. The low-level client
+  requires both bounds and exposes cursor and account selectors.
 - `GET /order-status` can include `reject_reason` and `reject_message` for rejected orders.
 - When an account selector is omitted, AX uses the primary account. The high-level execution client owns one
   primary account. Low-level request models expose documented account selectors.

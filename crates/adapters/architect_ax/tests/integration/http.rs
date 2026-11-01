@@ -887,8 +887,6 @@ async fn start_whoami_server(accounts: Value) -> AxHttpClient {
         "id": "01JBXR-7QK2-0000",
         "username": "trader@example.com",
         "created_at": "2025-12-18T02:20:42.675817Z",
-        "is_onboarded": true,
-        "is_frozen": false,
         "is_admin": false,
         "require_2fa": false,
         "accounts": accounts,

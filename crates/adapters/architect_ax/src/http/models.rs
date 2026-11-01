@@ -89,10 +89,12 @@ pub struct AxWhoAmI {
     pub created_at: Timestamp,
     /// Whether two-factor authentication is required.
     pub require_2fa: bool,
-    /// Whether the user has completed onboarding.
-    pub is_onboarded: bool,
-    /// Whether the account is frozen.
-    pub is_frozen: bool,
+    /// Whether the user has completed onboarding, when supplied by the venue.
+    #[serde(default)]
+    pub is_onboarded: Option<bool>,
+    /// Whether the account is frozen, when supplied by the venue.
+    #[serde(default)]
+    pub is_frozen: Option<bool>,
     /// Whether the user has admin privileges.
     pub is_admin: bool,
     /// Accounts the credentials can act on.
@@ -1595,8 +1597,8 @@ mod tests {
             "2025-12-18T02:20:42.675817Z".parse::<Timestamp>().unwrap()
         );
         assert!(!response.require_2fa);
-        assert!(response.is_onboarded);
-        assert!(!response.is_frozen);
+        assert_eq!(response.is_onboarded, Some(true));
+        assert_eq!(response.is_frozen, Some(false));
         assert!(!response.is_admin);
         assert_eq!(
             response.fiat_deposit_code.as_deref(),
@@ -1669,6 +1671,74 @@ mod tests {
         assert!(
             error.to_string().contains("Invalid decimal"),
             "unexpected error: {error}"
+        );
+    }
+
+    #[rstest]
+    #[case(true, false)]
+    #[case(false, true)]
+    #[case(true, true)]
+    fn test_deserialize_whoami_response_without_user_status(
+        #[case] omit_onboarded: bool,
+        #[case] omit_frozen: bool,
+    ) {
+        let mut json: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/http_get_whoami.json")).unwrap();
+        let fields = json.as_object_mut().unwrap();
+        if omit_onboarded {
+            fields.remove("is_onboarded");
+        }
+
+        if omit_frozen {
+            fields.remove("is_frozen");
+        }
+
+        let response: AxWhoAmI = serde_json::from_value(json).unwrap();
+
+        assert_eq!(response.is_onboarded, (!omit_onboarded).then_some(true));
+        assert_eq!(response.is_frozen, (!omit_frozen).then_some(false));
+        assert_eq!(response.accounts.len(), 1);
+        assert_eq!(response.accounts[0].maker_fee, Some(dec!(0.0002)));
+        assert_eq!(response.accounts[0].taker_fee, Some(dec!(0.0025)));
+    }
+
+    #[rstest]
+    #[case::null(json!(null), json!(null), None, None)]
+    #[case::boolean(json!(false), json!(true), Some(false), Some(true))]
+    fn test_deserialize_whoami_response_user_status(
+        #[case] onboarded: serde_json::Value,
+        #[case] frozen: serde_json::Value,
+        #[case] expected_onboarded: Option<bool>,
+        #[case] expected_frozen: Option<bool>,
+    ) {
+        let mut json: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/captured/whoami-without-status.json"
+        ))
+        .unwrap();
+        json["is_onboarded"] = onboarded;
+        json["is_frozen"] = frozen;
+
+        let response: AxWhoAmI = serde_json::from_value(json).unwrap();
+
+        assert_eq!(response.is_onboarded, expected_onboarded);
+        assert_eq!(response.is_frozen, expected_frozen);
+    }
+
+    #[rstest]
+    #[case("is_onboarded")]
+    #[case("is_frozen")]
+    fn test_deserialize_whoami_response_rejects_malformed_user_status(#[case] field: &str) {
+        let mut json: serde_json::Value = serde_json::from_str(include_str!(
+            "../../test_data/captured/whoami-without-status.json"
+        ))
+        .unwrap();
+        json[field] = json!("true");
+
+        let e = serde_json::from_value::<AxWhoAmI>(json).unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "invalid type: string \"true\", expected a boolean"
         );
     }
 
@@ -2143,6 +2213,7 @@ mod tests {
 
     #[rstest]
     #[case(include_str!("../../test_data/captured/whoami.json"), captured_response::<AxWhoAmI>)]
+    #[case::whoami_without_status(include_str!("../../test_data/captured/whoami-without-status.json"), captured_response::<AxWhoAmI>)]
     #[case(include_str!("../../test_data/captured/balances.json"), captured_response::<AxBalancesResponse>)]
     #[case(include_str!("../../test_data/captured/positions.json"), captured_response::<AxPositionsResponse>)]
     #[case(include_str!("../../test_data/captured/risk.json"), captured_response::<AxRiskSnapshotResponse>)]
