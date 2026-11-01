@@ -767,9 +767,11 @@ impl DataEngine {
     ) -> anyhow::Result<()> {
         {
             let mut cache = self.cache.borrow_mut();
-
             for target_id in target_ids {
-                if !cache.has_order_book(target_id) {
+                if cache
+                    .order_book(target_id)
+                    .is_none_or(|book| book.book_type != book_type)
+                {
                     cache.add_order_book(OrderBook::new(*target_id, book_type))?;
                 }
             }

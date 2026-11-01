@@ -60,6 +60,7 @@ Released on TBD (UTC).
 - Fixed closed-order and position purges ignoring `purge_from_database` in execution timers
 - Fixed Redis order and position deletion leaving routine snapshots and restoring purged positions
 - Fixed `Cache` indexing closed positions as open and excluding them from purging after insertion
+- Fixed managed order book subscriptions reusing a cached book of a different type
 - Fixed mixed-key market data batches being cached under the first row's instrument or bar type
 - Fixed historical time bar boundary assignment for ticks sharing a timestamp
 - Fixed `ExecTester` panicking on unsupported `GTD` brackets

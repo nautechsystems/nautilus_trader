@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashSet;
+use indexmap::IndexMap;
 
 use super::*;
 
@@ -1975,6 +1976,153 @@ fn test_managed_book_rejects_other_source_and_ignores_unmanaged_updates(
 }
 
 #[rstest]
+#[case::l2_to_l1(BookType::L2_MBP, BookType::L1_MBP)]
+#[case::l1_to_l2(BookType::L1_MBP, BookType::L2_MBP)]
+#[case::l1_reuse(BookType::L1_MBP, BookType::L1_MBP)]
+#[case::l2_reuse(BookType::L2_MBP, BookType::L2_MBP)]
+fn test_managed_book_resubscription_uses_requested_type(
+    managed_book_engine: Rc<RefCell<DataEngine>>,
+    audusd_sim: CurrencyPair,
+    client_id: ClientId,
+    #[case] previous_type: BookType,
+    #[case] requested_type: BookType,
+    #[values("deltas", "depth", "snapshots")] source: &str,
+) {
+    let mut engine = managed_book_engine.borrow_mut();
+
+    let subscribe = |book_type| {
+        let mut command = match source {
+            "deltas" | "depth" => {
+                book_source_command(audusd_sim.id, client_id, source == "depth", true)
+            }
+            "snapshots" => SubscribeCommand::BookSnapshots(SubscribeBookSnapshots::new(
+                audusd_sim.id,
+                book_type,
+                Some(client_id),
+                Some(audusd_sim.id.venue),
+                UUID4::new(),
+                UnixNanos::from(101),
+                NonZeroUsize::new(25),
+                NonZeroUsize::new(100).unwrap(),
+                None,
+                None,
+            )),
+            _ => unreachable!(),
+        };
+
+        match &mut command {
+            SubscribeCommand::BookDeltas(cmd) => cmd.book_type = book_type,
+            SubscribeCommand::BookDepth(cmd) => cmd.book_type = book_type,
+            SubscribeCommand::BookSnapshots(_) => {}
+            _ => unreachable!(),
+        }
+
+        command
+    };
+
+    let first = subscribe(previous_type);
+    engine.execute_subscribe(first.clone()).unwrap();
+    let mut snapshot = stub_depth10();
+    snapshot.instrument_id = audusd_sim.id;
+    snapshot.flags = RecordFlag::F_SNAPSHOT as u8;
+    snapshot.sequence = 109;
+    snapshot.ts_event = UnixNanos::from(113);
+    snapshot.ts_init = UnixNanos::from(127);
+    let mut full_book = OrderBook::new(audusd_sim.id, BookType::L2_MBP);
+    full_book.apply_depth(&snapshot).unwrap();
+    let data = if source == "depth" {
+        Data::BookDepth(Box::new(snapshot.clone()))
+    } else {
+        let deltas = full_book.to_deltas(snapshot.ts_event, snapshot.ts_init);
+        Data::BookDeltas(Box::new(deltas))
+    };
+
+    engine.process_data(data.clone());
+    let previous = engine
+        .cache()
+        .borrow()
+        .order_book(&audusd_sim.id)
+        .unwrap()
+        .clone();
+    let shared = subscribe(previous_type);
+    engine.execute_subscribe(shared.clone()).unwrap();
+    engine
+        .execute_unsubscribe(&first.clone().into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(131),
+            Some(first.command_id()),
+        ))
+        .unwrap();
+    {
+        let cache = engine.cache().borrow();
+        let book = cache.order_book(&audusd_sim.id).unwrap();
+        assert_eq!(book.book_type, previous_type);
+        assert_eq!(book.sequence, snapshot.sequence);
+        assert_eq!(book.ts_last, snapshot.ts_event);
+        assert_eq!(book.update_count, previous.update_count);
+        assert_eq!(book.bids_as_map(None), previous.bids_as_map(None));
+        assert_eq!(book.asks_as_map(None), previous.asks_as_map(None));
+    }
+
+    engine
+        .execute_unsubscribe(&shared.clone().into_unsubscribe(
+            UUID4::new(),
+            UnixNanos::from(137),
+            Some(shared.command_id()),
+        ))
+        .unwrap();
+    engine.execute_subscribe(subscribe(requested_type)).unwrap();
+    {
+        let cache = engine.cache().borrow();
+        let book = cache.order_book(&audusd_sim.id).unwrap();
+        assert_eq!(book.book_type, requested_type);
+
+        if previous_type == requested_type {
+            assert_eq!(book.sequence, snapshot.sequence);
+            assert_eq!(book.ts_last, snapshot.ts_event);
+            assert_eq!(book.update_count, previous.update_count);
+            assert_eq!(book.bids_as_map(None), previous.bids_as_map(None));
+            assert_eq!(book.asks_as_map(None), previous.asks_as_map(None));
+        } else {
+            assert_eq!(book.sequence, 0);
+            assert_eq!(book.ts_last, UnixNanos::default());
+            assert_eq!(book.update_count, 0);
+            assert_eq!(book.bids(None).count(), 0);
+            assert_eq!(book.asks(None).count(), 0);
+        }
+    }
+
+    engine.process_data(data);
+    let cache = engine.cache().borrow();
+    let book = cache.order_book(&audusd_sim.id).unwrap();
+
+    let levels = if requested_type == BookType::L1_MBP {
+        1
+    } else {
+        10
+    };
+
+    let expected_bids: IndexMap<_, _> = snapshot
+        .bids
+        .iter()
+        .take(levels)
+        .map(|order| (order.price.as_decimal(), order.size.as_decimal()))
+        .collect();
+    let expected_asks: IndexMap<_, _> = snapshot
+        .asks
+        .iter()
+        .take(levels)
+        .map(|order| (order.price.as_decimal(), order.size.as_decimal()))
+        .collect();
+    assert_eq!(book.instrument_id, audusd_sim.id);
+    assert_eq!(book.book_type, requested_type);
+    assert_eq!(book.sequence, snapshot.sequence);
+    assert_eq!(book.ts_last, snapshot.ts_event);
+    assert_eq!(book.bids_as_map(None), expected_bids);
+    assert_eq!(book.asks_as_map(None), expected_asks);
+}
+
+#[rstest]
 #[case::deltas_unmanaged_first(false, true)]
 #[case::deltas_unmanaged_last(false, false)]
 #[case::depth_unmanaged_first(true, true)]
@@ -2082,6 +2230,15 @@ fn test_managed_book_rejects_incompatible_configuration(
     assert_eq!(
         msgbus::subscriber_count_deltas(switchboard::get_book_deltas_topic(audusd_sim.id)),
         1
+    );
+    assert_eq!(
+        engine
+            .cache()
+            .borrow()
+            .order_book(&audusd_sim.id)
+            .unwrap()
+            .book_type,
+        BookType::L2_MBP,
     );
 }
 
