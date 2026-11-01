@@ -574,7 +574,7 @@ async fn refresh_peer(
     let (listener, address) = bind_peer().await;
 
     let config = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         max_concurrent_requests: 2,
         ..Default::default()

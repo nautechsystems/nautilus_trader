@@ -1224,7 +1224,7 @@ async fn disconnect_cancels_inflight_and_queued_requests_before_reconnect(#[case
     });
 
     let http = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         ..Default::default()
     };

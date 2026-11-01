@@ -104,7 +104,7 @@ async fn data_tester_routes_quotes_and_managed_books_and_stops() {
     });
 
     let http = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         attempt_budget: attempts as u64,
         ..Default::default()

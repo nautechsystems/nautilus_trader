@@ -367,7 +367,7 @@ async fn polling_workload_shares_feeds_and_bounds_fanout(#[case] markets: usize)
     });
 
     let http = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         attempt_budget: attempts as u64,
         ..Default::default()

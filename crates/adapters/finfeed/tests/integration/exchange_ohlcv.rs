@@ -258,7 +258,7 @@ async fn cancellation_interrupts_exchange_history_and_future_calls() {
     let (listener, address) = super::dst::bind_peer().await;
 
     let client = Arc::new(new_client(FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         ..Default::default()
     }));
 

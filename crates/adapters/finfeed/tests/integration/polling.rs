@@ -1549,7 +1549,7 @@ pub(super) async fn timed_peer(
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel();
 
     let config = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         retry: RetryConfig {
             initial_delay_ms: 10,

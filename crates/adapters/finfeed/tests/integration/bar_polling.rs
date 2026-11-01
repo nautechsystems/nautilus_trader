@@ -58,7 +58,7 @@ async fn public_bars_start_at_subscribe_and_restore_without_duplicates() {
     let (listener, address) = bind_peer().await;
 
     let http = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         attempt_budget: 12,
         ..Default::default()
@@ -176,7 +176,7 @@ async fn bar_unsubscribe_and_disconnect_cancel_delayed_latest(#[case] action: &s
     let (listener, address) = bind_peer().await;
 
     let http = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         ..Default::default()
     };
@@ -325,7 +325,7 @@ async fn response_crossing_period_end_uses_request_cutoff_and_final_later_values
     let (listener, address) = bind_peer().await;
 
     let http = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         ..Default::default()
     };
@@ -418,7 +418,7 @@ async fn canceling_catalog_resolution_keeps_the_quote_scope_active() {
     let (listener, address) = bind_peer().await;
 
     let http = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         ..Default::default()
     };
@@ -633,7 +633,7 @@ async fn bar_poll_limit_leaves_a_slot_for_the_closed_period(#[case] limit: u32) 
     let (listener, address) = bind_peer().await;
 
     let http = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         ..Default::default()
     };

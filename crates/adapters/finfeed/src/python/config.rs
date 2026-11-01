@@ -129,7 +129,9 @@ impl FinFeedDataClientConfig {
         Self {
             api_key: api_key.map(SecretString::from),
             http: FinFeedHttpConfig {
-                base_url: base_url_http.unwrap_or(defaults.http.base_url),
+                base_url: base_url_http
+                    .map(SecretString::from)
+                    .unwrap_or(defaults.http.base_url),
                 proxy_url: proxy_url.map(SecretString::from),
                 timeout_secs: http_timeout_secs.unwrap_or(defaults.http.timeout_secs),
                 max_concurrent_requests: max_concurrent_requests
@@ -160,9 +162,10 @@ impl FinFeedDataClientConfig {
     }
 
     /// HTTPS endpoint, or a plaintext loopback test peer, including the version prefix.
+    /// Debug output redacts the complete endpoint.
     #[getter]
     fn base_url_http(&self) -> &str {
-        &self.http.base_url
+        self.http.base_url.expose_secret()
     }
 
     /// Exact Polymarket Yes/No outcomes loaded and published before readiness.
@@ -297,6 +300,7 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+    use crate::python::http::PyFinFeedHttpClient;
 
     #[rstest]
     fn python_projection_preserves_every_rust_field() {
@@ -305,7 +309,7 @@ mod tests {
             let kwargs = PyDict::new(py);
             kwargs.set_item("api_key", "projection-secret").unwrap();
             kwargs
-                .set_item("base_url_http", "http://localhost:8123/v1/")
+                .set_item("base_url_http", "http://localhost:8123/path-sentinel/v1/")
                 .unwrap();
             kwargs
                 .set_item("proxy_url", "http://user:proxy-secret@localhost:8124")
@@ -348,7 +352,18 @@ mod tests {
                 config.api_key.as_ref().unwrap().expose_secret(),
                 "projection-secret"
             );
-            assert_eq!(config.http.base_url, "http://localhost:8123/v1/");
+            assert_eq!(
+                config.http.base_url.expose_secret(),
+                "http://localhost:8123/path-sentinel/v1/"
+            );
+            assert_eq!(
+                object
+                    .getattr("base_url_http")
+                    .unwrap()
+                    .extract::<String>()
+                    .unwrap(),
+                "http://localhost:8123/path-sentinel/v1/"
+            );
             assert_eq!(
                 config.http.proxy_url.as_ref().unwrap().expose_secret(),
                 "http://user:proxy-secret@localhost:8124"
@@ -372,9 +387,27 @@ mod tests {
             assert_eq!(config.poll_limit, 23);
             assert_eq!(config.connect_timeout_secs, 43);
             let debug = format!("{config:?}");
+            let http_object = py
+                .get_type::<PyFinFeedHttpClient>()
+                .call1((object.clone(),))
+                .unwrap();
+            let http_client: PyRef<'_, PyFinFeedHttpClient> = http_object.extract().unwrap();
+            let http_debug = format!("{:?}", *http_client);
 
-            for secret in ["projection-secret", "proxy-secret"] {
+            assert!(debug.contains("base_url: <redacted>"));
+            assert!(http_debug.contains("base_url: \"http://localhost:8123\""));
+            assert_eq!(
+                object.repr().unwrap().to_str().unwrap(),
+                "FinFeedDataClientConfig"
+            );
+            assert_eq!(
+                http_object.repr().unwrap().to_str().unwrap(),
+                "FinFeedHttpClient"
+            );
+
+            for secret in ["projection-secret", "proxy-secret", "path-sentinel"] {
                 assert!(!debug.contains(secret));
+                assert!(!http_debug.contains(secret));
             }
         });
     }

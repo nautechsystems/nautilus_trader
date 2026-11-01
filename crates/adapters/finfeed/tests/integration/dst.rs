@@ -20,6 +20,8 @@ use std::{sync::Arc, time::Duration};
 use nautilus_core::{UnixNanos, string::secret::SecretString};
 use nautilus_finfeed::{
     common::symbol::to_instrument_id,
+    config::FinFeedDataClientConfig,
+    data::FinFeedDataClient,
     http::{
         client::{FinFeedHttpClient, FinFeedHttpConfig},
         error::Error,
@@ -29,6 +31,7 @@ use nautilus_finfeed::{
     },
     instruments::{FinFeedInstrumentProvider, FinFeedInstrumentSelection},
 };
+use nautilus_model::identifiers::ClientId;
 use nautilus_network::{
     dst::{
         net::{TcpListener, TcpStream},
@@ -98,6 +101,7 @@ pub(super) fn assert_request(request: &str, target: &str, config: &FinFeedHttpCo
         "host: {}",
         config
             .base_url
+            .expose_secret()
             .trim_start_matches("http://")
             .trim_end_matches("/v1/")
     );
@@ -828,6 +832,122 @@ async fn budget_cancellation_and_elapsed_deadline_bound_admission() {
 }
 
 #[rstest]
+#[case("https://public.example:8443/path-sentinel/v1/")]
+#[case(
+    "https://user-sentinel:password-sentinel@public.example:8443/path-sentinel?key=query-sentinel#fragment-sentinel"
+)]
+#[case(
+    "https://user-sentinel:password-sentinel@[invalid/path-sentinel?query-sentinel#fragment-sentinel"
+)]
+#[case("file:///path-sentinel?query-sentinel#fragment-sentinel")]
+fn endpoint_config_debug_redacts_before_validation(#[case] base: &str) {
+    let http = FinFeedHttpConfig {
+        base_url: base.into(),
+        proxy_url: Some("http://proxy-user:proxy-sentinel@localhost:8124".into()),
+        ..Default::default()
+    };
+
+    let config = FinFeedDataClientConfig {
+        api_key: Some("api-sentinel".into()),
+        http,
+        ..Default::default()
+    };
+
+    for rendered in [
+        format!("{:?}", config.http),
+        format!("{:#?}", config.http),
+        format!("{config:?}"),
+        format!("{config:#?}"),
+    ] {
+        assert!(rendered.contains("base_url: <redacted>"), "{rendered}");
+
+        for secret in [
+            "path-sentinel",
+            "user-sentinel",
+            "password-sentinel",
+            "query-sentinel",
+            "fragment-sentinel",
+            "public.example",
+            "api-sentinel",
+            "proxy-sentinel",
+            "proxy-user",
+        ] {
+            assert!(!rendered.contains(secret), "{rendered}");
+        }
+    }
+
+    assert_eq!(config.http.base_url.expose_secret(), base);
+    let serialized = serde_json::to_value(&config).unwrap();
+    assert_eq!(serialized["http"]["base_url"], base);
+    let decoded: FinFeedDataClientConfig = serde_json::from_value(serialized).unwrap();
+    assert_eq!(decoded.http.base_url.expose_secret(), base);
+}
+
+#[rstest]
+fn endpoint_client_debug_redacts_nested_surfaces() {
+    let config = FinFeedDataClientConfig {
+        api_key: Some("api-sentinel".into()),
+        http: FinFeedHttpConfig {
+            base_url: "https://public.example:8443/path-sentinel/v1/".into(),
+            ..Default::default()
+        },
+        instruments: vec![FinFeedInstrumentSelection {
+            exchange_id: "POLYMARKET".into(),
+            market_ids: vec!["TEST-OUTCOME_NO".into()],
+        }],
+        ..Default::default()
+    };
+
+    let http =
+        Arc::new(FinFeedHttpClient::new(config.api_key.clone(), config.http.clone()).unwrap());
+    let provider = FinFeedInstrumentProvider::new(Arc::clone(&http));
+    let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+    let client = FinFeedDataClient::new(ClientId::from("FINFEED"), config, sender.into()).unwrap();
+
+    for rendered in [
+        format!("{http:?}"),
+        format!("{provider:?}"),
+        format!("{client:?}"),
+        format!("{client:#?}"),
+    ] {
+        assert!(
+            rendered.contains("base_url: \"https://public.example:8443\""),
+            "{rendered}"
+        );
+
+        for secret in ["path-sentinel", "api-sentinel"] {
+            assert!(!rendered.contains(secret), "{rendered}");
+        }
+    }
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn endpoint_debug_preserves_request_path() {
+    let (peer, mut config) = start_peer(vec![(200, "", EXCHANGES)]).await;
+    config.base_url = config
+        .base_url
+        .expose_secret()
+        .replace("/v1/", "/path-sentinel%2Fexact/v1")
+        .into();
+    let client = new_client(config);
+    let rendered = format!("{client:?}");
+    let exchanges = client.get_exchanges().await.unwrap();
+    let requests = time::timeout(Duration::from_secs(3), peer)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert!(!rendered.contains("path-sentinel"));
+    assert_eq!(exchanges.len(), 9);
+    assert_eq!(requests.len(), 1);
+    assert_eq!(
+        requests[0].lines().next().unwrap(),
+        "GET /path-sentinel%2Fexact/v1/exchanges HTTP/1.1"
+    );
+}
+
+#[rstest]
 fn http_builder_and_serde_defaults_match() {
     let expected = serde_json::to_value(FinFeedHttpConfig::default()).unwrap();
     let built = FinFeedHttpConfig::builder().build();
@@ -1222,6 +1342,7 @@ async fn explicit_http_proxy_routes_and_authenticates() {
         proxy_url: Some(SecretString::from(
             proxy
                 .base_url
+                .expose_secret()
                 .replace("/v1/", "/")
                 .replace("http://", "http://user:pass@"),
         )),
@@ -1374,7 +1495,7 @@ async fn configured_concurrency_limits_actual_inflight_transport() {
         let (listener, address) = bind_peer().await;
 
         let config = FinFeedHttpConfig {
-            base_url: format!("http://{address}/v1/"),
+            base_url: format!("http://{address}/v1/").into(),
             min_request_interval_ms: 1,
             max_concurrent_requests: concurrency,
             ..Default::default()
@@ -1447,7 +1568,9 @@ async fn explicit_https_proxy_uses_tls_and_http_proxy_tunnels_https() {
     let (peer, proxy) = start_peer(vec![(407, "", EMPTY)]).await;
 
     let mut config = FinFeedHttpConfig {
-        proxy_url: Some(SecretString::from(proxy.base_url.replace("/v1/", "/"))),
+        proxy_url: Some(SecretString::from(
+            proxy.base_url.expose_secret().replace("/v1/", "/"),
+        )),
         ..Default::default()
     };
 
@@ -1707,7 +1830,7 @@ async fn dropped_request_releases_concurrency_for_next_request() {
     });
 
     let client = Arc::new(new_client(FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         min_request_interval_ms: 1,
         ..Default::default()
     }));

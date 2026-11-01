@@ -657,7 +657,7 @@ async fn recording_peer(
     });
 
     let config = FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         attempt_budget: budget as u64,
         timeout_secs: timeout + 15,
         retry: RetryConfig {

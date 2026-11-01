@@ -487,7 +487,7 @@ mod tests {
         let http = FinFeedHttpClient::new(
             Some("test-api-key".into()),
             FinFeedHttpConfig {
-                base_url: format!("http://{address}/v1/"),
+                base_url: format!("http://{address}/v1/").into(),
                 min_request_interval_ms: 1,
                 ..Default::default()
             },

@@ -400,7 +400,7 @@ async fn cancellation_interrupts_history_inflight() {
     let (listener, address) = super::dst::bind_peer().await;
 
     let client = Arc::new(new_client(FinFeedHttpConfig {
-        base_url: format!("http://{address}/v1/"),
+        base_url: format!("http://{address}/v1/").into(),
         ..Default::default()
     }));
 
