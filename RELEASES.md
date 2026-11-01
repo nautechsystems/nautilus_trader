@@ -59,6 +59,7 @@ Released on TBD (UTC).
 ### Security
 
 - Improved R2 publishing credential handling to avoid writing keys to disk
+- Fixed CoinAPI WebSocket diagnostics logging API keys from malformed frames
 - Fixed Derive configs and HTTP client exposing endpoint credentials in `Debug` output
 - Fixed `Throttler` timer deadline overflow that could panic during order submission or modification
 

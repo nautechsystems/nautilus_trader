@@ -19,6 +19,7 @@
 )]
 
 use std::{
+    cell::RefCell,
     future::Future,
     sync::{Arc, Mutex},
     time::Duration,
@@ -30,7 +31,7 @@ use nautilus_coinapi::config::CoinApiDataClientConfig;
 use nautilus_coinapi::websocket::{
     client::{CoinApiWebSocketClient, CoinApiWebSocketConfig},
     error::Error,
-    messages::{Channel, CoinApiWsMessage, DataType, ScopeChange, Subscription},
+    messages::{Channel, CoinApiWsMessage, DataType, Frame, ScopeChange, Subscription},
 };
 use nautilus_core::string::secret::SecretString;
 use nautilus_network::{
@@ -598,6 +599,111 @@ async fn routes_each_message_family(
 
         let _socket = peer.await.unwrap();
         client.close().await;
+    })
+    .await;
+}
+
+struct DiagnosticLog;
+
+thread_local! {
+    static DIAGNOSTIC_MESSAGES: RefCell<Vec<(log::Level, String)>> = const { RefCell::new(Vec::new()) };
+}
+
+impl log::Log for DiagnosticLog {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.target().starts_with("nautilus_coinapi::")
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            DIAGNOSTIC_MESSAGES.with_borrow_mut(|messages| {
+                messages.push((record.level(), record.args().to_string()));
+            });
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn inbound_diagnostics_omit_credentials_at_every_level() {
+    const KEY: &str = "test-api-key";
+    const ERROR: &str = include_str!("../../../test_data/ws_error_credential.json");
+
+    static INSTALL_LOGGER: std::sync::Once = std::sync::Once::new();
+    INSTALL_LOGGER.call_once(|| {
+        log::set_logger(&DiagnosticLog).unwrap();
+        log::set_max_level(log::LevelFilter::Trace);
+    });
+
+    DIAGNOSTIC_MESSAGES.with_borrow_mut(Vec::clear);
+
+    bounded(async {
+        let truncated = ERROR.trim_end().strip_suffix('}').unwrap().to_owned();
+        let padding = "x".repeat(124 - truncated.find("Invalid key ").unwrap());
+        let boundary = truncated.replace("Invalid key ", &padding);
+        assert_eq!(boundary.find(KEY), Some(124));
+        assert_eq!(&boundary[124..128], "test");
+
+        let mut invalid_trade: serde_json::Value = serde_json::from_str(TRADE).unwrap();
+        invalid_trade["sequence"] = KEY.into();
+        let invalid_trade = format!("{}{invalid_trade}", " ".repeat(160));
+        let decoder_error = Frame::decode(invalid_trade.as_bytes()).unwrap_err();
+        assert!(decoder_error.to_string().contains(KEY));
+        assert!(!invalid_trade[..128].contains(KEY));
+
+        let malformed = [truncated, boundary, invalid_trade];
+
+        let mut expected_messages = malformed
+            .iter()
+            .map(|frame| {
+                let e = Frame::decode(frame.as_bytes()).unwrap_err();
+                (
+                    log::Level::Warn,
+                    format!(
+                        "Failed to decode CoinAPI frame: category={:?}, line={}, column={}, bytes={}",
+                        e.classify(), e.line(), e.column(), frame.len()
+                    ),
+                )
+            })
+            .collect::<Vec<_>>();
+
+        let unknown = ERROR.replace("error", KEY);
+        let unsubscribed = trade_for(KEY);
+        let (listener, address) = listener().await;
+        let peer = task::spawn(async move {
+            let (mut socket, _) = accept(&listener).await;
+            next_text(&mut socket).await;
+            for frame in &malformed {
+                send(&mut socket, frame).await;
+            }
+
+            send(&mut socket, &unknown).await;
+            send(&mut socket, &unsubscribed).await;
+            send(&mut socket, TRADE).await;
+            send(&mut socket, ERROR).await;
+            socket
+        });
+
+        let (client, mut rx) = client(&address);
+        client.subscribe(subscription(TRADES, BTC)).await.unwrap();
+        let trade = recv(&mut rx).await;
+        let rejection = recv(&mut rx).await;
+        let _socket = peer.await.unwrap();
+        client.close().await;
+        let messages = DIAGNOSTIC_MESSAGES.with_borrow(Clone::clone);
+
+        assert_eq!(trade, trade_message(TRADE));
+        assert_eq!(rejection, CoinApiWsMessage::Error("Invalid key <redacted>".into()));
+        assert!(messages.iter().all(|(_, message)| !message.contains(KEY)), "{messages:?}");
+
+        expected_messages.extend([
+            (log::Level::Debug, "Ignoring unknown CoinAPI frame type".to_owned()),
+            (log::Level::Trace, "Dropping unsubscribed CoinAPI frame".to_owned()),
+            (log::Level::Error, "CoinAPI rejected the session: Invalid key <redacted>".to_owned()),
+        ]);
+        assert_eq!(messages, expected_messages);
     })
     .await;
 }

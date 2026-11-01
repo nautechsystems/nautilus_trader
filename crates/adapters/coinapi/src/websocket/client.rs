@@ -65,7 +65,6 @@ const RECONNECT_BACKOFF_FACTOR: f64 = 2.0;
 const RECONNECT_JITTER_MS: u64 = 500;
 const TOPIC_DELIMITER: char = ':';
 const PERIOD_DELIMITER: char = '.';
-const PAYLOAD_EXCERPT_BYTES: usize = 128;
 
 // Live probes found that back-to-back hellos can leave a connection streaming nothing, and that
 // CoinAPI closes a connection once hellos exceed about one every two seconds per IP
@@ -647,12 +646,15 @@ impl ConnectionHandler {
                     self.retire(message).await;
                     return;
                 }
-                Ok(Frame::Unknown(kind)) => log::debug!("Ignoring CoinAPI frame type {kind}"),
+                Ok(Frame::Unknown(_)) => log::debug!("Ignoring unknown CoinAPI frame type"),
                 Err(e) => {
-                    let excerpt =
-                        String::from_utf8_lossy(&bytes[..bytes.len().min(PAYLOAD_EXCERPT_BYTES)]);
-                    log::warn!("Failed to decode CoinAPI frame: {e}");
-                    log::debug!("Undecodable CoinAPI frame excerpt: {excerpt}");
+                    log::warn!(
+                        "Failed to decode CoinAPI frame: category={:?}, line={}, column={}, bytes={}",
+                        e.classify(),
+                        e.line(),
+                        e.column(),
+                        bytes.len()
+                    );
                 }
             }
         }
@@ -665,7 +667,7 @@ impl ConnectionHandler {
 
         // The combined scope also delivers pairs nobody subscribed to
         if !is_subscribed(&self.subscriptions, &subscription) {
-            log::trace!("Dropping unsubscribed CoinAPI {subscription:?}");
+            log::trace!("Dropping unsubscribed CoinAPI frame");
             return;
         }
 
