@@ -121,6 +121,9 @@ pub(crate) struct BookLadder {
     pub side: OrderSide,
     pub book_type: BookType,
     pub levels: BTreeMap<BookPrice, BookLevel>,
+    // The standard hasher measured faster than ahash for this map's steady-state
+    // clear-and-insert pattern; see the 2026-11-02 rejection record in
+    // `crates/backtest/benches/BENCHMARKS.md` before changing hashers.
     pub cache: HashMap<u64, BookPrice>,
     batch_state: L1BatchState,
 }

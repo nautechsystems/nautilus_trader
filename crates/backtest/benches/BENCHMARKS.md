@@ -5,10 +5,12 @@ v1.231.0 and v2 comparison, and the benchmark's CI role. Use the native sections
 workload or evaluate another optimization under equivalent controls. Use the version comparison to
 inspect the released Cython and Rust/PyO3 results and their raw evidence.
 
-The latest native profile, collected on 2026-08-30 at commit `3dee76e70e4dc66cf705a90629924ec22e5cb3ab`,
-found no safe production candidate above the 10.872622191% shared-host detection floor. The dated
-records remain relevant because they define retained optimizations, rejected variants, and the
-conditions required to reconsider them.
+The latest native profile, collected on 2026-11-02 at commit
+`25217eea5d3b1ccad4c41c2765400c577541180f`, confirmed `BookLadder::replace_l1` as the largest
+single production lead. That day's rounds removed the measured L1 cache-hash candidate and left
+the empty command-queue fast path unimplemented after its realistic estimate fell below the fresh
+admission thresholds. The dated records remain relevant because they define retained
+optimizations, rejected variants, and the conditions required to reconsider them.
 
 ## Native canonical benchmark
 
@@ -191,6 +193,8 @@ artifact identity. A profile share selects a target; it never establishes an ela
 | 2026-08-30 | Pending queue snapshot                  |                   3.790% | 10.302% median reduction               | Retained               |
 | 2026-08-30 | Current-HEAD target search              |            10.872622191% | No eligible target                     | No candidate           |
 | 2026-09-04 | Typed batch input                       |    Per-row baseline band | Typed within legacy round bands        | Retained               |
+| 2026-11-02 | L1 cache map ahash swap                 |             3.241947562% | 4.27% median regression                | Removed                |
+| 2026-11-02 | Empty command-queue fast path           |            13.510776671% | 0.932517798% estimated removable share | Not implemented        |
 
 ### 2026-08-29: L1 replacement
 
@@ -491,8 +495,9 @@ The 15.223379333 ms median and 6.326209262% full spread set the admission thresh
 4.712818562% realistic removal estimate did not clear that threshold, so no production candidate,
 candidate executable, paired comparison, or candidate fingerprint run was created. This campaign
 establishes change-detection limits under normal shared-host load, not quiet-host absolute timing.
-Reconsider an empty command-queue fast path after reducing the fresh spread below its conservative
-effect estimate, or select a larger eligible non-book cost.
+The 2026-11-02 revaluation below met the reduced-spread condition with a 0.719145376% fresh spread
+and still rejected the candidate, because the direct drain share at current HEAD had fallen to
+1.554196330%.
 
 ### 2026-08-30: Shared-host repeatability calibration
 
@@ -816,6 +821,143 @@ Each row is the median of three runs.
 The quote reduction matches the 72-byte difference between `Data` and `QuoteTick`. The depth
 reduction matches the 168-byte enum plus the allocator header that `Data::BookDepth` spends on
 each boxed snapshot.
+
+### 2026-11-02: Rejected L1 cache map ahash swap
+
+The baseline was the signed `Add DataTester historical request controls` commit
+`64bb2b8526fd66964125b40b5bbf0af060ed120a`, measured from a clean tree. The candidate changed the
+`BookLadder` order cache field from `HashMap<u64, BookPrice>` to `ahash::AHashMap<u64, BookPrice>`
+and nothing else; `ahash` was already a `nautilus-model` dependency. The host was the Threadripper
+9980X system described above with kernel `7.0.0-38-generic`, the `powersave` governor on all 128
+logical CPUs, SMT and boost enabled, per-process ASLR disablement, and an unpinned benchmark
+thread. Rust and Cargo 1.99.1 built both `bench-lto` executables once for reuse with standard
+precision and the default empty `nautilus-backtest` feature set. No `valgrind` installation was
+present, so iai instruction counts were unavailable and sizing used a temporary Criterion
+microbenchmark instead.
+
+A fresh one-millisecond `gprofng` profile of canonical replay-only `run_preloaded` from the
+immutable baseline executable captured 17.112 seconds of CPU samples. `BacktestEngine::run`
+accounted for 10.406 seconds inclusive, and `BookLadder::replace_l1` for 3.258 seconds inclusive:
+19.04% of captured samples and 31.31% of the `run` stack, keeping it the largest single production
+lead. In this build the L1 cache insert appeared as its own unfolded symbol,
+`hashbrown::map::HashMap<u64, BookPrice, RandomState>::insert`, with 0.487 seconds inclusive:
+2.85% of captured samples and 4.68% of `run`. That share is the upper bound for the entire insert
+cost, covering hashing, probing, and storage, so the hashing alone is materially smaller.
+
+| Item                | Baseline                                                           | Candidate                                                          |
+| ------------------- | ------------------------------------------------------------------ | ------------------------------------------------------------------ |
+| Repository revision | `64bb2b8526fd66964125b40b5bbf0af060ed120a`                         | Baseline revision plus the measured patch                          |
+| Executable SHA-256  | `1b7b32e4ced97f4a23488c700f49284be075395d2e5ebd5a08d0a2ed39cbda7f` | `c965e4da58d8793e0b3c2f8ced4866ea7f4f2838fc84cc2debc479ff2ebac754` |
+| ELF build ID        | `f2b70927db12bba7c9f588e57e8d24e835c92945`                         | `3caa3557280a46e9f10974e3e6a400a8a5f74663`                         |
+
+Three fresh baseline sessions on the immutable baseline executable measured 10.565264,
+10.773944, and 10.914549 ms. Their 10.773944 ms median and 3.241947562% full spread set the fresh
+noise band. Sessions averaged 87% to 89% CPU idle under the normal desktop workload with no
+concurrent build process, which is quieter than the shared-load regime behind the 10.872622191%
+floor but noisier than the quietest recorded sessions.
+
+Sizing used a temporary Criterion benchmark, since removed from the tree. Its quote batch case
+drove 1,000 L1 quote replacements, or 2,000 `replace_l1` calls, through `OrderBook::
+update_quote_tick` with a deterministic price walk. Three alternated rounds measured:
+
+| Round | Baseline median | Candidate median |
+| ----- | --------------: | ---------------: |
+|     1 |    69.056 us    |    74.137 us     |
+|     2 |    70.773 us    |    75.744 us     |
+|     3 |    71.303 us    |    76.048 us     |
+
+The candidate was 4.7 to 5.1 us slower in every round, about 7% of the path, with baseline and
+candidate executables alternating within each round. An isolated map
+case timing 1,000 clear-plus-insert cycles of the same side-constant key measured 9.229 us with
+the standard hasher and 9.484 us with ahash, a 2.7% ahash deficit. The expected integer-key
+hashing advantage does not materialize on the steady-state clear-and-insert pattern; the map and
+table work around it offsets the cheaper hash function.
+
+Three paired sessions then alternated the immutable executables for canonical replay-only
+`run_preloaded`. Each run used an isolated Criterion home, a 3-second warm-up, a 5-second
+measurement target, and 50 samples.
+
+| Pair order         | Baseline median | Candidate median | Change |
+| ------------------ | --------------: | ---------------: | -----: |
+| Baseline/candidate |       10.979 ms |        11.110 ms | +1.19% |
+| Candidate/baseline |       10.653 ms |        11.107 ms | +4.27% |
+| Baseline/candidate |       10.331 ms |        11.229 ms | +8.71% |
+
+The candidate was slower in all three pairs, with a median 4.27% regression that matches the
+microbench direction. Every session executed the canonical fingerprint verification before
+timing and passed, so the candidate preserved every exact semantic fingerprint. All 402 focused
+order-book unit tests passed on the candidate source. The candidate was removed and the
+temporary benchmark deleted.
+
+Do not select the ahash swap for the `BookLadder` order cache again under the same hasher
+implementation, toolchain, and workload. The profile bounds the whole cache-insert cost near 5%
+of `run`, the swap measured no faster on the isolated operation, and both the L1 replacement path
+and the canonical workload regressed. Reconsider only after a material hasher or hashbrown
+dependency change, a toolchain change that alters standard-hash code generation, or a
+representative-workload change that grows the cache-insert share.
+
+### 2026-11-02: Empty command-queue fast path revaluation
+
+The 2026-08-30 command-queue profile left the empty fast path unimplemented because its
+4.712818562% realistic estimate did not clear that day's 6.326209262% shared-host spread. This
+round re-established the baseline, profile, and admission decision at current HEAD. No production
+code, test, or harness change resulted.
+
+| Item                 | Baseline                                                           |
+| -------------------- | ------------------------------------------------------------------ |
+| Repository revision  | `25217eea5d3b1ccad4c41c2765400c577541180f`                         |
+| Measured source tree | `c022d6583b19ff56aeebf5d4fabf643f977368dd`                         |
+| Executable SHA-256   | `c0e456a7e55b8526acbf32371e7507f763670c1cdd25fc264a6b5bbf66a8945d` |
+| ELF build ID         | `162e729ddb316aef1cf5da8266b8eda780bfaca1`                         |
+
+Rust and Cargo 1.99.1 built the executable once from the clean tree with standard precision, the
+default empty `nautilus-backtest` feature set, and `bench-lto`. The executable was copied to a
+read-only path, and every session verified its SHA-256 before and after execution and completed
+the canonical fingerprint checks. The host remained the Threadripper 9980X system with kernel
+`7.0.0-38-generic`, the `powersave` governor on all 128 logical CPUs, SMT and boost enabled,
+per-process ASLR disablement, and an unpinned benchmark thread. Each session ran canonical
+replay-only `run_preloaded` with a 3-second warm-up, a 5-second measurement target, 50 samples,
+and an isolated Criterion home. Compiler observations count cargo, rustc, clippy-driver, and
+linker process names in one-second host samples.
+
+A fresh one-millisecond `gprofng` profile of the immutable executable captured 17.110 seconds of
+CPU samples. `BacktestEngine::run` accounted for 9.973 seconds inclusive, or 58.29%.
+`BacktestEngine::drain_command_queues` accounted for 0.641 seconds inclusive: 3.7463% of captured
+samples and 6.4274% of the `run` stack. The direct trading and data command drains accounted for
+0.155 seconds inclusive (`drain_trading_cmd_queue` 0.054 seconds, `drain_data_cmd_queue` 0.101
+seconds), or 1.554196330% of `run`. This replaces the 2026-08-30 actionable upper bound of
+7.854697604%: the direct drain share at current HEAD is roughly one fifth of its August value, so
+the August lead no longer holds at this revision. A fast path keeps the thread-local emptiness
+tests, settling checks, and exec client event drain, so the predeclared 60% removal factor gives
+a realistic estimate of 0.932517798% end to end. `BookLadder::replace_l1` remained the largest
+single production lead at 18.4278% of captured samples.
+
+Three initial baseline sessions measured 10.672696937, 10.596332500, and 10.618776063 ms at
+95.77% to 96.60% average CPU idle with at most seven compiler observations. Their 10.618776063 ms
+median and 0.719145376% full spread give a 1.438290751% threshold at twice the spread. One
+further session overlapped concurrent compiler work from a sibling checkout, averaged 94.96% CPU
+idle, and was discarded. The admission rule was then fixed before further timing: twice the full
+spread of five further consecutive quiet sessions.
+
+| Session | Baseline median | Average CPU idle | Compiler observations |
+| ------: | --------------: | ---------------: | --------------------: |
+|       1 | 10.131573625 ms |           97.96% |                     0 |
+|       2 |  9.890054500 ms |           97.95% |                     0 |
+|       3 | 10.243396125 ms |           97.65% |                     0 |
+|       4 | 10.513002063 ms |           97.40% |                     0 |
+|       5 | 10.582035687 ms |           96.87% |                     0 |
+
+The five sessions produced a 10.243396125 ms median and a 6.755388336% full spread, with medians
+drifting upward through the set. Session-to-session drift dominates the band even near 98% average
+CPU idle, so the predeclared admission threshold is 13.510776671%.
+
+The 0.932517798% realistic estimate does not clear that threshold and does not clear the tighter
+1.438290751% threshold from the initial trio. The full 1.554196330% bound barely reaches that
+tighter threshold, and no fast path can remove it because the emptiness tests, settling checks,
+and exec client event drain remain. No candidate patch, executable, or paired comparison was
+produced. Reconsider an empty command-queue fast path after a material replay-loop or
+queue-implementation change regrows the direct drain share, or after a calibration establishes a
+protocol that resolves end-to-end effects below 1% on this host.
 
 ## v1.231.0 and v2 comparison
 
