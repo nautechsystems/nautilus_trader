@@ -71,11 +71,11 @@ def _peer(responses, **controls: Any) -> Iterator:
             requests.append(
                 (self.path, self.headers.get("Authorization"), self.headers.get("X-Referrer")),
             )
+            status, body = pending.popleft() if pending else (500, b"")
             entered.set()
 
             if controls.get("block"):
                 release.wait(10)
-            status, body = pending.popleft() if pending else (500, b"")
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
