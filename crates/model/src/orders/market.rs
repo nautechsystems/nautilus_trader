@@ -543,7 +543,7 @@ impl TryFrom<OrderInitialized> for MarketOrder {
     type Error = OrderError;
 
     fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
-        Self::new_checked(
+        let mut order = Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -563,7 +563,9 @@ impl TryFrom<OrderInitialized> for MarketOrder {
             event.exec_algorithm_params,
             event.exec_spawn_id,
             event.tags,
-        )
+        )?;
+        order.set_init_reconciliation(event.reconciliation);
+        Ok(order)
     }
 }
 

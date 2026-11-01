@@ -658,7 +658,7 @@ impl TryFrom<OrderInitialized> for TrailingStopLimitOrder {
                         .to_string(),
             }
                 })?;
-        Self::new_checked(
+        let mut order = Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -690,7 +690,9 @@ impl TryFrom<OrderInitialized> for TrailingStopLimitOrder {
             event.tags,
             event.event_id,
             event.ts_event,
-        )
+        )?;
+        order.set_init_reconciliation(event.reconciliation);
+        Ok(order)
     }
 }
 
