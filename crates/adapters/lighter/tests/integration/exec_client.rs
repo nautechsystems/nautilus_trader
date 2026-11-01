@@ -80,7 +80,10 @@ use nautilus_common::{
 };
 use nautilus_core::{DurationNanos, UUID4, UnixNanos};
 use nautilus_execution::engine::ExecutionEngine;
-use nautilus_live::{ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome};
+use nautilus_live::{
+    ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
+    manager::{ExecutionManager, ExecutionManagerConfig},
+};
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     enums::{
@@ -7409,6 +7412,352 @@ async fn test_failed_fill_sweep_does_not_poison_live_replay() {
     }
 
     client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_commission_failure_fill_reports_recover_once(
+    #[values(false, true)] worker: bool,
+    #[values(false, true)] scoped: bool,
+) {
+    set_message_bus(Rc::new(RefCell::new(MessageBus::new(
+        trader_id(),
+        UUID4::new(),
+        None,
+        None,
+    ))));
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    let venue_order_id = VenueOrderId::from("562947905631053");
+    let order = make_limit_order(
+        "O-COMMISSION-FILLS",
+        OrderSide::Buy,
+        Quantity::from("0.1336"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    let (_, cloid) = cache_accepted_order(&cache, order, venue_order_id);
+    let before = cache.borrow().order(&cloid).unwrap().clone();
+    client.connect().await.unwrap();
+    let trade = http_trade_fixture(19_209_006_980, 42);
+    let invalid = http_trade_with_commission_failure(&trade);
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[invalid]}));
+    drain_order_and_report_events(&mut rx);
+
+    let request = || {
+        GenerateFillReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            scoped.then_some(eth_perp_id()),
+            None,
+            None,
+            None,
+            None,
+            None,
+        )
+    };
+
+    let e = generate_fill_reports(&client, request(), worker)
+        .await
+        .expect_err("unrepresentable commission must fail the fill request");
+
+    assert!(super::is_commission_error(&e));
+    assert_order_state_unchanged(&cache.borrow().order(&cloid).unwrap(), &before);
+    assert!(drain_order_and_report_events(&mut rx).is_empty());
+
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[trade]}));
+    let reports = generate_fill_reports(&client, request(), worker)
+        .await
+        .unwrap();
+    let repeated = generate_fill_reports(&client, request(), worker)
+        .await
+        .unwrap();
+    client.disconnect().await.unwrap();
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::default()));
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    for report in reports.iter().chain(&repeated) {
+        engine.reconcile_fill_report(report);
+    }
+
+    assert_eq!(reports.len(), 1);
+    assert_eq!(repeated.len(), 1);
+    assert_eq!(reports[0].trade_id, TradeId::from("19209006980"));
+    assert_eq!(reports[0].client_order_id, Some(cloid));
+    assert_eq!(
+        cache.borrow().order(&cloid).unwrap().status(),
+        OrderStatus::Filled
+    );
+    assert_commission_recovery_fill(&cache.borrow().order(&cloid).unwrap(), reports[0].trade_id);
+    let queries = state.trades_queries.lock().await;
+    assert_eq!(queries.len(), 3);
+
+    for query in queries.iter() {
+        assert_eq!(
+            query.get("market_id").map(String::as_str),
+            scoped.then_some("0"),
+        );
+    }
+}
+
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_commission_failure_targeted_order_defers_terminal_until_recovery(
+    #[values(false, true)] worker: bool,
+) {
+    set_message_bus(Rc::new(RefCell::new(MessageBus::new(
+        trader_id(),
+        UUID4::new(),
+        None,
+        None,
+    ))));
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    let venue_order_id = VenueOrderId::from("562947905631053");
+    let order = make_limit_order(
+        "O-COMMISSION-TARGETED",
+        OrderSide::Buy,
+        Quantity::from("0.1336"),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    let (_, cloid) = cache_accepted_order(&cache, order, venue_order_id);
+    let before = cache.borrow().order(&cloid).unwrap().clone();
+    client.connect().await.unwrap();
+    let mut terminal = http_order_fixture(venue_order_id.as_str(), "42", "filled", "0.1336");
+    terminal["initial_base_amount"] = json!("0.1336");
+    terminal["remaining_base_amount"] = json!("0.0000");
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[terminal], None));
+    let trade = http_trade_fixture(19_209_006_981, 42);
+    let invalid = http_trade_with_commission_failure(&trade);
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[invalid]}));
+    drain_order_and_report_events(&mut rx);
+
+    let command = GenerateOrderStatusReport::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        Some(eth_perp_id()),
+        Some(cloid),
+        Some(venue_order_id),
+        None,
+        None,
+    );
+
+    let e = generate_order_status_report(&client, &command, worker)
+        .await
+        .expect_err("failed commission must withhold the terminal order report");
+
+    assert_eq!(
+        e.to_string(),
+        "Lighter order report deferred until execution state is applied"
+    );
+    assert_order_state_unchanged(&cache.borrow().order(&cloid).unwrap(), &before);
+    assert!(drain_order_and_report_events(&mut rx).is_empty());
+
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[trade]}));
+    let recovered = generate_order_status_report(&client, &command, worker).await;
+    if let Err(e) = recovered {
+        assert_eq!(
+            e.to_string(),
+            "Lighter order report deferred until execution state is applied"
+        );
+    }
+
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::default()));
+    let mut engine = ExecutionEngine::new(clock, cache.clone(), None);
+    let events = drain_order_and_report_events(&mut rx);
+    assert_eq!(events.len(), 1);
+
+    for event in events {
+        match event {
+            ExecutionEvent::Order(event) => engine.process(&event),
+            ExecutionEvent::Report(report) => engine.reconcile_execution_report(&report),
+            _ => unreachable!(),
+        }
+    }
+
+    let report = generate_order_status_report(&client, &command, worker)
+        .await
+        .unwrap()
+        .expect("terminal report after the real fill applies");
+    engine.reconcile_order_status_report(&report);
+    engine.reconcile_order_status_report(&report);
+    client.disconnect().await.unwrap();
+
+    assert_eq!(report.client_order_id, Some(cloid));
+    assert_eq!(report.venue_order_id, venue_order_id);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(
+        cache.borrow().order(&cloid).unwrap().status(),
+        OrderStatus::Filled
+    );
+    assert_commission_recovery_fill(
+        &cache.borrow().order(&cloid).unwrap(),
+        TradeId::from("19209006981"),
+    );
+    assert!(drain_order_and_report_events(&mut rx).is_empty());
+}
+
+#[rstest]
+#[case::filled("filled", OrderStatus::Filled, "0.1336")]
+#[case::canceled("canceled", OrderStatus::Canceled, "0.2000")]
+#[case::expired("canceled-expired", OrderStatus::Expired, "0.2000")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_commission_failure_mass_status_recovers_once(
+    #[case] status: &str,
+    #[case] expected_status: OrderStatus,
+    #[case] qty: &str,
+) {
+    set_message_bus(Rc::new(RefCell::new(MessageBus::new(
+        trader_id(),
+        UUID4::new(),
+        None,
+        None,
+    ))));
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    let venue_order_id = VenueOrderId::from("562947905631053");
+    let order = make_limit_order(
+        "O-COMMISSION-MASS",
+        OrderSide::Buy,
+        Quantity::from(qty),
+        Price::from("2361.31"),
+        TimeInForce::Gtc,
+        false,
+        false,
+    );
+    let (_, cloid) = cache_accepted_order(&cache, order, venue_order_id);
+    let before = cache.borrow().order(&cloid).unwrap().clone();
+    client.connect().await.unwrap();
+    let mut terminal = http_order_fixture(venue_order_id.as_str(), "42", status, "0.1336");
+    terminal["initial_base_amount"] = json!(qty);
+    terminal["remaining_base_amount"] = json!("0.0000");
+    terminal["updated_at"] = json!(1_777_941_385_000_i64);
+    *state.active_orders_response.lock().await = Some(http_orders_payload(&[], None));
+    *state.inactive_orders_unscoped_response.lock().await =
+        Some(http_orders_payload(&[terminal.clone()], None));
+    *state.inactive_orders_response.lock().await = Some(http_orders_payload(&[terminal], None));
+    let trade = http_trade_fixture(19_209_006_982, 42);
+    let invalid = http_trade_with_commission_failure(&trade);
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[invalid]}));
+    drain_order_and_report_events(&mut rx);
+
+    let e = client.generate_mass_status(None).await.expect_err(
+        "commission failure must abort mass status rather than return incomplete order-only reports",
+    );
+
+    assert!(super::is_commission_error(&e));
+    assert_order_state_unchanged(&cache.borrow().order(&cloid).unwrap(), &before);
+    assert!(drain_order_and_report_events(&mut rx).is_empty());
+
+    *state.trades_response.lock().await = Some(json!({"code":200,"trades":[trade]}));
+    let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+    client.disconnect().await.unwrap();
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::default()));
+    let engine = RefCell::new(ExecutionEngine::new(clock.clone(), cache.clone(), None));
+    engine
+        .borrow_mut()
+        .register_client(Box::new(client))
+        .unwrap();
+    let mut manager =
+        ExecutionManager::new(clock, cache.clone(), ExecutionManagerConfig::default()).unwrap();
+    let first = manager.reconcile_execution_mass_status(&mass, &engine);
+    let after = cache.borrow().order(&cloid).unwrap().clone();
+    let repeated = manager.reconcile_execution_mass_status(&mass, &engine);
+
+    assert!(mass.reports_complete());
+    assert_eq!(mass.fill_reports().values().map(Vec::len).sum::<usize>(), 1);
+    assert_eq!(
+        first
+            .events
+            .iter()
+            .filter(|event| matches!(event, OrderEventAny::Filled(_)))
+            .count(),
+        1
+    );
+    assert!(repeated.events.is_empty());
+    assert_order_state_unchanged(&cache.borrow().order(&cloid).unwrap(), &after);
+    assert_eq!(after.status(), expected_status);
+    assert_eq!(after.quantity(), Quantity::from(qty));
+    assert_commission_recovery_fill(&after, TradeId::from("19209006982"));
+}
+
+fn http_trade_with_commission_failure(trade: &Value) -> Value {
+    let mut invalid = trade.clone();
+    invalid["price"] = json!("1000000000.00");
+    invalid["size"] = json!("1000000000.0000");
+    invalid["usd_amount"] = json!("1000000000000000000.000000");
+    invalid
+}
+
+fn drain_order_and_report_events(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> Vec<ExecutionEvent> {
+    std::iter::from_fn(|| rx.try_recv().ok())
+        .filter(|event| matches!(event, ExecutionEvent::Order(_) | ExecutionEvent::Report(_)))
+        .collect()
+}
+
+fn assert_order_state_unchanged(actual: &OrderAny, expected: &OrderAny) {
+    assert_eq!(actual.client_order_id(), expected.client_order_id());
+    assert_eq!(actual.venue_order_id(), expected.venue_order_id());
+    assert_eq!(actual.account_id(), expected.account_id());
+    assert_eq!(actual.position_id(), expected.position_id());
+    assert_eq!(actual.status(), expected.status());
+    assert_eq!(actual.quantity(), expected.quantity());
+    assert_eq!(actual.filled_qty(), expected.filled_qty());
+    assert_eq!(actual.leaves_qty(), expected.leaves_qty());
+    assert_eq!(actual.voided_qty(), expected.voided_qty());
+    assert_eq!(actual.overfill_qty(), expected.overfill_qty());
+    assert_eq!(actual.price(), expected.price());
+    assert_eq!(actual.avg_px(), expected.avg_px());
+    assert_eq!(actual.liquidity_side(), expected.liquidity_side());
+    assert_eq!(actual.trade_ids(), expected.trade_ids());
+    assert_eq!(actual.commissions(), expected.commissions());
+    assert_eq!(actual.ts_last(), expected.ts_last());
+    assert_eq!(actual.ts_closed(), expected.ts_closed());
+    assert_eq!(actual.is_pending_update(), expected.is_pending_update());
+    assert_eq!(actual.is_pending_cancel(), expected.is_pending_cancel());
+    assert_eq!(actual.events(), expected.events());
+}
+
+fn assert_commission_recovery_fill(order: &OrderAny, trade_id: TradeId) {
+    let fills: Vec<_> = order
+        .events()
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => Some(fill),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(fills.len(), 1);
+    let fill = fills[0];
+    assert_eq!(fill.trader_id, trader_id());
+    assert_eq!(fill.strategy_id, strategy_id());
+    assert_eq!(fill.instrument_id, eth_perp_id());
+    assert_eq!(fill.client_order_id, order.client_order_id());
+    assert_eq!(fill.venue_order_id, VenueOrderId::from("562947905631053"));
+    assert_eq!(fill.account_id, account_id());
+    assert_eq!(fill.trade_id, trade_id);
+    assert_eq!(fill.order_side, OrderSide::Buy);
+    assert_eq!(fill.order_type, OrderType::Limit);
+    assert_eq!(fill.last_qty, Quantity::from("0.1336"));
+    assert_eq!(fill.last_px, Price::from("2352.73"));
+    assert_eq!(fill.currency, Currency::USDC());
+    assert_eq!(fill.commission, Some(Money::from("0.06160765 USDC")));
+    assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
+    assert_eq!(fill.ts_event, UnixNanos::from(1_777_941_384_181_000_000));
+    assert_eq!(order.filled_qty(), Quantity::from("0.1336"));
+    assert_eq!(order.trade_ids(), vec![&trade_id]);
+    assert_eq!(
+        order.commissions().get(&Currency::USDC()),
+        Some(&Money::from("0.06160765 USDC"))
+    );
 }
 
 #[rstest]
