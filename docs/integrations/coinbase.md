@@ -110,9 +110,10 @@ transparently on both sides:
 - Data subscriptions go out on the canonical id. The data WebSocket client
   holds the reverse mapping and re-keys inbound messages back to the
   caller-supplied id before parsing.
-- Orders are submitted on the caller's `product_id`. The execution client records that ID under the
-  `client_order_id` and re-keys the canonical ID echoed by the user channel. Thus, an alias-side order is
-  never reported against the canonical instrument.
+- Orders are submitted on the caller's `product_id`. Unfilled working updates restore that ID from
+  submit-time metadata. Updates with fills and terminal reports use the product IDs from REST order
+  details and fill history. Fill commissions use that instrument's quote currency. An alias-side order
+  remains associated with its submitted instrument.
 
 A strategy holding only USDC can therefore trade `BTC-USDC.COINBASE` end to
 end without referencing the canonical `BTC-USD`. Settlement currency is
@@ -606,39 +607,65 @@ an update, query result, or reconciliation resolves it.
 
 ### User WebSocket channel
 
-`CoinbaseExecutionClient` subscribes to the `user` channel with no `product_ids` filter and a fresh JWT. It
-parses each event into an `OrderStatusReport` and sends it to the execution event stream. Coinbase reports
-cumulative state per order rather than per-trade fills, so the exec client synthesizes a `FillReport` from the
-cumulative delta. The per-fill price is derived as `(avg_now * qty_now - avg_prev * qty_prev) / delta_qty` so
-multi-fill orders carry the correct trade price, not the cumulative weighted average. The original quantity is
-restored on terminal updates (`CANCELLED`, `EXPIRED`, `FAILED`) where the venue zeroes `leaves_quantity`.
+`CoinbaseExecutionClient` subscribes to the `user` channel with no `product_ids` filter and a fresh JWT.
+For updates with nonzero cumulative filled quantity and for terminal updates, it fetches REST order details.
+For orders with reported or discovered fills, it also fetches the complete per-order fill history.
+Recovery retains discovered trade IDs across failed reads and empty scans. It waits until REST reaches
+every pending user-channel target, includes every discovered trade, and each order's unique fill
+quantities sum exactly to its REST filled quantity. For an order not yet tracked from the Nautilus
+cache, recovery publishes an accepted (or rejected) order status with zero filled quantity before
+the real fill reports, then its final REST status after those fills. The preceding status establishes
+order context without inferring fills. Recovery publishes individual fills across orders in trade-time order. Known orders use native
+cancellation, expiry, and rejection events once the cache contains the recovered filled quantity.
+Known submitted orders receive native acceptance from user-channel or REST order evidence without
+waiting for fill history.
 
-The user channel does not echo `price`, `stop_price`, `trigger_type`, or
-maker/taker classification. The exec client caches these at submit time
-under the `client_order_id` and patches reports before emit, so the
-reconciler does not observe a `Some(price) -> None` divergence and
-`post_only` fills are correctly stamped `liquidity_side = Maker`. Order
-status `PENDING`, `QUEUED`, and `OPEN` all map to `OrderStatus::Accepted` to
-avoid spurious backwards-transition warnings when user-channel updates
-race the REST `OrderAccepted` event.
+Fills retain Coinbase's `trade_id`, per-trade price, commission, liquidity side, and trade timestamp.
+Quote-sized fills are converted to base quantity using the fill price. Terminal reports use the original
+REST order quantity even when the user channel zeroes `leaves_quantity`.
+
+Live fill delivery waits for REST visibility. Incomplete or failed reads hold the whole recovery batch
+pending for retry while connected. Polling continues even after an empty scan, so delayed fills from closed orders
+and pending queries do not require another WebSocket update. Polls have no attempt limit and run at
+intervals of `retry_delay_max_ms` (at least 1 ms); each HTTP request uses the existing retry policy.
+Recovery publication is serialized across queries and user updates. A changed target or a REST state
+older than a previously published recovery leaves the batch pending. A slow, failing, or incomplete
+read delays all processing on the user channel, including acceptances, amendments, reconnect account
+refreshes, and futures balance updates. Those messages queue until the read completes.
+
+The user channel omits `price`, `stop_price`, `trigger_type`, and `post_only`. The client fills these
+fields from submit-time metadata for its own orders and from REST enrichment for external orders.
+For orders submitted by this client, non-snapshot user updates emit native amendments using the
+reported quantity and captured submission or modification metadata. User-channel snapshots and fill
+recovery preserve cached limit and trigger prices. Recovery updates cached base quantity before
+fills when complete fill coverage exceeds it or a terminal `Filled` report establishes the final total.
+Quote-sized market orders wait for terminal REST totals, then normalize their quantity to base units
+before publishing fills. Order statuses `PENDING`, `QUEUED`, and `OPEN` map to `OrderStatus::Accepted`.
 
 A `submit_order` rejection carrying `INVALID_LIMIT_PRICE_POST_ONLY` (or the
 preview/new-order equivalent) is emitted with `due_post_only = true` so
 strategies can react to post-only crossings (typically by re-quoting against
 the new TOB).
 
-On reconnect, account state is re-fetched via REST so balance changes during
-the disconnect window are recovered. Cumulative per-order tracking persists
-across reconnects so synthesized fill deltas remain correct.
+On reconnect, the client refreshes account state. Fill discovery runs throughout the connection from
+the venue timestamp recorded before its first connection, with no fixed lookback window. Each scan
+also pages through the account's full REST order history, then filters for filled orders whose last
+fill is at or after that timestamp. A closed order can therefore hold recovery pending before its
+fills appear in the trade history. Each poll reprocesses matching orders, including already reconciled
+orders and orders that fill and close while disconnected. Each target requires a REST order read and
+its complete fill history. REST usage depends on the account's full order history and grows with
+activity during the client instance; see [Rate limiting](#rate-limiting). Pending targets and published
+recovery state survive disconnects of the same client instance.
 
 ### Fill deduplication
 
-The user-channel WebSocket can replay events on reconnect. The execution client maintains a 10,000-entry FIFO
-dedup keyed on `(venue_order_id, trade_id)` and drops any fill whose synthesized trade ID matches a
-recently-seen one. The cumulative-state map is bounded with the same capacity to protect against orders that
-never receive a terminal event in this client's lifetime. After very long disconnections (beyond the in-memory
-dedup window) replayed fills may emit duplicate `FillReport` values. Strategies should rely on REST
-reconciliation to recover canonical state in that case.
+Live updates, startup reconciliation, and reconnect recovery use the same venue trade IDs. The execution
+engine uses those identities for fill deduplication. Recovery deduplicates each order's response and
+sorts fills across the complete batch by trade timestamp before publication. This preserves individual
+partial fills when a user-channel update combines executions or several orders fill during a disconnect.
+Live recovery publishes each fill separately after order context is established. Known-order recovery
+uses fill reports and native lifecycle events without replaying REST price or trigger terms or treating
+a lower cumulative fill total as a fill correction.
 
 ### Position reconciliation
 
@@ -676,6 +703,17 @@ When the REST limit is exceeded, Coinbase returns HTTP `429` with this body:
   ]
 }
 ```
+
+Each recovery poll pages through fills since the first connection and the account's full order
+history. It also reads each matching filled order and its complete fill history. This costs at least
+two discovery requests plus two requests per filled order, before pagination and HTTP retries.
+The default five-second interval corresponds to 720 polls per hour before delays. Raise `retry_delay_max_ms`
+to reduce this REST usage; targeted order queries and user updates can trigger additional scans.
+
+Against the general Coinbase App quota above, six filled orders yield at least 10,080 requests per
+hour at the default interval, before delays or other traffic. The set of scanned orders grows for
+the lifetime of the client instance. A longer interval reduces the rate but does not bound that
+history, and it also increases the maximum HTTP retry delay.
 
 The adapter also throttles all REST traffic client-side at 30 requests per second. It limits subscribe and
 unsubscribe messages to 8 per second. Thus, it shapes bursts before they reach the venue.
@@ -741,7 +779,7 @@ command lost a race with the shutdown signal.
 | `http_timeout_secs`      | `10`      | HTTP request timeout (seconds).                                                                                                            |
 | `max_retries`            | `3`       | Maximum retry attempts for HTTP requests.                                                                                                  |
 | `retry_delay_initial_ms` | `100`     | Initial retry delay (milliseconds).                                                                                                        |
-| `retry_delay_max_ms`     | `5,000`   | Maximum retry delay (milliseconds).                                                                                                        |
+| `retry_delay_max_ms`     | `5,000`   | Maximum HTTP retry delay (milliseconds), also used for recovery polls with a 1 ms minimum.                                                 |
 | `account_type`           | `Cash`    | `Cash` for spot or `Margin` for CFM derivatives. See [Execution scope](#execution-scope).                                                  |
 | `default_margin_type`    | `None`    | Default `CoinbaseMarginType` (`Cross` or `Isolated`) applied to derivatives orders. Ignored on Cash.                                       |
 | `default_leverage`       | `None`    | Default leverage applied to derivatives orders. Ignored on Cash.                                                                           |
@@ -787,17 +825,11 @@ The current Python examples show how to pair these configs with
 - Batch submit and batch modify are not available. Only batch cancel is.
 - Sandbox is a static-mock environment (Accounts and Orders endpoints only,
   pre-defined responses, no real market data).
-- The user-channel WebSocket reports cumulative per-order state, not per-trade fills. The exec client derives
-  per-fill quantity, price, and commission from the cumulative delta. Per-trade `trade_id`s are synthesized
-  from `(venue_order_id, cumulative_quantity)`.
+- The user-channel WebSocket reports cumulative per-order state without per-trade IDs. Live fill delivery
+  therefore requires REST order and fill reads.
 
 ### Adapter-side
 
-- **Stable fill identity differs across live and REST paths.** The user
-  channel does not provide Coinbase's per-fill `trade_id`, so live
-  `FillReport` values use IDs synthesized from the venue order ID and
-  cumulative quantity. REST reconciliation uses the venue `trade_id`, so the identifiers can
-  differ across live processing and reconciliation.
 - **One product family per client.** Submission, modification, cancellation,
   and report generation are filtered to the configured product family (spot
   under `AccountType::Cash`; perp + dated futures under `AccountType::Margin`).
@@ -806,11 +838,12 @@ The current Python examples show how to pair these configs with
 - **Position reports are always empty for Cash accounts.** Coinbase spot has
   no positions. Derivatives (CFM) position reports come from `cfm/positions`
   and appear only on Margin clients.
-- **User-channel updates omit `price`, `stop_price`, and `trigger_type`.** For orders this client submitted,
-  the missing fields are patched from a cache populated at `submit_order` time. For external orders (submitted
-  by another process or via the Coinbase UI), the user-channel handler enriches the report on first sight by
-  fetching `/orders/historical/{venue_order_id}` and caching the result. The REST call adds latency to the
-  first user-channel update for an external order. Subsequent updates use the cached enrichment.
+- **User-channel updates omit `price`, `stop_price`, `trigger_type`, and `post_only`.** The client retains
+  submission and modification metadata for its own orders. It enriches external orders with
+  `/orders/historical/{venue_order_id}` when an unfilled, non-terminal update needs a missing price.
+  It retains that enrichment until a closed REST status is published. The lookup adds latency.
+  The metadata supplies external order status reports; known orders use native lifecycle events.
+  See [User WebSocket channel](#user-websocket-channel) for amendments and fill recovery.
 - **Cancel-all and batch-cancel REST list failures are logged only.** If the list-open-orders REST call fails,
   no per-order `OrderCancelRejected` is emitted. Orders remain in `PendingCancel` until the next
   reconciliation recovers them. Mirrors the Bybit adapter pattern.

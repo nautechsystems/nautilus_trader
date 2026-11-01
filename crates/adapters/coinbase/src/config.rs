@@ -165,7 +165,8 @@ pub struct CoinbaseExecutionClientConfig {
     /// Initial retry delay in milliseconds.
     #[builder(default = 100)]
     pub retry_delay_initial_ms: u64,
-    /// Maximum retry delay in milliseconds.
+    /// Maximum HTTP retry delay and recovery polling interval, in milliseconds.
+    /// Recovery polls use at least 1 ms and continue while connected.
     #[builder(default = 5000)]
     pub retry_delay_max_ms: u64,
     /// Selects the execution scope: `Cash` for spot, `Margin` for CFM

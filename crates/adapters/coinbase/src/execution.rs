@@ -16,29 +16,33 @@
 //! Live execution client implementation for the Coinbase Advanced Trade adapter.
 
 use std::{
-    collections::VecDeque,
+    collections::hash_map::Entry,
     future::Future,
-    str::FromStr,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
     clients::ExecutionClient,
+    factories::OrderEventFactory,
     live::runner::get_exec_event_sender,
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+    messages::{
+        ExecutionReport,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
+            SubmitOrder, SubmitOrderList,
+        },
     },
+    msgbus::{self, TypedHandler},
 };
 use nautilus_core::{
-    DurationNanos, Params, UnixNanos,
+    DurationNanos, Params, UUID4, UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -47,16 +51,16 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, LiquiditySide, OmsType, OrderStatus, OrderType, TriggerType},
-    events::OrderDeniedReason,
+    enums::{AccountType, OmsType, OrderStatus, OrderType, TriggerType},
+    events::{OrderDeniedReason, OrderEventAny, OrderUpdated},
     identifiers::{
-        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, Venue,
-        VenueOrderId,
+        AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId,
+        Venue, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
-    orders::Order,
+    orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance, Money, Price, Quantity},
+    types::{AccountBalance, MarginBalance, Price, Quantity},
 };
 use nautilus_network::retry::RetryConfig;
 use parking_lot::Mutex;
@@ -71,31 +75,19 @@ use crate::{
     },
     config::CoinbaseExecutionClientConfig,
     http::{
-        client::CoinbaseHttpClient,
-        error::Error as CoinbaseHttpError,
-        parse::{parse_quantity, parse_ws_cfm_account_state},
+        client::CoinbaseHttpClient, error::Error as CoinbaseHttpError,
+        parse::parse_ws_cfm_account_state,
     },
     websocket::{
         client::CoinbaseWebSocketClient,
         handler::{NautilusWsMessage, UserOrderUpdate},
         messages::WsOrderUpdate,
-        parse::parse_ws_user_event_to_fill_report,
     },
 };
 
 // Coinbase does not publish a formal max for batch_cancel; conservative chunk
 // size mirrors the 100 used by other adapters and keeps request bodies small.
 const BATCH_CANCEL_CHUNK: usize = 100;
-
-// Bounded LRU to drop replayed fills after reconnect. Size follows the
-// pattern used elsewhere; keyed by (venue_order_id, trade_id) as owned strings
-// so the global Ustr arena is not polluted with unique trade IDs.
-const FILL_DEDUP_CAPACITY: usize = 10_000;
-
-// Bounded LRU for per-order cumulative tracking. Terminal events drop entries
-// eagerly; this cap also protects against orders that this client never
-// observes a terminal status for (e.g. cancelled out-of-band).
-const CUMULATIVE_STATE_CAPACITY: usize = 10_000;
 
 // Coinbase spot account is ready as soon as the REST account state lands, but
 // the engine registers it asynchronously; wait up to 30s for that to happen.
@@ -114,8 +106,12 @@ pub struct CoinbaseExecutionClient {
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
     instruments_cache: Arc<AHashMap<String, InstrumentAny>>,
-    fill_dedup: Arc<Mutex<FillDedup>>,
-    cumulative_state: Arc<Mutex<CumulativeStateMap>>,
+    fills_observed: Arc<Mutex<AHashMap<VenueOrderId, AHashSet<TradeId>>>>,
+    fills_pending: Arc<Mutex<AHashMap<VenueOrderId, OrderStatusReport>>>,
+    fills_published: Arc<tokio::sync::Mutex<AHashMap<VenueOrderId, OrderStatusReport>>>,
+    fills_start: Option<UnixNanos>,
+    lifecycle: Arc<Mutex<RecoveryLifecycle>>,
+    order_event_handler: Option<TypedHandler<OrderEventAny>>,
     order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
     // Caches REST-derived metadata for orders this client did not submit
     // (keyed by `venue_order_id`). Populated lazily when the user-channel
@@ -203,6 +199,8 @@ impl CoinbaseExecutionClient {
         let session_tasks = TaskGroup::new();
         let pending_tasks = TaskGroup::new();
 
+        let lifecycle = RecoveryLifecycle::new(core.trader_id, core.account_id, core.account_type);
+
         Ok(Self {
             core,
             clock,
@@ -214,13 +212,78 @@ impl CoinbaseExecutionClient {
             pending_tasks,
             shutdown_errors: Vec::new(),
             instruments_cache: Arc::new(AHashMap::new()),
-            fill_dedup: Arc::new(Mutex::new(FillDedup::new(FILL_DEDUP_CAPACITY))),
-            cumulative_state: Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-                CUMULATIVE_STATE_CAPACITY,
-            ))),
+            fills_observed: Arc::new(Mutex::new(AHashMap::new())),
+            fills_pending: Arc::new(Mutex::new(AHashMap::new())),
+            fills_published: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
+            fills_start: None,
+            lifecycle: Arc::new(Mutex::new(lifecycle)),
+            order_event_handler: None,
             order_contexts: Arc::new(Mutex::new(AHashMap::new())),
             external_order_contexts: Arc::new(Mutex::new(AHashMap::new())),
         })
+    }
+
+    fn order_recovery(&self) -> UserOrderRecovery {
+        UserOrderRecovery {
+            http_client: self.http_client.clone(),
+            emitter: self.emitter.clone(),
+            instruments: Arc::clone(&self.instruments_cache),
+            observed: Arc::clone(&self.fills_observed),
+            pending: Arc::clone(&self.fills_pending),
+            published: Arc::clone(&self.fills_published),
+            order_contexts: Arc::clone(&self.order_contexts),
+            external_order_contexts: Arc::clone(&self.external_order_contexts),
+            start: self.fills_start.unwrap_or_default(),
+            lifecycle: Arc::clone(&self.lifecycle),
+        }
+    }
+
+    fn subscribe_order_events(&mut self) {
+        if self.order_event_handler.is_some() {
+            return;
+        }
+
+        let core = self.core.clone();
+        let lifecycle = Arc::clone(&self.lifecycle);
+        let emitter = self.emitter.clone();
+
+        let handler = TypedHandler::from(move |event: &OrderEventAny| {
+            if event.instrument_id().venue != core.venue
+                || matches!(event, OrderEventAny::Initialized(_))
+            {
+                return;
+            }
+
+            let order = core
+                .cache()
+                .order(&event.client_order_id())
+                .map(|order| order.clone());
+
+            if let Some(order) = order
+                && order.account_id().is_none_or(|id| id == core.account_id)
+            {
+                let mut lifecycle = lifecycle.lock();
+                lifecycle.track(order);
+                if let Err(e) = lifecycle.dispatch(&emitter) {
+                    log::warn!("Retaining Coinbase lifecycle recovery: {e}");
+                }
+            }
+        });
+
+        msgbus::subscribe_order_events("events.order.*".into(), handler.clone(), Some(10));
+        self.order_event_handler = Some(handler);
+
+        let cache = self.core.cache();
+        let mut lifecycle = self.lifecycle.lock();
+
+        for order in cache.orders_refs(Some(&self.core.venue), None, None, None, None) {
+            if order
+                .account_id()
+                .is_none_or(|id| id == self.core.account_id)
+            {
+                lifecycle.track(order.clone());
+            }
+        }
     }
 
     fn spawn_task<F>(&self, description: &'static str, fut: F)
@@ -481,6 +544,11 @@ impl ExecutionClient for CoinbaseExecutionClient {
             self.core.set_instruments_initialized();
         }
 
+        if self.fills_start.is_none() {
+            let time = self.http_client.request_server_time().await?;
+            self.fills_start = Some(time.saturating_sub(DurationNanos::from_millis(1)));
+        }
+
         let session_result = async {
             self.ws_user.set_account_id(self.core.account_id).await;
             self.ws_user.connect().await?;
@@ -499,69 +567,15 @@ impl ExecutionClient for CoinbaseExecutionClient {
                     .context("failed to subscribe to Coinbase futures_balance_summary channel")?;
             }
 
-            if let Some(mut rx) = self.ws_user.take_out_rx() {
-                let fill_dedup = Arc::clone(&self.fill_dedup);
-                let cumulative_state = Arc::clone(&self.cumulative_state);
-                let order_contexts = Arc::clone(&self.order_contexts);
-                let external_order_contexts = Arc::clone(&self.external_order_contexts);
-                let emitter = self.emitter.clone();
-                let http_client = self.http_client.clone();
-                let account_id = self.core.account_id;
+            if let Some(rx) = self.ws_user.take_out_rx() {
+                let recovery = self.order_recovery();
+                let retry_interval = Duration::from_millis(self.config.retry_delay_max_ms.max(1));
+
                 let clock = self.clock;
                 let is_margin = self.is_margin();
-
                 self.session_tasks.spawn(async move {
-                while let Some(message) = rx.recv().await {
-                    match message {
-                        NautilusWsMessage::UserOrder(carrier) => {
-                            handle_user_order_update(
-                                *carrier,
-                                &emitter,
-                                &fill_dedup,
-                                &cumulative_state,
-                                &order_contexts,
-                                &external_order_contexts,
-                                &http_client,
-                                account_id,
-                            )
-                            .await;
-                        }
-                        NautilusWsMessage::FuturesBalanceSummary(summary) => {
-                            let ts = clock.get_time_ns();
-                            match parse_ws_cfm_account_state(&summary, account_id, ts, ts) {
-                                Ok(state) => emitter.send_account_state(state),
-                                Err(e) => log::warn!(
-                                    "Failed to parse futures_balance_summary into AccountState: {e}"
-                                ),
-                            }
-                        }
-                        NautilusWsMessage::Reconnected => {
-                            log::info!("Coinbase user WebSocket reconnected");
-                            // Re-fetch account state so any balance change
-                            // during the disconnect window is picked up. The
-                            // margin flavor targets the CFM summary so the
-                            // account type matches the registered Margin
-                            // account.
-                            let refresh = if is_margin {
-                                http_client.request_cfm_account_state(account_id).await
-                            } else {
-                                http_client.request_account_state(account_id).await
-                            };
-
-                            match refresh {
-                                Ok(state) => emitter.send_account_state(state),
-                                Err(e) => {
-                                    log::warn!("Failed to refresh account state on reconnect: {e}");
-                                }
-                            }
-                        }
-                        NautilusWsMessage::Error(err) => {
-                            log::warn!("Coinbase user WebSocket error: {err}");
-                        }
-                        _ => {}
-                    }
-                }
-            })?;
+                    recovery.run(rx, retry_interval, clock, is_margin).await;
+                })?;
             }
 
             let account_state = if self.is_margin() {
@@ -619,6 +633,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
 
         let sender = get_exec_event_sender();
         self.emitter.set_sender(sender);
+        self.subscribe_order_events();
         self.core.set_started();
 
         log::info!(
@@ -634,6 +649,10 @@ impl ExecutionClient for CoinbaseExecutionClient {
     fn stop(&mut self) -> anyhow::Result<()> {
         if self.core.is_stopped() {
             return Ok(());
+        }
+
+        if let Some(handler) = self.order_event_handler.take() {
+            msgbus::unsubscribe_order_events("events.order.*".into(), &handler);
         }
 
         self.core.set_stopped();
@@ -670,20 +689,26 @@ impl ExecutionClient for CoinbaseExecutionClient {
     }
 
     fn query_order(&self, cmd: QueryOrder) -> anyhow::Result<()> {
-        let http_client = self.http_client.clone();
-        let account_id = self.core.account_id;
-        let emitter = self.emitter.clone();
-        let client_order_id = Some(cmd.client_order_id);
-        let venue_order_id = cmd.venue_order_id;
+        if let Some(order) = self.core.cache().order(&cmd.client_order_id) {
+            self.lifecycle.lock().track(order.clone());
+        }
 
+        let recovery = self.order_recovery();
         self.spawn_task("query_order", async move {
-            match http_client
-                .request_order_status_report(account_id, client_order_id, venue_order_id)
-                .await
-            {
-                Ok(report) => emitter.send_order_status_report(report),
-                Err(e) => log::warn!("Failed to query order: {e}"),
-            }
+            let report = recovery
+                .http_client
+                .request_order_status_report(
+                    recovery.emitter.account_id(),
+                    Some(cmd.client_order_id),
+                    cmd.venue_order_id,
+                )
+                .await?;
+            recovery.queue(report.clone());
+            recovery
+                .lifecycle
+                .lock()
+                .accept(&report, &recovery.emitter)?;
+            recovery.retry().await;
             Ok(())
         });
 
@@ -881,12 +906,12 @@ impl ExecutionClient for CoinbaseExecutionClient {
             return Ok(());
         }
 
+        self.lifecycle.lock().track(order.clone());
         let instrument_id = order.instrument_id();
 
         // The user channel does not need a product-wide alias registration:
         // `order_contexts` (keyed by `client_order_id`) records the
-        // submitted `product_id` and `handle_user_order_update` rewrites the
-        // report's instrument id from there. A product-wide map would
+        // submitted `product_id` to restore on working user-channel reports. A product-wide map would
         // misroute external or canonical-side orders that share the same
         // wire `product_id`.
 
@@ -916,7 +941,7 @@ impl ExecutionClient for CoinbaseExecutionClient {
         // response can still patch their reports. Coinbase's user channel does
         // not echo `price`, `stop_price`, `trigger_type`, or whether the order
         // is `post_only`, so without this the engine reconciler would clear
-        // the local price and synthesized fills would lack `LiquiditySide`.
+        // the local price or lose maker-only semantics.
         {
             let mut map = self.order_contexts.lock();
             map.insert(
@@ -1506,386 +1531,628 @@ fn coinbase_http_error(err: &anyhow::Error) -> Option<&CoinbaseHttpError> {
         .find_map(|cause| cause.downcast_ref::<CoinbaseHttpError>())
 }
 
-// Processes a single user-channel order update: emits the status report,
-// synthesizes a FillReport from the cumulative delta, and deduplicates
-// replayed fills by (venue_order_id, trade_id).
-#[allow(clippy::too_many_arguments)]
-async fn handle_user_order_update(
-    carrier: UserOrderUpdate,
-    emitter: &ExecutionEventEmitter,
-    fill_dedup: &Arc<Mutex<FillDedup>>,
-    cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
-    order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
-    external_order_contexts: &Arc<Mutex<AHashMap<String, OrderContext>>>,
-    http_client: &CoinbaseHttpClient,
-    account_id: AccountId,
-) {
-    // Coinbase's user channel does not echo `price`, `stop_price`,
-    // `trigger_type`, or `post_only`. Resolve an `OrderContext` (cached
-    // from `submit_order` for orders this client placed, or fetched from
-    // REST and cached for external orders) so the report can be patched
-    // before reaching the engine reconciler.
-    let context = resolve_order_context(
-        &carrier.update,
-        carrier.report.order_type,
-        carrier.report.price.is_none(),
-        order_contexts,
-        external_order_contexts,
-        http_client,
-        account_id,
-    )
-    .await;
+#[derive(Debug)]
+struct UserOrderRecovery {
+    http_client: CoinbaseHttpClient,
+    emitter: ExecutionEventEmitter,
+    instruments: Arc<AHashMap<String, InstrumentAny>>,
+    observed: Arc<Mutex<AHashMap<VenueOrderId, AHashSet<TradeId>>>>,
+    pending: Arc<Mutex<AHashMap<VenueOrderId, OrderStatusReport>>>,
+    published: Arc<tokio::sync::Mutex<AHashMap<VenueOrderId, OrderStatusReport>>>,
+    order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
+    external_order_contexts: Arc<Mutex<AHashMap<String, OrderContext>>>,
+    start: UnixNanos,
+    lifecycle: Arc<Mutex<RecoveryLifecycle>>,
+}
 
-    let is_terminal = carrier.update.status.is_terminal();
-    let client_order_id = carrier.update.client_order_id.clone();
-    let venue_order_id = carrier.update.order_id.clone();
+impl UserOrderRecovery {
+    async fn run(
+        &self,
+        mut rx: tokio::sync::mpsc::UnboundedReceiver<NautilusWsMessage>,
+        retry_interval: Duration,
+        clock: &'static AtomicTime,
+        is_margin: bool,
+    ) {
+        let mut interval = tokio::time::interval(retry_interval);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
-    process_user_order_update(
-        carrier,
-        context,
-        emitter,
-        fill_dedup,
-        cumulative_state,
-        Some(http_client),
-    );
+        loop {
+            tokio::select! {
+                message = rx.recv() => {
+                    let Some(message) = message else { break };
+                    match message {
+                        NautilusWsMessage::UserOrder(carrier) => self.handle_update(*carrier).await,
+                        NautilusWsMessage::FuturesBalanceSummary(summary) => {
+                            let ts = clock.get_time_ns();
+                            let account_id = self.emitter.account_id();
+                            match parse_ws_cfm_account_state(&summary, account_id, ts, ts) {
+                                Ok(state) => self.emitter.send_account_state(state),
+                                Err(e) => log::warn!("Failed to parse futures_balance_summary into AccountState: {e}"),
+                            }
+                        }
+                        NautilusWsMessage::Reconnected => {
+                            log::info!("Coinbase user WebSocket reconnected");
+                            let account_id = self.emitter.account_id();
+                            let refresh = if is_margin {
+                                self.http_client.request_cfm_account_state(account_id).await
+                            } else {
+                                self.http_client.request_account_state(account_id).await
+                            };
 
-    // Drop submit-time / enrichment metadata once the order reaches a
-    // terminal state so long-running clients do not accumulate one entry
-    // per order. Mirrors the cumulative-state cleanup in
-    // `process_user_order_update`.
-    if is_terminal {
-        if !client_order_id.is_empty() {
-            order_contexts.lock().remove(&client_order_id);
+                            match refresh {
+                                Ok(state) => self.emitter.send_account_state(state),
+                                Err(e) => log::warn!("Failed to refresh account state on reconnect: {e}"),
+                            }
+                        }
+                        NautilusWsMessage::Error(e) => log::warn!("Coinbase user WebSocket error: {e}"),
+                        _ => {}
+                    }
+                }
+                _ = interval.tick() => {
+                    self.retry().await;
+                }
+            }
         }
-        external_order_contexts.lock().remove(&venue_order_id);
+    }
+
+    async fn handle_update(&self, carrier: UserOrderUpdate) {
+        let needs_fills =
+            carrier.report.filled_qty.is_positive() || carrier.update.status.is_terminal();
+        let is_snapshot = carrier.is_snapshot;
+        let own_context = self
+            .order_contexts
+            .lock()
+            .contains_key(&carrier.update.client_order_id);
+        if needs_fills {
+            self.queue((*carrier.report).clone());
+            if let Err(e) = self.lifecycle.lock().accept(&carrier.report, &self.emitter) {
+                log::warn!("Retaining Coinbase acceptance recovery: {e}");
+            }
+        }
+
+        if needs_fills && !own_context {
+            self.retry().await;
+            return;
+        }
+
+        let context = resolve_order_context(
+            &carrier.update,
+            carrier.report.order_type,
+            carrier.report.price.is_none(),
+            &self.order_contexts,
+            &self.external_order_contexts,
+            &self.http_client,
+            self.emitter.account_id(),
+        )
+        .await;
+
+        if let Some(report) = prepare_user_order_report(carrier, context) {
+            if !is_snapshot
+                && own_context
+                && let Err(e) = self.lifecycle.lock().update(&report, &self.emitter)
+            {
+                log::warn!("Failed to publish Coinbase amendment: {e}");
+            }
+
+            if !needs_fills && let Err(e) = self.publish(&[(report, Vec::new())]) {
+                log::warn!("Failed to publish Coinbase acceptance: {e}");
+            }
+        }
+
+        if needs_fills {
+            self.retry().await;
+        }
+    }
+
+    async fn retry(&self) {
+        if let Err(e) = self.discover().await {
+            log::warn!("Coinbase fill recovery scan remains pending: {e}");
+            return;
+        }
+
+        if let Err(e) = self.recover().await {
+            log::warn!("Retaining pending Coinbase recovery: {e}");
+        }
+    }
+
+    async fn discover(&self) -> anyhow::Result<()> {
+        let fills = self.http_client.request_fill_ids(self.start).await?;
+        {
+            let mut observed = self.observed.lock();
+
+            for (venue_order_id, instrument_id, trade_id) in fills {
+                if self.instruments.contains_key(instrument_id.symbol.as_str()) {
+                    observed.entry(venue_order_id).or_default().insert(trade_id);
+                }
+            }
+        }
+
+        let mut reports: AHashMap<_, _> = self
+            .http_client
+            .request_order_status_reports(self.emitter.account_id(), None, false, None, None, None)
+            .await?
+            .into_iter()
+            .filter(|report| {
+                self.instruments
+                    .contains_key(report.instrument_id.symbol.as_str())
+                    && report.filled_qty.is_positive()
+                    && report.ts_last >= self.start
+            })
+            .map(|report| (report.venue_order_id, report))
+            .collect();
+
+        let orders: Vec<_> = self.observed.lock().keys().copied().collect();
+
+        for venue_order_id in orders {
+            if let Entry::Vacant(entry) = reports.entry(venue_order_id) {
+                let report = self
+                    .http_client
+                    .request_order_status_report(
+                        self.emitter.account_id(),
+                        None,
+                        Some(venue_order_id),
+                    )
+                    .await?;
+                entry.insert(report);
+            }
+        }
+
+        for report in reports.into_values() {
+            self.queue(report);
+        }
+
+        Ok(())
+    }
+
+    fn queue(&self, report: OrderStatusReport) {
+        let mut pending = self.pending.lock();
+        let entry = pending
+            .entry(report.venue_order_id)
+            .or_insert_with(|| report.clone());
+        if report.filled_qty > entry.filled_qty
+            || (report.filled_qty == entry.filled_qty && !entry.order_status.is_closed())
+        {
+            *entry = report;
+        }
+    }
+
+    async fn recover(&self) -> anyhow::Result<()> {
+        let mut published = self.published.lock().await;
+        let targets = self.pending.lock().clone();
+        let mut reports = Vec::with_capacity(targets.len());
+
+        for (venue_order_id, expected) in &targets {
+            let report = self
+                .http_client
+                .request_order_status_report(self.emitter.account_id(), None, Some(*venue_order_id))
+                .await?;
+            anyhow::ensure!(
+                self.instruments
+                    .contains_key(report.instrument_id.symbol.as_str()),
+                "order instrument is outside the configured product family"
+            );
+            anyhow::ensure!(
+                report.filled_qty >= expected.filled_qty
+                    && (!expected.order_status.is_closed() || report.order_status.is_closed()),
+                "REST order state has not reached the user-channel update"
+            );
+
+            if let Some(prior) = published.get(venue_order_id) {
+                anyhow::ensure!(
+                    report.filled_qty >= prior.filled_qty
+                        && (!prior.order_status.is_closed() || report.order_status.is_closed()),
+                    "REST order state precedes published recovery"
+                );
+            }
+
+            let fills = if report.filled_qty.is_positive()
+                || self.observed.lock().contains_key(venue_order_id)
+            {
+                self.http_client
+                    .request_fill_reports(
+                        self.emitter.account_id(),
+                        None,
+                        Some(*venue_order_id),
+                        None,
+                        None,
+                        None,
+                    )
+                    .await?
+            } else {
+                Vec::new()
+            };
+
+            let fills = prepare_order_fills(&report, fills)?;
+            reports.push((report, fills));
+        }
+
+        let mut pending = self.pending.lock();
+        let mut observed = self.observed.lock();
+        anyhow::ensure!(
+            pending.len() == targets.len()
+                && targets
+                    .iter()
+                    .all(|(id, target)| pending.get(id) == Some(target)),
+            "recovery target changed while reading REST"
+        );
+
+        let trades: AHashMap<_, AHashSet<_>> = reports
+            .iter()
+            .map(|(report, fills)| {
+                (
+                    report.venue_order_id,
+                    fills.iter().map(|fill| fill.trade_id).collect(),
+                )
+            })
+            .collect();
+
+        anyhow::ensure!(
+            observed
+                .iter()
+                .all(|(id, ids)| trades.get(id).is_some_and(|trades| ids.is_subset(trades))),
+            "REST fills have not reached discovered trades"
+        );
+        self.publish(&reports)?;
+        observed.clear();
+
+        for (report, _) in reports {
+            let venue_order_id = report.venue_order_id;
+            if pending.get(&venue_order_id) == targets.get(&venue_order_id) {
+                pending.remove(&venue_order_id);
+            }
+
+            if report.order_status.is_closed() {
+                if let Some(client_order_id) = report.client_order_id {
+                    self.order_contexts.lock().remove(client_order_id.as_str());
+                }
+
+                self.external_order_contexts
+                    .lock()
+                    .remove(venue_order_id.as_str());
+            }
+
+            published.insert(venue_order_id, report);
+        }
+
+        Ok(())
+    }
+
+    fn publish(&self, reports: &[(OrderStatusReport, Vec<FillReport>)]) -> anyhow::Result<()> {
+        let mut external = Vec::new();
+        {
+            let mut lifecycle = self.lifecycle.lock();
+            for (report, _) in reports {
+                if lifecycle.order(report).is_some() {
+                    lifecycle
+                        .pending
+                        .insert(report.venue_order_id, report.clone());
+                } else {
+                    // Establish order context without inferring fills before the real trades
+                    let mut accepted = report.clone();
+                    if accepted.order_status != OrderStatus::Rejected {
+                        accepted.order_status = OrderStatus::Accepted;
+                    }
+
+                    accepted.filled_qty = Quantity::zero(report.filled_qty.precision);
+                    accepted.avg_px = None;
+                    accepted.ts_last = accepted.ts_accepted;
+                    self.emitter
+                        .try_send_execution_report(ExecutionReport::Order(Box::new(accepted)))?;
+                    external.push(report);
+                }
+            }
+
+            lifecycle.dispatch(&self.emitter)?;
+        }
+
+        let mut fills: Vec<_> = reports.iter().flat_map(|(_, fills)| fills).collect();
+        fills.sort_by_key(|fill| (fill.ts_event, fill.trade_id, fill.venue_order_id));
+        for fill in fills {
+            self.emitter
+                .try_send_execution_report(ExecutionReport::Fill(Box::new(fill.clone())))?;
+        }
+
+        for report in external {
+            self.emitter
+                .try_send_execution_report(ExecutionReport::Order(Box::new(report.clone())))?;
+        }
+
+        Ok(())
     }
 }
 
-// Sync portion of the user-channel update handler. Split from
-// `handle_user_order_update` so tests can drive it without a tokio runtime;
-// the only async dependency is REST enrichment in `resolve_order_context`.
-fn process_user_order_update(
+#[derive(Debug)]
+struct RecoveryLifecycle {
+    factory: OrderEventFactory,
+    orders: AHashMap<ClientOrderId, OrderAny>,
+    venue_ids: AHashMap<VenueOrderId, ClientOrderId>,
+    pending: AHashMap<VenueOrderId, OrderStatusReport>,
+    accepted: AHashSet<VenueOrderId>,
+}
+
+impl RecoveryLifecycle {
+    fn new(trader_id: TraderId, account_id: AccountId, account_type: AccountType) -> Self {
+        Self {
+            factory: OrderEventFactory::new(trader_id, account_id, account_type, None),
+            orders: AHashMap::new(),
+            venue_ids: AHashMap::new(),
+            pending: AHashMap::new(),
+            accepted: AHashSet::new(),
+        }
+    }
+
+    fn track(&mut self, order: OrderAny) {
+        if let Some(venue_order_id) = order.venue_order_id() {
+            if !matches!(
+                order.status(),
+                OrderStatus::Initialized
+                    | OrderStatus::Submitted
+                    | OrderStatus::PendingUpdate
+                    | OrderStatus::PendingCancel
+            ) {
+                self.accepted.remove(&venue_order_id);
+            }
+
+            self.venue_ids
+                .insert(venue_order_id, order.client_order_id());
+        }
+
+        self.orders.insert(order.client_order_id(), order);
+    }
+
+    fn dispatch(&mut self, emitter: &ExecutionEventEmitter) -> anyhow::Result<()> {
+        let reports: Vec<_> = self.pending.values().cloned().collect();
+        for report in reports {
+            if self.dispatch_order(&report, emitter)? {
+                self.pending.remove(&report.venue_order_id);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn dispatch_order(
+        &mut self,
+        report: &OrderStatusReport,
+        emitter: &ExecutionEventEmitter,
+    ) -> anyhow::Result<bool> {
+        self.accept(report, emitter)?;
+
+        let Some(order) = self.order(report).cloned() else {
+            return Ok(false);
+        };
+
+        if order.is_closed() {
+            return Ok(true);
+        }
+
+        let factory = &self.factory;
+        let now = get_atomic_clock_realtime().get_time_ns();
+
+        if (order.order_type() == OrderType::Market
+            && order.is_quote_quantity()
+            && report.order_status.is_closed()
+            && report.filled_qty.is_positive())
+            || (!order.is_quote_quantity() && report.filled_qty > order.quantity())
+            || (report.order_status == OrderStatus::Filled && report.quantity != order.quantity())
+        {
+            let updated = OrderUpdated::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                report.quantity,
+                UUID4::new(),
+                report.ts_last,
+                now,
+                true,
+                Some(report.venue_order_id),
+                Some(emitter.account_id()),
+                None,
+                None,
+                None,
+                false,
+            );
+            emitter.try_send_order_event(OrderEventAny::Updated(updated))?;
+        }
+
+        if order.filled_qty() < report.filled_qty {
+            return Ok(false);
+        }
+
+        let event = match report.order_status {
+            OrderStatus::Canceled => factory.generate_order_canceled(
+                &order,
+                Some(report.venue_order_id),
+                report.ts_last,
+                now,
+            ),
+            OrderStatus::Expired => factory.generate_order_expired(
+                &order,
+                Some(report.venue_order_id),
+                report.ts_last,
+                now,
+            ),
+            OrderStatus::Rejected => factory.generate_order_rejected(
+                &order,
+                report.cancel_reason.as_deref().unwrap_or("rejected"),
+                report.ts_last,
+                now,
+                false,
+            ),
+            _ => return Ok(true),
+        };
+
+        emitter.try_send_order_event(event)?;
+        Ok(true)
+    }
+
+    fn accept(
+        &mut self,
+        report: &OrderStatusReport,
+        emitter: &ExecutionEventEmitter,
+    ) -> anyhow::Result<()> {
+        let Some(order) = self.order(report) else {
+            return Ok(());
+        };
+
+        let factory = &self.factory;
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let awaiting_acceptance = matches!(
+            order.status(),
+            OrderStatus::Initialized | OrderStatus::Submitted
+        );
+
+        if awaiting_acceptance
+            && report.order_status != OrderStatus::Rejected
+            && !self.accepted.contains(&report.venue_order_id)
+        {
+            let event = factory.generate_order_accepted(
+                order,
+                report.venue_order_id,
+                report.ts_accepted,
+                now,
+            );
+            emitter.try_send_order_event(event)?;
+            self.accepted.insert(report.venue_order_id);
+        }
+
+        Ok(())
+    }
+
+    fn update(
+        &self,
+        report: &OrderStatusReport,
+        emitter: &ExecutionEventEmitter,
+    ) -> anyhow::Result<()> {
+        let Some(order) = self.order(report) else {
+            return Ok(());
+        };
+
+        if order.is_closed()
+            || (order.order_type() == OrderType::Market && order.is_quote_quantity())
+            || (order.quantity() == report.quantity
+                && order.price() == report.price
+                && order.trigger_price() == report.trigger_price)
+        {
+            return Ok(());
+        }
+
+        let factory = &self.factory;
+        let now = get_atomic_clock_realtime().get_time_ns();
+        let event = factory.generate_order_updated(
+            order,
+            report.venue_order_id,
+            report.quantity,
+            report.price,
+            report.trigger_price,
+            None,
+            report.ts_last,
+            now,
+        );
+        emitter.try_send_order_event(event)
+    }
+
+    fn order(&self, report: &OrderStatusReport) -> Option<&OrderAny> {
+        report
+            .client_order_id
+            .and_then(|id| self.orders.get(&id))
+            .or_else(|| {
+                self.venue_ids
+                    .get(&report.venue_order_id)
+                    .and_then(|id| self.orders.get(id))
+            })
+    }
+}
+
+fn prepare_order_fills(
+    report: &OrderStatusReport,
+    fills: Vec<FillReport>,
+) -> anyhow::Result<Vec<FillReport>> {
+    // Quote-sized market orders have no final base quantity before terminal REST state
+    anyhow::ensure!(
+        report.order_type != OrderType::Market
+            || report.order_status.is_closed()
+            || report.quantity > report.filled_qty,
+        "market order base quantity is not final"
+    );
+    let mut unique = AHashMap::new();
+
+    for mut fill in fills {
+        anyhow::ensure!(
+            fill.account_id == report.account_id
+                && fill.venue_order_id == report.venue_order_id
+                && fill.instrument_id == report.instrument_id
+                && report.order_side == Some(fill.order_side),
+            "fill identity does not match the order report"
+        );
+        fill.client_order_id = report.client_order_id;
+        unique.entry(fill.trade_id).or_insert(fill);
+    }
+
+    let mut fills: Vec<_> = unique.into_values().collect();
+    fills.sort_by_key(|fill| (fill.ts_event, fill.trade_id));
+
+    let quantity = fills.iter().try_fold(Decimal::ZERO, |quantity, fill| {
+        quantity
+            .checked_add(fill.last_qty.as_decimal())
+            .context("fill quantity overflow")
+    })?;
+
+    anyhow::ensure!(
+        quantity == report.filled_qty.as_decimal(),
+        "REST fills do not cover the order filled quantity"
+    );
+    Ok(fills)
+}
+
+fn prepare_user_order_report(
     carrier: UserOrderUpdate,
     context: Option<OrderContext>,
-    emitter: &ExecutionEventEmitter,
-    fill_dedup: &Arc<Mutex<FillDedup>>,
-    cumulative_state: &Arc<Mutex<CumulativeStateMap>>,
-    http_client: Option<&CoinbaseHttpClient>,
-) {
+) -> Option<OrderStatusReport> {
     let UserOrderUpdate {
         mut report,
         update,
-        mut instrument,
         is_snapshot,
-        ts_event,
-        ts_init,
+        ..
     } = carrier;
-
-    let mut fill_liquidity_side = LiquiditySide::NoLiquiditySide;
-    let have_order_contexts = context.is_some();
-    let mut publish_instrument_id: Option<InstrumentId> = None;
-
+    let have_context = context.is_some();
     if let Some(meta) = context {
-        if report.price.is_none() && meta.price.is_some() {
+        if report.price.is_none() {
             report.price = meta.price;
         }
 
-        if report.trigger_price.is_none() && meta.trigger_price.is_some() {
+        if report.trigger_price.is_none() {
             report.trigger_price = meta.trigger_price;
         }
 
-        if report.trigger_type.is_none() && meta.trigger_type.is_some() {
+        if report.trigger_type.is_none() {
             report.trigger_type = meta.trigger_type;
         }
 
-        if meta.post_only {
-            // `post_only` orders are guaranteed `Maker`. Non-post-only
-            // orders cannot be classified from the user channel alone so
-            // they keep `NoLiquiditySide` until the fill is reconciled
-            // against the REST `/orders/historical/fills` endpoint.
-            fill_liquidity_side = LiquiditySide::Maker;
-            // The user channel does not echo `post_only`, so propagate the
-            // cached flag to the OSR to preserve maker-only semantics for
-            // any downstream order reconstruction.
-            report.post_only = true;
-        }
-
-        if let Some(submitted) = meta.submitted_product_id
-            && submitted != update.product_id
-        {
-            let submitted_id = InstrumentId::new(Symbol::new(submitted), *COINBASE_VENUE);
-            report.instrument_id = submitted_id;
-            publish_instrument_id = Some(submitted_id);
-            // Replace the carrier's instrument with the submitted-side one
-            // (looked up from the http client's bootstrapped cache) so the
-            // FillReport's commission currency, price/size precision, and
-            // any other instrument-derived field reflect the actual order's
-            // instrument rather than the canonical wire alias.
-            if let Some(http) = http_client
-                && let Some(submitted_instrument) = http.instruments().get_cloned(&submitted_id)
-            {
-                instrument = submitted_instrument;
-            }
+        report.post_only = meta.post_only;
+        if let Some(submitted) = meta.submitted_product_id {
+            report.instrument_id = InstrumentId::new(Symbol::new(submitted), *COINBASE_VENUE);
         }
     }
 
-    let size_precision = instrument.size_precision();
-
-    let cumulative_qty = if update.cumulative_quantity.is_empty() {
-        Quantity::zero(size_precision)
-    } else {
-        match parse_quantity(&update.cumulative_quantity, size_precision) {
-            Ok(q) => q,
-            Err(e) => {
-                log::warn!(
-                    "Failed to parse cumulative_quantity for order {}: {e}",
-                    update.order_id
-                );
-                return;
-            }
-        }
-    };
-
-    let cumulative_fees = if update.total_fees.is_empty() {
-        Decimal::ZERO
-    } else {
-        match Decimal::from_str(&update.total_fees) {
-            Ok(d) => d,
-            Err(e) => {
-                log::warn!(
-                    "Failed to parse total_fees for order {}: {e}",
-                    update.order_id
-                );
-                return;
-            }
-        }
-    };
-
-    let cumulative_avg = if update.avg_price.is_empty() {
-        Decimal::ZERO
-    } else {
-        match Decimal::from_str(&update.avg_price) {
-            Ok(d) => d,
-            Err(e) => {
-                log::warn!(
-                    "Failed to parse avg_price for order {}: {e}",
-                    update.order_id
-                );
-                return;
-            }
-        }
-    };
-    let order_id = update.order_id.clone();
-
-    let is_terminal = update.status.is_terminal();
-
-    // Snapshot previous state under lock; update immediately to avoid races
-    // between concurrent handler tasks for the same order.
-    let (delta_qty, delta_fees, last_fill_price_decimal, restored_quantity) = {
-        let mut state = cumulative_state.lock();
-        let entry = state.entry_or_default(&order_id);
-        let prev_qty = entry
-            .filled_qty
-            .unwrap_or_else(|| Quantity::zero(size_precision));
-        let prev_fees = entry.total_fees;
-        let prev_avg = entry.avg_price;
-
-        // Track the max-observed total quantity. The freshly-built report has
-        // quantity = cum+leaves which is correct for working orders; on
-        // terminal events Coinbase zeroes leaves_quantity, so we use the
-        // stored max instead.
-        let observed_quantity = report.quantity;
-        let stored_quantity = match entry.quantity {
-            Some(q) if q >= observed_quantity => q,
-            _ => observed_quantity,
-        };
-        entry.quantity = Some(stored_quantity);
-
-        // Snapshots restate the cumulative state of pre-existing open orders.
-        // Treat them as the new baseline (so subsequent updates compute correct
-        // deltas) but never synthesize a fill from them.
-        if is_snapshot {
-            entry.filled_qty = Some(cumulative_qty);
-            entry.total_fees = cumulative_fees;
-            entry.avg_price = cumulative_avg;
-
-            if is_terminal {
-                state.remove(&order_id);
-            }
-            (
-                Quantity::zero(size_precision),
-                Decimal::ZERO,
-                Decimal::ZERO,
-                stored_quantity,
-            )
-        } else {
-            let delta_qty = if cumulative_qty > prev_qty {
-                cumulative_qty - prev_qty
-            } else {
-                Quantity::zero(size_precision)
-            };
-            let delta_fees = cumulative_fees - prev_fees;
-
-            // Derive per-fill price from the cumulative notional delta:
-            //   last_px = (avg_now * qty_now - avg_prev * qty_prev) / delta_qty
-            // Falls back to the cumulative avg on the first fill (where
-            // delta_qty equals qty_now and prev_notional is zero).
-            let last_fill_price_decimal = if delta_qty.is_positive() {
-                let now_notional = cumulative_avg * cumulative_qty.as_decimal();
-                let prev_notional = prev_avg * prev_qty.as_decimal();
-                let delta_notional = now_notional - prev_notional;
-                let delta_qty_dec = delta_qty.as_decimal();
-                if delta_qty_dec.is_zero() {
-                    cumulative_avg
-                } else {
-                    delta_notional / delta_qty_dec
-                }
-            } else {
-                Decimal::ZERO
-            };
-
-            entry.filled_qty = Some(cumulative_qty);
-            entry.total_fees = cumulative_fees;
-            entry.avg_price = cumulative_avg;
-
-            if is_terminal {
-                state.remove(&order_id);
-            }
-
-            (
-                delta_qty,
-                delta_fees,
-                last_fill_price_decimal,
-                stored_quantity,
-            )
-        }
-    };
-
-    // Restore the original order quantity on terminal events when the venue's
-    // zeroed leaves_quantity would otherwise collapse the report to filled_qty.
-    if is_terminal && report.quantity < restored_quantity {
-        report.quantity = restored_quantity;
-    }
-
-    // Emit the synthesized FillReport before the OrderStatusReport when there
-    // is one. The engine's reconciler treats an OrderStatusReport with status
-    // `Filled` / `PartiallyFilled` as authoritative for `filled_qty` and will
-    // *infer* a synthetic fill when the local order is behind the report. If
-    // the OrderStatusReport landed first, that inferred fill would race ours
-    // and ours would then be rejected as an overfill.
-    let synthesized_fill = if delta_qty.is_positive()
-        && last_fill_price_decimal.is_sign_positive()
-        && !last_fill_price_decimal.is_zero()
-    {
-        let price_precision = instrument.price_precision();
-        match Price::from_decimal_dp(last_fill_price_decimal, price_precision) {
-            Ok(last_px) => {
-                // Coinbase's user channel reports cumulative state and does
-                // not assign a per-fill trade id, so we synthesize one.
-                // `TradeId` is a 36-char stack string; a full venue UUID
-                // (36 chars) plus the cumulative_qty would overflow. Use the
-                // first 8 chars of the venue UUID (already random hex) as a
-                // stable per-order discriminator.
-                let order_id_short = &update.order_id[..update.order_id.len().min(8)];
-                let trade_id = TradeId::new(format!("{order_id_short}-{cumulative_qty}"));
-                let trade_id_str = trade_id.as_str().to_string();
-
-                let is_new = {
-                    let mut dedup = fill_dedup.lock();
-                    dedup.insert((update.order_id.clone(), trade_id_str))
-                };
-
-                if is_new {
-                    let commission_currency = instrument.quote_currency();
-                    match Money::from_decimal(delta_fees, commission_currency) {
-                        Ok(commission) => match parse_ws_user_event_to_fill_report(
-                            &update,
-                            delta_qty,
-                            last_px,
-                            commission,
-                            trade_id,
-                            &instrument,
-                            emitter.account_id(),
-                            fill_liquidity_side,
-                            ts_event,
-                            ts_init,
-                        ) {
-                            Ok(report) => Some(report),
-                            Err(e) => {
-                                log::warn!(
-                                    "Failed to parse fill for order {}: {e}",
-                                    update.order_id
-                                );
-                                None
-                            }
-                        },
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to build commission Money for order {}: {e}",
-                                update.order_id
-                            );
-                            None
-                        }
-                    }
-                } else {
-                    log::debug!(
-                        "Dropping duplicate fill venue_order_id={}, trade_id={}",
-                        update.order_id,
-                        trade_id,
-                    );
-                    None
-                }
-            }
-            Err(e) => {
-                log::warn!(
-                    "Failed to build Price from derived last_fill={last_fill_price_decimal} at precision {price_precision} for order {}: {e}",
-                    update.order_id
-                );
-                None
-            }
-        }
-    } else {
-        None
-    };
-
-    if let Some(mut fill_report) = synthesized_fill {
-        if let Some(id) = publish_instrument_id {
-            fill_report.instrument_id = id;
-        }
-        emitter.send_fill_report(fill_report);
-    }
-
-    // OSR emission policy:
-    // - For order types that carry a price (LIMIT / STOP_LIMIT) or trigger
-    //   (STOP_MARKET / *_IF_TOUCHED), the report must include the relevant
-    //   field before reaching the engine reconciler; otherwise the order
-    //   reconstruction path panics with a missing-field error. Patching
-    //   above pulls these from the OrderContext when one is available, but
-    //   if enrichment was needed and unavailable (REST fetch failed for an
-    //   external order) the report is still missing the field and is unsafe
-    //   to emit.
-    // - Snapshots emit only when we have submit-time metadata; the
-    //   user-channel snapshot omits these fields entirely. With metadata,
-    //   the report has been patched above and is safe to emit (this
-    //   preserves reconnect-time partial-fill recovery for orders submitted
-    //   by this process). For unknown orders, the REST mass-status path
-    //   called from `LiveNode` startup is the canonical source.
-    let report_safe_for_type = match report.order_type {
+    let safe = match report.order_type {
         OrderType::Limit | OrderType::LimitIfTouched => report.price.is_some(),
         OrderType::StopLimit => report.price.is_some() && report.trigger_price.is_some(),
         OrderType::StopMarket | OrderType::MarketIfTouched => report.trigger_price.is_some(),
         _ => true,
     };
-    let should_emit = (!is_snapshot || have_order_contexts) && report_safe_for_type;
-    if should_emit {
-        emitter.send_order_status_report(*report);
-    } else if !report_safe_for_type {
+
+    if !safe {
         log::warn!(
             "Suppressed unsafe OrderStatusReport for {} {}: missing price/trigger after enrichment",
             report.order_type,
-            update.order_id,
+            update.order_id
         );
+        return None;
     }
+
+    (!is_snapshot || have_context).then_some(*report)
 }
 
 // Returns the submit-time / enriched metadata for `update`, fetching from
@@ -1929,6 +2196,7 @@ async fn resolve_order_context(
     }
 
     let venue_order_id = VenueOrderId::new(update.order_id.as_str());
+
     match http_client
         .request_order_status_report(account_id, None, Some(venue_order_id))
         .await
@@ -1936,6 +2204,7 @@ async fn resolve_order_context(
         Ok(rest_report) => {
             let post_only_from_rest = matches!(order_type, OrderType::Limit | OrderType::StopLimit)
                 && rest_report.post_only;
+
             let meta = OrderContext {
                 price: rest_report.price,
                 trigger_price: rest_report.trigger_price,
@@ -1958,74 +2227,13 @@ async fn resolve_order_context(
     }
 }
 
-#[derive(Debug)]
-struct FillDedup {
-    seen: AHashMap<(String, String), ()>,
-    order: VecDeque<(String, String)>,
-    capacity: usize,
-}
-
-impl FillDedup {
-    fn new(capacity: usize) -> Self {
-        Self {
-            seen: AHashMap::with_capacity(capacity),
-            order: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    // Returns true if the key is new (and inserts it); false when already seen.
-    fn insert(&mut self, key: (String, String)) -> bool {
-        if self.seen.contains_key(&key) {
-            return false;
-        }
-
-        if self.order.len() >= self.capacity
-            && let Some(oldest) = self.order.pop_front()
-        {
-            self.seen.remove(&oldest);
-        }
-        self.order.push_back(key.clone());
-        self.seen.insert(key, ());
-        true
-    }
-}
-
-// Per-order cumulative state tracked across WS reconnects so that delta-based
-// fill synthesis remains correct even when the feed handler is recreated.
-// `avg_price` is Coinbase's cumulative weighted-average fill price; the exec
-// client derives the per-fill price from the notional delta between successive
-// cumulative states.
-//
-// `quantity` records the largest `cumulative_quantity + leaves_quantity` ever
-// observed for the order. Coinbase zeroes `leaves_quantity` on terminal updates
-// (REJECTED / CANCELLED / EXPIRED), so the OSR's quantity computed from
-// cum+leaves on those events would collapse to filled_qty (or zero). Holding
-// the max-observed total lets us restore the original order quantity before
-// emitting the terminal report.
-#[derive(Debug, Default, Clone)]
-struct OrderCumulativeState {
-    filled_qty: Option<Quantity>,
-    total_fees: Decimal,
-    avg_price: Decimal,
-    quantity: Option<Quantity>,
-}
-
-// Captures the limit / trigger metadata of a submitted order, keyed by
-// `client_order_id` so it survives the venue-id-keyed cumulative state being
-// dropped on terminal user-channel events. Coinbase's user channel does not
-// echo `price`, `stop_price`, or `trigger_type`, so without these locally
-// cached values the engine reconciler would clear the local price the moment
-// a post-fill or cancel update lands.
+// Restores price and trigger fields omitted from unfilled user-channel reports
+// using submit-time metadata keyed by client_order_id.
 #[derive(Debug, Default, Clone)]
 struct OrderContext {
     price: Option<Price>,
     trigger_price: Option<Price>,
     trigger_type: Option<TriggerType>,
-    // `post_only` order fills are guaranteed `Maker` (the venue rejects an
-    // immediate match outright). The Coinbase user channel does not echo
-    // this flag, so we cache it at submit time and pass it through to the
-    // synthesized FillReport's `liquidity_side`.
     post_only: bool,
     // The `product_id` the order was submitted with. Coinbase rewrites
     // aliased products to the canonical id on the user channel, so
@@ -2037,115 +2245,27 @@ struct OrderContext {
     submitted_product_id: Option<Ustr>,
 }
 
-// Bounded map for per-order cumulative tracking. Insertions track LRU order;
-// when the live entry count reaches `capacity`, the oldest non-stale entry is
-// evicted. Terminal events call `remove()` which clears the map entry; the
-// matching deque slot becomes stale and is reclaimed during the next eviction
-// pass (the deque is also trimmed if it grows beyond `2 * capacity`).
-#[derive(Debug)]
-struct CumulativeStateMap {
-    map: AHashMap<String, OrderCumulativeState>,
-    order: VecDeque<String>,
-    capacity: usize,
-}
-
-impl CumulativeStateMap {
-    fn with_capacity(capacity: usize) -> Self {
-        Self {
-            map: AHashMap::with_capacity(capacity),
-            order: VecDeque::with_capacity(capacity),
-            capacity,
-        }
-    }
-
-    fn entry_or_default(&mut self, key: &str) -> &mut OrderCumulativeState {
-        if self.map.contains_key(key) {
-            // Hit: refresh recency so a long-lived order receiving updates
-            // is not evicted by churn on other orders. O(n) lookup and
-            // shift; tolerated because user-channel update volume is small
-            // relative to capacity
-            if let Some(pos) = self.order.iter().position(|k| k == key) {
-                self.order.remove(pos);
-            }
-            self.order.push_back(key.to_string());
-        } else {
-            self.evict_until_capacity_or_empty();
-            self.order.push_back(key.to_string());
-            self.map
-                .insert(key.to_string(), OrderCumulativeState::default());
-        }
-        self.map
-            .get_mut(key)
-            .expect("key was just inserted or confirmed present")
-    }
-
-    fn remove(&mut self, key: &str) {
-        if self.map.remove(key).is_some() {
-            // Drop the matching deque slot too. Without this, a later
-            // re-insert of the same key would leave a stale slot ahead of
-            // the new live one, and the eviction loop would pop the stale
-            // slot and remove the live entry from the map
-            self.order.retain(|k| k != key);
-        }
-    }
-
-    fn evict_until_capacity_or_empty(&mut self) {
-        // Evict the oldest live entries until we're under capacity. Stale
-        // deque entries (already removed from the map) are skipped naturally
-        // because removing a missing key is a no-op
-        while self.map.len() >= self.capacity {
-            match self.order.pop_front() {
-                Some(oldest) => {
-                    self.map.remove(&oldest);
-                }
-                None => break,
-            }
-        }
-
-        // When the deque accumulates many stale entries (e.g. a long-lived
-        // order at the front while later orders churn through terminal
-        // events), compact in place: keep live entries in their original
-        // order and drop the rest. Bounds memory without ever evicting live
-        // state
-        if self.order.len() > 2 * self.capacity {
-            self.order.retain(|key| self.map.contains_key(key));
-        }
-    }
-
-    #[cfg(test)]
-    fn len(&self) -> usize {
-        self.map.len()
-    }
-
-    #[cfg(test)]
-    fn get(&self, key: &str) -> Option<&OrderCumulativeState> {
-        self.map.get(key)
-    }
-
-    #[cfg(test)]
-    fn clear(&mut self) {
-        self.map.clear();
-        self.order.clear();
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc};
 
     use nautilus_common::{
         cache::Cache,
+        enums::Environment,
         messages::{ExecutionEvent, ExecutionReport},
     };
+    use nautilus_live::{manager::ExecutionManager, node::LiveNode};
     use nautilus_model::{
-        enums::AccountType,
-        events::OrderEventAny,
+        accounts::CashAccount,
+        enums::{AccountType, OrderSide, TimeInForce},
+        events::{AccountState, OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
         identifiers::{Symbol, TraderId, Venue},
         instruments::{
             CurrencyPair,
             stubs::{crypto_future_btcusdt, crypto_perpetual_ethusdt},
         },
-        types::Currency,
+        orders::OrderTestBuilder,
+        types::{Currency, Money, Quantity},
     };
     use rstest::rstest;
     use ustr::Ustr;
@@ -2281,11 +2401,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rate_limited_submit_retains_context_until_user_update() {
+    async fn test_rate_limited_submit_retains_context() {
         let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
         let order_contexts = Arc::new(Mutex::new(AHashMap::new()));
-        let external_order_contexts = Arc::new(Mutex::new(AHashMap::new()));
+
         let context = OrderContext {
             price: Some(Price::from("100.00")),
             trigger_price: Some(Price::from("99.00")),
@@ -2319,48 +2438,6 @@ mod tests {
             assert_eq!(retained.post_only, context.post_only);
             assert_eq!(retained.submitted_product_id, context.submitted_product_id);
         }
-
-        let mut update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
-        update.order_type = CbType::StopLimit;
-        handle_user_order_update(
-            make_carrier(update),
-            &emitter,
-            &dedup,
-            &state,
-            &order_contexts,
-            &external_order_contexts,
-            &CoinbaseHttpClient::default(),
-            AccountId::new("COINBASE-001"),
-        )
-        .await;
-
-        assert!(order_contexts.lock().is_empty());
-        let (orders, fills) = drain_all_reports(&mut rx);
-        assert_eq!(orders.len(), 1);
-        assert_eq!(
-            orders[0].client_order_id,
-            Some(ClientOrderId::from("client-1"))
-        );
-        assert_eq!(
-            orders[0].instrument_id,
-            InstrumentId::from("BTC-USDC.COINBASE")
-        );
-        assert_eq!(orders[0].order_type, OrderType::StopLimit);
-        assert_eq!(orders[0].order_status, OrderStatus::Filled);
-        assert_eq!(orders[0].price, Some(Price::from("100.00")));
-        assert_eq!(orders[0].trigger_price, Some(Price::from("99.00")));
-        assert_eq!(orders[0].trigger_type, Some(TriggerType::LastPrice));
-        assert!(orders[0].post_only);
-        assert_eq!(fills.len(), 1);
-        assert_eq!(
-            fills[0].client_order_id,
-            Some(ClientOrderId::from("client-1"))
-        );
-        assert_eq!(
-            fills[0].instrument_id,
-            InstrumentId::from("BTC-USDC.COINBASE")
-        );
-        assert_eq!(fills[0].liquidity_side, LiquiditySide::Maker);
     }
 
     #[rstest]
@@ -2443,131 +2520,6 @@ mod tests {
         assert!(!is_coinbase_ambiguous_command_failure(&err));
     }
 
-    #[rstest]
-    fn test_fill_dedup_rejects_duplicates() {
-        let mut dedup = FillDedup::new(4);
-        let key = ("venue-1".to_string(), "trade-1".to_string());
-        assert!(dedup.insert(key.clone()));
-        assert!(!dedup.insert(key));
-    }
-
-    #[rstest]
-    fn test_fill_dedup_evicts_oldest_when_full() {
-        let mut dedup = FillDedup::new(2);
-        assert!(dedup.insert(("v".to_string(), "t1".to_string())));
-        assert!(dedup.insert(("v".to_string(), "t2".to_string())));
-        assert!(dedup.insert(("v".to_string(), "t3".to_string())));
-        assert!(dedup.insert(("v".to_string(), "t1".to_string())));
-    }
-
-    #[rstest]
-    fn test_cumulative_state_evicts_oldest_at_capacity() {
-        let mut state = CumulativeStateMap::with_capacity(2);
-        state.entry_or_default("a");
-        state.entry_or_default("b");
-        state.entry_or_default("c");
-        assert_eq!(state.len(), 2);
-        assert!(state.map.contains_key("b"));
-        assert!(state.map.contains_key("c"));
-        assert!(!state.map.contains_key("a"));
-    }
-
-    #[rstest]
-    fn test_cumulative_state_remove_drops_entry_and_allows_reinsert() {
-        let mut state = CumulativeStateMap::with_capacity(2);
-        state.entry_or_default("a");
-        state.entry_or_default("b");
-        state.remove("a");
-        state.entry_or_default("c");
-        assert_eq!(state.len(), 2);
-        assert!(state.map.contains_key("b"));
-        assert!(state.map.contains_key("c"));
-    }
-
-    #[rstest]
-    fn test_cumulative_state_remove_and_reinsert_does_not_evict_live_state() {
-        let mut state = CumulativeStateMap::with_capacity(2);
-        state.entry_or_default("a");
-        state.remove("a");
-        state.entry_or_default("b");
-        state.entry_or_default("a");
-        // With the bug, inserting "c" pops the stale "a" slot at the front
-        // and removes the live "a" entry from the map; the live "b" should
-        // be evicted instead because it is now the oldest live entry.
-        state.entry_or_default("c");
-        assert_eq!(state.len(), 2);
-        assert!(
-            state.map.contains_key("a"),
-            "re-inserted live key must survive"
-        );
-        assert!(state.map.contains_key("c"));
-        assert!(!state.map.contains_key("b"));
-    }
-
-    #[rstest]
-    fn test_cumulative_state_hit_refreshes_lru_recency() {
-        let mut state = CumulativeStateMap::with_capacity(2);
-        state.entry_or_default("a");
-        state.entry_or_default("b");
-        // Re-access "a": without the LRU refresh this is a no-op and the
-        // next insert evicts "a"; with the refresh it should evict "b".
-        state.entry_or_default("a");
-        state.entry_or_default("c");
-        assert_eq!(state.len(), 2);
-        assert!(
-            state.map.contains_key("a"),
-            "recently-accessed key must survive eviction"
-        );
-        assert!(state.map.contains_key("c"));
-        assert!(!state.map.contains_key("b"));
-    }
-
-    #[rstest]
-    fn test_cumulative_state_preserves_live_entry_when_trimming_stale() {
-        // A long-lived order at the front of the deque must survive any number
-        // of terminal events on later orders, and the deque must stay bounded
-        // (compacted) so memory does not grow without bound under high churn.
-        let mut state = CumulativeStateMap::with_capacity(2);
-        state.entry_or_default("live");
-
-        for i in 0..50 {
-            let key = format!("t{i}");
-            state.entry_or_default(&key);
-            state.remove(&key);
-        }
-        assert!(
-            state.map.contains_key("live"),
-            "live entry must survive stale-trim cycles"
-        );
-        assert_eq!(state.len(), 1);
-        assert!(
-            state.order.len() <= 2 * state.capacity,
-            "deque must remain bounded after compaction (was {})",
-            state.order.len(),
-        );
-        // The live key must remain reachable through the deque so future
-        // eviction can find and (correctly) evict it. A bug that drops live
-        // keys from the deque would let the map grow past capacity on the
-        // next series of inserts.
-        assert!(
-            state.order.iter().any(|k| k == "live"),
-            "live key must remain in the deque, was: {:?}",
-            state.order,
-        );
-        // Drive eviction past capacity to confirm the live key still
-        // participates in LRU. With capacity=2, "live" plus two new keys
-        // means the next insert must evict the next-oldest live key
-        // ("live"), not silently grow the map.
-        state.entry_or_default("a");
-        state.entry_or_default("b");
-        state.entry_or_default("c");
-        assert_eq!(state.len(), state.capacity);
-        assert!(
-            !state.map.contains_key("live"),
-            "live key should have been evicted in LRU order once capacity demanded it"
-        );
-    }
-
     fn test_instrument() -> InstrumentAny {
         let instrument_id = InstrumentId::new(Symbol::new("BTC-USD"), *COINBASE_VENUE);
         InstrumentAny::CurrencyPair(
@@ -2638,9 +2590,6 @@ mod tests {
         make_carrier_with_kind(update, false)
     }
 
-    // Stub OrderContext with `price` populated so process_user_order_update's
-    // safe-emission gate accepts a LIMIT report. Mirrors what `submit_order`
-    // would have cached under production flow.
     fn make_limit_context() -> OrderContext {
         OrderContext {
             price: Some(Price::from("100.00")),
@@ -2668,531 +2617,1990 @@ mod tests {
         }
     }
 
-    fn drain_fill_reports(
-        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    ) -> Vec<FillReport> {
-        let mut reports = Vec::new();
+    struct RecoverySpec {
+        recovery: UserOrderRecovery,
+        rx: tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        state: Arc<Mutex<RecoveryResponses>>,
+        server: tokio::task::JoinHandle<()>,
+        client: Option<CoinbaseExecutionClient>,
+    }
 
-        while let Ok(event) = rx.try_recv() {
-            if let ExecutionEvent::Report(ExecutionReport::Fill(report)) = event {
-                reports.push(*report);
+    struct RecoveryResponses {
+        order: serde_json::Value,
+        fills: serde_json::Value,
+        fills_targeted: Option<serde_json::Value>,
+        fail_fills: bool,
+        orders: AHashMap<String, serde_json::Value>,
+        discover_orders: bool,
+        on_discovery: Option<Box<dyn FnOnce() + Send>>,
+        requests: Vec<String>,
+        on_order: Option<Box<dyn FnOnce() + Send>>,
+    }
+
+    impl RecoverySpec {
+        async fn new() -> Self {
+            let mut order: serde_json::Value =
+                serde_json::from_str(include_str!("../test_data/http_order.json")).unwrap();
+            order["order"]["order_id"] = "venue-1".into();
+            order["order"]["client_order_id"] = "client-1".into();
+            order["order"]["order_configuration"]["limit_limit_gtc"]["base_size"] = "1.0".into();
+            order["order"]["status"] = "FILLED".into();
+            order["order"]["filled_size"] = "1.0".into();
+            order["order"]["average_filled_price"] = "112.00".into();
+            order["order"]["created_time"] = "2024-01-15T09:59:00Z".into();
+            order["order"]["last_fill_time"] = "2024-01-15T10:31:00Z".into();
+            let fixture: serde_json::Value =
+                serde_json::from_str(include_str!("../test_data/http_fills.json")).unwrap();
+            let mut first = fixture["fills"][0].clone();
+            first["order_id"] = "venue-1".into();
+            first["trade_id"] = "trade-alpha".into();
+            first["size"] = "0.4".into();
+            first["price"] = "100.00".into();
+            first["commission"] = "0.04".into();
+            let mut second = first.clone();
+            second["trade_id"] = "trade-beta".into();
+            second["size"] = "0.6".into();
+            second["price"] = "120.00".into();
+            second["commission"] = "0.06".into();
+            second["trade_time"] = "2024-01-15T10:31:00Z".into();
+            second["liquidity_indicator"] = "TAKER".into();
+
+            let state = Arc::new(Mutex::new(RecoveryResponses {
+                order,
+                fills: serde_json::json!({"fills": [second, first], "cursor": ""}),
+                fills_targeted: None,
+                fail_fills: false,
+                orders: AHashMap::new(),
+                discover_orders: true,
+                on_discovery: None,
+                requests: Vec::new(),
+                on_order: None,
+            }));
+
+            let router = axum::Router::new().fallback(axum::routing::get({
+                let state = Arc::clone(&state);
+                move |uri: axum::http::Uri| {
+                    let state = Arc::clone(&state);
+                    async move {
+                        let (status, value) = state.lock().response(&uri);
+                        (status, axum::Json(value))
+                    }
+                }
+            }));
+
+            let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+            let rng = aws_lc_rs::rand::SystemRandom::new();
+            let key = aws_lc_rs::signature::EcdsaKeyPair::generate_pkcs8(
+                &aws_lc_rs::signature::ECDSA_P256_SHA256_FIXED_SIGNING,
+                &rng,
+            )
+            .unwrap();
+            let pem = pem::encode(&pem::Pem::new("PRIVATE KEY", key.as_ref().to_vec()));
+            let credential = CoinbaseCredential::new("test-key".into(), pem);
+
+            let http_client = CoinbaseHttpClient::with_credentials(
+                credential,
+                crate::common::enums::CoinbaseEnvironment::Live,
+                5,
+                None,
+                Some(RetryConfig {
+                    max_retries: 0,
+                    ..Default::default()
+                }),
+            )
+            .unwrap();
+
+            http_client.set_base_url(format!("http://{addr}"));
+            let instrument = test_instrument();
+            http_client.cache_instrument(&instrument);
+            let (emitter, rx) = make_emitter();
+
+            let recovery = UserOrderRecovery {
+                http_client,
+                emitter,
+                instruments: Arc::new(AHashMap::from([("BTC-USD".into(), instrument)])),
+                observed: Arc::new(Mutex::new(AHashMap::new())),
+                pending: Arc::new(Mutex::new(AHashMap::new())),
+                published: Arc::new(tokio::sync::Mutex::new(AHashMap::new())),
+                order_contexts: Arc::new(Mutex::new(AHashMap::new())),
+                external_order_contexts: Arc::new(Mutex::new(AHashMap::new())),
+                lifecycle: Arc::new(Mutex::new(RecoveryLifecycle::new(
+                    TraderId::from("TRADER-001"),
+                    AccountId::from("COINBASE-001"),
+                    AccountType::Cash,
+                ))),
+                start: crate::http::parse::parse_rfc3339_timestamp("2024-01-01T00:00:00Z").unwrap(),
+            };
+
+            Self {
+                recovery,
+                rx,
+                state,
+                server,
+                client: None,
             }
         }
-        reports
-    }
 
-    // Drains both `OrderStatusReport`s and `FillReport`s from `rx` in a single
-    // pass. Tests that need both must use this rather than calling
-    // `drain_status_reports` and `drain_fill_reports` sequentially, since each
-    // consumes the channel and discards non-matching events.
-    fn drain_all_reports(
-        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    ) -> (Vec<OrderStatusReport>, Vec<FillReport>) {
-        let mut orders = Vec::new();
-        let mut fills = Vec::new();
+        fn attach(&mut self, node: &LiveNode) {
+            let core = ExecutionClientCore::new(
+                TraderId::from("TRADER-001"),
+                ClientId::from("COINBASE-TEST"),
+                *COINBASE_VENUE,
+                OmsType::Netting,
+                AccountId::from("COINBASE-001"),
+                AccountType::Cash,
+                None,
+                node.kernel().cache.clone(),
+            );
 
-        while let Ok(event) = rx.try_recv() {
-            match event {
-                ExecutionEvent::Report(ExecutionReport::Order(r)) => orders.push(*r),
-                ExecutionEvent::Report(ExecutionReport::Fill(r)) => fills.push(*r),
-                _ => {}
+            let config = CoinbaseExecutionClientConfig {
+                api_key: Some("test-key".into()),
+                api_secret: Some("test-secret".into()),
+                ..Default::default()
+            };
+
+            let mut client = CoinbaseExecutionClient::new(core, config).unwrap();
+            client.emitter = self.recovery.emitter.clone();
+            client.lifecycle = Arc::clone(&self.recovery.lifecycle);
+            client.subscribe_order_events();
+            self.client = Some(client);
+        }
+
+        fn apply(&mut self, node: &LiveNode) {
+            while let Ok(event) = self.rx.try_recv() {
+                match event {
+                    ExecutionEvent::Report(report) => node
+                        .kernel()
+                        .exec_engine
+                        .borrow_mut()
+                        .reconcile_execution_report(&report),
+                    ExecutionEvent::Order(event) => {
+                        node.kernel().exec_engine.borrow_mut().process(&event);
+                    }
+                    other => panic!("unexpected recovery event: {other:?}"),
+                }
             }
         }
-        (orders, fills)
-    }
 
-    fn drain_status_reports(
-        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    ) -> Vec<OrderStatusReport> {
-        let mut reports = Vec::new();
+        fn reports(&mut self) -> Vec<ExecutionReport> {
+            let mut reports = Vec::new();
 
-        while let Ok(event) = rx.try_recv() {
-            if let ExecutionEvent::Report(ExecutionReport::Order(report)) = event {
-                reports.push(*report);
+            while let Ok(event) = self.rx.try_recv() {
+                let ExecutionEvent::Report(report) = event else {
+                    panic!("expected execution report, was {event:?}");
+                };
+
+                reports.push(report);
             }
+
+            reports
         }
-        reports
-    }
 
-    fn make_dedup_state_pair() -> (Arc<Mutex<FillDedup>>, Arc<Mutex<CumulativeStateMap>>) {
-        (
-            Arc::new(Mutex::new(FillDedup::new(64))),
-            Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-                CUMULATIVE_STATE_CAPACITY,
-            ))),
-        )
-    }
+        fn bundle(&mut self) -> (OrderStatusReport, Vec<FillReport>) {
+            let mut order = None;
+            let mut fills = Vec::new();
 
-    #[rstest]
-    fn test_handle_user_order_update_emits_status_report_and_no_fill_when_zero_filled() {
-        let (emitter, mut rx) = make_emitter();
-        let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-            CUMULATIVE_STATE_CAPACITY,
-        )));
-
-        let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        process_user_order_update(
-            make_carrier(update),
-            Some(make_limit_context()),
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        let mut got_status = false;
-        let mut got_fill = false;
-
-        while let Ok(event) = rx.try_recv() {
-            match event {
-                ExecutionEvent::Report(ExecutionReport::Order(_)) => got_status = true,
-                ExecutionEvent::Report(ExecutionReport::Fill(_)) => got_fill = true,
-                _ => {}
+            for report in self.reports() {
+                match report {
+                    ExecutionReport::Order(report) => order = Some(*report),
+                    ExecutionReport::Fill(fill) => fills.push(*fill),
+                    other => panic!("unexpected recovery report: {other:?}"),
+                }
             }
+
+            (order.expect("final order report emitted"), fills)
         }
-        assert!(got_status);
-        assert!(!got_fill);
     }
 
-    #[rstest]
-    fn test_handle_user_order_update_synthesizes_per_fill_price_from_notional_delta() {
-        let (emitter, mut rx) = make_emitter();
-        let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-            CUMULATIVE_STATE_CAPACITY,
-        )));
+    impl RecoveryResponses {
+        fn response(
+            &mut self,
+            uri: &axum::http::Uri,
+        ) -> (axum::http::StatusCode, serde_json::Value) {
+            self.requests.push(uri.to_string());
+            let value = if uri.path().ends_with("/fills") {
+                return self.response_fills(uri);
+            } else if uri.path().ends_with("/orders/historical/batch") {
+                self.response_orders()
+            } else {
+                if let Some(action) = self.on_order.take() {
+                    action();
+                }
 
-        let update_1 = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
-        process_user_order_update(make_carrier(update_1), None, &emitter, &dedup, &state, None);
+                let order_id = uri.path().rsplit('/').next().unwrap();
+                self.orders.get(order_id).unwrap_or(&self.order).clone()
+            };
 
-        // per_fill_px = (110*1.0 - 100*0.5) / 0.5 = 120
-        let update_2 = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
-        process_user_order_update(make_carrier(update_2), None, &emitter, &dedup, &state, None);
+            (axum::http::StatusCode::OK, value)
+        }
 
-        let fills = drain_fill_reports(&mut rx);
+        fn response_fills(
+            &mut self,
+            uri: &axum::http::Uri,
+        ) -> (axum::http::StatusCode, serde_json::Value) {
+            if self.fail_fills {
+                return (
+                    axum::http::StatusCode::SERVICE_UNAVAILABLE,
+                    serde_json::Value::Null,
+                );
+            }
+
+            let mut fills = self.fills.clone();
+            let order_id = url::form_urlencoded::parse(uri.query().unwrap_or_default().as_bytes())
+                .find(|(key, _)| key == "order_ids")
+                .map(|(_, value)| value.into_owned());
+
+            if let Some(order_id) = order_id {
+                fills = self.fills_targeted.as_ref().unwrap_or(&fills).clone();
+                fills["fills"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|fill| fill["order_id"] == order_id);
+            } else if let Some(action) = self.on_discovery.take() {
+                action();
+            }
+
+            (axum::http::StatusCode::OK, fills)
+        }
+
+        fn response_orders(&self) -> serde_json::Value {
+            let orders: Vec<_> = if self.discover_orders {
+                std::iter::once(self.order["order"].clone())
+                    .chain(self.orders.values().map(|order| order["order"].clone()))
+                    .collect()
+            } else {
+                Vec::new()
+            };
+
+            serde_json::json!({"orders": orders, "has_next": false, "cursor": ""})
+        }
+    }
+
+    impl Drop for RecoverySpec {
+        fn drop(&mut self) {
+            if let Some(client) = &mut self.client
+                && let Some(handler) = client.order_event_handler.take()
+            {
+                msgbus::unsubscribe_order_events("events.order.*".into(), &handler);
+            }
+
+            self.server.abort();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_user_fill_update_preserves_distinct_rest_trades() {
+        let mut spec = RecoverySpec::new().await;
+        let update = make_user_order_update("1.0", "0", "112.00", "0.10", CbStatus::Filled);
+
+        spec.recovery.handle_update(make_carrier(update)).await;
+        let (report, fills) = spec.bundle();
+        let rest = spec
+            .recovery
+            .http_client
+            .request_fill_reports(
+                report.account_id,
+                None,
+                Some(report.venue_order_id),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+        let mut expected = prepare_order_fills(&report, rest).unwrap();
+        for (expected, actual) in expected.iter_mut().zip(&fills) {
+            expected.report_id = actual.report_id;
+            expected.ts_init = actual.ts_init;
+        }
+
+        assert_eq!(fills, expected);
+        assert_eq!(report.quantity, Quantity::from("1.00000000"));
+        assert_eq!(report.filled_qty, Quantity::from("1.00000000"));
+        assert_eq!(report.order_status, OrderStatus::Filled);
         assert_eq!(fills.len(), 2);
-
-        assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
+        assert_eq!(fills[0].trade_id.as_str(), "trade-alpha");
+        assert_eq!(fills[0].last_qty, Quantity::from("0.40000000"));
         assert_eq!(fills[0].last_px, Price::from("100.00"));
-        assert_eq!(fills[0].commission.as_decimal().to_string(), "0.05");
-
-        assert_eq!(fills[1].last_qty, Quantity::from("0.50000000"));
+        assert_eq!(fills[0].commission.to_string(), "0.04 USD");
+        assert_eq!(fills[1].trade_id.as_str(), "trade-beta");
+        assert_eq!(fills[1].last_qty, Quantity::from("0.60000000"));
         assert_eq!(fills[1].last_px, Price::from("120.00"));
-        assert_eq!(fills[1].commission.as_decimal().to_string(), "0.10");
+        assert_eq!(fills[1].commission.to_string(), "0.06 USD");
+        assert!(spec.recovery.pending.lock().is_empty());
     }
 
     #[rstest]
-    fn test_handle_user_order_update_drops_replayed_fills() {
-        let (emitter, mut rx) = make_emitter();
-        let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-            CUMULATIVE_STATE_CAPACITY,
-        )));
-
-        let update = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
-        process_user_order_update(
-            make_carrier(update.clone()),
-            None,
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        // Simulate a WS reconnect that wipes the cumulative state, then replays
-        // the same cumulative=0.5 snapshot. The fill_dedup must drop the
-        // synthesized fill because the trade_id matches the prior emission.
+    #[case::missing_fill(false)]
+    #[case::request_failure(true)]
+    #[tokio::test]
+    async fn test_terminal_fill_retries_without_another_user_update(#[case] request_failure: bool) {
+        let mut spec = RecoverySpec::new().await;
+        spec.recovery
+            .order_contexts
+            .lock()
+            .insert("client-1".into(), make_limit_context());
+        let complete = spec.state.lock().fills.clone();
         {
-            let mut s = state.lock();
-            s.clear();
+            let mut state = spec.state.lock();
+            state.fail_fills = request_failure;
+            state.fills["fills"].as_array_mut().unwrap().pop();
         }
-        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
 
-        let next_update = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
-        process_user_order_update(
-            make_carrier(next_update),
-            None,
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
+        let update = make_user_order_update("1.0", "0", "112.00", "0.10", CbStatus::Filled);
+        spec.recovery.handle_update(make_carrier(update)).await;
 
-        let fills = drain_fill_reports(&mut rx);
-        assert_eq!(fills.len(), 2, "replay should be deduplicated");
-        assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
-        assert_eq!(fills[1].last_qty, Quantity::from("0.50000000"));
-    }
+        assert!(spec.rx.try_recv().is_err());
+        assert_eq!(spec.recovery.pending.lock().len(), 1);
+        assert_eq!(spec.recovery.order_contexts.lock().len(), 1);
 
-    #[rstest]
-    fn test_handle_user_order_update_clears_state_on_terminal_status() {
-        let (emitter, mut rx) = make_emitter();
-        let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-            CUMULATIVE_STATE_CAPACITY,
-        )));
-
-        let update = make_user_order_update("1.0", "0", "100.00", "0.10", CbStatus::Filled);
-        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
-
-        let _ = drain_fill_reports(&mut rx);
-
-        let s = state.lock();
-        assert!(
-            s.get("venue-1").is_none(),
-            "terminal status should remove cumulative state entry"
-        );
-    }
-
-    #[rstest]
-    fn test_handle_user_order_update_skips_when_avg_price_nonpositive() {
-        let (emitter, mut rx) = make_emitter();
-        let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-            CUMULATIVE_STATE_CAPACITY,
-        )));
-
-        let update = make_user_order_update("0.5", "0.5", "0", "0", CbStatus::Open);
-        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
-
-        let fills = drain_fill_reports(&mut rx);
-        assert!(
-            fills.is_empty(),
-            "non-positive avg_price should not emit a fill"
-        );
-    }
-
-    #[rstest]
-    fn test_handle_user_order_update_snapshot_does_not_synthesize_fill() {
-        let (emitter, mut rx) = make_emitter();
-        let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-            CUMULATIVE_STATE_CAPACITY,
-        )));
-
-        // Cold-start snapshot: order was already partially filled before we
-        // subscribed. Cumulative_quantity > 0 with positive avg_price would
-        // normally synthesize a fill, but the snapshot flag must suppress it.
-        let update = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
-        process_user_order_update(
-            make_carrier_with_kind(update, true),
-            None,
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        let fills = drain_fill_reports(&mut rx);
-        assert!(
-            fills.is_empty(),
-            "snapshot must not synthesize a fill from pre-existing cumulative state"
-        );
-
-        // The snapshot must seed cumulative_state so that the next live update
-        // computes a correct delta.
-        let s = state.lock();
-        let entry = s.get("venue-1").expect("snapshot should seed state");
-        assert_eq!(entry.filled_qty.unwrap(), Quantity::from("0.50000000"));
-    }
-
-    #[rstest]
-    fn test_handle_user_order_update_snapshot_then_update_synthesizes_only_delta() {
-        let (emitter, mut rx) = make_emitter();
-        let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-            CUMULATIVE_STATE_CAPACITY,
-        )));
-
-        let snap = make_user_order_update("0.5", "0.5", "100.00", "0.05", CbStatus::Open);
-        process_user_order_update(
-            make_carrier_with_kind(snap, true),
-            None,
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        let live = make_user_order_update("1.0", "0", "110.00", "0.15", CbStatus::Filled);
-        process_user_order_update(make_carrier(live), None, &emitter, &dedup, &state, None);
-
-        let fills = drain_fill_reports(&mut rx);
-        assert_eq!(fills.len(), 1);
-        assert_eq!(fills[0].last_qty, Quantity::from("0.50000000"));
-        // Per-fill price derived from notional delta: (110*1.0 - 100*0.5) / 0.5 = 120.
-        assert_eq!(fills[0].last_px, Price::from("120.00"));
-        assert_eq!(fills[0].commission.as_decimal().to_string(), "0.10");
-    }
-
-    #[rstest]
-    fn test_handle_user_order_update_terminal_restores_original_quantity() {
-        use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
-
-        let (emitter, mut rx) = make_emitter();
-        let dedup = Arc::new(Mutex::new(FillDedup::new(64)));
-        let state = Arc::new(Mutex::new(CumulativeStateMap::with_capacity(
-            CUMULATIVE_STATE_CAPACITY,
-        )));
-
-        let working = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        process_user_order_update(
-            make_carrier(working),
-            Some(make_limit_context()),
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        while rx.try_recv().is_ok() {}
-
-        // Cancellation: venue zeroes leaves_quantity. cum+leaves would be 0,
-        // but the report's quantity must stay 1.0 (the original order size).
-        let cancelled = make_user_order_update("0", "0", "0", "0", CbStatus::Cancelled);
-        process_user_order_update(
-            make_carrier(cancelled),
-            Some(make_limit_context()),
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        let mut got_terminal_report: Option<OrderStatusReport> = None;
-
-        while let Ok(event) = rx.try_recv() {
-            if let ExecutionEvent::Report(ExecutionReport::Order(r)) = event {
-                got_terminal_report = Some(*r);
-            }
+        {
+            let mut state = spec.state.lock();
+            state.fail_fills = false;
+            state.fills = complete;
         }
-        let report = got_terminal_report.expect("terminal report emitted");
+
+        spec.recovery.retry().await;
+        let (report, fills) = spec.bundle();
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(fills.len(), 2);
+        assert!(spec.recovery.pending.lock().is_empty());
+        assert!(spec.recovery.order_contexts.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_reconnect_discovers_closed_order_and_fetches_full_history() {
+        let mut spec = RecoverySpec::new().await;
+        let all = spec.state.lock().fills.clone();
+        // Discovery sees only the later fill; the targeted request must recover the earlier partial too
+        spec.state.lock().fills["fills"]
+            .as_array_mut()
+            .unwrap()
+            .pop();
+        spec.recovery.discover().await.unwrap();
+        spec.state.lock().fills = all;
+        spec.recovery.retry().await;
+        let (report, fills) = spec.bundle();
+        let requests = &spec.state.lock().requests;
+        let discovery = url::Url::parse(&format!("http://localhost{}", requests[0])).unwrap();
+        let target =
+            url::Url::parse(&format!("http://localhost{}", requests.last().unwrap())).unwrap();
+
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(fills.len(), 2);
+        assert!(
+            discovery
+                .query_pairs()
+                .any(|(key, value)| key == "start_sequence_timestamp"
+                    && value == "2024-01-01T00:00:00+00:00")
+        );
+        assert!(
+            target
+                .query_pairs()
+                .any(|(key, value)| key == "order_ids" && value == "venue-1")
+        );
+        assert!(
+            !target
+                .query_pairs()
+                .any(|(key, _)| key == "start_sequence_timestamp")
+        );
+    }
+
+    #[tokio::test]
+    async fn test_snapshot_and_replay_keep_rest_identity() {
+        let mut spec = RecoverySpec::new().await;
+        let update = make_user_order_update("1.0", "0", "112.00", "0.10", CbStatus::Filled);
+        spec.recovery
+            .handle_update(make_carrier_with_kind(update.clone(), true))
+            .await;
+        let (_, first) = spec.bundle();
+        spec.recovery.handle_update(make_carrier(update)).await;
+        let (_, replay) = spec.bundle();
+
+        assert_eq!(first.len(), replay.len());
+
+        for (first, mut replay) in first.iter().zip(replay) {
+            replay.report_id = first.report_id;
+            replay.ts_init = first.ts_init;
+            assert_eq!(*first, replay);
+        }
+
         assert_eq!(
-            report.quantity,
-            Quantity::from("1.00000000"),
-            "terminal report must restore the original order quantity"
+            first
+                .iter()
+                .map(|fill| fill.trade_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["trade-alpha", "trade-beta"]
         );
     }
 
     #[rstest]
-    fn test_process_user_order_update_suppresses_snapshot_without_context() {
-        // Snapshot for an order we don't have context for must be suppressed
-        // so the engine reconciler does not panic reconstructing a LIMIT
-        // order from `report.price = None`.
-        let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
-
+    #[case(false)]
+    #[case(true)]
+    fn test_prepare_user_order_report_requires_snapshot_context(#[case] snapshot: bool) {
         let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        process_user_order_update(
-            make_carrier_with_kind(update, true),
-            None,
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
+        let carrier = make_carrier_with_kind(update, snapshot);
+        let mut context = make_limit_context();
+        context.post_only = true;
+        context.submitted_product_id = Some(Ustr::from("BTC-USDC"));
 
-        assert!(drain_status_reports(&mut rx).is_empty());
-        assert!(drain_fill_reports(&mut rx).is_empty());
+        let report = prepare_user_order_report(carrier.clone(), Some(context)).unwrap();
+        let unknown = prepare_user_order_report(carrier, None);
+
+        assert_eq!(report.price, Some(Price::from("100.00")));
+        assert_eq!(
+            report.instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+        assert_eq!(report.quantity, Quantity::from("1.00000000"));
+        assert!(report.post_only);
+        assert!(unknown.is_none());
     }
 
     #[rstest]
-    fn test_process_user_order_update_emits_snapshot_when_context_present() {
-        // With a known OrderContext the snapshot OSR is safe to emit and
-        // the patched price reaches the engine.
-        let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
-        let context = OrderContext {
-            price: Some(Price::from("100.00")),
+    #[case(CbType::Limit, false)]
+    #[case(CbType::StopLimit, false)]
+    #[case(CbType::Market, true)]
+    fn test_prepare_user_order_report_preserves_safety_gate(
+        #[case] order_type: CbType,
+        #[case] safe: bool,
+    ) {
+        let mut update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
+        update.order_type = order_type;
+        let report = prepare_user_order_report(make_carrier(update), None);
+        assert_eq!(report.is_some(), safe);
+    }
+
+    #[rstest]
+    #[case::startup_first(true)]
+    #[case::live_first(false)]
+    #[tokio::test]
+    async fn test_startup_and_reconnect_overlap_apply_each_fill_once(#[case] startup_first: bool) {
+        let mut spec = RecoverySpec::new().await;
+        let node = recovery_node();
+        let kernel = node.kernel();
+        let account_id = AccountId::from("COINBASE-001");
+        let client_id = ClientId::from("COINBASE-TEST");
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            client_id,
+            *COINBASE_VENUE,
+            OmsType::Netting,
+            account_id,
+            AccountType::Cash,
+            None,
+            kernel.cache.clone(),
+        );
+
+        let config = CoinbaseExecutionClientConfig {
+            api_key: Some("test-key".into()),
+            api_secret: Some("test-secret".into()),
             ..Default::default()
         };
 
-        let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        process_user_order_update(
-            make_carrier_with_kind(update, true),
-            Some(context),
-            &emitter,
-            &dedup,
-            &state,
+        let mut client = CoinbaseExecutionClient::new(core, config).unwrap();
+        client.instruments_cache = Arc::clone(&spec.recovery.instruments);
+        kernel
+            .exec_engine
+            .borrow_mut()
+            .register_client(Box::new(client))
+            .unwrap();
+        let mut manager = ExecutionManager::new(
+            kernel.clock.clone(),
+            kernel.cache.clone(),
+            Default::default(),
+        )
+        .unwrap();
+        let full_order = spec.state.lock().order.clone();
+        let full_fills = spec.state.lock().fills.clone();
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = "0.4".into();
+            state.order["order"]["average_filled_price"] = "100.00".into();
+            state.fills["fills"].as_array_mut().unwrap().remove(0);
+        }
+
+        let report = spec
+            .recovery
+            .http_client
+            .request_order_status_report(account_id, None, Some(VenueOrderId::from("venue-1")))
+            .await
+            .unwrap();
+        let fills = spec
+            .recovery
+            .http_client
+            .request_fill_reports(
+                account_id,
+                None,
+                Some(report.venue_order_id),
+                None,
+                None,
+                None,
+            )
+            .await
+            .unwrap();
+
+        let mut mass = ExecutionMassStatus::new(
+            client_id,
+            account_id,
+            *COINBASE_VENUE,
+            UnixNanos::default(),
             None,
         );
+        mass.add_order_reports(vec![report.clone()]);
+        mass.add_fill_reports(fills.clone());
+        if startup_first {
+            manager.reconcile_execution_mass_status(&mass, &kernel.exec_engine);
+        }
 
-        let osrs = drain_status_reports(&mut rx);
-        assert_eq!(osrs.len(), 1);
-        assert_eq!(osrs[0].price, Some(Price::from("100.00")));
+        let update = make_user_order_update("0.4", "0.6", "100.00", "0.04", CbStatus::Open);
+        spec.recovery.handle_update(make_carrier(update)).await;
+        let live_reports = spec.reports();
+        apply_recovery_reports(&node, &live_reports);
+
+        if !startup_first {
+            manager.reconcile_execution_mass_status(&mass, &kernel.exec_engine);
+        }
+
+        {
+            let mut state = spec.state.lock();
+            state.order = full_order;
+            state.fills = full_fills;
+        }
+
+        spec.recovery.retry().await;
+        let reports = spec.reports();
+        apply_recovery_reports(&node, &reports);
+        let event_count = kernel
+            .cache
+            .borrow()
+            .order(&ClientOrderId::from("client-1"))
+            .unwrap()
+            .event_count();
+        apply_recovery_reports(&node, &reports);
+
+        let cache = kernel.cache.borrow();
+        let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+        let positions = cache.positions_refs(None, None, None, None, None);
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), Quantity::from("1.00000000"));
+        assert_eq!(order.event_count(), event_count);
+        assert_eq!(
+            order
+                .trade_ids()
+                .iter()
+                .map(|id| id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["trade-alpha", "trade-beta"]
+        );
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("1.00000000"));
+        assert_eq!(positions[0].avg_px_open, rust_decimal_macros::dec!(112));
+        assert_eq!(positions[0].commissions(), vec![Money::from("0.10 USD")]);
+        assert_eq!(positions[0].event_count(), 2);
     }
 
     #[rstest]
-    fn test_process_user_order_update_patches_price_and_trigger_from_context() {
-        // The user channel does not echo `price` / `stop_price` /
-        // `trigger_type`. Patching from context is what stops the engine
-        // reconciler clearing the local price.
-        let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
+    fn test_prepare_user_order_report_retains_trigger_metadata() {
+        let mut update = make_user_order_update("0", "1", "0", "0", CbStatus::Open);
+        update.order_type = CbType::StopLimit;
+
         let context = OrderContext {
             price: Some(Price::from("100.50")),
             trigger_price: Some(Price::from("99.00")),
             trigger_type: Some(TriggerType::LastPrice),
-            ..Default::default()
-        };
-
-        let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        process_user_order_update(
-            make_carrier(update),
-            Some(context),
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        let osrs = drain_status_reports(&mut rx);
-        assert_eq!(osrs[0].price, Some(Price::from("100.50")));
-        assert_eq!(osrs[0].trigger_price, Some(Price::from("99.00")));
-        assert_eq!(osrs[0].trigger_type, Some(TriggerType::LastPrice));
-    }
-
-    #[rstest]
-    fn test_process_user_order_update_rekeys_to_submitted_product_id() {
-        // Wire `product_id` is `BTC-USD` (canonical) but the order was
-        // submitted on the alias side `BTC-USDC`. Both the OSR and the
-        // synthesized FillReport must surface the submitted id.
-        let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
-        let context = OrderContext {
-            price: Some(Price::from("100.00")),
-            submitted_product_id: Some(Ustr::from("BTC-USDC")),
-            ..Default::default()
-        };
-
-        let update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
-        process_user_order_update(
-            make_carrier(update),
-            Some(context),
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        let (osrs, fills) = drain_all_reports(&mut rx);
-        assert_eq!(osrs.len(), 1);
-        assert_eq!(
-            osrs[0].instrument_id,
-            InstrumentId::from("BTC-USDC.COINBASE")
-        );
-        assert_eq!(fills.len(), 1);
-        assert_eq!(
-            fills[0].instrument_id,
-            InstrumentId::from("BTC-USDC.COINBASE")
-        );
-    }
-
-    #[rstest]
-    #[case(true, LiquiditySide::Maker)]
-    #[case(false, LiquiditySide::NoLiquiditySide)]
-    fn test_process_user_order_update_stamps_liquidity_side_from_post_only(
-        #[case] post_only: bool,
-        #[case] expected: LiquiditySide,
-    ) {
-        let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
-        let context = OrderContext {
-            price: Some(Price::from("100.00")),
-            post_only,
-            ..Default::default()
-        };
-
-        let update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
-        process_user_order_update(
-            make_carrier(update),
-            Some(context),
-            &emitter,
-            &dedup,
-            &state,
-            None,
-        );
-
-        let fills = drain_fill_reports(&mut rx);
-        assert_eq!(fills.len(), 1);
-        assert_eq!(fills[0].liquidity_side, expected);
-    }
-
-    #[rstest]
-    fn test_process_user_order_update_propagates_post_only_to_status_report() {
-        // Coinbase's user channel does not echo `post_only`; downstream
-        // reconstruction would lose maker-only semantics if we did not
-        // propagate the cached flag to the OrderStatusReport.
-        let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
-        let context = OrderContext {
-            price: Some(Price::from("100.00")),
             post_only: true,
+            submitted_product_id: Some(Ustr::from("BTC-USDC")),
+        };
+
+        let report = prepare_user_order_report(make_carrier(update), Some(context)).unwrap();
+        assert_eq!(report.price, Some(Price::from("100.50")));
+        assert_eq!(report.trigger_price, Some(Price::from("99.00")));
+        assert_eq!(report.trigger_type, Some(TriggerType::LastPrice));
+        assert_eq!(
+            report.instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+        assert!(report.post_only);
+    }
+
+    #[rstest]
+    #[case::partial_cancel("0.4", CbStatus::Cancelled, "CANCELLED")]
+    #[case::empty_cancel("0", CbStatus::Cancelled, "CANCELLED")]
+    #[case::empty_expire("0", CbStatus::Expired, "EXPIRED")]
+    #[tokio::test]
+    async fn test_terminal_recovery_retains_original_qty(
+        #[case] cumulative: &str,
+        #[case] status: CbStatus,
+        #[case] rest_status: &str,
+    ) {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = rest_status.into();
+            state.order["order"]["filled_size"] = cumulative.into();
+            let fills = state.fills["fills"].as_array_mut().unwrap();
+            if cumulative == "0" {
+                fills.clear();
+            } else {
+                fills.remove(0);
+            }
+        }
+
+        let update = make_user_order_update(cumulative, "0", "100", "0.04", status);
+        spec.recovery.handle_update(make_carrier(update)).await;
+        let (report, fills) = spec.bundle();
+        assert_eq!(report.quantity, Quantity::from("1.00000000"));
+        assert_eq!(
+            report.filled_qty.as_decimal(),
+            cumulative.parse::<Decimal>().unwrap()
+        );
+        assert_eq!(fills.len(), usize::from(cumulative != "0"));
+    }
+
+    #[tokio::test]
+    async fn test_recovery_uses_rest_alias_and_fee_currency_after_context_removal() {
+        let mut spec = RecoverySpec::new().await;
+
+        let InstrumentAny::CurrencyPair(mut pair) = test_instrument() else {
+            unreachable!()
+        };
+
+        pair.id = InstrumentId::from("BTC-USDC.COINBASE");
+        pair.raw_symbol = Symbol::from("BTC-USDC");
+        pair.quote_currency = Currency::USDC();
+        let instrument = InstrumentAny::CurrencyPair(pair);
+        spec.recovery.http_client.cache_instrument(&instrument);
+        spec.recovery.instruments = Arc::new(AHashMap::from([("BTC-USDC".into(), instrument)]));
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["product_id"] = "BTC-USDC".into();
+            for fill in state.fills["fills"].as_array_mut().unwrap() {
+                fill["product_id"] = "BTC-USDC".into();
+            }
+        }
+
+        let update = make_user_order_update("1", "0", "112", "0.10", CbStatus::Filled);
+        spec.recovery
+            .handle_update(make_carrier(update.clone()))
+            .await;
+        let (first_order, first_fills) = spec.bundle();
+        spec.recovery.handle_update(make_carrier(update)).await;
+        let (replay_order, replay_fills) = spec.bundle();
+
+        assert_eq!(
+            first_order.instrument_id,
+            InstrumentId::from("BTC-USDC.COINBASE")
+        );
+        assert_eq!(replay_order.instrument_id, first_order.instrument_id);
+        assert_eq!(first_fills.len(), 2);
+        assert_eq!(replay_fills.len(), 2);
+
+        for (first, replay) in first_fills.iter().zip(&replay_fills) {
+            assert_eq!(first.instrument_id, first_order.instrument_id);
+            assert_eq!(replay.instrument_id, first.instrument_id);
+            assert_eq!(first.commission.currency, Currency::USDC());
+            assert_eq!(replay.commission, first.commission);
+            assert_eq!(replay.trade_id, first.trade_id);
+        }
+    }
+
+    #[tokio::test]
+    async fn test_recovery_deduplicates_rest_rows_before_coverage() {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            let duplicate = state.fills["fills"][1].clone();
+            state.fills["fills"].as_array_mut().unwrap().push(duplicate);
+        }
+
+        let update = make_user_order_update("1", "0", "112", "0.10", CbStatus::Filled);
+        spec.recovery.handle_update(make_carrier(update)).await;
+        let (_, fills) = spec.bundle();
+        assert_eq!(fills.len(), 2);
+        assert_eq!(
+            fills
+                .iter()
+                .map(|fill| fill.last_qty.as_decimal())
+                .sum::<Decimal>(),
+            rust_decimal_macros::dec!(1)
+        );
+    }
+
+    #[tokio::test]
+    async fn test_discovery_does_not_hide_an_unparsable_fill() {
+        let mut spec = RecoverySpec::new().await;
+        spec.state.lock().fills["fills"][0]["size"] = "invalid".into();
+        spec.recovery.retry().await;
+        assert_eq!(spec.recovery.pending.lock().len(), 1);
+        assert!(spec.rx.try_recv().is_err());
+
+        spec.state.lock().fills["fills"][0]["size"] = "0.6".into();
+        spec.recovery.retry().await;
+        let (_, fills) = spec.bundle();
+        assert_eq!(fills.len(), 2);
+        assert!(spec.recovery.pending.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_pending_terminal_is_not_replaced_by_stale_update() {
+        let spec = RecoverySpec::new().await;
+        let terminal = make_carrier(make_user_order_update(
+            "1",
+            "0",
+            "112",
+            "0.10",
+            CbStatus::Filled,
+        ));
+        let stale = make_carrier(make_user_order_update(
+            "0.4",
+            "0.6",
+            "100",
+            "0.04",
+            CbStatus::Open,
+        ));
+        spec.recovery.queue(*terminal.report.clone());
+        spec.recovery.queue(*stale.report);
+        let pending = spec.recovery.pending.lock();
+        assert_eq!(pending[&VenueOrderId::from("venue-1")], *terminal.report);
+    }
+
+    #[tokio::test]
+    async fn test_recovery_timer_publishes_pending_terminal_without_user_message() {
+        let mut spec = RecoverySpec::new().await;
+        let carrier = make_carrier(make_user_order_update(
+            "1",
+            "0",
+            "112",
+            "0.10",
+            CbStatus::Filled,
+        ));
+        spec.recovery.queue(*carrier.report);
+        let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let reports = {
+            let run = spec.recovery.run(
+                rx,
+                Duration::from_millis(1),
+                get_atomic_clock_realtime(),
+                false,
+            );
+            tokio::pin!(run);
+
+            let collect = async {
+                let mut reports = Vec::new();
+
+                loop {
+                    let ExecutionEvent::Report(report) = spec.rx.recv().await.unwrap() else {
+                        panic!("expected execution report");
+                    };
+
+                    let complete = matches!(&report, ExecutionReport::Fill(fill) if fill.trade_id.as_str() == "trade-beta");
+                    reports.push(report);
+                    if complete {
+                        return reports;
+                    }
+                }
+            };
+
+            tokio::select! {
+                () = &mut run => panic!("recovery loop stopped while the input channel is open"),
+                result = tokio::time::timeout(Duration::from_secs(2), collect) => result.unwrap(),
+            }
+        };
+
+        assert_eq!(reports.len(), 3);
+
+        let trade_ids: Vec<_> = reports
+            .iter()
+            .filter_map(|report| match report {
+                ExecutionReport::Fill(fill) => Some(fill.trade_id.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(trade_ids, vec!["trade-alpha", "trade-beta"]);
+        assert!(spec.recovery.pending.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_recovery_preserves_new_target_queued_during_request() {
+        let mut spec = RecoverySpec::new().await;
+        let full_order = spec.state.lock().order.clone();
+        let full_fills = spec.state.lock().fills.clone();
+        let partial = make_carrier(make_user_order_update(
+            "0.4",
+            "0.6",
+            "100",
+            "0.04",
+            CbStatus::Open,
+        ));
+        let terminal = make_carrier(make_user_order_update(
+            "1",
+            "0",
+            "112",
+            "0.10",
+            CbStatus::Filled,
+        ));
+        spec.recovery.queue(*partial.report);
+        let pending = Arc::clone(&spec.recovery.pending);
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = "0.4".into();
+            state.fills["fills"].as_array_mut().unwrap().remove(0);
+            state.on_order = Some(Box::new(move || {
+                pending
+                    .lock()
+                    .insert(terminal.report.venue_order_id, *terminal.report);
+            }));
+        }
+
+        let error = spec.recovery.recover().await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "recovery target changed while reading REST"
+        );
+        assert!(spec.rx.try_recv().is_err());
+        assert_eq!(
+            spec.recovery.pending.lock()[&VenueOrderId::from("venue-1")].filled_qty,
+            Quantity::from("1.00000000")
+        );
+
+        {
+            let mut state = spec.state.lock();
+            state.order = full_order;
+            state.fills = full_fills;
+        }
+
+        spec.recovery.retry().await;
+        let (terminal, fills) = spec.bundle();
+        assert_eq!(terminal.order_status, OrderStatus::Filled);
+        assert_eq!(fills.len(), 2);
+        assert!(spec.recovery.pending.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_recovery_retains_pending_on_closed_event_receiver() {
+        let mut spec = RecoverySpec::new().await;
+        spec.rx.close();
+        let carrier = make_carrier(make_user_order_update(
+            "1",
+            "0",
+            "112",
+            "0.10",
+            CbStatus::Filled,
+        ));
+        spec.recovery.handle_update(carrier).await;
+        assert_eq!(spec.recovery.pending.lock().len(), 1);
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        spec.recovery.emitter.set_sender(tx);
+        spec.rx = rx;
+        spec.recovery.retry().await;
+        let (terminal, fills) = spec.bundle();
+        assert_eq!(terminal.order_status, OrderStatus::Filled);
+        assert_eq!(fills.len(), 2);
+        assert!(spec.recovery.pending.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_server_time_uses_venue_timestamp_and_rejects_missing_field() {
+        let spec = RecoverySpec::new().await;
+        spec.state.lock().order["iso"] = "2024-01-02T03:04:05.123Z".into();
+        let time = spec
+            .recovery
+            .http_client
+            .request_server_time()
+            .await
+            .unwrap();
+        assert_eq!(
+            time,
+            crate::http::parse::parse_rfc3339_timestamp("2024-01-02T03:04:05.123Z").unwrap()
+        );
+
+        spec.state.lock().order["iso"] = serde_json::Value::Null;
+        let error = spec
+            .recovery
+            .http_client
+            .request_server_time()
+            .await
+            .unwrap_err();
+        assert_eq!(error.to_string(), "server time response is missing iso");
+    }
+
+    #[rstest]
+    #[case::older_partial("1", CbStatus::Filled)]
+    #[case::active_before_cancel("0.4", CbStatus::Cancelled)]
+    #[tokio::test]
+    async fn test_recovery_waits_for_rest_to_reach_user_state(
+        #[case] expected_qty: &str,
+        #[case] status: CbStatus,
+    ) {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = "0.4".into();
+            state.fills["fills"].as_array_mut().unwrap().remove(0);
+        }
+
+        let carrier = make_carrier(make_user_order_update(
+            expected_qty,
+            "0",
+            "112",
+            "0.10",
+            status,
+        ));
+        spec.recovery.queue(*carrier.report);
+        let error = spec.recovery.recover().await.unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "REST order state has not reached the user-channel update"
+        );
+        assert_eq!(spec.recovery.pending.lock().len(), 1);
+        assert!(spec.rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn test_query_order_uses_ordered_rest_recovery() {
+        let mut spec = RecoverySpec::new().await;
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TRADER-001"),
+            ClientId::from("COINBASE-TEST"),
+            *COINBASE_VENUE,
+            OmsType::Netting,
+            AccountId::from("COINBASE-001"),
+            AccountType::Cash,
+            None,
+            cache,
+        );
+
+        let config = CoinbaseExecutionClientConfig {
+            api_key: Some("test-key".into()),
+            api_secret: Some("test-secret".into()),
             ..Default::default()
         };
 
-        let update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        process_user_order_update(
-            make_carrier(update),
-            Some(context),
-            &emitter,
-            &dedup,
-            &state,
+        let mut client = CoinbaseExecutionClient::new(core, config).unwrap();
+        client.http_client = spec.recovery.http_client.clone();
+        client.emitter = spec.recovery.emitter.clone();
+        client.instruments_cache = Arc::clone(&spec.recovery.instruments);
+
+        let command = QueryOrder::new(
+            TraderId::from("TRADER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("BTC-USD.COINBASE"),
+            ClientOrderId::from("client-1"),
+            Some(VenueOrderId::from("venue-1")),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
             None,
         );
+        client.query_order(command).unwrap();
+        tokio::time::timeout(Duration::from_secs(2), client.await_pending_tasks())
+            .await
+            .unwrap()
+            .unwrap();
+        let (report, fills) = spec.bundle();
 
-        let osrs = drain_status_reports(&mut rx);
-        assert_eq!(osrs.len(), 1);
-        assert!(osrs[0].post_only);
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(
+            fills
+                .iter()
+                .map(|fill| fill.trade_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["trade-alpha", "trade-beta"]
+        );
+        client.await_pending_tasks().await.unwrap();
     }
 
     #[rstest]
-    #[case(OrderType::Limit)]
-    #[case(OrderType::StopLimit)]
-    fn test_process_user_order_update_suppresses_unsafe_report_when_enrichment_unavailable(
-        #[case] order_type: OrderType,
+    #[case::visible(false)]
+    #[case::delayed_closing_fill(true)]
+    #[tokio::test]
+    async fn test_recovery_orders_interleaved_fills_across_orders(#[case] delayed: bool) {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            let mut closing = state.order.clone();
+            closing["order"]["order_id"] = "venue-2".into();
+            closing["order"]["client_order_id"] = "client-2".into();
+            closing["order"]["side"] = "SELL".into();
+            closing["order"]["filled_size"] = "0.4".into();
+            closing["order"]["average_filled_price"] = "110.00".into();
+            closing["order"]["last_fill_time"] = "2024-01-15T10:01:00Z".into();
+            closing["order"]["order_configuration"]["limit_limit_gtc"]["base_size"] = "0.4".into();
+            state.orders.insert("venue-2".into(), closing);
+            state.order["order"]["last_fill_time"] = "2024-01-15T10:02:00Z".into();
+            state.fills["fills"][1]["trade_time"] = "2024-01-15T10:00:00Z".into();
+            state.fills["fills"][0]["trade_time"] = "2024-01-15T10:02:00Z".into();
+            let mut fill = state.fills["fills"][1].clone();
+            fill["order_id"] = "venue-2".into();
+            fill["trade_id"] = "trade-gamma".into();
+            fill["side"] = "SELL".into();
+            fill["price"] = "110.00".into();
+            fill["commission"] = "0.08".into();
+            fill["trade_time"] = "2024-01-15T10:01:00Z".into();
+            state.fills["fills"].as_array_mut().unwrap().insert(0, fill);
+        }
+
+        let node = recovery_node();
+
+        if delayed {
+            let closing = spec.state.lock().fills["fills"]
+                .as_array_mut()
+                .unwrap()
+                .remove(0);
+            spec.recovery.retry().await;
+            assert!(spec.rx.try_recv().is_err());
+            assert_eq!(spec.recovery.pending.lock().len(), 2);
+            spec.state.lock().fills["fills"]
+                .as_array_mut()
+                .unwrap()
+                .push(closing);
+        }
+
+        spec.recovery.retry().await;
+        let reports = spec.reports();
+
+        let trades: Vec<_> = reports
+            .iter()
+            .filter_map(|report| match report {
+                ExecutionReport::Fill(fill) => Some(fill.trade_id.as_str()),
+                _ => None,
+            })
+            .collect();
+
+        assert_eq!(trades, vec!["trade-alpha", "trade-gamma", "trade-beta"]);
+        apply_recovery_reports(&node, &reports);
+        let events_before: Vec<_> = ["client-1", "client-2"]
+            .iter()
+            .map(|id| {
+                node.kernel()
+                    .cache
+                    .borrow()
+                    .order(&ClientOrderId::from(*id))
+                    .unwrap()
+                    .event_count()
+            })
+            .collect();
+
+        spec.recovery.retry().await;
+        apply_recovery_reports(&node, &spec.reports());
+        let cache = node.kernel().cache.borrow();
+        let positions = cache.positions_open_refs(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("0.600000"));
+        assert_eq!(positions[0].avg_px_open, rust_decimal_macros::dec!(120));
+
+        for (id, events) in ["client-1", "client-2"].iter().zip(events_before) {
+            let order = cache.order(&ClientOrderId::from(*id)).unwrap();
+            assert_eq!(order.status(), OrderStatus::Filled);
+            assert_eq!(order.event_count(), events);
+            assert_eq!(
+                order
+                    .events()
+                    .iter()
+                    .filter(|event| matches!(event, OrderEventAny::FillVoided(_)))
+                    .count(),
+                0
+            );
+        }
+    }
+
+    #[rstest]
+    #[case::already_published(true)]
+    #[case::startup_only(false)]
+    #[tokio::test]
+    async fn test_stale_recovery_cannot_void_newer_fills(#[case] published: bool) {
+        let mut spec = RecoverySpec::new().await;
+        let node = recovery_node();
+        spec.recovery.retry().await;
+        apply_recovery_reports(&node, &spec.reports());
+        if !published {
+            spec.recovery.published.lock().await.clear();
+        }
+
+        let before = node
+            .kernel()
+            .cache
+            .borrow()
+            .order(&ClientOrderId::from("client-1"))
+            .unwrap()
+            .event_count();
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = "0.4".into();
+            state.order["order"]["average_filled_price"] = "100.00".into();
+            state.fills["fills"].as_array_mut().unwrap().remove(0);
+        }
+
+        let partial = make_carrier(make_user_order_update(
+            "0.4",
+            "0.6",
+            "100",
+            "0.04",
+            CbStatus::Open,
+        ));
+        spec.recovery.queue(*partial.report);
+        let result = spec.recovery.recover().await;
+
+        if published {
+            assert_eq!(
+                result.unwrap_err().to_string(),
+                "REST order state precedes published recovery"
+            );
+            assert!(spec.rx.try_recv().is_err());
+        } else {
+            result.unwrap();
+            apply_recovery_reports(&node, &spec.reports());
+        }
+
+        let cache = node.kernel().cache.borrow();
+        let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+        let positions = cache.positions_open_refs(None, None, None, None, None);
+        assert_eq!(order.filled_qty(), Quantity::from("1.000000"));
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.event_count(), before);
+        assert_eq!(
+            order
+                .events()
+                .iter()
+                .filter(|event| matches!(event, OrderEventAny::FillVoided(_)))
+                .count(),
+            0
+        );
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("1.000000"));
+        assert_eq!(positions[0].avg_px_open, rust_decimal_macros::dec!(112));
+    }
+
+    #[rstest]
+    #[case::closed_order(false)]
+    #[case::query_pending(true)]
+    #[tokio::test]
+    async fn test_idle_recovery_discovers_fills_visible_after_empty_scan(
+        #[case] query_pending: bool,
     ) {
-        // For LIMIT / STOP_LIMIT orders, missing `price` (or `trigger_price`)
-        // would panic the engine reconciler. When enrichment is unavailable
-        // the OSR must be suppressed rather than emitted with `None` fields.
-        let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
-        let mut update = make_user_order_update("0", "1.0", "0", "0", CbStatus::Open);
-        update.order_type = match order_type {
-            OrderType::Limit => CbType::Limit,
-            OrderType::StopLimit => CbType::StopLimit,
-            _ => CbType::Limit,
+        let mut spec = RecoverySpec::new().await;
+        let complete = spec.state.lock().fills.clone();
+        let scanned = Arc::new(tokio::sync::Notify::new());
+        {
+            let scanned = Arc::clone(&scanned);
+            let mut state = spec.state.lock();
+            state.fills["fills"] = serde_json::Value::Array(Vec::new());
+            state.discover_orders = false;
+            state.on_discovery = Some(Box::new(move || scanned.notify_one()));
+        }
+
+        let state = Arc::clone(&spec.state);
+        let pending = Arc::clone(&spec.recovery.pending);
+        let target = make_carrier(make_user_order_update(
+            "1",
+            "0",
+            "112",
+            "0.10",
+            CbStatus::Filled,
+        ));
+
+        let make_visible = async move {
+            scanned.notified().await;
+            state.lock().fills = complete;
+
+            if query_pending {
+                pending
+                    .lock()
+                    .insert(target.report.venue_order_id, *target.report);
+            }
         };
 
-        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
+        let (_tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        let run = spec.recovery.run(
+            rx,
+            Duration::from_millis(1),
+            get_atomic_clock_realtime(),
+            false,
+        );
 
-        assert!(drain_status_reports(&mut rx).is_empty());
+        let collect = async {
+            make_visible.await;
+            let mut trades = Vec::new();
+
+            loop {
+                let ExecutionEvent::Report(report) = spec.rx.recv().await.unwrap() else {
+                    panic!("expected execution report");
+                };
+
+                match report {
+                    ExecutionReport::Fill(fill) => {
+                        trades.push(fill.trade_id);
+                        if trades.len() == 2 {
+                            return trades;
+                        }
+                    }
+                    ExecutionReport::Order(_) => {}
+                    other => panic!("unexpected recovery report: {other:?}"),
+                }
+            }
+        };
+
+        tokio::pin!(run);
+        let trades = tokio::select! {
+            () = &mut run => panic!("recovery loop stopped"),
+            result = tokio::time::timeout(Duration::from_secs(2), collect) => result.unwrap(),
+        };
+        assert_eq!(
+            trades.iter().map(|id| id.as_str()).collect::<Vec<_>>(),
+            vec!["trade-alpha", "trade-beta"]
+        );
     }
 
     #[rstest]
-    fn test_process_user_order_update_trade_id_fits_stack_str() {
-        // A full Coinbase venue UUID is 36 characters; concatenating the
-        // cumulative qty would overflow `TradeId`'s 36-char stack string,
-        // so the synthesized id is `{order_id_prefix_8}-{cumulative_qty}`.
-        let (emitter, mut rx) = make_emitter();
-        let (dedup, state) = make_dedup_state_pair();
-        let mut update = make_user_order_update("1.0", "0", "100.00", "0.05", CbStatus::Filled);
-        update.order_id = "11d357f0-155e-4ed4-b87c-1cf966f65d10".to_string();
+    #[case::zero_total("0", false)]
+    #[case::partial_total("0.4", true)]
+    #[case::empty_targeted_history("0", true)]
+    #[tokio::test]
+    async fn test_discovered_trades_survive_stale_totals_and_later_empty_scans(
+        #[case] filled_qty: &str,
+        #[case] targeted: bool,
+    ) {
+        let mut spec = RecoverySpec::new().await;
+        let complete = spec.state.lock().fills.clone();
+        let order = spec.state.lock().order.clone();
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = filled_qty.into();
 
-        process_user_order_update(make_carrier(update), None, &emitter, &dedup, &state, None);
+            if targeted {
+                let mut fills = complete.clone();
+                fills["fills"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|fill| filled_qty == "0.4" && fill["trade_id"] == "trade-alpha");
+                state.fills_targeted = Some(fills);
+            }
+        }
 
-        let fills = drain_fill_reports(&mut rx);
-        assert_eq!(fills.len(), 1);
-        let trade_id = fills[0].trade_id.as_str();
-        assert!(
-            trade_id.len() <= 36,
-            "trade_id was {} chars",
-            trade_id.len()
+        spec.recovery.retry().await;
+        assert!(spec.rx.try_recv().is_err());
+        assert_eq!(
+            spec.recovery.observed.lock()[&VenueOrderId::from("venue-1")].len(),
+            2
         );
-        assert!(
-            trade_id.starts_with("11d357f0-"),
-            "trade_id should start with the 8-char prefix, was {trade_id}",
+        spec.state.lock().fills["fills"] = serde_json::Value::Array(Vec::new());
+        spec.recovery.retry().await;
+        assert!(spec.rx.try_recv().is_err());
+        assert_eq!(
+            spec.recovery.observed.lock()[&VenueOrderId::from("venue-1")].len(),
+            2
         );
+        {
+            let mut state = spec.state.lock();
+            state.order = order;
+            state.fills = complete;
+            state.fills_targeted = None;
+        }
+
+        spec.recovery.retry().await;
+        let (report, fills) = spec.bundle();
+        assert_eq!(report.filled_qty, Quantity::from("1.00000000"));
+        assert_eq!(
+            fills
+                .iter()
+                .map(|fill| fill.trade_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["trade-alpha", "trade-beta"]
+        );
+        assert!(spec.recovery.observed.lock().is_empty());
+        assert!(spec.recovery.pending.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_recovery_preserves_newer_cached_amendment() {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = "0.4".into();
+            state.order["order"]["average_filled_price"] = "100.00".into();
+            state.fills["fills"].as_array_mut().unwrap().remove(0);
+        }
+
+        let node = recovery_node();
+        spec.attach(&node);
+        spec.recovery.retry().await;
+        apply_recovery_reports(&node, &spec.reports());
+        let mut amended = spec
+            .recovery
+            .http_client
+            .request_order_status_report(
+                AccountId::from("COINBASE-001"),
+                None,
+                Some(VenueOrderId::from("venue-1")),
+            )
+            .await
+            .unwrap();
+        amended.quantity = Quantity::from("2.00000000");
+        amended.price = Some(Price::from("10100.00"));
+        amended.ts_last = UnixNanos::from(amended.ts_last.as_u64() + 1);
+        node.kernel()
+            .exec_engine
+            .borrow_mut()
+            .reconcile_order_status_report(&amended);
+        {
+            let cache = node.kernel().cache.borrow();
+            let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+            assert_eq!(order.quantity(), amended.quantity);
+            assert_eq!(order.price(), amended.price);
+        }
+
+        spec.recovery.retry().await;
+        apply_recovery_reports(&node, &spec.reports());
+        let cache = node.kernel().cache.borrow();
+        let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+        assert_eq!(order.quantity(), amended.quantity);
+        assert_eq!(order.price(), amended.price);
+        assert_eq!(order.filled_qty(), Quantity::from("0.40000000"));
+    }
+
+    #[tokio::test]
+    async fn test_external_recovery_emits_order_status_before_real_fills() {
+        let mut spec = RecoverySpec::new().await;
+        spec.recovery.retry().await;
+        let reports = spec.reports();
+
+        let ExecutionReport::Order(accepted) = &reports[0] else {
+            panic!("order status must precede external fills")
+        };
+
+        let ExecutionReport::Order(terminal) = &reports[3] else {
+            panic!("final order status must follow external fills")
+        };
+
+        let fills: Vec<_> = reports[1..3]
+            .iter()
+            .map(|report| {
+                let ExecutionReport::Fill(fill) = report else {
+                    panic!("expected canonical fill report")
+                };
+
+                assert_eq!(fill.account_id, accepted.account_id);
+                assert_eq!(fill.instrument_id, accepted.instrument_id);
+                assert_eq!(fill.venue_order_id, accepted.venue_order_id);
+                fill.trade_id
+            })
+            .collect();
+
+        assert_eq!(reports.len(), 4);
+        assert_eq!(accepted.order_status, OrderStatus::Accepted);
+        assert_eq!(accepted.quantity, terminal.quantity);
+        assert_eq!(accepted.price, terminal.price);
+        assert_eq!(accepted.filled_qty, Quantity::from("0.00000000"));
+        assert_eq!(accepted.avg_px, None);
+        assert_eq!(accepted.ts_last, accepted.ts_accepted);
+        assert_eq!(terminal.order_status, OrderStatus::Filled);
+        assert_eq!(terminal.filled_qty, Quantity::from("1.00000000"));
+        assert_eq!(
+            fills,
+            vec![TradeId::from("trade-alpha"), TradeId::from("trade-beta")]
+        );
+        let node = recovery_node();
+        apply_recovery_reports(&node, &reports);
+        let cache = node.kernel().cache.borrow();
+        let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.filled_qty(), terminal.filled_qty);
+        assert_eq!(
+            order.trade_ids().into_iter().copied().collect::<Vec<_>>(),
+            fills
+        );
+    }
+
+    #[rstest]
+    #[case::partial_cancel("CANCELLED", OrderStatus::Canceled, "0.4")]
+    #[case::partial_expire("EXPIRED", OrderStatus::Expired, "0.4")]
+    #[case::empty_cancel("CANCELLED", OrderStatus::Canceled, "0")]
+    #[case::empty_expire("EXPIRED", OrderStatus::Expired, "0")]
+    #[tokio::test]
+    async fn test_unknown_recovery_applies_native_terminal_after_fills(
+        #[case] status: &str,
+        #[case] expected: OrderStatus,
+        #[case] filled: &str,
+        #[values(false, true)] known: bool,
+        #[values(false, true)] missing_client_id: bool,
+    ) {
+        let mut spec = RecoverySpec::new().await;
+
+        let client_order_id = ClientOrderId::from(if missing_client_id {
+            "venue-1"
+        } else {
+            "client-1"
+        });
+
+        if missing_client_id {
+            spec.state.lock().order["order"]["client_order_id"] = "".into();
+        }
+
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = status.into();
+            state.order["order"]["filled_size"] = filled.into();
+            state.order["order"]["average_filled_price"] = "100".into();
+            let fills = state.fills["fills"].as_array_mut().unwrap();
+            fills.remove(0);
+            if filled == "0" {
+                fills.clear();
+            }
+        }
+
+        let node = recovery_node();
+
+        if known {
+            let mut report = spec
+                .recovery
+                .http_client
+                .request_order_status_report(
+                    AccountId::from("COINBASE-001"),
+                    None,
+                    Some(VenueOrderId::from("venue-1")),
+                )
+                .await
+                .unwrap();
+            report.quantity = Quantity::from("2.00000000");
+            report.price = Some(Price::from("10100.00"));
+            report.filled_qty = Quantity::from("0.00000000");
+            report.avg_px = None;
+            report.order_status = OrderStatus::Accepted;
+            node.kernel()
+                .exec_engine
+                .borrow_mut()
+                .reconcile_order_status_report(&report);
+        }
+
+        spec.attach(&node);
+
+        let status = if expected == OrderStatus::Canceled {
+            CbStatus::Cancelled
+        } else {
+            CbStatus::Expired
+        };
+
+        let mut update = make_user_order_update(filled, "0", "100", "0.04", status);
+        if missing_client_id {
+            update.client_order_id.clear();
+        }
+
+        let carrier = make_carrier(update);
+        spec.recovery.handle_update(carrier).await;
+        spec.apply(&node);
+        let before = node
+            .kernel()
+            .cache
+            .borrow()
+            .order(&client_order_id)
+            .unwrap()
+            .event_count();
+        spec.recovery.retry().await;
+        spec.apply(&node);
+        let cache = node.kernel().cache.borrow();
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(order.status(), expected);
+        assert_eq!(
+            order.quantity(),
+            Quantity::from(if known { "2.00000000" } else { "1.00000000" })
+        );
+        assert_eq!(
+            order.price(),
+            Some(Price::from(if known { "10100.00" } else { "10000.00" }))
+        );
+        assert_eq!(
+            order.filled_qty().as_decimal(),
+            filled.parse::<Decimal>().unwrap()
+        );
+        assert_eq!(order.event_count(), before);
+        assert_eq!(order.trade_ids().len(), usize::from(filled != "0"));
+        assert!(spec.recovery.lifecycle.lock().pending.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_recovery_accepts_cached_submitted_order_without_replacing_terms(
+        #[values(false, true)] fills_lag: bool,
+    ) {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = if fills_lag { "0.4" } else { "0" }.into();
+            if fills_lag {
+                state.fills["fills"].as_array_mut().unwrap().remove(0);
+                state.fail_fills = true;
+            } else {
+                state.fills["fills"].as_array_mut().unwrap().clear();
+            }
+        }
+
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("STRATEGY-007"))
+            .instrument_id(InstrumentId::from("BTC-USD.COINBASE"))
+            .client_order_id(ClientOrderId::from("client-1"))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("2.00000000"))
+            .price(Price::from("10100.00"))
+            .build();
+
+        let factory = OrderEventFactory::new(
+            TraderId::from("TRADER-001"),
+            AccountId::from("COINBASE-001"),
+            AccountType::Cash,
+            None,
+        );
+        let submitted = factory.generate_order_submitted(&order, UnixNanos::from(10));
+        order.apply(submitted).unwrap();
+        let node = recovery_node();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        spec.attach(&node);
+        let carrier = make_carrier(make_user_order_update(
+            if fills_lag { "0.4" } else { "0" },
+            if fills_lag { "0.6" } else { "1" },
+            "100",
+            "0.04",
+            CbStatus::Open,
+        ));
+        spec.recovery.handle_update(carrier).await;
+        spec.apply(&node);
+        {
+            let cache = node.kernel().cache.borrow();
+            let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+            assert_eq!(order.status(), OrderStatus::Accepted);
+            assert_eq!(order.quantity(), Quantity::from("2.00000000"));
+            assert_eq!(order.price(), Some(Price::from("10100.00")));
+            assert_eq!(order.filled_qty(), Quantity::from("0.00000000"));
+        }
+
+        if fills_lag {
+            assert_eq!(spec.recovery.pending.lock().len(), 1);
+        } else {
+            assert!(spec.recovery.pending.lock().is_empty());
+        }
+    }
+
+    #[rstest]
+    #[case::cancel(OrderStatus::PendingCancel)]
+    #[case::update(OrderStatus::PendingUpdate)]
+    #[tokio::test]
+    async fn test_recovery_preserves_pending_command_on_unchanged_open_report(
+        #[case] expected_status: OrderStatus,
+    ) {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = "0".into();
+            state.fills["fills"].as_array_mut().unwrap().clear();
+        }
+
+        let report = spec
+            .recovery
+            .http_client
+            .request_order_status_report(
+                AccountId::from("COINBASE-001"),
+                None,
+                Some(VenueOrderId::from("venue-1")),
+            )
+            .await
+            .unwrap();
+        let node = recovery_node();
+        node.kernel()
+            .exec_engine
+            .borrow_mut()
+            .reconcile_order_status_report(&report);
+        let order = node
+            .kernel()
+            .cache
+            .borrow()
+            .order(&ClientOrderId::from("client-1"))
+            .unwrap()
+            .clone();
+        let ts = UnixNanos::from(report.ts_last.as_u64() + 1);
+
+        let pending = match expected_status {
+            OrderStatus::PendingCancel => OrderEventAny::PendingCancel(OrderPendingCancel::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.account_id(),
+                UUID4::new(),
+                ts,
+                ts,
+                false,
+                order.venue_order_id(),
+            )),
+            OrderStatus::PendingUpdate => OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                order.account_id(),
+                UUID4::new(),
+                ts,
+                ts,
+                false,
+                order.venue_order_id(),
+            )),
+            _ => unreachable!(),
+        };
+
+        node.kernel().exec_engine.borrow_mut().process(&pending);
+        let before = node
+            .kernel()
+            .cache
+            .borrow()
+            .order(&order.client_order_id())
+            .unwrap()
+            .event_count();
+        node.kernel()
+            .exec_engine
+            .borrow_mut()
+            .reconcile_order_status_report(&report);
+        {
+            let cache = node.kernel().cache.borrow();
+            let order = cache.order(&order.client_order_id()).unwrap();
+            assert_eq!(order.status(), expected_status);
+            assert_eq!(order.event_count(), before);
+        }
+
+        spec.attach(&node);
+        spec.recovery.queue(report);
+        spec.recovery.retry().await;
+        spec.apply(&node);
+        let cache = node.kernel().cache.borrow();
+        let order = cache.order(&order.client_order_id()).unwrap();
+        assert_eq!(order.status(), expected_status);
+        assert_eq!(order.event_count(), before);
+        assert_eq!(order.quantity(), Quantity::from("1.00000000"));
+        assert_eq!(order.price(), Some(Price::from("10000.00")));
+        assert_eq!(order.filled_qty(), Quantity::from("0.00000000"));
+        assert!(order.trade_ids().is_empty());
+        assert!(
+            cache
+                .positions_refs(None, None, None, None, None)
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn test_partial_user_amendment_survives_snapshot_and_rest_replay() {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = "OPEN".into();
+            state.order["order"]["filled_size"] = "0.4".into();
+            state.order["order"]["average_filled_price"] = "100".into();
+            state.fills["fills"].as_array_mut().unwrap().remove(0);
+        }
+
+        let node = recovery_node();
+        spec.attach(&node);
+        spec.recovery.retry().await;
+        spec.apply(&node);
+
+        let context = OrderContext {
+            price: Some(Price::from("10100.00")),
+            ..Default::default()
+        };
+
+        spec.recovery
+            .order_contexts
+            .lock()
+            .insert("client-1".into(), context);
+        let update = make_user_order_update("0.4", "1.6", "100", "0.04", CbStatus::Open);
+        spec.recovery.handle_update(make_carrier(update)).await;
+        spec.apply(&node);
+        {
+            let cache = node.kernel().cache.borrow();
+            let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+            assert_eq!(order.quantity(), Quantity::from("2.00000000"));
+            assert_eq!(order.price(), Some(Price::from("10100.00")));
+        }
+
+        let stale = make_user_order_update("0.4", "0.6", "100", "0.04", CbStatus::Open);
+        spec.recovery
+            .handle_update(make_carrier_with_kind(stale, true))
+            .await;
+        spec.apply(&node);
+        let cache = node.kernel().cache.borrow();
+        let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+        assert_eq!(order.quantity(), Quantity::from("2.00000000"));
+        assert_eq!(order.price(), Some(Price::from("10100.00")));
+        assert_eq!(order.filled_qty(), Quantity::from("0.40000000"));
+        assert_eq!(
+            order.trade_ids().into_iter().copied().collect::<Vec<_>>(),
+            vec![TradeId::from("trade-alpha")]
+        );
+    }
+
+    #[rstest]
+    #[case::partial("OPEN", "2", "0.5", OrderStatus::PartiallyFilled)]
+    #[case::filled_increase("FILLED", "1", "0.5", OrderStatus::Filled)]
+    #[case::filled_decrease("FILLED", "1", "2", OrderStatus::Filled)]
+    #[tokio::test]
+    async fn test_recovery_updates_missed_quantity_amendment_before_fills(
+        #[case] status: &str,
+        #[case] quantity: &str,
+        #[case] cached_quantity: &str,
+        #[case] expected_status: OrderStatus,
+    ) {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["status"] = status.into();
+            state.order["order"]["order_configuration"]["limit_limit_gtc"]["base_size"] =
+                quantity.into();
+        }
+
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TRADER-001"))
+            .strategy_id(StrategyId::from("STRATEGY-007"))
+            .instrument_id(InstrumentId::from("BTC-USD.COINBASE"))
+            .client_order_id(ClientOrderId::from("client-1"))
+            .side(OrderSide::Buy)
+            .quantity(cached_quantity.parse().unwrap())
+            .price(Price::from("10100.00"))
+            .build();
+
+        let factory = OrderEventFactory::new(
+            TraderId::from("TRADER-001"),
+            AccountId::from("COINBASE-001"),
+            AccountType::Cash,
+            None,
+        );
+        let accepted = factory.generate_order_accepted(
+            &order,
+            VenueOrderId::from("venue-1"),
+            UnixNanos::from(1),
+            UnixNanos::from(1),
+        );
+        order.apply(accepted).unwrap();
+        let before = order.event_count();
+        let node = recovery_node();
+        node.kernel()
+            .cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        spec.attach(&node);
+        spec.recovery.retry().await;
+        spec.apply(&node);
+        let cache = node.kernel().cache.borrow();
+        let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+        let events = order.events();
+        let update_index = events
+            .iter()
+            .position(|event| matches!(event, OrderEventAny::Updated(_)))
+            .unwrap();
+        let fill_index = events
+            .iter()
+            .position(|event| matches!(event, OrderEventAny::Filled(_)))
+            .unwrap();
+        let positions = cache.positions_open_refs(None, None, None, None, None);
+        assert!(update_index < fill_index);
+        assert_eq!(order.status(), expected_status);
+        assert_eq!(
+            order.quantity().as_decimal(),
+            quantity.parse::<Decimal>().unwrap()
+        );
+        assert_eq!(order.price(), Some(Price::from("10100.00")));
+        assert_eq!(order.filled_qty(), Quantity::from("1.00000000"));
+        assert_eq!(order.event_count(), before + 3);
+        assert_eq!(
+            order.trade_ids().into_iter().copied().collect::<Vec<_>>(),
+            vec![TradeId::from("trade-alpha"), TradeId::from("trade-beta")]
+        );
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("1.00000000"));
+        assert_eq!(positions[0].avg_px_open, Decimal::from(112));
+        assert_eq!(positions[0].commissions(), vec![Money::from("0.10 USD")]);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_quote_market_recovery_normalizes_base_units_after_terminal_totals(
+        #[values(false, true)] known: bool,
+        #[values(false, true)] snapshot: bool,
+        #[values(false, true)] partial: bool,
+    ) {
+        let mut spec = RecoverySpec::new().await;
+        {
+            let mut state = spec.state.lock();
+            state.order["order"]["order_type"] = "MARKET".into();
+            state.order["order"]["time_in_force"] = "IMMEDIATE_OR_CANCEL".into();
+            state.order["order"]["order_configuration"] =
+                serde_json::json!({"market_market_ioc": {"quote_size": "112"}});
+            state.order["order"]["size_in_quote"] = true.into();
+            state.fills["fills"][0]["size_in_quote"] = true.into();
+            state.fills["fills"][0]["size"] = "72".into();
+            state.fills["fills"][1]["size_in_quote"] = true.into();
+            state.fills["fills"][1]["size"] = "40".into();
+        }
+
+        let node = recovery_node();
+
+        if known {
+            let mut order = OrderTestBuilder::new(OrderType::Market)
+                .trader_id(TraderId::from("TRADER-001"))
+                .strategy_id(StrategyId::from("STRATEGY-007"))
+                .instrument_id(InstrumentId::from("BTC-USD.COINBASE"))
+                .client_order_id(ClientOrderId::from("client-1"))
+                .side(OrderSide::Buy)
+                .quantity(Quantity::from("112.00"))
+                .quote_quantity(true)
+                .time_in_force(TimeInForce::Ioc)
+                .build();
+
+            let factory = OrderEventFactory::new(
+                TraderId::from("TRADER-001"),
+                AccountId::from("COINBASE-001"),
+                AccountType::Cash,
+                None,
+            );
+            let accepted = factory.generate_order_accepted(
+                &order,
+                VenueOrderId::from("venue-1"),
+                UnixNanos::from(1),
+                UnixNanos::from(1),
+            );
+            order.apply(accepted).unwrap();
+            node.kernel()
+                .cache
+                .borrow_mut()
+                .add_order(order, None, None, false)
+                .unwrap();
+            spec.recovery
+                .order_contexts
+                .lock()
+                .insert("client-1".into(), OrderContext::default());
+        }
+
+        spec.attach(&node);
+        let final_order = spec.state.lock().order.clone();
+        let final_fills = spec.state.lock().fills.clone();
+
+        if partial {
+            {
+                let mut state = spec.state.lock();
+                state.order["order"]["status"] = "OPEN".into();
+                state.order["order"]["filled_size"] = "0.4".into();
+                state.order["order"]["average_filled_price"] = "100".into();
+                state.fills["fills"].as_array_mut().unwrap().remove(0);
+            }
+
+            let mut update = make_user_order_update("0.4", "0", "100", "0.04", CbStatus::Open);
+            update.order_type = CbType::Market;
+            spec.recovery.handle_update(make_carrier(update)).await;
+            assert!(spec.rx.try_recv().is_err());
+            assert_eq!(spec.recovery.pending.lock().len(), 1);
+        }
+
+        {
+            let mut state = spec.state.lock();
+            state.order = final_order;
+            state.fills = final_fills;
+        }
+
+        let mut update = make_user_order_update("1", "0", "112", "0.10", CbStatus::Filled);
+        update.order_type = CbType::Market;
+        spec.recovery
+            .handle_update(make_carrier_with_kind(update, snapshot))
+            .await;
+        spec.apply(&node);
+        let before = node
+            .kernel()
+            .cache
+            .borrow()
+            .order(&ClientOrderId::from("client-1"))
+            .unwrap()
+            .event_count();
+        spec.recovery.retry().await;
+        spec.apply(&node);
+        let cache = node.kernel().cache.borrow();
+        let order = cache.order(&ClientOrderId::from("client-1")).unwrap();
+        let positions = cache.positions_refs(None, None, None, None, None);
+        assert_eq!(order.status(), OrderStatus::Filled);
+        assert_eq!(order.quantity(), Quantity::from("1.00000000"));
+        assert_eq!(order.filled_qty(), Quantity::from("1.00000000"));
+        assert!(!order.is_quote_quantity());
+        assert_eq!(
+            order.trade_ids().into_iter().copied().collect::<Vec<_>>(),
+            vec![TradeId::from("trade-alpha"), TradeId::from("trade-beta")]
+        );
+        assert_eq!(order.event_count(), before);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from("1.00000000"));
+        assert_eq!(positions[0].avg_px_open, Decimal::from(112));
+        assert_eq!(positions[0].commissions(), vec![Money::from("0.10 USD")]);
+    }
+
+    fn apply_recovery_reports(node: &LiveNode, reports: &[ExecutionReport]) {
+        for report in reports {
+            node.kernel()
+                .exec_engine
+                .borrow_mut()
+                .reconcile_execution_report(report);
+        }
+    }
+
+    fn recovery_node() -> LiveNode {
+        let node = LiveNode::builder(TraderId::from("TRADER-001"), Environment::Live)
+            .unwrap()
+            .build()
+            .unwrap();
+        let kernel = node.kernel();
+        kernel
+            .cache
+            .borrow_mut()
+            .add_instrument(test_instrument())
+            .unwrap();
+        let account_id = AccountId::from("COINBASE-001");
+
+        let state = AccountState::new(
+            account_id,
+            AccountType::Cash,
+            vec![AccountBalance::new(
+                Money::from("100000 USD"),
+                Money::from("0 USD"),
+                Money::from("100000 USD"),
+            )],
+            vec![],
+            true,
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        );
+        kernel
+            .cache
+            .borrow_mut()
+            .add_account(AccountAny::Cash(CashAccount::new(state, true, false)))
+            .unwrap();
+        node
     }
 }

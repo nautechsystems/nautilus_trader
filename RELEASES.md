@@ -28,6 +28,7 @@ Released on TBD (UTC).
 - Changed Binance HTTP error enums to add `RateLimitBlocked`; update exhaustive matches
 - Changed Binance REST to block on 418 without `Retry-After`; confirm the ban has ended before restarting
 - Changed Bybit HTTP `modify_order` to take `trigger_price`; pass `None` when unchanged
+- Changed Coinbase live fills to use polled REST history; raise `retry_delay_max_ms` to reduce REST usage
 - Changed Databento and Interactive Brokers futures year settings to `FuturesYearDigits`; Python keeps `1`/`2`
 - Changed Databento futures IDs to two-digit years by default; `futures_year_digits=1` keeps old IDs, thanks @faysou
 - Changed Databento futures-option IDs and underlyings to match `futures_year_digits`
@@ -74,6 +75,8 @@ Released on TBD (UTC).
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
 - Fixed Bybit demo cancels remaining pending cancel without an order stream update
 - Fixed Coinbase and OKX checks closing positions outside report scope (#5280), thanks for reporting @chaneyka1
+- Fixed Coinbase live fill IDs differing from REST reconciliation
+- Fixed Coinbase quote-sized fills being interpreted as base quantities
 - Fixed Databento statistics decoding with insufficient precision for VWAP, volatility, and delta
 - Fixed Databento statistics Arrow encoding accepting mixed instruments or precisions
 - Fixed Databento MBO decode errors delaying buffered book events at `F_LAST` boundaries

@@ -373,6 +373,10 @@ const API_PREFIX: &str = "/api/v3/brokerage";
 fn create_router(state: TestState) -> Router {
     Router::new()
         .route(
+            &format!("{API_PREFIX}/time"),
+            get(|| async { Json(json!({"iso": "2024-01-01T00:00:00Z"})) }),
+        )
+        .route(
             &format!("{API_PREFIX}/orders/historical/batch"),
             get(handle_orders_batch),
         )
