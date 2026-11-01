@@ -45,7 +45,7 @@ use nautilus_polymarket::{
     positions::{PolymarketPositionClient, PolymarketPositionOutcome},
     signing::eip712::{
         CTF_COLLATERAL_ADAPTER, DEPOSIT_WALLET_FACTORY, EXCHANGE_V3,
-        NEG_RISK_CTF_COLLATERAL_ADAPTER, POLYMARKET_COLLATERAL_TOKEN, POSITION_MANAGER,
+        NEG_RISK_CTF_COLLATERAL_ADAPTER, POLYMARKET_COLLATERAL_TOKEN, POSITION_MANAGER, ROUTER,
     },
 };
 use rstest::rstest;
@@ -77,6 +77,13 @@ struct TestServerState {
     last_headers: Arc<tokio::sync::Mutex<HashMap<String, String>>>,
     poll_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     poll_statuses: Arc<tokio::sync::Mutex<VecDeque<StatusCode>>>,
+    market_requests: Arc<tokio::sync::Mutex<Vec<String>>>,
+    rpc_reads: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    collateral_balance: Arc<tokio::sync::Mutex<u64>>,
+    router_allowance: Arc<tokio::sync::Mutex<u64>>,
+    router_operator: Arc<tokio::sync::Mutex<bool>>,
+    position_balances: Arc<tokio::sync::Mutex<[u64; 2]>>,
+    payout: Arc<tokio::sync::Mutex<Option<u64>>>,
 }
 
 impl Default for TestServerState {
@@ -110,6 +117,13 @@ impl Default for TestServerState {
                 "error_msg": null
             })]))),
             poll_statuses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
+            market_requests: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            rpc_reads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            collateral_balance: Arc::new(tokio::sync::Mutex::new(4_000_001)),
+            router_allowance: Arc::new(tokio::sync::Mutex::new(3_000_002)),
+            router_operator: Arc::new(tokio::sync::Mutex::new(true)),
+            position_balances: Arc::new(tokio::sync::Mutex::new([2_000_003, 1_000_004])),
+            payout: Arc::new(tokio::sync::Mutex::new(Some(750_005))),
         }
     }
 }
@@ -128,7 +142,11 @@ async fn handle_health() -> &'static str {
     "ok"
 }
 
-async fn handle_market(State(state): State<TestServerState>) -> Response {
+async fn handle_market(
+    State(state): State<TestServerState>,
+    Path(condition_id): Path<String>,
+) -> Response {
+    state.market_requests.lock().await.push(condition_id);
     let status = *state.market_status.lock().await;
     let body = state.market.lock().await.clone();
     (status, Json(body)).into_response()
@@ -237,7 +255,6 @@ fn position_client(addr: &SocketAddr) -> PolymarketPositionClient {
 }
 
 #[rstest]
-#[case(Some("v2"))]
 #[case(None)]
 #[case(Some("unknown"))]
 #[tokio::test]
@@ -264,10 +281,8 @@ async fn test_position_operations_refuse_unsupported_protocol(
     };
 
     let error = result.unwrap_err();
-    assert!(error.to_string().contains(&format!(
-        "Unsupported Polymarket market protocol {}; only v1 CTF markets are supported",
-        version.unwrap_or("missing"),
-    )));
+    assert!(error.to_string().contains("Unsupported Polymarket"));
+    assert!(error.to_string().contains(version.unwrap_or("missing")));
     assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
     assert_eq!(*state.last_submit.lock().await, None);
 }
@@ -377,15 +392,27 @@ async fn test_missing_neg_risk_is_invalid_metadata() {
 
 #[rstest]
 #[tokio::test]
-async fn test_submit_rejection_is_explicit() {
-    let state = TestServerState::default();
+async fn test_submit_rejection_is_explicit(#[values(false, true)] v2: bool) {
+    let state = TestServerState {
+        market: Arc::new(tokio::sync::Mutex::new(if v2 {
+            market_v2_json(1)
+        } else {
+            market_json(false)
+        })),
+        ..TestServerState::default()
+    };
+
+    let condition = state.market.lock().await["condition_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     *state.submit_status.lock().await = StatusCode::BAD_REQUEST;
     *state.submit_body.lock().await = json!({"error": "invalid signature"});
     let addr = start_mock_server(state).await;
     let client = position_client(&addr);
 
     let err = client
-        .split_position(CONDITION_ID, dec!(1))
+        .split_position(&condition, dec!(1))
         .await
         .unwrap_err();
     assert!(err.to_string().contains("400"));
@@ -757,6 +784,7 @@ static RECOVERY_LOG_CAPTURE: RecoveryLogCapture = RecoveryLogCapture {
 };
 
 async fn handle_rpc(State(state): State<TestServerState>, Json(body): Json<Value>) -> Json<Value> {
+    state.rpc_reads.lock().await.push(body.clone());
     if *state.rpc_error.lock().await {
         return Json(
             json!({"jsonrpc": "2.0", "id": 1, "error": {"code": -32000, "message": "unavailable"}}),
@@ -767,6 +795,10 @@ async fn handle_rpc(State(state): State<TestServerState>, Json(body): Json<Value
         state.rpc_code.lock().await.clone()
     } else {
         let data = body["params"][0]["data"].as_str().unwrap();
+        if let Some(response) = position_rpc_response(&state, data).await {
+            return Json(response);
+        }
+
         let id_selector = alloy_primitives::keccak256(b"id()");
 
         if data == format!("0x{}", alloy_primitives::hex::encode(&id_selector[..4]))
@@ -822,16 +854,62 @@ async fn handle_rpc(State(state): State<TestServerState>, Json(body): Json<Value
     Json(json!({"jsonrpc": "2.0", "id": 1, "result": result}))
 }
 
+async fn position_rpc_response(state: &TestServerState, data: &str) -> Option<Value> {
+    let call_selector = &data[..10];
+
+    let value = match call_selector {
+        "0x70a08231" => Some(*state.collateral_balance.lock().await),
+        "0xdd62ed3e" => Some(*state.router_allowance.lock().await),
+        "0xe985e9c5" => Some(u64::from(*state.router_operator.lock().await)),
+        "0x00fdd58e" => {
+            let outcome = usize::from_str_radix(&data[data.len() - 2..], 16).unwrap();
+            Some(state.position_balances.lock().await[outcome])
+        }
+        _ => None,
+    };
+
+    if let Some(value) = value {
+        return Some(json!({"jsonrpc":"2.0", "id":1, "result":format!("0x{value:064x}")}));
+    }
+
+    let payout_selector = alloy_primitives::keccak256(b"getPayout(uint256,uint256)");
+
+    if call_selector == format!("0x{}", alloy_primitives::hex::encode(&payout_selector[..4])) {
+        return Some(match *state.payout.lock().await {
+            Some(value) => json!({"jsonrpc":"2.0", "id":1, "result":format!("0x{value:064x}")}),
+            None => {
+                json!({"jsonrpc":"2.0", "id":1, "error":{"code":3,"message":"execution reverted"}})
+            }
+        });
+    }
+
+    None
+}
+
 #[rstest]
 #[tokio::test]
-async fn test_concurrent_clients_do_not_sign_competing_wallet_nonces() {
-    let state = TestServerState::default();
+async fn test_concurrent_clients_do_not_sign_competing_wallet_nonces(
+    #[values(false, true)] v2: bool,
+) {
+    let state = TestServerState {
+        market: Arc::new(tokio::sync::Mutex::new(if v2 {
+            market_v2_json(1)
+        } else {
+            market_json(false)
+        })),
+        ..TestServerState::default()
+    };
+
+    let condition = state.market.lock().await["condition_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let addr = start_mock_server(state.clone()).await;
     let first = position_client(&addr);
     let second = position_client(&addr);
     let (a, b) = tokio::join!(
-        first.split_position(CONDITION_ID, dec!(1)),
-        second.merge_positions(CONDITION_ID, dec!(2)),
+        first.split_position(&condition, dec!(1)),
+        second.merge_positions(&condition, if v2 { dec!(0.5) } else { dec!(2) }),
     );
     assert_eq!(usize::from(a.is_ok()) + usize::from(b.is_ok()), 1);
     let err = a.err().or_else(|| b.err()).unwrap();
@@ -841,18 +919,30 @@ async fn test_concurrent_clients_do_not_sign_competing_wallet_nonces() {
 
 #[rstest]
 #[tokio::test]
-async fn test_ambiguous_submit_blocks_recreated_client() {
-    let state = TestServerState::default();
+async fn test_ambiguous_submit_blocks_recreated_client(#[values(false, true)] v2: bool) {
+    let state = TestServerState {
+        market: Arc::new(tokio::sync::Mutex::new(if v2 {
+            market_v2_json(1)
+        } else {
+            market_json(false)
+        })),
+        ..TestServerState::default()
+    };
+
+    let condition = state.market.lock().await["condition_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     *state.submit_empty_body.lock().await = true;
     let addr = start_mock_server(state.clone()).await;
     let client = position_client(&addr);
     client
-        .split_position(CONDITION_ID, dec!(1))
+        .split_position(&condition, dec!(1))
         .await
         .unwrap_err();
     drop(client);
     let err = position_client(&addr)
-        .split_position(CONDITION_ID, dec!(1))
+        .split_position(&condition, dec!(1))
         .await
         .unwrap_err();
     assert!(
@@ -895,13 +985,25 @@ async fn test_cancelled_submit_retains_wallet_reservation() {
 
 #[rstest]
 #[tokio::test]
-async fn test_terminal_submission_allows_advanced_nonce() {
-    let state = TestServerState::default();
+async fn test_terminal_submission_allows_advanced_nonce(#[values(false, true)] v2: bool) {
+    let state = TestServerState {
+        market: Arc::new(tokio::sync::Mutex::new(if v2 {
+            market_v2_json(1)
+        } else {
+            market_json(false)
+        })),
+        ..TestServerState::default()
+    };
+
+    let condition = state.market.lock().await["condition_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let addr = start_mock_server(state.clone()).await;
     let client = position_client(&addr);
-    client.split_position(CONDITION_ID, dec!(1)).await.unwrap();
+    client.split_position(&condition, dec!(1)).await.unwrap();
     *state.nonce.lock().await = json!({"nonce":"8"});
-    client.merge_positions(CONDITION_ID, dec!(1)).await.unwrap();
+    client.merge_positions(&condition, dec!(1)).await.unwrap();
     assert_eq!(state.submit_count.load(Ordering::SeqCst), 2);
     assert_eq!(
         state.last_submit.lock().await.as_ref().unwrap()["nonce"],
@@ -917,8 +1019,23 @@ async fn test_terminal_submission_allows_advanced_nonce() {
 #[case("empty_identity")]
 #[case("reverted_identity")]
 #[tokio::test]
-async fn test_wallet_validation_prevents_submission(#[case] failure: &str) {
-    let state = TestServerState::default();
+async fn test_wallet_validation_prevents_submission(
+    #[case] failure: &str,
+    #[values(false, true)] v2: bool,
+) {
+    let state = TestServerState {
+        market: Arc::new(tokio::sync::Mutex::new(if v2 {
+            market_v2_json(1)
+        } else {
+            market_json(false)
+        })),
+        ..TestServerState::default()
+    };
+
+    let condition = state.market.lock().await["condition_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let addr = start_mock_server(state.clone()).await;
 
     match failure {
@@ -943,7 +1060,7 @@ async fn test_wallet_validation_prevents_submission(#[case] failure: &str) {
     }
 
     let err = position_client(&addr)
-        .split_position(CONDITION_ID, dec!(1))
+        .split_position(&condition, dec!(1))
         .await
         .unwrap_err();
 
@@ -1085,4 +1202,396 @@ async fn test_v2_trading_approvals_refuse_invalid_limits_before_submit(
         .unwrap_err();
     assert!(error.to_string().contains("pUSD amount must be"));
     assert_eq!(state.submit_count.load(Ordering::SeqCst), 0);
+}
+
+#[rstest]
+#[case("split")]
+#[case("merge")]
+#[case("redeem_yes")]
+#[case("redeem_no")]
+#[tokio::test]
+async fn test_v2_operations_use_router_and_asset_holder(
+    #[case] operation: &str,
+    #[values(1u8, 2u8)] module: u8,
+    #[values(false, true)] native: bool,
+) {
+    let state = TestServerState::default();
+    let market = market_v2_json(module);
+    let condition_id = market["condition_id"].as_str().unwrap().to_string();
+    *state.market.lock().await = market;
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+
+    let condition = if native {
+        &condition_id[..64]
+    } else {
+        &condition_id
+    };
+
+    let amount = dec!(0.654321);
+
+    let (tx, expected) = match operation {
+        "split" => (
+            client.split_position(condition, amount).await,
+            nautilus_polymarket::positions::calldata::encode_split_position_v2(condition, amount),
+        ),
+        "merge" => (
+            client.merge_positions(condition, amount).await,
+            nautilus_polymarket::positions::calldata::encode_merge_positions_v2(condition, amount),
+        ),
+        _ => {
+            let outcome = u8::from(operation == "redeem_no");
+            (
+                client.redeem_position(condition, outcome, amount).await,
+                nautilus_polymarket::positions::calldata::encode_redeem_position_v2(
+                    condition, outcome, amount,
+                ),
+            )
+        }
+    };
+
+    let outcome = tx.unwrap().wait().await.unwrap();
+    let expected = expected.unwrap();
+    assert_eq!(
+        outcome,
+        PolymarketPositionOutcome::Confirmed {
+            transaction_id: "tx-1".into(),
+            transaction_hash: Some("0xabc".into())
+        }
+    );
+    let submit = state.last_submit.lock().await.clone().unwrap();
+    assert_eq!(submit["nonce"], "7");
+    assert_eq!(
+        submit["depositWalletParams"]["depositWallet"],
+        wallet_address(&addr)
+    );
+    assert_eq!(
+        submit["depositWalletParams"]["calls"],
+        json!([
+            {"target":format!("{ROUTER:#x}"),"value":"0","data":format!("{}",expected.data)}
+        ])
+    );
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 1);
+    assert_eq!(
+        *state.market_requests.lock().await,
+        vec![condition_id.clone()]
+    );
+    let reads = state.rpc_reads.lock().await;
+
+    let permission_selector = if operation == "split" {
+        "0xdd62ed3e"
+    } else {
+        "0xe985e9c5"
+    };
+
+    let permission = reads
+        .iter()
+        .find(|read| {
+            read["params"][0]["data"]
+                .as_str()
+                .is_some_and(|data| data.starts_with(permission_selector))
+        })
+        .unwrap();
+
+    assert_eq!(
+        permission["params"][0]["to"],
+        format!(
+            "{:#x}",
+            if operation == "split" {
+                POLYMARKET_COLLATERAL_TOKEN
+            } else {
+                POSITION_MANAGER
+            }
+        )
+    );
+    assert_eq!(
+        permission["params"][0]["data"],
+        format!(
+            "{permission_selector}{:0>64}{:0>64}",
+            &wallet_address(&addr)[2..],
+            format!("{ROUTER:x}")
+        )
+    );
+
+    let position_zero = alloy_primitives::U256::from_str_radix(&condition_id[2..], 16).unwrap();
+    let owner = format!("{:0>64}", &wallet_address(&addr)[2..]);
+
+    let balance_reads: Vec<_> = reads
+        .iter()
+        .filter(|read| {
+            read["params"][0]["data"].as_str().is_some_and(|data| {
+                data.starts_with("0x70a08231") || data.starts_with("0x00fdd58e")
+            })
+        })
+        .map(|read| read["params"][0].clone())
+        .collect();
+
+    let expected_balances = if operation == "split" {
+        vec![json!({
+            "to": format!("{POLYMARKET_COLLATERAL_TOKEN:#x}"),
+            "data": format!("0x70a08231{owner}"),
+        })]
+    } else {
+        let outcomes = match operation {
+            "merge" => vec![0u8, 1],
+            "redeem_yes" => vec![0],
+            _ => vec![1],
+        };
+
+        outcomes
+            .into_iter()
+            .map(|outcome| {
+                let position = position_zero + alloy_primitives::U256::from(outcome);
+                json!({
+                    "to": format!("{POSITION_MANAGER:#x}"),
+                    "data": format!("0x00fdd58e{owner}{position:064x}"),
+                })
+            })
+            .collect()
+    };
+
+    assert_eq!(balance_reads, expected_balances);
+
+    if operation.starts_with("redeem") {
+        let selector = alloy_primitives::keccak256(b"getPayout(uint256,uint256)");
+        let prefix = format!("0x{}", alloy_primitives::hex::encode(&selector[..4]));
+
+        let payout = reads
+            .iter()
+            .find(|read| {
+                read["params"][0]["data"]
+                    .as_str()
+                    .is_some_and(|data| data.starts_with(&prefix))
+            })
+            .unwrap();
+
+        let position =
+            position_zero + alloy_primitives::U256::from(u8::from(operation == "redeem_no"));
+        assert_eq!(payout["params"][0]["to"], format!("{POSITION_MANAGER:#x}"));
+        assert_eq!(
+            payout["params"][0]["data"],
+            format!("{prefix}{position:064x}{:064x}", 654_321u64)
+        );
+    }
+}
+
+#[rstest]
+#[case("condition")]
+#[case("position")]
+#[case("outcome")]
+#[case("neg_risk")]
+#[case("missing_version")]
+#[case("combo")]
+#[tokio::test]
+async fn test_v2_operations_refuse_inconsistent_identity(
+    #[case] mutation: &str,
+    #[values("split", "merge", "redeem")] operation: &str,
+) {
+    let state = TestServerState::default();
+    let mut market = market_v2_json(1);
+    let condition = market["condition_id"].as_str().unwrap().to_string();
+    match mutation {
+        "condition" => market["condition_id"] = json!(format!("0x01{}00", "34".repeat(30))),
+        "position" => market["tokens"][0]["token_id"] = json!("42"),
+        "outcome" => market["tokens"][0]["outcome"] = market["tokens"][1]["outcome"].clone(),
+        "neg_risk" => market["neg_risk"] = json!(true),
+        "missing_version" => {
+            market.as_object_mut().unwrap().remove("version");
+        }
+        "combo" => market["condition_id"] = json!(format!("0x03{}00", "23".repeat(30))),
+        _ => unreachable!(),
+    }
+
+    *state.market.lock().await = market;
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    let result = match operation {
+        "split" => client.split_position(&condition, dec!(1)).await,
+        "merge" => client.merge_positions(&condition, dec!(1)).await,
+        _ => client.redeem_position(&condition, 0, dec!(1)).await,
+    };
+
+    assert!(matches!(result, Err(Error::BadRequest(_))));
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+}
+
+#[rstest]
+#[case("split", "balance")]
+#[case("split", "allowance")]
+#[case("merge", "operator")]
+#[case("merge", "yes_balance")]
+#[case("merge", "no_balance")]
+#[case("redeem", "operator")]
+#[case("redeem", "no_balance")]
+#[tokio::test]
+async fn test_v2_operations_refuse_missing_holder_assets_or_permissions(
+    #[case] operation: &str,
+    #[case] missing: &str,
+) {
+    let state = TestServerState::default();
+    let market = market_v2_json(1);
+    let condition = market["condition_id"].as_str().unwrap().to_string();
+    *state.market.lock().await = market;
+    match missing {
+        "balance" => *state.collateral_balance.lock().await = 999_999,
+        "allowance" => *state.router_allowance.lock().await = 999_999,
+        "operator" => *state.router_operator.lock().await = false,
+        "yes_balance" => state.position_balances.lock().await[0] = 999_999,
+        "no_balance" => state.position_balances.lock().await[1] = 999_999,
+        _ => unreachable!(),
+    }
+
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    let result = match operation {
+        "split" => client.split_position(&condition, dec!(1)).await,
+        "merge" => client.merge_positions(&condition, dec!(1)).await,
+        _ => client.redeem_position(&condition, 1, dec!(1)).await,
+    };
+
+    assert!(matches!(result, Err(Error::BadRequest(_))));
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+}
+
+#[rstest]
+#[case(Some(0), true)]
+#[case(None, false)]
+#[tokio::test]
+async fn test_v2_redemption_distinguishes_zero_from_unavailable_payout(
+    #[case] payout: Option<u64>,
+    #[case] submitted: bool,
+) {
+    let state = TestServerState::default();
+    let market = market_v2_json(2);
+    let condition = market["condition_id"].as_str().unwrap().to_string();
+    *state.market.lock().await = market;
+    *state.payout.lock().await = payout;
+    let addr = start_mock_server(state.clone()).await;
+    let result = position_client(&addr)
+        .redeem_position(&condition, 1, dec!(1))
+        .await;
+    assert_eq!(result.is_ok(), submitted);
+    assert_eq!(
+        state.submit_count.load(Ordering::Acquire),
+        usize::from(submitted)
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_v2_legacy_redeem_remains_refused() {
+    let state = TestServerState::default();
+    let market = market_v2_json(1);
+    let condition = market["condition_id"].as_str().unwrap().to_string();
+    *state.market.lock().await = market;
+    let addr = start_mock_server(state.clone()).await;
+    let error = position_client(&addr)
+        .redeem_positions(&condition)
+        .await
+        .unwrap_err();
+    assert!(error.to_string().contains("only v1 CTF markets"));
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ctf_operations_refuse_mismatched_condition(
+    #[values("split", "merge", "redeem")] operation: &str,
+) {
+    let state = TestServerState::default();
+    state.market.lock().await["condition_id"] = json!(format!("0x{}", "dd".repeat(32)));
+    let addr = start_mock_server(state.clone()).await;
+    let client = position_client(&addr);
+    let result = match operation {
+        "split" => client.split_position(CONDITION_ID, dec!(1)).await,
+        "merge" => client.merge_positions(CONDITION_ID, dec!(1)).await,
+        _ => client.redeem_positions(CONDITION_ID).await,
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "bad request: Market condition ID does not match the requested condition"
+    );
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_v2_redemption_refuses_ctf_market() {
+    let state = TestServerState::default();
+    let condition = format!("0x01{}00", "23".repeat(30));
+    state.market.lock().await["condition_id"] = json!(condition);
+    let addr = start_mock_server(state.clone()).await;
+    let error = position_client(&addr)
+        .redeem_position(&condition, 1, dec!(1))
+        .await
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "bad request: redeem_position requires a V2 market; use redeem_positions for CTF"
+    );
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 0);
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_python_v2_redemption_arguments_reach_wallet_submission() {
+    use pyo3::{
+        Python,
+        types::{PyDict, PyDictMethods, PyModule},
+    };
+
+    let state = TestServerState::default();
+    let market = market_v2_json(1);
+    let condition = market["condition_id"].as_str().unwrap().to_string();
+    *state.market.lock().await = market;
+    let addr = start_mock_server(state.clone()).await;
+    Python::initialize();
+    Python::attach(|py| {
+        let module = PyModule::new(py, "polymarket").unwrap();
+        nautilus_polymarket::python::polymarket(py, &module).unwrap();
+        let locals = PyDict::new(py);
+        locals.set_item("polymarket", module).unwrap();
+        locals.set_item("private_key", TEST_PRIVATE_KEY).unwrap();
+        locals.set_item("signer", TEST_SIGNER).unwrap();
+        locals.set_item("wallet", wallet_address(&addr)).unwrap();
+        locals.set_item("url", format!("http://{addr}")).unwrap();
+        locals.set_item("condition", &condition).unwrap();
+        py.run(c"import asyncio
+from decimal import Decimal
+async def check():
+    client = polymarket.PolymarketPositionClient(private_key=private_key, funder=wallet, relayer_api_key='dummy-key', relayer_api_key_address=signer, base_url_relayer=url, base_url_clob=url, base_url_rpc=url, timeout_secs=2)
+    tx = await client.redeem_position(condition, 1, Decimal('0.123457'))
+    result = await tx.wait()
+    assert (result.status, result.transaction_id, result.transaction_hash, result.error_msg) == ('confirmed', 'tx-1', '0xabc', None)
+asyncio.run(check())", Some(&locals), Some(&locals)).unwrap();
+    });
+
+    let submit = state.last_submit.lock().await.clone().unwrap();
+
+    let expected_data = nautilus_polymarket::positions::calldata::encode_redeem_position_v2(
+        &condition,
+        1,
+        dec!(0.123457),
+    )
+    .unwrap()
+    .data
+    .to_string();
+    assert_eq!(
+        submit["depositWalletParams"]["calls"][0]["data"],
+        expected_data
+    );
+    assert_eq!(state.submit_count.load(Ordering::Acquire), 1);
+}
+
+fn market_v2_json(module: u8) -> Value {
+    let condition = format!("0x{module:02x}{}00", "23".repeat(30));
+    let yes = alloy_primitives::U256::from_str_radix(&condition[2..], 16).unwrap();
+    json!({"version":"v2", "condition_id":condition, "closed":false, "neg_risk":module == 2,
+    "tokens":[
+        {"token_id":(yes + alloy_primitives::U256::from(1u8)).to_string(),"outcome":"No","winner":false},
+        {"token_id":yes.to_string(),"outcome":"Yes","winner":false}
+    ]})
 }

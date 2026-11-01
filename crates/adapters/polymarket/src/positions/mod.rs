@@ -35,14 +35,16 @@ use rust_decimal::Decimal;
 use self::{
     amounts::pusd_to_base_units,
     calldata::{
-        PositionCall, encode_approval, encode_merge_positions, encode_redeem_positions,
-        encode_split_position,
+        PositionCall, encode_approval, encode_merge_positions, encode_merge_positions_v2,
+        encode_redeem_position_v2, encode_redeem_positions, encode_split_position,
+        encode_split_position_v2, parse_condition_id_v2,
     },
 };
 use crate::{
     common::{
+        consts::MARKET_VERSION_V2,
         credential::{EvmPrivateKey, RelayerApiKey},
-        parse::validate_market_version,
+        parse::{validate_data_market_version, validate_outcome_ids, validate_outcomes},
     },
     http::{
         clob::PolymarketClobPublicClient,
@@ -52,7 +54,9 @@ use crate::{
             RelayerWalletSubmit,
         },
     },
-    signing::eip712::{DepositWalletCall, OrderSigner, approval_plan_v2, parse_address},
+    signing::eip712::{
+        DepositWalletCall, OrderSigner, approval_plan_v2, parse_address, parse_bytes32,
+    },
 };
 
 const DEFAULT_HTTP_TIMEOUT_SECS: u64 = 60;
@@ -248,15 +252,28 @@ impl PolymarketPositionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if market metadata is invalid, encoding fails, or Relayer
-    /// submission is rejected or ambiguous.
+    /// Returns an error if market metadata or encoding is invalid, V2 balance or Router permission
+    /// checks fail, or Relayer submission is rejected or ambiguous.
     pub async fn split_position(
         &self,
         condition_id: &str,
         amount: Decimal,
     ) -> Result<PolymarketPositionTransaction> {
-        let neg_risk = self.market_neg_risk(condition_id).await?;
-        let call = encode_split_position(condition_id, amount, neg_risk)?;
+        let base_amount = pusd_to_base_units(amount)?;
+
+        let call = match self.market(condition_id).await? {
+            PositionMarket::Ctf { neg_risk } => {
+                encode_split_position(condition_id, amount, neg_risk)?
+            }
+            PositionMarket::V2 { .. } => {
+                let call = encode_split_position_v2(condition_id, amount)?;
+                self.wallet
+                    .verify_v2_split(self.deposit_wallet, base_amount)
+                    .await?;
+                call
+            }
+        };
+
         self.submit_call(call, "Split position").await
     }
 
@@ -264,31 +281,82 @@ impl PolymarketPositionClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if market metadata is invalid, encoding fails, or Relayer
-    /// submission is rejected or ambiguous.
+    /// Returns an error if market metadata or encoding is invalid, V2 balance or Router permission
+    /// checks fail, or Relayer submission is rejected or ambiguous.
     pub async fn merge_positions(
         &self,
         condition_id: &str,
         amount: Decimal,
     ) -> Result<PolymarketPositionTransaction> {
-        let neg_risk = self.market_neg_risk(condition_id).await?;
-        let call = encode_merge_positions(condition_id, amount, neg_risk)?;
+        let base_amount = pusd_to_base_units(amount)?;
+
+        let call = match self.market(condition_id).await? {
+            PositionMarket::Ctf { neg_risk } => {
+                encode_merge_positions(condition_id, amount, neg_risk)?
+            }
+            PositionMarket::V2 { position_ids } => {
+                let call = encode_merge_positions_v2(condition_id, amount)?;
+                self.wallet
+                    .verify_v2_positions(self.deposit_wallet, &position_ids, base_amount)
+                    .await?;
+                call
+            }
+        };
+
         self.submit_call(call, "Merge positions").await
     }
 
-    /// Redeems both binary outcome balances for a resolved market.
+    /// Redeems both CTF binary outcome balances for a resolved market.
     ///
     /// # Errors
     ///
-    /// Returns an error if market metadata is invalid, encoding fails, or Relayer
-    /// submission is rejected or ambiguous.
+    /// Returns an error if the market is V2, metadata or encoding is invalid, or Relayer submission
+    /// is rejected or ambiguous.
     pub async fn redeem_positions(
         &self,
         condition_id: &str,
     ) -> Result<PolymarketPositionTransaction> {
-        let neg_risk = self.market_neg_risk(condition_id).await?;
+        let PositionMarket::Ctf { neg_risk } = self.market(condition_id).await? else {
+            return Err(Error::bad_request(
+                "redeem_positions supports only v1 CTF markets; use redeem_position for V2",
+            ));
+        };
+
         let call = encode_redeem_positions(condition_id, neg_risk)?;
         self.submit_call(call, "Redeem positions").await
+    }
+
+    /// Redeems an explicit amount of V2 outcome index `0` or `1`.
+    ///
+    /// The index is the position ID's final byte, independent of CLOB token-array order.
+    /// Amounts are exact six-decimal share quantities. A zero losing payout is redeemable;
+    /// a reverted or unavailable payout read fails before submission.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if metadata is unsupported, amounts or outcomes are invalid, Router permissions
+    /// are missing, balances are insufficient, payout reads fail, or submission is rejected or ambiguous.
+    pub async fn redeem_position(
+        &self,
+        condition_id: &str,
+        outcome_index: u8,
+        amount: Decimal,
+    ) -> Result<PolymarketPositionTransaction> {
+        let call = encode_redeem_position_v2(condition_id, outcome_index, amount)?;
+        let base_amount = pusd_to_base_units(amount)?;
+
+        let PositionMarket::V2 { position_ids, .. } = self.market(condition_id).await? else {
+            return Err(Error::bad_request(
+                "redeem_position requires a V2 market; use redeem_positions for CTF",
+            ));
+        };
+
+        let position_id = position_ids[usize::from(outcome_index)];
+        self.wallet
+            .verify_v2_positions(self.deposit_wallet, &[position_id], base_amount)
+            .await?;
+        self.wallet.payout(position_id, base_amount).await?;
+        self.submit_call(call, "Redeem V2 position").await
     }
 
     /// Approves ExchangeV3 trading from the Deposit Wallet holding the assets.
@@ -314,15 +382,76 @@ impl PolymarketPositionClient {
         self.submit_calls(&calls, "Approve V2 trading").await
     }
 
-    async fn market_neg_risk(&self, condition_id: &str) -> Result<bool> {
-        let market = self.clob.get_market(condition_id).await?;
-        validate_market_version(market.version.as_deref())
+    async fn market(&self, condition_id: &str) -> Result<PositionMarket> {
+        let query = if condition_id.len() == 64 {
+            let native = parse_condition_id_v2(condition_id)?;
+            format!("{native:#x}00")
+        } else {
+            condition_id.to_string()
+        };
+
+        let market = self.clob.get_market(&query).await?;
+        let version = validate_data_market_version(market.version.as_deref())
             .map_err(|e| Error::bad_request(e.to_string()))?;
-        market.neg_risk.ok_or_else(|| {
+
+        let neg_risk = market.neg_risk.ok_or_else(|| {
             Error::bad_request(format!(
                 "market metadata for {condition_id} is missing neg_risk"
             ))
-        })
+        })?;
+
+        if version != MARKET_VERSION_V2 {
+            if parse_bytes32(&market.condition_id, "market condition_id")?
+                != parse_bytes32(&query, "condition_id")?
+            {
+                return Err(Error::bad_request(
+                    "Market condition ID does not match the requested condition",
+                ));
+            }
+
+            return Ok(PositionMarket::Ctf { neg_risk });
+        }
+
+        let requested = parse_condition_id_v2(condition_id)?;
+        if parse_condition_id_v2(&market.condition_id)? != requested {
+            return Err(Error::bad_request(
+                "Market condition ID does not match the requested V2 condition",
+            ));
+        }
+
+        if (requested[0] == 2) != neg_risk {
+            return Err(Error::bad_request(
+                "V2 module and neg_risk metadata disagree",
+            ));
+        }
+
+        let ids: Vec<_> = market
+            .tokens
+            .iter()
+            .map(|token| token.token_id.clone())
+            .collect();
+        let outcomes: Vec<_> = market
+            .tokens
+            .iter()
+            .map(|token| token.outcome.clone())
+            .collect();
+        validate_outcome_ids(&ids)
+            .and_then(|()| validate_outcomes(&outcomes))
+            .map_err(|e| Error::bad_request(e.to_string()))?;
+        let yes_id = U256::from_be_slice(requested.as_slice()) << 8;
+        let position_ids = [yes_id, yes_id + U256::from(1u8)];
+
+        for id in ids {
+            let id =
+                U256::from_str_radix(&id, 10).map_err(|e| Error::bad_request(e.to_string()))?;
+            if !position_ids.contains(&id) {
+                return Err(Error::bad_request(
+                    "V2 position IDs do not match the requested condition and outcomes",
+                ));
+            }
+        }
+
+        Ok(PositionMarket::V2 { position_ids })
     }
 
     async fn submit_call(
@@ -434,6 +563,11 @@ impl PolymarketPositionClient {
     }
 }
 
+enum PositionMarket {
+    Ctf { neg_risk: bool },
+    V2 { position_ids: [U256; 2] },
+}
+
 #[derive(Debug)]
 struct WalletSubmission {
     nonce: U256,
@@ -490,7 +624,7 @@ mod tests {
 
     #[tokio::test]
     #[ignore = "requires read-only access to live Polymarket Gamma and CLOB APIs"]
-    async fn test_live_market_protocol_refusal() {
+    async fn test_live_market_protocol_selection() {
         let key = EvmPrivateKey::new(
             "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
         )
@@ -514,31 +648,22 @@ mod tests {
             crate::http::gamma::PolymarketGammaHttpClient::new(None, 20, RetryConfig::default())
                 .unwrap();
 
-        for (slug, supported) in [
-            ("xi-jinping-out-before-2027", true),
-            ("polyv2bkbsl-cay-bur-2026-10-23", false),
-        ] {
-            let markets = vec![gamma.inner().get_gamma_market_by_slug(slug).await.unwrap()];
+        for (market_id, protocol) in [("1557558", "v1"), ("5931597", "v2")] {
+            let markets = vec![gamma.inner().get_gamma_market(market_id).await.unwrap()];
             let market = &markets[0];
-            assert_eq!(
-                market.version.as_deref(),
-                Some(if supported { "v1" } else { "v2" })
-            );
+            assert_eq!(market.version.as_deref(), Some(protocol));
             let (instruments, transient) =
                 crate::http::gamma::parse_markets_with_transient(&markets, 1.into());
             assert_eq!(instruments.len(), 2);
             assert_eq!(transient, Vec::<String>::new());
-            let result = client.market_neg_risk(&market.condition_id).await;
+            let result = client.market(&market.condition_id).await.unwrap();
 
-            if supported {
-                assert_eq!(result.unwrap(), market.neg_risk.unwrap());
-            } else {
+            if protocol == "v1" {
                 assert!(
-                    result
-                        .unwrap_err()
-                        .to_string()
-                        .contains("Unsupported Polymarket market protocol v2")
+                    matches!(result, PositionMarket::Ctf { neg_risk } if neg_risk == market.neg_risk.unwrap())
                 );
+            } else {
+                assert!(matches!(result, PositionMarket::V2 { .. }));
             }
         }
     }

@@ -14,8 +14,8 @@ covers market data, trade execution, session key administration, and Deposit Wal
 
 The adapter supports market data and resolution for Conditional Tokens Framework (CTF) markets with
 protocol `v1` and Protocol V2 markets with protocol `v2`. Execution and account reconciliation support both
-protocols. Split, merge, and redeem operations require `v1`. Market protocol is separate from CLOB service
-version `2` and the `CTFExchangeV2` signed order structure.
+protocols. Deposit Wallet split, merge, and redeem support both protocols. Market protocol is separate
+from CLOB service version `2` and the `CTFExchangeV2` signed order structure.
 
 The market's explicit `version` selects `clobTokenIds` (JSON text) for `v1` or `positionIds` (an array of
 decimal strings) for `v2`, even when both fields exist. Instrument IDs use
@@ -115,8 +115,8 @@ Use these Rust components together or separately for live market data and trade 
   builder).
 - `PolymarketExecutionClientFactory`: Factory for Polymarket execution clients (used by the live
   node builder).
-- `PolymarketPositionClient`: CTF split, merge, and redeem operations, plus
-  [V2 trading approval submissions](#setting-smart-wallet-allowances) subject to Relayer policy.
+- `PolymarketPositionClient`: CTF and V2 [position operations](#position-operations),
+  plus [V2 trading approval submissions](#setting-smart-wallet-allowances) subject to Relayer policy.
 - `PolymarketSessionKeyClient`: Owner-operated session authorization, listing, and revocation.
 
 :::note
@@ -201,7 +201,7 @@ V2 trading requires an `ExchangeV3` pUSD allowance covering BUY spend plus fees 
 operator permission for SELL. CTF approvals do not grant V2 permissions.
 
 :::warning
-The Relayer requires unlimited ExchangeV3 approvals and rejects the adapter's bounded Deposit Wallet
+The Relayer requires unlimited ExchangeV3 approvals and rejects the adapter's bounded ExchangeV3
 approval requests with HTTP 400. Deposit Wallet V2 trading therefore relies on existing approvals,
 such as those granted through Polymarket's wallet flow. The adapter does not fall back to an unlimited approval.
 
@@ -546,34 +546,56 @@ that authorization remains active.
 ## Position operations
 
 `PolymarketPositionClient` splits pUSD into complete outcome-token sets, merges complete sets back
-to pUSD, and redeems resolved positions. It also exposes [V2 trading approval submissions](#setting-smart-wallet-allowances),
+to pUSD, and redeems resolved CTF and V2 positions. It also exposes [V2 trading approval submissions](#setting-smart-wallet-allowances),
 which Relayer policy blocks for bounded Deposit Wallet limits.
 The client supports Deposit Wallet (`PolymarketSignatureType::Poly1271`) only. Safe, Proxy, and EOA paths are not available. The client does not deploy wallets, batch
-unrelated calls, size a merge to `"max"`, or redeem positions automatically.
+unrelated calls, size a merge to `"max"`, or redeem positions automatically. Combo products are unsupported.
 
 ### Inputs and approvals
 
-Each split, merge, or redeem call looks up the public CLOB market by condition ID and requires protocol `v1`
-and a present `neg_risk` value before encoding calldata. It then selects the canonical pUSD token and
-the standard or negative-risk collateral adapter. Callers pass a 0x-prefixed 32-byte condition ID and
-do not supply contract addresses.
+Each split, merge, or redeem call verifies the public CLOB market's explicit protocol, condition ID,
+and `neg_risk` value.
+CTF calls use the standard or negative-risk collateral adapter. V2 calls use
+[Router and PositionManager](https://docs.polymarket.com/migrate/polymarket-v2/contract-integrations)
+with verified binary or negative-risk position IDs. Callers do not supply contract addresses.
 
+- **Condition IDs**: Both protocols require a `0x` prefix. CTF requires a 32-byte value. V2 accepts native
+  31-byte IDs or 32-byte IDs with a zero final byte. Nonzero padding is rejected before narrowing.
 - **Split and merge amounts**: Positive pUSD decimals exactly representable at six decimal places, with no
   rounding. Amounts use pUSD units, never base units. `"max"` is not accepted.
-- **Redemption**: No amount argument. Redeems both binary index sets `[1, 2]`.
+- **CTF redemption**: `redeem_positions(condition_id)` redeems both binary index sets `[1, 2]` without
+  an amount argument.
+- **V2 redemption**: `redeem_position(condition_id, outcome_index, amount)` redeems an explicit positive
+  share amount exactly representable at six decimal places, with no rounding. The index is the position
+  ID's final byte (`0` or `1`), independent of CLOB token-array order. The CTF redeem-both call refuses V2.
+
+Split spends the specified pUSD amount and creates that amount of each outcome. Merge consumes the specified
+amount of each outcome and returns pUSD. V2 redemption burns only the selected outcome amount and returns
+its PositionManager payout. A valid zero losing payout is redeemable; a reverted or unavailable payout
+read prevents submission. For negative-risk markets, the payout read can reflect a derived result without
+an individual condition-resolution event. Refresh wallet balances after confirmation.
 
 **Approvals are not submitted automatically.** Grant them from the Deposit Wallet before submitting:
 
-| Operation       | Required approval for the market's collateral adapter |
-| --------------- | ----------------------------------------------------- |
-| Split           | Spend the wallet's pUSD                               |
-| Merge or redeem | Act as a Conditional Tokens operator                  |
+| Operation       | CTF collateral adapter approval       | V2 Router approval                 |
+| --------------- | ------------------------------------- | ---------------------------------- |
+| Split           | Spend the wallet's pUSD.              | Spend the wallet's pUSD.           |
+| Merge or redeem | Act as a Conditional Tokens operator. | Act as a PositionManager operator. |
+
+V2 calls check balances and Router permissions on the Deposit Wallet holding the assets before submission.
+Merge checks both outcome balances. CTF and ExchangeV3 trading approvals do not authorize Router.
+Router pulls inputs from the wallet and returns outputs in the same transaction; no pre-transfer is needed.
+
+Grant Router permissions from the Deposit Wallet through the venue's
+[contract integration](https://docs.polymarket.com/migrate/polymarket-v2/contract-integrations).
+PositionManager operator approval covers **all V2 holdings**, without a per-position amount limit.
+A pUSD approval sets the remaining Router allowance; splits consume it.
 
 The standard collateral adapter is absent from the CTF approval plan in `polymarket-set-allowances`.
 The negative-risk adapter is included. The command's default mode submits CTF approvals from the EOA;
-its V2 mode requests trading permissions, not these CTF position-operation approvals. Use Polymarket's
-[wallet and authentication flow](https://docs.polymarket.com/trading/wallets-auth) to grant the
-position-operation approvals from the Deposit Wallet.
+its V2 mode requests ExchangeV3 trading permissions, not CTF or Router position-operation approvals.
+Use the [wallet and authentication flow](https://docs.polymarket.com/trading/wallets-auth)
+to grant CTF position-operation approvals from the Deposit Wallet.
 
 ### Submit and wait
 
@@ -591,8 +613,22 @@ transaction = await client.split_position(condition_id, Decimal("1"))
 outcome = await transaction.wait()
 ```
 
-`split_position` and `merge_positions` take the condition ID and a positive pUSD `Decimal`.
-`redeem_positions` takes only the condition ID. `approve_v2_trading` takes an explicit positive pUSD
+`split_position` and `merge_positions` take a condition ID and a positive pUSD `Decimal` for either protocol.
+To redeem V2 shares, set `v2_condition_id` to the market's actual condition ID:
+
+```rust tab="Rust"
+use rust_decimal::Decimal;
+
+let transaction = client.redeem_position(v2_condition_id, 1, Decimal::new(25, 2)).await?;
+let outcome = transaction.wait().await?;
+```
+
+```python tab="Python"
+transaction = await client.redeem_position(v2_condition_id, 1, Decimal("0.25"))
+outcome = await transaction.wait()
+```
+
+`approve_v2_trading` takes an explicit positive pUSD
 limit, which the Relayer rejects under the [approval policy](#setting-smart-wallet-allowances).
 After a successful Relayer submission, each method returns a `PolymarketPositionTransaction`.
 Call `wait()` once to poll until a `PolymarketPositionOutcome` is available.
@@ -656,7 +692,8 @@ client emits a `Deposit Wallet submission` record containing:
 
 - Wallet address, reserved nonce, and signed deadline (Unix seconds).
 - Operation, target contract, and value.
-- Unsigned calldata identifying the condition and, for split or merge, the amount.
+- Unsigned calldata identifying the condition and, for split, merge, or V2 redemption, the amount.
+  V2 redemption also includes the outcome index.
 
 The record excludes signatures and credentials, but contains trading intent. Restrict access to retained logs.
 Keep the transaction ID from the returned handle when available.
@@ -1197,13 +1234,13 @@ settlement report gate.
 
 ### Position management
 
-| Feature              | Binary options | Notes                                                             |
-| -------------------- | -------------- | ----------------------------------------------------------------- |
-| Query positions      | ✓              | Data API user positions, excluding resolved balances.             |
-| Split, merge, redeem | ✓              | CTF (`v1`) only; see [Position operations](#position-operations). |
-| Position mode        | -              | Binary outcome positions only.                                    |
-| Leverage control     | -              | No leverage available.                                            |
-| Margin mode          | -              | No margin trading.                                                |
+| Feature              | Binary options | Notes                                                                                       |
+| -------------------- | -------------- | ------------------------------------------------------------------------------------------- |
+| Query positions      | ✓              | Data API user positions, excluding resolved balances.                                       |
+| Split, merge, redeem | ✓              | CTF (`v1`) and V2 through Deposit Wallets; see [Position operations](#position-operations). |
+| Position mode        | -              | Binary outcome positions only.                                                              |
+| Leverage control     | -              | No leverage available.                                                                      |
+| Margin mode          | -              | No margin trading.                                                                          |
 
 ### Order querying
 
@@ -2760,9 +2797,7 @@ without an order or fill. The first close applied is authoritative (see
 
 Settlement does not redeem tokens or claim funds on-chain. The pUSD balance includes the payout
 only after redemption, so account balances exclude unredeemed winnings until then. Deposit Wallet
-users can redeem winning CTF tokens with [Position operations](#position-operations). For V2 redemption,
-use the venue's [contract integration](https://docs.polymarket.com/migrate/polymarket-v2/contract-integrations).
-The adapter refuses V2 split, merge, and redeem operations.
+users can redeem CTF and V2 positions with [Position operations](#position-operations).
 
 #### Closure and subscription release
 

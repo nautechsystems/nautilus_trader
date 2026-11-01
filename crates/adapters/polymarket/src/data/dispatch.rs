@@ -8625,13 +8625,19 @@ mod tests {
         market["resolutionStatus"] = serde_json::json!("resolved");
         market["outcomePrices"] = serde_json::json!("[\"1\",\"0\"]");
 
+        let attempts = usize::try_from(RetryConfig::default().max_retries).unwrap() + 1;
+
+        let open_replies = if initial_failure {
+            vec![ScriptedAutoLoadReply::failed(); attempts]
+        } else {
+            vec![ScriptedAutoLoadReply::ok(serde_json::json!([
+                market.clone()
+            ]))]
+        };
+
         let state = ScriptedAutoLoadServerState::new(
-            vec![if initial_failure {
-                ScriptedAutoLoadReply::failed()
-            } else {
-                ScriptedAutoLoadReply::ok(serde_json::json!([market.clone()]))
-            }],
-            vec![ScriptedAutoLoadReply::failed()],
+            open_replies,
+            vec![ScriptedAutoLoadReply::failed(); attempts],
         );
         let addr = start_scripted_auto_load_test_server(state.clone()).await;
         let (client, mut data_rx) = create_test_client(addr);
@@ -8693,7 +8699,11 @@ mod tests {
         );
         assert_eq!(
             state.queries.lock().len(),
-            if initial_failure { 1 } else { 2 }
+            if initial_failure {
+                attempts
+            } else {
+                attempts + 1
+            }
         );
     }
 

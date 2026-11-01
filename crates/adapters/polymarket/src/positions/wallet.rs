@@ -13,7 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Deposit Wallet identity checks against the Polygon factory.
+//! Polygon reads for Deposit Wallet identity and V2 position operations.
 
 use std::{collections::HashMap, fmt::Debug};
 
@@ -29,7 +29,9 @@ use serde_json::json;
 
 use crate::{
     http::error::{Error, Result},
-    signing::eip712::DEPOSIT_WALLET_FACTORY,
+    signing::eip712::{
+        DEPOSIT_WALLET_FACTORY, POLYMARKET_COLLATERAL_TOKEN, POSITION_MANAGER, ROUTER,
+    },
 };
 
 const DEFAULT_RPC_URL: &str = "https://polygon.drpc.org";
@@ -40,6 +42,13 @@ sol! {
     function nonce() external view returns (uint256);
     function predictWalletAddress(bytes32 id) external view returns (address);
     function predictLegacyWalletAddress(bytes32 id) external view returns (address);
+    function balanceOf(address account) external view returns (uint256);
+    function allowance(address owner, address spender) external view returns (uint256);
+    function isApprovedForAll(address owner, address operator) external view returns (bool);
+    interface PositionLedger {
+        function balanceOf(address owner, uint256 id) external view returns (uint256);
+    }
+    function getPayout(uint256 positionId, uint256 amount) external view returns (uint256);
 }
 
 pub(super) struct WalletVerifier {
@@ -122,6 +131,96 @@ impl WalletVerifier {
         let nonce = self.call(wallet, nonceCall {}.abi_encode()).await?;
         nonceCall::abi_decode_returns_validate(&nonce)
             .map_err(|e| Error::decode(format!("Invalid Deposit Wallet nonce: {e}")))
+    }
+
+    pub(super) async fn verify_v2_split(&self, owner: Address, amount: U256) -> Result<()> {
+        let balance = self
+            .read(
+                POLYMARKET_COLLATERAL_TOKEN,
+                balanceOfCall { account: owner },
+            )
+            .await?;
+
+        if balance < amount {
+            return Err(Error::bad_request(
+                "Deposit Wallet has insufficient pUSD for split",
+            ));
+        }
+
+        let allowance = self
+            .read(
+                POLYMARKET_COLLATERAL_TOKEN,
+                allowanceCall {
+                    owner,
+                    spender: ROUTER,
+                },
+            )
+            .await?;
+
+        if allowance < amount {
+            return Err(Error::bad_request(
+                "Deposit Wallet pUSD allowance for Router is insufficient",
+            ));
+        }
+
+        Ok(())
+    }
+
+    pub(super) async fn verify_v2_positions(
+        &self,
+        owner: Address,
+        position_ids: &[U256],
+        amount: U256,
+    ) -> Result<()> {
+        let approved = self
+            .read(
+                POSITION_MANAGER,
+                isApprovedForAllCall {
+                    owner,
+                    operator: ROUTER,
+                },
+            )
+            .await?;
+
+        if !approved {
+            return Err(Error::bad_request(
+                "Deposit Wallet must approve Router as a PositionManager operator",
+            ));
+        }
+
+        for &id in position_ids {
+            let balance = self
+                .read(
+                    POSITION_MANAGER,
+                    PositionLedger::balanceOfCall { owner, id },
+                )
+                .await?;
+
+            if balance < amount {
+                return Err(Error::bad_request(format!(
+                    "Deposit Wallet has insufficient V2 position balance for {id}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    pub(super) async fn payout(&self, position_id: U256, amount: U256) -> Result<U256> {
+        self.read(
+            POSITION_MANAGER,
+            getPayoutCall {
+                positionId: position_id,
+                amount,
+            },
+        )
+        .await
+    }
+
+    async fn read<C: SolCall>(&self, target: Address, call: C) -> Result<C::Return> {
+        let response = self.call(target, call.abi_encode()).await?;
+        C::abi_decode_returns_validate(&response)
+            .map_err(|_| Error::decode(format!("Invalid Polygon RPC result for {}", C::SIGNATURE)))
     }
 
     async fn predict(&self, data: Vec<u8>) -> Result<Address> {

@@ -69,6 +69,9 @@ pub const EXCHANGE_V3: Address = address!("0xe3333700cA9d93003F00f0F71f8515005F6
 /// Protocol V2 position ledger on Polygon mainnet.
 pub const POSITION_MANAGER: Address = address!("0x006F54F7f9A22e0000CC2AB60031000000ae9fEF");
 
+/// Protocol V2 position-operation Router proxy on Polygon mainnet.
+pub const ROUTER: Address = address!("0x12121212006e4CD160D18e3f00711DA5c3372600");
+
 /// Standard CTF collateral adapter address on Polygon mainnet.
 pub const CTF_COLLATERAL_ADAPTER: Address = address!("0xAdA100Db00Ca00073811820692005400218FcE1f");
 

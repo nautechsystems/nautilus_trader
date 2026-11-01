@@ -17,6 +17,7 @@ Released on TBD (UTC).
 - Added Deribit `load_ids` so a scoped node can omit other instruments during reconciliation
 - Added Deribit routed spot metadata and local order and market data capability checks
 - Added Polymarket Protocol V2 market data, execution, account reporting, and resolution support
+- Added Polymarket Protocol V2 split, merge, and redemption support for Deposit Wallets
 
 ### Breaking Changes
 
