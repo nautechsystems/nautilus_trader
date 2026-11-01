@@ -12,6 +12,7 @@ Released on TBD (UTC).
 - Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`
 - Added CoinAPI flat-file support for numeric book update codes
+- Added Deribit `load_ids` so a scoped node can omit other instruments during reconciliation
 - Added Deribit routed spot metadata and local order and market data capability checks
 
 ### Breaking Changes
@@ -46,6 +47,7 @@ Released on TBD (UTC).
 - Changed Databento statistics to use at least nine decimal places
 - Changed Databento market decoding to reject extra price digits, including sub-penny equity trades and bars
 - Changed Deribit orders to require cached instruments; include traded product types in execution `product_types`
+- Changed Deribit reconciliation to fail on uncached in-scope records; set `load_ids` to limit scope
 - Changed Deribit spot orders to reject `GTD`; use `GTC`, `IOC`, or `FOK`
 - Changed `DeribitInstrument` literals; add `is_cbe_routed: None` and `is_csr: None`
 - Changed Derive endpoint overrides to `SecretString`; pass strings to builders or use `.into()` in struct literals
@@ -99,6 +101,7 @@ Released on TBD (UTC).
 - Fixed Deribit instrument loading panicking on invalid spot definitions
 - Fixed Deribit single-order recovery treating failed lookups as missing orders
 - Fixed Deribit fill report requests returning partial results when a required trade fails to parse
+- Fixed Deribit reconciliation omitting in-scope orders, fills, and positions when the instrument is not cached
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects

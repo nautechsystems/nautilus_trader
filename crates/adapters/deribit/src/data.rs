@@ -711,6 +711,90 @@ impl DeribitDataClient {
 
         leg_ids
     }
+
+    async fn load_data_instruments(&self) -> anyhow::Result<Vec<InstrumentAny>> {
+        let product_types = if self.config.product_types.is_empty() {
+            vec![DeribitProductType::Future]
+        } else {
+            self.config.product_types.clone()
+        };
+
+        let mut all_instruments = Vec::new();
+
+        for product_type in &product_types {
+            let fetched = self
+                .http_client
+                .request_instruments(DeribitCurrency::ANY, Some(*product_type))
+                .await
+                .with_context(|| format!("failed to request instruments for {product_type:?}"))?;
+            self.cache_loaded_instruments(&fetched);
+            all_instruments.extend(fetched);
+        }
+
+        let required = self
+            .http_client
+            .request_uncached_instruments(self.config.load_ids.as_deref().unwrap_or(&[]))
+            .await
+            .context("failed to load reconciliation instruments")?;
+        self.cache_loaded_instruments(&required);
+        all_instruments.extend(required);
+        self.append_cached_load_ids(&mut all_instruments);
+        log::debug!(
+            "Cached instruments: client_id={}, total={}",
+            self.client_id,
+            all_instruments.len()
+        );
+        Ok(all_instruments)
+    }
+
+    fn cache_loaded_instruments(&self, instruments: &[InstrumentAny]) {
+        if instruments.is_empty() {
+            return;
+        }
+
+        self.http_client.cache_instruments(instruments);
+        self.instruments.rcu(|cached| {
+            for instrument in instruments {
+                cached.insert(instrument.id(), instrument.clone());
+            }
+        });
+    }
+
+    fn append_cached_load_ids(&self, instruments: &mut Vec<InstrumentAny>) {
+        let Some(load_ids) = self
+            .config
+            .load_ids
+            .as_deref()
+            .filter(|ids| !ids.is_empty())
+        else {
+            return;
+        };
+
+        let mut cached = Vec::new();
+
+        for instrument_id in load_ids {
+            if instruments
+                .iter()
+                .any(|instrument| instrument.id() == *instrument_id)
+            {
+                continue;
+            }
+
+            let Some(instrument) = self
+                .http_client
+                .get_instrument(&instrument_id.symbol.inner())
+            else {
+                continue;
+            };
+
+            if instrument.id() == *instrument_id {
+                cached.push(instrument);
+            }
+        }
+
+        self.cache_loaded_instruments(&cached);
+        instruments.extend(cached);
+    }
 }
 
 #[async_trait(?Send)]
@@ -793,41 +877,7 @@ impl DataClient for DeribitDataClient {
 
         register_deribit_custom_data();
 
-        // Fetch instruments for each configured product type
-        let product_types = if self.config.product_types.is_empty() {
-            vec![DeribitProductType::Future]
-        } else {
-            self.config.product_types.clone()
-        };
-
-        let mut all_instruments = Vec::new();
-
-        for product_type in &product_types {
-            let fetched = self
-                .http_client
-                .request_instruments(DeribitCurrency::ANY, Some(*product_type))
-                .await
-                .with_context(|| format!("failed to request instruments for {product_type:?}"))?;
-
-            // Cache in http client
-            self.http_client.cache_instruments(&fetched);
-
-            // Cache locally
-            self.instruments.rcu(|m| {
-                for instrument in &fetched {
-                    m.insert(instrument.id(), instrument.clone());
-                }
-            });
-
-            all_instruments.extend(fetched);
-        }
-
-        log::debug!(
-            "Cached instruments: client_id={}, total={}",
-            self.client_id,
-            all_instruments.len()
-        );
-
+        let all_instruments = self.load_data_instruments().await?;
         for instrument in &all_instruments {
             if let Err(e) = self
                 .data_sender

@@ -42,12 +42,13 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::AccountAny,
-    enums::{AccountType, OmsType, OrderType, TimeInForce},
+    enums::{AccountType, OmsType, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
     identifiers::{AccountId, ClientId, InstrumentId, Venue},
+    instruments::InstrumentAny,
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
-    types::{AccountBalance, MarginBalance},
+    types::{AccountBalance, MarginBalance, Quantity},
 };
 use serde::Serialize;
 
@@ -59,8 +60,11 @@ use crate::{
     },
     config::DeribitExecutionClientConfig,
     http::{
-        client::DeribitHttpClient, error::DeribitHttpError, models::DeribitCurrency,
+        client::DeribitHttpClient,
+        error::DeribitHttpError,
+        models::DeribitCurrency,
         query::GetOrderStateParams,
+        reconciliation::{ReconciliationScope, ReportRead, historical_miss_message},
     },
     websocket::{
         auth::DERIBIT_EXECUTION_SESSION_NAME,
@@ -390,6 +394,55 @@ impl DeribitExecutionClient {
         log::debug!("WebSocket stream handler started");
         Ok(())
     }
+
+    async fn load_execution_instruments(&self) -> anyhow::Result<()> {
+        if self.core.instruments_initialized() {
+            return Ok(());
+        }
+
+        for product_type in &self.config.product_types {
+            let instruments = self
+                .http_client
+                .request_instruments(DeribitCurrency::ANY, Some(*product_type))
+                .await
+                .with_context(|| format!("failed to request instruments for {product_type:?}"))?;
+
+            if instruments.is_empty() {
+                log::warn!("No instruments returned for {product_type:?}");
+                continue;
+            }
+
+            log::debug!("Fetched {} {product_type:?} instruments", instruments.len());
+            self.ws_client.cache_instruments(&instruments);
+            self.http_client.cache_instruments(&instruments);
+        }
+
+        let required = self
+            .http_client
+            .request_uncached_instruments(self.config.load_ids.as_deref().unwrap_or(&[]))
+            .await
+            .context("failed to load reconciliation instruments")?;
+
+        if !required.is_empty() {
+            self.ws_client.cache_instruments(&required);
+            self.http_client.cache_instruments(&required);
+        }
+
+        self.core.set_instruments_initialized();
+        Ok(())
+    }
+
+    fn reconciliation_scope(&self) -> ReconciliationScope {
+        ReconciliationScope::from_load_ids(self.config.load_ids.as_deref())
+    }
+
+    fn reports_or_historical_error<T>(read: ReportRead<T>) -> anyhow::Result<Vec<T>> {
+        if read.historical_incomplete() {
+            anyhow::bail!(historical_miss_message(&read.historical_misses));
+        }
+
+        Ok(read.reports)
+    }
 }
 
 #[async_trait(?Send)]
@@ -510,28 +563,7 @@ impl ExecutionClient for DeribitExecutionClient {
         // Set account ID for order/fill reports
         self.ws_client.set_account_id(self.core.account_id);
 
-        // Fetch and cache instruments in both HTTP client and WebSocket client
-        if !self.core.instruments_initialized() {
-            for product_type in &self.config.product_types {
-                let instruments = self
-                    .http_client
-                    .request_instruments(DeribitCurrency::ANY, Some(*product_type))
-                    .await
-                    .with_context(|| {
-                        format!("failed to request instruments for {product_type:?}")
-                    })?;
-
-                if instruments.is_empty() {
-                    log::warn!("No instruments returned for {product_type:?}");
-                    continue;
-                }
-
-                log::debug!("Fetched {} {product_type:?} instruments", instruments.len());
-                self.ws_client.cache_instruments(&instruments);
-                self.http_client.cache_instruments(&instruments);
-            }
-            self.core.set_instruments_initialized();
-        }
+        self.load_execution_instruments().await?;
 
         // Fetch initial account state
         let account_state = self
@@ -637,14 +669,16 @@ impl ExecutionClient for DeribitExecutionClient {
         } else if let Some(client_order_id) = &cmd.client_order_id {
             let reports = self
                 .http_client
-                .request_order_status_reports(
+                .request_order_status_reports_in_scope(
                     self.core.account_id,
                     cmd.instrument_id,
                     None,
                     None,
                     false, // Search all orders, not just open
+                    self.reconciliation_scope(),
                 )
-                .await?;
+                .await?
+                .reports;
 
             // Bulk reports can omit orders outside the cached products or venue history window
             reports
@@ -679,39 +713,51 @@ impl ExecutionClient for DeribitExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        self.http_client
-            .request_order_status_reports(
+        let read = self
+            .http_client
+            .request_order_status_reports_in_scope(
                 self.core.account_id,
                 cmd.instrument_id,
                 cmd.start,
                 cmd.end,
                 cmd.open_only,
+                self.reconciliation_scope(),
             )
-            .await
+            .await?;
+        Self::reports_or_historical_error(read)
     }
 
     async fn generate_fill_reports(
         &self,
         cmd: GenerateFillReports,
     ) -> anyhow::Result<Vec<FillReport>> {
-        self.http_client
+        let read = self
+            .http_client
             .request_fill_reports_scoped(
                 self.core.account_id,
                 cmd.instrument_id,
                 cmd.start,
                 cmd.end,
                 cmd.venue_order_id.as_ref(),
+                self.reconciliation_scope(),
             )
-            .await
+            .await?;
+        Self::reports_or_historical_error(read)
     }
 
     async fn generate_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
-        self.http_client
-            .request_position_status_reports(self.core.account_id, cmd.instrument_id)
-            .await
+        Ok(self
+            .http_client
+            .request_position_status_reports_in_scope(
+                self.core.account_id,
+                cmd.instrument_id,
+                self.reconciliation_scope(),
+            )
+            .await?
+            .reports)
     }
 
     async fn generate_mass_status(
@@ -744,11 +790,36 @@ impl ExecutionClient for DeribitExecutionClient {
             .build()
             .context("Failed to build GeneratePositionStatusReports")?;
 
-        let (order_reports, fill_reports, position_reports) = tokio::try_join!(
-            self.generate_order_status_reports(&order_cmd),
-            self.generate_fill_reports(fill_cmd),
-            self.generate_position_status_reports(&position_cmd),
+        let scope = self.reconciliation_scope();
+        let (order_read, fill_read, position_read) = tokio::try_join!(
+            self.http_client.request_order_status_reports_in_scope(
+                self.core.account_id,
+                order_cmd.instrument_id,
+                order_cmd.start,
+                order_cmd.end,
+                order_cmd.open_only,
+                scope.clone(),
+            ),
+            self.http_client.request_fill_reports_scoped(
+                self.core.account_id,
+                fill_cmd.instrument_id,
+                fill_cmd.start,
+                fill_cmd.end,
+                fill_cmd.venue_order_id.as_ref(),
+                scope.clone(),
+            ),
+            self.http_client.request_position_status_reports_in_scope(
+                self.core.account_id,
+                position_cmd.instrument_id,
+                scope,
+            ),
         )?;
+        let historical_incomplete = order_read.historical_incomplete()
+            || fill_read.historical_incomplete()
+            || position_read.historical_incomplete();
+        let order_reports = order_read.reports;
+        let fill_reports = fill_read.reports;
+        let position_reports = position_read.reports;
 
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
@@ -765,6 +836,16 @@ impl ExecutionClient for DeribitExecutionClient {
         mass_status.add_order_reports(order_reports);
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
+
+        if start.is_some() && historical_incomplete {
+            add_flat_reports_without_position(
+                &mut mass_status,
+                &self.http_client,
+                self.core.account_id,
+                ts_now,
+            );
+            mass_status.set_report_window(start, false);
+        }
 
         Ok(Some(mass_status))
     }
@@ -1157,6 +1238,68 @@ impl ExecutionClient for DeribitExecutionClient {
 
         Ok(())
     }
+}
+
+fn add_flat_reports_without_position(
+    mass_status: &mut ExecutionMassStatus,
+    http_client: &DeribitHttpClient,
+    account_id: AccountId,
+    ts_init: UnixNanos,
+) {
+    let reported: Vec<InstrumentId> = mass_status.position_reports().keys().copied().collect();
+    let mut missing = Vec::new();
+
+    for report in mass_status.order_reports().values() {
+        if position_snapshot_covers(http_client, report.instrument_id)
+            && !reported.contains(&report.instrument_id)
+            && !missing.contains(&report.instrument_id)
+        {
+            missing.push(report.instrument_id);
+        }
+    }
+
+    for fills in mass_status.fill_reports().values() {
+        let Some(fill) = fills.first() else {
+            continue;
+        };
+
+        if position_snapshot_covers(http_client, fill.instrument_id)
+            && !reported.contains(&fill.instrument_id)
+            && !missing.contains(&fill.instrument_id)
+        {
+            missing.push(fill.instrument_id);
+        }
+    }
+
+    missing.sort();
+    if missing.is_empty() {
+        return;
+    }
+
+    let flats = missing
+        .into_iter()
+        .map(|instrument_id| {
+            PositionStatusReport::new(
+                account_id,
+                instrument_id,
+                PositionSide::Flat,
+                Quantity::from("0"),
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            )
+        })
+        .collect();
+
+    mass_status.add_position_reports(flats);
+}
+
+fn position_snapshot_covers(http_client: &DeribitHttpClient, instrument_id: InstrumentId) -> bool {
+    http_client
+        .get_instrument(&instrument_id.symbol.inner())
+        .is_some_and(|instrument| !matches!(instrument, InstrumentAny::CurrencyPair(_)))
 }
 
 /// Dispatches a WebSocket message using the event emitter.

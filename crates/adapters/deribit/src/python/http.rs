@@ -371,6 +371,8 @@ impl DeribitHttpClient {
     /// Requests order status reports for reconciliation.
     ///
     /// Fetches order statuses from Deribit and converts them to Nautilus `OrderStatusReport`.
+    /// Every instrument is in scope. An unresolved open order fails the request. An unresolved
+    /// closed order inside the request window also fails the request.
     ///
     /// # Strategy
     /// - Uses `/private/get_open_orders` for all open orders (single efficient API call)
@@ -379,7 +381,10 @@ impl DeribitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or parsing fails.
+    /// Returns an error if:
+    /// - The request fails.
+    /// - An in-scope open order cannot be resolved.
+    /// - An in-scope closed order inside the request window cannot be resolved.
     #[pyo3(name = "request_order_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None, open_only=true))]
     fn py_request_order_status_reports<'py>(
@@ -421,9 +426,10 @@ impl DeribitHttpClient {
     /// Fetches user trades from Deribit and converts them to Nautilus `FillReport`.
     /// Automatically paginates through all results using time-cursor advancement.
     ///
-    /// Trades whose instruments are not in the client's instrument cache are omitted. A trade
-    /// for a cached instrument that cannot be parsed, including a commission outside the
-    /// representable money range, fails the request. No fill reports are returned.
+    /// Every instrument is in scope. A trade whose instrument is not cached is an unresolved
+    /// historical record and fails this request. A trade for a cached instrument that cannot be
+    /// parsed, including a commission outside the representable money range, also fails the
+    /// request. No fill reports are returned.
     ///
     /// # Strategy
     /// - Uses `/private/get_user_trades_by_instrument_and_time` when instrument is provided
@@ -434,6 +440,7 @@ impl DeribitHttpClient {
     /// Returns an error if:
     /// - The request fails.
     /// - A trade for a cached instrument cannot be parsed.
+    /// - An in-scope trade inside the request window cannot be resolved.
     #[pyo3(name = "request_fill_reports")]
     #[pyo3(signature = (account_id, instrument_id=None, start=None, end=None))]
     fn py_request_fill_reports<'py>(
@@ -471,6 +478,8 @@ impl DeribitHttpClient {
     /// Requests position status reports for reconciliation.
     ///
     /// Fetches positions from Deribit and converts them to Nautilus `PositionStatusReport`.
+    /// Every instrument is in scope. A non-flat position whose instrument is not cached fails the
+    /// request, and no reports are returned.
     ///
     /// # Strategy
     /// - Uses `currency=any` to fetch all positions in one call
@@ -478,7 +487,7 @@ impl DeribitHttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if the request fails or parsing fails.
+    /// Returns an error if the request fails or an in-scope non-flat position cannot be resolved.
     #[pyo3(name = "request_position_status_reports")]
     #[pyo3(signature = (account_id, instrument_id=None))]
     fn py_request_position_status_reports<'py>(

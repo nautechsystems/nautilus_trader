@@ -2160,6 +2160,60 @@ async fn test_subscribe_funding_rates_rejects_non_perpetual() {
 
 #[rstest]
 #[tokio::test]
+async fn test_data_connect_publishes_load_ids_missing_from_product_types() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.load_ids = Some(vec![InstrumentId::from("BTC_USDC.DERIBIT")]);
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+
+    client.connect().await.expect("connect");
+    let mut published = Vec::new();
+
+    while let Ok(event) = rx.try_recv() {
+        if let DataEvent::Data(Data::Instrument(instrument)) = event {
+            published.push(instrument.id());
+        }
+    }
+
+    client.disconnect().await.unwrap();
+
+    assert!(state.get_instrument_request_count.load(Ordering::Relaxed) >= 1);
+    assert!(published.contains(&InstrumentId::from("BTC_USDC.DERIBIT")));
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_data_reset_republishes_cached_load_ids() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.load_ids = Some(vec![InstrumentId::from("BTC_USDC.DERIBIT")]);
+    let mut client = DeribitDataClient::new(*DERIBIT_CLIENT_ID, config).unwrap();
+
+    client.connect().await.expect("connect");
+
+    while rx.try_recv().is_ok() {}
+    client.disconnect().await.unwrap();
+    client.reset().unwrap();
+    client.connect().await.expect("reconnect");
+    let mut republished = Vec::new();
+
+    while let Ok(event) = rx.try_recv() {
+        if let DataEvent::Data(Data::Instrument(instrument)) = event {
+            republished.push(instrument.id());
+        }
+    }
+
+    client.disconnect().await.unwrap();
+
+    assert!(republished.contains(&InstrumentId::from("BTC_USDC.DERIBIT")));
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_data_client_emits_instruments_on_connect() {
     let (addr, _state) = start_test_server().await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();

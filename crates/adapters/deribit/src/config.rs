@@ -15,22 +15,41 @@
 
 //! Configuration structures for the Deribit adapter.
 
-use nautilus_common::config::{ConfigResult, check_unique_values};
+use nautilus_common::config::{ConfigError, ConfigResult, check_unique_values};
 #[cfg(test)]
 use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::websocket::TransportBackend;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     common::{
+        consts::DERIBIT_VENUE,
         credential::credential_env_vars,
         enums::DeribitEnvironment,
         urls::{get_http_base_url, get_ws_url},
     },
     http::models::DeribitProductType,
 };
+
+fn validate_load_ids(load_ids: Option<&[InstrumentId]>) -> ConfigResult<()> {
+    let Some(load_ids) = load_ids else {
+        return Ok(());
+    };
+
+    check_unique_values("load_ids", load_ids)?;
+    for instrument_id in load_ids {
+        if instrument_id.venue != *DERIBIT_VENUE {
+            return Err(ConfigError::invalid_value(
+                "load_ids",
+                format!("{instrument_id} is not a DERIBIT instrument"),
+            ));
+        }
+    }
+
+    Ok(())
+}
 
 /// Configuration for the Deribit data client.
 #[derive(Debug, Clone, Serialize, Deserialize, bon::Builder)]
@@ -88,6 +107,11 @@ pub struct DeribitDataClientConfig {
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Extra instruments to load on connect.
+    ///
+    /// `None` or empty adds none. Set the same value on the execution client. That client uses
+    /// the value as the reconciliation scope.
+    pub load_ids: Option<Vec<InstrumentId>>,
 }
 
 #[cfg(feature = "python")]
@@ -105,6 +129,7 @@ nautilus_core::impl_pyo3_config_getters!(DeribitDataClientConfig {
     update_instruments_interval_mins: u64,
     auto_load_missing_instruments: bool,
     transport_backend: TransportBackend,
+    load_ids: Option<Vec<InstrumentId>>,
 });
 
 impl Default for DeribitDataClientConfig {
@@ -124,9 +149,11 @@ impl DeribitDataClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if `product_types` repeats a value.
+    /// Returns an error if `product_types` or `load_ids` repeats a value, or a `load_ids` entry
+    /// is not a DERIBIT instrument.
     pub fn validate(&self) -> ConfigResult<()> {
-        check_unique_values("product_types", &self.product_types)
+        check_unique_values("product_types", &self.product_types)?;
+        validate_load_ids(self.load_ids.as_deref())
     }
 
     /// Returns `true` when API credentials are available (in config or env vars).
@@ -204,6 +231,13 @@ pub struct DeribitExecutionClientConfig {
     /// WebSocket transport backend (defaults to `Tungstenite`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
+    /// Instruments this node loads during connect and reconciles.
+    ///
+    /// `None` or empty means every instrument is in scope. A non-empty set is the only
+    /// reconciliation scope. Set the same value on the data and execution clients, and set
+    /// `reconciliation_instrument_ids` to that set so continuous checks do not treat an omitted
+    /// position as flat.
+    pub load_ids: Option<Vec<InstrumentId>>,
 }
 
 #[cfg(feature = "python")]
@@ -219,6 +253,7 @@ nautilus_core::impl_pyo3_config_getters!(DeribitExecutionClientConfig {
     retry_delay_max_ms: u64,
     auth_timeout_secs: Option<u64>,
     transport_backend: TransportBackend,
+    load_ids: Option<Vec<InstrumentId>>,
 });
 
 impl Default for DeribitExecutionClientConfig {
@@ -232,9 +267,11 @@ impl DeribitExecutionClientConfig {
     ///
     /// # Errors
     ///
-    /// Returns an error if `product_types` repeats a value.
+    /// Returns an error if `product_types` or `load_ids` repeats a value, or a `load_ids` entry
+    /// is not a DERIBIT instrument.
     pub fn validate(&self) -> ConfigResult<()> {
-        check_unique_values("product_types", &self.product_types)
+        check_unique_values("product_types", &self.product_types)?;
+        validate_load_ids(self.load_ids.as_deref())
     }
 
     /// Returns `true` when API credentials are available (in config or env vars).
@@ -395,6 +432,35 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(config.ws_url(), "wss://test.deribit.com/ws/api/v2");
+    }
+
+    #[rstest]
+    fn test_load_ids_reject_duplicates_and_other_venues() {
+        let duplicate = DeribitExecutionClientConfig {
+            load_ids: Some(vec![
+                InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            ]),
+            ..Default::default()
+        };
+
+        let other_venue = DeribitDataClientConfig {
+            load_ids: Some(vec![InstrumentId::from("BTC-PERPETUAL.BINANCE")]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            duplicate.validate(),
+            Err(ConfigError::duplicate("load_ids", None)),
+        );
+        assert_eq!(
+            other_venue.validate().expect_err("other venue").to_string(),
+            ConfigError::invalid_value(
+                "load_ids",
+                "BTC-PERPETUAL.BINANCE is not a DERIBIT instrument",
+            )
+            .to_string(),
+        );
     }
 
     #[rstest]
