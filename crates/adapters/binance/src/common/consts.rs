@@ -192,6 +192,9 @@ pub struct BinanceRateLimitQuota {
     pub limit: u32,
 }
 
+pub(crate) const BINANCE_SPOT_REQUEST_WEIGHT_PER_MINUTE: NonZeroU32 =
+    NonZeroU32::new(1_200).expect("non-zero");
+
 /// Spot & margin REST limits (default IP weights).
 ///
 /// References:
@@ -201,7 +204,7 @@ pub const BINANCE_SPOT_RATE_LIMITS: &[BinanceRateLimitQuota] = &[
         rate_limit_type: BinanceRateLimitType::RequestWeight,
         interval: BinanceRateLimitInterval::Minute,
         interval_num: 1,
-        limit: 1_200,
+        limit: BINANCE_SPOT_REQUEST_WEIGHT_PER_MINUTE.get(),
     },
     BinanceRateLimitQuota {
         rate_limit_type: BinanceRateLimitType::Orders,

@@ -77,6 +77,7 @@ Released on TBD (UTC).
 - Fixed Binance REST requests ignoring 429 and 418 cooldowns from other requests
 - Fixed Binance cancellations and COIN-M modifications consuming order-count quota
 - Fixed Binance snapshot HTTP retries bypassing request-weight pacing
+- Fixed Binance REST pacing ignoring endpoint weights and USD-M funding and open-interest limits
 - Fixed Bybit batch modify orders not using the trade WebSocket batch amend
 - Fixed Bybit data client ignoring environment credentials when config credentials are omitted
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments

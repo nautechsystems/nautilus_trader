@@ -33,6 +33,7 @@ pub mod urls;
 
 pub(crate) mod failure;
 pub(crate) mod http;
+pub(crate) mod http_weights;
 
 pub(crate) mod websocket;
 

@@ -82,6 +82,7 @@ use crate::{
         bar::{binance_bar_data_type, binance_bars_to_custom_data, parse_binance_bar_type},
         consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
         enums::{BinanceEnvironment, BinanceProductType},
+        http_weights::depth_weight_futures as depth_request_weight,
         parse::{
             bar_spec_to_binance_interval, parse_millis, parse_millis_or_init,
             parse_price_at_precision, parse_quantity_at_precision,
@@ -1121,16 +1122,6 @@ fn parse_order_book_snapshot(
     }
 
     OrderBookDeltas::new(instrument_id, deltas)
-}
-
-// Futures `/depth` request weight by level limit, shared by USD-M and COIN-M
-fn depth_request_weight(limit: u32) -> u32 {
-    match limit {
-        ..=50 => 2,
-        51..=100 => 5,
-        101..=500 => 10,
-        _ => 20,
-    }
 }
 
 // The HTTP client has already spent its own retries, so an exhausted budget stays retryable

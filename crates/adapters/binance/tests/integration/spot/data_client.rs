@@ -2087,9 +2087,9 @@ async fn test_request_book_snapshot_paces_requests_by_weight() {
     while rx.try_recv().is_ok() {}
     let instrument_id = InstrumentId::from("BTCUSDT.BINANCE");
 
-    // Each 5,000-level request weighs 250, so six spend the 1,500 burst and the seventh waits
-    // about 10s for weight to refill
-    for _ in 0..7 {
+    // The 600-weight burst admits two 250-weight snapshots; the next waits 15s for refill
+    let burst_requests = 2;
+    for _ in 0..=burst_requests {
         client
             .request_book_snapshot(RequestBookSnapshot::new(
                 instrument_id,
@@ -2104,7 +2104,7 @@ async fn test_request_book_snapshot_paces_requests_by_weight() {
 
     tokio::time::sleep(Duration::from_secs(1)).await;
 
-    assert_eq!(depth_requests.load(Ordering::Relaxed), 6);
+    assert_eq!(depth_requests.load(Ordering::Relaxed), burst_requests);
 }
 
 #[rstest]
@@ -2132,12 +2132,15 @@ async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
 
     let started = tokio::time::Instant::now();
 
+    // Exceed one minute's budget so committing reservations during cooldown cannot pass
+    let request_count = 5;
+
     let initial_and_queue = async {
         let initial = throttle
             .post_signed("cooldown", Some(&HashMap::from([("seconds", 11)])))
             .await;
 
-        for _ in 0..14 {
+        for _ in 0..request_count {
             client
                 .request_book_snapshot(RequestBookSnapshot::new(
                     InstrumentId::from("BTCUSDT.BINANCE"),
@@ -2164,8 +2167,8 @@ async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
 
     assert!(initial.is_err());
     assert!(extension.is_err());
-    assert_eq!(times.len(), 14);
-    assert_eq!(responses, 14);
+    assert_eq!(times.len(), request_count);
+    assert_eq!(responses, request_count);
     assert!(
         times
             .iter()
@@ -2176,7 +2179,7 @@ async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
             .iter()
             .filter(|time| **time < started + Duration::from_secs(30))
             .count(),
-        6
+        2
     );
 
     for start in &times {
@@ -2185,7 +2188,7 @@ async fn test_request_book_snapshot_keeps_weight_budget_after_extended_cooldown(
             .filter(|time| **time >= *start && **time < *start + Duration::from_secs(60))
             .count()
             * 250;
-        assert!(weight <= 3_000, "snapshot weight exceeded budget: {weight}");
+        assert!(weight <= 1_200, "snapshot weight exceeded budget: {weight}");
     }
 }
 

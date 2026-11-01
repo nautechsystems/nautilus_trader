@@ -16,7 +16,6 @@
 //! Live market data client implementation for the Binance Spot adapter.
 
 use std::{
-    num::NonZeroU32,
     str::FromStr,
     sync::{
         Arc,
@@ -77,9 +76,13 @@ use crate::{
     },
     common::{
         bar::{binance_bar_data_type, binance_bars_to_custom_data, parse_binance_bar_type},
-        consts::{BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
+        consts::{
+            BINANCE_SPOT_REQUEST_WEIGHT_PER_MINUTE as SNAPSHOT_WEIGHT_PER_MINUTE, BINANCE_VENUE,
+            BINANCE_WS_HEARTBEAT_SECS,
+        },
         credential::resolve_credentials,
         enums::{BinanceEnvironment, BinanceProductType},
+        http_weights::depth_weight_spot as depth_request_weight,
         parse::{bar_spec_to_binance_interval, quote_to_l1_deltas},
         status::diff_and_emit_statuses,
         urls::{get_http_base_url_with_us, get_ws_base_url_with_us},
@@ -116,9 +119,6 @@ const BOOK_DEPTHS_JSON: [usize; 3] = [5, 10, 20];
 
 // Venue maximum, so seeded books are as deep as REST allows, at the top request weight of 250
 const SNAPSHOT_DEPTH: u32 = 5000;
-
-// Half the venue's 6,000 per-minute request weight, leaving room for other requests
-const SNAPSHOT_WEIGHT_PER_MINUTE: NonZeroU32 = NonZeroU32::new(3_000).expect("non-zero");
 
 /// Binance Spot data client for SBE market data.
 #[derive(Debug)]
@@ -857,16 +857,6 @@ fn parse_spot_depth_snapshot(
     }
 
     Ok(OrderBookDeltas::new(instrument_id, deltas))
-}
-
-// Spot `/api/v3/depth` request weight by level limit
-fn depth_request_weight(limit: u32) -> u32 {
-    match limit {
-        ..=100 => 5,
-        101..=500 => 25,
-        501..=1000 => 50,
-        _ => 250,
-    }
 }
 
 // The HTTP client has already spent its own retries, so an exhausted budget stays retryable
@@ -2097,12 +2087,16 @@ mod tests {
         testing::wait_until_async,
     };
     use nautilus_core::{AtomicMap, nanos::UnixNanos, time::AtomicTime};
-    use nautilus_live::task::TaskGroup;
+    use nautilus_live::{book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS, task::TaskGroup};
     use nautilus_model::{
         data::Data,
         enums::{BookAction, RecordFlag},
         identifiers::InstrumentId,
         instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
+    };
+    use nautilus_network::{
+        http::HttpClient,
+        ratelimiter::{RateLimiter, quota::Quota},
     };
     use parking_lot::Mutex;
     use rstest::rstest;
@@ -2111,8 +2105,9 @@ mod tests {
 
     use super::{
         BinanceBookError, BinanceDepth, BinanceEnvironment, BinanceSpotDataClient,
-        BinanceSpotHttpError, BinanceSpotMarketDataMode, depth_request_weight,
-        depth_snapshot_error, parse_spot_depth_snapshot, resolve_spot_json_ws_url,
+        BinanceSpotHttpError, BinanceSpotMarketDataMode, SNAPSHOT_DEPTH,
+        SNAPSHOT_WEIGHT_PER_MINUTE, depth_request_weight, depth_snapshot_error,
+        parse_spot_depth_snapshot, resolve_spot_json_ws_url,
     };
     use crate::{
         book::{
@@ -2120,7 +2115,9 @@ mod tests {
             sync::{BookSyncTracker, DepthSequencing},
         },
         common::{
-            consts::{BINANCE_CLIENT_ID, BINANCE_SPOT_WS_URL},
+            consts::{
+                BINANCE_CLIENT_ID, BINANCE_SPOT_REQUEST_WEIGHT_PER_MINUTE, BINANCE_SPOT_WS_URL,
+            },
             websocket::chain_command,
         },
         config::BinanceDataClientConfig,
@@ -2133,6 +2130,50 @@ mod tests {
             websocket::streams::messages::BinanceSpotWsMessage,
         },
     };
+
+    #[tokio::test(start_paused = true)]
+    async fn full_depth_snapshot_pacing_prevents_http_admission_timeouts() {
+        let pacer = Arc::new(SnapshotPacer::new(SNAPSHOT_WEIGHT_PER_MINUTE));
+        let quota = Quota::per_minute(BINANCE_SPOT_REQUEST_WEIGHT_PER_MINUTE);
+        let request_key = Ustr::from("snapshot");
+
+        let limiter = Arc::new(RateLimiter::new_with_quota(
+            None,
+            vec![(request_key, quota)],
+        ));
+        let client = HttpClient::builder()
+            .rate_limiters(vec![limiter])
+            .build()
+            .unwrap();
+        let weight = depth_request_weight(SNAPSHOT_DEPTH);
+        let mut snapshots = tokio::task::JoinSet::new();
+
+        for _ in 0..6 {
+            let pacer = pacer.clone();
+            let client = client.clone();
+
+            snapshots.spawn(async move {
+                let permit = pacer.acquire(weight).await;
+                tokio::time::timeout(
+                    Duration::from_secs(DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS),
+                    async move {
+                        let keys = vec![request_key; weight as usize];
+                        client.await_rate_limits(Some(&keys)).await;
+                        permit.commit();
+                    },
+                )
+                .await
+                .is_ok()
+            });
+        }
+
+        let mut admitted = Vec::new();
+        while let Some(snapshot) = snapshots.join_next().await {
+            admitted.push(snapshot.unwrap());
+        }
+
+        assert_eq!(admitted, vec![true; 6]);
+    }
 
     #[rstest]
     #[case::trades("trades")]

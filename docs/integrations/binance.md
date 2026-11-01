@@ -826,10 +826,11 @@ resyncs, such as after a reconnect, waits for budget instead of exceeding it:
 
 | Product | Snapshot budget  | Burst (half the budget) | Full snapshot cost |
 | ------- | ---------------- | ----------------------- | ------------------ |
-| Spot    | 3,000 per minute | 1,500                   | 250 (5000 levels)  |
+| Spot    | 1,200 per minute | 600                     | 250 (5000 levels)  |
 | Futures | 1,200 per minute | 600                     | 20 (1000 levels)   |
 
-- Queueing for the first snapshot does not consume the recovery's attempts or 180-second budget.
+- Waiting for the first snapshot-pacer reservation does not consume recovery attempts or the 180-second budget.
+  After that reservation, REST quota and cooldown waits count against the snapshot timeout.
 - Explicit snapshot requests draw on the same budget.
 - Each HTTP attempt, including retries, spends snapshot weight immediately before transmission.
   Queued reservations do not accumulate send credit during a cooldown. An unsent attempt releases its
@@ -1226,22 +1227,24 @@ Binance's own per-IP weight allowance, which the endpoint costs below draw from:
 
 Binance charges these weights per request:
 
-| Endpoint                  | Weight | Notes                                  |
-| ------------------------- | ------ | -------------------------------------- |
-| `/api/v3/order`           | 1      | Spot order placement.                  |
-| `/api/v3/allOrders`       | 20     | Spot historical orders (expensive).    |
-| `/api/v3/klines`          | 2+     | Scales with `limit` parameter.         |
-| `/api/v3/depth`           | 5+     | Scales with `limit`; 250 at 5000.      |
-| `/fapi/v1/order`          | 1      | Futures order placement.               |
-| `/fapi/v1/algoOrder`      | 0      | Uses order-count limits.               |
-| `/fapi/v1/allOrders`      | 20     | Futures historical orders (expensive). |
-| `/fapi/v1/commissionRate` | 20     | Futures commission rate query.         |
-| `/fapi/v1/klines`         | 5+     | Scales with `limit` parameter.         |
-| `/fapi/v1/depth`          | 2+     | Scales with `limit`; 20 at 1000.       |
+| Endpoint                  | Weight         | Notes                                 |
+| ------------------------- | -------------- | ------------------------------------- |
+| `/api/v3/order`           | 1              | Spot order placement.                 |
+| `/api/v3/allOrders`       | 20             | Spot historical orders (expensive).   |
+| `/api/v3/klines`          | 2              | Fixed cost for supported limits.      |
+| `/api/v3/depth`           | 5, 25, 50, 250 | Scales with `limit`; 250 at 5000.     |
+| `/fapi/v1/order`          | 0              | Futures order placement.              |
+| `/fapi/v1/algoOrder`      | 0              | Uses order-count limits.              |
+| `/fapi/v1/allOrders`      | 5              | Futures historical orders.            |
+| `/fapi/v1/commissionRate` | 20             | Futures commission rate query.        |
+| `/fapi/v1/klines`         | 1, 2, 5, 10    | Scales with `limit`; default costs 5. |
+| `/fapi/v1/depth`          | 2, 5, 10, 20   | Scales with `limit`; 20 at 1000.      |
 
-USD-M Futures `POST /fapi/v1/algoOrder` consumes `1` from both `X-MBX-ORDER-COUNT-10S` and
-`X-MBX-ORDER-COUNT-1M`. Binance charges no IP request weight for this endpoint. The adapter still requires
-a global-bucket token and fails locally if it is unavailable.
+USD-M Futures `POST /fapi/v1/order`, `POST /fapi/v1/algoOrder`, and `PUT /fapi/v1/order`
+consume 1 from both `X-MBX-ORDER-COUNT-10S` and `X-MBX-ORDER-COUNT-1M`, without IP request weight.
+COIN-M `POST /dapi/v1/order` and `POST /dapi/v1/algoOrder` also consume no IP request weight.
+These requests can proceed when the local request-weight bucket is empty, subject to order-count
+quota and shared REST cooldowns.
 
 ### WebSocket API limits
 
@@ -1256,14 +1259,15 @@ REST API:
 
 ### Adapter pacing
 
-The adapter runs its own token bucket limiters ahead of the venue's accounting. Every HTTP request
-draws one token from a per-product request bucket. Placements and applicable modifications also draw
-from the order-count buckets:
+The adapter runs token bucket limiters ahead of the venue's fixed-window accounting. Each supported
+HTTP endpoint consumes its published request weight before transmission. Retries and history pages
+acquire their full weight for every attempt. Placements and applicable modifications draw from
+the order-count buckets:
 
-| Product                    | Requests     | Order operations             |
-| -------------------------- | ------------ | ---------------------------- |
-| Spot                       | 1,200/minute | 10/second, 100,000/day       |
-| Futures (USD-M and COIN-M) | 2,400/minute | 300/10 seconds, 1,200/minute |
+| Product                    | Request weight | Order operations             |
+| -------------------------- | -------------- | ---------------------------- |
+| Spot                       | 1,200/minute   | 10/second, 100,000/day       |
+| Futures (USD-M and COIN-M) | 2,400/minute   | 300/10 seconds, 1,200/minute |
 
 The order-count buckets cover submit, OCO submit, batch submit, algo submit, Spot cancel-replace, and
 USD-M modify and batch modify. Cancellations and COIN-M modifications use the request bucket alone.
@@ -1271,11 +1275,14 @@ Non-order authenticated requests, such as leverage and margin-type changes and l
 also use the request bucket alone. Mutations are rejected as `NotSent` when an applicable bucket is empty.
 Futures data and execution clients share the request bucket for matching configurations.
 
-The request bucket counts calls rather than weight, so it does not mirror the venue's weight accounting. A run
-of high-weight or dynamic-weight endpoints (`/api/v3/allOrders` at weight 20, or `/klines` scaling with
-`limit`) spends venue weight faster than the local bucket accounts for. Large history requests may need manual
-pacing. Monitor the `X-MBX-USED-WEIGHT-*` response headers to track actual venue usage. Order book snapshot
-requests also wait on a weight-aware budget. See [Snapshot pacing](#snapshot-pacing).
+The `/fapi/v1/fundingRate` and `/fapi/v1/fundingInfo` endpoints share a USD-M bucket of 500 requests
+per 5 minutes. `/futures/data/openInterestHist` has its own USD-M bucket of 1,000 requests per 5 minutes.
+These endpoints consume no global IP request weight.
+
+Local buckets refill continuously and do not track the venue's exact fixed-window counters or
+traffic from other processes. Monitor `X-MBX-USED-WEIGHT-*` headers and coordinate shared IP usage
+externally; large history requests may still need manual pacing. Order book snapshot requests also
+wait on a separate weight-aware budget. See [Snapshot pacing](#snapshot-pacing).
 
 ### Shared REST backoff
 

@@ -25,13 +25,13 @@ use ahash::AHashMap;
 use aws_lc_rs::digest;
 use futures_util::FutureExt;
 use jiff::Timestamp;
-use nautilus_core::collections::into_ustr_vec;
 use nautilus_network::{
     dst::{self, time::Instant},
     http::{HttpClient, parse_retry_after},
     retry::RetryConfig,
 };
 use parking_lot::Mutex;
+use ustr::Ustr;
 
 use crate::common::{
     consts::BINANCE_RETRY_AFTER_HEADER,
@@ -103,12 +103,10 @@ impl BinanceHttpBackoff {
     pub(crate) async fn admit(
         &self,
         client: &HttpClient,
-        keys: Vec<String>,
+        keys: Vec<Ustr>,
         use_orders: bool,
         wait: bool,
     ) -> Result<(), ()> {
-        let keys = into_ustr_vec(keys);
-
         loop {
             let remaining = self.remaining(use_orders)?;
             if !remaining.is_zero() {
@@ -492,12 +490,12 @@ mod tests {
             .await;
         let start = Instant::now();
         let blocked = backoff
-            .admit(&client, vec!["request".to_string()], false, false)
+            .admit(&client, vec![Ustr::from("request")], false, false)
             .await;
         let elapsed = start.elapsed();
         tokio::time::advance(Duration::from_secs(1)).await;
         let admitted = backoff
-            .admit(&client, vec!["request".to_string()], false, false)
+            .admit(&client, vec![Ustr::from("request")], false, false)
             .await;
 
         assert_eq!(blocked, Err(()));
@@ -527,7 +525,7 @@ mod tests {
 
         let waiter = tokio::spawn(async move {
             other
-                .admit(&client, vec!["request".to_string()], false, true)
+                .admit(&client, vec![Ustr::from("request")], false, true)
                 .await
         });
 
