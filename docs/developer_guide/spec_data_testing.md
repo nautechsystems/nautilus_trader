@@ -397,8 +397,8 @@ Test order book subscription modes and snapshot requests.
 | TC-D13 | Request book snapshot      | One-time book snapshot request.     | No book snapshot. |
 | TC-D14 | Managed book from deltas   | Build local book from delta stream. | No book support.  |
 
-Python uses `BookType.L2_MBP` for these scenarios. The Rust builder can override `book_type` when
-an adapter requires a different book representation.
+Python and Rust default to `BookType.L2_MBP` for these scenarios. Set `book_type` when an adapter requires
+a different book representation.
 
 ### TC-D10: Subscribe book deltas
 
@@ -1232,49 +1232,55 @@ Cover these overlaps:
 ## DataTester configuration reference
 
 The Python constructor accepts the parameters below. Defaults are resolved values after construction.
-Historical quote, trade, and bar requests use a one-hour lookback. Funding rate requests use seven days. The
-lookback is not configurable through `DataTesterConfig`.
+Historical quote, trade, and bar requests default to a one-hour lookback. Funding rate requests default to
+seven days. Set `request_start` and `request_end` to choose a historical window, and `request_limit` to cap
+records per request. Use timezone-aware datetimes. An unset start uses the default lookback before
+`request_end`, or before now when the end is unset. These settings apply to quotes, trades, bars, and funding
+rates. The start must not be later than the end.
 
-| Parameter                     | Type                 | Default | Affects groups  |
-| ----------------------------- | -------------------- | ------- | --------------- |
-| `actor_id`                    | `ActorId?`           | `None`  | All             |
-| `client_id`                   | `ClientId?`          | `None`  | All             |
-| `instrument_ids`              | `list[InstrumentId]` | `[]`    | All             |
-| `bar_types`                   | `list[BarType]?`     | `None`  | 5               |
-| `subscribe_book_deltas`       | `bool`               | `False` | 2               |
-| `subscribe_book_depth`        | `bool`               | `False` | 2               |
-| `subscribe_book_at_interval`  | `bool`               | `False` | 2               |
-| `subscribe_quotes`            | `bool`               | `False` | 3               |
-| `subscribe_trades`            | `bool`               | `False` | 4               |
-| `subscribe_mark_prices`       | `bool`               | `False` | 6               |
-| `subscribe_index_prices`      | `bool`               | `False` | 6               |
-| `subscribe_funding_rates`     | `bool`               | `False` | 6               |
-| `subscribe_bars`              | `bool`               | `False` | 5               |
-| `subscribe_instrument`        | `bool`               | `False` | 1               |
-| `subscribe_instrument_status` | `bool`               | `False` | 7               |
-| `subscribe_instrument_close`  | `bool`               | `False` | 7               |
-| `subscribe_option_greeks`     | `bool`               | `False` | 8               |
-| `can_unsubscribe`             | `bool`               | `True`  | 9               |
-| `request_instruments`         | `bool`               | `False` | 1               |
-| `request_book_snapshot`       | `bool`               | `False` | 2               |
-| `request_book_deltas`         | `bool`               | `False` | Not implemented |
-| `request_quotes`              | `bool`               | `False` | 3               |
-| `request_trades`              | `bool`               | `False` | 4               |
-| `request_bars`                | `bool`               | `False` | 5               |
-| `request_funding_rates`       | `bool`               | `False` | 6               |
-| `book_depth`                  | `PositiveInt?`       | `None`  | 2               |
-| `book_interval_ms`            | `PositiveInt`        | `1000`  | 2               |
-| `book_levels_to_print`        | `PositiveInt`        | `10`    | 2               |
-| `manage_book`                 | `bool`               | `True`  | 2               |
-| `log_data`                    | `bool`               | `True`  | All             |
-| `stats_interval_secs`         | `int`                | `5`     | All             |
-| `log_events`                  | `bool`               | `True`  | All             |
-| `log_commands`                | `bool`               | `True`  | All             |
+| Parameter                     | Type                 | Default  | Affects groups  |
+| ----------------------------- | -------------------- | -------- | --------------- |
+| `actor_id`                    | `ActorId?`           | `None`   | All             |
+| `client_id`                   | `ClientId?`          | `None`   | All             |
+| `instrument_ids`              | `list[InstrumentId]` | `[]`     | All             |
+| `bar_types`                   | `list[BarType]?`     | `None`   | 5               |
+| `subscribe_book_deltas`       | `bool`               | `False`  | 2               |
+| `subscribe_book_depth`        | `bool`               | `False`  | 2               |
+| `subscribe_book_at_interval`  | `bool`               | `False`  | 2               |
+| `subscribe_quotes`            | `bool`               | `False`  | 3               |
+| `subscribe_trades`            | `bool`               | `False`  | 4               |
+| `subscribe_mark_prices`       | `bool`               | `False`  | 6               |
+| `subscribe_index_prices`      | `bool`               | `False`  | 6               |
+| `subscribe_funding_rates`     | `bool`               | `False`  | 6               |
+| `subscribe_bars`              | `bool`               | `False`  | 5               |
+| `subscribe_instrument`        | `bool`               | `False`  | 1               |
+| `subscribe_instrument_status` | `bool`               | `False`  | 7               |
+| `subscribe_instrument_close`  | `bool`               | `False`  | 7               |
+| `subscribe_option_greeks`     | `bool`               | `False`  | 8               |
+| `can_unsubscribe`             | `bool`               | `True`   | 9               |
+| `request_instruments`         | `bool`               | `False`  | 1               |
+| `request_book_snapshot`       | `bool`               | `False`  | 2               |
+| `request_book_deltas`         | `bool`               | `False`  | Not implemented |
+| `request_quotes`              | `bool`               | `False`  | 3               |
+| `request_trades`              | `bool`               | `False`  | 4               |
+| `request_bars`                | `bool`               | `False`  | 5               |
+| `request_funding_rates`       | `bool`               | `False`  | 6               |
+| `request_start`               | `datetime?`          | `None`   | 3, 4, 5, 6      |
+| `request_end`                 | `datetime?`          | `None`   | 3, 4, 5, 6      |
+| `request_limit`               | `PositiveInt?`       | `None`   | 3, 4, 5, 6      |
+| `book_type`                   | `BookType`           | `L2_MBP` | 2               |
+| `book_depth`                  | `PositiveInt?`       | `None`   | 2               |
+| `book_interval_ms`            | `PositiveInt`        | `1000`   | 2               |
+| `book_levels_to_print`        | `PositiveInt`        | `10`     | 2               |
+| `manage_book`                 | `bool`               | `True`   | 2               |
+| `log_data`                    | `bool`               | `True`   | All             |
+| `stats_interval_secs`         | `int`                | `5`      | All             |
+| `log_events`                  | `bool`               | `True`   | All             |
+| `log_commands`                | `bool`               | `True`   | All             |
 
 The Rust builder also exposes these parameters:
 
-| Parameter          | Type       | Default  | Affects groups |
-| ------------------ | ---------- | -------- | -------------- |
-| `book_type`        | `BookType` | `L2_MBP` | 2              |
-| `subscribe_params` | `Params?`  | `None`   | 9              |
-| `request_params`   | `Params?`  | `None`   | 9              |
+| Parameter          | Type      | Default | Affects groups |
+| ------------------ | --------- | ------- | -------------- |
+| `subscribe_params` | `Params?` | `None`  | 9              |
+| `request_params`   | `Params?` | `None`  | 9              |

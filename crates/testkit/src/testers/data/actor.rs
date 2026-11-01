@@ -66,6 +66,13 @@ impl DataActor for DataTester {
         let subscribe_params = self.config.subscribe_params.clone();
         let request_params = self.config.request_params.clone();
         let stats_interval_secs = self.config.stats_interval_secs;
+        let request_end = self.config.request_end;
+        let request_anchor = request_end.unwrap_or_else(|| self.clock().utc_now());
+        let request_start = self
+            .config
+            .request_start
+            .unwrap_or_else(|| request_anchor - SignedDuration::from_hours(1));
+        let request_limit = self.config.request_limit;
 
         // Request instruments if configured
         if self.config.request_instruments {
@@ -178,20 +185,17 @@ impl DataActor for DataTester {
                 self.subscribe_option_greeks(instrument_id, client_id, subscribe_params.clone());
             }
 
-            // Request historical quotes (default to last 1 hour)
-            if self.config.request_quotes {
-                let start = self.clock().utc_now() - SignedDuration::from_hours(1);
-
-                if let Err(e) = self.request_quotes(
+            if self.config.request_quotes
+                && let Err(e) = self.request_quotes(
                     instrument_id,
-                    Some(start),
-                    None,
-                    None,
+                    Some(request_start),
+                    request_end,
+                    request_limit,
                     client_id,
                     request_params.clone(),
-                ) {
-                    log::error!("Failed to request quotes for {instrument_id}: {e}");
-                }
+                )
+            {
+                log::error!("Failed to request quotes for {instrument_id}: {e}");
             }
 
             // Request order book snapshot if configured
@@ -213,31 +217,30 @@ impl DataActor for DataTester {
 
             // TODO: Request book deltas when Rust data engine has RequestBookDeltas
 
-            // Request historical trades (default to last 1 hour)
-            if self.config.request_trades {
-                let start = self.clock().utc_now() - SignedDuration::from_hours(1);
-
-                if let Err(e) = self.request_trades(
+            if self.config.request_trades
+                && let Err(e) = self.request_trades(
                     instrument_id,
-                    Some(start),
-                    None,
-                    None,
+                    Some(request_start),
+                    request_end,
+                    request_limit,
                     client_id,
                     request_params.clone(),
-                ) {
-                    log::error!("Failed to request trades for {instrument_id}: {e}");
-                }
+                )
+            {
+                log::error!("Failed to request trades for {instrument_id}: {e}");
             }
 
-            // Request historical funding rates (default to last 7 days)
             if self.config.request_funding_rates {
-                let start = self.clock().utc_now() - SignedDuration::from_hours(7 * 24);
+                let start = self
+                    .config
+                    .request_start
+                    .unwrap_or_else(|| request_anchor - SignedDuration::from_hours(7 * 24));
 
                 if let Err(e) = self.request_funding_rates(
                     instrument_id,
                     Some(start),
-                    None,
-                    None,
+                    request_end,
+                    request_limit,
                     client_id,
                     request_params.clone(),
                 ) {
@@ -253,20 +256,17 @@ impl DataActor for DataTester {
                     self.subscribe_bars(bar_type, client_id, subscribe_params.clone());
                 }
 
-                // Request historical bars (default to last 1 hour)
-                if self.config.request_bars {
-                    let start = self.clock().utc_now() - SignedDuration::from_hours(1);
-
-                    if let Err(e) = self.request_bars(
+                if self.config.request_bars
+                    && let Err(e) = self.request_bars(
                         bar_type,
-                        Some(start),
-                        None,
-                        None,
+                        Some(request_start),
+                        request_end,
+                        request_limit,
                         client_id,
                         request_params.clone(),
-                    ) {
-                        log::error!("Failed to request bars for {bar_type}: {e}");
-                    }
+                    )
+                {
+                    log::error!("Failed to request bars for {bar_type}: {e}");
                 }
             }
         }

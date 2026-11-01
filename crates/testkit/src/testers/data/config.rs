@@ -13,6 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::num::NonZeroUsize;
+
+use jiff::Timestamp;
 use nautilus_common::{
     actor::DataActorConfig,
     config::{ConfigError, ConfigErrorCollector, ConfigResult},
@@ -124,7 +127,6 @@ pub struct DataTesterConfig {
     /// Whether to request historical funding rates.
     #[builder(default = false)]
     pub request_funding_rates: bool,
-    // TODO: Support requests_start_delta when we implement historical data requests
     /// Book type for order book subscriptions.
     #[builder(default = BookType::L2_MBP)]
     pub book_type: BookType,
@@ -146,6 +148,13 @@ pub struct DataTesterConfig {
     /// Stats logging interval in seconds (0 to disable).
     #[builder(default = 5)]
     pub stats_interval_secs: u64,
+    /// Start time for historical quotes, trades, bars, and funding rates.
+    /// Defaults to one hour before the end time, or seven days for funding rates.
+    pub request_start: Option<Timestamp>,
+    /// End time for historical quotes, trades, bars, and funding rates; `None` uses now.
+    pub request_end: Option<Timestamp>,
+    /// Record limit per historical quote, trade, bar, or funding rate request.
+    pub request_limit: Option<NonZeroUsize>,
 }
 
 impl<S: data_tester_config_builder::IsComplete> DataTesterConfigBuilder<S> {
@@ -180,6 +189,13 @@ impl DataTesterConfig {
             errors.check(
                 book_depth > 0,
                 ConfigError::range("book_depth", "must be positive, was 0"),
+            );
+        }
+
+        if let (Some(start), Some(end)) = (self.request_start, self.request_end) {
+            errors.check(
+                start <= end,
+                ConfigError::range("request_start", "must not be later than request_end"),
             );
         }
 
@@ -225,6 +241,9 @@ impl DataTesterConfig {
             manage_book: true,
             log_data: true,
             stats_interval_secs: 5,
+            request_start: None,
+            request_end: None,
+            request_limit: None,
         }
     }
 }
@@ -260,5 +279,47 @@ mod tests {
     fn test_zero_book_depth_rejected() {
         let result = DataTesterConfig::builder().book_depth(0).build();
         assert!(matches!(result, Err(ConfigError::Range { field, .. }) if field == "book_depth"));
+    }
+
+    #[rstest]
+    #[case(1, true)]
+    #[case(0, true)]
+    #[case(-1, false)]
+    fn test_request_window_validation(#[case] end_seconds: i64, #[case] valid: bool) {
+        let start = Timestamp::from_second(1_700_000_000).unwrap();
+        let end = start + jiff::SignedDuration::from_secs(end_seconds);
+        let result = DataTesterConfig::builder()
+            .request_start(start)
+            .request_end(end)
+            .build();
+
+        if valid {
+            let config = result.unwrap();
+            assert_eq!(config.request_start, Some(start));
+            assert_eq!(config.request_end, Some(end));
+        } else {
+            assert!(matches!(result, Err(ConfigError::Range { field, reason })
+                if field == "request_start" && reason == "must not be later than request_end"));
+        }
+    }
+
+    #[rstest]
+    fn test_request_bounds_serde_roundtrip() {
+        let start = Timestamp::from_second(1_700_000_000).unwrap();
+        let end = Timestamp::from_second(1_700_000_123).unwrap();
+        let limit = NonZeroUsize::new(37).unwrap();
+        let config = DataTesterConfig::builder()
+            .request_start(start)
+            .request_end(end)
+            .request_limit(limit)
+            .build()
+            .unwrap();
+
+        let value = serde_json::to_value(config).unwrap();
+        let decoded: DataTesterConfig = serde_json::from_value(value).unwrap();
+
+        assert_eq!(decoded.request_start, Some(start));
+        assert_eq!(decoded.request_end, Some(end));
+        assert_eq!(decoded.request_limit, Some(limit));
     }
 }
