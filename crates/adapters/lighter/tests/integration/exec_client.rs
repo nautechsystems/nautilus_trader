@@ -3613,6 +3613,176 @@ async fn test_cancel_order_signs_cancel_sendtx() {
 }
 
 #[rstest]
+#[case::acknowledged(false)]
+#[case::venue_rejected(true)]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_cancel_already_canceled_preserves_terminal_state(#[case] rejected: bool) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    let id = ClientOrderId::from("O-CANCEL-TERMINAL");
+    let (index, venue_id) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510113",
+    )
+    .await;
+    let pending = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+        trader_id(),
+        strategy_id(),
+        eth_perp_id(),
+        id,
+        Some(account_id()),
+        UUID4::new(),
+        UnixNanos::default(),
+        UnixNanos::default(),
+        false,
+        Some(venue_id),
+    ));
+    cache.borrow_mut().update_order(&pending).unwrap();
+    client
+        .cancel_order(CancelOrder::new(
+            trader_id(),
+            Some(client_id()),
+            strategy_id(),
+            eth_perp_id(),
+            id,
+            Some(venue_id),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .expect("initial cancel");
+    await_send_tx_count(&state, 2).await;
+    let frames = state.send_txs().await;
+    let create_nonce = send_tx_info(&frames[0])["Nonce"].as_i64().unwrap();
+    let cancel_nonce = send_tx_info(&frames[1])["Nonce"].as_i64().unwrap();
+    wait_until_async(
+        || async {
+            client
+                .dispatch
+                .nonce_manager
+                .baseline(TEST_ACCOUNT_INDEX as i64, TEST_API_KEY_INDEX)
+                == Some(cancel_nonce)
+        },
+        Duration::from_secs(2),
+    )
+    .await;
+
+    let mut entry = account_all_orders_open_entry(
+        index,
+        venue_id.as_str(),
+        &index.to_string(),
+        TEST_ORDER_NONCE,
+    );
+    entry["status"] = json!("canceled");
+    entry["remaining_base_amount"] = json!("0.0000");
+    state.push_frame(&json!({
+        "type": "update/account_all_orders",
+        "channel": format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders": {"0": [entry]},
+    }));
+    let canceled = next_order_event(&mut rx, Duration::from_secs(2))
+        .await
+        .expect("OrderCanceled");
+
+    let OrderEventAny::Canceled(event) = &canceled else {
+        panic!("expected OrderCanceled, was {canceled:?}");
+    };
+
+    assert_eq!(event.trader_id, trader_id());
+    assert_eq!(event.strategy_id, strategy_id());
+    assert_eq!(event.instrument_id, eth_perp_id());
+    assert_eq!(event.client_order_id, id);
+    assert_eq!(event.venue_order_id, Some(venue_id));
+    assert_eq!(event.account_id, Some(account_id()));
+    cache.borrow_mut().update_order(&canceled).unwrap();
+    let terminal = cache.borrow().order(&id).unwrap().clone();
+    assert_eq!(terminal.status(), OrderStatus::Canceled);
+    assert!(!terminal.is_pending_cancel());
+
+    let mut expected_nonce = cancel_nonce + 1;
+
+    for (offset, reject) in [rejected, false].into_iter().enumerate() {
+        if reject {
+            *state.next_send_tx_ack.lock().await = Some(json!({
+                "type": "jsonapi/sendtx",
+                "code": 21727,
+                "message": "order is not cancelable",
+            }));
+        }
+
+        client
+            .cancel_order(CancelOrder::new(
+                trader_id(),
+                Some(client_id()),
+                strategy_id(),
+                eth_perp_id(),
+                id,
+                Some(venue_id),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .expect("repeat terminal cancel");
+        await_send_tx_count(&state, offset + 3).await;
+        wait_until_async(
+            || async {
+                let nonce_manager = &client.dispatch.nonce_manager;
+                if reject {
+                    nonce_manager.last_issued(TEST_ACCOUNT_INDEX as i64, TEST_API_KEY_INDEX)
+                        == Some(expected_nonce - 1)
+                } else {
+                    nonce_manager.baseline(TEST_ACCOUNT_INDEX as i64, TEST_API_KEY_INDEX)
+                        == Some(expected_nonce)
+                }
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
+        let unexpected = tokio::time::timeout(Duration::from_millis(250), async {
+            loop {
+                let event = rx.recv().await.expect("execution event channel");
+                if matches!(event, ExecutionEvent::Order(_) | ExecutionEvent::Report(_)) {
+                    break event;
+                }
+            }
+        })
+        .await;
+
+        assert!(unexpected.is_err(), "unexpected event: {unexpected:?}");
+        assert!(drain_order_and_report_events(&mut rx).is_empty());
+        assert_order_state_unchanged(&cache.borrow().order(&id).unwrap(), &terminal);
+        assert_eq!(client.dispatch.pending_order_action(&id), None);
+        assert_eq!(client.dispatch.pending_cancel_nonce(&id), None);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 0);
+        assert_eq!(
+            client
+                .dispatch
+                .resolve_client_order_index_for_venue(index, venue_id),
+            Some(id),
+        );
+        let frames = state.send_txs().await;
+        assert_eq!(send_tx_type(&frames[offset + 2]), 15);
+        let info = send_tx_info(&frames[offset + 2]);
+        assert_eq!(info["MarketIndex"], TEST_MARKET_INDEX);
+        assert_eq!(info["Index"], 281_476_929_510_113_i64);
+        assert_eq!(info["Nonce"], expected_nonce);
+        expected_nonce += i64::from(!reject);
+    }
+
+    assert_eq!(cancel_nonce, create_nonce + 1);
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_cancel_order_venue_rejection_emits_cancel_rejected_for_pending_cancel_order() {
     let (addr, state) = start_server().await;

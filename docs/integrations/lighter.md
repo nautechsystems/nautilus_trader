@@ -688,6 +688,10 @@ Python do not expose them.
 The generic `CancelAllOrders` command retains its instrument and side filters and uses per-order
 cancellations.
 
+A direct execution-client `CancelOrder` for a cached terminal order still sends the venue-ID request.
+A successful acknowledgement or venue rejection produces no additional order event and preserves
+the cached terminal state. Strategy cancellation methods filter closed orders before adapter dispatch.
+
 :::warning
 Native cancellation affects **all open orders on the account**, across markets and strategies,
 including orders absent from the local cache. It does not close positions. Use a dedicated account
@@ -998,7 +1002,8 @@ Cursor exhaustion cannot distinguish truncation from no older trades. Young acco
 with nothing missing. Choose a lookback the venue can serve.
 
 For older fills, the venue's [historical data exports](https://apidocs.lighter.xyz/docs/historical-data)
-provide up to 12 months of account trades. The adapter does not read the `export` endpoint.
+provide [all available account trade history](https://t.me/lighter_api_updates/190) when you omit
+`start_timestamp` and `end_timestamp`. The adapter does not read the `export` endpoint.
 
 #### Startup position checks
 
