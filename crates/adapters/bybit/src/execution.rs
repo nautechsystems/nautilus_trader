@@ -29,7 +29,7 @@ use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     live::runner::get_exec_event_sender,
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
         GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports, ModifyOrder,
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
@@ -643,6 +643,37 @@ impl BybitExecutionClient {
             position_idx,
             bbo_side_type: tp_sl.bbo_side_type,
             bbo_level: tp_sl.bbo_level.clone(),
+        })
+    }
+
+    fn build_ws_amend_params(
+        cmd: &ModifyOrder,
+        product_type: BybitProductType,
+        raw_symbol: &str,
+    ) -> Result<BybitWsAmendOrderParams, String> {
+        let order_iv = if let Some(params) = cmd.params.as_ref()
+            && let Some(value) = params.get("order_iv")
+        {
+            Some(get_price_str(params, "order_iv").ok_or_else(|| {
+                format!("invalid type for 'order_iv': {value}, expected string or number")
+            })?)
+        } else {
+            None
+        };
+
+        Ok(BybitWsAmendOrderParams {
+            category: product_type,
+            symbol: Ustr::from(raw_symbol),
+            order_id: cmd.venue_order_id.map(|v| v.to_string()),
+            order_link_id: Some(cmd.client_order_id.to_string()),
+            qty: cmd.quantity.map(|q| q.to_string()),
+            price: cmd.price.map(|p| p.to_string()),
+            trigger_price: cmd.trigger_price.map(|p| p.to_string()),
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            order_iv,
         })
     }
 }
@@ -1894,33 +1925,14 @@ impl ExecutionClient for BybitExecutionClient {
 
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
 
-        let order_iv = if let Some(value) = cmd.params.as_ref().and_then(|p| p.get("order_iv")) {
-            match get_price_str(cmd.params.as_ref().unwrap(), "order_iv") {
-                Some(s) => Some(s),
-                None => {
-                    log::warn!(
-                        "Modify command failed local validation for {client_order_id}: invalid type for 'order_iv': {value}, expected string or number",
-                    );
-                    return Ok(());
-                }
+        let params = match Self::build_ws_amend_params(&cmd, product_type, raw_symbol) {
+            Ok(params) => params,
+            Err(reason) => {
+                log::warn!(
+                    "Modify command failed local validation for {client_order_id}: {reason}",
+                );
+                return Ok(());
             }
-        } else {
-            None
-        };
-
-        let params = BybitWsAmendOrderParams {
-            category: product_type,
-            symbol: Ustr::from(raw_symbol),
-            order_id: cmd.venue_order_id.map(|v| v.to_string()),
-            order_link_id: Some(cmd.client_order_id.to_string()),
-            qty: cmd.quantity.map(|q| q.to_string()),
-            price: cmd.price.map(|p| p.to_string()),
-            trigger_price: cmd.trigger_price.map(|p| p.to_string()),
-            take_profit: None,
-            stop_loss: None,
-            tp_trigger_by: None,
-            sl_trigger_by: None,
-            order_iv,
         };
 
         let ws_trade = self.ws_trade.clone();
@@ -1947,6 +1959,107 @@ impl ExecutionClient for BybitExecutionClient {
                     &e.to_string(),
                     clock.get_time_ns(),
                 );
+            }
+
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn batch_modify_orders(&self, cmd: BatchModifyOrders) -> anyhow::Result<()> {
+        if cmd.modifies.is_empty() {
+            return Ok(());
+        }
+
+        if self.config.environment == BybitEnvironment::Demo {
+            for modify in cmd.modifies {
+                self.modify_order(modify)?;
+            }
+
+            return Ok(());
+        }
+
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        let mut amend_params = Vec::with_capacity(cmd.modifies.len());
+        let mut strategy_ids = Vec::with_capacity(cmd.modifies.len());
+        let mut client_order_ids = Vec::with_capacity(cmd.modifies.len());
+        let mut venue_order_ids = Vec::with_capacity(cmd.modifies.len());
+
+        for modify in &cmd.modifies {
+            match Self::build_ws_amend_params(modify, product_type, raw_symbol) {
+                Ok(params) => {
+                    amend_params.push(params);
+                    strategy_ids.push(modify.strategy_id);
+                    client_order_ids.push(modify.client_order_id);
+                    venue_order_ids.push(modify.venue_order_id);
+                }
+                Err(reason) => {
+                    log::warn!(
+                        "Modify command failed local validation for {}: {reason}",
+                        modify.client_order_id,
+                    );
+                }
+            }
+        }
+
+        if amend_params.is_empty() {
+            return Ok(());
+        }
+
+        let ws_trade = self.ws_trade.clone();
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+
+        self.spawn_task("batch_modify_orders", async move {
+            let req_ids = BybitWebSocketClient::batch_request_ids(product_type, amend_params.len());
+            let chunk_limit = batch_send_limit(product_type);
+
+            for (req_id, (chunk_cids, chunk_voids)) in req_ids.iter().zip(
+                client_order_ids
+                    .chunks(chunk_limit)
+                    .map(|chunk| chunk.to_vec())
+                    .zip(
+                        venue_order_ids
+                            .chunks(chunk_limit)
+                            .map(|chunk| chunk.to_vec()),
+                    ),
+            ) {
+                dispatch_state.pending_requests.insert(
+                    req_id.clone(),
+                    (chunk_cids, chunk_voids, PendingOperation::Amend),
+                );
+            }
+
+            if let Err(e) = ws_trade
+                .batch_amend_orders_with_ids(amend_params, req_ids.clone())
+                .await
+            {
+                for req_id in req_ids {
+                    dispatch_state.pending_requests.remove(&req_id);
+                }
+
+                let reason = e.to_string();
+                let ts_event = clock.get_time_ns();
+
+                for ((strategy_id, client_order_id), venue_order_id) in strategy_ids
+                    .into_iter()
+                    .zip(client_order_ids)
+                    .zip(venue_order_ids)
+                {
+                    emitter.emit_order_modify_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &reason,
+                        ts_event,
+                    );
+                }
             }
 
             Ok(())
@@ -2437,8 +2550,8 @@ mod tests {
         messages::{
             ExecutionEvent,
             execution::{
-                BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder,
-                SubmitOrderList,
+                BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+                SubmitOrder, SubmitOrderList,
             },
         },
         testing::wait_until_async,
@@ -4217,6 +4330,148 @@ mod tests {
         expected.sort();
 
         assert_eq!(actual, expected);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_batch_modify_orders_failure_preserves_owning_strategies() {
+        let (mut client, _cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.ws_trade.close().await.unwrap();
+
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+
+        let modifies = ["S-001", "S-002"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, owner)| {
+                ModifyOrder::new(
+                    TraderId::from("TESTER-001"),
+                    Some(*BYBIT_CLIENT_ID),
+                    StrategyId::from(owner),
+                    instrument_id,
+                    ClientOrderId::from(format!("O-BATCH-MODIFY-{index}")),
+                    Some(VenueOrderId::from(format!("BYBIT-BATCH-MODIFY-{index}"))),
+                    Some(Quantity::from("1")),
+                    Some(Price::from("10001.00")),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        client
+            .batch_modify_orders(BatchModifyOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                modifies.clone(),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        let mut actual = Vec::new();
+
+        for _ in &modifies {
+            let event = rx.try_recv().expect("expected OrderModifyRejected event");
+            match event {
+                ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
+                    actual.push((rejected.client_order_id, rejected.strategy_id));
+                }
+                event => panic!("expected OrderModifyRejected, was {event:?}"),
+            }
+        }
+
+        let mut expected: Vec<_> = modifies
+            .iter()
+            .map(|modify| (modify.client_order_id, modify.strategy_id))
+            .collect();
+
+        actual.sort();
+        expected.sort();
+
+        assert_eq!(actual, expected);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_batch_modify_orders_skips_invalid_order_iv_and_rejects_valid_sibling() {
+        let (mut client, _cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.ws_trade.close().await.unwrap();
+
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let invalid_params =
+            Params::new([("order_iv".to_string(), serde_json::json!({ "bad": true }))].into());
+
+        let invalid = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-INVALID"),
+            instrument_id,
+            ClientOrderId::from("O-BATCH-IV-INVALID"),
+            Some(VenueOrderId::from("BYBIT-IV-INVALID")),
+            Some(Quantity::from("1")),
+            Some(Price::from("10001.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(invalid_params),
+            None,
+        );
+
+        let valid = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-VALID"),
+            instrument_id,
+            ClientOrderId::from("O-BATCH-IV-VALID"),
+            Some(VenueOrderId::from("BYBIT-IV-VALID")),
+            Some(Quantity::from("2")),
+            Some(Price::from("10002.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        client
+            .batch_modify_orders(BatchModifyOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from("S-BATCH"),
+                instrument_id,
+                vec![invalid, valid.clone()],
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        let event = rx.try_recv().expect("expected OrderModifyRejected event");
+
+        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event else {
+            panic!("expected OrderModifyRejected, was {event:?}");
+        };
+
+        assert_eq!(rejected.client_order_id, valid.client_order_id);
+        assert_eq!(rejected.strategy_id, valid.strategy_id);
+        assert_eq!(rejected.venue_order_id, valid.venue_order_id);
         assert!(rx.try_recv().is_err());
     }
 }

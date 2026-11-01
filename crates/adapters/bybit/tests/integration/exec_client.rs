@@ -60,8 +60,9 @@ use nautilus_common::{
     messages::{
         ExecutionEvent, SystemEvent,
         execution::{
-            BatchCancelOrders, CancelAllOrders, CancelOrder, ExecutionReport, GenerateFillReports,
-            GenerateOrderStatusReports, GeneratePositionStatusReports, ModifyOrder, SubmitOrder,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ExecutionReport,
+            GenerateFillReports, GenerateOrderStatusReports, GeneratePositionStatusReports,
+            ModifyOrder, SubmitOrder,
         },
         system::SocketState,
     },
@@ -108,6 +109,7 @@ struct TestServerState {
     private_ws_connections: Arc<AtomicUsize>,
     trade_ws_connections: Arc<AtomicUsize>,
     trade_order_ret_code: Arc<AtomicUsize>,
+    trade_batch_ret_code: Arc<AtomicUsize>,
     trade_order_requests: Arc<AtomicUsize>,
     trade_order_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
     amend_order_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
@@ -143,6 +145,7 @@ impl Default for TestServerState {
             private_ws_connections: Arc::new(AtomicUsize::new(0)),
             trade_ws_connections: Arc::new(AtomicUsize::new(0)),
             trade_order_ret_code: Arc::new(AtomicUsize::new(0)),
+            trade_batch_ret_code: Arc::new(AtomicUsize::new(0)),
             trade_order_requests: Arc::new(AtomicUsize::new(0)),
             trade_order_payloads: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             amend_order_payloads: Arc::default(),
@@ -787,7 +790,7 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             break;
                         }
                     }
-                    Some("order.create" | "order.amend" | "order.cancel") => {
+                    Some("order.create" | "order.amend" | "order.cancel" | "order.amend-batch") => {
                         state.trade_order_requests.fetch_add(1, Ordering::Relaxed);
                         state.trade_order_payloads.lock().await.push(value.clone());
                         let req_id = value.get("reqId").and_then(|v| v.as_str());
@@ -795,7 +798,13 @@ async fn handle_socket(mut socket: WebSocket, state: TestServerState) {
                             req_id.is_some_and(|req_id| !req_id.is_empty()),
                             Ordering::Relaxed,
                         );
-                        let ret_code = state.trade_order_ret_code.load(Ordering::Relaxed);
+
+                        let ret_code = if op == Some("order.amend-batch") {
+                            state.trade_batch_ret_code.load(Ordering::Relaxed)
+                        } else {
+                            state.trade_order_ret_code.load(Ordering::Relaxed)
+                        };
+
                         let ret_msg = if ret_code == 0 {
                             "OK"
                         } else {
@@ -2869,6 +2878,335 @@ async fn test_exec_client_modify_order_payload(
         assert!(state.amend_order_payloads.lock().await.is_empty());
     }
 
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_batch_modify_orders_payload(#[values(true, false)] demo: bool) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let config = if demo {
+        create_test_demo_exec_config(addr)
+    } else {
+        create_test_exec_config(addr)
+    };
+
+    let (mut client, mut rx, cache) = create_test_execution_client_with_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.connect().await.unwrap();
+    client.start().unwrap();
+    drain_execution_events(&mut rx).await;
+
+    let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+    let trader_id = TraderId::from("TESTER-001");
+
+    let modifies = [
+        (
+            "S-001",
+            "batch-modify-1",
+            "venue-mod-1",
+            Some("0.021"),
+            Some("1741.23"),
+            None,
+            None,
+        ),
+        (
+            "S-002",
+            "batch-modify-2",
+            "venue-mod-2",
+            Some("0.033"),
+            Some("1755.50"),
+            Some("1732.45"),
+            (!demo).then_some("0.42"),
+        ),
+    ]
+    .into_iter()
+    .map(
+        |(owner, client_order_id, venue_order_id, quantity, price, trigger_price, order_iv)| {
+            let params = order_iv
+                .map(|order_iv| Params::new([("order_iv".to_string(), json!(order_iv))].into()));
+
+            ModifyOrder::new(
+                trader_id,
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from(owner),
+                instrument_id,
+                ClientOrderId::from(client_order_id),
+                Some(VenueOrderId::from(venue_order_id)),
+                quantity.map(Quantity::from),
+                price.map(Price::from),
+                trigger_price.map(Price::from),
+                UUID4::new(),
+                UnixNanos::default(),
+                params,
+                None,
+            )
+        },
+    )
+    .collect::<Vec<_>>();
+
+    client
+        .batch_modify_orders(BatchModifyOrders::new(
+            trader_id,
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            modifies,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    wait_until_async(
+        || async {
+            if demo {
+                state.amend_order_payloads.lock().await.len() == 2
+            } else {
+                state.trade_order_payloads.lock().await.len() == 1
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    if demo {
+        let mut expected_http = vec![
+            json!({
+                "category": "linear",
+                "symbol": "ETHUSDT",
+                "orderId": "venue-mod-1",
+                "qty": "0.021",
+                "price": "1741.23",
+            }),
+            json!({
+                "category": "linear",
+                "symbol": "ETHUSDT",
+                "orderId": "venue-mod-2",
+                "qty": "0.033",
+                "price": "1755.50",
+                "triggerPrice": "1732.45",
+            }),
+        ];
+        let mut payloads = state.amend_order_payloads.lock().await.clone();
+        payloads.sort_by(|left, right| left["orderId"].as_str().cmp(&right["orderId"].as_str()));
+        expected_http
+            .sort_by(|left, right| left["orderId"].as_str().cmp(&right["orderId"].as_str()));
+        assert_eq!(payloads, expected_http);
+        assert_eq!(state.trade_order_requests.load(Ordering::Relaxed), 0);
+    } else {
+        let request = json!({
+            "category": "linear",
+            "request": [
+                {
+                    "symbol": "ETHUSDT",
+                    "orderId": "venue-mod-1",
+                    "orderLinkId": "batch-modify-1",
+                    "qty": "0.021",
+                    "price": "1741.23",
+                },
+                {
+                    "symbol": "ETHUSDT",
+                    "orderId": "venue-mod-2",
+                    "orderLinkId": "batch-modify-2",
+                    "qty": "0.033",
+                    "price": "1755.50",
+                    "triggerPrice": "1732.45",
+                    "orderIv": "0.42",
+                },
+            ],
+        });
+        let payloads = state.trade_order_payloads.lock().await;
+        assert_eq!(payloads.len(), 1);
+        assert_eq!(payloads[0]["op"], "order.amend-batch");
+        assert!(
+            payloads[0]["reqId"]
+                .as_str()
+                .is_some_and(|req_id| !req_id.is_empty())
+        );
+        assert_eq!(payloads[0]["args"], json!([request]));
+        assert!(state.amend_order_payloads.lock().await.is_empty());
+        assert_eq!(state.trade_order_requests.load(Ordering::Relaxed), 1);
+    }
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_exec_client_batch_modify_venue_rejection_uses_amend_correlation() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("BYBIT-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+    wait_until_async(
+        || async { state.subscriptions.lock().await.len() >= 4 },
+        Duration::from_secs(10),
+    )
+    .await;
+    drain_execution_events(&mut rx).await;
+
+    let trader_id = TraderId::from("TESTER-001");
+    let instrument_id = InstrumentId::from("ETHUSDT-LINEAR.BYBIT");
+    let orders = [
+        ("S-001", "batch-reject-1", "venue-reject-1"),
+        ("S-002", "batch-reject-2", "venue-reject-2"),
+    ];
+
+    for (owner, client_order_id, _) in orders {
+        let strategy_id = StrategyId::from(owner);
+        let client_order_id = ClientOrderId::from(client_order_id);
+        let order = OrderAny::Market(MarketOrder::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            OrderSide::Buy,
+            Quantity::from("0.01"),
+            TimeInForce::Gtc,
+            UUID4::new(),
+            UnixNanos::default(),
+            false,
+            false,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+        ));
+        let init = order.init_event().clone();
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*BYBIT_CLIENT_ID), false)
+            .unwrap();
+        client
+            .submit_order(SubmitOrder::new(
+                trader_id,
+                Some(*BYBIT_CLIENT_ID),
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                init,
+                None,
+                None,
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+    }
+
+    wait_until_async(
+        || async { state.trade_order_payloads.lock().await.len() == 2 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    for _ in 0..2 {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timed out waiting for OrderSubmitted")
+            .expect("channel closed");
+        assert!(
+            matches!(event, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+            "expected OrderSubmitted, was {event:?}",
+        );
+    }
+
+    state.trade_batch_ret_code.store(110001, Ordering::Relaxed);
+
+    let modifies = orders
+        .into_iter()
+        .map(|(owner, client_order_id, venue_order_id)| {
+            ModifyOrder::new(
+                trader_id,
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from(owner),
+                instrument_id,
+                ClientOrderId::from(client_order_id),
+                Some(VenueOrderId::from(venue_order_id)),
+                Some(Quantity::from("0.02")),
+                Some(Price::from("1600.00")),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        })
+        .collect::<Vec<_>>();
+
+    client
+        .batch_modify_orders(BatchModifyOrders::new(
+            trader_id,
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-001"),
+            instrument_id,
+            modifies.clone(),
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let mut actual = Vec::new();
+
+    for _ in &modifies {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .expect("timed out waiting for OrderModifyRejected")
+            .expect("channel closed");
+
+        match event {
+            ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) => {
+                actual.push((
+                    rejected.client_order_id,
+                    rejected.strategy_id,
+                    rejected.venue_order_id,
+                    rejected.reason.to_string(),
+                ));
+            }
+            event => panic!("expected OrderModifyRejected, was {event:?}"),
+        }
+    }
+
+    actual.sort();
+
+    let mut expected: Vec<_> = modifies
+        .iter()
+        .map(|modify| {
+            (
+                modify.client_order_id,
+                modify.strategy_id,
+                modify.venue_order_id,
+                "Too many visits.".to_string(),
+            )
+        })
+        .collect();
+
+    expected.sort();
+    assert_eq!(actual, expected);
+
+    let payloads = state.trade_order_payloads.lock().await;
+    let batch_payloads: Vec<_> = payloads
+        .iter()
+        .filter(|payload| payload["op"] == "order.amend-batch")
+        .collect();
+    assert_eq!(batch_payloads.len(), 1);
+    assert_eq!(
+        batch_payloads[0]["args"][0]["request"]
+            .as_array()
+            .map(Vec::len),
+        Some(2)
+    );
+    assert!(rx.try_recv().is_err());
     client.disconnect().await.unwrap();
 }
 
