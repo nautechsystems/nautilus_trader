@@ -85,14 +85,14 @@ impl LiveClock {
         )?;
 
         self.replace_existing_timer_if_needed(&name);
-        let callback = if let Some(callback) = callback {
-            self.callbacks.register_callback(name, callback.clone());
-            callback
-        } else {
-            self.callbacks
-                .get_callback(&name)
-                .expect("Callback should exist")
-        };
+        if let Some(callback) = callback {
+            self.callbacks.register_callback(name, callback);
+        }
+
+        let callback = self
+            .callbacks
+            .get_callback(&name)
+            .expect("Callback should exist");
 
         let sender = self.resolve_time_event_sender();
 
@@ -200,15 +200,14 @@ impl Clock for LiveClock {
         )?;
 
         self.replace_existing_timer_if_needed(&name);
+        if let Some(callback) = callback {
+            self.callbacks.register_callback(name, callback);
+        }
 
-        let callback = if let Some(callback) = callback {
-            self.callbacks.register_callback(name, callback.clone());
-            callback
-        } else {
-            self.callbacks
-                .get_callback(&name)
-                .expect("Callback should exist")
-        };
+        let callback = self
+            .callbacks
+            .get_callback(&name)
+            .expect("Callback should exist");
 
         // Safe to calculate interval now that we've ensured alert_time_ns >= ts_now
         let interval_ns = create_valid_interval(alert_time_ns - ts_now);
@@ -337,7 +336,7 @@ mod tests {
     use std::{
         sync::{
             Arc,
-            atomic::{AtomicBool, Ordering},
+            atomic::{AtomicBool, AtomicUsize, Ordering},
             mpsc,
         },
         time::Duration,
@@ -374,6 +373,72 @@ mod tests {
             let event = message.event().clone();
             message.dispatch();
             self.events.lock().push((event, now_ns));
+        }
+    }
+
+    #[derive(Debug)]
+    struct QueuedSender(mpsc::Sender<TimeEventMessage>);
+
+    impl TimeEventSender for QueuedSender {
+        fn send(&self, message: TimeEventMessage) {
+            self.0.send(message).unwrap();
+        }
+    }
+
+    #[rstest]
+    #[case::alert(false)]
+    #[case::timer(true)]
+    fn test_live_clock_revokes_queued_callbacks(
+        #[case] recurring: bool,
+        #[values(false, true)] named: bool,
+        #[values(false, true)] local: bool,
+    ) {
+        let (tx, rx) = mpsc::channel();
+        let sender = Arc::new(QueuedSender(tx));
+        let mut clock = LiveClock::new(Some(sender));
+        let calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = calls.clone();
+        let callback = move |_: TimeEvent| {
+            callback_calls.fetch_add(1, Ordering::Relaxed);
+        };
+
+        let callback = if local {
+            TimeEventCallback::RustLocal(std::rc::Rc::new(callback))
+        } else {
+            TimeEventCallback::from(callback)
+        };
+
+        clock.register_default_handler(callback.clone());
+        for retire in [false, true] {
+            let explicit = named.then(|| callback.clone());
+
+            if recurring {
+                clock
+                    .set_timer_ns(
+                        "queued",
+                        DurationNanos::from_secs(60),
+                        None,
+                        None,
+                        explicit,
+                        None,
+                        Some(true),
+                    )
+                    .unwrap();
+            } else {
+                clock
+                    .set_time_alert_ns("queued", clock.timestamp_ns(), explicit, None)
+                    .unwrap();
+            }
+
+            let message = rx.recv_timeout(Duration::from_secs(2)).unwrap();
+            clock.cancel_timers();
+            if retire {
+                clock.cancel_default_handler();
+                clock.cancel_callbacks();
+            }
+
+            assert!(message.dispatch());
+            assert_eq!(calls.load(Ordering::Relaxed), 1);
         }
     }
 
