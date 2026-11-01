@@ -66,6 +66,7 @@ Released on TBD (UTC).
 - Fixed historical time bar boundary assignment for ticks sharing a timestamp
 - Fixed `ExecTester` panicking on unsupported `GTD` brackets
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
+- Fixed exchange-rate conversions failing on overflow despite a representable route or returning zero on underflow
 - Fixed Sockudo WebSocket timeouts overriding the client heartbeat and idle policy
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Binance REST requests ignoring 429 and 418 cooldowns from other requests

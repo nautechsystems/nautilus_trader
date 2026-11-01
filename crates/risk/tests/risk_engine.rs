@@ -7021,6 +7021,7 @@ fn test_risk_rejects_when_checks_cannot_complete(
 #[case::missing_rate("100 EUR", "empty", true)]
 #[case::disconnected_rate("100 EUR", "disconnected", true)]
 #[case::conversion_overflow("100 EUR", "overflow", true)]
+#[case::alternate_rate("100 EUR", "alternate", false)]
 fn test_order_risk_in_account_base_currency(
     #[case] balance: &str,
     #[case] rate: &str,
@@ -7060,34 +7061,38 @@ fn test_order_risk_in_account_base_currency(
     cache.add_account(account).unwrap();
 
     if rate != "empty" {
-        let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
-            Symbol::from(if rate == "disconnected" {
-                "AUD/USD"
-            } else {
-                "USDT/EUR"
-            }),
-            Some(Venue::from("BINANCE")),
-        ));
-        cache.add_instrument(instrument.clone()).unwrap();
-        cache
-            .add_quote(QuoteTick::new(
-                instrument.id(),
-                Price::from(if rate == "overflow" {
-                    "1000000.00000"
-                } else {
-                    "0.90000"
-                }),
-                Price::from(if rate == "overflow" {
-                    "1000000.00000"
-                } else {
-                    "0.95000"
-                }),
-                Quantity::from("1"),
-                Quantity::from("1"),
-                UnixNanos::default(),
-                UnixNanos::default(),
-            ))
-            .unwrap();
+        let pairs: &[(&str, &str, &str)] = match rate {
+            "disconnected" => &[("AUD/USD", "0.90000", "0.95000")],
+            "overflow" => &[("USDT/EUR", "1000000.00000", "1000000.00000")],
+            "alternate" => &[
+                ("USDT/AUD", "1000000000", "1000000000"),
+                ("AUD/CAD", "1000000000", "1000000000"),
+                ("CAD/CHF", "1000000000", "1000000000"),
+                ("CHF/EUR", "1000000000", "1000000000"),
+                ("USDT/GBP", "0.90000", "0.95000"),
+                ("GBP/EUR", "1.00000", "1.00000"),
+            ],
+            _ => &[("USDT/EUR", "0.90000", "0.95000")],
+        };
+
+        for &(symbol, bid, ask) in pairs {
+            let instrument = InstrumentAny::CurrencyPair(default_fx_ccy(
+                Symbol::from(symbol),
+                Some(Venue::from("BINANCE")),
+            ));
+            cache.add_instrument(instrument.clone()).unwrap();
+            cache
+                .add_quote(QuoteTick::new(
+                    instrument.id(),
+                    Price::from(bid),
+                    Price::from(ask),
+                    Quantity::from("1"),
+                    Quantity::from("1"),
+                    UnixNanos::default(),
+                    UnixNanos::default(),
+                ))
+                .unwrap();
+        }
     }
 
     let mut order = OrderTestBuilder::new(OrderType::Limit)

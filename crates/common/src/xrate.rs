@@ -22,12 +22,17 @@ use nautilus_model::enums::PriceType;
 use rust_decimal::Decimal;
 use ustr::Ustr;
 
+type RateGraph = AHashMap<Ustr, Vec<(Ustr, Decimal)>>;
+
 /// Calculates the exchange rate between two currencies using provided bid and ask quotes.
 ///
-/// This function builds a graph of direct conversion rates from the quotes and uses a DFS to
-/// accumulate the conversion rate along a valid conversion path. While a full Floyd-Warshall
-/// algorithm could compute all-pairs conversion rates, the DFS approach here provides a quick
-/// solution for a single conversion query.
+/// This function builds a graph of direct conversion rates from the quotes and searches for a
+/// conversion path whose accumulated rate is representable as a positive `Decimal`.
+/// If a path calculation is unrepresentable, the search may examine every simple path. In the
+/// worst case, this takes exponential time in dense graphs, even when a valid route exists.
+///
+/// Identical `from_currency` and `to_currency` return a rate of one without inspecting the quotes.
+/// Returns `Ok(None)` when no path is found and all quote and path calculations are representable.
 ///
 /// # Errors
 ///
@@ -36,16 +41,14 @@ use ustr::Ustr;
 /// - `quotes_bid` and `quotes_ask` lengths are not equal.
 /// - `price_type` is equal to `Last` or `Mark` (cannot calculate from quotes).
 /// - The bid or ask side of a pair is missing.
-/// - An exchange rate calculation exceeds the decimal range.
-///
-/// These conditions apply only to conversions between distinct currencies. Identical
-/// `from_currency` and `to_currency` return a rate of one without inspecting the quotes.
+/// - No rate is found, and a calculation for any supplied pair or searched path overflows or
+///   underflows to zero.
 pub fn get_exchange_rate(
     from_currency: Ustr,
     to_currency: Ustr,
     price_type: PriceType,
     quotes_bid: AHashMap<Ustr, Decimal>,
-    mut quotes_ask: AHashMap<Ustr, Decimal>,
+    quotes_ask: AHashMap<Ustr, Decimal>,
 ) -> anyhow::Result<Option<Decimal>> {
     if from_currency == to_currency {
         // When the source and target currencies are identical,
@@ -67,96 +70,329 @@ pub fn get_exchange_rate(
         anyhow::bail!("Invalid `price_type`, was '{price_type}'");
     }
 
+    let (graph, unrepresentable) = build_rate_graph(quotes_bid, quotes_ask, price_type)?;
+    find_representable_rate(&graph, from_currency, to_currency, unrepresentable)
+}
+
+pub(crate) fn get_exchange_rate_with_alternates(
+    from_currency: Ustr,
+    to_currency: Ustr,
+    price_type: PriceType,
+    quotes_bid: &AHashMap<Ustr, Decimal>,
+    quotes_ask: &AHashMap<Ustr, Decimal>,
+    alternates: &[(Ustr, Decimal, Decimal)],
+) -> anyhow::Result<Option<Decimal>> {
+    let preferred = get_exchange_rate(
+        from_currency,
+        to_currency,
+        price_type,
+        quotes_bid.clone(),
+        quotes_ask.clone(),
+    );
+
+    if matches!(preferred, Ok(Some(_))) || alternates.is_empty() {
+        return preferred;
+    }
+
+    if !matches!(price_type, PriceType::Bid | PriceType::Ask | PriceType::Mid) {
+        return preferred;
+    }
+
+    let (mut graph, mut unrepresentable) =
+        build_rate_graph(quotes_bid.clone(), quotes_ask.clone(), price_type)?;
+    for &(pair, bid, ask) in alternates {
+        add_pair_rates(&mut graph, pair, bid, ask, price_type, &mut unrepresentable);
+    }
+
+    if !is_connected(&graph, from_currency, to_currency) {
+        return preferred;
+    }
+
+    sort_rate_graph(&mut graph);
+    let available = find_representable_rate(&graph, from_currency, to_currency, unrepresentable);
+    if !matches!(available, Ok(Some(_))) {
+        return available;
+    }
+
+    if let Some(rate) = find_rate_with_quote_choices(
+        from_currency,
+        to_currency,
+        price_type,
+        quotes_bid,
+        quotes_ask,
+        alternates,
+    ) {
+        return Ok(Some(rate));
+    }
+
+    available
+}
+
+fn build_rate_graph(
+    quotes_bid: AHashMap<Ustr, Decimal>,
+    mut quotes_ask: AHashMap<Ustr, Decimal>,
+    price_type: PriceType,
+) -> anyhow::Result<(RateGraph, bool)> {
     // Construct a graph: each currency maps to its neighbors and corresponding conversion rate
-    let mut graph: AHashMap<Ustr, Vec<(Ustr, Decimal)>> = AHashMap::new();
+    let mut graph = RateGraph::new();
+    let mut unrepresentable = false;
 
     for (pair, bid) in quotes_bid {
         let ask = quotes_ask
             .remove(&pair)
             .ok_or_else(|| anyhow::anyhow!("Missing ask quote for pair {pair}"))?;
-        let mut parts = pair.split('/');
-
-        let (Some(base), Some(quote), None) = (parts.next(), parts.next(), parts.next()) else {
-            log::warn!("Skipping invalid pair string: {pair}");
-            continue;
-        };
-
-        if bid <= Decimal::ZERO || ask <= Decimal::ZERO {
-            // Both sides are required to build valid forward and reverse edges.
-            log::warn!("Skipping pair with non-positive bid or ask rate: {pair}");
-            continue;
-        }
-
-        let base = Ustr::from(base);
-        let quote = Ustr::from(quote);
-        let (forward_rate, reverse_rate) = directional_rates(pair, bid, ask, price_type)?;
-
-        graph.entry(base).or_default().push((quote, forward_rate));
-        graph.entry(quote).or_default().push((base, reverse_rate));
+        add_pair_rates(&mut graph, pair, bid, ask, price_type, &mut unrepresentable);
     }
 
-    // Descending total order makes the smallest distinct neighbor the first branch popped from
-    // the LIFO stack. The rate only breaks ties between parallel edges.
+    sort_rate_graph(&mut graph);
+
+    Ok((graph, unrepresentable))
+}
+
+fn find_rate_with_quote_choices(
+    from_currency: Ustr,
+    to_currency: Ustr,
+    price_type: PriceType,
+    quotes_bid: &AHashMap<Ustr, Decimal>,
+    quotes_ask: &AHashMap<Ustr, Decimal>,
+    alternates: &[(Ustr, Decimal, Decimal)],
+) -> Option<Decimal> {
+    for count in 1..=alternates.len() {
+        let mut indices: Vec<usize> = (0..count).collect();
+
+        loop {
+            let mut bid = quotes_bid.clone();
+            let mut ask = quotes_ask.clone();
+
+            for &index in &indices {
+                let (pair, alternate_bid, alternate_ask) = alternates[index];
+                bid.insert(pair, alternate_bid);
+                ask.insert(pair, alternate_ask);
+            }
+
+            if let Ok(Some(rate)) =
+                get_exchange_rate(from_currency, to_currency, price_type, bid, ask)
+            {
+                return Some(rate);
+            }
+
+            let mut position = count;
+            while position > 0 && indices[position - 1] == alternates.len() - count + position - 1 {
+                position -= 1;
+            }
+
+            if position == 0 {
+                break;
+            }
+
+            indices[position - 1] += 1;
+            for index in position..count {
+                indices[index] = indices[index - 1] + 1;
+            }
+        }
+    }
+
+    None
+}
+
+fn add_pair_rates(
+    graph: &mut RateGraph,
+    pair: Ustr,
+    bid: Decimal,
+    ask: Decimal,
+    price_type: PriceType,
+    unrepresentable: &mut bool,
+) {
+    let mut parts = pair.split('/');
+
+    let (Some(base), Some(quote), None) = (parts.next(), parts.next(), parts.next()) else {
+        log::warn!("Skipping invalid pair string: {pair}");
+        return;
+    };
+
+    if bid <= Decimal::ZERO || ask <= Decimal::ZERO {
+        // Both sides are required to build valid forward and reverse edges.
+        log::warn!("Skipping pair with non-positive bid or ask rate: {pair}");
+        return;
+    }
+
+    let base = Ustr::from(base);
+    let quote = Ustr::from(quote);
+    let (forward_rate, reverse_rate) = directional_rates(bid, ask, price_type);
+
+    if let Some(rate) = forward_rate {
+        graph.entry(base).or_default().push((quote, rate));
+    } else {
+        *unrepresentable = true;
+    }
+
+    if let Some(rate) = reverse_rate {
+        graph.entry(quote).or_default().push((base, rate));
+    } else {
+        *unrepresentable = true;
+    }
+}
+
+fn sort_rate_graph(graph: &mut RateGraph) {
+    // The LIFO fast search visits smaller neighbors first and favors higher parallel rates.
     for neighbors in graph.values_mut() {
         neighbors.sort_unstable_by(|left, right| right.cmp(left));
     }
+}
 
-    // DFS: search for a conversion path from `from_currency` to `to_currency`
-    let mut stack: Vec<(Ustr, Decimal)> = vec![(from_currency, Decimal::ONE)];
+fn find_representable_rate(
+    graph: &RateGraph,
+    from_currency: Ustr,
+    to_currency: Ustr,
+    unrepresentable: bool,
+) -> anyhow::Result<Option<Decimal>> {
+    let (rate, path_unrepresentable) =
+        find_rate_without_backtracking(graph, from_currency, to_currency);
+
+    if rate.is_some() {
+        return Ok(rate);
+    }
+
+    if path_unrepresentable
+        && is_connected(graph, from_currency, to_currency)
+        && let Some(rate) = find_rate_with_backtracking(graph, from_currency, to_currency)
+    {
+        return Ok(Some(rate));
+    }
+
+    if unrepresentable || path_unrepresentable {
+        anyhow::bail!("No representable exchange rate from {from_currency} to {to_currency}");
+    }
+
+    Ok(None)
+}
+
+fn find_rate_without_backtracking(
+    graph: &RateGraph,
+    from_currency: Ustr,
+    to_currency: Ustr,
+) -> (Option<Decimal>, bool) {
+    let mut stack = vec![(from_currency, Decimal::ONE)];
     let mut visited: AHashSet<Ustr> = AHashSet::new();
     visited.insert(from_currency);
+    let mut path_unrepresentable = false;
 
     while let Some((current, current_rate)) = stack.pop() {
         if current == to_currency {
-            return Ok(Some(current_rate));
+            return (Some(current_rate), path_unrepresentable);
+        }
+
+        let neighbors = graph.get(&current).map_or(&[][..], Vec::as_slice);
+        for (neighbor, rate) in neighbors {
+            if visited.contains(neighbor) {
+                continue;
+            }
+
+            if let Some(next_rate) = current_rate
+                .checked_mul(*rate)
+                .filter(|rate| !rate.is_zero())
+            {
+                visited.insert(*neighbor);
+                stack.push((*neighbor, next_rate));
+            } else {
+                path_unrepresentable = true;
+            }
+        }
+    }
+
+    (None, path_unrepresentable)
+}
+
+fn is_connected(graph: &RateGraph, from_currency: Ustr, to_currency: Ustr) -> bool {
+    let mut stack = vec![from_currency];
+    let mut visited = AHashSet::from_iter([from_currency]);
+
+    while let Some(current) = stack.pop() {
+        if current == to_currency {
+            return true;
         }
 
         if let Some(neighbors) = graph.get(&current) {
-            for (neighbor, rate) in neighbors {
+            for (neighbor, _) in neighbors {
                 if visited.insert(*neighbor) {
-                    let next_rate = current_rate.checked_mul(*rate).ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "Decimal overflow multiplying exchange rates for {from_currency}/{to_currency} at {current}/{neighbor}"
-                        )
-                    })?;
-
-                    stack.push((*neighbor, next_rate));
+                    stack.push(*neighbor);
                 }
             }
         }
     }
 
-    // No conversion path found
-    Ok(None)
+    false
+}
+
+fn find_rate_with_backtracking(
+    graph: &RateGraph,
+    from_currency: Ustr,
+    to_currency: Ustr,
+) -> Option<Decimal> {
+    let mut stack = vec![(from_currency, Decimal::ONE, 0)];
+    let mut visited: AHashSet<Ustr> = AHashSet::new();
+    visited.insert(from_currency);
+
+    while let Some((current, current_rate, next_index)) = stack.last_mut() {
+        if *current == to_currency {
+            return Some(*current_rate);
+        }
+
+        let neighbors = graph.get(current).map_or(&[][..], Vec::as_slice);
+        if *next_index == neighbors.len() {
+            visited.remove(current);
+            stack.pop();
+            continue;
+        }
+
+        let (neighbor, rate) = neighbors[neighbors.len() - 1 - *next_index];
+        *next_index += 1;
+
+        if visited.contains(&neighbor) {
+            continue;
+        }
+
+        if let Some(next_rate) = current_rate
+            .checked_mul(rate)
+            .filter(|rate| !rate.is_zero())
+        {
+            visited.insert(neighbor);
+            stack.push((neighbor, next_rate, 0));
+        }
+    }
+
+    None
 }
 
 fn directional_rates(
-    pair: Ustr,
     bid: Decimal,
     ask: Decimal,
     price_type: PriceType,
-) -> anyhow::Result<(Decimal, Decimal)> {
+) -> (Option<Decimal>, Option<Decimal>) {
     let (forward_rate, reverse_divisor) = match price_type {
-        PriceType::Bid => (bid, ask),
-        PriceType::Ask => (ask, bid),
+        PriceType::Bid => (Some(bid), Some(ask)),
+        PriceType::Ask => (Some(ask), Some(bid)),
         PriceType::Mid => {
             let mid = bid
                 .checked_add(ask)
                 .and_then(|sum| sum.checked_div(Decimal::TWO))
-                .ok_or_else(|| {
-                    anyhow::anyhow!("Decimal overflow calculating midpoint for pair {pair}")
-                })?;
+                .or_else(|| {
+                    let (low, high) = if bid < ask { (bid, ask) } else { (ask, bid) };
+                    high.checked_sub(low)
+                        .and_then(|difference| difference.checked_div(Decimal::TWO))
+                        .and_then(|half| low.checked_add(half))
+                });
 
             (mid, mid)
         }
         _ => unreachable!("Price type was validated before graph construction"),
     };
 
-    let reverse_rate = Decimal::ONE.checked_div(reverse_divisor).ok_or_else(|| {
-        anyhow::anyhow!("Decimal overflow calculating inverse rate for pair {pair}")
-    })?;
+    let reverse_rate = reverse_divisor
+        .and_then(|divisor| Decimal::ONE.checked_div(divisor))
+        .filter(|rate| !rate.is_zero());
 
-    Ok((forward_rate, reverse_rate))
+    (forward_rate.filter(|rate| !rate.is_zero()), reverse_rate)
 }
 
 #[cfg(test)]
@@ -385,7 +621,7 @@ mod tests {
     }
 
     #[rstest]
-    fn test_midpoint_overflow_returns_error() {
+    fn test_midpoint_sum_overflow_uses_representable_rate() {
         let quotes_bid = AHashMap::from([(Ustr::from("EUR/USD"), Decimal::MAX)]);
         let quotes_ask = quotes_bid.clone();
 
@@ -397,10 +633,7 @@ mod tests {
             quotes_ask,
         );
 
-        assert_eq!(
-            result.unwrap_err().to_string(),
-            "Decimal overflow calculating midpoint for pair EUR/USD"
-        );
+        assert_eq!(result.unwrap(), Some(Decimal::MAX));
     }
 
     #[rstest]
@@ -424,8 +657,140 @@ mod tests {
 
         assert_eq!(
             result.unwrap_err().to_string(),
-            "Decimal overflow multiplying exchange rates for EUR/JPY at USD/JPY"
+            "No representable exchange rate from EUR to JPY"
         );
+    }
+
+    #[rstest]
+    fn test_alternate_quotes_unrepresentable_route_returns_error() {
+        let quotes_bid = AHashMap::from([
+            (Ustr::from("EUR/USD"), dec!(100000000000000000000)),
+            (Ustr::from("USD/JPY"), dec!(100000000000000000000)),
+            (Ustr::from("BTC/USDT"), Decimal::ONE),
+        ]);
+        let quotes_ask = quotes_bid.clone();
+        let alternates = vec![(Ustr::from("BTC/USDT"), Decimal::ONE, Decimal::ONE); 30];
+
+        let result = get_exchange_rate_with_alternates(
+            Ustr::from("EUR"),
+            Ustr::from("JPY"),
+            PriceType::Bid,
+            &quotes_bid,
+            &quotes_ask,
+            &alternates,
+        );
+
+        assert_eq!(
+            result.unwrap_err().to_string(),
+            "No representable exchange rate from EUR to JPY"
+        );
+    }
+
+    #[rstest]
+    #[case(PriceType::Bid)]
+    #[case(PriceType::Ask)]
+    #[case(PriceType::Mid)]
+    fn test_path_overflow_uses_alternate_route(#[case] price_type: PriceType) {
+        let quotes_bid = AHashMap::from([
+            (Ustr::from("AAA/BBB"), dec!(1000000000)),
+            (Ustr::from("BBB/CCC"), dec!(1000000000)),
+            (Ustr::from("CCC/DDD"), dec!(1000000000)),
+            (Ustr::from("DDD/TTT"), dec!(1000000000)),
+            (Ustr::from("AAA/EEE"), dec!(2)),
+            (Ustr::from("EEE/TTT"), dec!(3)),
+        ]);
+        let quotes_ask = quotes_bid.clone();
+
+        let result = get_exchange_rate(
+            Ustr::from("AAA"),
+            Ustr::from("TTT"),
+            price_type,
+            quotes_bid,
+            quotes_ask,
+        );
+
+        assert_eq!(result.unwrap(), Some(dec!(6)));
+    }
+
+    #[rstest]
+    fn test_path_overflow_revisits_currency_at_representable_rate() {
+        let quotes_bid = AHashMap::from([
+            (Ustr::from("AAA/BBB"), dec!(100000000000000000000)),
+            (Ustr::from("AAA/CCC"), Decimal::ONE),
+            (Ustr::from("CCC/BBB"), dec!(0.00000000000000000001)),
+            (Ustr::from("BBB/TTT"), dec!(100000000000000000000)),
+        ]);
+        let quotes_ask = quotes_bid.clone();
+
+        let result = get_exchange_rate(
+            Ustr::from("AAA"),
+            Ustr::from("TTT"),
+            PriceType::Bid,
+            quotes_bid,
+            quotes_ask,
+        );
+
+        assert_eq!(result.unwrap(), Some(Decimal::ONE));
+    }
+
+    #[rstest]
+    fn test_path_underflow_uses_alternate_route() {
+        let quotes_bid = AHashMap::from([
+            (Ustr::from("AAA/BBB"), dec!(0.00000000000000000001)),
+            (Ustr::from("BBB/TTT"), dec!(0.00000000000000000001)),
+            (Ustr::from("AAA/CCC"), dec!(2)),
+            (Ustr::from("CCC/TTT"), dec!(3)),
+        ]);
+        let quotes_ask = quotes_bid.clone();
+
+        let result = get_exchange_rate(
+            Ustr::from("AAA"),
+            Ustr::from("TTT"),
+            PriceType::Bid,
+            quotes_bid,
+            quotes_ask,
+        );
+
+        assert_eq!(result.unwrap(), Some(dec!(6)));
+    }
+
+    #[rstest]
+    fn test_inverse_underflow_uses_alternate_route() {
+        let quotes_bid = AHashMap::from([
+            (Ustr::from("AAA/BBB"), Decimal::MAX),
+            (Ustr::from("BBB/CCC"), Decimal::ONE),
+            (Ustr::from("CCC/AAA"), Decimal::ONE),
+        ]);
+        let quotes_ask = quotes_bid.clone();
+
+        let result = get_exchange_rate(
+            Ustr::from("BBB"),
+            Ustr::from("AAA"),
+            PriceType::Bid,
+            quotes_bid,
+            quotes_ask,
+        );
+
+        assert_eq!(result.unwrap(), Some(Decimal::ONE));
+    }
+
+    #[rstest]
+    fn test_unrelated_inverse_underflow_does_not_mask_valid_route() {
+        let quotes_bid = AHashMap::from([
+            (Ustr::from("AAA/TTT"), dec!(6)),
+            (Ustr::from("XXX/YYY"), Decimal::MAX),
+        ]);
+        let quotes_ask = quotes_bid.clone();
+
+        let result = get_exchange_rate(
+            Ustr::from("AAA"),
+            Ustr::from("TTT"),
+            PriceType::Bid,
+            quotes_bid,
+            quotes_ask,
+        );
+
+        assert_eq!(result.unwrap(), Some(dec!(6)));
     }
 
     #[rstest]
@@ -691,10 +1056,6 @@ mod tests {
         )
         .unwrap();
 
-        // Both paths should be consistent:
-        let direct = dec!(1.1001);
-        let indirect = dec!(0.8462) * dec!(1.3001);
-        assert!((direct - indirect).abs() < dec!(0.0001));
-        assert!((rate.unwrap() - direct).abs() < dec!(0.0001));
+        assert_eq!(rate, Some(dec!(1.1001)));
     }
 }

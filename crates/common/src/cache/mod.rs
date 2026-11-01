@@ -101,7 +101,7 @@ use rust_decimal::Decimal;
 use ustr::Ustr;
 pub use view::CacheView; // Re-export
 
-use crate::xrate::get_exchange_rate;
+use crate::xrate::{get_exchange_rate, get_exchange_rate_with_alternates};
 
 /// A common in-memory `Cache` for market and execution related data.
 #[cfg_attr(
@@ -7054,6 +7054,9 @@ impl Cache {
 
     /// Tries to calculate the exchange rate without logging calculation errors.
     ///
+    /// If preferred quotes cannot form a rate, tries alternate quote selections by replacement
+    /// count, then source preference. This can take exponential time in the number of alternates.
+    ///
     /// # Errors
     ///
     /// Returns an error if the cached quotes cannot form a valid exchange rate calculation.
@@ -7070,24 +7073,33 @@ impl Cache {
             return Ok(Some(Decimal::ONE));
         }
 
-        let (bid_quote, ask_quote) = self.build_quote_table(&venue);
+        let (bid_quote, ask_quote, alternates) = self.build_quote_table(&venue);
 
-        get_exchange_rate(
-            from_currency.code,
-            to_currency.code,
-            price_type,
-            bid_quote,
-            ask_quote,
-        )
+        if alternates.is_empty() {
+            get_exchange_rate(
+                from_currency.code,
+                to_currency.code,
+                price_type,
+                bid_quote,
+                ask_quote,
+            )
+        } else {
+            get_exchange_rate_with_alternates(
+                from_currency.code,
+                to_currency.code,
+                price_type,
+                &bid_quote,
+                &ask_quote,
+                &alternates,
+            )
+        }
     }
 
-    fn build_quote_table(
-        &self,
-        venue: &Venue,
-    ) -> (AHashMap<Ustr, Decimal>, AHashMap<Ustr, Decimal>) {
+    fn build_quote_table(&self, venue: &Venue) -> QuoteTable {
         let mut bid_quotes = AHashMap::new();
         let mut ask_quotes = AHashMap::new();
         let mut quote_sources = AHashMap::new();
+        let mut alternates = Vec::new();
         let mut bar_quotes = None;
         let mut pair_buffer = String::new();
 
@@ -7135,15 +7147,32 @@ impl Cache {
                 .get(&pair)
                 .is_some_and(|current| current >= &preference)
             {
+                alternates.push((
+                    preference,
+                    pair,
+                    bid_price.as_decimal(),
+                    ask_price.as_decimal(),
+                ));
                 continue;
             }
 
-            bid_quotes.insert(pair, bid_price.as_decimal());
-            ask_quotes.insert(pair, ask_price.as_decimal());
-            quote_sources.insert(pair, preference);
+            let previous = quote_sources.insert(pair, preference);
+            if let (Some(preference), Some(bid), Some(ask)) = (
+                previous,
+                bid_quotes.insert(pair, bid_price.as_decimal()),
+                ask_quotes.insert(pair, ask_price.as_decimal()),
+            ) {
+                alternates.push((preference, pair, bid, ask));
+            }
         }
 
-        (bid_quotes, ask_quotes)
+        alternates.sort_unstable_by_key(|entry| Reverse(entry.0));
+        let alternates = alternates
+            .into_iter()
+            .map(|(_, pair, bid, ask)| (pair, bid, ask))
+            .collect();
+
+        (bid_quotes, ask_quotes, alternates)
     }
 
     fn build_bar_quote_table(
@@ -7596,6 +7625,12 @@ impl Cache {
         log::debug!("Completed own books audit in {:?}", start.elapsed());
     }
 }
+
+type QuoteTable = (
+    AHashMap<Ustr, Decimal>,
+    AHashMap<Ustr, Decimal>,
+    Vec<(Ustr, Decimal, Decimal)>,
+);
 
 const POSITION_OMS_KEY_PREFIX: &str = "position_oms:";
 
