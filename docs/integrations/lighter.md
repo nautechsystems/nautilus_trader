@@ -689,8 +689,9 @@ The generic `CancelAllOrders` command retains its instrument and side filters an
 cancellations.
 
 A direct execution-client `CancelOrder` for a cached terminal order still sends the venue-ID request.
-A successful acknowledgement or venue rejection produces no additional order event and preserves
-the cached terminal state. Strategy cancellation methods filter closed orders before adapter dispatch.
+A venue rejection emits `OrderCancelRejected` with the command ID and preserves the cached terminal state.
+An acknowledgement keeps the command pending until transaction and order recovery resolve it.
+Strategy cancellation methods filter closed orders before adapter dispatch.
 
 :::warning
 Native cancellation affects **all open orders on the account**, across markets and strategies,

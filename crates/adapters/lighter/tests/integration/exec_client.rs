@@ -126,6 +126,7 @@ use crate::{
             L2TxAttributes, ModifyOrderTxInfo, OrderInfo, TxContext, compute_tx_hash,
         },
     },
+    websocket::dispatch::PendingOrderAction,
 };
 
 const PRIVATE_KEY_HEX: &str =
@@ -3717,6 +3718,7 @@ async fn test_cancel_already_canceled_preserves_terminal_state(#[case] rejected:
             }));
         }
 
+        let command_id = UUID4::new();
         client
             .cancel_order(CancelOrder::new(
                 trader_id(),
@@ -3725,7 +3727,7 @@ async fn test_cancel_already_canceled_preserves_terminal_state(#[case] rejected:
                 eth_perp_id(),
                 id,
                 Some(venue_id),
-                UUID4::new(),
+                command_id,
                 UnixNanos::default(),
                 None,
                 None,
@@ -3741,11 +3743,33 @@ async fn test_cancel_already_canceled_preserves_terminal_state(#[case] rejected:
                 } else {
                     nonce_manager.baseline(TEST_ACCOUNT_INDEX as i64, TEST_API_KEY_INDEX)
                         == Some(expected_nonce)
+                        && client.dispatch.pending_cancel_nonce(&id)
+                            == Some((client.ws_client.connection_epoch(), expected_nonce))
                 }
             },
             Duration::from_secs(2),
         )
         .await;
+
+        if reject {
+            let event = next_order_event(&mut rx, Duration::from_secs(2))
+                .await
+                .expect("OrderCancelRejected");
+
+            let OrderEventAny::CancelRejected(event) = event else {
+                panic!("expected OrderCancelRejected, was {event:?}");
+            };
+
+            assert_eq!(event.trader_id, trader_id());
+            assert_eq!(event.strategy_id, strategy_id());
+            assert_eq!(event.instrument_id, eth_perp_id());
+            assert_eq!(event.client_order_id, id);
+            assert_eq!(event.venue_order_id, Some(venue_id));
+            assert_eq!(event.account_id, Some(account_id()));
+            assert_eq!(event.causation_id, Some(command_id));
+            assert_eq!(event.reason, "LIGHTER_21727: order is not cancelable");
+            assert!(!event.reconciliation);
+        }
 
         let unexpected = tokio::time::timeout(Duration::from_millis(250), async {
             loop {
@@ -3760,8 +3784,17 @@ async fn test_cancel_already_canceled_preserves_terminal_state(#[case] rejected:
         assert!(unexpected.is_err(), "unexpected event: {unexpected:?}");
         assert!(drain_order_and_report_events(&mut rx).is_empty());
         assert_order_state_unchanged(&cache.borrow().order(&id).unwrap(), &terminal);
-        assert_eq!(client.dispatch.pending_order_action(&id), None);
-        assert_eq!(client.dispatch.pending_cancel_nonce(&id), None);
+        assert_eq!(
+            client.dispatch.pending_order_action(&id),
+            (!reject).then_some(PendingOrderAction::CancelUnmarked),
+        );
+        assert_eq!(
+            client.dispatch.pending_cancel_identity(&id),
+            (!reject).then_some((
+                command_id,
+                (client.ws_client.connection_epoch(), expected_nonce)
+            )),
+        );
         assert_eq!(client.dispatch.pending_sendtx_len(), 0);
         assert_eq!(
             client
