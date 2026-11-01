@@ -186,6 +186,26 @@ data at once.
 
 `BacktestNode` also provides methods for adding actors and built-in strategies to a built run.
 
+Rust callers can register external catalog backends with `extend_catalog_factories` and select
+the resulting registry through the node builder. Select a factory by setting the data config's
+`DataCatalogConfig` backend to `CatalogBackendType::External(name)`, where `name` matches its
+registered factory key:
+
+```rust
+let mut node = BacktestNode::builder(configs)
+    .with_catalog_factories(factories)
+    .build()?;
+```
+
+The builder's `build()` validates the run configurations and creates the node without initializing
+its engines. Call `node.build()` to initialize them, or `node.run()` to initialize them and run the
+backtest. The selected registry supplies instrument loading and replay data in both one-shot and
+streaming runs. The builder defaults to the built-in registry; `BacktestNode::new`,
+`BacktestNode::load_catalog`, and `BacktestNode::load_data_config` always use the built-in registry.
+
+The kernel uses its built-in factories for `BacktestEngineConfig.catalogs` and streaming output;
+the node's selected registry applies only to `BacktestDataConfig` loading.
+
 ### Order book delta replay
 
 `BacktestNode` replays `OrderBookDelta` catalog data as `OrderBookDeltas` batches by default in both

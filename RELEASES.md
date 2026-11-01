@@ -4,6 +4,7 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `BacktestNodeBuilder` with custom catalog factories for instrument loading and replay
 - Added FinFeedAPI prediction market data adapter with REST access, historical requests, and polling
 - Added `Cache` lazy instrument and synthetic loads, saved component-state deletion, and explicit heartbeat writes
 - Added `DataEngine` processing and managed books for external data clients (#5520), thanks @nicezic
