@@ -35,15 +35,21 @@ use super::dst::{assert_request, new_client, start_peer};
 const EXACT: &str = include_str!("../../test_data/exchange-ohlcv-exact.json");
 
 #[rstest]
-#[case(2)]
-#[case(10_000)]
+#[case(2, "1HRS")]
+#[case(10_000, "1HRS")]
+#[case(2, "45MIN")]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
-async fn exchange_route_preserves_market_rows_and_exact_fields(#[case] limit: u32) {
+async fn exchange_route_preserves_market_rows_and_exact_fields(
+    #[case] limit: u32,
+    #[case] period: &str,
+) {
     let (peer, config) = start_peer(vec![(200, "", EXACT)]).await;
     let client = new_client(config.clone());
+    let mut query = query(limit);
+    query.period_id = period.into();
     let records = client
-        .get_ohlcv_exchange_history("MY/RIAD", &query(limit))
+        .get_ohlcv_exchange_history("MY/RIAD", &query)
         .await
         .unwrap();
     let requests = peer.await.unwrap();
@@ -52,16 +58,16 @@ async fn exchange_route_preserves_market_rows_and_exact_fields(#[case] limit: u3
         records[0],
         Ohlcv {
             market_id_exchange: Some("MixedCase/Outcome?+=%_NO".into()),
-            time_period_start: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
-            time_period_end: "2026-10-11T00:01:00.0000002Z".parse().unwrap(),
-            time_open: Some("2026-10-11T00:00:02.0000003Z".parse().unwrap()),
-            time_close: Some("2026-10-11T00:00:58.0000004Z".parse().unwrap()),
             price_open: Some("0.1".parse().unwrap()),
             price_high: Some("0.9".parse().unwrap()),
             price_low: Some("0.01".parse().unwrap()),
             price_close: Some("0.5".parse().unwrap()),
             volume_traded: "9007199254740993.125".parse().unwrap(),
             trades_count: i64::MAX,
+            time_period_start: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
+            time_period_end: "2026-10-11T00:01:00.0000002Z".parse().unwrap(),
+            time_open: Some("2026-10-11T00:00:02.0000003Z".parse().unwrap()),
+            time_close: Some("2026-10-11T00:00:58.0000004Z".parse().unwrap()),
         }
     );
     assert_raw_rows(&records, EXACT);
@@ -74,7 +80,7 @@ async fn exchange_route_preserves_market_rows_and_exact_fields(#[case] limit: u3
     assert_request(
         &requests[0],
         &format!(
-            "/v1/ohlcv/MY%2FRIAD/history?period_id=1HRS&time_start=2026-10-11T00%3A00%3A00.0000001Z&time_end=2026-10-12T00%3A00%3A00.0000001Z&limit={limit}"
+            "/v1/ohlcv/MY%2FRIAD/history?period_id={period}&time_start=2026-10-11T00%3A00%3A00.0000001Z&time_end=2026-10-12T00%3A00%3A00.0000001Z&limit={limit}"
         ),
         &config,
     );
@@ -343,7 +349,7 @@ fn assert_raw_rows(records: &[Ohlcv], body: &str) {
         assert_eq!(
             row.market_id_exchange,
             raw.get("market_id_exchange")
-                .and_then(|v| serde_json::from_str::<Option<String>>(v.get()).unwrap())
+                .and_then(|v| serde_json::from_str::<Option<ustr::Ustr>>(v.get()).unwrap())
         );
         assert_eq!(
             row.time_period_start,

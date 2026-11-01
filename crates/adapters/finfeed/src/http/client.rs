@@ -35,6 +35,7 @@ use serde::{
 use serde_json::{Map, Value};
 use tokio_util::sync::CancellationToken;
 use url::Url;
+use ustr::Ustr;
 
 use super::{
     error::Error,
@@ -282,9 +283,9 @@ impl FinFeedHttpClient {
         &self,
         exchange_id: &str,
         query: &ActiveQuery,
-    ) -> Result<Vec<String>, Error> {
+    ) -> Result<Vec<Ustr>, Error> {
         query.validate()?;
-        let ids: Vec<String> = self.get(&["markets", exchange_id, "active"], query).await?;
+        let ids: Vec<Ustr> = self.get(&["markets", exchange_id, "active"], query).await?;
         check_page(ids.len(), query.limit)?;
         Ok(ids)
     }
@@ -594,7 +595,7 @@ impl FinFeedHttpClient {
         exchange_id: &str,
         query: &ActiveQuery,
         bounds: Pagination,
-    ) -> Result<Vec<String>, Error> {
+    ) -> Result<Vec<Ustr>, Error> {
         query.validate()?;
         bounds.validate()?;
         let mut query = query.clone();
@@ -612,7 +613,7 @@ impl FinFeedHttpClient {
             }
 
             for id in page {
-                if id.is_empty() || !seen.insert(id.clone()) {
+                if id.is_empty() || !seen.insert(id) {
                     return Err(Error::Response("active ID is empty or repeated"));
                 }
 

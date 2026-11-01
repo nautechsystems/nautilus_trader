@@ -40,17 +40,17 @@ from nautilus_trader.adapters import finfeed as ff
 TEST_DATA = Path(__file__).resolve().parents[5] / "crates/adapters/finfeed/test_data"
 FIELDS = {
     "FinFeedExchange": "exchange_id market_name_institution_description website",
-    "FinFeedMarket": "market_id title description outcome_name price status exchange exchange_id outcome_type mechanism source_specific_data",
+    "FinFeedMarket": "exchange_id market_id outcome_type outcome_name mechanism status price title description exchange source_specific_data",
     "FinFeedMarketsPage": "data next_cursor",
-    "FinFeedTrade": "id market_id price quantity timestamp outcome side",
-    "FinFeedQuote": "ask bid ask_volume bid_volume entry_time recv_time",
-    "FinFeedActivityCurrent": "trade quote",
-    "FinFeedActivityBatch": "trades quotes",
+    "FinFeedTrade": "market_id id outcome side price quantity timestamp",
+    "FinFeedQuote": "bid ask bid_volume ask_volume entry_time recv_time",
+    "FinFeedActivityCurrent": "quote trade",
+    "FinFeedActivityBatch": "quotes trades",
     "FinFeedBookLevel": "price size",
-    "FinFeedBook": "exchange_id market_id time_exchange time_coinapi asks bids",
-    "FinFeedBookEvent": "symbol_id time_exchange time_coinapi price size is_sell_ask update_type id",
-    "FinFeedOhlcvPeriod": "period_id length_seconds length_months unit_count unit_name display_name",
-    "FinFeedOhlcv": "market_id_exchange time_period_start time_period_end time_open time_close price_open price_high price_low price_close volume_traded trades_count",
+    "FinFeedBook": "exchange_id market_id bids asks time_exchange time_coinapi",
+    "FinFeedBookEvent": "symbol_id id update_type is_sell_ask price size time_exchange time_coinapi",
+    "FinFeedOhlcvPeriod": "period_id unit_name unit_count length_seconds length_months display_name",
+    "FinFeedOhlcv": "market_id_exchange price_open price_high price_low price_close volume_traded trades_count time_period_start time_period_end time_open time_close",
 }
 ENUMS = {
     "status": "FinFeedMarketStatus",

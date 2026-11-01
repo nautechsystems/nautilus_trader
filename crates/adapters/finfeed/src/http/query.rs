@@ -19,6 +19,7 @@ use jiff::{Timestamp, civil::Date};
 use serde::{Serialize, Serializer};
 
 use super::error::Error;
+use crate::common::enums::OhlcvInterval;
 
 /// Maximum listing, active-ID, activity, and historical trade/quote/book page size.
 pub const PAGE_LIMIT_MAX: u32 = 10_000;
@@ -222,7 +223,7 @@ impl HistoryQuery {
 )]
 pub struct FlatFileOhlcvQuery {
     /// Flat-file aggregation period: `1SEC`, `1MIN`, or `1HRS`.
-    pub period: String,
+    pub period: OhlcvInterval,
     /// Date or time selectors and response limit for the flat-file source.
     #[serde(flatten)]
     pub history: HistoryQuery,
@@ -230,7 +231,7 @@ pub struct FlatFileOhlcvQuery {
 
 impl FlatFileOhlcvQuery {
     pub(super) fn validate(&self) -> Result<(), Error> {
-        if !matches!(self.period.as_str(), "1SEC" | "1MIN" | "1HRS") {
+        if !matches!(self.period.as_ref(), "1SEC" | "1MIN" | "1HRS") {
             return Err(Error::Validation(
                 "flat-file period must be 1SEC, 1MIN, or 1HRS".into(),
             ));
@@ -260,7 +261,7 @@ impl FlatFileOhlcvQuery {
 )]
 pub struct OhlcvQuery {
     /// Nonblank identifier from the provider period catalog.
-    pub period_id: String,
+    pub period_id: OhlcvInterval,
     /// Optional start timestamp; required for exchange-wide history and rejected for latest bars.
     #[serde(
         skip_serializing_if = "Option::is_none",
@@ -281,7 +282,7 @@ impl OhlcvQuery {
     pub(super) fn validate(&self, latest: bool) -> Result<(), Error> {
         validate_limit(self.limit, OHLCV_LIMIT_MAX)?;
 
-        if self.period_id.trim().is_empty()
+        if self.period_id.as_ref().trim().is_empty()
             || (latest && (self.time_start.is_some() || self.time_end.is_some()))
         {
             return Err(Error::Validation(

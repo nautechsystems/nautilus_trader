@@ -84,23 +84,23 @@ async fn selectors_headers_and_every_event_field(#[case] selector: &str, #[case]
         vec![
             BookEvent {
                 symbol_id: "MixedCase/Outcome?+=%_NO".into(),
-                time_exchange: "2026-10-17T00:00:03.0180674Z".parse().unwrap(),
-                time_coinapi: Some("2026-10-17T00:00:04.1234567Z".parse().unwrap()),
+                id: "opaque/ID?+=%".into(),
+                update_type: 987,
+                is_sell_ask: true,
                 price: "0.1234567890123456789012345678".parse().unwrap(),
                 size: "9007199254740993.125".parse().unwrap(),
-                is_sell_ask: true,
-                update_type: 987,
-                id: "opaque/ID?+=%".into(),
+                time_exchange: "2026-10-17T00:00:03.0180674Z".parse().unwrap(),
+                time_coinapi: Some("2026-10-17T00:00:04.1234567Z".parse().unwrap()),
             },
             BookEvent {
                 symbol_id: "MixedCase/Outcome?+=%_YES".into(),
-                time_exchange: "2026-10-17T00:00:03.0180674Z".parse().unwrap(),
-                time_coinapi: None,
+                id: String::new(),
+                update_type: 1,
+                is_sell_ask: false,
                 price: "0.9876543210987654321098765432".parse().unwrap(),
                 size: "0".parse().unwrap(),
-                is_sell_ask: false,
-                update_type: 1,
-                id: String::new(),
+                time_exchange: "2026-10-17T00:00:03.0180674Z".parse().unwrap(),
+                time_coinapi: None,
             },
         ]
     );

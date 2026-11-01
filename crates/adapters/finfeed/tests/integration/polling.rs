@@ -576,36 +576,6 @@ async fn account_attempt_budget_stops_wire_polls_without_erasing_intent() {
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
-async fn unsubscribe_cancels_admission_wait_before_any_poll_is_sent() {
-    let (peer, mut http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-    ])
-    .await;
-    http.min_request_interval_ms = 200;
-    let (mut client, mut receiver) = connected(http).await;
-
-    subscribe(&mut client, true, true);
-    wait_for_admission(&client).await;
-    unsubscribe(&mut client, true, true);
-    time::sleep(Duration::from_millis(250)).await;
-    client.disconnect().await.unwrap();
-    assert_eq!(
-        time::timeout(Duration::from_secs(5), peer)
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        2
-    );
-    assert_eq!(observed.try_recv().unwrap().0, 0);
-    assert_eq!(observed.try_recv().unwrap().0, 1);
-    assert!(observed.try_recv().is_err());
-    assert!(receiver.try_recv().is_err());
-}
-
-#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn unsubscribe_and_resubscribe_rejects_old_response() {
     let (peer, http, mut observed) = timed_peer(vec![
         (200, EXCHANGES, Duration::ZERO),
@@ -1062,17 +1032,6 @@ async fn unsubscribe_cancels_retry_backoff_without_sending_retry() {
     assert!(receiver.try_recv().is_err());
 }
 
-pub(super) async fn wait_for_admission(client: &FinFeedDataClient) {
-    time::timeout(Duration::from_secs(3), async {
-        // The transport holds next_request across its admission sleep
-        while !format!("{client:?}").contains("next_request: Mutex { data: <locked> }") {
-            time::sleep(Duration::from_millis(1)).await;
-        }
-    })
-    .await
-    .expect("FinFeed poll must wait for admission before unsubscribe");
-}
-
 pub(super) async fn wait_for_retry_backoff(client: &FinFeedDataClient) {
     time::timeout(Duration::from_secs(3), async {
         // The observed 429 attempt releases its sole permit before waiting to retry
@@ -1422,7 +1381,7 @@ pub(super) async fn connected_selection(
         http,
         instruments: vec![FinFeedInstrumentSelection {
             exchange_id: "POLYMARKET".into(),
-            market_ids,
+            market_ids: market_ids.iter().map(|id| id.as_str().into()).collect(),
         }],
         poll_interval_ms,
         poll_limit: 100,

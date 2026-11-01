@@ -705,7 +705,6 @@ async fn request(
                 let query = OhlcvQuery {
                     period_id: period
                         .period_id
-                        .clone()
                         .ok_or(Error::Response("OHLCV period ID is missing"))?,
                     time_start: None,
                     time_end: None,
@@ -992,16 +991,140 @@ impl Snapshot {
 
 #[cfg(test)]
 mod tests {
-    use nautilus_core::{UnixNanos, string::secret::SecretString};
+    use std::{
+        future::{Future, poll_fn},
+        task::Poll,
+    };
+
+    use nautilus_common::{
+        clients::DataClient,
+        messages::data::{UnsubscribeBookDeltas, UnsubscribeQuotes},
+    };
+    use nautilus_core::{UUID4, UnixNanos, string::secret::SecretString};
     use nautilus_model::{
         data::{Bar, BarSpecification, TradeTick},
-        enums::{AggregationSource, AggressorSide, BarAggregation, PriceType},
+        enums::{AggregationSource, AggressorSide, BarAggregation, BookType, PriceType},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
 
     use super::*;
     use crate::http::{client::FinFeedHttpConfig, models::Market, parse::parse_instrument};
+
+    #[rstest]
+    #[case::book_unsubscribed(Feed::Book, true)]
+    #[case::book_subscribed(Feed::Book, false)]
+    #[case::activity_unsubscribed(Feed::Activity, true)]
+    #[case::activity_subscribed(Feed::Activity, false)]
+    #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+    #[cfg_attr(
+        not(all(feature = "simulation", madsim)),
+        tokio::test(start_paused = true)
+    )]
+    async fn unsubscribe_cancels_admission_wait_before_any_poll_is_sent(
+        #[case] feed: Feed,
+        #[case] unsubscribe: bool,
+    ) {
+        let mut client = super::super::tests::subscription_client();
+
+        client.http = Arc::new(
+            FinFeedHttpClient::new(
+                Some(SecretString::from("test-api-key")),
+                FinFeedHttpConfig {
+                    base_url: "http://127.0.0.1:1/v1/".into(),
+                    min_request_interval_ms: 200,
+                    attempt_budget: 3,
+                    ..Default::default()
+                },
+            )
+            .unwrap(),
+        );
+
+        let http = Arc::clone(&client.http);
+        // Seed pacing without waiting for network I/O
+        {
+            let mut first = Box::pin(http.get_exchanges());
+            poll_fn(|cx| {
+                let _ = first.as_mut().poll(cx);
+                Poll::Ready(())
+            })
+            .await;
+        }
+
+        assert_eq!(http.attempts_remaining(), 2);
+
+        let id = InstrumentId::from("first_NO.FINFEED_POLYMARKET");
+
+        match feed {
+            Feed::Book => client
+                .subscribe_book(id, BookType::L2_MBP, true, None)
+                .unwrap(),
+            Feed::Activity => client.subscribe_activity(id, true).unwrap(),
+            Feed::Bars(_) => unreachable!(),
+        }
+
+        let publication = Arc::clone(&client.publication);
+        let changed = Arc::clone(&client.poll_changed);
+        let revision = publication
+            .lock()
+            .polling
+            .schedule(id, feed)
+            .unwrap()
+            .revision;
+        let cancellation = CancellationToken::new();
+        let query = ActivityQuery { limit: 1 };
+        // Drive admission on the test clock, outside the global polling runtime
+        let mut pending = Box::pin(request(
+            &publication,
+            &http,
+            &changed,
+            &cancellation,
+            (id, feed, revision),
+            ("POLYMARKET", "first_NO"),
+            &query,
+        ));
+        poll_fn(|cx| {
+            assert!(pending.as_mut().poll(cx).is_pending());
+            Poll::Ready(())
+        })
+        .await;
+
+        assert_eq!(http.attempts_remaining(), 2);
+
+        if unsubscribe {
+            let client_id = Some(client.client_id());
+            let command_id = UUID4::new();
+            let ts_init = UnixNanos::from(0);
+
+            match feed {
+                Feed::Book => client
+                    .unsubscribe_book_deltas(&UnsubscribeBookDeltas::new(
+                        id, client_id, None, command_id, ts_init, None, None,
+                    ))
+                    .unwrap(),
+                Feed::Activity => client
+                    .unsubscribe_quotes(&UnsubscribeQuotes::new(
+                        id, client_id, None, command_id, ts_init, None, None,
+                    ))
+                    .unwrap(),
+                Feed::Bars(_) => unreachable!(),
+            }
+
+            assert!(pending.as_mut().await.is_none());
+        }
+
+        time::sleep(Duration::from_millis(250)).await;
+
+        if !unsubscribe {
+            poll_fn(|cx| {
+                let _ = pending.as_mut().poll(cx);
+                Poll::Ready(())
+            })
+            .await;
+        }
+
+        assert_eq!(http.attempts_remaining(), if unsubscribe { 2 } else { 1 });
+    }
 
     #[rstest]
     #[case("disconnected")]

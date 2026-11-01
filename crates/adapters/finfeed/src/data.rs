@@ -117,6 +117,7 @@ const TASK_FORCE: Duration = Duration::from_secs(2);
 /// return an error.
 #[derive(Debug)]
 pub struct FinFeedDataClient {
+    clock: &'static AtomicTime,
     client_id: ClientId,
     config: FinFeedDataClientConfig,
     api_key: SecretString,
@@ -126,7 +127,6 @@ pub struct FinFeedDataClient {
     command_tasks: TaskGroup,
     publication: Arc<Mutex<Publication>>,
     sender: EventSender<DataEvent>,
-    clock: &'static AtomicTime,
     poll_changed: Arc<tokio::sync::Notify>,
 }
 
@@ -170,6 +170,7 @@ impl FinFeedDataClient {
         )?);
         let provider = FinFeedInstrumentProvider::new(Arc::clone(&http));
         Ok(Self {
+            clock: get_atomic_clock_realtime(),
             client_id,
             config,
             api_key,
@@ -179,54 +180,8 @@ impl FinFeedDataClient {
             command_tasks: TaskGroup::new(),
             publication: Arc::new(Mutex::new(Publication::default())),
             sender,
-            clock: get_atomic_clock_realtime(),
             poll_changed: Arc::new(tokio::sync::Notify::new()),
         })
-    }
-
-    fn loaded(&self, id: InstrumentId) -> anyhow::Result<BinaryOption> {
-        self.publication.lock().loaded(id).cloned()
-    }
-
-    fn spawn_request<F>(&self, description: &'static str, future: F) -> anyhow::Result<()>
-    where
-        F: Future<Output = anyhow::Result<()>> + Send + 'static,
-    {
-        let state = self.publication.lock();
-        anyhow::ensure!(state.connected, "FinFeed client is disconnected");
-        let cancellation = self.command_tasks.cancellation_token();
-
-        self.command_tasks.spawn(async move {
-            tokio::select! {
-                biased;
-                () = cancellation.cancelled() => {}
-                result = future => {
-                    if let Err(e) = result {
-                        log::error!("{description} failed: {e:#}");
-                    }
-                }
-            }
-        })?;
-
-        Ok(())
-    }
-
-    fn begin_shutdown(&self) {
-        let mut state = self.publication.lock();
-        state.connected = false;
-        self.session_tasks.begin_shutdown();
-        self.command_tasks.begin_shutdown();
-        self.http.cancel();
-    }
-
-    async fn finish_shutdown(&self) -> anyhow::Result<()> {
-        let (session, command) = tokio::join!(
-            self.session_tasks.finish_shutdown(TASK_GRACE, TASK_FORCE),
-            self.command_tasks.finish_shutdown(TASK_GRACE, TASK_FORCE),
-        );
-        session.context("failed to stop FinFeed polling tasks")?;
-        command.context("failed to stop FinFeed request tasks")?;
-        Ok(())
     }
 }
 
@@ -810,6 +765,51 @@ impl DataClient for FinFeedDataClient {
 }
 
 impl FinFeedDataClient {
+    fn loaded(&self, id: InstrumentId) -> anyhow::Result<BinaryOption> {
+        self.publication.lock().loaded(id).cloned()
+    }
+
+    fn spawn_request<F>(&self, description: &'static str, future: F) -> anyhow::Result<()>
+    where
+        F: Future<Output = anyhow::Result<()>> + Send + 'static,
+    {
+        let state = self.publication.lock();
+        anyhow::ensure!(state.connected, "FinFeed client is disconnected");
+        let cancellation = self.command_tasks.cancellation_token();
+
+        self.command_tasks.spawn(async move {
+            tokio::select! {
+                biased;
+                () = cancellation.cancelled() => {}
+                result = future => {
+                    if let Err(e) = result {
+                        log::error!("{description} failed: {e:#}");
+                    }
+                }
+            }
+        })?;
+
+        Ok(())
+    }
+
+    fn begin_shutdown(&self) {
+        let mut state = self.publication.lock();
+        state.connected = false;
+        self.session_tasks.begin_shutdown();
+        self.command_tasks.begin_shutdown();
+        self.http.cancel();
+    }
+
+    async fn finish_shutdown(&self) -> anyhow::Result<()> {
+        let (session, command) = tokio::join!(
+            self.session_tasks.finish_shutdown(TASK_GRACE, TASK_FORCE),
+            self.command_tasks.finish_shutdown(TASK_GRACE, TASK_FORCE),
+        );
+        session.context("failed to stop FinFeed polling tasks")?;
+        command.context("failed to stop FinFeed request tasks")?;
+        Ok(())
+    }
+
     fn subscribe_activity(&self, id: InstrumentId, quotes: bool) -> anyhow::Result<()> {
         let mut state = self.publication.lock();
         state.check_subscription(id)?;
@@ -1241,7 +1241,7 @@ mod tests {
         );
     }
 
-    fn subscription_client() -> FinFeedDataClient {
+    pub(super) fn subscription_client() -> FinFeedDataClient {
         let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
 
         let config = FinFeedDataClientConfig {

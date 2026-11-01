@@ -47,7 +47,7 @@ impl PyFinFeedExchange {
     /// Provider exchange identifier, retained verbatim.
     #[getter(exchange_id)]
     fn py_exchange_id(&self) -> Option<String> {
-        self.inner.exchange_id.clone()
+        self.inner.exchange_id.map(|value| value.to_string())
     }
 
     /// Provider description of the exchange or institution.
@@ -85,10 +85,46 @@ pub struct PyFinFeedMarket {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyFinFeedMarket {
+    /// Provider exchange identifier for this outcome.
+    #[getter(exchange_id)]
+    fn py_exchange_id(&self) -> Option<String> {
+        self.inner.exchange_id.map(|value| value.to_string())
+    }
+
     /// Provider outcome identifier, retained verbatim.
     #[getter(market_id)]
     fn py_market_id(&self) -> Option<String> {
-        self.inner.market_id.clone()
+        self.inner.market_id.map(|value| value.to_string())
+    }
+
+    /// Provider contract classification, independent of native mapping support.
+    #[getter(outcome_type)]
+    fn py_outcome_type(&self) -> FinFeedOutcomeType {
+        self.inner.outcome_type.into()
+    }
+
+    /// Provider outcome label, such as `Yes` or `No`.
+    #[getter(outcome_name)]
+    fn py_outcome_name(&self) -> Option<String> {
+        self.inner.outcome_name.clone()
+    }
+
+    /// Provider market mechanism label.
+    #[getter(mechanism)]
+    fn py_mechanism(&self) -> Option<String> {
+        self.inner.mechanism.map(|value| value.to_string())
+    }
+
+    /// Provider lifecycle label; unknown labels decode as `Unknown`.
+    #[getter(status)]
+    fn py_status(&self) -> FinFeedMarketStatus {
+        self.inner.status.into()
+    }
+
+    /// Provider-reported outcome price, decoded without floating-point conversion.
+    #[getter(price)]
+    fn py_price(&self) -> Decimal {
+        self.inner.price
     }
 
     /// Provider market title.
@@ -103,46 +139,10 @@ impl PyFinFeedMarket {
         self.inner.description.clone()
     }
 
-    /// Provider outcome label, such as `Yes` or `No`.
-    #[getter(outcome_name)]
-    fn py_outcome_name(&self) -> Option<String> {
-        self.inner.outcome_name.clone()
-    }
-
-    /// Provider-reported outcome price, decoded without floating-point conversion.
-    #[getter(price)]
-    fn py_price(&self) -> Decimal {
-        self.inner.price
-    }
-
-    /// Provider lifecycle label; unknown labels decode as `Unknown`.
-    #[getter(status)]
-    fn py_status(&self) -> FinFeedMarketStatus {
-        self.inner.status.into()
-    }
-
     /// Nested exchange metadata, when supplied.
     #[getter(exchange)]
     fn py_exchange(&self) -> Option<PyFinFeedExchange> {
         self.inner.exchange.clone().map(Into::into)
-    }
-
-    /// Provider exchange identifier for this outcome.
-    #[getter(exchange_id)]
-    fn py_exchange_id(&self) -> Option<String> {
-        self.inner.exchange_id.clone()
-    }
-
-    /// Provider contract classification, independent of native mapping support.
-    #[getter(outcome_type)]
-    fn py_outcome_type(&self) -> FinFeedOutcomeType {
-        self.inner.outcome_type.into()
-    }
-
-    /// Provider market mechanism label.
-    #[getter(mechanism)]
-    fn py_mechanism(&self) -> Option<String> {
-        self.inner.mechanism.clone()
     }
 
     /// Venue-specific metadata retained as raw JSON values.
@@ -244,16 +244,28 @@ pub struct PyFinFeedTrade {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyFinFeedTrade {
+    /// Provider outcome identifier.
+    #[getter(market_id)]
+    fn py_market_id(&self) -> Option<String> {
+        self.inner.market_id.map(|value| value.to_string())
+    }
+
     /// Opaque provider trade ID; native conversion requires a nonempty ID.
     #[getter(id)]
     fn py_id(&self) -> Option<String> {
         self.inner.id.clone()
     }
 
-    /// Provider outcome identifier.
-    #[getter(market_id)]
-    fn py_market_id(&self) -> Option<String> {
-        self.inner.market_id.clone()
+    /// Provider outcome label, when supplied.
+    #[getter(outcome)]
+    fn py_outcome(&self) -> Option<String> {
+        self.inner.outcome.clone()
+    }
+
+    /// Provider side label; does not identify the aggressor.
+    #[getter(side)]
+    fn py_side(&self) -> FinFeedTradeSide {
+        self.inner.side.into()
     }
 
     /// Trade price, decoded without floating-point conversion.
@@ -272,18 +284,6 @@ impl PyFinFeedTrade {
     #[getter(timestamp)]
     fn py_timestamp(&self) -> String {
         self.inner.timestamp.to_string()
-    }
-
-    /// Provider outcome label, when supplied.
-    #[getter(outcome)]
-    fn py_outcome(&self) -> Option<String> {
-        self.inner.outcome.clone()
-    }
-
-    /// Provider side label; does not identify the aggressor.
-    #[getter(side)]
-    fn py_side(&self) -> FinFeedTradeSide {
-        self.inner.side.into()
     }
 }
 
@@ -309,28 +309,28 @@ pub struct PyFinFeedQuote {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyFinFeedQuote {
-    /// Ask price, decoded exactly.
-    #[getter(ask)]
-    fn py_ask(&self) -> Decimal {
-        self.inner.ask
-    }
-
     /// Bid price, decoded exactly.
     #[getter(bid)]
     fn py_bid(&self) -> Decimal {
         self.inner.bid
     }
 
-    /// Size available at the ask, decoded exactly.
-    #[getter(ask_volume)]
-    fn py_ask_volume(&self) -> Decimal {
-        self.inner.ask_volume
+    /// Ask price, decoded exactly.
+    #[getter(ask)]
+    fn py_ask(&self) -> Decimal {
+        self.inner.ask
     }
 
     /// Size available at the bid, decoded exactly.
     #[getter(bid_volume)]
     fn py_bid_volume(&self) -> Decimal {
         self.inner.bid_volume
+    }
+
+    /// Size available at the ask, decoded exactly.
+    #[getter(ask_volume)]
+    fn py_ask_volume(&self) -> Decimal {
+        self.inner.ask_volume
     }
 
     /// Provider entry timestamp, used as native `ts_event`.
@@ -368,16 +368,16 @@ pub struct PyFinFeedActivityCurrent {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyFinFeedActivityCurrent {
-    /// Latest trade; absent or null values remain `None`.
-    #[getter(trade)]
-    fn py_trade(&self) -> Option<PyFinFeedTrade> {
-        self.inner.trade.clone().map(Into::into)
-    }
-
     /// Latest quote; absent or null values remain `None`.
     #[getter(quote)]
     fn py_quote(&self) -> Option<PyFinFeedQuote> {
         self.inner.quote.clone().map(Into::into)
+    }
+
+    /// Latest trade; absent or null values remain `None`.
+    #[getter(trade)]
+    fn py_trade(&self) -> Option<PyFinFeedTrade> {
+        self.inner.trade.clone().map(Into::into)
     }
 }
 
@@ -403,20 +403,20 @@ pub struct PyFinFeedActivityBatch {
 #[pymethods]
 #[pyo3_stub_gen::derive::gen_stub_pymethods]
 impl PyFinFeedActivityBatch {
-    /// Trade list, independently bounded by the activity query limit.
-    #[getter(trades)]
-    fn py_trades(&self) -> Option<Vec<PyFinFeedTrade>> {
-        self.inner
-            .trades
-            .clone()
-            .map(|records| records.into_iter().map(Into::into).collect())
-    }
-
     /// Quote list, independently bounded by the activity query limit.
     #[getter(quotes)]
     fn py_quotes(&self) -> Option<Vec<PyFinFeedQuote>> {
         self.inner
             .quotes
+            .clone()
+            .map(|records| records.into_iter().map(Into::into).collect())
+    }
+
+    /// Trade list, independently bounded by the activity query limit.
+    #[getter(trades)]
+    fn py_trades(&self) -> Option<Vec<PyFinFeedTrade>> {
+        self.inner
+            .trades
             .clone()
             .map(|records| records.into_iter().map(Into::into).collect())
     }
@@ -482,13 +482,31 @@ impl PyFinFeedBook {
     /// Provider exchange identifier.
     #[getter(exchange_id)]
     fn py_exchange_id(&self) -> Option<String> {
-        self.inner.exchange_id.clone()
+        self.inner.exchange_id.map(|value| value.to_string())
     }
 
     /// Provider outcome identifier.
     #[getter(market_id)]
     fn py_market_id(&self) -> Option<String> {
-        self.inner.market_id.clone()
+        self.inner.market_id.map(|value| value.to_string())
+    }
+
+    /// Bid levels; `None` remains distinct from an empty side.
+    #[getter(bids)]
+    fn py_bids(&self) -> Option<Vec<PyFinFeedBookLevel>> {
+        self.inner
+            .bids
+            .clone()
+            .map(|records| records.into_iter().map(Into::into).collect())
+    }
+
+    /// Ask levels; `None` remains distinct from an empty side.
+    #[getter(asks)]
+    fn py_asks(&self) -> Option<Vec<PyFinFeedBookLevel>> {
+        self.inner
+            .asks
+            .clone()
+            .map(|records| records.into_iter().map(Into::into).collect())
     }
 
     /// Exchange timestamp, used as native `ts_event`.
@@ -501,24 +519,6 @@ impl PyFinFeedBook {
     #[getter(time_coinapi)]
     fn py_time_coinapi(&self) -> String {
         self.inner.time_coinapi.to_string()
-    }
-
-    /// Ask levels; `None` remains distinct from an empty side.
-    #[getter(asks)]
-    fn py_asks(&self) -> Option<Vec<PyFinFeedBookLevel>> {
-        self.inner
-            .asks
-            .clone()
-            .map(|records| records.into_iter().map(Into::into).collect())
-    }
-
-    /// Bid levels; `None` remains distinct from an empty side.
-    #[getter(bids)]
-    fn py_bids(&self) -> Option<Vec<PyFinFeedBookLevel>> {
-        self.inner
-            .bids
-            .clone()
-            .map(|records| records.into_iter().map(Into::into).collect())
     }
 }
 
@@ -547,19 +547,25 @@ impl PyFinFeedBookEvent {
     /// Provider symbol identifier, retained verbatim.
     #[getter(symbol_id)]
     fn py_symbol_id(&self) -> String {
-        self.inner.symbol_id.clone()
+        self.inner.symbol_id.to_string()
     }
 
-    /// Exchange event timestamp.
-    #[getter(time_exchange)]
-    fn py_time_exchange(&self) -> String {
-        self.inner.time_exchange.to_string()
+    /// Provider event identifier, retained verbatim.
+    #[getter(id)]
+    fn py_id(&self) -> String {
+        self.inner.id.clone()
     }
 
-    /// Optional provider processing timestamp; omissions remain `None`.
-    #[getter(time_coinapi)]
-    fn py_time_coinapi(&self) -> Option<String> {
-        self.inner.time_coinapi.map(|time| time.to_string())
+    /// Raw numeric action code, interpreted only during native L2 replay.
+    #[getter(update_type)]
+    fn py_update_type(&self) -> i64 {
+        self.inner.update_type
+    }
+
+    /// Whether the event applies to the ask side.
+    #[getter(is_sell_ask)]
+    fn py_is_sell_ask(&self) -> bool {
+        self.inner.is_sell_ask
     }
 
     /// Raw event price, decoded exactly.
@@ -574,22 +580,16 @@ impl PyFinFeedBookEvent {
         self.inner.size
     }
 
-    /// Whether the event applies to the ask side.
-    #[getter(is_sell_ask)]
-    fn py_is_sell_ask(&self) -> bool {
-        self.inner.is_sell_ask
+    /// Exchange event timestamp.
+    #[getter(time_exchange)]
+    fn py_time_exchange(&self) -> String {
+        self.inner.time_exchange.to_string()
     }
 
-    /// Raw numeric action code, interpreted only during native L2 replay.
-    #[getter(update_type)]
-    fn py_update_type(&self) -> i64 {
-        self.inner.update_type
-    }
-
-    /// Provider event identifier, retained verbatim.
-    #[getter(id)]
-    fn py_id(&self) -> String {
-        self.inner.id.clone()
+    /// Optional provider processing timestamp; omissions remain `None`.
+    #[getter(time_coinapi)]
+    fn py_time_coinapi(&self) -> Option<String> {
+        self.inner.time_coinapi.map(|time| time.to_string())
     }
 }
 
@@ -618,7 +618,19 @@ impl PyFinFeedOhlcvPeriod {
     /// Provider identifier accepted by DB-backed OHLCV queries.
     #[getter(period_id)]
     fn py_period_id(&self) -> Option<String> {
-        self.inner.period_id.clone()
+        self.inner.period_id.map(|value| value.to_string())
+    }
+
+    /// Provider unit label.
+    #[getter(unit_name)]
+    fn py_unit_name(&self) -> Option<String> {
+        self.inner.unit_name.map(|value| value.to_string())
+    }
+
+    /// Number of units in the provider period definition.
+    #[getter(unit_count)]
+    fn py_unit_count(&self) -> Option<i32> {
+        self.inner.unit_count
     }
 
     /// Fixed period length in seconds.
@@ -633,22 +645,10 @@ impl PyFinFeedOhlcvPeriod {
         self.inner.length_months
     }
 
-    /// Number of units in the provider period definition.
-    #[getter(unit_count)]
-    fn py_unit_count(&self) -> Option<i32> {
-        self.inner.unit_count
-    }
-
-    /// Provider unit label.
-    #[getter(unit_name)]
-    fn py_unit_name(&self) -> Option<String> {
-        self.inner.unit_name.clone()
-    }
-
     /// Provider display label for the period.
     #[getter(display_name)]
     fn py_display_name(&self) -> Option<String> {
-        self.inner.display_name.clone()
+        self.inner.display_name.map(|value| value.to_string())
     }
 }
 
@@ -677,31 +677,7 @@ impl PyFinFeedOhlcv {
     /// Raw outcome identifier; exchange-wide history can include unknown or missing IDs.
     #[getter(market_id_exchange)]
     fn py_market_id_exchange(&self) -> Option<String> {
-        self.inner.market_id_exchange.clone()
-    }
-
-    /// Period start timestamp.
-    #[getter(time_period_start)]
-    fn py_time_period_start(&self) -> String {
-        self.inner.time_period_start.to_string()
-    }
-
-    /// Period end timestamp, used for both native bar timestamps.
-    #[getter(time_period_end)]
-    fn py_time_period_end(&self) -> String {
-        self.inner.time_period_end.to_string()
-    }
-
-    /// Provider timestamp of the opening observation, when supplied.
-    #[getter(time_open)]
-    fn py_time_open(&self) -> Option<String> {
-        self.inner.time_open.map(|time| time.to_string())
-    }
-
-    /// Provider timestamp of the closing observation, when supplied.
-    #[getter(time_close)]
-    fn py_time_close(&self) -> Option<String> {
-        self.inner.time_close.map(|time| time.to_string())
+        self.inner.market_id_exchange.map(|value| value.to_string())
     }
 
     /// Opening price; absent or null values remain `None`.
@@ -738,6 +714,30 @@ impl PyFinFeedOhlcv {
     #[getter(trades_count)]
     fn py_trades_count(&self) -> i64 {
         self.inner.trades_count
+    }
+
+    /// Period start timestamp.
+    #[getter(time_period_start)]
+    fn py_time_period_start(&self) -> String {
+        self.inner.time_period_start.to_string()
+    }
+
+    /// Period end timestamp, used for both native bar timestamps.
+    #[getter(time_period_end)]
+    fn py_time_period_end(&self) -> String {
+        self.inner.time_period_end.to_string()
+    }
+
+    /// Provider timestamp of the opening observation, when supplied.
+    #[getter(time_open)]
+    fn py_time_open(&self) -> Option<String> {
+        self.inner.time_open.map(|time| time.to_string())
+    }
+
+    /// Provider timestamp of the closing observation, when supplied.
+    #[getter(time_close)]
+    fn py_time_close(&self) -> Option<String> {
+        self.inner.time_close.map(|time| time.to_string())
     }
 }
 

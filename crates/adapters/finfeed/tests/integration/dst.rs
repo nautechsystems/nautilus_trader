@@ -286,16 +286,16 @@ async fn all_endpoint_paths_queries_and_models() {
         bars,
         vec![Ohlcv {
             market_id_exchange: None,
-            time_period_start: "2026-10-11T00:03:00Z".parse().unwrap(),
-            time_period_end: "2026-10-11T00:04:00Z".parse().unwrap(),
-            time_open: Some("2026-10-11T00:03:10.0000001Z".parse().unwrap()),
-            time_close: Some("2026-10-11T00:03:50.0000003Z".parse().unwrap()),
             price_open: Some("0.2".parse().unwrap()),
             price_high: Some("0.4".parse().unwrap()),
             price_low: Some("0.1".parse().unwrap()),
             price_close: Some("0.3".parse().unwrap()),
             volume_traded: "12.5".parse().unwrap(),
-            trades_count: 2
+            trades_count: 2,
+            time_period_start: "2026-10-11T00:03:00Z".parse().unwrap(),
+            time_period_end: "2026-10-11T00:04:00Z".parse().unwrap(),
+            time_open: Some("2026-10-11T00:03:10.0000001Z".parse().unwrap()),
+            time_close: Some("2026-10-11T00:03:50.0000003Z".parse().unwrap()),
         }]
     );
 
@@ -343,8 +343,8 @@ async fn all_endpoint_paths_queries_and_models() {
     assert_eq!(
         client.get_current("POLYMARKET", id).await.unwrap(),
         ActivityCurrent {
+            quote: None,
             trade: None,
-            quote: None
         }
     );
     let requests = peer.await.unwrap();
@@ -435,7 +435,7 @@ async fn published_examples_preserve_discovery_and_raw_response_fields() {
     let expected: Vec<_> = raw
         .iter()
         .map(|value| Exchange {
-            exchange_id: value["exchange_id"].as_str().map(str::to_owned),
+            exchange_id: value["exchange_id"].as_str().map(Into::into),
             market_name_institution_description: value["market_name_institution_description"]
                 .as_str()
                 .map(str::to_owned),
@@ -482,7 +482,10 @@ async fn published_examples_preserve_discovery_and_raw_response_fields() {
             expected["exchange_id"].as_str()
         );
         assert_eq!(actual.outcome_type, OutcomeType::Binary);
-        assert_eq!(actual.mechanism.as_deref(), expected["mechanism"].as_str());
+        assert_eq!(
+            actual.mechanism.as_ref().map(AsRef::as_ref),
+            expected["mechanism"].as_str()
+        );
         assert_eq!(
             actual.exchange.as_ref(),
             expected.get("exchange").map(|_| &exchange)
@@ -531,27 +534,27 @@ async fn published_examples_preserve_discovery_and_raw_response_fields() {
         vec![
             OhlcvPeriod {
                 period_id: Some("1SEC".into()),
+                unit_name: Some("second".into()),
+                unit_count: Some(1),
                 length_seconds: 1,
                 length_months: 0,
-                unit_count: Some(1),
-                unit_name: Some("second".into()),
-                display_name: Some("1 Second".into())
+                display_name: Some("1 Second".into()),
             },
             OhlcvPeriod {
                 period_id: Some("10DAY".into()),
+                unit_name: Some("day".into()),
+                unit_count: Some(10),
                 length_seconds: 864000,
                 length_months: 0,
-                unit_count: Some(10),
-                unit_name: Some("day".into()),
-                display_name: Some("10 Days".into())
+                display_name: Some("10 Days".into()),
             },
             OhlcvPeriod {
                 period_id: Some("2YRS".into()),
+                unit_name: Some("year".into()),
+                unit_count: Some(2),
                 length_seconds: 0,
                 length_months: 24,
-                unit_count: Some(2),
-                unit_name: Some("year".into()),
-                display_name: Some("2 Years".into())
+                display_name: Some("2 Years".into()),
             },
         ]
     );
@@ -1060,7 +1063,7 @@ async fn invalid_queries_fail_before_transmission() {
     }
 
     let query = OhlcvQuery {
-        period_id: String::new(),
+        period_id: "".into(),
         ..ohlcv()
     };
 
@@ -1739,7 +1742,7 @@ async fn instrument_startup_and_fresh_requests_return_exact_selections() {
     let no = to_instrument_id("POLYMARKET", &no_id).unwrap();
     let selections = [FinFeedInstrumentSelection {
         exchange_id: "POLYMARKET".into(),
-        market_ids: vec![yes_id.clone()],
+        market_ids: vec![yes_id.as_str().into()],
     }];
     let loaded = provider
         .load(&selections, UnixNanos::from(111))
@@ -1805,7 +1808,7 @@ async fn instrument_startup_failure_preserves_the_entire_previous_catalog() {
         .load(
             &[FinFeedInstrumentSelection {
                 exchange_id: "POLYMARKET".into(),
-                market_ids: vec![no_id.clone()],
+                market_ids: vec![no_id.as_str().into()],
             }],
             UnixNanos::from(11),
         )
@@ -1815,7 +1818,7 @@ async fn instrument_startup_failure_preserves_the_entire_previous_catalog() {
         .load(
             &[FinFeedInstrumentSelection {
                 exchange_id: "POLYMARKET".into(),
-                market_ids: vec![no_id.clone(), yes_id.clone()],
+                market_ids: vec![no_id.as_str().into(), yes_id.as_str().into()],
             }],
             UnixNanos::from(22),
         )
@@ -1926,7 +1929,7 @@ async fn duplicate_startup_outcome_tokens_preserve_the_entire_previous_catalog()
         .load(
             &[FinFeedInstrumentSelection {
                 exchange_id: "POLYMARKET".into(),
-                market_ids: vec![no_id.clone(), yes_id.clone()],
+                market_ids: vec![no_id.as_str().into(), yes_id.as_str().into()],
             }],
             UnixNanos::from(11),
         )
@@ -1936,7 +1939,7 @@ async fn duplicate_startup_outcome_tokens_preserve_the_entire_previous_catalog()
         .load(
             &[FinFeedInstrumentSelection {
                 exchange_id: "POLYMARKET".into(),
-                market_ids: vec![no_id.clone(), alias_id.into()],
+                market_ids: vec![no_id.as_str().into(), alias_id.into()],
             }],
             UnixNanos::from(22),
         )
@@ -2015,7 +2018,7 @@ async fn successful_startup_replaces_previous_selection() {
         .load(
             &[FinFeedInstrumentSelection {
                 exchange_id: "POLYMARKET".into(),
-                market_ids: vec![no_id],
+                market_ids: vec![no_id.as_str().into()],
             }],
             UnixNanos::from(1),
         )
@@ -2025,7 +2028,7 @@ async fn successful_startup_replaces_previous_selection() {
         .load(
             &[FinFeedInstrumentSelection {
                 exchange_id: "POLYMARKET".into(),
-                market_ids: vec![yes_id],
+                market_ids: vec![yes_id.as_str().into()],
             }],
             UnixNanos::from(2),
         )

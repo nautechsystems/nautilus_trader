@@ -232,10 +232,7 @@ pub(super) async fn bars(
     let (exchange, id) = crate::common::symbol::from_instrument_id(instrument.id)?;
 
     let query = OhlcvQuery {
-        period_id: period
-            .period_id
-            .clone()
-            .context("FinFeed period ID is missing")?,
+        period_id: period.period_id.context("FinFeed period ID is missing")?,
         time_start: Some(Timestamp::from_nanosecond(
             window.start.as_nanosecond().div_euclid(100) * 100,
         )?),
@@ -313,7 +310,7 @@ pub(super) fn period(
             period
                 .period_id
                 .as_ref()
-                .is_some_and(|id| !id.trim().is_empty())
+                .is_some_and(|id| !id.as_ref().trim().is_empty())
         })
         .context("FinFeed has no matching OHLCV period")
 }
@@ -588,7 +585,7 @@ mod tests {
         let mut claimed = Vec::new();
 
         for period in &periods {
-            let (step, aggregation) = match period.unit_name.as_deref().unwrap() {
+            let (step, aggregation) = match period.unit_name.as_ref().map(AsRef::as_ref).unwrap() {
                 "second" => (period.unit_count.unwrap() as usize, BarAggregation::Second),
                 "minute" => (period.unit_count.unwrap() as usize, BarAggregation::Minute),
                 "hour" => (period.unit_count.unwrap() as usize, BarAggregation::Hour),
@@ -608,7 +605,7 @@ mod tests {
             let length = period_length(bar_type).unwrap();
             let actual = super::period(&periods, length).unwrap();
             assert_eq!(actual, period);
-            claimed.push(period.period_id.as_deref().unwrap());
+            claimed.push(period.period_id.as_ref().map(AsRef::as_ref).unwrap());
         }
 
         assert_eq!(
@@ -668,7 +665,8 @@ mod tests {
             period(&periods, period_length(bar_type).unwrap())
                 .unwrap()
                 .period_id
-                .as_deref(),
+                .as_ref()
+                .map(AsRef::as_ref),
             Some(expected)
         );
     }

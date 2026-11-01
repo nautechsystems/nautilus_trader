@@ -66,7 +66,7 @@ async fn bounded_multi_outcome_bootstrap_deadlines() {
             api_key: Some(SecretString::from(key.clone())),
             instruments: vec![FinFeedInstrumentSelection {
                 exchange_id: "POLYMARKET".into(),
-                market_ids: ids.clone(),
+                market_ids: ids.iter().map(|id| id.as_str().into()).collect(),
             }],
             http: FinFeedHttpConfig {
                 attempt_budget: 3,
@@ -465,7 +465,7 @@ async fn bounded_read_only_rest_smoke() {
     assert!(
         periods
             .iter()
-            .any(|period| period.period_id.as_deref() == Some("1MIN"))
+            .any(|period| period.period_id.as_ref().map(AsRef::as_ref) == Some("1MIN"))
     );
 
     let day = HistoryQuery {

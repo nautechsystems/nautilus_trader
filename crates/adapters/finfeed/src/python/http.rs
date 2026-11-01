@@ -201,6 +201,7 @@ impl PyFinFeedHttpClient {
             client
                 .get_active(&exchange_id, &query)
                 .await
+                .map(|ids| ids.iter().map(ToString::to_string).collect::<Vec<_>>())
                 .map_err(python_error)
         })
     }
@@ -680,6 +681,7 @@ impl PyFinFeedHttpClient {
             client
                 .get_active_all(&exchange_id, &query, bounds)
                 .await
+                .map(|ids| ids.iter().map(ToString::to_string).collect::<Vec<_>>())
                 .map_err(python_error)
         })
     }

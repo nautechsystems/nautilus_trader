@@ -173,7 +173,7 @@ fn bench_bars(c: &mut Criterion) {
         serde_json::from_str(include_str!("../test_data/periods.json")).unwrap();
     let period = periods
         .iter()
-        .find(|period| period.period_id.as_deref() == Some("1MIN"))
+        .find(|period| period.period_id.as_ref().map(AsRef::as_ref) == Some("1MIN"))
         .unwrap();
     let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id));
 

@@ -301,8 +301,8 @@ fn exact_price(market: &Market, value: Decimal, field: &'static str) -> Result<P
 
 fn definition_error(market: &Market, field: &'static str, reason: &'static str) -> Error {
     Error::Definition {
-        exchange_id: market.exchange_id.clone().unwrap_or_default(),
-        market_id: market.market_id.clone().unwrap_or_default(),
+        exchange_id: market.exchange_id.unwrap_or_default(),
+        market_id: market.market_id.unwrap_or_default(),
         field,
         reason,
     }

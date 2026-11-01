@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use nautilus_model::identifiers::InstrumentId;
 use nautilus_network::{http::HttpClientError, retry::RetryError};
+use ustr::Ustr;
 
 /// A failure in prediction-market requests or instrument definitions.
 #[derive(Debug, thiserror::Error)]
@@ -30,9 +31,9 @@ pub enum Error {
     #[error("Invalid FinFeed definition {exchange_id}/{market_id}: {field} {reason}")]
     Definition {
         /// Provider exchange identifier.
-        exchange_id: String,
+        exchange_id: Ustr,
         /// Provider outcome identifier.
-        market_id: String,
+        market_id: Ustr,
         /// Metadata field that failed validation.
         field: &'static str,
         /// Static description of the definition failure.

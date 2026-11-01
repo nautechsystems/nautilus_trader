@@ -282,7 +282,7 @@ async fn multi_outcome_bootstrap_sizes_allowance_and_whole_deadline(
         http,
         instruments: vec![FinFeedInstrumentSelection {
             exchange_id: "POLYMARKET".into(),
-            market_ids: ids.clone(),
+            market_ids: ids.iter().map(|id| id.as_str().into()).collect(),
         }],
         connect_timeout_secs: deadline,
         ..Default::default()

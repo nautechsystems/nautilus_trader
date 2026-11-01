@@ -493,7 +493,7 @@ mod tests {
     fn invalid_replay_fails_atomically_before_depth(#[case] invalid: &str) {
         let mut source = events();
         match invalid {
-            "identity" => source[1].symbol_id.push_str("_YES"),
+            "identity" => source[1].symbol_id = format!("{}_YES", source[1].symbol_id).into(),
             "order-id" => source[1].id = "order-1".into(),
             "unknown-action" => source[1].update_type = 99,
             "sub" => source[1].update_type = 2,

@@ -34,8 +34,8 @@ impl FinFeedInstrumentSelection {
     #[new]
     fn py_new(exchange_id: String, market_ids: Vec<String>) -> Self {
         Self {
-            exchange_id,
-            market_ids,
+            exchange_id: exchange_id.into(),
+            market_ids: market_ids.into_iter().map(Into::into).collect(),
         }
     }
 
@@ -48,7 +48,7 @@ impl FinFeedInstrumentSelection {
     /// Exact outcome IDs, including `_YES` or `_NO`; related outcomes are not loaded implicitly.
     #[getter]
     fn market_ids(&self) -> Vec<String> {
-        self.market_ids.clone()
+        self.market_ids.iter().map(ToString::to_string).collect()
     }
 }
 

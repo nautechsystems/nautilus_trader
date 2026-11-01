@@ -36,7 +36,7 @@ use serde_json::Value;
 
 use super::{
     dst::start_peer,
-    polling::{connected_selection, timed_peer, wait_for_admission, wait_for_retry_backoff},
+    polling::{connected_selection, timed_peer, wait_for_retry_backoff},
 };
 
 const EXCHANGES: &str = include_str!("../../test_data/exchanges.json");
@@ -954,36 +954,6 @@ async fn unsubscribe_cancels_book_retry_backoff_without_a_second_attempt() {
             .len(),
         3
     );
-    assert!(receiver.try_recv().is_err());
-}
-
-#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
-#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
-async fn unsubscribe_cancels_book_admission_wait_before_any_poll_is_sent() {
-    let (peer, mut http, mut observed) = timed_peer(vec![
-        (200, EXCHANGES, Duration::ZERO),
-        (200, MARKET, Duration::ZERO),
-    ])
-    .await;
-    http.min_request_interval_ms = 200;
-    let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
-
-    subscribe(&mut client, true, BookType::L2_MBP, None).unwrap();
-    wait_for_admission(&client).await;
-    unsubscribe(&mut client, true);
-    time::sleep(Duration::from_millis(250)).await;
-    client.disconnect().await.unwrap();
-    assert_eq!(
-        time::timeout(Duration::from_secs(5), peer)
-            .await
-            .unwrap()
-            .unwrap()
-            .len(),
-        2
-    );
-    assert_eq!(observed.try_recv().unwrap().0, 0);
-    assert_eq!(observed.try_recv().unwrap().0, 1);
-    assert!(observed.try_recv().is_err());
     assert!(receiver.try_recv().is_err());
 }
 

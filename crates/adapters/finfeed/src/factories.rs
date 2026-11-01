@@ -28,12 +28,6 @@ use nautilus_model::identifiers::ClientId;
 
 use crate::{common::consts::FINFEED, config::FinFeedDataClientConfig, data::FinFeedDataClient};
 
-impl ClientConfig for FinFeedDataClientConfig {
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-}
-
 /// Factory for creating FinFeed data clients.
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -92,6 +86,12 @@ impl DataClientFactory for FinFeedDataClientFactory {
 
     fn config_type(&self) -> &'static str {
         "FinFeedDataClientConfig"
+    }
+}
+
+impl ClientConfig for FinFeedDataClientConfig {
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

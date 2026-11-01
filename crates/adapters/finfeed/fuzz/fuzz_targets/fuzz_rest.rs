@@ -154,10 +154,10 @@ fn book(source: &http::models::Book, instrument: &BinaryOption) {
 fn bar(source: &http::models::Ohlcv, instrument: &BinaryOption) {
     let period = http::models::OhlcvPeriod {
         period_id: Some("1MIN".into()),
+        unit_name: Some("minute".into()),
+        unit_count: Some(1),
         length_seconds: 60,
         length_months: 0,
-        unit_count: Some(1),
-        unit_name: Some("minute".into()),
         display_name: None,
     };
 

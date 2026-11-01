@@ -4,10 +4,11 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added FinFeedAPI prediction market data adapter with REST access, historical requests, and polling
 - Added `Cache` lazy instrument and synthetic loads, saved component-state deletion, and explicit heartbeat writes
 - Added `LiveExecutionEngineConfig.purge_from_database` support in Python and live nodes
-- Added Postgres cache support for actor and strategy state, synthetics, heartbeat writes, and entity deletion
 - Added `HttpClient` certificate support through `certs_dir`
+- Added Postgres cache support for actor and strategy state, synthetics, heartbeat writes, and entity deletion
 - Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`
 - Added CoinAPI flat-file support for numeric book update codes
@@ -110,6 +111,7 @@ Released on TBD (UTC).
 - Added NETTING startup reconciliation scenarios for flat accounts and recovered positions
 - Improved Docker publishing with temporary digest directories isolated per job
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
+- Refined Polymarket limit submit responses and venue order ID lookup
 - Optimized empty command-queue drains and L1 order-book quote replacement
 - Upgraded `cargo-codspeed` tool to v6.0.0
 - Upgraded `cargo-nextest` tool to v0.9.150

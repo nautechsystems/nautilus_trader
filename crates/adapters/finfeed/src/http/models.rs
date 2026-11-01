@@ -22,12 +22,15 @@ use nautilus_core::serialization::decimal;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
+use ustr::Ustr;
+
+use crate::common::enums::{MarketMechanism, OhlcvInterval, OhlcvUnit};
 
 /// Exchange identity and metadata, retaining identifiers verbatim.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Exchange {
     /// Provider exchange identifier, retained verbatim.
-    pub exchange_id: Option<String>,
+    pub exchange_id: Option<Ustr>,
     /// Provider description of the exchange or institution.
     pub market_name_institution_description: Option<String>,
     /// Provider-supplied website URL.
@@ -79,27 +82,27 @@ pub enum TradeSide {
 /// Outcome metadata with source values retained as raw JSON.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Market {
+    /// Provider exchange identifier for this outcome.
+    pub exchange_id: Option<Ustr>,
     /// Provider outcome identifier, retained verbatim.
-    pub market_id: Option<String>,
+    pub market_id: Option<Ustr>,
+    /// Provider contract classification, independent of native mapping support.
+    pub outcome_type: OutcomeType,
+    /// Provider outcome label, such as `Yes` or `No`.
+    pub outcome_name: Option<String>,
+    /// Provider market mechanism label.
+    pub mechanism: Option<MarketMechanism>,
+    /// Provider lifecycle label; unknown labels decode as `Unknown`.
+    pub status: MarketStatus,
+    /// Provider-reported outcome price, decoded without floating-point conversion.
+    #[serde(deserialize_with = "decimal::deserialize_json")]
+    pub price: Decimal,
     /// Provider market title.
     pub title: Option<String>,
     /// Provider market description.
     pub description: Option<String>,
-    /// Provider outcome label, such as `Yes` or `No`.
-    pub outcome_name: Option<String>,
-    /// Provider-reported outcome price, decoded without floating-point conversion.
-    #[serde(deserialize_with = "decimal::deserialize_json")]
-    pub price: Decimal,
-    /// Provider lifecycle label; unknown labels decode as `Unknown`.
-    pub status: MarketStatus,
     /// Nested exchange metadata, when supplied.
     pub exchange: Option<Exchange>,
-    /// Provider exchange identifier for this outcome.
-    pub exchange_id: Option<String>,
-    /// Provider contract classification, independent of native mapping support.
-    pub outcome_type: OutcomeType,
-    /// Provider market mechanism label.
-    pub mechanism: Option<String>,
     /// Venue-specific metadata retained as raw JSON values.
     pub source_specific_data: Option<HashMap<String, Box<RawValue>>>,
 }
@@ -116,10 +119,14 @@ pub struct MarketsPage {
 /// A provider trade with an optional opaque identifier.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Trade {
+    /// Provider outcome identifier.
+    pub market_id: Option<Ustr>,
     /// Opaque provider trade ID; native conversion requires a nonempty ID.
     pub id: Option<String>,
-    /// Provider outcome identifier.
-    pub market_id: Option<String>,
+    /// Provider outcome label, when supplied.
+    pub outcome: Option<String>,
+    /// Provider side label; does not identify the aggressor.
+    pub side: TradeSide,
     /// Trade price, decoded without floating-point conversion.
     #[serde(deserialize_with = "decimal::deserialize_json")]
     pub price: Decimal,
@@ -128,27 +135,23 @@ pub struct Trade {
     pub quantity: Decimal,
     /// Sole provider timestamp, used for both native event and initialization times.
     pub timestamp: Timestamp,
-    /// Provider outcome label, when supplied.
-    pub outcome: Option<String>,
-    /// Provider side label; does not identify the aggressor.
-    pub side: TradeSide,
 }
 
 /// Quote prices, sizes, and both provider timestamps.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Quote {
-    /// Ask price, decoded exactly.
-    #[serde(deserialize_with = "decimal::deserialize_json")]
-    pub ask: Decimal,
     /// Bid price, decoded exactly.
     #[serde(deserialize_with = "decimal::deserialize_json")]
     pub bid: Decimal,
-    /// Size available at the ask, decoded exactly.
+    /// Ask price, decoded exactly.
     #[serde(deserialize_with = "decimal::deserialize_json")]
-    pub ask_volume: Decimal,
+    pub ask: Decimal,
     /// Size available at the bid, decoded exactly.
     #[serde(deserialize_with = "decimal::deserialize_json")]
     pub bid_volume: Decimal,
+    /// Size available at the ask, decoded exactly.
+    #[serde(deserialize_with = "decimal::deserialize_json")]
+    pub ask_volume: Decimal,
     /// Provider entry timestamp, used as native `ts_event`.
     pub entry_time: Timestamp,
     /// Provider receive timestamp, used as native `ts_init`.
@@ -158,19 +161,19 @@ pub struct Quote {
 /// Latest activity; absent or null trade and quote fields are valid.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ActivityCurrent {
-    /// Latest trade; absent or null values remain `None`.
-    pub trade: Option<Trade>,
     /// Latest quote; absent or null values remain `None`.
     pub quote: Option<Quote>,
+    /// Latest trade; absent or null values remain `None`.
+    pub trade: Option<Trade>,
 }
 
 /// Bounded latest activity; list limits apply independently.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct ActivityBatch {
-    /// Trade list, independently bounded by the activity query limit.
-    pub trades: Option<Vec<Trade>>,
     /// Quote list, independently bounded by the activity query limit.
     pub quotes: Option<Vec<Quote>>,
+    /// Trade list, independently bounded by the activity query limit.
+    pub trades: Option<Vec<Trade>>,
 }
 
 /// A snapshot price level with exact size.
@@ -189,17 +192,17 @@ pub struct BookLevel {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Book {
     /// Provider exchange identifier.
-    pub exchange_id: Option<String>,
+    pub exchange_id: Option<Ustr>,
     /// Provider outcome identifier.
-    pub market_id: Option<String>,
+    pub market_id: Option<Ustr>,
+    /// Bid levels; `None` remains distinct from an empty side.
+    pub bids: Option<Vec<BookLevel>>,
+    /// Ask levels; `None` remains distinct from an empty side.
+    pub asks: Option<Vec<BookLevel>>,
     /// Exchange timestamp, used as native `ts_event`.
     pub time_exchange: Timestamp,
     /// Provider receive timestamp, used as native `ts_init`.
     pub time_coinapi: Timestamp,
-    /// Ask levels; `None` remains distinct from an empty side.
-    pub asks: Option<Vec<BookLevel>>,
-    /// Bid levels; `None` remains distinct from an empty side.
-    pub bids: Option<Vec<BookLevel>>,
 }
 
 /// A raw historical book event, retaining provider identity and numeric action codes.
@@ -210,40 +213,40 @@ pub struct Book {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct BookEvent {
     /// Provider symbol identifier, retained verbatim.
-    pub symbol_id: String,
-    /// Exchange event timestamp.
-    pub time_exchange: Timestamp,
-    /// Optional provider processing timestamp; omissions remain `None`.
-    pub time_coinapi: Option<Timestamp>,
+    pub symbol_id: Ustr,
+    /// Provider event identifier, retained verbatim.
+    pub id: String,
+    /// Raw numeric action code, interpreted only during native L2 replay.
+    pub update_type: i64,
+    /// Whether the event applies to the ask side.
+    pub is_sell_ask: bool,
     /// Raw event price, decoded exactly.
     #[serde(deserialize_with = "decimal::deserialize_json")]
     pub price: Decimal,
     /// Raw event size; absolute or relative meaning depends on the action.
     #[serde(deserialize_with = "decimal::deserialize_json")]
     pub size: Decimal,
-    /// Whether the event applies to the ask side.
-    pub is_sell_ask: bool,
-    /// Raw numeric action code, interpreted only during native L2 replay.
-    pub update_type: i64,
-    /// Provider event identifier, retained verbatim.
-    pub id: String,
+    /// Exchange event timestamp.
+    pub time_exchange: Timestamp,
+    /// Optional provider processing timestamp; omissions remain `None`.
+    pub time_coinapi: Option<Timestamp>,
 }
 
 /// A provider period definition.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct OhlcvPeriod {
     /// Provider identifier accepted by DB-backed OHLCV queries.
-    pub period_id: Option<String>,
+    pub period_id: Option<OhlcvInterval>,
+    /// Provider unit label.
+    pub unit_name: Option<OhlcvUnit>,
+    /// Number of units in the provider period definition.
+    pub unit_count: Option<i32>,
     /// Fixed period length in seconds.
     pub length_seconds: i32,
     /// Calendar period length in months.
     pub length_months: i32,
-    /// Number of units in the provider period definition.
-    pub unit_count: Option<i32>,
-    /// Provider unit label.
-    pub unit_name: Option<String>,
     /// Provider display label for the period.
-    pub display_name: Option<String>,
+    pub display_name: Option<Ustr>,
 }
 
 /// A bar with nullable prices, exact aggregate volume, and an optional raw market identifier.
@@ -252,15 +255,7 @@ pub struct OhlcvPeriod {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct Ohlcv {
     /// Raw outcome identifier; exchange-wide history can include unknown or missing IDs.
-    pub market_id_exchange: Option<String>,
-    /// Period start timestamp.
-    pub time_period_start: Timestamp,
-    /// Period end timestamp, used for both native bar timestamps.
-    pub time_period_end: Timestamp,
-    /// Provider timestamp of the opening observation, when supplied.
-    pub time_open: Option<Timestamp>,
-    /// Provider timestamp of the closing observation, when supplied.
-    pub time_close: Option<Timestamp>,
+    pub market_id_exchange: Option<Ustr>,
     /// Opening price; absent or null values remain `None`.
     #[serde(default, deserialize_with = "decimal::deserialize_optional_json")]
     pub price_open: Option<Decimal>,
@@ -278,6 +273,14 @@ pub struct Ohlcv {
     pub volume_traded: Decimal,
     /// Provider-reported trade count.
     pub trades_count: i64,
+    /// Period start timestamp.
+    pub time_period_start: Timestamp,
+    /// Period end timestamp, used for both native bar timestamps.
+    pub time_period_end: Timestamp,
+    /// Provider timestamp of the opening observation, when supplied.
+    pub time_open: Option<Timestamp>,
+    /// Provider timestamp of the closing observation, when supplied.
+    pub time_close: Option<Timestamp>,
 }
 
 #[cfg(test)]
@@ -349,40 +352,40 @@ mod tests {
         assert_eq!(
             serde_json::from_str::<Quote>(QUOTE).unwrap(),
             Quote {
-                ask: "0.1234567890123456789012345678".parse().unwrap(),
                 bid: "0.9876543210987654321098765432".parse().unwrap(),
-                ask_volume: "9007199254740993".parse().unwrap(),
+                ask: "0.1234567890123456789012345678".parse().unwrap(),
                 bid_volume: "18446744073709551617".parse().unwrap(),
+                ask_volume: "9007199254740993".parse().unwrap(),
                 entry_time: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
-                recv_time: "2026-10-11T00:00:00.0000003Z".parse().unwrap()
+                recv_time: "2026-10-11T00:00:00.0000003Z".parse().unwrap(),
             }
         );
         assert_eq!(
             serde_json::from_str::<Trade>(TRADE).unwrap(),
             Trade {
-                id: Some("opaque/ID?+=%".into()),
                 market_id: Some("outcome/Y?+=%".into()),
+                id: Some("opaque/ID?+=%".into()),
+                outcome: Some("MixedCase".into()),
+                side: TradeSide::Buy,
                 price: "0.1234567890123456789012345678".parse().unwrap(),
                 quantity: "9007199254740993.125".parse().unwrap(),
                 timestamp: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
-                outcome: Some("MixedCase".into()),
-                side: TradeSide::Buy
             }
         );
         assert_eq!(
             serde_json::from_str::<Ohlcv>(BAR).unwrap(),
             Ohlcv {
                 market_id_exchange: None,
-                time_period_start: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
-                time_period_end: "2026-10-11T00:01:00.0000002Z".parse().unwrap(),
-                time_open: Some("2026-10-11T00:00:02.0000003Z".parse().unwrap()),
-                time_close: Some("2026-10-11T00:00:58.0000004Z".parse().unwrap()),
                 price_open: Some("0.1".parse().unwrap()),
                 price_high: Some("0.9".parse().unwrap()),
                 price_low: Some("0.01".parse().unwrap()),
                 price_close: Some("0.5".parse().unwrap()),
                 volume_traded: "9007199254740993.125".parse().unwrap(),
-                trades_count: 9223372036854775807
+                trades_count: 9223372036854775807,
+                time_period_start: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
+                time_period_end: "2026-10-11T00:01:00.0000002Z".parse().unwrap(),
+                time_open: Some("2026-10-11T00:00:02.0000003Z".parse().unwrap()),
+                time_close: Some("2026-10-11T00:00:58.0000004Z".parse().unwrap()),
             }
         );
     }
@@ -533,7 +536,7 @@ mod tests {
         );
         assert_eq!(market.exchange_id.as_deref(), Some("MYRIAD"));
         assert_eq!(market.outcome_type, OutcomeType::MultipleChoice);
-        assert_eq!(market.mechanism.as_deref(), Some("CPMM"));
+        assert_eq!(market.mechanism.as_ref().map(AsRef::as_ref), Some("CPMM"));
         let source = market.source_specific_data.unwrap();
         assert_eq!(source.len(), 2);
         assert_eq!(source["precise"].get(), "0.9876543210987654321098765432");
@@ -570,10 +573,10 @@ mod tests {
             Book {
                 exchange_id: Some("KALSHI".into()),
                 market_id: Some("opaque/NO?+=%".into()),
+                bids: None,
+                asks: None,
                 time_exchange: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
                 time_coinapi: "2026-10-11T00:00:00.0000003Z".parse().unwrap(),
-                asks: None,
-                bids: None
             }
         );
     }
@@ -603,11 +606,11 @@ mod tests {
             data.period,
             OhlcvPeriod {
                 period_id: None,
+                unit_name: Some("distinct unit".into()),
+                unit_count: Some(13),
                 length_seconds: 59,
                 length_months: 17,
-                unit_count: Some(13),
-                unit_name: Some("distinct unit".into()),
-                display_name: Some("distinct display".into())
+                display_name: Some("distinct display".into()),
             }
         );
     }

@@ -151,20 +151,23 @@ impl FlatFileOhlcvQuery {
     #[new]
     #[pyo3(signature = (period, limit, date=None, time_start=None, time_end=None))]
     fn py_new(
-        period: String,
+        period: &str,
         limit: u32,
         date: Option<&str>,
         time_start: Option<&str>,
         time_end: Option<&str>,
     ) -> PyResult<Self> {
         let history = HistoryQuery::py_new(limit, date, time_start, time_end)?;
-        Ok(Self { period, history })
+        Ok(Self {
+            period: period.into(),
+            history,
+        })
     }
 
     /// Flat-file aggregation period: `1SEC`, `1MIN`, or `1HRS`.
     #[getter(period)]
     fn py_period(&self) -> String {
-        self.period.clone()
+        self.period.to_string()
     }
 
     /// Maximum response records, in `[1, 10000]`.
@@ -202,14 +205,14 @@ impl OhlcvQuery {
     #[new]
     #[pyo3(signature = (period_id, limit, time_start=None, time_end=None))]
     fn py_new(
-        period_id: String,
+        period_id: &str,
         limit: u32,
         time_start: Option<&str>,
         time_end: Option<&str>,
     ) -> PyResult<Self> {
         let (time_start, time_end) = parse_times(time_start, time_end)?;
         Ok(Self {
-            period_id,
+            period_id: period_id.into(),
             time_start,
             time_end,
             limit,
@@ -219,7 +222,7 @@ impl OhlcvQuery {
     /// Nonblank identifier from the provider period catalog.
     #[getter(period_id)]
     fn py_period_id(&self) -> String {
-        self.period_id.clone()
+        self.period_id.to_string()
     }
 
     /// Maximum rows: `[1, 100000]` per market or `[1, 10000]` for exchange-wide history.

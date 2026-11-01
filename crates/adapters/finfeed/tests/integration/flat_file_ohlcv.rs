@@ -15,11 +15,14 @@
 
 //! Flat-file OHLCV selectors and separation from DB-backed bars.
 
-use nautilus_finfeed::http::{
-    client::FinFeedHttpConfig,
-    error::Error,
-    models::Ohlcv,
-    query::{FlatFileOhlcvQuery, HistoryQuery, OhlcvQuery},
+use nautilus_finfeed::{
+    common::enums::OhlcvInterval,
+    http::{
+        client::FinFeedHttpConfig,
+        error::Error,
+        models::Ohlcv,
+        query::{FlatFileOhlcvQuery, HistoryQuery, OhlcvQuery},
+    },
 };
 use rstest::rstest;
 
@@ -38,11 +41,16 @@ async fn flat_file_route_preserves_fields_and_selectors(
     #[case] period: &str,
     #[case] selector_kind: &str,
     #[case] limit: u32,
+    #[values(false, true)] period_other: bool,
 ) {
     let body = format!("[{EXACT}]");
     let (peer, config) = start_peer(vec![(200, "", body)]).await;
     let client = new_client(config.clone());
     let mut query = query(period, limit);
+    if period_other {
+        query.period = OhlcvInterval::Other(period.into());
+    }
+
     let selector = if selector_kind == "start" {
         query.history.date = None;
         query.history.time_start = Some("2026-10-11T00:00:00.0000001Z".parse().unwrap());
@@ -65,16 +73,16 @@ async fn flat_file_route_preserves_fields_and_selectors(
         rows,
         vec![Ohlcv {
             market_id_exchange: None,
-            time_period_start: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
-            time_period_end: "2026-10-11T00:01:00.0000002Z".parse().unwrap(),
-            time_open: Some("2026-10-11T00:00:02.0000003Z".parse().unwrap()),
-            time_close: Some("2026-10-11T00:00:58.0000004Z".parse().unwrap()),
             price_open: Some("0.1".parse().unwrap()),
             price_high: Some("0.9".parse().unwrap()),
             price_low: Some("0.01".parse().unwrap()),
             price_close: Some("0.5".parse().unwrap()),
             volume_traded: "9007199254740993.125".parse().unwrap(),
             trades_count: i64::MAX,
+            time_period_start: "2026-10-11T00:00:00.0000001Z".parse().unwrap(),
+            time_period_end: "2026-10-11T00:01:00.0000002Z".parse().unwrap(),
+            time_open: Some("2026-10-11T00:00:02.0000003Z".parse().unwrap()),
+            time_close: Some("2026-10-11T00:00:58.0000004Z".parse().unwrap()),
         }]
     );
     assert_eq!(requests.len(), 1);
@@ -90,6 +98,7 @@ async fn flat_file_route_preserves_fields_and_selectors(
 
 #[rstest]
 #[case("period", "flat-file period must be 1SEC, 1MIN, or 1HRS")]
+#[case("period_other", "flat-file period must be 1SEC, 1MIN, or 1HRS")]
 #[case("missing", "date or time_start is required")]
 #[case("both", "date and time bounds are mutually exclusive")]
 #[case("end", "date or time_start is required")]
@@ -108,6 +117,7 @@ async fn flat_file_validation_precedes_admission(#[case] kind: &str, #[case] mes
     let mut query = query("1MIN", 2);
     match kind {
         "period" => query.period = "1DAY".into(),
+        "period_other" => query.period = OhlcvInterval::Other("45MIN".into()),
         "missing" => query.history.date = None,
         "both" => query.history.time_end = Some("2026-10-11T01:00:00Z".parse().unwrap()),
         "end" => {

@@ -23,6 +23,7 @@ use std::{
 use nautilus_core::UnixNanos;
 use nautilus_model::{identifiers::InstrumentId, instruments::BinaryOption};
 use serde::{Deserialize, Serialize};
+use ustr::Ustr;
 
 use crate::{
     common::symbol::{from_instrument_id, to_instrument_id},
@@ -49,9 +50,9 @@ use crate::{
 )]
 pub struct FinFeedInstrumentSelection {
     /// Provider exchange identifier, such as `POLYMARKET`.
-    pub exchange_id: String,
+    pub exchange_id: Ustr,
     /// Exact outcome IDs, including `_YES` or `_NO`; related outcomes are not loaded implicitly.
-    pub market_ids: Vec<String>,
+    pub market_ids: Vec<Ustr>,
 }
 
 /// Loads and retains provider-owned definitions for caller publication.
