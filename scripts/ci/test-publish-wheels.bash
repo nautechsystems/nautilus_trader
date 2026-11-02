@@ -327,18 +327,21 @@ test_sha256_portability() {
 create_development_wheels() {
   local dist=$1
   local version=$2
+  local python_tag
 
   mkdir -p "$dist"
-  printf 'cp313-%s\n' "$version" > "${dist}/nautilus_trader-${version}-cp313-cp313-manylinux_2_34_x86_64.whl"
-  printf 'cp314-%s\n' "$version" > "${dist}/nautilus_trader-${version}-cp314-cp314-manylinux_2_34_x86_64.whl"
+  for python_tag in cp313 cp314 cp315; do
+    printf '%s-%s\n' "$python_tag" "$version" > "${dist}/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_34_x86_64.whl"
+  done
 }
 
 create_full_wheels() {
   local dist=$1
   local version=$2
+  local python_tag
 
   mkdir -p "$dist"
-  for python_tag in cp313 cp314; do
+  for python_tag in cp313 cp314 cp315; do
     printf '%s-linux-x86\n' "$python_tag" > "${dist}/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_34_x86_64.whl"
     printf '%s-linux-arm\n' "$python_tag" > "${dist}/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_35_aarch64.whl"
     printf '%s-macos\n' "$python_tag" > "${dist}/nautilus_trader-${version}-${python_tag}-${python_tag}-macosx_11_0_arm64.whl"
@@ -347,6 +350,7 @@ create_full_wheels() {
 }
 
 test_artifact_matrix() {
+  local python_tag
   local version="2.0.0rc3.dev20260803+451"
   local valid="${work_dir}/matrix-valid"
   local missing="${work_dir}/matrix-missing"
@@ -362,12 +366,14 @@ test_artifact_matrix() {
     PUBLISH_WHEEL_VERSION="$version" PUBLISH_WHEEL_MATRIX=development \
       bash "${repo_root}/scripts/ci/validate-wheel-artifacts.bash" manifest
   )
-  [[ "$(wc -l < "${valid}/manifest" | tr -d ' ')" == "2" ]] || fail "Valid matrix must have two wheels"
+  [[ "$(wc -l < "${valid}/manifest" | tr -d ' ')" == "3" ]] || fail "Valid matrix must have three wheels"
 
-  create_development_wheels "${missing}/dist" "$version"
-  rm "${missing}/dist/nautilus_trader-${version}-cp314-cp314-manylinux_2_34_x86_64.whl"
-  run_expect_failure "$output" bash -c \
-    "cd '$missing' && PUBLISH_WHEEL_VERSION='$version' PUBLISH_WHEEL_MATRIX=development bash '$repo_root/scripts/ci/validate-wheel-artifacts.bash' manifest"
+  for python_tag in cp313 cp314 cp315; do
+    create_development_wheels "${missing}/${python_tag}/dist" "$version"
+    rm "${missing}/${python_tag}/dist/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_34_x86_64.whl"
+    run_expect_failure "$output" bash -c \
+      "cd '$missing/$python_tag' && PUBLISH_WHEEL_VERSION='$version' PUBLISH_WHEEL_MATRIX=development bash '$repo_root/scripts/ci/validate-wheel-artifacts.bash' manifest"
+  done
 
   create_development_wheels "${mixed}/dist" "$version"
   mv "${mixed}/dist/nautilus_trader-${version}-cp314-cp314-manylinux_2_34_x86_64.whl" \
@@ -386,8 +392,8 @@ test_artifact_matrix() {
     PUBLISH_WHEEL_VERSION=2.0.0rc3.dev20260803 PUBLISH_WHEEL_MATRIX=nightly \
       bash "${repo_root}/scripts/ci/validate-wheel-artifacts.bash" manifest
   )
-  [[ "$(wc -l < "${nightly}/manifest" | tr -d ' ')" == "8" ]] ||
-    fail "Valid nightly matrix must have eight wheels"
+  [[ "$(wc -l < "${nightly}/manifest" | tr -d ' ')" == "12" ]] ||
+    fail "Valid nightly matrix must have twelve wheels"
 
   create_full_wheels "${stable}/dist" "2.0.0rc3"
   (
@@ -395,8 +401,8 @@ test_artifact_matrix() {
     PUBLISH_WHEEL_VERSION=2.0.0rc3 PUBLISH_WHEEL_MATRIX=stable \
       bash "${repo_root}/scripts/ci/validate-wheel-artifacts.bash" manifest
   )
-  [[ "$(wc -l < "${stable}/manifest" | tr -d ' ')" == "8" ]] ||
-    fail "Valid stable matrix must have eight wheels"
+  [[ "$(wc -l < "${stable}/manifest" | tr -d ' ')" == "12" ]] ||
+    fail "Valid stable matrix must have twelve wheels"
 
   run_expect_failure "$output" bash -c \
     "cd '$stable' && PUBLISH_WHEEL_VERSION='2.0.0rc3.dev20260803' PUBLISH_WHEEL_MATRIX=stable bash '$repo_root/scripts/ci/validate-wheel-artifacts.bash' manifest"
@@ -710,7 +716,7 @@ test_overlapping_publication() {
           assert_line "${case_dir}/published-index.html" \
             "<a href=\"${filename}#sha256=${hash}\">${filename}</a><br>"
         done < "${stable_dir}/manifest"
-        [[ "$(wc -l < "${stable_dir}/manifest" | tr -d ' ')" == "8" ]] ||
+        [[ "$(wc -l < "${stable_dir}/manifest" | tr -d ' ')" == "12" ]] ||
           fail "Competing stable publication must publish the complete matrix"
         expected_writes=1
         if [[ "$boundary" == "index-write" ]]; then
@@ -928,7 +934,7 @@ test_publication_transaction() {
   if [[ -s "${stale}/uv.log" ]]; then
     fail "Stale publication ran public-index verification"
   fi
-  for python_tag in cp313 cp314; do
+  for python_tag in cp313 cp314 cp315; do
     assert_absent \
       "${stale}/r2/nautilus_trader-${version}-${python_tag}-${python_tag}-manylinux_2_34_x86_64.whl"
   done

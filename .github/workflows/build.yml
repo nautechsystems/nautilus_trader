@@ -388,7 +388,9 @@ jobs:
 
       - name: Select Python build environment
         env:
-          PYTHON_VERSION: ${{ github.job == 'build-python314' && '3.14' || '3.13' }}
+          PYTHON_VERSION: >-
+            ${{ github.job == 'build-python315' && '3.15'
+            || github.job == 'build-python314' && '3.14' || '3.13' }}
           BUILD_ENVIRONMENT: ${{ runner.environment }}
         run: |
           echo "PYTHON_VERSION=$PYTHON_VERSION" >> "$GITHUB_ENV"
@@ -475,6 +477,17 @@ jobs:
     services: *python-build-services
     steps: *python-build-steps
 
+  build-python315:
+    if: *python-build-condition
+    needs: *python-build-needs
+    name: build - python 3.15 (ubuntu-22.04)
+    runs-on: *python-build-runner
+    permissions: *python-build-permissions
+    defaults: *python-build-defaults
+    env: *python-build-env
+    services: *python-build-services
+    steps: *python-build-steps
+
   python-checks:
     name: python checks
     if: always() && github.event_name != 'workflow_dispatch' && github.ref != 'refs/heads/test-pre-commit'
@@ -483,6 +496,8 @@ jobs:
       - pre-commit
       - test-scripts
       - build
+      - build-python314
+      - build-python315
     runs-on: ubuntu-22.04
     env:
       PLAN_RESULT: ${{ needs.plan.result }}
@@ -490,6 +505,8 @@ jobs:
       SCRIPT_TESTS_RESULT: ${{ needs.test-scripts.result }}
       RUN_TESTS: ${{ needs.plan.outputs.run-tests }}
       BUILD_RESULT: ${{ needs.build.result }}
+      BUILD_PYTHON314_RESULT: ${{ needs.build-python314.result }}
+      BUILD_PYTHON315_RESULT: ${{ needs.build-python315.result }}
     steps:
       # https://github.com/step-security/harden-runner
       - uses: step-security/harden-runner@46b06cea07f9e64621fdf066ba77ac6915163d43 # v2.22.3
@@ -663,6 +680,7 @@ jobs:
         python-version:
           - "3.13"
           - "3.14"
+          - "3.15"
     runs-on: depot-ubuntu-22.04-arm-8
     defaults:
       run:
@@ -734,6 +752,7 @@ jobs:
         python-version:
           - "3.13"
           - "3.14"
+          - "3.15"
     runs-on: macos-latest
     defaults:
       run:
@@ -807,6 +826,7 @@ jobs:
         python-version:
           - "3.13"
           - "3.14"
+          - "3.15"
     runs-on: depot-windows-2022-8
     defaults:
       run:
@@ -870,6 +890,7 @@ jobs:
     needs:
       - build
       - build-python314
+      - build-python315
       - build-linux-arm
       - build-macos
       - build-windows
@@ -944,6 +965,7 @@ jobs:
       - plan
       - build
       - build-python314
+      - build-python315
       - build-linux-arm
       - build-macos
       - build-windows
@@ -959,6 +981,7 @@ jobs:
       !cancelled() &&
       needs.build.result == 'success' &&
       needs.build-python314.result == 'success' &&
+      needs.build-python315.result == 'success' &&
       needs.build-linux-arm.result != 'failure' &&
       needs.build-macos.result != 'failure' &&
       needs.build-windows.result != 'failure' &&
@@ -1227,6 +1250,7 @@ jobs:
       - plan
       - build
       - build-python314
+      - build-python315
       - build-linux-arm
       - build-macos
       - build-windows
@@ -1419,6 +1443,7 @@ jobs:
     needs:
       - build
       - build-python314
+      - build-python315
       - build-linux-arm
       - build-macos
       - build-windows

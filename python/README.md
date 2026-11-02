@@ -45,7 +45,7 @@ make pytest       # Run Python tests
 ### Prerequisites
 
 - Rust toolchain (via `rustup`)
-- Python 3.13-3.14
+- Python 3.13-3.15
 - `patchelf` (Linux only) for setting rpath on the compiled extension
 
 ### Quick start
@@ -58,6 +58,9 @@ make build-debug
 
 This compiles the Rust extension and installs it into the project environment (`python/.venv`). Run
 it again after Rust changes.
+
+For Python 3.15, follow the [environment setup](../docs/developer_guide/environment_setup.md#1-install-dependencies)
+to exclude documentation dependencies from sync, build, and test targets. Documentation builds use Python 3.14.
 
 ## How it works
 
@@ -96,12 +99,14 @@ uv pip install --pre --index-url=https://packages.nautechsystems.io/simple/ naut
 
 | Platform           | Python    | Develop | Nightly |
 | :----------------- | :-------- | :------ | :------ |
-| `Linux (x86_64)`   | 3.13-3.14 | ✓       | ✓       |
-| `Linux (ARM64)`    | 3.13-3.14 | -       | ✓       |
-| `macOS (ARM64)`    | 3.13-3.14 | -       | ✓       |
-| `Windows (x86_64)` | 3.13-3.14 | -       | ✓       |
+| `Linux (x86_64)`   | 3.13-3.15 | ✓       | ✓       |
+| `Linux (ARM64)`    | 3.13-3.15 | -       | ✓       |
+| `macOS (ARM64)`    | 3.13-3.15 | -       | ✓       |
+| `Windows (x86_64)` | 3.13-3.15 | -       | ✓       |
 
 The nightly merge builds and tests wheels on every listed platform.
+
+Python 3.15 requires a source build or a development wheel until the next PyPI release.
 
 The `--pre` flag is required because wheels are tagged as pre-release builds. Run this command
 outside the NautilusTrader source checkout so the repository's `exclude-newer` uv policy does not

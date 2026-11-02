@@ -4011,7 +4011,7 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.29.3 -> 0.30.1"
 importable = false
-notes = "Reviewed the published delta for the enabled std CPython 3.13/3.14 graph, focusing on GC traversal, owned deferred references, mutex guards, array initialization cleanup, bounded integer digit conversion, argument extraction, return conversion, and raw-pointer API removals. GC retains base/type and dictionary traversal before guarded Rust state; deferred decrefs transfer owned references and drain outside the mutex. Disabled numeric integrations, experimental inspection, no-std, and Python 3.15-only APIs are outside this review."
+notes = "Reviewed the published delta for the enabled std, GIL-enabled CPython 3.13/3.14/3.15 graph, focusing on GC traversal, owned deferred references, mutex guards, array initialization cleanup, bounded integer digit conversion, argument extraction, return conversion, and raw-pointer API removals. GC retains base/type and dictionary traversal before guarded Rust state; deferred decrefs transfer owned references and drain outside the mutex. Extended the 3.15 review to PySlot class/module initialization and ABI flags, DuringGC type-data access, native bytes-writer ownership, frozen-dictionary references and iteration, and bounded 128-bit integer conversion. Checked the checksum-verified 0.30.1 published sources against the 0.29.3 delta and CPython 3.15.1 headers; focused upstream module, class, GC, integer, bytes, and frozen-dictionary tests pass on 3.15.1. Disabled numeric integrations, experimental inspection, no-std, free-threaded builds, limited-API builds, and alternate interpreters remain outside this review."
 
 [[audits.pyo3-async-runtimes]]
 who = "Nautech Systems <info@nautechsystems.io>"
@@ -4072,7 +4072,7 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.29.3 -> 0.30.1"
 importable = false
-notes = "Reviewed published build checks and FFI delta for the enabled CPython 3.13 and 3.14 bindings. Removes Python 3.8 branches and adds CPython declarations and version guards; current object layouts remain consistent with their selected interpreter version. Python 3.15-only additions and alternate interpreter configurations are outside this graph."
+notes = "Reviewed published build checks and FFI delta for the enabled GIL-enabled CPython 3.13, 3.14, and 3.15 bindings. Removes Python 3.8 branches and adds CPython declarations and version guards. Extended the 3.15 review to object/reference-count and bytearray layouts, PySlot and PyABIInfo declarations, module/type initialization, DuringGC accessors, critical sections, native bytes/integer writers, frozen dictionaries, and tuple construction. Compared checksum-verified 0.30.1 published sources with 0.29.3 and CPython 3.15.1 headers. A compiled C/Rust comparison matches object, type, module, configuration, Unicode, bytearray, integer-export, critical-section, slot, and ABI-info sizes, alignments, field offsets, and slot/ABI constants on Linux x86_64; source review covers the platform guards for the supported 64-bit targets. Free-threaded builds, limited-API builds, and alternate interpreters remain outside this graph."
 
 [[audits.pyo3-macros]]
 who = "Nautech Systems <info@nautechsystems.io>"

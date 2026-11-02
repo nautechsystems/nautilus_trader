@@ -8,15 +8,18 @@ if [ "${PLAN_RESULT:-}" != "success" ] ||
   exit 1
 fi
 
-case "${RUN_TESTS:-}:${BUILD_RESULT:-}" in
-  true:success)
-    echo "Python 3.13 build, tests, and generated file checks passed"
-    ;;
-  false:skipped)
-    echo "Python build and tests intentionally skipped"
-    ;;
-  *)
-    echo "::error::Unexpected Python build result: run-tests=${RUN_TESTS:-unset}, build=${BUILD_RESULT:-unset}"
-    exit 1
-    ;;
-esac
+for result in "${BUILD_RESULT:-}" "${BUILD_PYTHON314_RESULT:-}" "${BUILD_PYTHON315_RESULT:-}"; do
+  case "${RUN_TESTS:-}:${result}" in
+    true:success | false:skipped) ;;
+    *)
+      echo "::error::Unexpected Python build result: run-tests=${RUN_TESTS:-unset}, build=${result:-unset}"
+      exit 1
+      ;;
+  esac
+done
+
+if [ "$RUN_TESTS" = true ]; then
+  echo "Python 3.13, 3.14, and 3.15 builds, tests, and generated file checks passed"
+else
+  echo "Python build and tests intentionally skipped"
+fi

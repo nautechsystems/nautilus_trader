@@ -130,17 +130,23 @@ jobs:
         run: prek run --all-files
 
   python-tests-linux-x86:
-    name: python (Linux x86_64, Python 3.14)
+    name: python (Linux x86_64, Python ${{ matrix.python-version }})
     needs:
       - pre-commit
       - test-scripts
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version:
+          - "3.14"
+          - "3.15"
     runs-on: [self-hosted, Linux, X64, build]
     defaults:
       run:
         shell: bash
     env:
       CARGO_CI_PROFILE: nextest
-      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/test-python-py3.14
+      CARGO_TARGET_DIR: /home/runner/.cache/cargo-target/test-python-py${{ matrix.python-version }}
       MATURIN_PROFILE: release
       RUST_BACKTRACE: 1
     steps:
@@ -164,7 +170,7 @@ jobs:
       - name: Common setup
         uses: $/.github/actions/common-setup
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python-version }}
           free-disk-space: "true"
           rust-cache-enabled: "false"
 

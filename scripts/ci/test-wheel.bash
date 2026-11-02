@@ -29,11 +29,11 @@ cp "$pkg_dir/pyproject.toml" "$pkg_dir/uv.lock" "$wheel_project/"
 
 wheel_project_native="$(native_path "$wheel_project")"
 wheel_path="$(native_path "$1")"
-uv sync --project "$wheel_project_native" --python "$project_python" --frozen --group test --no-install-package nautilus-trader
+uv sync --project "$wheel_project_native" --python "$project_python" --frozen --group test --extra visualization --no-install-package nautilus-trader
 wheel_python="$(uv run --project "$wheel_project_native" --no-sync python -c 'import sys; print(sys.executable)')"
-uv pip install --python "$wheel_python" --reinstall "${wheel_path}[visualization]"
+uv pip install --python "$wheel_python" --reinstall --no-deps "${wheel_path}[visualization]"
 
-# Pin pandas test dependencies until runtime dependencies are settled
+# Keep older interpreter test pins until runtime dependencies are settled
 platform="$(uname -s)"
 pandas_version="3.0.3"
 if [ "$platform" = "Darwin" ]; then
@@ -41,11 +41,12 @@ if [ "$platform" = "Darwin" ]; then
 fi
 
 uv pip install --python "$wheel_python" --only-binary :all: \
-  "numpy==2.4.6" \
-  "pandas==$pandas_version" \
+  "numpy==2.4.6; python_version < '3.15'" \
+  "pandas==$pandas_version; python_version < '3.15'" \
   "python-dateutil==2.9.0.post0" \
   "six==1.17.0"
 
-uv pip install --python "$wheel_python" --only-binary :all: "pyarrow==25.0.0" # Test-only pending runtime dependencies
+uv pip install --python "$wheel_python" --only-binary :all: \
+  "pyarrow==25.0.0; python_version < '3.15'" # Test-only pending runtime dependencies
 
 bash "$pkg_dir/../scripts/ci/check-python-isolation.bash" "$wheel_project" "$pkg_dir"

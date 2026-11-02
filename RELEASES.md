@@ -2,6 +2,9 @@
 
 Released on TBD (UTC).
 
+> [!NOTE]
+> This release adds support for Python 3.15.
+
 ### Enhancements
 
 - Added `BacktestNodeBuilder` with custom catalog factories for instrument loading and replay
