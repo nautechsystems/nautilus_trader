@@ -30,7 +30,8 @@ impl DataEngine {
     /// # Panics
     ///
     /// Panics if a client with the same client ID has already been registered.
-    pub fn register_client(&mut self, client: DataClientAdapter, routing: Option<Venue>) {
+    pub fn register_client(&mut self, mut client: DataClientAdapter, routing: Option<Venue>) {
+        client.is_stopped = self.is_stopped;
         let client_id = client.client_id();
 
         check_key_not_in_map(&client_id, &self.clients, "client_id", "clients").expect(FAILED);
@@ -76,7 +77,8 @@ impl DataEngine {
     /// # Panics
     ///
     /// Panics if a default client has already been registered.
-    pub fn register_default_client(&mut self, client: DataClientAdapter) {
+    pub fn register_default_client(&mut self, mut client: DataClientAdapter) {
+        client.is_stopped = self.is_stopped;
         check_predicate_true(
             self.default_client_id.is_none(),
             "default client already registered",

@@ -178,6 +178,7 @@ pub struct DataEngine {
     clock: Rc<RefCell<dyn Clock>>,
     cache: Rc<RefCell<Cache>>,
     config: DataEngineConfig,
+    is_stopped: bool,
     msgbus_priority: u32,
     subscriptions_external: SubscriptionRegistry<(ClientId, SubscriptionKey), SubscribeCommand>,
     clients: IndexMap<ClientId, DataClientAdapter>,
@@ -257,6 +258,7 @@ impl DataEngine {
             clock,
             cache,
             config,
+            is_stopped: false,
             msgbus_priority: 10, // High-priority for built-in component
             subscriptions_external: SubscriptionRegistry::default(),
             clients: IndexMap::new(),
@@ -469,7 +471,10 @@ impl DataEngine {
 
     /// Starts all registered data clients and re-arms bar aggregator timers.
     pub fn start(&mut self) {
+        self.is_stopped = false;
+
         for client in self.get_clients_mut() {
+            client.is_stopped = false;
             if client.start().is_err() {
                 log::error!("Failed to start data client {}", client.client_id());
             }
@@ -495,8 +500,15 @@ impl DataEngine {
     }
 
     /// Stops all registered data clients and bar aggregator timers.
+    ///
+    /// Blocks new physical subscriptions until [`Self::start`] or [`Self::reset`].
+    /// Data processing, subscription ownership, and unsubscribes remain enabled.
+    /// Blocked subscriptions are not automatically replayed on start or connect.
     pub fn stop(&mut self) {
+        self.is_stopped = true;
+
         for client in self.get_clients_mut() {
+            client.is_stopped = true;
             if client.stop().is_err() {
                 log::error!("Failed to stop data client {}", client.client_id());
             }
@@ -513,7 +525,10 @@ impl DataEngine {
 
     /// Resets all registered data clients and clears engine state.
     pub fn reset(&mut self) {
+        self.is_stopped = false;
+
         for client in self.get_clients_mut() {
+            client.is_stopped = false;
             match client.reset() {
                 Ok(()) => client.clear_subscription_state(),
                 Err(_) => log::error!("Failed to reset data client {}", client.client_id()),
@@ -1334,6 +1349,14 @@ impl DataEngine {
         let Some(dispatch) = dispatch else {
             return result;
         };
+
+        if self.is_stopped {
+            log::debug!(
+                "Skipped external subscribe after stop: client_id={client_id}, command_id={}",
+                dispatch.command_id()
+            );
+            return result;
+        }
 
         register_external_streaming_type(&dispatch);
         publish_external_data_command(client_id, &dispatch);

@@ -1064,6 +1064,93 @@ fn test_execute_subscribe_instrument(
 }
 
 #[rstest]
+#[case::start(false)]
+#[case::reset(true)]
+fn test_stopped_engine_blocks_new_physical_subscriptions(
+    #[case] reset: bool,
+    #[values(false, true)] default_client: bool,
+    #[values(false, true)] register_after_stop: bool,
+    audusd_sim: CurrencyPair,
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let client_id = ClientId::test_default();
+    let venue = Venue::test_default();
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+
+    if register_after_stop {
+        data_engine.stop();
+    }
+
+    if default_client {
+        let client = MockDataClient::new_with_recorder(
+            clock,
+            cache,
+            client_id,
+            Some(venue),
+            Some(Rc::clone(&recorder)),
+        );
+        let adapter = DataClientAdapter::new(client_id, Some(venue), true, true, Box::new(client));
+        data_engine.register_default_client(adapter);
+    } else {
+        register_mock_client(
+            clock,
+            cache,
+            client_id,
+            venue,
+            None,
+            &recorder,
+            &mut data_engine,
+        );
+    }
+
+    if !register_after_stop {
+        data_engine.stop();
+    }
+
+    futures::executor::block_on(data_engine.connect());
+
+    let subscribe = || {
+        SubscribeCommand::Quotes(SubscribeQuotes::new(
+            audusd_sim.id,
+            Some(client_id),
+            Some(venue),
+            UUID4::new(),
+            UnixNanos::from(12),
+            None,
+            None,
+        ))
+    };
+
+    let blocked = subscribe();
+    data_engine.execute(DataCommand::Subscribe(blocked.clone()));
+    assert!(recorder.borrow().is_empty());
+    assert!(data_engine.subscribed_quotes().is_empty());
+
+    data_engine.execute(DataCommand::Unsubscribe(blocked.into_unsubscribe(
+        UUID4::new(),
+        UnixNanos::from(13),
+        None,
+    )));
+    assert!(recorder.borrow().is_empty());
+
+    if reset {
+        data_engine.reset();
+    } else {
+        data_engine.start();
+    }
+
+    assert!(recorder.borrow().is_empty());
+
+    let fresh = DataCommand::Subscribe(subscribe());
+    data_engine.execute(fresh.clone());
+    assert_eq!(data_engine.subscribed_quotes(), vec![audusd_sim.id]);
+    assert_eq!(recorder.borrow().as_slice(), &[fresh]);
+}
+
+#[rstest]
 fn test_execute_subscribe_quotes(
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
@@ -1382,6 +1469,7 @@ batch_subscription_tests!(
 
 #[rstest]
 fn test_unsubscribe_quotes_keeps_client_subscribed_until_final_owner(
+    #[values(false, true)] stopped: bool,
     audusd_sim: CurrencyPair,
     data_engine: Rc<RefCell<DataEngine>>,
     clock: Rc<RefCell<VirtualClock>>,
@@ -1420,6 +1508,9 @@ fn test_unsubscribe_quotes_keeps_client_subscribed_until_final_owner(
     );
     let sub_cmd_a = DataCommand::Subscribe(SubscribeCommand::Quotes(sub_a));
     data_engine.execute(sub_cmd_a.clone());
+    if stopped {
+        data_engine.stop();
+    }
 
     let sub_b = SubscribeQuotes::new(
         audusd_sim.id,
@@ -1904,6 +1995,7 @@ fn test_external_client_subscribe_registers_streamable_payload_types(
 
 #[rstest]
 fn test_external_client_releases_after_final_owner(
+    #[values(false, true)] stopped: bool,
     audusd_sim: CurrencyPair,
     _stub_msgbus: Rc<RefCell<MessageBus>>,
     client_id: ClientId,
@@ -1942,12 +2034,21 @@ fn test_external_client_releases_after_final_owner(
     let (subscribe_handler, subscribe_saver) = get_any_saving_handler::<SubscribeCommand>(None);
     msgbus::subscribe_any(topic.as_str().into(), subscribe_handler, None);
 
+    if stopped {
+        data_engine.stop();
+    }
+
     data_engine.execute(DataCommand::Subscribe(first_subscribe.clone()));
     data_engine.execute(DataCommand::Subscribe(second_subscribe));
 
     assert_eq!(
         serde_json::to_value(subscribe_saver.get_messages()).unwrap(),
-        serde_json::to_value([first_subscribe]).unwrap(),
+        serde_json::to_value(if stopped {
+            vec![]
+        } else {
+            vec![first_subscribe]
+        })
+        .unwrap(),
     );
 
     let (unsubscribe_handler, unsubscribe_saver) =
@@ -3456,6 +3557,44 @@ fn test_synthetic_trades_release_after_final_owner(
         data_engine.subscribed_synthetic_trades(),
         Vec::<InstrumentId>::new(),
     );
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_stopped_engine_blocks_new_defi_subscriptions(
+    data_engine: Rc<RefCell<DataEngine>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+    venue: Venue,
+) {
+    let mut data_engine = data_engine.borrow_mut();
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        cache,
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut data_engine,
+    );
+
+    let subscribe = DefiSubscribeCommand::Blocks(SubscribeBlocks {
+        chain: Blockchain::Ethereum,
+        client_id: Some(client_id),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::from(25),
+        params: None,
+    });
+
+    data_engine.stop();
+    data_engine.execute(DataCommand::DefiSubscribe(subscribe.clone()));
+    data_engine.execute(DataCommand::DefiUnsubscribe(
+        subscribe.into_unsubscribe(UUID4::new(), UnixNanos::from(26)),
+    ));
+    assert!(data_engine.subscribed_blocks().is_empty());
+    assert!(recorder.borrow().is_empty());
 }
 
 #[cfg(feature = "defi")]
