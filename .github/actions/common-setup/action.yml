@@ -223,6 +223,11 @@ runs:
         python_executable="$(python -c 'import sys; print(sys.executable)')"
         printf 'UV_PYTHON=%s\nPYO3_PYTHON=%s\n' \
           "$python_executable" "$python_executable" >> "$GITHUB_ENV"
+        if [ "$RUNNER_OS" = "Linux" ]; then
+          # Relocated Python builds can retain their original LIBDIR in sysconfig
+          printf 'LIBRARY_PATH=%s/lib%s\n' \
+            "${pythonLocation:?}" "${LIBRARY_PATH:+:$LIBRARY_PATH}" >> "$GITHUB_ENV"
+        fi
 
     - name: Ensure ~/.local/bin on PATH
       shell: bash
