@@ -91,8 +91,8 @@ use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
     data::{Data, QuoteTick},
     enums::{
-        AccountType, ContingencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType,
-        PositionSide, TimeInForce, TriggerType,
+        AccountType, AvgPxReconciliation, ContingencyType, LiquiditySide, OmsType, OrderSide,
+        OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
         AccountState, OrderAccepted, OrderCanceled, OrderEventAny, OrderEventType,
@@ -109,6 +109,7 @@ use nautilus_model::{
 };
 use nautilus_network::{http::HttpClient, websocket::TransportBackend};
 use rstest::rstest;
+use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use ustr::Ustr;
@@ -10232,41 +10233,63 @@ async fn test_generate_mass_status_normalizes_duplicate_labels() {
 }
 
 #[rstest]
-#[case::current_lifecycle(false)]
-#[case::prior_closed_lifecycle(true)]
+#[case::perp("ETH-PERP", dec!(2553.01), dec!(2553.87589666777), dec!(0.086589666777), dec!(2552.59), dec!(0.08658522))]
+#[case::option("ETH-20261106-2225-C", dec!(98.8), dec!(104.48782069511), dec!(0.56878207), dec!(98.4), dec!(0.5))]
 #[tokio::test]
 async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
-    #[case] prior_closed_lifecycle: bool,
+    #[case] symbol: &str,
+    #[case] entry_px: Decimal,
+    #[case] venue_average: Decimal,
+    #[case] opening_fee: Decimal,
+    #[case] close_px: Decimal,
+    #[case] closing_fee: Decimal,
+    #[values(false, true)] prior_closed_lifecycle: bool,
 ) {
     let state = RestState::default();
     let cid = ClientOrderId::from("FEE-AVERAGE-ENTRY");
-    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let instrument_id = InstrumentId::from(format!("{symbol}.DERIVE"));
+
+    let quantity = if symbol == "ETH-PERP" {
+        Quantity::from("0.100")
+    } else {
+        Quantity::from("0.10")
+    };
+
+    let entry_price = Price::from(entry_px.to_string());
+    let close_price = Price::from(close_px.to_string());
+    let opening_commission = Money::from_decimal(opening_fee, Currency::USDC()).unwrap();
+    let closing_commission = Money::from_decimal(closing_fee, Currency::USDC()).unwrap();
+    let total_commission = opening_commission + closing_commission;
     let venue_order_id = VenueOrderId::from("fee-average-entry");
     let trade_id = TradeId::from("fee-average-fill");
     let mut order = order_json_with(
         venue_order_id.as_str(),
         cid.as_str(),
         "buy",
-        "ETH-PERP",
+        symbol,
         1_700_000_002_000,
         "filled",
     );
     order["amount"] = json!("0.1");
     order["filled_amount"] = json!("0.1");
-    order["average_price"] = json!("2553.01");
-    order["limit_price"] = json!("2554.00");
-    order["order_fee"] = json!("0.086589666777");
+    order["average_price"] = json!(entry_px.to_string());
+    order["limit_price"] = json!(entry_px.to_string());
+    order["order_fee"] = json!(opening_fee.to_string());
     let mut trade = trade_json_with_label(
         trade_id.as_str(),
         venue_order_id.as_str(),
-        "ETH-PERP",
+        symbol,
         cid.as_str(),
     );
     trade["trade_amount"] = json!("0.1");
-    trade["trade_price"] = json!("2553.01");
+    trade["trade_price"] = json!(entry_px.to_string());
     trade["trade_fee"] = order["order_fee"].clone();
-    let mut position = sample_position_json("ETH-PERP", "0.1");
-    position["average_price"] = json!("2553.87589666777");
+    let mut position = sample_position_json(symbol, "0.1");
+    position["average_price"] = json!(venue_average.to_string());
+    if symbol != "ETH-PERP" {
+        position["instrument_type"] = json!("option");
+    }
+
     position["average_price_excl_fees"] = trade["trade_price"].clone();
     position["total_fees"] = trade["trade_fee"].clone();
     *state.open_orders_response.lock().await =
@@ -10292,14 +10315,14 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
             ),
         ] {
             let mut previous =
-                order_json_with(label, label, direction, "ETH-PERP", timestamp, "filled");
+                order_json_with(label, label, direction, symbol, timestamp, "filled");
             previous["amount"] = json!("0.2");
             previous["filled_amount"] = json!("0.2");
             previous["average_price"] = json!(price);
             previous["limit_price"] = json!(price);
             previous["order_fee"] = json!(fee);
             orders.push(previous);
-            let mut previous = trade_json_with_label(label, label, "ETH-PERP", label);
+            let mut previous = trade_json_with_label(label, label, symbol, label);
             previous["direction"] = json!(direction);
             previous["trade_amount"] = json!("0.2");
             previous["trade_price"] = json!(price);
@@ -10316,6 +10339,18 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
     *state.positions_response.lock().await =
         json!({"positions": [position], "subaccount_id": TEST_SUBACCOUNT});
     let mut tc = build_report_client(state, WsState::default()).await;
+
+    if symbol != "ETH-PERP" {
+        let mut definition = option_instrument_json(symbol, "C", "2225");
+        definition["tick_size"] = json!("0.1");
+        let raw: DeriveInstrument = serde_json::from_value(definition).unwrap();
+        let instrument = parse_derive_instrument_any(&raw, UnixNanos::default())
+            .unwrap()
+            .unwrap();
+        tc.client.cache_instrument(raw).unwrap();
+        tc.cache.borrow_mut().add_instrument(instrument).unwrap();
+    }
+
     tc.client.connect().await.unwrap();
     let mass = tc.client.generate_mass_status(None).await.unwrap().unwrap();
     tc.client.disconnect().await.unwrap();
@@ -10363,7 +10398,7 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
 
         assert_eq!(
             mass.position_reports()[&instrument_id][0].avg_px_open,
-            Some(dec!(2553.87589666777))
+            Some(venue_average)
         );
         assert_eq!(
             cache.orders(None, None, None, None, None).len(),
@@ -10374,38 +10409,34 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
             }
         );
         assert_eq!(order.status(), OrderStatus::Filled);
-        assert_eq!(order.quantity(), Quantity::from("0.100"));
-        assert_eq!(order.filled_qty(), Quantity::from("0.100"));
-        assert_eq!(order.avg_px(), Some(dec!(2553.01)));
+        assert_eq!(order.quantity(), quantity);
+        assert_eq!(order.filled_qty(), quantity);
+        assert_eq!(order.avg_px(), Some(entry_px));
         assert_eq!(fills.len(), 1);
         assert_eq!(fills[0].venue_order_id, venue_order_id);
         assert_eq!(fills[0].trade_id, trade_id);
         assert_eq!(fills[0].order_side, OrderSide::Buy);
-        assert_eq!(fills[0].last_qty, Quantity::from("0.100"));
-        assert_eq!(fills[0].last_px, Price::from("2553.01"));
-        assert_eq!(fills[0].commission, Some(Money::from("0.08658967 USDC")));
+        assert_eq!(fills[0].last_qty, quantity);
+        assert_eq!(fills[0].last_px, entry_price);
+        assert_eq!(fills[0].commission, Some(opening_commission));
         assert_eq!(
             fills[0].ts_event,
             UnixNanos::from(1_700_000_002_000_000_000_u64)
         );
         assert_eq!(positions.len(), 1);
-        assert_eq!(positions[0].quantity, Quantity::from("0.100"));
+        assert_eq!(positions[0].instrument_id, instrument_id);
+        assert_eq!(positions[0].side, PositionSide::Long);
+        assert_eq!(positions[0].quantity, quantity);
         assert_eq!(positions[0].signed_decimal_qty(), dec!(0.1));
-        assert_eq!(positions[0].avg_px_open, dec!(2553.01));
+        assert_eq!(positions[0].avg_px_open, entry_px);
         assert_eq!(
             positions[0].trade_ids.iter().copied().collect::<Vec<_>>(),
             vec![trade_id]
         );
+        assert_eq!(positions[0].commissions(), vec![opening_commission]);
+        assert_eq!(positions[0].realized_pnl, Some(-opening_commission));
         assert_eq!(
-            positions[0].commissions(),
-            vec![Money::from("0.08658967 USDC")]
-        );
-        assert_eq!(
-            positions[0].realized_pnl,
-            Some(Money::from("-0.08658967 USDC"))
-        );
-        assert_eq!(
-            positions[0].unrealized_pnl(Price::from("2553.01")).unwrap(),
+            positions[0].unrealized_pnl(entry_price).unwrap(),
             Money::from("0.00000000 USDC")
         );
     }
@@ -10418,8 +10449,8 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
     close_order.client_order_id = Some(close_cid);
     close_order.venue_order_id = close_order_id;
     close_order.order_side = Some(OrderSide::Sell);
-    close_order.price = Some(Price::from("2552.59"));
-    close_order.avg_px = Some(dec!(2552.59));
+    close_order.price = Some(close_price);
+    close_order.avg_px = Some(close_px);
     close_order.ts_accepted = close_ts;
     close_order.ts_last = close_ts;
     let mut close_fill = mass.fill_reports()[&venue_order_id][0].clone();
@@ -10427,8 +10458,8 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
     close_fill.venue_order_id = close_order_id;
     close_fill.trade_id = close_trade_id;
     close_fill.order_side = OrderSide::Sell;
-    close_fill.last_px = Price::from("2552.59");
-    close_fill.commission = Money::from("0.08658522 USDC");
+    close_fill.last_px = close_price;
+    close_fill.commission = closing_commission;
     close_fill.ts_event = close_ts;
 
     let flat = PositionStatusReport::new(
@@ -10475,26 +10506,26 @@ async fn test_mass_status_fee_inclusive_average_keeps_real_fills(
         );
         assert_eq!(positions.len(), 1);
         assert_eq!(positions[0].quantity, Quantity::from("0.000"));
-        assert_eq!(positions[0].avg_px_open, dec!(2553.01));
-        assert_eq!(positions[0].avg_px_close, Some(dec!(2552.59)));
+        assert_eq!(positions[0].avg_px_open, entry_px);
+        assert_eq!(positions[0].avg_px_close, Some(close_px));
         assert_eq!(
             positions[0].trade_ids,
             [trade_id, close_trade_id].into_iter().collect()
         );
-        assert_eq!(
-            positions[0].commissions(),
-            vec![Money::from("0.17317489 USDC")]
-        );
+        assert_eq!(positions[0].commissions(), vec![total_commission]);
         assert_eq!(
             positions[0].realized_pnl,
-            Some(Money::from("-0.21517489 USDC"))
+            Some(
+                Money::from_decimal((close_px - entry_px) * dec!(0.1), Currency::USDC()).unwrap()
+                    - total_commission
+            )
         );
-        assert_eq!(close_order.filled_qty(), Quantity::from("0.100"));
-        assert_eq!(close_order.avg_px(), Some(dec!(2552.59)));
+        assert_eq!(close_order.filled_qty(), quantity);
+        assert_eq!(close_order.avg_px(), Some(close_px));
         assert_eq!(fills.len(), 1);
-        assert_eq!(fills[0].last_px, Price::from("2552.59"));
-        assert_eq!(fills[0].last_qty, Quantity::from("0.100"));
-        assert_eq!(fills[0].commission, Some(Money::from("0.08658522 USDC")));
+        assert_eq!(fills[0].last_px, close_price);
+        assert_eq!(fills[0].last_qty, quantity);
+        assert_eq!(fills[0].commission, Some(closing_commission));
         assert_eq!(fills[0].trade_id, close_trade_id);
         assert_eq!(fills[0].venue_order_id, close_order_id);
         assert_eq!(fills[0].ts_event, close_ts);
@@ -13199,6 +13230,10 @@ async fn test_generate_position_status_reports_option_position() {
     assert_eq!(reports[0].position_side, PositionSide::Short);
     assert_eq!(reports[0].signed_decimal_qty, dec!(-2));
     assert_eq!(reports[0].avg_px_open, Some(dec!(80)));
+    assert_eq!(
+        reports[0].avg_px_open_reconciliation,
+        AvgPxReconciliation::OpeningOnly
+    );
 
     tc.client.disconnect().await.expect("disconnect");
 }

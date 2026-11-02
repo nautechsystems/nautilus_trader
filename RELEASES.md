@@ -128,6 +128,7 @@ Released on TBD (UTC).
 - Fixed Deribit fill report requests returning partial results when a required trade fails to parse
 - Fixed Deribit reconciliation omitting in-scope orders, fills, and positions when the instrument is not cached
 - Fixed Deribit rejected order results emitting `OrderAccepted`
+- Fixed Derive option recovery rejecting startup or replacing real fills due to fee-inclusive averages
 - Fixed Hyperliquid account state staying stale after fills (#5449), thanks for reporting @dxwil
 - Fixed Hyperliquid instrument caching stalling node startup (#5354), thanks for reporting @Karrenbelt
 - Fixed Hyperliquid startup reconciliation failing on truncated entry prices (#5530), thanks for reporting @mark1lah

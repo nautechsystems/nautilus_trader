@@ -661,12 +661,12 @@ amounts to fit the cached instrument's size precision. A position conversion fai
 status, including its order and fill reports. This preserves cached positions instead of treating a missing
 position report as flat.
 
-Position reports preserve the venue's average entry price. For perpetuals, this price includes opening fees
+Position reports preserve the venue's average entry price. For perpetuals and options, this price includes opening fees
 and can differ from the average reconstructed from real fill prices. The adapter uses
 [`AvgPxReconciliation::OpeningOnly`](../concepts/execution/reconciliation.md#reported-entry-averages) for
-perpetuals: a matching position quantity does not require the fill-derived average to equal the reported
+perpetuals and options: a matching position quantity does not require the fill-derived average to equal the reported
 average. Real fill prices, quantities, and commissions remain intact. Nautilus keeps commissions out of the
-position's average entry price and deducts them from realized PnL. Other instrument types retain the default
+position's average entry price and deducts them from realized PnL. Spot positions retain the default
 average-price reconciliation.
 
 When fill history is absent, recovery opens a synthetic position at the reported average,
