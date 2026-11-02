@@ -34,10 +34,16 @@
 use std::{collections::HashMap, fmt::Debug, num::NonZeroU32, sync::Arc};
 
 use ahash::AHashMap;
+use anyhow::Context;
+use indexmap::{IndexMap, map::Entry};
 use jiff::Timestamp;
 use nautilus_common::cache::InstrumentLookupError;
 use nautilus_core::{
-    collections::AtomicMap, datetime::SECONDS_IN_DAY, hex, nanos::UnixNanos, time::AtomicTime,
+    collections::AtomicMap,
+    datetime::{NANOSECONDS_IN_MICROSECOND, NANOSECONDS_IN_MILLISECOND, SECONDS_IN_DAY},
+    hex,
+    nanos::UnixNanos,
+    time::AtomicTime,
 };
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, TradeTick},
@@ -1680,9 +1686,21 @@ impl BinanceRawSpotHttpClient {
         end_time: Option<i64>,
         limit: Option<u32>,
     ) -> BinanceSpotHttpResult<Vec<BinanceOrderResponse>> {
+        self.all_orders_with_cursor(symbol, None, start_time, end_time, limit)
+            .await
+    }
+
+    async fn all_orders_with_cursor(
+        &self,
+        symbol: &str,
+        order_id: Option<i64>,
+        start_time: Option<i64>,
+        end_time: Option<i64>,
+        limit: Option<u32>,
+    ) -> BinanceSpotHttpResult<Vec<BinanceOrderResponse>> {
         let params = AllOrdersParams {
             symbol: symbol.to_string(),
-            order_id: None,
+            order_id,
             start_time,
             end_time,
             limit,
@@ -2878,6 +2896,14 @@ impl BinanceSpotHttpClient {
         self.instruments_cache.get_cloned(symbol)
     }
 
+    pub(crate) fn instrument_ids_reconciliation(&self) -> Vec<InstrumentId> {
+        self.instruments_cache
+            .load()
+            .values()
+            .map(|instrument| instrument.id())
+            .collect()
+    }
+
     /// Tests connectivity to the API.
     ///
     /// # Errors
@@ -3467,6 +3493,92 @@ impl BinanceSpotHttpClient {
                 )
             })
             .collect()
+    }
+
+    pub(crate) async fn request_order_history(
+        &self,
+        account_id: AccountId,
+        instrument_id: InstrumentId,
+        start: Option<UnixNanos>,
+        end: UnixNanos,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        const PAGE_LIMIT: u32 = 1_000;
+        const MAX_INTERVAL_MS: i64 = SECONDS_IN_DAY as i64 * 1_000;
+
+        let instrument = self.instrument_from_cache(instrument_id.symbol.inner())?;
+        let end_ms = end.as_i64() / NANOSECONDS_IN_MILLISECOND as i64;
+        let mut window_start = start.map(|time| time.as_i64() / NANOSECONDS_IN_MILLISECOND as i64);
+        let mut reports = IndexMap::new();
+
+        loop {
+            let window_end = window_start.map_or(end_ms, |start_ms| {
+                start_ms.saturating_add(MAX_INTERVAL_MS - 1).min(end_ms)
+            });
+
+            let mut order_id = window_start.is_none().then_some(0);
+            let window_end_micros = window_end
+                .saturating_add(1)
+                .saturating_mul((NANOSECONDS_IN_MILLISECOND / NANOSECONDS_IN_MICROSECOND) as i64)
+                .saturating_sub(1);
+
+            loop {
+                let orders = self
+                    .inner
+                    .all_orders_with_cursor(
+                        instrument_id.symbol.as_str(),
+                        order_id,
+                        window_start.filter(|_| order_id.is_none()),
+                        order_id.is_none().then_some(window_end),
+                        Some(PAGE_LIMIT),
+                    )
+                    .await?;
+                let page_len = orders.len();
+
+                let Some(last_id) = orders.iter().map(|order| order.order_id).max() else {
+                    break;
+                };
+
+                let past_end = orders.iter().any(|order| order.time > window_end_micros);
+                for order in orders
+                    .into_iter()
+                    .filter(|order| order.time <= window_end_micros)
+                {
+                    let Entry::Vacant(entry) = reports.entry(order.order_id) else {
+                        continue;
+                    };
+
+                    let report = parse_order_status_report_sbe(
+                        &order,
+                        account_id,
+                        &instrument,
+                        BINANCE_NAUTILUS_SPOT_BROKER_ID,
+                        end,
+                    )?;
+                    entry.insert(report);
+                }
+
+                if page_len < PAGE_LIMIT as usize || past_end {
+                    break;
+                }
+
+                let next_id = last_id
+                    .checked_add(1)
+                    .context("Binance Spot order ID overflow during pagination")?;
+                anyhow::ensure!(
+                    next_id > order_id.unwrap_or_default(),
+                    "Binance Spot order history pagination made no progress"
+                );
+                order_id = Some(next_id);
+            }
+
+            if window_start.is_none() || window_end >= end_ms {
+                break;
+            }
+
+            window_start = Some(window_end + 1);
+        }
+
+        Ok(reports.into_values().collect())
     }
 
     /// Requests fill reports (trade history) for an instrument.

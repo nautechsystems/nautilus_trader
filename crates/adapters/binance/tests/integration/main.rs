@@ -13,8 +13,33 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+use std::{cell::RefCell, rc::Rc};
+
+use nautilus_common::{cache::Cache, clients::ExecutionClient, clock::VirtualClock};
+use nautilus_execution::engine::ExecutionEngine;
+use nautilus_live::manager::{ExecutionManager, ExecutionManagerConfig};
+use nautilus_model::identifiers::TraderId;
+
 mod futures;
 mod http_contracts;
 mod http_retry;
 mod python;
 mod spot;
+
+fn execution_reconciliation(
+    cache: Rc<RefCell<Cache>>,
+    trader_id: TraderId,
+    client: Box<dyn ExecutionClient>,
+) -> (ExecutionManager, Rc<RefCell<ExecutionEngine>>) {
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+    let config = ExecutionManagerConfig {
+        trader_id,
+        ..Default::default()
+    };
+
+    let manager = ExecutionManager::new(clock.clone(), cache.clone(), config).unwrap();
+    let mut engine = ExecutionEngine::new(clock, cache, None);
+    engine.register_client(client).unwrap();
+    (manager, Rc::new(RefCell::new(engine)))
+}

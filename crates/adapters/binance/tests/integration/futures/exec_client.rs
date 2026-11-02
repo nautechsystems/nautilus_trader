@@ -107,6 +107,8 @@ use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::json;
 
+const SEED_CLIENT_ORDER_ID: &str = "completed-seed";
+
 fn has_auth_headers(headers: &HeaderMap) -> bool {
     headers.contains_key("x-mbx-apikey")
 }
@@ -201,6 +203,10 @@ type CapturedWsTradingMessages = Arc<parking_lot::Mutex<Vec<serde_json::Value>>>
 
 #[derive(Clone, Copy, Debug)]
 enum ReportFixtureMode {
+    Completed,
+    CompletedAlgo,
+    CompletedAlgoMissingChild,
+    HistoryFailure,
     ClosePosition,
     Delivery,
     Empty,
@@ -487,6 +493,15 @@ async fn handle_position_risk_query(
     }
     record_query(&state, "positionRisk", query);
     match state.report_fixture_mode {
+        ReportFixtureMode::Completed
+        | ReportFixtureMode::CompletedAlgo
+        | ReportFixtureMode::CompletedAlgoMissingChild => {
+            let mut positions = load_fixture("position_risk.json");
+            positions[0]["positionAmt"] = json!("0.001");
+            positions[0]["entryPrice"] = json!("50000.00");
+            positions[0]["positionSide"] = json!(if state.hedge_mode { "LONG" } else { "BOTH" });
+            json_response(&positions)
+        }
         ReportFixtureMode::Empty | ReportFixtureMode::FillsOnly | ReportFixtureMode::Gtd => {
             json_response(&json!([]))
         }
@@ -550,6 +565,7 @@ async fn handle_position_risk_query(
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
+        | ReportFixtureMode::HistoryFailure
         | ReportFixtureMode::Populated
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => json_response(&load_fixture("position_risk.json")),
@@ -566,6 +582,9 @@ async fn handle_open_orders_query(
     }
     record_query(&state, "openOrders", query);
     match state.report_fixture_mode {
+        ReportFixtureMode::Completed
+        | ReportFixtureMode::CompletedAlgo
+        | ReportFixtureMode::CompletedAlgoMissingChild => json_response(&json!([])),
         ReportFixtureMode::ClosePosition
         | ReportFixtureMode::Empty
         | ReportFixtureMode::FillsOnly
@@ -588,6 +607,7 @@ async fn handle_open_orders_query(
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
+        | ReportFixtureMode::HistoryFailure
         | ReportFixtureMode::Populated
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
@@ -606,6 +626,9 @@ async fn handle_open_algo_orders_query(
     }
     record_query(&state, "openAlgoOrders", query);
     match state.report_fixture_mode {
+        ReportFixtureMode::Completed
+        | ReportFixtureMode::CompletedAlgo
+        | ReportFixtureMode::CompletedAlgoMissingChild => json_response(&json!([])),
         ReportFixtureMode::Empty
         | ReportFixtureMode::FillsOnly
         | ReportFixtureMode::HedgePositions
@@ -682,6 +705,7 @@ async fn handle_open_algo_orders_query(
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
+        | ReportFixtureMode::HistoryFailure
         | ReportFixtureMode::Populated
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => json_response(&load_fixture("open_algo_orders.json")),
@@ -745,12 +769,64 @@ async fn handle_all_algo_orders_query(
     if !has_auth_headers(&headers) {
         return unauthorized_response();
     }
+
     let requested_algo_id = query
         .get("algoId")
-        .and_then(|value| value.parse::<i64>().ok())
-        .unwrap_or_default();
+        .and_then(|value| value.parse::<i64>().ok());
+    let bulk_history = query.contains_key("startTime");
     record_query(&state, "allAlgoOrders", query);
+
+    if matches!(
+        state.report_fixture_mode,
+        ReportFixtureMode::CompletedAlgo | ReportFixtureMode::CompletedAlgoMissingChild
+    ) {
+        let mut orders = load_fixture("open_algo_orders.json");
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+            - 30_000;
+        orders[0]["positionSide"] = json!(if state.hedge_mode { "LONG" } else { "BOTH" });
+        orders[0]["algoId"] = json!(98765);
+        orders[0]["clientAlgoId"] = json!(encode_broker_id(
+            &ClientOrderId::from(SEED_CLIENT_ORDER_ID),
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID
+        ));
+        orders[0]["actualOrderId"] = json!("8886774");
+        orders[0]["actualQty"] = json!("0.001");
+        orders[0]["actualPrice"] = json!("50000.00");
+        orders[0]["algoStatus"] = json!("FINISHED");
+        orders[0]["createTime"] = json!(now);
+        orders[0]["updateTime"] = json!(now);
+        if matches!(
+            state.report_fixture_mode,
+            ReportFixtureMode::CompletedAlgoMissingChild
+        ) {
+            orders[0]["clientAlgoId"] = json!(encode_broker_id(
+                &ClientOrderId::from("purged-child"),
+                BINANCE_NAUTILUS_FUTURES_BROKER_ID
+            ));
+            orders[0]["actualOrderId"] = json!("22542179");
+            orders[0]["actualQty"] = json!("0");
+            orders[0]["actualPrice"] = json!("0");
+            orders[0]["algoStatus"] = json!("CANCELED");
+        }
+
+        return json_response(&orders);
+    }
+
+    if bulk_history {
+        return json_response(&json!([]));
+    }
+
+    let Some(requested_algo_id) = requested_algo_id else {
+        return json_response(&json!([]));
+    };
+
     match state.report_fixture_mode {
+        ReportFixtureMode::Completed
+        | ReportFixtureMode::CompletedAlgo
+        | ReportFixtureMode::CompletedAlgoMissingChild => json_response(&json!([])),
         ReportFixtureMode::Delivery
         | ReportFixtureMode::ClosePosition
         | ReportFixtureMode::Empty
@@ -764,6 +840,7 @@ async fn handle_all_algo_orders_query(
         ReportFixtureMode::InvalidFill
         | ReportFixtureMode::PaginatedFills
         | ReportFixtureMode::PreBoundaryFill
+        | ReportFixtureMode::HistoryFailure
         | ReportFixtureMode::Populated
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
@@ -794,6 +871,50 @@ async fn handle_all_orders_query(
         return unauthorized_response();
     }
     record_query(&state, "allOrders", query);
+
+    if matches!(state.report_fixture_mode, ReportFixtureMode::HistoryFailure) {
+        return command_response(
+            CommandResponse::VenueReject {
+                code: -1121,
+                msg: "Historical source unavailable",
+            },
+            &json!([]),
+        );
+    }
+
+    if matches!(
+        state.report_fixture_mode,
+        ReportFixtureMode::Completed
+            | ReportFixtureMode::CompletedAlgo
+            | ReportFixtureMode::CompletedAlgoMissingChild
+    ) {
+        let mut order = load_fixture("order_response.json");
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as i64
+            - 30_000;
+        order["orderId"] = json!(8886774);
+        order["clientOrderId"] = json!(encode_broker_id(
+            &ClientOrderId::from(SEED_CLIENT_ORDER_ID),
+            BINANCE_NAUTILUS_FUTURES_BROKER_ID
+        ));
+
+        if matches!(state.report_fixture_mode, ReportFixtureMode::CompletedAlgo) {
+            order["clientOrderId"] = json!("venue-trigger-child");
+            order["type"] = json!("MARKET");
+            order["origType"] = json!("MARKET");
+        }
+
+        order["positionSide"] = json!(if state.hedge_mode { "LONG" } else { "BOTH" });
+        order["status"] = json!("FILLED");
+        order["executedQty"] = json!("0.001");
+        order["avgPrice"] = json!("50000.00");
+        order["time"] = json!(now);
+        order["updateTime"] = json!(now);
+        return json_response(&json!([order]));
+    }
+
     json_response(&json!([]))
 }
 
@@ -814,7 +935,18 @@ async fn handle_user_trades_query(
         .as_millis() as i64
         - 30_000;
     record_query(&state, "userTrades", query);
+
     match state.report_fixture_mode {
+        ReportFixtureMode::Completed
+        | ReportFixtureMode::CompletedAlgo
+        | ReportFixtureMode::CompletedAlgoMissingChild => {
+            let mut trade = load_fixture("user_trade.json");
+            trade["positionSide"] = json!(if state.hedge_mode { "LONG" } else { "BOTH" });
+            trade["price"] = json!("50000.00");
+            trade["quoteQty"] = json!("50.00");
+            trade["time"] = json!(trade_time);
+            json_response(&json!([trade]))
+        }
         ReportFixtureMode::ClosePosition
         | ReportFixtureMode::Delivery
         | ReportFixtureMode::Empty
@@ -848,6 +980,7 @@ async fn handle_user_trades_query(
             json_response(&json!([long, short]))
         }
         ReportFixtureMode::FillsOnly
+        | ReportFixtureMode::HistoryFailure
         | ReportFixtureMode::Populated
         | ReportFixtureMode::MismatchedAlgoId
         | ReportFixtureMode::DirectAlgo => {
@@ -6136,6 +6269,283 @@ async fn test_generate_mass_status_includes_stable_fill_identity(
             .filter(|query| query.path == "userTrades")
             .count(),
         1
+    );
+}
+
+#[rstest]
+#[case(ReportFixtureMode::Completed, OrderType::Limit)]
+#[case(ReportFixtureMode::CompletedAlgo, OrderType::StopMarket)]
+#[tokio::test]
+async fn test_generate_mass_status_restores_completed_seed_without_duplicate_exposure(
+    #[case] mode: ReportFixtureMode,
+    #[case] order_type: OrderType,
+    #[values(1, 5)] lookback_mins: u64,
+) {
+    let (addr, _) =
+        start_exec_test_server_with_query_capture_and_responses(CommandResponses::default(), mode)
+            .await;
+    let (client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    let client: Box<dyn ExecutionClient> = Box::new(client);
+
+    #[cfg(feature = "python")]
+    let client = {
+        drop(client);
+        super::super::python::create_execution_client(
+            BinanceProductType::UsdM,
+            &format!("http://{addr}"),
+            &format!("ws://{addr}/ws"),
+            cache.clone(),
+        )
+    };
+
+    let mut client = client;
+    let account_id = AccountId::from("BINANCE-001");
+    let instrument_id = test_instrument_id();
+    let client_order_id = ClientOrderId::from(SEED_CLIENT_ORDER_ID);
+    let venue_order_id = VenueOrderId::from("8886774");
+    add_test_account_to_cache(&cache, account_id);
+    add_test_instrument_to_cache(&cache);
+    cache
+        .borrow_mut()
+        .register_external_order_claims(test_strategy_id(), &[instrument_id])
+        .unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let status = client
+        .generate_mass_status(Some(lookback_mins))
+        .await
+        .unwrap()
+        .unwrap();
+    let orders = status.order_reports();
+    let fills = status.fill_reports();
+    assert_eq!(orders.len(), 1);
+    let report = &orders[&venue_order_id];
+    assert_eq!(report.client_order_id, Some(client_order_id));
+    assert_eq!(report.order_type, order_type);
+    assert_eq!(report.order_status, OrderStatus::Filled);
+    assert_eq!(report.quantity, Quantity::from("0.001"));
+    assert_eq!(report.filled_qty, Quantity::from("0.001"));
+    assert_eq!(report.avg_px, Some(dec!(50000)));
+    assert_eq!(report.venue_position_id, None);
+    assert_eq!(fills[&venue_order_id].len(), 1);
+    assert_eq!(
+        fills[&venue_order_id][0].trade_id,
+        TradeId::from("12345678")
+    );
+    assert_eq!(
+        fills[&venue_order_id][0].commission,
+        Money::from("0.01 USDT")
+    );
+    assert!(status.reports_complete());
+
+    let (mut manager, engine) =
+        super::super::execution_reconciliation(cache.clone(), test_trader_id(), client);
+    engine
+        .borrow_mut()
+        .register_oms_type(test_strategy_id(), OmsType::Netting);
+
+    let result = manager.reconcile_execution_mass_status(&status, &engine);
+    let replay = manager.reconcile_execution_mass_status(&status, &engine);
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    let positions = cache.positions_open(None, None, None, None, None);
+
+    assert!(result.unresolved_positions.is_empty());
+    assert_eq!(result.external_orders.len(), 1);
+    assert!(replay.events.is_empty());
+    assert!(replay.unresolved_positions.is_empty());
+    assert_eq!(cache.orders(None, None, None, None, None).len(), 1);
+    assert_eq!(order.strategy_id(), test_strategy_id());
+    assert_eq!(order.account_id(), Some(account_id));
+    assert_eq!(order.instrument_id(), instrument_id);
+    assert_eq!(order.venue_order_id(), Some(venue_order_id));
+    assert_eq!(order.status(), OrderStatus::Filled);
+    assert_eq!(order.quantity(), Quantity::from("0.001"));
+    assert_eq!(order.filled_qty(), Quantity::from("0.001"));
+    assert_eq!(order.trade_ids(), vec![&TradeId::from("12345678")]);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].strategy_id, test_strategy_id());
+    assert_eq!(positions[0].account_id, account_id);
+    assert_eq!(positions[0].instrument_id, instrument_id);
+    assert_eq!(positions[0].quantity, Quantity::from("0.001"));
+    assert_eq!(positions[0].avg_px_open, dec!(50000));
+    assert_eq!(positions[0].events.len(), 1);
+    assert_eq!(positions[0].events[0].trade_id, TradeId::from("12345678"));
+}
+
+#[rstest]
+#[case::regular(ReportFixtureMode::Completed)]
+#[case::algo(ReportFixtureMode::CompletedAlgo)]
+#[tokio::test]
+async fn test_completed_history_respects_position_ids(
+    #[case] mode: ReportFixtureMode,
+    #[values(true, false)] use_position_ids: bool,
+) {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses_and_hedge_mode(
+        CommandResponses::default(),
+        mode,
+        true,
+    )
+    .await;
+    let (mut client, _rx, cache) = create_test_execution_client_with_position_ids(
+        format!("http://{addr}"),
+        format!("ws://{addr}/ws"),
+        use_position_ids,
+    );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    cache
+        .borrow_mut()
+        .register_external_order_claims(test_strategy_id(), &[test_instrument_id()])
+        .unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let status = client.generate_mass_status(Some(1)).await.unwrap().unwrap();
+    let orders = status.order_reports();
+    let report = &orders[&VenueOrderId::from("8886774")];
+    let expected = use_position_ids.then(|| PositionId::from("BTCUSDT-PERP.BINANCE-LONG"));
+
+    assert_eq!(orders.len(), 1);
+    assert_eq!(
+        report.client_order_id,
+        Some(ClientOrderId::from(SEED_CLIENT_ORDER_ID))
+    );
+    assert_eq!(report.venue_position_id, expected);
+    assert_eq!(
+        status.fill_reports()[&report.venue_order_id][0].venue_position_id,
+        expected
+    );
+    assert!(status.reports_complete());
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_mass_status_history_failure_preserves_successful_reports() {
+    let (addr, _) = start_exec_test_server_with_query_capture_and_responses(
+        CommandResponses::default(),
+        ReportFixtureMode::HistoryFailure,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let status = client.generate_mass_status(Some(1)).await.unwrap().unwrap();
+    let orders = status.order_reports();
+    let fills = status.fill_reports();
+
+    assert!(!status.reports_complete());
+    assert_eq!(orders.len(), 2);
+    assert_eq!(
+        orders[&VenueOrderId::from("12345678")].order_status,
+        OrderStatus::Accepted
+    );
+    assert_eq!(fills.len(), 1);
+    assert_eq!(
+        fills[&VenueOrderId::from("8886774")][0].trade_id,
+        TradeId::from("12345678")
+    );
+    assert_eq!(status.position_reports()[&test_instrument_id()].len(), 1);
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_missing_algo_child_preserves_other_completed_history() {
+    let responses = CommandResponses {
+        actual_order_query: CommandResponse::VenueReject {
+            code: -2013,
+            msg: "Order does not exist",
+        },
+        ..Default::default()
+    };
+
+    let (addr, captured) = start_exec_test_server_with_query_capture_and_responses(
+        responses,
+        ReportFixtureMode::CompletedAlgoMissingChild,
+    )
+    .await;
+    let (mut client, _rx, cache) =
+        create_test_execution_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let status = client.generate_mass_status(Some(1)).await.unwrap().unwrap();
+    let orders = status.order_reports();
+    let seed = &orders[&VenueOrderId::from("8886774")];
+    let canceled = &orders[&VenueOrderId::from("22542179")];
+
+    assert_eq!(orders.len(), 2);
+    assert_eq!(
+        seed.client_order_id,
+        Some(ClientOrderId::from(SEED_CLIENT_ORDER_ID))
+    );
+    assert_eq!(seed.order_status, OrderStatus::Filled);
+    assert_eq!(seed.filled_qty, Quantity::from("0.001"));
+    assert_eq!(
+        canceled.client_order_id,
+        Some(ClientOrderId::from("purged-child"))
+    );
+    assert_eq!(canceled.order_status, OrderStatus::Canceled);
+    assert_eq!(canceled.order_type, OrderType::StopMarket);
+    assert_eq!(canceled.quantity, Quantity::from("0.001"));
+    assert_eq!(canceled.filled_qty, Quantity::from("0.000"));
+    assert_eq!(
+        status.fill_reports()[&seed.venue_order_id][0].trade_id,
+        TradeId::from("12345678")
+    );
+    assert!(status.reports_complete());
+    assert_eq!(
+        captured
+            .lock()
+            .iter()
+            .filter(|query| query.path == "order")
+            .count(),
+        1
+    );
+}
+
+#[rstest]
+#[case("quotes", "USDT")]
+#[case("bases", "BTC")]
+#[case("contract_types", "PERPETUAL")]
+#[tokio::test]
+async fn test_broad_provider_filters_do_not_scan_futures_history(
+    #[case] filter: &str,
+    #[case] value: &str,
+) {
+    let (addr, captured) = start_exec_test_server_with_query_capture().await;
+
+    let provider = BinanceInstrumentProviderConfig {
+        filters: HashMap::from([(filter.to_string(), json!([value]))]),
+        ..Default::default()
+    };
+
+    let (mut client, _rx, cache) = create_test_execution_client_with_config(
+        format!("http://{addr}"),
+        format!("ws://{addr}/ws"),
+        BinanceProductType::UsdM,
+        None,
+        provider,
+        true,
+    );
+    add_test_account_to_cache(&cache, AccountId::from("BINANCE-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let status = client.generate_mass_status(Some(1)).await.unwrap().unwrap();
+    assert!(status.order_reports().is_empty());
+    assert!(status.fill_reports().is_empty());
+    assert!(status.reports_complete());
+    assert!(
+        captured
+            .lock()
+            .iter()
+            .all(|query| !matches!(query.path, "allOrders" | "allAlgoOrders" | "userTrades"))
     );
 }
 

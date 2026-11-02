@@ -22,19 +22,26 @@ use nautilus_binance::{
         consts::BINANCE,
         enums::{BinanceEnvironment, BinanceProductType},
     },
-    config::{BinanceDataClientConfig, BinanceExecutionClientConfig},
+    config::{
+        BinanceDataClientConfig, BinanceExecutionClientConfig, BinanceInstrumentProviderConfig,
+    },
     factories::{BinanceDataClientFactory, BinanceExecutionClientFactory},
     python,
 };
 use nautilus_common::{
     cache::Cache,
+    clients::ExecutionClient,
     clock::VirtualClock,
+    factories::ExecutionClientFactory,
     live::runner::{replace_data_event_sender, replace_exec_event_sender},
     messages::{DataEvent, ExecutionEvent},
 };
 use nautilus_model::identifiers::{AccountId, ClientId, TraderId};
 use nautilus_system::get_global_pyo3_registry;
-use pyo3::{Py, Python, types::PyModule};
+use pyo3::{
+    Py, Python,
+    types::{PyAnyMethods, PyDict, PyDictMethods, PyModule},
+};
 use rstest::rstest;
 
 const SMOKE_API_KEY: &str = "test_key";
@@ -56,6 +63,64 @@ fn test_binance_python_factories_extract_from_registry() {
 fn setup_data_event_sender() {
     let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     replace_data_event_sender(sender);
+}
+
+pub(crate) fn create_execution_client(
+    product_type: BinanceProductType,
+    base_url_http: &str,
+    base_url_ws: &str,
+    cache: Rc<RefCell<Cache>>,
+) -> Box<dyn ExecutionClient> {
+    Python::initialize();
+    Python::attach(|py| {
+        let provider_args = PyDict::new(py);
+        provider_args.set_item("load_all", false).unwrap();
+
+        let id = if product_type == BinanceProductType::Spot {
+            "BTCUSDT.BINANCE"
+        } else {
+            "BTCUSDT-PERP.BINANCE"
+        };
+
+        provider_args.set_item("load_ids", vec![id]).unwrap();
+        let provider = py
+            .get_type::<BinanceInstrumentProviderConfig>()
+            .call((), Some(&provider_args))
+            .unwrap();
+        let args = PyDict::new(py);
+        args.set_item("account_id", AccountId::from("BINANCE-001"))
+            .unwrap();
+        args.set_item("product_type", product_type).unwrap();
+        args.set_item("api_key", SMOKE_API_KEY).unwrap();
+        args.set_item("api_secret", SMOKE_API_SECRET).unwrap();
+        args.set_item("use_ws_trading", false).unwrap();
+        args.set_item("base_url_http", base_url_http).unwrap();
+        args.set_item("base_url_ws", base_url_ws).unwrap();
+        args.set_item("base_url_ws_trading", base_url_ws).unwrap();
+        args.set_item("instrument_provider", provider).unwrap();
+        let config = py
+            .get_type::<BinanceExecutionClientConfig>()
+            .call((), Some(&args))
+            .unwrap()
+            .extract::<BinanceExecutionClientConfig>()
+            .unwrap();
+        let factory = py
+            .get_type::<BinanceExecutionClientFactory>()
+            .call0()
+            .unwrap()
+            .extract::<BinanceExecutionClientFactory>()
+            .unwrap();
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        factory
+            .create(
+                TraderId::from("TESTER-001"),
+                BINANCE,
+                &config,
+                cache.into(),
+                clock,
+            )
+            .unwrap()
+    })
 }
 
 fn setup_exec_event_sender() {

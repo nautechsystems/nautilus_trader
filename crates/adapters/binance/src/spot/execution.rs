@@ -20,6 +20,7 @@ use std::{future::Future, sync::Arc, time::Duration};
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
+use indexmap::IndexMap;
 use jiff::Timestamp;
 use nautilus_common::{
     cache::fifo::FifoCache,
@@ -56,7 +57,7 @@ use nautilus_model::{
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
     },
-    instruments::Instrument,
+    instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
@@ -90,6 +91,7 @@ use crate::{
         encoder::{decode_client_order_id, encode_broker_id},
         enums::{BinanceEnvironment, BinanceOrderStatus, BinanceSide, BinanceTimeInForce},
         failure::{classify_spot_http_failure, classify_venue_failure, sanitize_reason},
+        instruments::BinanceInstrumentSelector,
         parse::{
             parse_micros, parse_micros_or_init, parse_millis_or_init, parse_required_decimal,
             parse_required_price_at_precision, parse_required_quantity_at_precision,
@@ -1697,8 +1699,6 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             .transpose()?
             .map(|lookback| ts_now.saturating_sub(lookback));
 
-        // Binance requires instrument_id for historical orders (open_only=false).
-        // Use open_only=true for mass status to get all open orders across instruments.
         let order_cmd = GenerateOrderStatusReportsBuilder::default()
             .log_receipt_level(LogLevel::Off)
             .ts_init(ts_now)
@@ -1725,6 +1725,19 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             .collect();
         {
             let cache = self.core.cache();
+            instrument_ids.extend(cache.external_order_claim_instrument_ids(None));
+            instrument_ids.extend(
+                cache
+                    .positions_open(
+                        Some(&BINANCE_VENUE),
+                        None,
+                        None,
+                        Some(&self.core.account_id),
+                        None,
+                    )
+                    .into_iter()
+                    .map(|position| position.instrument_id),
+            );
             instrument_ids.extend(
                 cache
                     .orders_open(
@@ -1750,12 +1763,73 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                     }),
             );
         }
+
+        let selector = BinanceInstrumentSelector::new(
+            &self.config.instrument_provider,
+            self.config.product_type,
+        )?;
+        instrument_ids.extend(
+            self.http_client
+                .instrument_ids_reconciliation()
+                .into_iter()
+                .filter(|id| selector.is_explicit(*id, id.symbol.as_str())),
+        );
+
+        {
+            let cache = self.core.cache();
+            instrument_ids.retain(|id| {
+                id.venue == *BINANCE_VENUE
+                    && !self.config.instrument_provider.excludes(*id)
+                    && cache.instrument(id).is_none_or(|instrument| {
+                        matches!(instrument, InstrumentAny::CurrencyPair(_))
+                    })
+            });
+        }
+
         instrument_ids.sort_unstable();
         instrument_ids.dedup();
 
+        let mut order_reports: IndexMap<_, _> = order_reports
+            .into_iter()
+            .map(|report| (report.venue_order_id, report))
+            .collect();
+        let mut reports_complete = true;
         let mut fill_reports = Vec::new();
 
         for instrument_id in instrument_ids {
+            if self
+                .http_client
+                .get_instrument(&instrument_id.symbol.inner())
+                .is_none_or(|instrument| instrument.id() != instrument_id)
+            {
+                log::warn!("Cannot recover Binance Spot history for unresolved {instrument_id}");
+                reports_complete = false;
+                continue;
+            }
+
+            match self
+                .http_client
+                .request_order_history(self.core.account_id, instrument_id, start, ts_now)
+                .await
+            {
+                Ok(mut history) => {
+                    normalize_spot_order_status_reports(
+                        &mut history,
+                        self.config.treat_expired_as_canceled,
+                    );
+                    crate::common::execution::merge_order_history(
+                        &mut order_reports,
+                        history,
+                        start,
+                        ts_now,
+                    );
+                }
+                Err(e) => {
+                    log::warn!("Failed to recover Binance Spot history for {instrument_id}: {e}");
+                    reports_complete = false;
+                }
+            }
+
             let fill_cmd = GenerateFillReportsBuilder::default()
                 .log_receipt_level(LogLevel::Off)
                 .ts_init(ts_now)
@@ -1779,24 +1853,23 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             None,
         );
 
-        let reported_order_ids: AHashSet<_> = order_reports
-            .iter()
-            .map(|report| report.venue_order_id)
-            .collect();
         let cache = self.core.cache();
-        let reports_complete = fill_reports.iter().all(|fill| {
-            reported_order_ids.contains(&fill.venue_order_id)
-                || cache
-                    .client_order_id(&fill.venue_order_id)
-                    .and_then(|client_order_id| cache.order(client_order_id))
-                    .is_some_and(|order| {
-                        order.instrument_id() == fill.instrument_id
-                            && order.account_id() == Some(fill.account_id)
-                            && order.order_side() == fill.order_side
-                    })
-        });
-        mass_status.set_report_window(start, reports_complete);
-        mass_status.add_order_reports(order_reports);
+
+        let reports_complete = reports_complete
+            && fill_reports.iter().all(|fill| {
+                order_reports.contains_key(&fill.venue_order_id)
+                    || cache
+                        .client_order_id(&fill.venue_order_id)
+                        .and_then(|client_order_id| cache.order(client_order_id))
+                        .is_some_and(|order| {
+                            order.instrument_id() == fill.instrument_id
+                                && order.account_id() == Some(fill.account_id)
+                                && order.order_side() == fill.order_side
+                        })
+            });
+
+        mass_status.set_report_window(Some(start.unwrap_or_default()), reports_complete);
+        mass_status.add_order_reports(order_reports.into_values().collect());
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
 

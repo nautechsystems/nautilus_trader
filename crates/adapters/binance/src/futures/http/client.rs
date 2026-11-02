@@ -23,10 +23,17 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
+use anyhow::Context;
 use dashmap::DashMap;
+use indexmap::IndexMap;
 use jiff::{SignedDuration, Timestamp};
 use nautilus_common::cache::InstrumentLookupError;
-use nautilus_core::{AtomicMap, datetime::SECONDS_IN_DAY, nanos::UnixNanos, time::AtomicTime};
+use nautilus_core::{
+    AtomicMap,
+    datetime::{NANOSECONDS_IN_MILLISECOND, SECONDS_IN_DAY},
+    nanos::UnixNanos,
+    time::AtomicTime,
+};
 use nautilus_model::{
     data::{Bar, BarType, BookOrder, FundingRateUpdate, TradeTick},
     enums::{
@@ -112,6 +119,8 @@ use crate::{
     config::BinanceInstrumentProviderConfig,
     futures::conversions::reduce_only_param,
 };
+
+const ORDER_HISTORY_PAGE_LIMIT: u32 = 1_000;
 
 const BINANCE_GLOBAL_RATE_KEY: &str = "binance:global";
 const BINANCE_ORDERS_RATE_KEY: &str = "binance:orders";
@@ -2037,6 +2046,14 @@ impl BinanceFuturesHttpClient {
         self.instruments_reconciliation.get_cloned(instrument_id)
     }
 
+    pub(crate) fn instrument_ids_reconciliation(&self) -> Vec<InstrumentId> {
+        self.instruments_reconciliation
+            .load()
+            .keys()
+            .copied()
+            .collect()
+    }
+
     /// Returns whether this client has complete signing credentials.
     #[must_use]
     pub fn has_credentials(&self) -> bool {
@@ -2520,6 +2537,146 @@ impl BinanceFuturesHttpClient {
         params: &BinanceAllOrdersParams,
     ) -> BinanceFuturesHttpResult<Vec<BinanceFuturesOrder>> {
         self.inner.query_all_orders(params).await
+    }
+
+    pub(crate) async fn query_order_history(
+        &self,
+        instrument_id: InstrumentId,
+        start: UnixNanos,
+        end: UnixNanos,
+    ) -> anyhow::Result<(
+        IndexMap<i64, BinanceFuturesOrder>,
+        IndexMap<i64, BinanceFuturesAlgoOrder>,
+    )> {
+        const MAX_INTERVAL_MS: i64 = 7 * SECONDS_IN_DAY as i64 * 1_000;
+
+        let symbol = format_binance_symbol(&instrument_id);
+        let end_ms = end.as_i64() / NANOSECONDS_IN_MILLISECOND as i64;
+        let mut window_start = start.as_i64() / NANOSECONDS_IN_MILLISECOND as i64;
+        let mut orders = IndexMap::new();
+        let mut algo_orders = IndexMap::new();
+
+        while window_start <= end_ms {
+            let window_end = window_start.saturating_add(MAX_INTERVAL_MS - 1).min(end_ms);
+            let page = self
+                .query_order_history_window(&symbol, window_start, window_end)
+                .await?;
+            orders.extend(page.into_iter().map(|order| (order.order_id, order)));
+
+            if self.product_type == BinanceProductType::UsdM {
+                let page = self
+                    .query_algo_history_window(&symbol, window_start, window_end)
+                    .await?;
+                algo_orders.extend(page.into_iter().map(|order| (order.algo_id, order)));
+            }
+
+            window_start = window_end + 1;
+        }
+
+        Ok((orders, algo_orders))
+    }
+
+    async fn query_order_history_window(
+        &self,
+        symbol: &str,
+        start: i64,
+        end: i64,
+    ) -> anyhow::Result<Vec<BinanceFuturesOrder>> {
+        let mut orders = Vec::new();
+        let mut order_id = None;
+
+        loop {
+            let params = BinanceAllOrdersParams {
+                symbol: symbol.to_string(),
+                order_id,
+                start_time: order_id.is_none().then_some(start),
+                end_time: order_id.is_none().then_some(end),
+                limit: Some(ORDER_HISTORY_PAGE_LIMIT),
+                recv_window: None,
+            };
+
+            let page = self.query_all_orders(&params).await?;
+            let page_len = page.len();
+
+            let Some(last_id) = page.iter().map(|order| order.order_id).max() else {
+                break;
+            };
+
+            let past_end = page
+                .iter()
+                .any(|order| order.time.is_some_and(|time| time > end));
+            orders.extend(
+                page.into_iter()
+                    .filter(|order| order.time.is_none_or(|time| time <= end)),
+            );
+
+            if page_len < ORDER_HISTORY_PAGE_LIMIT as usize || past_end {
+                break;
+            }
+
+            let next_id = last_id
+                .checked_add(1)
+                .context("Binance Futures order ID overflow during pagination")?;
+            anyhow::ensure!(
+                next_id > order_id.unwrap_or_default(),
+                "Binance Futures order history pagination made no progress"
+            );
+            order_id = Some(next_id);
+        }
+
+        Ok(orders)
+    }
+
+    async fn query_algo_history_window(
+        &self,
+        symbol: &str,
+        start: i64,
+        end: i64,
+    ) -> anyhow::Result<Vec<BinanceFuturesAlgoOrder>> {
+        let mut orders = Vec::new();
+        let mut algo_id = None;
+
+        loop {
+            let params = BinanceAllAlgoOrdersParams {
+                symbol: symbol.to_string(),
+                algo_id,
+                start_time: algo_id.is_none().then_some(start),
+                end_time: algo_id.is_none().then_some(end),
+                page: None,
+                limit: Some(ORDER_HISTORY_PAGE_LIMIT),
+                recv_window: None,
+            };
+
+            let page = self.inner.query_all_algo_orders(&params).await?;
+            let page_len = page.len();
+
+            let Some(last_id) = page.iter().map(|order| order.algo_id).max() else {
+                break;
+            };
+
+            let past_end = page
+                .iter()
+                .any(|order| order.create_time.is_some_and(|time| time > end));
+            orders.extend(
+                page.into_iter()
+                    .filter(|order| order.create_time.is_none_or(|time| time <= end)),
+            );
+
+            if page_len < ORDER_HISTORY_PAGE_LIMIT as usize || past_end {
+                break;
+            }
+
+            let next_id = last_id
+                .checked_add(1)
+                .context("Binance Futures algo ID overflow during pagination")?;
+            anyhow::ensure!(
+                next_id > algo_id.unwrap_or_default(),
+                "Binance Futures algo history pagination made no progress"
+            );
+            algo_id = Some(next_id);
+        }
+
+        Ok(orders)
     }
 
     /// Fetches account information including balances and positions.
@@ -3168,6 +3325,7 @@ impl BinanceFuturesHttpClient {
         let Some(order) = order else {
             return Ok(None);
         };
+
         let actual = if let Some(actual_order_id) = order
             .actual_order_id
             .as_deref()
@@ -3176,27 +3334,8 @@ impl BinanceFuturesHttpClient {
             .transpose()
             .map_err(|e| BinanceFuturesHttpError::ValidationError(e.to_string()))?
         {
-            let params = BinanceOrderQueryParams {
-                symbol: format_binance_symbol(&instrument_id),
-                order_id: Some(actual_order_id),
-                orig_client_order_id: None,
-                recv_window: None,
-            };
-
-            match self.inner.query_order(&params).await {
-                Ok(actual) => Some(actual),
-                Err(
-                    e @ (BinanceFuturesHttpError::MissingCredentials
-                    | BinanceFuturesHttpError::ValidationError(_)),
-                ) => return Err(e),
-                Err(e) => {
-                    log::warn!(
-                        "Failed to enrich algo order with matching-engine order \
-                         {actual_order_id}: {e}; falling back to Algo Service execution fields"
-                    );
-                    None
-                }
-            }
+            self.query_algo_order_actual(instrument_id, actual_order_id)
+                .await?
         } else {
             None
         };
@@ -3205,6 +3344,36 @@ impl BinanceFuturesHttpClient {
             algo: order,
             actual,
         }))
+    }
+
+    pub(crate) async fn query_algo_order_actual(
+        &self,
+        instrument_id: InstrumentId,
+        actual_order_id: i64,
+    ) -> BinanceFuturesHttpResult<Option<BinanceFuturesOrder>> {
+        let params = BinanceOrderQueryParams {
+            symbol: format_binance_symbol(&instrument_id),
+            order_id: Some(actual_order_id),
+            orig_client_order_id: None,
+            recv_window: None,
+        };
+
+        let actual = match self.inner.query_order(&params).await {
+            Ok(actual) => Some(actual),
+            Err(
+                e @ (BinanceFuturesHttpError::MissingCredentials
+                | BinanceFuturesHttpError::ValidationError(_)),
+            ) => return Err(e),
+            Err(e) => {
+                log::warn!(
+                    "Failed to enrich algo order with matching-engine order \
+                     {actual_order_id}: {e}; falling back to Algo Service execution fields"
+                );
+                None
+            }
+        };
+
+        Ok(actual)
     }
 
     /// Requests the current account state.
@@ -3941,6 +4110,7 @@ mod tests {
     use axum::{Router, http::Method, response::IntoResponse, routing::any};
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_live::execution::failure::CommandFailure;
+    use nautilus_model::enums::OrderStatus;
     use nautilus_network::http::{HttpStatus, StatusCode};
     use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
@@ -3948,6 +4118,312 @@ mod tests {
 
     use super::*;
     use crate::common::{enums::BinanceTradingStatus, failure::classify_futures_http_failure};
+
+    #[rstest]
+    #[case::usd_regular(
+        BinanceProductType::UsdM,
+        false,
+        "BTCUSDT-PERP.BINANCE",
+        "BTCUSDT",
+        "/fapi/v1/"
+    )]
+    #[case::usd_algo(
+        BinanceProductType::UsdM,
+        true,
+        "BTCUSDT-PERP.BINANCE",
+        "BTCUSDT",
+        "/fapi/v1/"
+    )]
+    #[case::coin_regular(
+        BinanceProductType::CoinM,
+        false,
+        "BTCUSD_PERP.BINANCE",
+        "BTCUSD_PERP",
+        "/dapi/v1/"
+    )]
+    #[tokio::test]
+    async fn test_order_history_pages_with_fixed_cutoff(
+        #[case] product: BinanceProductType,
+        #[case] page_algo: bool,
+        #[case] instrument: &str,
+        #[case] symbol: &str,
+        #[case] prefix: &str,
+    ) {
+        let captured = Arc::new(parking_lot::Mutex::new(Vec::new()));
+        let app = Router::new()
+            .fallback(any(order_history_response))
+            .with_state((page_algo, captured.clone()));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = BinanceFuturesHttpClient::new(
+            product,
+            BinanceEnvironment::Live,
+            get_atomic_clock_realtime(),
+            Some("key".into()),
+            Some("secret".into()),
+            Some(url),
+            None,
+            Some(1),
+            None,
+            false,
+        )
+        .unwrap();
+
+        let (orders, algos) = client
+            .query_order_history(
+                InstrumentId::from(instrument),
+                10_000_000.into(),
+                20_000_000.into(),
+            )
+            .await
+            .unwrap();
+        let instrument_id = InstrumentId::from(instrument);
+
+        let report = orders[&8_886_774]
+            .to_order_status_report(
+                "BINANCE-001".into(),
+                instrument_id,
+                2,
+                if product == BinanceProductType::CoinM {
+                    0
+                } else {
+                    3
+                },
+                false,
+                20_000_000.into(),
+            )
+            .unwrap();
+
+        let qty = if product == BinanceProductType::CoinM {
+            Quantity::from("1")
+        } else {
+            Quantity::from("0.001")
+        };
+
+        let requests = captured.lock();
+
+        let paged_endpoint = if page_algo {
+            "allAlgoOrders"
+        } else {
+            "allOrders"
+        };
+
+        let pages: Vec<_> = requests
+            .iter()
+            .filter(|(path, _)| path.ends_with(paged_endpoint))
+            .collect();
+
+        let cursor = if page_algo { "algoId" } else { "orderId" };
+
+        assert_eq!(report.instrument_id, instrument_id);
+        assert_eq!(report.venue_order_id, VenueOrderId::from("8886774"));
+        assert_eq!(
+            report.client_order_id,
+            Some(ClientOrderId::from("testOrder123"))
+        );
+        assert_eq!(report.order_status, OrderStatus::Filled);
+        assert_eq!(report.quantity, qty);
+        assert_eq!(report.filled_qty, qty);
+        assert_eq!(report.avg_px, Some(rust_decimal_macros::dec!(50000)));
+        assert_eq!(orders.len(), if page_algo { 1 } else { 1_001 });
+        assert_eq!(orders[&8_886_774].symbol.as_str(), symbol);
+        assert_eq!(orders[&8_886_774].order_id, 8_886_774);
+        assert_eq!(
+            algos.len(),
+            if product == BinanceProductType::CoinM {
+                0
+            } else if page_algo {
+                1_001
+            } else {
+                1
+            }
+        );
+        assert_eq!(pages.len(), 2);
+        assert!(!pages[0].1.contains_key(cursor));
+        assert_eq!(pages[1].1[cursor], "1001");
+
+        for (path, query) in requests.iter() {
+            assert!(path.starts_with(prefix));
+            assert_eq!(query["symbol"], symbol);
+
+            if query.contains_key("algoId") || query.contains_key("orderId") {
+                assert!(!query.contains_key("startTime"));
+                assert!(!query.contains_key("endTime"));
+            } else {
+                assert_eq!(query["startTime"], "10");
+                assert_eq!(query["endTime"], "20");
+            }
+
+            assert_eq!(query["limit"], "1000");
+            assert!(!query.contains_key("page"));
+        }
+
+        if product == BinanceProductType::CoinM {
+            assert_eq!(requests.len(), 2);
+        } else {
+            assert_eq!(requests.len(), 3);
+            assert_eq!(algos[&8_886_774].symbol.as_str(), symbol);
+        }
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::usd(BinanceProductType::UsdM, "/fapi/v1/", "BTCUSDT-PERP.BINANCE")]
+    #[case::coin(BinanceProductType::CoinM, "/dapi/v1/", "BTCUSD_PERP.BINANCE")]
+    #[tokio::test]
+    async fn test_order_history_windows_are_contiguous(
+        #[case] product: BinanceProductType,
+        #[case] prefix: &str,
+        #[case] instrument: &str,
+    ) {
+        let captured = HistoryRequests::default();
+
+        let app = Router::new()
+            .fallback(any(
+                |axum::extract::State(requests): axum::extract::State<HistoryRequests>,
+                 uri: axum::http::Uri,
+                 axum::extract::Query(query): axum::extract::Query<
+                    std::collections::HashMap<String, String>,
+                >| async move {
+                    requests.lock().push((uri.path().to_string(), query));
+                    axum::Json(serde_json::json!([]))
+                },
+            ))
+            .with_state(captured.clone());
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let client = BinanceFuturesHttpClient::new(
+            product,
+            BinanceEnvironment::Live,
+            get_atomic_clock_realtime(),
+            Some("key".into()),
+            Some("secret".into()),
+            Some(url),
+            None,
+            Some(1),
+            None,
+            false,
+        )
+        .unwrap();
+
+        let (orders, algos) = client
+            .query_order_history(
+                InstrumentId::from(instrument),
+                10_000_000.into(),
+                1_209_600_133_000_000.into(),
+            )
+            .await
+            .unwrap();
+        let requests = captured.lock();
+
+        let endpoints = if product == BinanceProductType::UsdM {
+            vec!["allOrders", "allAlgoOrders"]
+        } else {
+            vec!["allOrders"]
+        };
+
+        let windows = [
+            (10, 604_800_009),
+            (604_800_010, 1_209_600_009),
+            (1_209_600_010, 1_209_600_133),
+        ];
+
+        assert!(orders.is_empty());
+        assert!(algos.is_empty());
+        assert_eq!(requests.len(), windows.len() * endpoints.len());
+
+        for ((path, query), ((start, end), endpoint)) in requests.iter().zip(
+            windows
+                .iter()
+                .flat_map(|window| endpoints.iter().map(move |endpoint| (window, endpoint))),
+        ) {
+            assert_eq!(path, &format!("{prefix}{endpoint}"));
+            assert_eq!(query["startTime"], start.to_string());
+            assert_eq!(query["endTime"], end.to_string());
+            assert_eq!(query["limit"], "1000");
+            assert!(!query.contains_key("orderId"));
+            assert!(!query.contains_key("algoId"));
+        }
+
+        server.abort();
+    }
+
+    type HistoryRequests =
+        Arc<parking_lot::Mutex<Vec<(String, std::collections::HashMap<String, String>)>>>;
+
+    async fn order_history_response(
+        axum::extract::State((page_algo, requests)): axum::extract::State<(bool, HistoryRequests)>,
+        uri: axum::http::Uri,
+        axum::extract::Query(query): axum::extract::Query<
+            std::collections::HashMap<String, String>,
+        >,
+    ) -> axum::response::Response {
+        let algo = uri.path().ends_with("allAlgoOrders");
+
+        let (cursor, mut template) = if algo {
+            let rows: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+                "../../../test_data/futures/http_json/open_algo_orders.json"
+            ))
+            .unwrap();
+            ("algoId", rows[0].clone())
+        } else {
+            let row = serde_json::from_str(include_str!(
+                "../../../test_data/futures/http_json/order_response.json"
+            ))
+            .unwrap();
+            ("orderId", row)
+        };
+
+        let first_page = !query.contains_key(cursor);
+        if !first_page && (query.contains_key("startTime") || query.contains_key("endTime")) {
+            return (axum::http::StatusCode::BAD_REQUEST, axum::Json(serde_json::json!({"code": -1106, "msg": "Cursor cannot accompany time bounds"}))).into_response();
+        }
+
+        requests
+            .lock()
+            .push((uri.path().to_string(), query.clone()));
+
+        let qty = if query["symbol"] == "BTCUSD_PERP" {
+            "1"
+        } else {
+            "0.001"
+        };
+
+        template["symbol"] = serde_json::json!(query["symbol"]);
+        template["status"] = serde_json::json!("FILLED");
+        template["origQty"] = serde_json::json!(qty);
+        template["executedQty"] = serde_json::json!(qty);
+        template["avgPrice"] = serde_json::json!("50000.00");
+
+        let ids: Vec<_> = if algo == page_algo && first_page {
+            (1..=1_000).collect()
+        } else {
+            vec![8_886_774, 8_886_775]
+        };
+
+        let rows: Vec<_> = ids
+            .into_iter()
+            .map(|value| {
+                let mut row = template.clone();
+                row[cursor] = serde_json::json!(value);
+
+                let timestamp = if value == 8_886_775 { 21 } else { 15 };
+                row["time"] = serde_json::json!(timestamp);
+                row["createTime"] = serde_json::json!(timestamp);
+                row["updateTime"] = serde_json::json!(timestamp);
+                row
+            })
+            .collect();
+
+        axum::Json(rows).into_response()
+    }
 
     #[rstest]
     #[case::usd_m(BinanceProductType::UsdM)]
