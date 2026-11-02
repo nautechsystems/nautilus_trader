@@ -7135,7 +7135,28 @@ fn test_netting_cycles_with_equal_pnl_each_count_in_realized_pnls(
     instrument_audusd: InstrumentAny,
     #[values(false, true)] same_timestamps: bool,
     #[values(false, true)] rebuild: bool,
+    #[values(false, true)] losing: bool,
 ) {
+    let (entry_px, exit_px, fee, cycle_pnl, open_pnl, total_pnl) = if losing {
+        (
+            "105.00",
+            "100.00",
+            "2.00 USD",
+            "-504.00 USD",
+            "-506.00 USD",
+            "-1008.00 USD",
+        )
+    } else {
+        (
+            "1.00",
+            "1.10",
+            "0.00 USD",
+            "10.00 USD",
+            "10.00 USD",
+            "20.00 USD",
+        )
+    };
+
     let account_id = AccountId::new("SIM-001");
     let position_id = PositionId::new("P-EQUAL-PNL-CYCLES");
     let venue = instrument_audusd.id().venue;
@@ -7149,11 +7170,12 @@ fn test_netting_cycles_with_equal_pnl_each_count_in_realized_pnls(
             account_id,
             OrderSide::Buy,
             Quantity::from("100"),
-            Price::from("1.00"),
+            Price::from(entry_px),
             position_id,
         );
         opening_fill.event_id = UUID4::new();
         opening_fill.trade_id = TradeId::new(format!("OPEN-{cycle}"));
+        opening_fill.commission = Some(Money::from(fee));
         opening_fill.ts_event = UnixNanos::from(11 + ts_offset);
 
         if let Some(current) = position.as_mut() {
@@ -7186,7 +7208,7 @@ fn test_netting_cycles_with_equal_pnl_each_count_in_realized_pnls(
             // Aggregate the archived cycle while the second one is open
             assert_eq!(
                 portfolio.realized_pnls(&venue, None, None).unwrap()[&Currency::USD()],
-                Money::from("10.00 USD"),
+                Money::from(open_pnl),
             );
 
             if rebuild {
@@ -7217,14 +7239,15 @@ fn test_netting_cycles_with_equal_pnl_each_count_in_realized_pnls(
             account_id,
             OrderSide::Sell,
             Quantity::from("100"),
-            Price::from("1.10"),
+            Price::from(exit_px),
             position_id,
         );
         closing_fill.event_id = UUID4::new();
         closing_fill.trade_id = TradeId::new(format!("CLOSE-{cycle}"));
+        closing_fill.commission = Some(Money::from(fee));
         closing_fill.ts_event = UnixNanos::from(13 + ts_offset);
         current.apply(&closing_fill);
-        assert_eq!(current.realized_pnl, Some(Money::from("10.00 USD")));
+        assert_eq!(current.realized_pnl, Some(Money::from(cycle_pnl)));
         portfolio
             .cache()
             .borrow_mut()
@@ -7233,16 +7256,15 @@ fn test_netting_cycles_with_equal_pnl_each_count_in_realized_pnls(
         portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(current)));
     }
 
-    // Both cycles realized 10.00; equal PnL must not make the second look like the first's frame
     assert_eq!(
         portfolio.realized_pnls(&venue, None, None).unwrap()[&Currency::USD()],
-        Money::from("20.00 USD"),
+        Money::from(total_pnl),
     );
     assert_eq!(
         portfolio
             .realized_pnls(&venue, Some(&account_id), None)
             .unwrap()[&Currency::USD()],
-        Money::from("20.00 USD"),
+        Money::from(total_pnl),
     );
 }
 
@@ -7277,6 +7299,97 @@ fn test_realized_pnl_for_closed_cached_netting_position_adds_settled_frame_with_
 
     // The settled frame stands for the earlier cycles, never the final one: 7.00 + 7.00
     assert_eq!(pnl, Money::from("14.00 USD"));
+}
+
+#[rstest]
+#[case::opening(["1.00", "2.00", "1.00", "3.00"], [2, 0], "100.00 USD")]
+#[case::closing(["1.00", "2.00", "3.00", "2.00"], [3, 1], "200.00 USD")]
+#[case::opening_and_closing(["1.00", "2.00", "3.00", "1.00"], [3, 0], "100.00 USD")]
+fn test_realized_pnl_for_snapshotted_netting_cycle_preserves_identity_after_fill_voids(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+    #[case] prices: [&str; 4],
+    #[case] void_indices: [usize; 2],
+    #[case] expected_pnl: &str,
+    #[values(false, true)] same_timestamps: bool,
+) {
+    let account_id = AccountId::new("SIM-001");
+    let position_id = PositionId::new("P-SNAPSHOT-FILL-VOIDS");
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+
+    let fills: Vec<_> = [
+        OrderSide::Buy,
+        OrderSide::Buy,
+        OrderSide::Sell,
+        OrderSide::Sell,
+    ]
+    .into_iter()
+    .zip(prices)
+    .enumerate()
+    .map(|(index, (side, price))| {
+        let mut fill = make_fill_for_account(
+            &instrument_audusd,
+            account_id,
+            side,
+            Quantity::from("100"),
+            Price::from(price),
+            position_id,
+        );
+        fill.client_order_id = ClientOrderId::new(format!("O-VOID-{index}"));
+        fill.trade_id = TradeId::new(format!("T-VOID-{index}"));
+        fill.event_id = UUID4::new();
+        fill.ts_event = UnixNanos::from(11 + if same_timestamps { 0 } else { index as u64 });
+        fill
+    })
+    .collect();
+
+    let expected_pnl = Money::from(expected_pnl);
+    let expected_events: Vec<_> = fills
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !void_indices.contains(index))
+        .map(|(_, fill)| fill.clone())
+        .collect();
+    let mut position = Position::new(&instrument_audusd, fills[0].clone());
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    for fill in &fills[1..] {
+        position.apply(fill);
+    }
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(
+        &position,
+    )));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .snapshot_position(&position)
+        .unwrap();
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(expected_pnl)
+    );
+
+    for index in void_indices {
+        void_position_fill(&mut portfolio, &mut position, &fills[index]);
+    }
+
+    assert!(position.is_closed());
+    assert_eq!(position.events, expected_events);
+    assert_eq!(position.realized_pnl, Some(expected_pnl));
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(expected_pnl)
+    );
 }
 
 #[rstest]

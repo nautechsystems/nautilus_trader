@@ -94,7 +94,7 @@ struct PortfolioState {
 /// The realized PnL of a position's last NETTING snapshot frame, with the fills it archived.
 struct LastSnapshotFrame {
     realized_pnl: Money,
-    fill_ids: Vec<UUID4>,
+    fill_ids: AHashSet<UUID4>,
 }
 
 impl LastSnapshotFrame {
@@ -105,17 +105,13 @@ impl LastSnapshotFrame {
         }
     }
 
-    /// Returns whether this frame holds the same fills as the cycle `position` closed with.
-    ///
-    /// A frame archived from a cycle holds that cycle's fills, which no other cycle shares, while
-    /// a settled frame holds none. Fills cannot tell a settled frame from a position left with no
-    /// fills, so such a position matches any frame without fills and the PnL decides.
     fn archives_cycle_of(&self, position: &Position) -> bool {
-        position
-            .events
-            .iter()
-            .map(|fill| fill.event_id)
-            .eq(self.fill_ids.iter().copied())
+        // Corrections can remove any fill, so a surviving fill identifies the archived cycle
+        (self.fill_ids.is_empty() && position.events.is_empty())
+            || position
+                .events
+                .iter()
+                .any(|fill| self.fill_ids.contains(&fill.event_id))
     }
 }
 
