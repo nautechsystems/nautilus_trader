@@ -141,6 +141,7 @@ Released on TBD (UTC).
 - Upgraded `cargo-nextest` tool to v0.9.150
 - Upgraded `socket-cli` tool to v1.11.1
 - Upgraded `arrow` and `parquet` crates to v59.3.2
+- Upgraded `aws-lc-rs` crate to v1.19.0
 - Upgraded `hypersync-client` crate to v2.0.0
 - Upgraded `ruff` package (dev) to v0.17.3
 - Upgraded `ty` package (dev) to v0.0.91
