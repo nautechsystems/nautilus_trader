@@ -572,7 +572,8 @@ impl PolymarketGammaHttpClient {
             .limit
             .unwrap_or(GAMMA_MARKETS_KEYSET_PAGE_LIMIT)
             .min(GAMMA_MARKETS_KEYSET_PAGE_LIMIT);
-        let protocol = CursorProtocol::<GammaStop>::gamma("Gamma market");
+        let protocol = CursorProtocol::gamma("Gamma market");
+
         let reducer = WindowedCollect::new(
             base_params.offset.unwrap_or(0) as usize,
             base_params.max_markets.map(|value| value as usize),
@@ -593,7 +594,7 @@ impl PolymarketGammaHttpClient {
                             .inner
                             .get_gamma_markets_keyset(params, after_cursor.as_deref())
                             .await?;
-                        Ok::<_, anyhow::Error>(FetchOutcome::Page {
+                        Ok::<_, anyhow::Error>(FetchOutcome {
                             rows: response.markets,
                             wire: response.next_cursor,
                         })
@@ -990,7 +991,8 @@ impl PolymarketGammaHttpClient {
             .limit
             .unwrap_or(GAMMA_EVENTS_KEYSET_PAGE_LIMIT)
             .min(GAMMA_EVENTS_KEYSET_PAGE_LIMIT);
-        let protocol = CursorProtocol::<GammaStop>::gamma("Gamma event");
+        let protocol = CursorProtocol::gamma("Gamma event");
+
         let reducer = WindowedCollect::new(
             base_params.offset.unwrap_or(0) as usize,
             base_params.max_events.map(|value| value as usize),
@@ -1011,7 +1013,7 @@ impl PolymarketGammaHttpClient {
                             .inner
                             .get_gamma_events_keyset(params, after_cursor.as_deref())
                             .await?;
-                        Ok::<_, anyhow::Error>(FetchOutcome::Page {
+                        Ok::<_, anyhow::Error>(FetchOutcome {
                             rows: response.events,
                             wire: response.next_cursor,
                         })
