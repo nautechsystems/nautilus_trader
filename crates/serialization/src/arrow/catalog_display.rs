@@ -935,6 +935,8 @@ fn convert_deltas(
     metadata: &HashMap<String, String>,
     batch: &RecordBatch,
 ) -> Result<RecordBatch, EncodingError> {
+    const NO_ORDER_SIDE: &str = "NO_ORDER_SIDE";
+
     let instrument_id = instrument_id(metadata)?;
     let price_precision = parse_price_precision(metadata)?;
     let size_precision = parse_size_precision(metadata)?;
@@ -968,11 +970,19 @@ fn convert_deltas(
         let action = BookAction::from_str(action_value)
             .map_err(|e| EncodingError::ParseError(stringify!(BookAction), e.to_string()))?;
         let side_value = side.value(row);
-        let side = OrderSide::from_str(side_value)
-            .map_err(|e| EncodingError::ParseError(stringify!(OrderSide), e.to_string()))?;
+
+        let side = if side_value.eq_ignore_ascii_case(NO_ORDER_SIDE) {
+            None
+        } else {
+            Some(
+                OrderSide::from_str(side_value)
+                    .map_err(|e| EncodingError::ParseError(stringify!(OrderSide), e.to_string()))?,
+            )
+        };
 
         action_builder.append_value(action.as_ref());
-        side_builder.append_value(side.as_ref());
+        side_builder.append_value(side.as_ref().map_or(NO_ORDER_SIDE, AsRef::as_ref));
+
         if action == BookAction::Clear {
             price_builder.append_value(f64::NAN);
             size_builder.append_value(f64::NAN);
@@ -1730,7 +1740,7 @@ mod tests {
     use nautilus_model::{
         data::{
             FundingRateUpdate, OrderBookDepth, QuoteTick, ensure_arrow_registered,
-            stubs::stub_depth10,
+            order::BookOrder, stubs::stub_depth10,
         },
         identifiers::InstrumentId,
         types::{Price, Quantity},
@@ -1741,6 +1751,7 @@ mod tests {
     use super::*;
     use crate::arrow::{
         EncodeToRecordBatch, KEY_INSTRUMENT_ID, KEY_PRICE_PRECISION, KEY_SIZE_PRECISION,
+        book_deltas_to_arrow_record_batch_bytes, enum_dictionary_array,
     };
     #[cfg(feature = "arrow-display")]
     use crate::arrow::{
@@ -1750,6 +1761,154 @@ mod tests {
         },
         record_batch_without_identifier_column,
     };
+
+    #[rstest]
+    #[case::clear_only(false)]
+    #[case::mixed(true)]
+    fn test_catalog_display_converts_clear_deltas(#[case] mixed: bool) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let clear = OrderBookDelta::clear(instrument_id, 41, 101.into(), 102.into());
+        let mut deltas = vec![clear];
+        if mixed {
+            deltas.extend([
+                OrderBookDelta::new(
+                    instrument_id,
+                    BookAction::Add,
+                    BookOrder::new(
+                        OrderSide::Buy,
+                        Price::from("100.25"),
+                        Quantity::from("2.50"),
+                        9_007_199_254_740_993,
+                    ),
+                    128,
+                    42,
+                    103.into(),
+                    104.into(),
+                ),
+                OrderBookDelta::new(
+                    instrument_id,
+                    BookAction::Update,
+                    BookOrder::new(
+                        OrderSide::Sell,
+                        Price::from("101.75"),
+                        Quantity::from("3.25"),
+                        73,
+                    ),
+                    64,
+                    43,
+                    105.into(),
+                    106.into(),
+                ),
+            ]);
+        }
+
+        let raw = book_deltas_to_arrow_record_batch_bytes(&deltas).unwrap();
+        let display = catalog_record_batch_to_display(
+            &NautilusDataType::OrderBookDelta,
+            raw.schema().metadata(),
+            &raw,
+        )
+        .unwrap();
+        let len = deltas.len();
+        let mut fields = deltas_schema().fields().to_vec();
+        fields.push(Arc::new(utf8_field(KEY_IDENTIFIER, true)));
+        let expected_schema = Schema::new(fields);
+        let expected: Vec<ArrayRef> = vec![
+            Arc::new(StringArray::from(vec!["AAPL.XNAS"; len])),
+            Arc::new(StringArray::from(
+                ["CLEAR", "ADD", "UPDATE"][..len].to_vec(),
+            )),
+            Arc::new(StringArray::from(
+                ["NO_ORDER_SIDE", "BUY", "SELL"][..len].to_vec(),
+            )),
+            Arc::new(Float64Array::from(
+                [f64::NAN, 100.25, 101.75][..len].to_vec(),
+            )),
+            Arc::new(Float64Array::from([f64::NAN, 2.50, 3.25][..len].to_vec())),
+            Arc::new(StringArray::from(
+                ["0", "9007199254740993", "73"][..len].to_vec(),
+            )),
+            Arc::new(UInt8Array::from([32, 128, 64][..len].to_vec())),
+            Arc::new(UInt64Array::from([41, 42, 43][..len].to_vec())),
+            Arc::new(
+                TimestampNanosecondArray::from([101, 103, 105][..len].to_vec())
+                    .with_timezone("UTC"),
+            ),
+            Arc::new(
+                TimestampNanosecondArray::from([102, 104, 106][..len].to_vec())
+                    .with_timezone("UTC"),
+            ),
+            Arc::new(StringArray::from(vec!["AAPL.XNAS"; len])),
+        ];
+
+        assert_eq!(display.schema().as_ref(), &expected_schema);
+        assert_eq!(display.num_rows(), len);
+        assert_eq!(display.num_columns(), expected.len());
+
+        for (actual, expected) in display.columns().iter().zip(&expected) {
+            if let Some(actual) = actual.as_any().downcast_ref::<Float64Array>() {
+                let expected = expected.as_any().downcast_ref::<Float64Array>().unwrap();
+                assert_eq!(actual.null_count(), 0);
+                assert!(actual.value(0).is_nan());
+                assert_eq!(&actual.values()[1..], &expected.values()[1..]);
+            } else {
+                assert_eq!(actual, expected);
+            }
+        }
+    }
+
+    #[rstest]
+    #[case("no_order_side", "NO_ORDER_SIDE")]
+    #[case("buy", "BUY")]
+    #[case("sell", "SELL")]
+    fn test_catalog_display_normalizes_delta_side(#[case] side: &str, #[case] expected: &str) {
+        let delta =
+            OrderBookDelta::clear(InstrumentId::from("AAPL.XNAS"), 41, 101.into(), 102.into());
+        let raw = book_deltas_to_arrow_record_batch_bytes(&[delta]).unwrap();
+        let mut columns = raw.columns().to_vec();
+        let side_index = raw.schema().index_of("side").unwrap();
+        let side = enum_dictionary_array([side]).unwrap();
+        columns[side_index] = Arc::new(side);
+        let raw = RecordBatch::try_new(raw.schema(), columns).unwrap();
+
+        let display = catalog_record_batch_to_display(
+            &NautilusDataType::OrderBookDelta,
+            raw.schema().metadata(),
+            &raw,
+        )
+        .unwrap();
+
+        assert_eq!(
+            display.column_by_name("side").unwrap().as_ref(),
+            &StringArray::from(vec![expected])
+        );
+    }
+
+    #[rstest]
+    #[case::clear(BookAction::Clear)]
+    #[case::add(BookAction::Add)]
+    fn test_catalog_display_rejects_invalid_delta_side(#[case] action: BookAction) {
+        let instrument_id = InstrumentId::from("AAPL.XNAS");
+        let mut delta = OrderBookDelta::clear(instrument_id, 41, 101.into(), 102.into());
+        delta.action = action;
+        let raw = book_deltas_to_arrow_record_batch_bytes(&[delta]).unwrap();
+        let mut columns = raw.columns().to_vec();
+        let side_index = raw.schema().index_of("side").unwrap();
+        let side = enum_dictionary_array(["INVALID"]).unwrap();
+        columns[side_index] = Arc::new(side);
+        let raw = RecordBatch::try_new(raw.schema(), columns).unwrap();
+
+        let error = catalog_record_batch_to_display(
+            &NautilusDataType::OrderBookDelta,
+            raw.schema().metadata(),
+            &raw,
+        )
+        .unwrap_err();
+
+        assert!(
+            matches!(error, EncodingError::ParseError("OrderSide", message) if message == "Matching variant not found")
+        );
+    }
 
     #[rstest]
     fn test_catalog_record_batch_to_display_converts_quote_prices_and_metadata() {
