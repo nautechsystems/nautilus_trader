@@ -13,6 +13,7 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
+mod mbo_promotion;
 mod python;
 
 #[cfg(feature = "live")]
