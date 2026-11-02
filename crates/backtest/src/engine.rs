@@ -1720,9 +1720,7 @@ impl BacktestEngine {
         ts_now: UnixNanos,
         clocks: &[Rc<RefCell<dyn Clock>>],
     ) -> anyhow::Result<()> {
-        for clock in clocks {
-            Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-        }
+        self.accumulate_time_events(clocks, ts_now);
 
         // Process events with ts_event < ts_now
         let ts_before = ts_now.saturating_sub(DurationNanos::new(1));
@@ -1734,7 +1732,7 @@ impl BacktestEngine {
             .peek_next_time()
             .filter(|ts_event| *ts_event <= ts_before)
         {
-            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event, ts_now)?;
+            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1750,9 +1748,7 @@ impl BacktestEngine {
                 break;
             }
 
-            for clock in clocks {
-                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-            }
+            self.accumulate_time_events(clocks, ts_now);
         }
 
         // On a mid-drain shutdown, anchor state at the firing timer's ts so
@@ -1781,16 +1777,13 @@ impl BacktestEngine {
 
         let last_ns = self.last_ns;
 
-        for clock in clocks {
-            Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-        }
-
+        self.accumulate_time_events(clocks, ts_now);
         while let Some(ts_event) = self
             .accumulator
             .peek_next_time()
             .filter(|ts_event| *ts_event <= ts_now)
         {
-            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event, ts_now)?;
+            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1804,9 +1797,7 @@ impl BacktestEngine {
                 break;
             }
 
-            for clock in clocks {
-                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-            }
+            self.accumulate_time_events(clocks, ts_now);
         }
 
         if !self.kernel.is_shutdown_requested() {
@@ -1819,22 +1810,7 @@ impl BacktestEngine {
     fn process_next_timer(&mut self, clocks: &[Rc<RefCell<dyn Clock>>]) -> anyhow::Result<bool> {
         self.flush_accumulator_events(clocks, self.last_ns)?;
 
-        // Find minimum next timer time across all component clocks
-        let mut min_next_time: Option<UnixNanos> = None;
-
-        for clock in clocks {
-            let clock_ref = clock.borrow();
-            for name in clock_ref.timer_names() {
-                if let Some(next_time) = clock_ref.next_time_ns(name)
-                    && next_time > self.last_ns
-                {
-                    min_next_time = Some(match min_next_time {
-                        Some(current_min) => next_time.min(current_min),
-                        None => next_time,
-                    });
-                }
-            }
-        }
+        let min_next_time = Self::next_timer_time(clocks).filter(|time| *time > self.last_ns);
 
         match min_next_time {
             None => Ok(true),
@@ -1851,7 +1827,6 @@ impl BacktestEngine {
         &mut self,
         clocks: &[Rc<RefCell<dyn Clock>>],
         ts_event: UnixNanos,
-        advance_to: UnixNanos,
     ) -> anyhow::Result<SettlementScope> {
         self.last_ns = ts_event;
         let mut settlement_scope = SettlementScope::Data(None);
@@ -1875,9 +1850,7 @@ impl BacktestEngine {
                 return Ok(settlement_scope);
             }
 
-            for clock in clocks {
-                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, advance_to, false);
-            }
+            self.accumulate_time_events(clocks, ts_event);
         }
 
         Ok(settlement_scope)
@@ -1897,13 +1870,11 @@ impl BacktestEngine {
                 break;
             }
 
-            for clock in clocks {
-                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-            }
+            self.accumulate_time_events(clocks, ts_now);
 
             if self.accumulator.peek_next_time() == Some(ts_now) {
                 if matches!(
-                    self.run_timer_handlers_at(clocks, ts_now, ts_now)?,
+                    self.run_timer_handlers_at(clocks, ts_now)?,
                     SettlementScope::All
                 ) {
                     settlement_scope = SettlementScope::All;
@@ -2248,18 +2219,72 @@ impl BacktestEngine {
         replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
     }
 
+    fn accumulate_time_events(&mut self, clocks: &[Rc<RefCell<dyn Clock>>], until: UnixNanos) {
+        loop {
+            let Some(next_time) = self
+                .accumulator
+                .peek_next_time()
+                .into_iter()
+                .chain(Self::next_timer_time(clocks))
+                .min()
+            else {
+                return;
+            };
+
+            if next_time > until {
+                return;
+            }
+
+            for clock in clocks {
+                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, next_time);
+            }
+
+            if self
+                .accumulator
+                .peek_next_time()
+                .is_some_and(|time| time <= next_time)
+            {
+                return;
+            }
+        }
+    }
+
+    fn next_timer_time(clocks: &[Rc<RefCell<dyn Clock>>]) -> Option<UnixNanos> {
+        clocks
+            .iter()
+            .filter_map(|clock| {
+                let clock = clock.borrow();
+                let clock = clock
+                    .as_any()
+                    .downcast_ref::<VirtualClock>()
+                    .expect("BacktestEngine requires VirtualClock");
+                clock.next_event_time_ns()
+            })
+            .min()
+    }
+
     fn advance_clock_on_accumulator(
         accumulator: &mut TimeEventAccumulator,
         clock: &Rc<RefCell<dyn Clock>>,
         to_time_ns: UnixNanos,
-        set_time: bool,
     ) {
         let mut clock_ref = clock.borrow_mut();
         let test_clock = clock_ref
             .as_any_mut()
             .downcast_mut::<VirtualClock>()
             .expect("BacktestEngine requires VirtualClock");
-        accumulator.advance_clock(test_clock, to_time_ns, set_time);
+        let previous_time = test_clock.timestamp_ns();
+        let rewind = to_time_ns < previous_time;
+
+        // Timers registered with allow_past can be due before the stored clock time
+        if rewind {
+            test_clock.set_time(to_time_ns);
+        }
+
+        accumulator.advance_clock(test_clock, to_time_ns, false);
+        if rewind {
+            test_clock.set_time(previous_time);
+        }
     }
 
     fn set_all_clocks_time(clocks: &[Rc<RefCell<dyn Clock>>], time_ns: UnixNanos) {
@@ -3945,12 +3970,11 @@ mod tests {
                 &mut engine.accumulator,
                 clock,
                 UnixNanos::from(30),
-                false,
             );
         }
 
         let settlement_scope = engine
-            .run_timer_handlers_at(&clocks, UnixNanos::from(20), UnixNanos::from(30))
+            .run_timer_handlers_at(&clocks, UnixNanos::from(20))
             .unwrap();
 
         assert_eq!(fired.get(), timer_names.len());
