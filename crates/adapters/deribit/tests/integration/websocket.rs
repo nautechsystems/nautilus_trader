@@ -625,7 +625,6 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
             .expect("websocket server failed");
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
     addr
 }
 

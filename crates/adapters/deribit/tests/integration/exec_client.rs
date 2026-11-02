@@ -553,12 +553,20 @@ async fn send_command_response(
     response_kind: CommandResponse,
     success_result: &Value,
 ) -> bool {
-    let Some(response) = command_response(id, response_kind, success_result) else {
-        return true;
-    };
+    if let Some(response) = command_response(id, response_kind, success_result)
+        && socket
+            .send(Message::Text(response.to_string().into()))
+            .await
+            .is_err()
+    {
+        return false;
+    }
 
+    // The portfolio update marks the end of this command's ordered event stream
     socket
-        .send(Message::Text(response.to_string().into()))
+        .send(Message::Text(
+            load_json("ws_portfolio.json").to_string().into(),
+        ))
         .await
         .is_ok()
 }
@@ -2118,9 +2126,12 @@ async fn connected_client_with_command_responses(
     let (addr, state) = start_test_server().await.unwrap();
     *state.command_responses.lock().await = responses;
     let request_count = state.command_request_count.clone();
-    let (mut client, rx, cache) = create_test_execution_client(addr);
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
     client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
     (client, rx, cache, request_count)
 }
 
@@ -2413,21 +2424,27 @@ async fn assert_no_order_event_matching<F>(
 ) where
     F: Fn(&OrderEventAny) -> bool,
 {
-    let unexpected = tokio::time::timeout(Duration::from_millis(500), async {
+    tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let event = rx.recv().await.expect("Execution event channel closed");
             if let ExecutionEvent::Order(order_event) = &event
                 && predicate(order_event)
             {
-                return event;
+                panic!("Unexpected order event: {event:?}");
+            }
+
+            if let ExecutionEvent::Account(state) = event
+                && state
+                    .balances
+                    .iter()
+                    .any(|balance| balance.total == Money::from("55.00055 USDT"))
+            {
+                return;
             }
         }
     })
-    .await;
-
-    if let Ok(event) = unexpected {
-        panic!("Unexpected order event: {event:?}");
-    }
+    .await
+    .expect("Timed out waiting for the command's portfolio update");
 }
 
 async fn recv_until<F>(

@@ -2126,12 +2126,10 @@ mod tests {
         assert!(!client.ws_client.is_authenticated());
 
         submit_test_orders(&client, &orders, false).unwrap();
+        client.await_pending_tasks().await.unwrap();
 
-        let submitted = rx.recv().await.expect("submitted event");
-        let rejected = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
-            .await
-            .expect("rejection timed out")
-            .expect("event channel closed");
+        let submitted = rx.try_recv().expect("submitted event");
+        let rejected = rx.try_recv().expect("rejection event");
         assert!(rx.try_recv().is_err());
 
         let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) = submitted else {
@@ -2326,10 +2324,8 @@ mod tests {
                 .unwrap();
         }
 
-        let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
-            .await
-            .expect("denial timed out")
-            .expect("event channel closed");
+        client.await_pending_tasks().await.unwrap();
+        let event = rx.try_recv().expect("denial event");
         assert!(rx.try_recv().is_err());
 
         let (kind, reason, venue) = match event {
@@ -2481,10 +2477,23 @@ mod tests {
             })
             .collect::<Vec<_>>();
 
-        assert_eq!(
-            rx.try_recv().unwrap_err(),
-            tokio::sync::mpsc::error::TryRecvError::Empty
-        );
+        client.await_pending_tasks().await.unwrap();
+        let mut rejected = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            match event {
+                ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+                    assert_eq!(event.reason.as_str(), "not authenticated");
+                    rejected.push(event.client_order_id);
+                }
+                other => panic!("Unexpected submission result: {other:?}"),
+            }
+        }
+
+        rejected.sort();
+        let mut expected_rejected: Vec<_> = expected.iter().map(Order::client_order_id).collect();
+        expected_rejected.sort();
+        assert_eq!(rejected, expected_rejected);
 
         for (event, order) in events.iter().zip(expected) {
             assert_eq!(event.trader_id, client.core.trader_id);

@@ -5660,18 +5660,9 @@ mod tests {
         }
 
         handler.subscriptions_state.add_reference(&channels[0]);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(20), handler.next())
-                .await
-                .is_err()
-        );
+        assert!(futures_util::poll!(Box::pin(handler.next())).is_pending());
         assert!(handler.subscription_send.is_some());
         assert_eq!(handler.subscription_requests.len(), 1);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(20), socket.next())
-                .await
-                .is_err()
-        );
 
         let incoming = serde_json::json!({"value":17});
         socket
