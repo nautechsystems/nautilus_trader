@@ -29,7 +29,7 @@ use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     live::runner::get_exec_event_sender,
     messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+        BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
         GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports, ModifyOrder,
         QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
@@ -50,7 +50,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{OmsType, OrderStatus, OrderType},
     events::{OrderCanceled, OrderDeniedReason, OrderEventAny},
-    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -643,6 +643,37 @@ impl BybitExecutionClient {
             position_idx,
             bbo_side_type: tp_sl.bbo_side_type,
             bbo_level: tp_sl.bbo_level.clone(),
+        })
+    }
+
+    fn build_ws_amend_params(
+        cmd: &ModifyOrder,
+        product_type: BybitProductType,
+        raw_symbol: &str,
+    ) -> Result<BybitWsAmendOrderParams, String> {
+        let order_iv = if let Some(params) = cmd.params.as_ref()
+            && let Some(value) = params.get("order_iv")
+        {
+            Some(get_price_str(params, "order_iv").ok_or_else(|| {
+                format!("invalid type for 'order_iv': {value}, expected string or number")
+            })?)
+        } else {
+            None
+        };
+
+        Ok(BybitWsAmendOrderParams {
+            category: product_type,
+            symbol: Ustr::from(raw_symbol),
+            order_id: cmd.venue_order_id.map(|v| v.to_string()),
+            order_link_id: Some(cmd.client_order_id.to_string()),
+            qty: cmd.quantity.map(|q| q.to_string()),
+            price: cmd.price.map(|p| p.to_string()),
+            trigger_price: cmd.trigger_price.map(|p| p.to_string()),
+            take_profit: None,
+            stop_loss: None,
+            tp_trigger_by: None,
+            sl_trigger_by: None,
+            order_iv,
         })
     }
 }
@@ -1461,7 +1492,12 @@ impl ExecutionClient for BybitExecutionClient {
             let req_id = UUID4::new().to_string();
             dispatch_state.pending_requests.insert(
                 req_id.clone(),
-                (vec![client_order_id], vec![None], PendingOperation::Place),
+                (
+                    vec![client_order_id],
+                    vec![None],
+                    PendingOperation::Place,
+                    Vec::new(),
+                ),
             );
 
             if let Err(e) = ws_trade.place_order_with_id(params, req_id.clone()).await {
@@ -1782,7 +1818,7 @@ impl ExecutionClient for BybitExecutionClient {
                 let chunk_voids = vec![None; chunk_cids.len()];
                 dispatch_state.pending_requests.insert(
                     req_id.clone(),
-                    (chunk_cids, chunk_voids, PendingOperation::Place),
+                    (chunk_cids, chunk_voids, PendingOperation::Place, Vec::new()),
                 );
             }
 
@@ -1835,6 +1871,15 @@ impl ExecutionClient for BybitExecutionClient {
                 "Modify command failed local validation for {client_order_id}: {}",
                 "Option params (order_iv) are not supported in demo mode",
             );
+            emitter.emit_order_modify_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                "Option params (order_iv) are not supported in demo mode",
+                clock.get_time_ns(),
+                Some(cmd.command_id),
+            );
             return Ok(());
         }
 
@@ -1870,12 +1915,19 @@ impl ExecutionClient for BybitExecutionClient {
                                 venue_order_id,
                                 &format!("modify-order-error: {reason}"),
                                 ts_event,
+                                Some(cmd.command_id),
                             );
                             anyhow::bail!("modify order rejected: {reason}");
                         }
                         CommandFailure::NotSent(reason) => {
-                            log::warn!(
-                                "HTTP modify command failed local validation for {client_order_id}: {reason}"
+                            emitter.emit_order_modify_denied_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                venue_order_id,
+                                &reason,
+                                clock.get_time_ns(),
+                                Some(cmd.command_id),
                             );
                         }
                         CommandFailure::Ambiguous(reason) => {
@@ -1894,33 +1946,23 @@ impl ExecutionClient for BybitExecutionClient {
 
         let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
 
-        let order_iv = if let Some(value) = cmd.params.as_ref().and_then(|p| p.get("order_iv")) {
-            match get_price_str(cmd.params.as_ref().unwrap(), "order_iv") {
-                Some(s) => Some(s),
-                None => {
-                    log::warn!(
-                        "Modify command failed local validation for {client_order_id}: invalid type for 'order_iv': {value}, expected string or number",
-                    );
-                    return Ok(());
-                }
+        let params = match Self::build_ws_amend_params(&cmd, product_type, raw_symbol) {
+            Ok(params) => params,
+            Err(reason) => {
+                log::warn!(
+                    "Modify command failed local validation for {client_order_id}: {reason}",
+                );
+                emitter.emit_order_modify_denied_event(
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(cmd.command_id),
+                );
+                return Ok(());
             }
-        } else {
-            None
-        };
-
-        let params = BybitWsAmendOrderParams {
-            category: product_type,
-            symbol: Ustr::from(raw_symbol),
-            order_id: cmd.venue_order_id.map(|v| v.to_string()),
-            order_link_id: Some(cmd.client_order_id.to_string()),
-            qty: cmd.quantity.map(|q| q.to_string()),
-            price: cmd.price.map(|p| p.to_string()),
-            trigger_price: cmd.trigger_price.map(|p| p.to_string()),
-            take_profit: None,
-            stop_loss: None,
-            tp_trigger_by: None,
-            sl_trigger_by: None,
-            order_iv,
         };
 
         let ws_trade = self.ws_trade.clone();
@@ -1934,19 +1976,141 @@ impl ExecutionClient for BybitExecutionClient {
                     vec![client_order_id],
                     vec![venue_order_id],
                     PendingOperation::Amend,
+                    vec![Some(cmd.command_id)],
                 ),
             );
 
             if let Err(e) = ws_trade.amend_order_with_id(params, req_id.clone()).await {
                 dispatch_state.pending_requests.remove(&req_id);
-                emitter.emit_order_modify_rejected_event(
+                emitter.emit_order_modify_denied_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     venue_order_id,
                     &e.to_string(),
                     clock.get_time_ns(),
+                    Some(cmd.command_id),
                 );
+            }
+
+            Ok(())
+        });
+
+        Ok(())
+    }
+
+    fn batch_modify_orders(&self, cmd: BatchModifyOrders) -> anyhow::Result<()> {
+        if cmd.modifies.is_empty() {
+            return Ok(());
+        }
+
+        if self.config.environment == BybitEnvironment::Demo {
+            for modify in cmd.modifies {
+                self.modify_order(modify)?;
+            }
+
+            return Ok(());
+        }
+
+        let instrument_id = cmd.instrument_id;
+        let product_type = self.get_product_type_for_instrument(instrument_id);
+        let raw_symbol = extract_raw_symbol(instrument_id.symbol.as_str());
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        let mut amend_params = Vec::with_capacity(cmd.modifies.len());
+        let mut strategy_ids = Vec::with_capacity(cmd.modifies.len());
+        let mut client_order_ids = Vec::with_capacity(cmd.modifies.len());
+        let mut venue_order_ids = Vec::with_capacity(cmd.modifies.len());
+        let mut command_ids = Vec::with_capacity(cmd.modifies.len());
+
+        for modify in &cmd.modifies {
+            match Self::build_ws_amend_params(modify, product_type, raw_symbol) {
+                Ok(params) => {
+                    amend_params.push(params);
+                    strategy_ids.push(modify.strategy_id);
+                    client_order_ids.push(modify.client_order_id);
+                    venue_order_ids.push(modify.venue_order_id);
+                    command_ids.push(modify.command_id);
+                }
+                Err(reason) => {
+                    log::warn!(
+                        "Modify command failed local validation for {}: {reason}",
+                        modify.client_order_id,
+                    );
+                    emitter.emit_order_modify_denied_event(
+                        modify.strategy_id,
+                        instrument_id,
+                        modify.client_order_id,
+                        modify.venue_order_id,
+                        &reason,
+                        clock.get_time_ns(),
+                        Some(modify.command_id),
+                    );
+                }
+            }
+        }
+
+        if amend_params.is_empty() {
+            return Ok(());
+        }
+
+        let ws_trade = self.ws_trade.clone();
+        let dispatch_state = Arc::clone(&self.dispatch_state);
+
+        self.spawn_task("batch_modify_orders", async move {
+            let req_ids = BybitWebSocketClient::batch_request_ids(product_type, amend_params.len());
+            let chunk_limit = batch_send_limit(product_type);
+
+            for (req_id, ((chunk_cids, chunk_voids), chunk_commands)) in req_ids.iter().zip(
+                client_order_ids
+                    .chunks(chunk_limit)
+                    .map(|chunk| chunk.to_vec())
+                    .zip(
+                        venue_order_ids
+                            .chunks(chunk_limit)
+                            .map(|chunk| chunk.to_vec()),
+                    )
+                    .zip(command_ids.chunks(chunk_limit)),
+            ) {
+                dispatch_state.pending_requests.insert(
+                    req_id.clone(),
+                    (
+                        chunk_cids,
+                        chunk_voids,
+                        PendingOperation::Amend,
+                        chunk_commands.iter().copied().map(Some).collect(),
+                    ),
+                );
+            }
+
+            if let Err(e) = ws_trade
+                .batch_amend_orders_with_ids(amend_params, req_ids.clone())
+                .await
+            {
+                for req_id in req_ids {
+                    dispatch_state.pending_requests.remove(&req_id);
+                }
+
+                let reason = e.to_string();
+                let ts_event = clock.get_time_ns();
+
+                for (((strategy_id, client_order_id), venue_order_id), command_id) in strategy_ids
+                    .into_iter()
+                    .zip(client_order_ids)
+                    .zip(venue_order_ids)
+                    .zip(command_ids)
+                {
+                    emitter.emit_order_modify_denied_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &reason,
+                        ts_event,
+                        Some(command_id),
+                    );
+                }
             }
 
             Ok(())
@@ -1979,6 +2143,10 @@ impl ExecutionClient for BybitExecutionClient {
                     )
                     .await;
 
+                if let Ok(ref report) = result {
+                    emit_cancel_confirmation(&emitter, strategy_id, client_order_id, report);
+                }
+
                 if let Err(e) = result {
                     match classify_cancel_http_failure(&e) {
                         CommandFailure::VenueRejected(reason) => {
@@ -1990,12 +2158,19 @@ impl ExecutionClient for BybitExecutionClient {
                                 venue_order_id,
                                 &format!("cancel-order-error: {reason}"),
                                 ts_event,
+                                Some(cmd.command_id),
                             );
                             anyhow::bail!("cancel order rejected: {reason}");
                         }
                         CommandFailure::NotSent(reason) => {
-                            log::warn!(
-                                "HTTP cancel command failed local validation for {client_order_id}: {reason}"
+                            emitter.emit_order_cancel_denied_event(
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                venue_order_id,
+                                &reason,
+                                clock.get_time_ns(),
+                                Some(cmd.command_id),
                             );
                         }
                         CommandFailure::Ambiguous(reason) => {
@@ -2032,18 +2207,20 @@ impl ExecutionClient for BybitExecutionClient {
                     vec![client_order_id],
                     vec![venue_order_id],
                     PendingOperation::Cancel,
+                    vec![Some(cmd.command_id)],
                 ),
             );
 
             if let Err(e) = ws_trade.cancel_order_with_id(params, req_id.clone()).await {
                 dispatch_state.pending_requests.remove(&req_id);
-                emitter.emit_order_cancel_rejected_event(
+                emitter.emit_order_cancel_denied_event(
                     strategy_id,
                     instrument_id,
                     client_order_id,
                     venue_order_id,
                     &e.to_string(),
                     clock.get_time_ns(),
+                    Some(cmd.command_id),
                 );
             }
 
@@ -2121,26 +2298,6 @@ impl ExecutionClient for BybitExecutionClient {
         let interval = Duration::from_millis(self.config.retry_delay_initial_ms.max(1));
 
         self.spawn_task("cancel_all_orders", async move {
-            // Status reports can infer fills before the execution stream delivers them
-            let emit_canceled = |client_order_id, strategy_id, report: &OrderStatusReport| {
-                if report.order_status == OrderStatus::Canceled {
-                    let canceled = OrderCanceled::new(
-                        emitter.trader_id(),
-                        strategy_id,
-                        instrument_id,
-                        client_order_id,
-                        UUID4::new(),
-                        report.ts_last,
-                        report.ts_init,
-                        false,
-                        Some(report.venue_order_id),
-                        Some(account_id),
-                        None,
-                    );
-                    emitter.send_order_event(OrderEventAny::Canceled(canceled));
-                }
-            };
-
             let confirmation = async {
                 let reports = http_client
                     .cancel_all_orders(account_id, product_type, instrument_id)
@@ -2165,7 +2322,7 @@ impl ExecutionClient for BybitExecutionClient {
                             })
                     {
                         let (client_order_id, _, strategy_id) = orders.swap_remove(index);
-                        emit_canceled(client_order_id, strategy_id, &report);
+                        emit_cancel_confirmation(&emitter, strategy_id, client_order_id, &report);
                     }
                 }
 
@@ -2184,7 +2341,12 @@ impl ExecutionClient for BybitExecutionClient {
                             && report.order_status.is_closed()
                         {
                             orders.swap_remove(index);
-                            emit_canceled(client_order_id, strategy_id, &report);
+                            emit_cancel_confirmation(
+                                &emitter,
+                                strategy_id,
+                                client_order_id,
+                                &report,
+                            );
                         }
                     }
 
@@ -2209,69 +2371,25 @@ impl ExecutionClient for BybitExecutionClient {
             return Ok(());
         }
 
+        if self.config.environment == BybitEnvironment::Demo {
+            for cancel in cmd.cancels {
+                self.cancel_order(cancel)?;
+            }
+
+            return Ok(());
+        }
+
         let instrument_id = cmd.instrument_id;
         let product_type = self.get_product_type_for_instrument(instrument_id);
         let emitter = self.emitter.clone();
         let clock = self.clock;
-
-        // Demo mode: cancel individually via HTTP (batch not supported)
-        if self.config.environment == BybitEnvironment::Demo {
-            let http_client = self.http_client.clone();
-            let account_id = self.core.account_id;
-            let cancels: Vec<_> = cmd
-                .cancels
-                .iter()
-                .map(|c| (c.strategy_id, c.client_order_id, c.venue_order_id))
-                .collect();
-
-            self.spawn_task("batch_cancel_orders_http", async move {
-                for (strategy_id, client_order_id, venue_order_id) in cancels {
-                    if let Err(e) = http_client
-                        .cancel_order(
-                            account_id,
-                            product_type,
-                            instrument_id,
-                            Some(client_order_id),
-                            venue_order_id,
-                        )
-                        .await
-                    {
-                        match classify_cancel_http_failure(&e) {
-                            CommandFailure::VenueRejected(reason) => {
-                                let ts_event = clock.get_time_ns();
-                                emitter.emit_order_cancel_rejected_event(
-                                    strategy_id,
-                                    instrument_id,
-                                    client_order_id,
-                                    venue_order_id,
-                                    &format!("cancel-order-error: {reason}"),
-                                    ts_event,
-                                );
-                            }
-                            CommandFailure::NotSent(reason) => {
-                                log::warn!(
-                                    "HTTP batch cancel command failed local validation for {client_order_id}: {reason}"
-                                );
-                            }
-                            CommandFailure::Ambiguous(reason) => {
-                                log::warn!(
-                                    "Ambiguous HTTP batch cancel failure for {client_order_id}, awaiting reconciliation: {reason}"
-                                );
-                            }
-                        }
-                    }
-                }
-                Ok(())
-            });
-
-            return Ok(());
-        }
 
         let raw_symbol = Ustr::from(extract_raw_symbol(instrument_id.symbol.as_str()));
 
         let mut cancel_params = Vec::with_capacity(cmd.cancels.len());
         let strategy_ids: Vec<_> = cmd.cancels.iter().map(|c| c.strategy_id).collect();
         let client_order_ids: Vec<_> = cmd.cancels.iter().map(|c| c.client_order_id).collect();
+        let command_ids: Vec<_> = cmd.cancels.iter().map(|c| c.command_id).collect();
         let venue_order_ids: Vec<_> = cmd.cancels.iter().map(|c| c.venue_order_id).collect();
 
         for cancel in &cmd.cancels {
@@ -2291,7 +2409,7 @@ impl ExecutionClient for BybitExecutionClient {
                 BybitWebSocketClient::batch_request_ids(product_type, cancel_params.len());
             let chunk_limit = batch_send_limit(product_type);
 
-            for (req_id, (chunk_cids, chunk_voids)) in req_ids.iter().zip(
+            for (req_id, ((chunk_cids, chunk_voids), chunk_commands)) in req_ids.iter().zip(
                 client_order_ids
                     .chunks(chunk_limit)
                     .map(|chunk| chunk.to_vec())
@@ -2299,11 +2417,17 @@ impl ExecutionClient for BybitExecutionClient {
                         venue_order_ids
                             .chunks(chunk_limit)
                             .map(|chunk| chunk.to_vec()),
-                    ),
+                    )
+                    .zip(command_ids.chunks(chunk_limit)),
             ) {
                 dispatch_state.pending_requests.insert(
                     req_id.clone(),
-                    (chunk_cids, chunk_voids, PendingOperation::Cancel),
+                    (
+                        chunk_cids,
+                        chunk_voids,
+                        PendingOperation::Cancel,
+                        chunk_commands.iter().copied().map(Some).collect(),
+                    ),
                 );
             }
 
@@ -2317,18 +2441,20 @@ impl ExecutionClient for BybitExecutionClient {
                 let reason = e.to_string();
                 let ts_event = clock.get_time_ns();
 
-                for ((strategy_id, client_order_id), venue_order_id) in strategy_ids
+                for (((strategy_id, client_order_id), venue_order_id), command_id) in strategy_ids
                     .into_iter()
                     .zip(client_order_ids)
                     .zip(venue_order_ids)
+                    .zip(command_ids)
                 {
-                    emitter.emit_order_cancel_rejected_event(
+                    emitter.emit_order_cancel_denied_event(
                         strategy_id,
                         instrument_id,
                         client_order_id,
                         venue_order_id,
                         &reason,
                         ts_event,
+                        Some(command_id),
                     );
                 }
             }
@@ -2364,6 +2490,33 @@ fn validate_order(
     }
 
     Ok(())
+}
+
+fn emit_cancel_confirmation(
+    emitter: &ExecutionEventEmitter,
+    strategy_id: StrategyId,
+    client_order_id: ClientOrderId,
+    report: &OrderStatusReport,
+) {
+    // Status reports can infer fills before the execution stream delivers them
+    if report.order_status != OrderStatus::Canceled {
+        return;
+    }
+
+    let canceled = OrderCanceled::new(
+        emitter.trader_id(),
+        strategy_id,
+        report.instrument_id,
+        client_order_id,
+        UUID4::new(),
+        report.ts_last,
+        report.ts_init,
+        false,
+        Some(report.venue_order_id),
+        Some(report.account_id),
+        None,
+    );
+    emitter.send_order_event(OrderEventAny::Canceled(canceled));
 }
 
 fn classify_cancel_http_failure(error: &anyhow::Error) -> CommandFailure {
@@ -2466,8 +2619,8 @@ mod tests {
         messages::{
             ExecutionEvent,
             execution::{
-                BatchCancelOrders, CancelAllOrders, CancelOrder, ModifyOrder, SubmitOrder,
-                SubmitOrderList,
+                BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+                SubmitOrder, SubmitOrderList,
             },
         },
         testing::wait_until_async,
@@ -2546,56 +2699,28 @@ mod tests {
         );
     }
 
-    fn assert_next_cancel_rejected(
+    fn assert_next_cancel_denied(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         client_order_id: ClientOrderId,
     ) {
-        let event = rx.try_recv().expect("expected OrderCancelRejected event");
+        let event = rx.try_recv().expect("expected OrderCancelDenied event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelRejected(ref rejected))
+            matches!(event, ExecutionEvent::Order(OrderEventAny::CancelDenied(ref rejected))
                 if rejected.client_order_id == client_order_id),
-            "expected OrderCancelRejected for {client_order_id}, was {event:?}",
+            "expected OrderCancelDenied for {client_order_id}, was {event:?}",
         );
     }
 
-    fn assert_next_modify_rejected(
+    fn assert_next_modify_denied(
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
         client_order_id: ClientOrderId,
     ) {
-        let event = rx.try_recv().expect("expected OrderModifyRejected event");
+        let event = rx.try_recv().expect("expected OrderModifyDenied event");
         assert!(
-            matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyRejected(ref rejected))
+            matches!(event, ExecutionEvent::Order(OrderEventAny::ModifyDenied(ref rejected))
                 if rejected.client_order_id == client_order_id),
-            "expected OrderModifyRejected for {client_order_id}, was {event:?}",
+            "expected OrderModifyDenied for {client_order_id}, was {event:?}",
         );
-    }
-
-    fn assert_no_order_cancel_rejected(
-        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    ) {
-        while let Ok(event) = rx.try_recv() {
-            assert!(
-                !matches!(
-                    event,
-                    ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
-                ),
-                "unexpected OrderCancelRejected event: {event:?}",
-            );
-        }
-    }
-
-    fn assert_no_order_modify_rejected(
-        rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
-    ) {
-        while let Ok(event) = rx.try_recv() {
-            assert!(
-                !matches!(
-                    event,
-                    ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))
-                ),
-                "unexpected OrderModifyRejected event: {event:?}",
-            );
-        }
     }
 
     fn cancel_command(client_order_id: ClientOrderId) -> CancelOrder {
@@ -2708,7 +2833,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_ws_cancel_queue_failure_emits_cancel_rejected() {
+    async fn test_ws_cancel_queue_failure_emits_cancel_denied() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -2720,12 +2845,12 @@ mod tests {
             .unwrap();
         wait_for_spawned_tasks(&client).await;
 
-        assert_next_cancel_rejected(&mut rx, client_order_id);
+        assert_next_cancel_denied(&mut rx, client_order_id);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_ws_modify_queue_failure_emits_modify_rejected() {
+    async fn test_ws_modify_queue_failure_emits_modify_denied() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -2737,12 +2862,12 @@ mod tests {
             .unwrap();
         wait_for_spawned_tasks(&client).await;
 
-        assert_next_modify_rejected(&mut rx, client_order_id);
+        assert_next_modify_denied(&mut rx, client_order_id);
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_http_cancel_local_validation_failure_does_not_emit_cancel_rejected() {
+    async fn test_http_cancel_local_validation_failure_emits_cancel_denied() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -2755,12 +2880,12 @@ mod tests {
             .unwrap();
         wait_for_spawned_tasks(&client).await;
 
-        assert_no_order_cancel_rejected(&mut rx);
+        assert_next_cancel_denied(&mut rx, ClientOrderId::from("O-CANCEL-LOCAL-VALIDATION"));
     }
 
     #[rstest]
     #[tokio::test]
-    async fn test_modify_local_validation_failure_does_not_emit_modify_rejected() {
+    async fn test_modify_local_validation_failure_emits_modify_denied() {
         let (mut client, _cache) = test_execution_client();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(tx);
@@ -2775,7 +2900,7 @@ mod tests {
             ))
             .unwrap();
 
-        assert_no_order_modify_rejected(&mut rx);
+        assert_next_modify_denied(&mut rx, ClientOrderId::from("O-MODIFY-LOCAL-VALIDATION"));
     }
 
     #[rstest]
@@ -3275,6 +3400,7 @@ mod tests {
                 vec![client_order_id],
                 vec![Some(report.venue_order_id)],
                 operation,
+                Vec::new(),
             ),
         );
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -4019,12 +4145,12 @@ mod tests {
         let mut actual = Vec::new();
 
         for _ in &expected_indices {
-            let event = rx.try_recv().expect("expected OrderCancelRejected event");
+            let event = rx.try_recv().expect("expected OrderCancelDenied event");
             match event {
-                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
+                ExecutionEvent::Order(OrderEventAny::CancelDenied(rejected)) => {
                     actual.push((rejected.client_order_id, rejected.strategy_id));
                 }
-                event => panic!("expected OrderCancelRejected, was {event:?}"),
+                event => panic!("expected OrderCancelDenied, was {event:?}"),
             }
         }
 
@@ -4228,24 +4354,192 @@ mod tests {
         let mut actual = Vec::new();
 
         for _ in &cancels {
-            let event = rx.try_recv().expect("expected OrderCancelRejected event");
+            let event = rx.try_recv().expect("expected OrderCancelDenied event");
             match event {
-                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) => {
-                    actual.push((rejected.client_order_id, rejected.strategy_id));
+                ExecutionEvent::Order(OrderEventAny::CancelDenied(rejected)) => {
+                    actual.push((
+                        rejected.client_order_id,
+                        rejected.strategy_id,
+                        rejected.causation_id,
+                    ));
                 }
-                event => panic!("expected OrderCancelRejected, was {event:?}"),
+                event => panic!("expected OrderCancelDenied, was {event:?}"),
             }
         }
 
         let mut expected: Vec<_> = cancels
             .iter()
-            .map(|cancel| (cancel.client_order_id, cancel.strategy_id))
+            .map(|cancel| {
+                (
+                    cancel.client_order_id,
+                    cancel.strategy_id,
+                    Some(cancel.command_id),
+                )
+            })
             .collect();
 
-        actual.sort();
-        expected.sort();
+        actual.sort_by_key(|entry| entry.0);
+        expected.sort_by_key(|entry| entry.0);
 
         assert_eq!(actual, expected);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_batch_modify_orders_failure_preserves_owning_strategies() {
+        let (mut client, _cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.ws_trade.close().await.unwrap();
+
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+
+        let modifies = ["S-001", "S-002"]
+            .into_iter()
+            .enumerate()
+            .map(|(index, owner)| {
+                ModifyOrder::new(
+                    TraderId::from("TESTER-001"),
+                    Some(*BYBIT_CLIENT_ID),
+                    StrategyId::from(owner),
+                    instrument_id,
+                    ClientOrderId::from(format!("O-BATCH-MODIFY-{index}")),
+                    Some(VenueOrderId::from(format!("BYBIT-BATCH-MODIFY-{index}"))),
+                    Some(Quantity::from("1")),
+                    Some(Price::from("10001.00")),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )
+            })
+            .collect::<Vec<_>>();
+
+        client
+            .batch_modify_orders(BatchModifyOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from("S-001"),
+                instrument_id,
+                modifies.clone(),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        let mut actual = Vec::new();
+
+        for _ in &modifies {
+            let event = rx.try_recv().expect("expected OrderModifyDenied event");
+            match event {
+                ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) => {
+                    actual.push((
+                        denied.client_order_id,
+                        denied.strategy_id,
+                        denied.venue_order_id,
+                        denied.causation_id,
+                    ));
+                }
+                event => panic!("expected OrderModifyDenied, was {event:?}"),
+            }
+        }
+
+        let mut expected: Vec<_> = modifies
+            .iter()
+            .map(|modify| {
+                (
+                    modify.client_order_id,
+                    modify.strategy_id,
+                    modify.venue_order_id,
+                    Some(modify.command_id),
+                )
+            })
+            .collect();
+
+        actual.sort_by_key(|entry| entry.0);
+        expected.sort_by_key(|entry| entry.0);
+
+        assert_eq!(actual, expected);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_batch_modify_orders_denies_invalid_order_iv_and_unsent_valid_sibling() {
+        let (mut client, _cache) = test_execution_client();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(tx);
+        client.ws_trade.close().await.unwrap();
+
+        let instrument_id = InstrumentId::from("BTCUSDT-LINEAR.BYBIT");
+        let invalid_params =
+            Params::new([("order_iv".to_string(), serde_json::json!({ "bad": true }))].into());
+
+        let invalid = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-INVALID"),
+            instrument_id,
+            ClientOrderId::from("O-BATCH-IV-INVALID"),
+            Some(VenueOrderId::from("BYBIT-IV-INVALID")),
+            Some(Quantity::from("1")),
+            Some(Price::from("10001.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            Some(invalid_params),
+            None,
+        );
+
+        let valid = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            Some(*BYBIT_CLIENT_ID),
+            StrategyId::from("S-VALID"),
+            instrument_id,
+            ClientOrderId::from("O-BATCH-IV-VALID"),
+            Some(VenueOrderId::from("BYBIT-IV-VALID")),
+            Some(Quantity::from("2")),
+            Some(Price::from("10002.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+
+        client
+            .batch_modify_orders(BatchModifyOrders::new(
+                TraderId::from("TESTER-001"),
+                Some(*BYBIT_CLIENT_ID),
+                StrategyId::from("S-BATCH"),
+                instrument_id,
+                vec![invalid.clone(), valid.clone()],
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_for_spawned_tasks(&client).await;
+
+        for modify in [&invalid, &valid] {
+            let event = rx.try_recv().expect("expected OrderModifyDenied event");
+
+            let ExecutionEvent::Order(OrderEventAny::ModifyDenied(denied)) = event else {
+                panic!("expected OrderModifyDenied, was {event:?}");
+            };
+
+            assert_eq!(denied.client_order_id, modify.client_order_id);
+            assert_eq!(denied.strategy_id, modify.strategy_id);
+            assert_eq!(denied.venue_order_id, modify.venue_order_id);
+            assert_eq!(denied.causation_id, Some(modify.command_id));
+        }
+
         assert!(rx.try_recv().is_err());
     }
 }

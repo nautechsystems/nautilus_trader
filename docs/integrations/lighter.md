@@ -688,6 +688,11 @@ Python do not expose them.
 The generic `CancelAllOrders` command retains its instrument and side filters and uses per-order
 cancellations.
 
+A direct execution-client `CancelOrder` for a cached terminal order still sends the venue-ID request.
+A venue rejection emits `OrderCancelRejected` with the command ID and preserves the cached terminal state.
+An acknowledgement keeps the command pending until transaction and order recovery resolve it.
+Strategy cancellation methods filter closed orders before adapter dispatch.
+
 :::warning
 Native cancellation affects **all open orders on the account**, across markets and strategies,
 including orders absent from the local cache. It does not close positions. Use a dedicated account
@@ -776,7 +781,10 @@ Non-contingent `SubmitOrderList`, `BatchModifyOrders`, and `BatchCancelOrders` u
 `jsonapi/sendtxbatch`. Each child has its own signed transaction and order events. Execution is neither
 atomic nor contingent on other children.
 
-Local validation denies invalid submit children or rejects invalid modify children; supported siblings continue.
+Local validation emits `OrderDenied` for invalid submit children and `OrderModifyDenied` for invalid modify
+children; supported siblings continue.
+For repeated cancel targets, the last command owns the wire request. Other commands receive
+`OrderCancelDenied` with their command IDs.
 Batches hold up to 15 transactions: 31 supported children normally produce 15, 15, and 1.
 Concurrent nonce allocation or recovery can shrink batches.
 
@@ -816,18 +824,22 @@ Acknowledgement confirms transaction admission, not order acceptance, modificati
 See [nonce consumption](https://apidocs.lighter.xyz/docs/core-concepts#when-a-rejected-transaction-consumes-its-nonce).
 
 On ambiguous delivery, the adapter retains pending state for reconciliation and does not resend the batch.
+A later cancellation replaces an earlier recovery probe after transport accepts its frame or delivery
+becomes ambiguous. A local refusal preserves the earlier probe.
 
 #### Modification confirmation
 
-Wait for `OrderUpdated` or `OrderModifyRejected` before modifying an order again. Only one modification
-per order can remain unresolved; a second receives `OrderModifyRejected` without resolving the first.
+Wait for `OrderUpdated`, `OrderModifyDenied`, or `OrderModifyRejected` before modifying an order again.
+Only one modification per order can remain unresolved; a second receives `OrderModifyDenied` without
+resolving the first.
 
-Pending cancellation rejects modification. During pending modification, cancellation remains available
+Pending cancellation denies modification. During pending modification, cancellation remains available
 but its outcome waits for modification resolution.
 
 Confirmation requires a transaction lookup and matching current venue order shape:
 
-- Affected WebSocket order frames and fills wait for publication of `OrderUpdated` or `OrderModifyRejected`.
+- Affected WebSocket order frames and fills wait for publication of `OrderUpdated`, `OrderModifyDenied`,
+  or `OrderModifyRejected`.
 - HTTP reports that could apply the amendment or fill wait for the cache to apply that event.
 
 | Request                            | Behavior while modification is pending                     |
@@ -870,14 +882,15 @@ type, account, API key, and original submission nonce.
 Resolved or superseded cancels stop their probes, including requests waiting for REST quota.
 When a cancel transaction executes, recovery retries missing or nonterminal order status within the same three lookups.
 
-A definitively failed admitted modification, single or batched, emits one `OrderModifyRejected` and clears
-its matching pending action. The consumed nonce is not rolled back.
+A modification proven not sent emits `OrderModifyDenied`; an authoritative venue refusal
+emits `OrderModifyRejected`. Both resolve only the matching command.
+A nonce consumed by a venue-refused transaction is not rolled back.
 
 Delayed outcomes cannot clear a newer modification or reject one already confirmed by recovery.
 
 :::warning
 An unconfirmed modification can remain unresolved for the rest of the session after bounded lookups.
-It holds later order events and fills and rejects further modifications. The adapter neither assumes success
+It holds later order events and fills and denies further modifications. The adapter neither assumes success
 nor resends it. Restart and reconcile venue state before managing that order again.
 :::
 
@@ -885,7 +898,9 @@ Modification probes retain their original submission identity across reconnects.
 their connection changes; the pending cancel keeps its submission identity for reconciliation.
 
 Cancellation recovery includes orders outside `PendingCancel`, such as `CancelAllOrders` targets.
-Only cached orders in `PendingCancel` at dispatch receive `OrderCancelRejected`; other failures are logged.
+Attributable failures proven not sent emit `OrderCancelDenied`. Authoritative venue refusals emit
+`OrderCancelRejected`, including for cancel-all targets. An implicit OCO peer has no command of its
+own and receives no independent denial or rejection.
 
 #### Terminal events and missing fills
 
@@ -988,7 +1003,8 @@ Cursor exhaustion cannot distinguish truncation from no older trades. Young acco
 with nothing missing. Choose a lookback the venue can serve.
 
 For older fills, the venue's [historical data exports](https://apidocs.lighter.xyz/docs/historical-data)
-provide up to 12 months of account trades. The adapter does not read the `export` endpoint.
+provide [all available account trade history](https://t.me/lighter_api_updates/190) when you omit
+`start_timestamp` and `end_timestamp`. The adapter does not read the `export` endpoint.
 
 #### Startup position checks
 

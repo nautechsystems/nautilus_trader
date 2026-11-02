@@ -687,6 +687,76 @@ fn test_partial_subscription_logs_only_failed_members(
     );
 }
 
+#[rstest]
+fn test_external_client_book_batch_logs_each_failed_member(
+    _stub_msgbus: Rc<RefCell<MessageBus>>,
+    clock: Rc<RefCell<VirtualClock>>,
+    cache: Rc<RefCell<Cache>>,
+) {
+    let first = InstrumentId::from("FIRST.SIM");
+    let second = InstrumentId::from("SECOND.SIM");
+    let fresh = InstrumentId::from("FRESH.SIM");
+
+    let config = DataEngineConfig {
+        external_clients: Some(vec!["EXTERNAL".into(), "OTHER".into()]),
+        ..Default::default()
+    };
+
+    let mut engine = DataEngine::new(clock, cache, Some(config));
+
+    let occupied = SubscribeBookDeltas::new(
+        vec![first, second],
+        BookType::L2_MBP,
+        Some("OTHER".into()),
+        None,
+        UUID4::new(),
+        123.into(),
+        None,
+        true,
+        None,
+        None,
+    );
+    engine
+        .execute_subscribe(SubscribeCommand::BookDeltas(occupied))
+        .unwrap();
+    let command_id = UUID4::new();
+
+    let command = SubscribeBookDeltas::new(
+        vec![fresh, first, second],
+        BookType::L2_MBP,
+        Some("EXTERNAL".into()),
+        None,
+        command_id,
+        456.into(),
+        None,
+        true,
+        None,
+        None,
+    );
+    capture_connection_logs();
+
+    let error = engine
+        .execute_subscribe(SubscribeCommand::BookDeltas(command))
+        .unwrap_err();
+
+    let errors: Vec<_> = take_connection_logs()
+        .into_iter()
+        .filter(|(level, _)| *level == Level::Error)
+        .collect();
+    let expected: Vec<_> = [first, second].into_iter().map(|id| (
+        Level::Error,
+        format!("External subscribe preparation failed: command={command_id}, client=EXTERNAL, subscription=BookDeltas({id:?}): Conflicting book subscription for {id}: shared book sources must use the same client, book type, depth, and parameters"),
+    )).collect();
+    assert_eq!(errors, expected);
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "Conflicting book subscription for {first}: shared book sources must use the same client, book type, depth, and parameters"
+        )
+    );
+    assert!(engine.has_book_subscription(&fresh));
+}
+
 fn capture_connection_logs() {
     static INIT: Once = Once::new();
     INIT.call_once(|| {

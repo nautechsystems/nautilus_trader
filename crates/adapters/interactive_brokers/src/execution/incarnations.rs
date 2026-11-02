@@ -440,7 +440,126 @@ impl InteractiveBrokersExecutionClient {
         request_timeout_secs: u64,
         order_side: Option<OrderSide>,
         parent_pending_cancel: bool,
-    ) -> anyhow::Result<()> {
+    ) -> Result<(), CommandFailure> {
+        let prepared = Self::prepare_incarnation_cancels(
+            parent_id,
+            client,
+            orders,
+            provider,
+            exec_sender,
+            ts_init,
+            account_id,
+            ib_account,
+            request_timeout_secs,
+            order_side,
+        )
+        .await
+        .map_err(|e| CommandFailure::not_sent(format!("Failed to resolve cancel routes: {e:#}")))?;
+
+        let Some((routes, parent)) = prepared else {
+            return Ok(());
+        };
+
+        let mut failures = Vec::new();
+        let mut sent = false;
+
+        for (client_order_id, perm_id, order_id) in routes {
+            let send = tokio::time::timeout(
+                Duration::from_secs(request_timeout_secs),
+                client.cancel_order(order_id, ""),
+            )
+            .await;
+
+            match send {
+                // A strategy cancel already published the parent's PENDING_CANCEL
+                Ok(Ok(_)) if client_order_id == parent_id && parent_pending_cancel => {
+                    sent = true;
+                }
+                Ok(Ok(_)) => {
+                    sent = true;
+
+                    let event = OrderPendingCancel::new(
+                        parent.trader_id,
+                        parent.strategy_id,
+                        parent.instrument_id,
+                        client_order_id,
+                        Some(account_id),
+                        UUID4::new(),
+                        ts_init,
+                        ts_init,
+                        false,
+                        Some(parse::ib_venue_order_id(order_id, perm_id)),
+                    );
+
+                    if let Err(e) =
+                        exec_sender.send(ExecutionEvent::Order(OrderEventAny::PendingCancel(event)))
+                    {
+                        tracing::error!(
+                            "IB cancel was sent but pending state could not be delivered: {e}"
+                        );
+                    }
+                }
+                Ok(Err(e)) => {
+                    let failure = Self::classify_order_submit_error(&e);
+                    tracing::warn!("IB cancel failed for permanent ID {perm_id}: {failure:?}");
+                    failures.push(failure);
+                }
+                Err(e) => {
+                    failures.push(CommandFailure::ambiguous(format!(
+                        "Cancel for permanent ID {perm_id} timed out: {e}"
+                    )));
+                }
+            }
+        }
+
+        orders
+            .lock()
+            .map_err(|e| {
+                CommandFailure::ambiguous(format!(
+                    "Failed to archive cancel routes after dispatch: {e}"
+                ))
+            })?
+            .archive_finished_groups();
+
+        if !sent && !failures.is_empty() {
+            if failures
+                .iter()
+                .all(|failure| matches!(failure, CommandFailure::NotSent(_)))
+            {
+                return Err(CommandFailure::not_sent(format!(
+                    "No broker cancellation was sent: {failures:?}"
+                )));
+            }
+
+            if failures
+                .iter()
+                .all(|failure| !matches!(failure, CommandFailure::Ambiguous(_)))
+            {
+                return Err(CommandFailure::venue_rejected(format!(
+                    "Broker cancellation was refused: {failures:?}"
+                )));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Route preparation uses the existing broker session and order ownership context"
+    )]
+    async fn prepare_incarnation_cancels(
+        parent_id: ClientOrderId,
+        client: &Arc<Client>,
+        orders: &OrderTracker,
+        provider: &Arc<InteractiveBrokersInstrumentProvider>,
+        exec_sender: &EventSender<ExecutionEvent>,
+        ts_init: UnixNanos,
+        account_id: AccountId,
+        ib_account: Ustr,
+        request_timeout_secs: u64,
+        order_side: Option<OrderSide>,
+    ) -> anyhow::Result<Option<(Vec<(ClientOrderId, i64, i32)>, TrackedOrder)>> {
         {
             let mut state = orders.lock()?;
             if let Some(group) = state.groups.get_mut(&parent_id) {
@@ -449,100 +568,24 @@ impl InteractiveBrokersExecutionClient {
                     member.route_conflict = false;
                 }
             } else {
-                return Ok(());
+                return Ok(None);
             }
         }
 
-        let mut unresolved_fills = Vec::new();
-
-        let refresh = async {
-            for completed in [false, true] {
-                let subscription = if completed {
-                    client.completed_orders(false).await?
-                } else {
-                    client.all_open_orders().await?
-                };
-
-                let mut subscription = subscription.filter_data();
-                while let Some(item) = subscription.next().await {
-                    let Orders::OrderData(data) = item? else {
-                        continue;
-                    };
-
-                    if data.order.account != ib_account {
-                        continue;
-                    }
-
-                    let parent = {
-                        let state = orders.lock()?;
-
-                        let Some(group) = state.groups.get(&parent_id) else {
-                            continue;
-                        };
-
-                        if !group.members.contains_key(&data.order.perm_id)
-                            && parse::normalized_order_ref(&data.order.order_ref)
-                                != Some(parent_id.as_str())
-                        {
-                            continue;
-                        }
-
-                        group.parent.clone()
-                    };
-
-                    let resolved = provider.resolve_instrument_id_for_contract(&data.contract)?;
-                    anyhow::ensure!(
-                        resolved == parent.instrument_id,
-                        "IB shared order reference {parent_id} has conflicting instruments"
-                    );
-                    let primary_id = orders
-                        .lock()?
-                        .groups
-                        .get(&parent_id)
-                        .expect("group exists")
-                        .primary_order_id;
-                    orders.lock()?.record_incarnation(
-                        primary_id,
-                        &parent,
-                        account_id,
-                        data.order.perm_id,
-                        Some(&data),
-                        completed,
-                    );
-
-                    if data.order.perm_id != parent.perm_id {
-                        let perm_id = data.order.perm_id;
-                        let mut report = parse_order_data_to_report(
-                            &data,
-                            parent.instrument_id,
-                            account_id,
-                            provider,
-                            ts_init,
-                        )?;
-                        report.client_order_id =
-                            Some(duplicate_client_order_id(account_id, perm_id)?);
-
-                        // Resolved after this open-orders stream ends
-                        if orders
-                            .lock()?
-                            .duplicate_fills_unresolved(perm_id, report.filled_qty.as_f64())
-                        {
-                            unresolved_fills.push(perm_id);
-                        } else {
-                            exec_sender.send(ExecutionEvent::Report(ExecutionReport::Order(
-                                Box::new(report),
-                            )))?;
-                        }
-                    }
-                }
-            }
-
-            Ok::<_, anyhow::Error>(())
-        };
-
-        tokio::time::timeout(Duration::from_secs(request_timeout_secs), refresh)
-            .await
-            .context("timed out refreshing IB order incarnations")??;
+        let refresh = Self::refresh_incarnation_cancel_routes(
+            parent_id,
+            client,
+            orders,
+            provider,
+            exec_sender,
+            ts_init,
+            account_id,
+            ib_account,
+        );
+        let unresolved_fills =
+            tokio::time::timeout(Duration::from_secs(request_timeout_secs), refresh)
+                .await
+                .context("timed out refreshing IB order incarnations")??;
 
         let (routes, unresolved, parent) = {
             let state = orders.lock()?;
@@ -582,54 +625,144 @@ impl InteractiveBrokersExecutionClient {
             );
         }
 
-        for (perm_id, order_id) in routes {
-            let client_order_id = if perm_id == parent.perm_id {
-                parent_id
+        let routes = routes
+            .into_iter()
+            .map(|(perm_id, order_id)| {
+                let client_order_id = if perm_id == parent.perm_id {
+                    parent_id
+                } else {
+                    duplicate_client_order_id(account_id, perm_id)?
+                };
+
+                Ok((client_order_id, perm_id, order_id))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+
+        Ok::<_, anyhow::Error>(Some((routes, parent)))
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Refresh uses the existing broker session and order ownership context"
+    )]
+    async fn refresh_incarnation_cancel_routes(
+        parent_id: ClientOrderId,
+        client: &Arc<Client>,
+        orders: &OrderTracker,
+        provider: &Arc<InteractiveBrokersInstrumentProvider>,
+        exec_sender: &EventSender<ExecutionEvent>,
+        ts_init: UnixNanos,
+        account_id: AccountId,
+        ib_account: Ustr,
+    ) -> anyhow::Result<Vec<i64>> {
+        let mut unresolved_fills = Vec::new();
+
+        for completed in [false, true] {
+            let subscription = if completed {
+                client.completed_orders(false).await?
             } else {
-                duplicate_client_order_id(account_id, perm_id)?
+                client.all_open_orders().await?
             };
 
-            let send = tokio::time::timeout(
-                Duration::from_secs(request_timeout_secs),
-                client.cancel_order(order_id, ""),
-            )
-            .await;
+            let mut subscription = subscription.filter_data();
+            while let Some(item) = subscription.next().await {
+                let Orders::OrderData(data) = item? else {
+                    continue;
+                };
 
-            match send {
-                // A strategy cancel already published the parent's PENDING_CANCEL
-                Ok(Ok(_)) if client_order_id == parent_id && parent_pending_cancel => {}
-                Ok(Ok(_)) => {
-                    let event = OrderPendingCancel::new(
-                        parent.trader_id,
-                        parent.strategy_id,
-                        parent.instrument_id,
-                        client_order_id,
-                        Some(account_id),
-                        UUID4::new(),
-                        ts_init,
-                        ts_init,
-                        false,
-                        Some(parse::ib_venue_order_id(order_id, perm_id)),
-                    );
-
-                    if let Err(e) =
-                        exec_sender.send(ExecutionEvent::Order(OrderEventAny::PendingCancel(event)))
-                    {
-                        tracing::error!(
-                            "IB cancel was sent but pending state could not be delivered: {e}"
-                        );
-                    }
+                if data.order.account != ib_account {
+                    continue;
                 }
-                Ok(Err(e)) => tracing::warn!(
-                    "IB cancel outcome for permanent ID {perm_id} remains unresolved: {e}"
-                ),
-                Err(e) => {
-                    tracing::warn!("IB cancel outcome for permanent ID {perm_id} timed out: {e}");
+
+                if let Some(perm_id) = Self::observe_cancel_incarnation(
+                    parent_id,
+                    &data,
+                    completed,
+                    orders,
+                    provider,
+                    exec_sender,
+                    ts_init,
+                    account_id,
+                )? {
+                    unresolved_fills.push(perm_id);
                 }
             }
         }
 
-        orders.lock()?.archive_finished_groups();
-        Ok(())
+        Ok(unresolved_fills)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Incarnation observation uses broker order and reporting ownership"
+    )]
+    fn observe_cancel_incarnation(
+        parent_id: ClientOrderId,
+        data: &ibapi::orders::OrderData,
+        completed: bool,
+        orders: &OrderTracker,
+        provider: &Arc<InteractiveBrokersInstrumentProvider>,
+        exec_sender: &EventSender<ExecutionEvent>,
+        ts_init: UnixNanos,
+        account_id: AccountId,
+    ) -> anyhow::Result<Option<i64>> {
+        let parent = {
+            let state = orders.lock()?;
+
+            let Some(group) = state.groups.get(&parent_id) else {
+                return Ok(None);
+            };
+
+            if !group.members.contains_key(&data.order.perm_id)
+                && parse::normalized_order_ref(&data.order.order_ref) != Some(parent_id.as_str())
+            {
+                return Ok(None);
+            }
+
+            group.parent.clone()
+        };
+
+        let resolved = provider.resolve_instrument_id_for_contract(&data.contract)?;
+        anyhow::ensure!(
+            resolved == parent.instrument_id,
+            "IB shared order reference {parent_id} has conflicting instruments"
+        );
+        let primary_id = orders
+            .lock()?
+            .groups
+            .get(&parent_id)
+            .expect("group exists")
+            .primary_order_id;
+        orders.lock()?.record_incarnation(
+            primary_id,
+            &parent,
+            account_id,
+            data.order.perm_id,
+            Some(data),
+            completed,
+        );
+
+        if data.order.perm_id == parent.perm_id {
+            return Ok(None);
+        }
+
+        let perm_id = data.order.perm_id;
+        let mut report =
+            parse_order_data_to_report(data, parent.instrument_id, account_id, provider, ts_init)?;
+        report.client_order_id = Some(duplicate_client_order_id(account_id, perm_id)?);
+
+        // Resolved after this open-orders stream ends
+        if orders
+            .lock()?
+            .duplicate_fills_unresolved(perm_id, report.filled_qty.as_f64())
+        {
+            return Ok(Some(perm_id));
+        } else {
+            exec_sender.send(ExecutionEvent::Report(ExecutionReport::Order(Box::new(
+                report,
+            ))))?;
+        }
+
+        Ok(None)
     }
 }

@@ -23,7 +23,10 @@ use indexmap::IndexMap;
 use nautilus_common::{
     actor::DataActor,
     cache::Cache,
-    messages::execution::{GenerateOrderStatusReport, QueryAccount, QueryOrder, TradingCommand},
+    messages::execution::{
+        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReportsBuilder,
+        QueryAccount, QueryOrder, TradingCommand,
+    },
     msgbus::{self, TypedHandler},
     testing::wait_until_async,
 };
@@ -34,13 +37,13 @@ use nautilus_live::{
 };
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
-    events::{OrderEventAny, OrderRejected},
+    events::{OrderEventAny, OrderRejected, OrderUpdated},
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, VenueOrderId,
     },
     instruments::InstrumentAny,
     orders::{Order, OrderAny, OrderTestBuilder, stubs::TestOrderEventStubs},
-    reports::{ExecutionMassStatus, OrderStatusReport},
+    reports::{ExecutionMassStatus, FillReport, OrderStatusReport},
     types::{AccountBalance, Currency, Money, Price, Quantity},
 };
 use rstest::rstest;
@@ -56,6 +59,12 @@ use crate::{
 const DEADLINE: Duration = Duration::from_secs(5);
 const UNRESOLVED_MASS_STATUS_ERROR: &str = "cannot generate mass status: Polymarket settlement \
                                             registry holds 1 record(s) with unresolved evidence";
+const UNRESOLVED_FILL_REPORTS_ERROR: &str = "cannot generate fill reports: Polymarket settlement \
+                                             registry holds 1 record(s) with unresolved evidence";
+const OTHER_OPEN_ORDER_ID: &str =
+    "0xabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcdefabcd";
+const REPLACEMENT_VENUE_ORDER_ID: &str =
+    "0x1111111111111111111111111111111111111111111111111111111111111111";
 const STREAM_GAP_MASS_STATUS_ERROR: &str = "cannot generate mass status: 1 Polymarket order(s) \
                                             await a trade read after a user stream reconnect";
 // Matches the user stream endpoint name the execution client registers
@@ -1159,7 +1168,7 @@ async fn reconciliation_applies_missed_terminal_cancel() {
         .await,
         "order did not reach Accepted",
     );
-    h.mark_pending_cancel(&order);
+    h.mark_pending_cancel(&order, None);
     *h.mock_state.orders_response_override.lock().await = Some(crate::mock_venue::load_json(
         "http_canceled_orders_harness.json",
     ));
@@ -2654,6 +2663,371 @@ async fn matched_not_broadcasted_trade_applies_provisionally_once() {
 
 #[rstest]
 #[tokio::test]
+async fn open_order_check_keeps_other_orders_while_admitted_fill_is_unsettled() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-SETTLING");
+    submit_until_accepted(&mut h, &order).await;
+
+    let mut orders = load_json("http_open_orders_harness.json");
+    let mut other = orders["data"][0].clone();
+    other["id"] = json!(OTHER_OPEN_ORDER_ID);
+    orders["data"]
+        .as_array_mut()
+        .expect("open-order page")
+        .push(other);
+    *h.mock_state.orders_response_override.lock().await = Some(orders);
+    *h.mock_state.trades_response_override.lock().await =
+        Some(json!({ "data": [], "next_cursor": "LTE=" }));
+
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "MATCHED"))
+        .await;
+    let unresolved = wait_for_unresolved_mass_status(&h).await;
+
+    let order_reports = generate_order_status_reports(&h).await;
+    let single_report =
+        generate_order_status_report(&h, &order, VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+            .await;
+    let fill_reports = generate_fill_reports(&h).await;
+
+    let kept_other_order = order_reports.as_ref().is_ok_and(|reports| {
+        reports
+            .iter()
+            .any(|report| report.venue_order_id == VenueOrderId::from(OTHER_OPEN_ORDER_ID))
+    });
+
+    assert!(
+        unresolved.is_ok(),
+        "admitted fill was not unresolved before the open-order check: {unresolved:?}"
+    );
+    assert!(
+        kept_other_order,
+        "open-order check warned Failed to generate order status reports or dropped other \
+         open-order evidence: {order_reports:?}"
+    );
+    assert_eq!(
+        single_report.venue_order_id,
+        VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID)
+    );
+    assert_eq!(
+        fill_reports.unwrap_err().to_string(),
+        UNRESOLVED_FILL_REPORTS_ERROR
+    );
+
+    let filled = h
+        .pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await;
+
+    assert!(
+        filled,
+        "provisional fill did not apply after the open-order check"
+    );
+}
+
+#[rstest]
+#[case::trade_returned(true)]
+#[case::trade_omitted(false)]
+#[tokio::test]
+async fn missing_order_keeps_cached_fill_while_admitted_fill_awaits_application(
+    #[case] trade_returned: bool,
+) {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-MISSING");
+    submit_until_accepted(&mut h, &order).await;
+    admit_unsettled_fill(&h, &order).await;
+
+    *h.mock_state.single_order_response.lock().await = Some(Value::Null);
+
+    let trades = if trade_returned {
+        vec![user_trade("ws_user_trade_full.json", "CONFIRMED")]
+    } else {
+        Vec::new()
+    };
+
+    serve_rest_trades(&h, &trades).await;
+
+    let cached = cached_order(&h, &order);
+    let report =
+        request_order_status_report(&h, &order, VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+            .await
+            .expect("pending application must not fail order-status recovery");
+    let fill_reports = generate_fill_reports(&h).await;
+
+    let report = report.expect("pending application must not defer a cached order");
+    assert_eq!(
+        report.venue_order_id,
+        VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID)
+    );
+    assert_eq!(report.order_status, OrderStatus::Accepted);
+    assert!(report.cancel_reason.is_none());
+    assert!(cached.filled_qty().is_zero());
+    assert_eq!(report.filled_qty, cached.filled_qty());
+    assert_eq!(
+        fill_reports.unwrap_err().to_string(),
+        UNRESOLVED_FILL_REPORTS_ERROR
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn order_status_does_not_count_confirmed_fill_awaiting_application() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-CAPPED");
+    submit_until_accepted(&mut h, &order).await;
+    admit_unsettled_fill(&h, &order).await;
+
+    let mut tracked = load_json("http_open_order.json");
+    tracked["status"] = json!("MATCHED");
+    tracked["size_matched"] = json!("100.0000");
+    let mut other = load_json("http_open_orders_harness.json")["data"][0].clone();
+    other["id"] = json!(OTHER_OPEN_ORDER_ID);
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "CONFIRMED")]).await;
+    *h.mock_state.orders_response_override.lock().await = Some(json!({
+        "data": [tracked.clone(), other],
+        "next_cursor": "LTE="
+    }));
+    *h.mock_state.single_order_response.lock().await = Some(tracked);
+
+    let cached = cached_order(&h, &order);
+    let order_reports = generate_order_status_reports(&h).await;
+    let single_report =
+        request_order_status_report(&h, &order, VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+            .await;
+    let fill_reports = generate_fill_reports(&h).await;
+
+    assert!(cached.filled_qty().is_zero());
+    let order_reports = order_reports.expect("pending fill must not drop open-order reports");
+    let tracked_report = order_reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+        .expect("tracked order");
+    assert_eq!(tracked_report.filled_qty, cached.filled_qty());
+    assert!(
+        order_reports
+            .iter()
+            .any(|report| report.venue_order_id == VenueOrderId::from(OTHER_OPEN_ORDER_ID))
+    );
+    let single_report = single_report
+        .expect("pending fill must not fail the targeted report")
+        .expect("targeted report");
+    assert_eq!(single_report.filled_qty, cached.filled_qty());
+    assert_eq!(
+        fill_reports.unwrap_err().to_string(),
+        UNRESOLVED_FILL_REPORTS_ERROR
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn order_status_keeps_cached_fill_when_another_confirmed_trade_is_present() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-CAPPED-OTHER");
+    submit_until_accepted(&mut h, &order).await;
+    h.mock_state
+        .send_user(sized_trade("trade-0xpending", "25.0000", "MATCHED"))
+        .await;
+    wait_for_unresolved_mass_status(&h)
+        .await
+        .expect("admitted fill should block mass status before it applies");
+
+    let mut tracked = load_json("http_open_order.json");
+    tracked["status"] = json!("LIVE");
+    tracked["size_matched"] = json!("35.0000");
+    let mut other = load_json("http_open_orders_harness.json")["data"][0].clone();
+    other["id"] = json!(OTHER_OPEN_ORDER_ID);
+    serve_rest_trades(
+        &h,
+        &[
+            sized_trade("trade-0xpending", "25.0000", "CONFIRMED"),
+            sized_trade("trade-0xconfirmed", "10.0000", "CONFIRMED"),
+        ],
+    )
+    .await;
+    *h.mock_state.orders_response_override.lock().await = Some(json!({
+        "data": [tracked.clone(), other],
+        "next_cursor": "LTE="
+    }));
+    *h.mock_state.single_order_response.lock().await = Some(tracked);
+
+    let cached = cached_order(&h, &order);
+    let order_reports = generate_order_status_reports(&h).await;
+    let single_report =
+        request_order_status_report(&h, &order, VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+            .await;
+    let fill_reports = generate_fill_reports(&h).await;
+
+    assert!(cached.filled_qty().is_zero());
+    let order_reports = order_reports.expect("pending fill must not drop open-order reports");
+    let tracked_report = order_reports
+        .iter()
+        .find(|report| report.venue_order_id == VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID))
+        .expect("tracked order");
+    assert_eq!(tracked_report.filled_qty, cached.filled_qty());
+    assert_eq!(tracked_report.order_status, cached.status());
+    assert!(
+        order_reports
+            .iter()
+            .any(|report| report.venue_order_id == VenueOrderId::from(OTHER_OPEN_ORDER_ID))
+    );
+    let single_report = single_report
+        .expect("pending fill must not fail the targeted report")
+        .expect("targeted report");
+    assert_eq!(single_report.filled_qty, cached.filled_qty());
+    assert_eq!(single_report.order_status, cached.status());
+    assert_eq!(
+        fill_reports.unwrap_err().to_string(),
+        UNRESOLVED_FILL_REPORTS_ERROR
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn order_status_keeps_cached_fill_while_void_is_pending() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-VOID-PENDING");
+    submit_until_accepted(&mut h, &order).await;
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "MATCHED"))
+        .await;
+    assert!(
+        h.pump_until(DEADLINE, |cache| {
+            order_reached(cache, &order, OrderStatus::Filled)
+        })
+        .await,
+        "order did not reach Filled",
+    );
+
+    serve_rest_trades(&h, &[user_trade("ws_user_trade_full.json", "FAILED")]).await;
+    let mut tracked = load_json("http_open_order.json");
+    tracked["status"] = json!("LIVE");
+    tracked["size_matched"] = json!("0.0000");
+    let mut other = load_json("http_open_orders_harness.json")["data"][0].clone();
+    other["id"] = json!(OTHER_OPEN_ORDER_ID);
+    *h.mock_state.orders_response_override.lock().await = Some(json!({
+        "data": [tracked.clone(), other],
+        "next_cursor": "LTE="
+    }));
+    *h.mock_state.single_order_response.lock().await = Some(tracked);
+    let handle = h
+        .sockets
+        .handle(h.client_id(), Ustr::from(USER_STREAMS_ENDPOINT))
+        .expect("user stream should register a reconnect handle");
+    assert_eq!(
+        handle.request_reconnect(),
+        SocketReconnectRequestOutcome::Accepted,
+    );
+
+    let venue_order_id = VenueOrderId::from(DEFAULT_ACCEPTED_ORDER_ID);
+    // REST FAILED leaves the void pending: mass status stays blocked, and order status is available.
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+    let mut saw_pending_void = false;
+
+    while tokio::time::Instant::now() < deadline {
+        let cached = cached_order(&h, &order);
+        assert_eq!(
+            cached.filled_qty(),
+            Quantity::from("100.0000"),
+            "void applied before the order-status check",
+        );
+        let mass_status = generate_mass_status(&h).await;
+        let single = request_order_status_report(&h, &order, venue_order_id).await;
+        if mass_status.is_err() && single.is_ok() {
+            let order_reports = generate_order_status_reports(&h).await;
+            *h.mock_state.single_order_response.lock().await = Some(Value::Null);
+            let missing = request_order_status_report(&h, &order, venue_order_id).await;
+            let fill_reports = generate_fill_reports(&h).await;
+
+            let single = single.expect("pending void report").expect("report");
+            assert_eq!(single.filled_qty, cached.filled_qty());
+            assert_eq!(single.order_status, OrderStatus::Filled);
+            let order_reports =
+                order_reports.expect("pending void must not drop open-order reports");
+            let tracked_report = order_reports
+                .iter()
+                .find(|report| report.venue_order_id == venue_order_id)
+                .expect("tracked order");
+            assert_eq!(tracked_report.filled_qty, cached.filled_qty());
+            assert_eq!(tracked_report.order_status, OrderStatus::Filled);
+            assert!(
+                order_reports
+                    .iter()
+                    .any(|report| report.venue_order_id == VenueOrderId::from(OTHER_OPEN_ORDER_ID))
+            );
+            let missing = missing.expect("pending void recovery").expect("report");
+            assert_eq!(missing.order_status, OrderStatus::Filled);
+            assert!(missing.cancel_reason.is_none());
+            assert_eq!(missing.filled_qty, cached.filled_qty());
+            assert_eq!(
+                fill_reports.unwrap_err().to_string(),
+                UNRESOLVED_FILL_REPORTS_ERROR
+            );
+            saw_pending_void = true;
+            break;
+        }
+
+        tokio::task::yield_now().await;
+    }
+
+    assert!(
+        saw_pending_void,
+        "REST FAILED did not leave a pending void before the order-status check",
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn order_status_keeps_cached_fill_while_previous_venue_leg_awaits_application() {
+    let mut h = harness::Harness::build().await;
+    let order = harness::limit_order(h.instrument_id(), "O-REPLACED");
+    submit_until_accepted(&mut h, &order).await;
+    admit_unsettled_fill(&h, &order).await;
+    replace_venue_order(&h, &order);
+
+    let replacement = VenueOrderId::from(REPLACEMENT_VENUE_ORDER_ID);
+    let cached = cached_order(&h, &order);
+    let mut tracked = load_json("http_open_order.json");
+    tracked["id"] = json!(REPLACEMENT_VENUE_ORDER_ID);
+    tracked["status"] = json!("LIVE");
+    tracked["size_matched"] = json!("25.0000");
+    let mut other = load_json("http_open_orders_harness.json")["data"][0].clone();
+    other["id"] = json!(OTHER_OPEN_ORDER_ID);
+    let mut confirmed = sized_trade("trade-0xconfirmed", "10.0000", "CONFIRMED");
+    confirmed["taker_order_id"] = json!(REPLACEMENT_VENUE_ORDER_ID);
+    serve_rest_trades(&h, &[confirmed]).await;
+    *h.mock_state.orders_response_override.lock().await = Some(json!({
+        "data": [tracked.clone(), other],
+        "next_cursor": "LTE="
+    }));
+    *h.mock_state.single_order_response.lock().await = Some(tracked);
+    let order_reports = generate_order_status_reports(&h).await;
+    let fill_reports = generate_fill_reports(&h).await;
+
+    assert_eq!(cached.venue_order_ids().len(), 2);
+    assert_eq!(cached.venue_order_id(), Some(replacement));
+    assert!(cached.filled_qty().is_zero());
+    let order_reports =
+        order_reports.expect("previous pending leg must not drop open-order reports");
+    let tracked_report = order_reports
+        .iter()
+        .find(|report| report.venue_order_id == replacement)
+        .expect("replacement order");
+    assert_eq!(tracked_report.filled_qty, cached.filled_qty());
+    assert_eq!(tracked_report.order_status, cached.status());
+    assert!(
+        order_reports
+            .iter()
+            .any(|report| report.venue_order_id == VenueOrderId::from(OTHER_OPEN_ORDER_ID))
+    );
+    assert_eq!(
+        fill_reports.unwrap_err().to_string(),
+        UNRESOLVED_FILL_REPORTS_ERROR
+    );
+}
+
+#[rstest]
+#[tokio::test]
 async fn restart_hydrates_cached_fill_and_ignores_replayed_trade() {
     let order = harness::limit_order(InstrumentId::from(harness::INSTRUMENT_ID), "O-1");
     let mut h =
@@ -2889,13 +3263,13 @@ async fn restart_restores_dust_terminal_after_prior_void() {
 }
 
 // The venue order fills 30 and has 10 more voided when its trade fails. A modify to the 40 they
-// account for, or to less, leaves nothing to replace, so it is rejected while the venue order
+// account for, or to less, leaves nothing to replace, so it is denied while the venue order
 // still works, and a modify to 50 then replaces it with 10.
 #[rstest]
 #[case::equal("40.0000")]
 #[case::below("35.0000")]
 #[tokio::test]
-async fn modify_within_filled_and_voided_is_rejected_before_cancel(#[case] target: &str) {
+async fn modify_within_filled_and_voided_is_denied_before_cancel(#[case] target: &str) {
     let mut h = harness::Harness::build().await;
     let order = harness::limit_order(h.instrument_id(), "O-1");
     submit_until_accepted(&mut h, &order).await;
@@ -2903,11 +3277,11 @@ async fn modify_within_filled_and_voided_is_rejected_before_cancel(#[case] targe
     let before = cached_order(&h, &order);
 
     h.modify_via_risk(&order, None, Some(Quantity::from(target)));
-    let rejected = h
+    let denied = h
         .pump_until(DEADLINE, |cache| {
             cache.order(&order.client_order_id()).is_some_and(|cached| {
                 event_count(&cached, |event| {
-                    matches!(event, OrderEventAny::ModifyRejected(_))
+                    matches!(event, OrderEventAny::ModifyDenied(_))
                 }) == 1
             })
         })
@@ -2919,11 +3293,12 @@ async fn modify_within_filled_and_voided_is_rejected_before_cancel(#[case] targe
         .events()
         .into_iter()
         .filter_map(|event| match event {
-            OrderEventAny::ModifyRejected(event) => Some(event.reason.to_string()),
+            OrderEventAny::ModifyDenied(event) => Some(event.reason.to_string()),
             _ => None,
         })
         .collect();
-    assert!(rejected, "modify was not rejected");
+
+    assert!(denied, "modify was not denied");
     assert_eq!(*h.mock_state.cancel_delete_count.lock().await, 0);
     assert_eq!(
         reasons,
@@ -3061,6 +3436,43 @@ async fn replace_and_fill_to_dust(
     [trade, matched]
 }
 
+fn replace_venue_order(h: &harness::Harness, order: &OrderAny) {
+    let cached = cached_order(h, order);
+    h.cache()
+        .borrow_mut()
+        .update_order(&OrderEventAny::Updated(OrderUpdated::new(
+            cached.trader_id(),
+            cached.strategy_id(),
+            cached.instrument_id(),
+            cached.client_order_id(),
+            cached.quantity(),
+            UUID4::new(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            false,
+            Some(VenueOrderId::from(REPLACEMENT_VENUE_ORDER_ID)),
+            Some(AccountId::from(harness::ACCOUNT_ID)),
+            cached.price(),
+            None,
+            None,
+            false,
+        )))
+        .expect("replacement venue order id");
+}
+
+async fn admit_unsettled_fill(h: &harness::Harness, order: &OrderAny) {
+    h.mock_state
+        .send_user(user_trade("ws_user_trade_full.json", "MATCHED"))
+        .await;
+    wait_for_unresolved_mass_status(h)
+        .await
+        .expect("admitted fill should block mass status before it applies");
+    assert!(
+        cached_order(h, order).filled_qty().is_zero(),
+        "admitted fill applied before the order-status check",
+    );
+}
+
 async fn submit_until_accepted(h: &mut harness::Harness, order: &OrderAny) {
     h.submit_via_risk(order);
     assert!(
@@ -3133,6 +3545,21 @@ async fn generate_order_status_report(
     order: &OrderAny,
     venue_order_id: VenueOrderId,
 ) -> OrderStatusReport {
+    request_order_status_report(h, order, venue_order_id)
+        .await
+        .expect("order status report request should succeed")
+        .expect("order status report request should return a report")
+}
+
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "single-threaded test harness only runs mock venue tasks during the await"
+)]
+async fn request_order_status_report(
+    h: &harness::Harness,
+    order: &OrderAny,
+    venue_order_id: VenueOrderId,
+) -> anyhow::Result<Option<OrderStatusReport>> {
     h.exec_engine()
         .borrow()
         .get_client(&h.client_id())
@@ -3148,8 +3575,58 @@ async fn generate_order_status_report(
             causation_id: None,
         })
         .await
-        .expect("order status report request should succeed")
-        .expect("order status report request should return a report")
+}
+
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "single-threaded test harness only runs mock venue tasks during the await"
+)]
+async fn generate_order_status_reports(
+    h: &harness::Harness,
+) -> anyhow::Result<Vec<OrderStatusReport>> {
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .open_only(false)
+        .build()
+        .expect("order status reports command");
+    h.exec_engine()
+        .borrow()
+        .get_client(&h.client_id())
+        .expect("execution client is registered")
+        .generate_order_status_reports(&command)
+        .await
+}
+
+#[allow(
+    clippy::await_holding_refcell_ref,
+    reason = "single-threaded test harness only runs mock venue tasks during the await"
+)]
+async fn generate_fill_reports(h: &harness::Harness) -> anyhow::Result<Vec<FillReport>> {
+    let command = GenerateFillReportsBuilder::default()
+        .ts_init(UnixNanos::default())
+        .build()
+        .expect("fill reports command");
+    h.exec_engine()
+        .borrow()
+        .get_client(&h.client_id())
+        .expect("execution client is registered")
+        .generate_fill_reports(command)
+        .await
+}
+
+async fn wait_for_unresolved_mass_status(h: &harness::Harness) -> anyhow::Result<()> {
+    let deadline = tokio::time::Instant::now() + DEADLINE;
+    let mut last = String::new();
+
+    while tokio::time::Instant::now() < deadline {
+        match generate_mass_status(h).await {
+            Err(e) if e.to_string() == UNRESOLVED_MASS_STATUS_ERROR => return Ok(()),
+            Err(e) => last = e.to_string(),
+            Ok(_) => tokio::task::yield_now().await,
+        }
+    }
+
+    anyhow::bail!("mass status did not block on unresolved evidence, last={last}")
 }
 
 #[allow(

@@ -91,6 +91,7 @@ enum SingleCancelResponse {
     #[default]
     Success,
     AmbiguousFailure,
+    AuthenticationFailure(StatusCode),
     NonOrderApiError,
     StructuredReject,
 }
@@ -443,6 +444,10 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                     r#"{"result":"success","cancelStatus":{"status":"cancelled","order_id":"V-SINGLE"}}"#
                         .to_string(),
                 ),
+                SingleCancelResponse::AuthenticationFailure(status) => Response::builder()
+                    .status(status)
+                    .body(Body::from("authentication refused"))
+                    .unwrap(),
                 SingleCancelResponse::AmbiguousFailure => Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from("cancel failed"))
@@ -683,6 +688,10 @@ async fn handle_http_request(State(state): State<TestServerState>, req: Request)
                 SingleCancelResponse::Success => {
                     json_response(r#"{"error":[],"result":{"count":1}}"#.to_string())
                 }
+                SingleCancelResponse::AuthenticationFailure(status) => Response::builder()
+                    .status(status)
+                    .body(Body::from("authentication refused"))
+                    .unwrap(),
                 SingleCancelResponse::AmbiguousFailure => Response::builder()
                     .status(StatusCode::INTERNAL_SERVER_ERROR)
                     .body(Body::from("cancel failed"))
@@ -8074,11 +8083,16 @@ async fn test_spot_local_cancel_validation_failure_does_not_emit_cancel_rejected
 }
 
 #[rstest]
+#[case::server_error(SingleCancelResponse::AmbiguousFailure)]
+#[case::unauthorized(SingleCancelResponse::AuthenticationFailure(StatusCode::UNAUTHORIZED))]
+#[case::forbidden(SingleCancelResponse::AuthenticationFailure(StatusCode::FORBIDDEN))]
 #[tokio::test]
-async fn test_spot_ambiguous_single_cancel_failure_does_not_emit_cancel_rejected() {
+async fn test_spot_ambiguous_single_cancel_failure_emits_no_refusal(
+    #[case] response: SingleCancelResponse,
+) {
     let (client, mut rx, cache, state) =
         connected_spot_client_with_command_responses(CommandResponses {
-            single_cancel: SingleCancelResponse::AmbiguousFailure,
+            single_cancel: response,
             ..Default::default()
         })
         .await;
@@ -8097,6 +8111,9 @@ async fn test_spot_ambiguous_single_cancel_failure_does_not_emit_cancel_rejected
 
     assert_no_order_event_matching(&mut rx, |event| {
         matches!(
+            event,
+            OrderEventAny::CancelDenied(event) if event.client_order_id == client_order_id
+        ) || matches!(
             event,
             OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
         )
@@ -8583,11 +8600,16 @@ async fn test_spot_cancel_all_partial_result_does_not_emit_cancel_rejected() {
 }
 
 #[rstest]
+#[case::server_error(SingleCancelResponse::AmbiguousFailure)]
+#[case::unauthorized(SingleCancelResponse::AuthenticationFailure(StatusCode::UNAUTHORIZED))]
+#[case::forbidden(SingleCancelResponse::AuthenticationFailure(StatusCode::FORBIDDEN))]
 #[tokio::test]
-async fn test_ambiguous_single_cancel_failure_does_not_emit_cancel_rejected() {
+async fn test_ambiguous_single_cancel_failure_emits_no_refusal(
+    #[case] response: SingleCancelResponse,
+) {
     let (client, mut rx, cache, state) =
         connected_client_with_command_responses(CommandResponses {
-            single_cancel: SingleCancelResponse::AmbiguousFailure,
+            single_cancel: response,
             ..Default::default()
         })
         .await;
@@ -8606,6 +8628,9 @@ async fn test_ambiguous_single_cancel_failure_does_not_emit_cancel_rejected() {
 
     assert_no_order_event_matching(&mut rx, |event| {
         matches!(
+            event,
+            OrderEventAny::CancelDenied(event) if event.client_order_id == client_order_id
+        ) || matches!(
             event,
             OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
         )
@@ -8929,7 +8954,9 @@ async fn test_mixed_per_item_batch_cancel_result_rejects_only_failed_item() {
 /// ID, which the venue echoes on the rejected item, so the rejection reaches that order.
 #[rstest]
 #[tokio::test]
-async fn test_batch_cancel_rejection_by_client_order_id_reaches_its_order() {
+async fn test_batch_cancel_rejection_by_client_order_id_reaches_its_order(
+    #[values(1, 2)] count: usize,
+) {
     let (client, mut rx, cache, state) =
         connected_client_with_command_responses(CommandResponses {
             batch_cancel: BatchCancelResponse::RejectedByClientOrderId,
@@ -8940,27 +8967,52 @@ async fn test_batch_cancel_rejection_by_client_order_id_reaches_its_order() {
     add_limit_order_to_cache(&cache, client_order_id);
     let mut cancel = cancel_order_command(client_order_id, VenueOrderId::from("V-UNUSED"));
     cancel.venue_order_id = None;
+    let cancels: Vec<_> = (0..count)
+        .map(|_| {
+            let mut command = cancel.clone();
+            command.command_id = UUID4::new();
+            command
+        })
+        .collect();
 
+    let causes: Vec<_> = cancels.iter().map(|cmd| cmd.command_id).collect();
     client
-        .batch_cancel_orders(batch_cancel_command(vec![cancel]))
+        .batch_cancel_orders(batch_cancel_command(cancels))
         .unwrap();
 
     wait_for_count(&state.batch_cancel_request_count, 1).await;
 
-    match recv_until(&mut rx, |event| {
-        matches!(
-            event,
-            ExecutionEvent::Order(OrderEventAny::CancelRejected(event))
-                if event.client_order_id == client_order_id
-        )
-    })
-    .await
-    {
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) => {
-            assert!(event.reason.contains("notFound"), "{event:?}");
-        }
-        other => panic!("Expected CancelRejected event, was {other:?}"),
+    for cause in causes {
+        let event = recv_until(&mut rx, |event| {
+            matches!(
+                event,
+                ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
+            )
+        })
+        .await;
+
+        let ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) = event else {
+            unreachable!()
+        };
+
+        assert_eq!(event.trader_id, test_trader_id());
+        assert_eq!(event.strategy_id, test_strategy_id());
+        assert_eq!(event.instrument_id, test_instrument_id());
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(event.account_id, Some(test_account_id()));
+        assert_eq!(event.venue_order_id, None);
+        assert_eq!(event.causation_id, Some(cause));
+        assert_eq!(
+            event.reason.as_str(),
+            "batch-cancel rejected: status=notFound"
+        );
+        assert!(!event.reconciliation);
     }
+
+    assert_eq!(
+        state.batch_cancel_request_count.load(Ordering::Relaxed),
+        count
+    );
 }
 
 #[rstest]

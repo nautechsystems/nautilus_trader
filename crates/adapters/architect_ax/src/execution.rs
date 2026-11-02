@@ -434,12 +434,27 @@ impl AxExecutionClient {
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
 
-        // `OrderCancelRejected` comes only from the WS CancelRejected event;
-        // local send failures leave the outcome to reconciliation.
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+        let strategy_id = cmd.strategy_id;
+        let instrument_id = cmd.instrument_id;
+        let command_id = cmd.command_id;
+
         self.spawn_task("cancel_order", async move {
             if let Err(e) = ws_orders.cancel_order(client_order_id, venue_order_id).await {
                 match classify_ax_ws_failure(&e) {
-                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                    CommandFailure::NotSent(reason) => {
+                        emitter.emit_order_cancel_denied_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            &reason,
+                            clock.get_time_ns(),
+                            Some(command_id),
+                        );
+                    }
+                    CommandFailure::VenueRejected(reason) => {
                         log::warn!("Cancel command failed for {client_order_id}: {reason}");
                     }
                     CommandFailure::Ambiguous(reason) => {
@@ -957,7 +972,7 @@ impl ExecutionClient for AxExecutionClient {
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         if cmd.trigger_price.is_some() {
-            emit_ax_modify_rejected(
+            emit_ax_modify_denied(
                 &self.emitter,
                 self.clock,
                 cmd.strategy_id,
@@ -965,6 +980,7 @@ impl ExecutionClient for AxExecutionClient {
                 cmd.client_order_id,
                 cmd.venue_order_id,
                 "AX does not support venue-native trigger prices",
+                cmd.command_id,
             );
             return Ok(());
         }
@@ -978,7 +994,7 @@ impl ExecutionClient for AxExecutionClient {
         let venue_order_id = match tracked_venue_order_id.or(cmd.venue_order_id) {
             Some(voi) => voi,
             None => {
-                emit_ax_modify_rejected(
+                emit_ax_modify_denied(
                     &self.emitter,
                     self.clock,
                     cmd.strategy_id,
@@ -986,6 +1002,7 @@ impl ExecutionClient for AxExecutionClient {
                     cmd.client_order_id,
                     None,
                     "missing venue_order_id",
+                    cmd.command_id,
                 );
                 return Ok(());
             }
@@ -995,7 +1012,7 @@ impl ExecutionClient for AxExecutionClient {
             Some(quantity) => match quantity_to_contracts(quantity) {
                 Ok(contracts) => Some(contracts),
                 Err(e) => {
-                    emit_ax_modify_rejected(
+                    emit_ax_modify_denied(
                         &self.emitter,
                         self.clock,
                         cmd.strategy_id,
@@ -1003,6 +1020,7 @@ impl ExecutionClient for AxExecutionClient {
                         cmd.client_order_id,
                         Some(venue_order_id),
                         &e.to_string(),
+                        cmd.command_id,
                     );
                     return Ok(());
                 }
@@ -1011,7 +1029,7 @@ impl ExecutionClient for AxExecutionClient {
         };
 
         if !self.core.is_connected() {
-            emit_ax_modify_rejected(
+            emit_ax_modify_denied(
                 &self.emitter,
                 self.clock,
                 cmd.strategy_id,
@@ -1019,6 +1037,7 @@ impl ExecutionClient for AxExecutionClient {
                 cmd.client_order_id,
                 Some(venue_order_id),
                 "AX execution client is not connected",
+                cmd.command_id,
             );
             return Ok(());
         }
@@ -1070,7 +1089,20 @@ impl ExecutionClient for AxExecutionClient {
                 // No replace failure is an unambiguous rejection (see
                 // `classify_ax_http_failure`); leave the order pending.
                 Err(e) => match classify_ax_http_failure(&e) {
-                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                    CommandFailure::NotSent(reason) => {
+                        complete_pending_modify(&caches, venue_order_id);
+                        emit_ax_modify_denied(
+                            &emitter,
+                            clock,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            &reason,
+                            cmd.command_id,
+                        );
+                    }
+                    CommandFailure::VenueRejected(reason) => {
                         complete_pending_modify(&caches, venue_order_id);
                         emit_ax_modify_rejected(
                             &emitter,
@@ -1080,6 +1112,7 @@ impl ExecutionClient for AxExecutionClient {
                             client_order_id,
                             Some(venue_order_id),
                             &reason,
+                            Some(cmd.command_id),
                         );
                     }
                     CommandFailure::Ambiguous(reason) => {
@@ -1764,6 +1797,36 @@ fn add_special_fill_order_reports(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
+fn emit_ax_modify_denied(
+    emitter: &ExecutionEventEmitter,
+    clock: &'static AtomicTime,
+    strategy_id: StrategyId,
+    instrument_id: InstrumentId,
+    client_order_id: ClientOrderId,
+    venue_order_id: Option<VenueOrderId>,
+    reason: &str,
+    causation_id: UUID4,
+) {
+    log::warn!("AX modify denied for {client_order_id}: {reason}");
+    emitter.emit_order_modify_denied_event(
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id,
+        reason,
+        clock.get_time_ns(),
+        Some(causation_id),
+    );
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
 fn emit_ax_modify_rejected(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
@@ -1772,6 +1835,7 @@ fn emit_ax_modify_rejected(
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
     reason: &str,
+    causation_id: Option<UUID4>,
 ) {
     log::warn!("AX modify rejected for {client_order_id}: {reason}");
     emitter.emit_order_modify_rejected_event(
@@ -1781,6 +1845,7 @@ fn emit_ax_modify_rejected(
         venue_order_id,
         reason,
         clock.get_time_ns(),
+        causation_id,
     );
 }
 
@@ -2100,6 +2165,7 @@ fn dispatch_order_event(
                         client_order_id,
                         Some(active_venue_order_id),
                         reason,
+                        None,
                     );
 
                     if let Some(order) = &msg.o

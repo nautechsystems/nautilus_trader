@@ -1825,7 +1825,10 @@ mod tests {
     use std::{
         cell::{Cell, RefCell},
         rc::Rc,
-        sync::Arc,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
     };
 
     #[cfg(feature = "python")]
@@ -1865,8 +1868,9 @@ mod tests {
             drain_trading_cmd_queue, replace_data_cmd_sender, replace_exec_cmd_sender,
             trading_cmd_queue_is_empty,
         },
+        timer::TimeEventHandler,
     };
-    use nautilus_core::UUID4;
+    use nautilus_core::{DurationNanos, UUID4};
     use nautilus_data::engine::{DataEngine, config::DataEngineConfig};
     use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_model::{
@@ -1918,6 +1922,7 @@ mod tests {
         fail_fault: bool,
         fail_dispose: bool,
         bars_received: usize,
+        time_events: usize,
     }
 
     impl TestDataActor {
@@ -1928,11 +1933,17 @@ mod tests {
                 fail_fault: false,
                 fail_dispose: false,
                 bars_received: 0,
+                time_events: 0,
             }
         }
     }
 
     impl DataActor for TestDataActor {
+        fn on_time_event(&mut self, _event: &TimeEvent) -> anyhow::Result<()> {
+            self.time_events += 1;
+            Ok(())
+        }
+
         fn on_stop(&mut self) -> anyhow::Result<()> {
             if self.fail_stop {
                 anyhow::bail!("test actor stop failure");
@@ -3394,22 +3405,26 @@ mod tests {
         clock: &Rc<RefCell<dyn Clock>>,
         to_time_ns: UnixNanos,
     ) -> usize {
-        let handlers = {
-            let mut clock_ref = clock.borrow_mut();
-            let test_clock = clock_ref
-                .as_any_mut()
-                .downcast_mut::<VirtualClock>()
-                .expect("component clock must be VirtualClock");
-            let events = test_clock.advance_time(to_time_ns, true);
-            test_clock.match_handlers(events)
-        };
+        let handlers = queue_component_time_events(clock, to_time_ns);
         let dispatched = handlers.len();
-
         for handler in handlers {
             handler.run();
         }
 
         dispatched
+    }
+
+    fn queue_component_time_events(
+        clock: &Rc<RefCell<dyn Clock>>,
+        to_time_ns: UnixNanos,
+    ) -> Vec<TimeEventHandler> {
+        let mut clock_ref = clock.borrow_mut();
+        let test_clock = clock_ref
+            .as_any_mut()
+            .downcast_mut::<VirtualClock>()
+            .expect("component clock must be VirtualClock");
+        let events = test_clock.advance_time(to_time_ns, true);
+        test_clock.match_handlers(events)
     }
 
     fn register_gtd_timer(
@@ -4217,6 +4232,200 @@ class StateComponent:
             0,
             "actor clocks must be dropped after clear_actors",
         );
+    }
+
+    #[rstest]
+    #[case::removed(false, true)]
+    #[case::reused(true, true)]
+    #[case::invalid_registration(false, false)]
+    fn test_queued_actor_time_event_is_revoked_on_retirement(
+        #[case] reuse_id: bool,
+        #[case] retire: bool,
+    ) {
+        let _guard = init_logging(
+            TraderId::test_default(),
+            UUID4::new(),
+            LoggerConfig::default(),
+            FileWriterConfig::default(),
+        )
+        .unwrap();
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let retired_id = ActorId::from("Queued-Retirement");
+        let active_id = ActorId::from("Queued-Active");
+        for actor_id in [retired_id, active_id] {
+            trader
+                .add_actor(TestDataActor::new(DataActorConfig {
+                    actor_id: Some(actor_id),
+                    ..Default::default()
+                }))
+                .unwrap();
+
+            trader.start_actor(&actor_id).unwrap();
+        }
+
+        let mut handlers = Vec::new();
+
+        for clock in trader.get_component_clocks() {
+            clock
+                .borrow_mut()
+                .set_timer_ns(
+                    "stats",
+                    DurationNanos::new(1_000_000_000),
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                )
+                .unwrap();
+            handlers.extend(queue_component_time_events(&clock, 1_000_000_000u64.into()));
+        }
+
+        assert_eq!(handlers.len(), 2);
+
+        if retire {
+            trader.remove_actor(&retired_id).unwrap();
+        } else {
+            deregister_actor(&retired_id.inner());
+        }
+
+        if reuse_id {
+            trader
+                .add_actor(TestDataActor::new(DataActorConfig {
+                    actor_id: Some(retired_id),
+                    ..Default::default()
+                }))
+                .unwrap();
+
+            trader.start_actor(&retired_id).unwrap();
+        }
+
+        arm_shutdown_on_error(true);
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        let trigger = take_shutdown_on_error_trigger();
+        disarm_shutdown_on_error();
+
+        if retire {
+            assert!(
+                trigger.is_none(),
+                "retired callback logged an error: {trigger:?}"
+            );
+        } else {
+            assert_eq!(
+                trigger.unwrap().message,
+                format!("Actor {retired_id} not found for time event handling")
+            );
+        }
+
+        assert_eq!(
+            get_actor_unchecked::<TestDataActor>(&active_id.inner()).time_events,
+            1
+        );
+
+        if reuse_id {
+            assert_eq!(
+                get_actor_unchecked::<TestDataActor>(&retired_id.inner()).time_events,
+                0
+            );
+        } else {
+            assert!(!actor_exists(&retired_id.inner()));
+        }
+    }
+
+    #[rstest]
+    fn test_failed_dispose_preserves_queued_callbacks_until_retry(
+        #[values(false, true)] named: bool,
+    ) {
+        let (_msgbus, cache, portfolio, _data_engine, _risk_engine, _exec_engine, clock_factory) =
+            create_trader_components();
+
+        let mut trader = Trader::new(
+            TraderId::test_default(),
+            UUID4::new(),
+            Environment::Backtest,
+            clock_factory,
+            cache,
+            portfolio,
+        );
+        let actor_id = ActorId::from("Queued-Failed-Dispose");
+
+        let mut actor = TestDataActor::new(DataActorConfig {
+            actor_id: Some(actor_id),
+            ..Default::default()
+        });
+
+        actor.fail_dispose = true;
+        trader.add_actor(actor).unwrap();
+        let clock = trader.get_component_clocks().pop().unwrap();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let callback_calls = calls.clone();
+        let callback = TimeEventCallback::from(move |_| {
+            callback_calls.fetch_add(1, Ordering::Relaxed);
+        });
+
+        if !named {
+            clock
+                .borrow_mut()
+                .register_default_handler(callback.clone());
+        }
+
+        clock
+            .borrow_mut()
+            .set_timer_ns(
+                "queued",
+                DurationNanos::new(1_000_000_000),
+                None,
+                None,
+                named.then_some(callback),
+                None,
+                None,
+            )
+            .unwrap();
+
+        let handlers = queue_component_time_events(&clock, 1_000_000_000u64.into());
+        assert_eq!(handlers.len(), 1);
+
+        let error = trader.remove_actor(&actor_id).unwrap_err();
+        assert_eq!(error.to_string(), "test actor dispose failure");
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert!(actor_exists(&actor_id.inner()));
+        assert!(get_component(&actor_id.inner()).is_some());
+        assert_eq!(trader.actor_ids(), vec![actor_id]);
+        assert_eq!(clock.borrow().timer_count(), 1);
+
+        let handlers = queue_component_time_events(&clock, 2_000_000_000u64.into());
+        assert_eq!(handlers.len(), 1);
+        trader.remove_actor(&actor_id).unwrap();
+
+        for handler in handlers {
+            handler.run();
+        }
+
+        assert_eq!(calls.load(Ordering::Relaxed), 1);
+        assert!(!actor_exists(&actor_id.inner()));
+        assert!(get_component(&actor_id.inner()).is_none());
+        assert!(trader.get_component_clocks().is_empty());
+        assert!(trader.actor_ids().is_empty());
+        assert_eq!(clock.borrow().timer_count(), 0);
     }
 
     #[rstest]
@@ -5291,13 +5500,34 @@ class ModuleStrategy(Strategy):
         drain_data_cmd_queue();
         assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
 
+        let topic = get_bars_topic(bar_type);
+        assert_eq!(msgbus::exact_subscriber_count_bars(topic), 2);
+
+        let bar = Bar {
+            bar_type,
+            ..stub_bar()
+        };
+
         trader.remove_actor(&first_id).unwrap();
         drain_data_cmd_queue();
         assert!(data_engine.borrow().subscribed_bars().contains(&bar_type));
 
+        assert_eq!(msgbus::exact_subscriber_count_bars(topic), 1);
+        msgbus::publish_bar(topic, &bar);
+        assert_eq!(
+            get_actor_unchecked::<TestDataActor>(&second_id.inner()).bars_received,
+            1
+        );
+        assert!(!actor_exists(&first_id.inner()));
+        assert!(get_component(&first_id.inner()).is_none());
+
         trader.remove_actor(&second_id).unwrap();
         drain_data_cmd_queue();
         assert!(!data_engine.borrow().subscribed_bars().contains(&bar_type));
+        assert_eq!(msgbus::exact_subscriber_count_bars(topic), 0);
+        assert!(!actor_exists(&second_id.inner()));
+        assert!(get_component(&second_id.inner()).is_none());
+        assert!(trader.get_component_clocks().is_empty());
     }
 
     #[rstest]

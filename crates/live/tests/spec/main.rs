@@ -40,7 +40,7 @@ use nautilus_live::{
     node::{LiveNode, LiveNodeHandle, NodeState},
 };
 use nautilus_model::{
-    enums::PositionSide,
+    enums::{OmsType, PositionSide},
     identifiers::{AccountId, ClientId, InstrumentId, PositionId, StrategyId},
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
     reports::{ExecutionMassStatus, PositionStatusReport},
@@ -67,6 +67,7 @@ struct StartupWorld {
     config: LiveNodeConfig,
     setup_requested: bool,
     behavior: StartupMassStatusBehavior,
+    oms_type: OmsType,
     position_report: Option<PositionStatusReport>,
     client_state: StartupMassStatusClientState,
     node_state: Option<NodeState>,
@@ -90,6 +91,7 @@ impl StartupWorld {
             },
             setup_requested: false,
             behavior: StartupMassStatusBehavior::Available,
+            oms_type: OmsType::Hedging,
             position_report: None,
             client_state: StartupMassStatusClientState::default(),
             node_state: None,
@@ -153,6 +155,17 @@ fn cache_initialized(world: &mut StartupWorld) {
     world.setup_requested = true;
 }
 
+#[given("the execution client uses NETTING accounting")]
+fn netting_client(world: &mut StartupWorld) {
+    world.oms_type = OmsType::Netting;
+}
+
+#[given("the venue reports no orders, fills, or positions")]
+fn venue_flat(world: &mut StartupWorld) {
+    world.behavior = StartupMassStatusBehavior::Available;
+    world.position_report = None;
+}
+
 #[given(regex = "^the venue reports a (long|short) position of ([0-9.]+) ETH$")]
 fn venue_position(world: &mut StartupWorld, side: String, qty: Quantity) {
     let instrument_id = crypto_perpetual_ethusdt().id();
@@ -167,6 +180,11 @@ fn venue_position(world: &mut StartupWorld, side: String, qty: Quantity) {
         Some(PositionId::from("VENUE-POSITION-042")),
         None,
     ));
+}
+
+#[given("the position report has no venue position ID")]
+fn no_venue_position_id(world: &mut StartupWorld) {
+    world.position_report.as_mut().unwrap().venue_position_id = None;
 }
 
 #[given(regex = "^its average opening price is ([0-9.]+) USDT$")]
@@ -214,6 +232,7 @@ async fn start_node(world: &mut StartupWorld, entrypoint: String) {
     let factory =
         StartupMassStatusExecutionClientFactory::new(world.client_state.clone(), world.behavior)
             .with_identity(client_id, account_id, instrument.id().venue)
+            .with_oms_type(world.oms_type)
             .with_handles_all_order_venues();
     let node = LiveNodeBuilder::from_config(world.config.clone())
         .unwrap()
@@ -325,16 +344,26 @@ fn startup_fails(world: &mut StartupWorld, reason: String) {
 )]
 fn reconciled_position(world: &mut StartupWorld, side: String, qty: Quantity, price: Decimal) {
     let observation = world.observation.borrow();
-    let positions = &observation.as_ref().expect("strategy must start").positions;
+    let observation = observation.as_ref().expect("strategy must start");
+    let positions = &observation.positions;
     assert_eq!(positions.len(), 1);
+    assert_eq!(observation.orders_open, 0);
     let instrument_id = crypto_perpetual_ethusdt().id();
+
+    let position_id = if world.oms_type == OmsType::Netting {
+        PositionId::from("ETHUSDT-PERP.BINANCE-EXTERNAL")
+    } else {
+        PositionId::from("VENUE-POSITION-042")
+    };
+
     assert_eq!(
         positions[0],
         PositionObservation {
-            id: PositionId::from("VENUE-POSITION-042"),
+            id: position_id,
             account_id: AccountId::from("BLOCKING-REPORT-001"),
             instrument_id,
             strategy_id: StrategyId::from("EXTERNAL"),
+            oms_type: Some(world.oms_type),
             side: position_side(&side),
             qty,
             avg_px_open: price,
@@ -364,6 +393,18 @@ fn components_not_started(world: &mut StartupWorld) {
 #[then("no position is cached")]
 fn no_position(world: &mut StartupWorld) {
     assert_eq!(world.position_count, Some(0));
+}
+
+#[then("the strategy observes no open orders or positions when it starts")]
+fn flat_startup(world: &mut StartupWorld) {
+    assert_eq!(
+        *world.observation.borrow(),
+        Some(StartupObservation {
+            orders_open: 0,
+            positions: Vec::new(),
+            net_qty: Decimal::ZERO,
+        })
+    );
 }
 
 #[then("the venue receives a startup mass-status request")]
@@ -408,6 +449,7 @@ fn position_side(side: &str) -> PositionSide {
 
 #[derive(Debug, PartialEq)]
 struct StartupObservation {
+    orders_open: usize,
     positions: Vec<PositionObservation>,
     net_qty: Decimal,
 }
@@ -418,6 +460,7 @@ struct PositionObservation {
     account_id: AccountId,
     instrument_id: InstrumentId,
     strategy_id: StrategyId,
+    oms_type: Option<OmsType>,
     side: PositionSide,
     qty: Quantity,
     avg_px_open: Decimal,
@@ -437,8 +480,10 @@ impl DataActor for StartupStrategy {
             "strategy must start only once"
         );
 
-        let positions = self
-            .cache()
+        let cache = self.cache();
+        let orders_open = cache.orders_open_count(None, None, None, None, None);
+
+        let positions = cache
             .positions_open(None, None, None, None, None)
             .iter()
             .map(|position| PositionObservation {
@@ -446,6 +491,7 @@ impl DataActor for StartupStrategy {
                 account_id: position.account_id,
                 instrument_id: position.instrument_id,
                 strategy_id: position.strategy_id,
+                oms_type: cache.oms_type(&position.id),
                 side: position.side,
                 qty: position.quantity,
                 avg_px_open: position.avg_px_open,
@@ -454,7 +500,12 @@ impl DataActor for StartupStrategy {
 
         let instrument_id = crypto_perpetual_ethusdt().id();
         let net_qty = self.portfolio().net_position(&instrument_id);
-        *self.observation.borrow_mut() = Some(StartupObservation { positions, net_qty });
+        *self.observation.borrow_mut() = Some(StartupObservation {
+            orders_open,
+            positions,
+            net_qty,
+        });
+
         self.handle.stop();
         Ok(())
     }

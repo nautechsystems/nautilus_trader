@@ -425,6 +425,11 @@ impl DataCommandSender for SyncDataCommandSender {
 /// Panics if a command handler panics; remaining commands in the collected batch are then dropped.
 pub fn drain_data_cmd_queue() {
     DATA_CMD_QUEUE.with(|q| {
+        // Skip the drain batch when empty; backtest replay calls this per data point
+        if q.borrow().is_empty() {
+            return;
+        }
+
         let commands: Vec<QueuedDataCommand> = q.borrow_mut().drain(..).collect();
         let endpoint = MessagingSwitchboard::data_engine_execute();
 
@@ -711,6 +716,11 @@ impl TradingCommandSender for SyncTradingCommandSender {
 /// Panics if a command handler panics; pending children and the remaining batch are then dropped.
 pub fn drain_trading_cmd_queue() {
     TRADING_CMD_QUEUE.with(|q| {
+        // Skip the drain batch when empty; backtest replay calls this per data point
+        if q.borrow().is_empty() {
+            return;
+        }
+
         let messages: Vec<QueuedTradingCommand> = q.borrow_mut().drain(..).collect();
         for message in messages {
             dispatch_trading_cmd(message, &mut |_| {});

@@ -14,6 +14,7 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashSet;
+use nautilus_model::enums::BarIntervalType;
 
 use super::*;
 
@@ -847,4 +848,429 @@ fn test_skipped_bar_release_preserves_other_owner(
     assert_eq!(msgbus::exact_subscriber_count_bars(topic), 0);
     assert_eq!(engine.subscribed_bars(), Vec::<BarType>::new());
     assert_eq!(recorder.borrow().len(), 2);
+}
+
+#[rstest]
+#[case::quotes(PriceType::Bid)]
+#[case::trades(PriceType::Last)]
+fn test_request_time_bar_boundary_assignment(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    venue: Venue,
+    #[case] price_type: PriceType,
+    #[values(BarIntervalType::RightOpen, BarIntervalType::LeftOpen)] interval: BarIntervalType,
+    #[values(0, 2, 3)] split_at: usize,
+    #[values(false, true)] advance: bool,
+) {
+    let _ = stub_msgbus;
+    let client_id = client_id();
+    let instrument_id = audusd_sim.id;
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let config = DataEngineConfig {
+        time_bars_interval_type: interval,
+        ..DataEngineConfig::default()
+    };
+
+    let mut engine = DataEngine::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        Some(config),
+    );
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        Rc::clone(&cache),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut engine,
+    );
+    let bar_type =
+        BarType::from(format!("{instrument_id}-1-SECOND-{price_type}-INTERNAL").as_str());
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [bar_type.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+
+    let request = if price_type == PriceType::Last {
+        RequestCommand::Trades(RequestTrades::new(
+            instrument_id,
+            None,
+            None,
+            None,
+            Some(client_id),
+            request_id,
+            UnixNanos::from(12_000_000_000),
+            Some(params),
+        ))
+    } else {
+        RequestCommand::Quotes(RequestQuotes::new(
+            instrument_id,
+            None,
+            None,
+            None,
+            Some(client_id),
+            request_id,
+            UnixNanos::from(12_000_000_000),
+            Some(params),
+        ))
+    };
+
+    engine.execute_request(request).unwrap();
+    let mut samples = vec![
+        (10_500_000_000_u64, "100.00000"),
+        (11_000_000_000, "101.00000"),
+        (11_000_000_000, "102.00000"),
+    ];
+
+    if advance {
+        samples.push((11_500_000_000, "103.00000"));
+    }
+
+    let chunks = if split_at == 0 {
+        vec![samples.as_slice()]
+    } else {
+        vec![&samples[..split_at], &samples[split_at..]]
+    };
+
+    for (index, chunk) in chunks.iter().enumerate() {
+        let response = if price_type == PriceType::Last {
+            let trades: Vec<_> = chunk
+                .iter()
+                .enumerate()
+                .map(|(i, (ts, price))| {
+                    let trade_id = TradeId::new(format!("{index}-{i}"));
+
+                    TradeTick::new(
+                        instrument_id,
+                        Price::from(*price),
+                        Quantity::from(1),
+                        AggressorSide::Buy,
+                        trade_id,
+                        UnixNanos::from(*ts),
+                        UnixNanos::from(*ts),
+                    )
+                })
+                .collect();
+
+            DataResponse::Trades(TradesResponse::new(
+                request_id,
+                client_id,
+                instrument_id,
+                trades,
+                None,
+                None,
+                UnixNanos::from(12_000_000_000),
+                None,
+            ))
+        } else {
+            let quotes: Vec<_> = chunk
+                .iter()
+                .map(|(ts, price)| {
+                    QuoteTick::new(
+                        instrument_id,
+                        Price::from(*price),
+                        Price::from("200.00000"),
+                        Quantity::from(1),
+                        Quantity::from(7),
+                        UnixNanos::from(*ts),
+                        UnixNanos::from(*ts),
+                    )
+                })
+                .collect();
+
+            DataResponse::Quotes(QuotesResponse::new(
+                request_id,
+                client_id,
+                instrument_id,
+                quotes,
+                None,
+                None,
+                UnixNanos::from(12_000_000_000),
+                None,
+            ))
+        };
+
+        let completed = index + 1 == chunks.len();
+        engine.response_envelope(DataResponseEnvelope::new(response, completed, None));
+        if !completed && interval == BarIntervalType::LeftOpen {
+            assert_eq!(cache.borrow().bar(&bar_type), None);
+        }
+    }
+
+    let (close, volume, ts_event) = if interval == BarIntervalType::LeftOpen {
+        ("102.00000", 3, 11_000_000_000)
+    } else {
+        ("100.00000", 1, 10_000_000_000)
+    };
+
+    let expected = Bar::new(
+        bar_type,
+        Price::from("100.00000"),
+        Price::from(close),
+        Price::from("100.00000"),
+        Price::from(close),
+        Quantity::from(volume),
+        UnixNanos::from(ts_event),
+        UnixNanos::from(11_000_000_000),
+    );
+    let bars: Vec<_> = cache.borrow().bars(&bar_type).unwrap();
+    assert_eq!(bars, vec![expected]);
+}
+
+#[rstest]
+#[case::right_open(BarIntervalType::RightOpen, ("102.00000", 3, 10_000_000_000))]
+#[case::left_open(BarIntervalType::LeftOpen, ("103.00000", 4, 12_000_000_000))]
+fn test_request_time_bar_boundary_finalizes_sources_before_dependents(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] interval: BarIntervalType,
+    #[case] expected: (&str, u64, u64),
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let config = DataEngineConfig {
+        time_bars_interval_type: interval,
+        ..DataEngineConfig::default()
+    };
+
+    let mut engine = DataEngine::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        Some(config),
+    );
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        clock,
+        Rc::clone(&cache),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut engine,
+    );
+    let source = BarType::from(format!("{instrument_id}-1-SECOND-LAST-INTERNAL").as_str());
+    let target =
+        BarType::from(format!("{instrument_id}-2-SECOND-LAST-INTERNAL@1-SECOND-INTERNAL").as_str());
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(json!({
+        "bar_types": [target.to_string(), source.to_string()],
+        "update_subscriptions": false,
+    }))
+    .unwrap();
+
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::from(12_000_000_000),
+        Some(params),
+    );
+    engine
+        .execute_request(RequestCommand::Trades(request))
+        .unwrap();
+
+    let trades: Vec<_> = [
+        (10_500_000_000_u64, "100.00000"),
+        (11_000_000_000, "101.00000"),
+        (11_500_000_000, "102.00000"),
+        (12_000_000_000, "103.00000"),
+    ]
+    .into_iter()
+    .enumerate()
+    .map(|(i, (ts, price))| {
+        let trade_id = TradeId::new(format!("trade-{i}"));
+
+        TradeTick::new(
+            instrument_id,
+            Price::from(price),
+            Quantity::from(1),
+            AggressorSide::Buy,
+            trade_id,
+            UnixNanos::from(ts),
+            UnixNanos::from(ts),
+        )
+    })
+    .collect();
+
+    engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        trades,
+        None,
+        None,
+        UnixNanos::from(12_000_000_000),
+        None,
+    )));
+
+    let (close, volume, ts_event) = expected;
+
+    let expected = Bar::new(
+        target.standard(),
+        Price::from("100.00000"),
+        Price::from(close),
+        Price::from("100.00000"),
+        Price::from(close),
+        Quantity::from(volume),
+        UnixNanos::from(ts_event),
+        UnixNanos::from(12_000_000_000),
+    );
+    let bars: Vec<_> = cache.borrow().bars(&target.standard()).unwrap();
+    assert_eq!(bars, vec![expected]);
+}
+
+#[rstest]
+#[case::right_open(BarIntervalType::RightOpen, ("100.00000", 1, 10_000_000_000), ("101.00000", 3, 11_000_000_000))]
+#[case::left_open(BarIntervalType::LeftOpen, ("102.00000", 3, 11_000_000_000), ("103.00000", 1, 12_000_000_000))]
+fn test_request_time_bar_boundary_replays_warmup_before_final_close(
+    audusd_sim: CurrencyPair,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    client_id: ClientId,
+    venue: Venue,
+    #[case] interval: BarIntervalType,
+    #[case] historical_fields: (&str, u64, u64),
+    #[case] live_fields: (&str, u64, u64),
+) {
+    let _ = stub_msgbus;
+    let instrument_id = audusd_sim.id;
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    clock.borrow_mut().set_time(UnixNanos::from(11_500_000_000));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let config = DataEngineConfig {
+        time_bars_interval_type: interval,
+        ..DataEngineConfig::default()
+    };
+
+    let mut engine = DataEngine::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        Some(config),
+    );
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::clone(&clock),
+        Rc::clone(&cache),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut engine,
+    );
+    let bar_type = BarType::from(format!("{instrument_id}-1-SECOND-LAST-INTERNAL").as_str());
+    let request_id = UUID4::new();
+    let params: Params = serde_json::from_value(
+        json!({"bar_types": [bar_type.to_string()], "update_subscriptions": true}),
+    )
+    .unwrap();
+
+    let request = RequestTrades::new(
+        instrument_id,
+        None,
+        None,
+        None,
+        Some(client_id),
+        request_id,
+        UnixNanos::from(11_500_000_000),
+        Some(params),
+    );
+    engine
+        .execute_request(RequestCommand::Trades(request))
+        .unwrap();
+
+    let subscribe = SubscribeBars::new(
+        bar_type,
+        Some(client_id),
+        Some(venue),
+        UUID4::new(),
+        UnixNanos::from(11_500_000_000),
+        None,
+        None,
+    );
+    engine.execute(DataCommand::Subscribe(SubscribeCommand::Bars(subscribe)));
+    let (handler, saver) = get_typed_message_saving_handler::<Bar>(None);
+    let topic = switchboard::get_bars_topic(bar_type);
+    msgbus::subscribe_bars(topic.into(), handler, None);
+
+    let warmup = make_trade(instrument_id, "102.00000", 1, "warmup", 11_000_000_000);
+    engine.process_data(Data::Trade(warmup));
+    let first = make_trade(instrument_id, "100.00000", 1, "first", 10_500_000_000);
+    let boundary = make_trade(instrument_id, "101.00000", 1, "boundary", 11_000_000_000);
+    engine.response(DataResponse::Trades(TradesResponse::new(
+        request_id,
+        client_id,
+        instrument_id,
+        vec![first, boundary],
+        None,
+        None,
+        UnixNanos::from(11_500_000_000),
+        None,
+    )));
+
+    let (historical_close, historical_volume, historical_ts) = historical_fields;
+
+    let historical = Bar::new(
+        bar_type,
+        Price::from("100.00000"),
+        Price::from(historical_close),
+        Price::from("100.00000"),
+        Price::from(historical_close),
+        Quantity::from(historical_volume),
+        UnixNanos::from(historical_ts),
+        UnixNanos::from(11_000_000_000),
+    );
+    assert_eq!(cache.borrow().bar(&bar_type), Some(&historical));
+    assert_eq!(saver.get_messages(), Vec::<Bar>::new());
+
+    let live = make_trade(instrument_id, "103.00000", 1, "live", 11_750_000_000);
+    engine.process_data(Data::Trade(live));
+    let events = clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(12_000_000_000), true);
+    let handlers = clock.borrow().match_handlers(events);
+    for handler in handlers {
+        handler.callback.call(handler.event);
+    }
+
+    let (live_open, live_volume, live_ts) = live_fields;
+
+    let expected = Bar::new(
+        bar_type,
+        Price::from(live_open),
+        Price::from("103.00000"),
+        Price::from(live_open),
+        Price::from("103.00000"),
+        Quantity::from(live_volume),
+        UnixNanos::from(live_ts),
+        UnixNanos::from(12_000_000_000),
+    );
+    let bars: Vec<_> = cache.borrow().bars(&bar_type).unwrap();
+    assert_eq!(bars, vec![expected, historical]);
+    assert_eq!(saver.get_messages(), vec![expected]);
 }

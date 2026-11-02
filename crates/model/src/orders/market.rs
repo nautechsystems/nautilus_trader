@@ -442,6 +442,14 @@ impl Order for MarketOrder {
         self.core.apply_updated_quantity(event.quantity);
     }
 
+    fn has_pending_update_command(&self) -> bool {
+        self.core.has_pending_update_command()
+    }
+
+    fn has_pending_cancel_command(&self) -> bool {
+        self.core.has_pending_cancel_command()
+    }
+
     fn events(&self) -> Vec<&OrderEventAny> {
         self.events.iter().collect()
     }
@@ -543,7 +551,7 @@ impl TryFrom<OrderInitialized> for MarketOrder {
     type Error = OrderError;
 
     fn try_from(event: OrderInitialized) -> Result<Self, Self::Error> {
-        Self::new_checked(
+        let mut order = Self::new_checked(
             event.trader_id,
             event.strategy_id,
             event.instrument_id,
@@ -563,7 +571,9 @@ impl TryFrom<OrderInitialized> for MarketOrder {
             event.exec_algorithm_params,
             event.exec_spawn_id,
             event.tags,
-        )
+        )?;
+        order.set_init_reconciliation(event.reconciliation);
+        Ok(order)
     }
 }
 

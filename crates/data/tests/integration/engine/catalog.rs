@@ -3513,20 +3513,11 @@ fn test_batch_writeback_records_only_successful_source_coverage(
 
 #[cfg(feature = "streaming")]
 #[rstest]
-#[case::single((None, None), false, false, false)]
-#[case::empty((None, None), false, false, true)]
-#[case::limited((Some(2), None), false, false, false)]
-#[case::limit_reached((Some(1), None), false, false, false)]
-#[case::limited_empty((Some(1), None), false, false, true)]
-#[case::intermediate((None, None), true, false, false)]
-#[case::write_error((None, None), false, true, false)]
-#[case::explicit_default((None, Some("mbp-1")), false, false, false)]
-#[case::sampled((None, Some("bbo-1s")), false, false, false)]
-#[case::sampled_empty((None, Some("bbo-1s")), false, false, true)]
-#[case::trade_triggered((None, Some("tbbo")), false, false, false)]
-#[case::consolidated((None, Some("cmbp-1")), false, false, false)]
+#[case::single(false, false, false)]
+#[case::empty(false, false, true)]
+#[case::intermediate(true, false, false)]
+#[case::write_error(false, true, false)]
 fn test_single_request_writeback_coverage_boundaries(
-    #[case] request_options: (Option<usize>, Option<&str>),
     #[case] intermediate: bool,
     #[case] write_error: bool,
     #[case] empty: bool,
@@ -3540,7 +3531,6 @@ fn test_single_request_writeback_coverage_boundaries(
     use nautilus_persistence::catalog::traits::{CatalogQuery, CatalogReader};
 
     let _ = stub_msgbus;
-    let (limit, schema) = request_options;
     let id = InstrumentId::from("AUD/USD.SIM");
     let mut engine = DataEngine::new(data_engine_clock_at(3000), Rc::clone(&cache), None);
     let recorder = Rc::new(RefCell::new(Vec::new()));
@@ -3557,7 +3547,7 @@ fn test_single_request_writeback_coverage_boundaries(
     let catalog = ParquetDataCatalog::new(directory.path(), None, None, None, None);
 
     let (seed_start, seed_end, seed_ts) = if write_error {
-        (1000, 2000, 1500)
+        (1500, 2500, 1500)
     } else {
         (500, 999, 500)
     };
@@ -3575,20 +3565,15 @@ fn test_single_request_writeback_coverage_boundaries(
     let root = UUID4::new();
     let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
     msgbus::register_response_handler(&root, handler);
-    let mut params =
-        json!({"update_catalog": true, "catalog_name": "history", "skip_catalog_data": true});
-
-    if let Some(schema) = schema {
-        params["schema"] = json!(schema);
-    }
-
-    let params = Some(params_from_json(params));
+    let params = Some(params_from_json(
+        json!({"update_catalog": true, "catalog_name": "history", "skip_catalog_data": true}),
+    ));
     engine
         .execute_request(RequestCommand::Quotes(RequestQuotes::new(
             id,
             Some(UnixNanos::from(1000).to_datetime_utc()),
             Some(UnixNanos::from(2000).to_datetime_utc()),
-            limit.map(|value| NonZeroUsize::new(value).unwrap()),
+            None,
             Some(client_id),
             root,
             UnixNanos::from(3000),
@@ -3637,7 +3622,16 @@ fn test_single_request_writeback_coverage_boundaries(
     let final_reply = replies.last().unwrap();
     assert_eq!(final_reply.correlation_id(), &root);
     assert!(final_reply.completed());
-    assert_eq!(final_reply.failure_reason(), None);
+
+    if write_error {
+        let reason = final_reply.failure_reason().unwrap();
+        assert!(
+            reason.starts_with("Catalog write-back failed for Some(\"AUD/USD.SIM\"): "),
+            "{reason}"
+        );
+    } else {
+        assert_eq!(final_reply.failure_reason(), None);
+    }
 
     let DataResponse::Quotes(returned) = final_reply.response().unwrap() else {
         panic!("Expected quotes");
@@ -3660,8 +3654,10 @@ fn test_single_request_writeback_coverage_boundaries(
     )
     .unwrap();
 
-    let expected_missing = if intermediate || limit.is_some() || schema.is_some() {
+    let expected_missing = if intermediate {
         vec![(1000, 2000)]
+    } else if write_error {
+        vec![(1000, 1499)]
     } else {
         Vec::new()
     };
@@ -3675,10 +3671,7 @@ fn test_single_request_writeback_coverage_boundaries(
         panic!("Expected quote batch");
     };
 
-    let (expected_rows, expected_all) = match (
-        write_error,
-        intermediate || limit.is_some() || empty || schema.is_some(),
-    ) {
+    let (expected_rows, expected_all) = match (write_error, intermediate || empty) {
         (true, _) => (vec![seed], vec![seed]),
         (false, true) => (Vec::new(), vec![seed]),
         (false, false) => (vec![quote], vec![seed, quote]),
@@ -3694,6 +3687,75 @@ fn test_single_request_writeback_coverage_boundaries(
     };
 
     assert_eq!(all_rows.as_ref(), expected_all.as_slice());
+}
+
+#[cfg(feature = "streaming")]
+#[rstest]
+#[case::no_catalog(false, None, None, "Catalog write-back requires a registered catalog")]
+#[case::limit(
+    true,
+    Some(2),
+    None,
+    "Catalog write-back is unsupported for requests with a record limit"
+)]
+#[case::schema(
+    true,
+    None,
+    Some("mbp-1"),
+    "Catalog write-back is unsupported for requests with a source schema"
+)]
+fn test_catalog_update_rejects_request_before_fetching(
+    #[case] catalog: bool,
+    #[case] limit: Option<usize>,
+    #[case] schema: Option<&str>,
+    #[case] reason: &str,
+    stub_msgbus: Rc<RefCell<MessageBus>>,
+    cache: Rc<RefCell<Cache>>,
+    client_id: ClientId,
+) {
+    let _ = stub_msgbus;
+    let id = InstrumentId::from("AUD/USD.SIM");
+    let mut engine = DataEngine::new(data_engine_clock_at(3000), Rc::clone(&cache), None);
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::new(RefCell::new(VirtualClock::new())),
+        cache,
+        client_id,
+        id.venue,
+        None,
+        &recorder,
+        &mut engine,
+    );
+    let _directory = catalog.then(|| register_empty_catalog(&mut engine, "rejected-write-back"));
+    let root = UUID4::new();
+    let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
+    msgbus::register_response_handler(&root, handler);
+    let mut params = json!({"update_catalog": true});
+
+    if let Some(schema) = schema {
+        params["schema"] = json!(schema);
+    }
+
+    let error = engine
+        .execute_request(RequestCommand::Quotes(RequestQuotes::new(
+            id,
+            Some(UnixNanos::from(1000).to_datetime_utc()),
+            Some(UnixNanos::from(2000).to_datetime_utc()),
+            limit.map(|value| NonZeroUsize::new(value).unwrap()),
+            Some(client_id),
+            root,
+            UnixNanos::from(3000),
+            Some(params_from_json(params)),
+        )))
+        .unwrap_err();
+    let replies = saver.get_messages();
+
+    assert_eq!(error.to_string(), reason);
+    assert!(recorder.borrow().is_empty());
+    assert_eq!(replies.len(), 1);
+    assert!(replies[0].completed());
+    assert_eq!(replies[0].failure_reason(), Some(reason));
+    assert!(replies[0].response().is_none());
 }
 
 #[cfg(feature = "streaming")]
@@ -3921,7 +3983,15 @@ fn test_remapped_response_does_not_certify_concrete_contract_coverage(
     assert_eq!(replies.len(), 1);
     assert_eq!(reply.correlation_id(), &root);
     assert!(reply.completed());
-    assert_eq!(reply.failure_reason(), None);
+    assert_eq!(
+        reply.failure_reason(),
+        Some(
+            "Catalog write-back failed: identifier coverage is unverified, \
+             identifier=Some(\"ESM4.GLBX\"); \
+             Catalog write-back failed: identifier coverage is unverified, \
+             identifier=Some(\"ESU4.GLBX\")"
+        )
+    );
 
     let DataResponse::Quotes(response) = reply.response().unwrap() else {
         panic!("expected quotes");
@@ -4156,9 +4226,11 @@ fn test_trade_schema_preserves_source_rows_and_catalog_isolation(
     let root = UUID4::new();
     let (handler, saver) = get_typed_message_saving_handler::<DataResponseEnvelope>(None);
     msgbus::register_response_handler(&root, handler);
-    let mut params = json!({"update_catalog": true, "catalog_name": "history"});
-    if let Some(schema) = schema {
-        params["schema"] = json!(schema);
+    // Write-back is rejected for a source schema, so only the canonical request asks for it
+    let mut params = json!({"catalog_name": "history"});
+    match schema {
+        Some(schema) => params["schema"] = json!(schema),
+        None => params["update_catalog"] = json!(true),
     }
 
     let params = params_from_json(params);

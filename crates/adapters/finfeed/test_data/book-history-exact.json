@@ -1,0 +1,21 @@
+[
+  {
+    "symbol_id": "MixedCase/Outcome?+=%_NO",
+    "time_exchange": "2026-10-17T00:00:03.0180674Z",
+    "time_coinapi": "2026-10-17T00:00:04.1234567Z",
+    "price": 0.1234567890123456789012345678,
+    "size": 9007199254740993.125,
+    "is_sell_ask": true,
+    "update_type": 987,
+    "id": "opaque/ID?+=%"
+  },
+  {
+    "symbol_id": "MixedCase/Outcome?+=%_YES",
+    "time_exchange": "2026-10-17T00:00:03.0180674Z",
+    "price": 0.9876543210987654321098765432,
+    "size": 0,
+    "is_sell_ask": false,
+    "update_type": 1,
+    "id": ""
+  }
+]

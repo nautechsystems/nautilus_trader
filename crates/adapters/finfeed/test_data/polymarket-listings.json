@@ -1,0 +1,53 @@
+{
+  "data": [
+    {
+      "market_id": "TEST-PAIR_NO",
+      "title": "Authored binary outcome",
+      "description": "Authored metadata for field preservation.\nA second line checks multiline text.",
+      "outcome_name": "No",
+      "price": 1,
+      "status": "Closed",
+      "exchange": {
+        "exchange_id": "POLYMARKET",
+        "market_name_institution_description": "Authored exchange metadata",
+        "website": "https://example.com"
+      },
+      "exchange_id": "POLYMARKET",
+      "outcome_type": "Binary",
+      "source_specific_data": {
+        "ConditionId": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "QuestionId": "0x4444444444444444444444444444444444444444444444444444444444444444",
+        "MinimumTickSize": "0.001",
+        "EndDateIso": "2026-06-02T00:00:00+00:00",
+        "Tokens": "[{\"token_id\":\"303033030330303303033030330303303033030330303303033030330303303033030330303\",\"outcome\":\"Yes\",\"price\":0.58,\"winner\":false},{\"token_id\":\"404044040440404404044040440404404044040440404404044040440404404044040440404\",\"outcome\":\"No\",\"price\":0.42,\"winner\":false}]",
+        "Tags": "[\"Test\",\"Binary\"]",
+        "Description": "Authored metadata for field preservation.\nA second line checks multiline text."
+      }
+    },
+    {
+      "market_id": "TEST-PAIR_YES",
+      "title": "Authored binary outcome",
+      "description": "Authored metadata for field preservation.\nA second line checks multiline text.",
+      "outcome_name": "Yes",
+      "price": 0,
+      "status": "Closed",
+      "exchange": {
+        "exchange_id": "POLYMARKET",
+        "market_name_institution_description": "Authored exchange metadata",
+        "website": "https://example.com"
+      },
+      "exchange_id": "POLYMARKET",
+      "outcome_type": "Binary",
+      "source_specific_data": {
+        "ConditionId": "0x3333333333333333333333333333333333333333333333333333333333333333",
+        "QuestionId": "0x4444444444444444444444444444444444444444444444444444444444444444",
+        "MinimumTickSize": "0.001",
+        "EndDateIso": "2026-06-02T00:00:00+00:00",
+        "Tokens": "[{\"token_id\":\"303033030330303303033030330303303033030330303303033030330303303033030330303\",\"outcome\":\"Yes\",\"price\":0.58,\"winner\":false},{\"token_id\":\"404044040440404404044040440404404044040440404404044040440404404044040440404\",\"outcome\":\"No\",\"price\":0.42,\"winner\":false}]",
+        "Tags": "[\"Test\",\"Binary\"]",
+        "Description": "Authored metadata for field preservation.\nA second line checks multiline text."
+      }
+    }
+  ],
+  "next_cursor": "test-pair_YES"
+}

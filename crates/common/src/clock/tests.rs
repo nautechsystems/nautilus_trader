@@ -13,12 +13,26 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, collections::BTreeMap, sync::Arc, time::Duration};
+use std::{
+    cell::RefCell,
+    collections::BTreeMap,
+    rc::Rc,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 
 use jiff::{Span, Zoned};
 use nautilus_core::{DurationNanos, UnixNanos, datetime::NANOSECONDS_IN_SECOND};
 use parking_lot::Mutex;
 use proptest::{prelude::*, test_runner::TestCaseResult};
+#[cfg(feature = "python")]
+use pyo3::{
+    Python,
+    types::{PyAnyMethods, PyList, PyListMethods},
+};
 use rstest::{fixture, rstest};
 use ustr::Ustr;
 
@@ -2366,4 +2380,189 @@ fn test_timer_schedule_shared_source_has_independent_occurrence_indices(
     let following = UnixNanos::from("2026-03-31T00:00:00Z".parse::<Timestamp>().unwrap());
     assert_eq!(test_clock.next_time_ns("one"), Some(following));
     assert_eq!(test_clock.next_time_ns("two"), Some(following));
+}
+
+#[rstest]
+#[case::default(false)]
+#[case::named(true)]
+fn test_callback_revocation_preserves_other_scope_and_new_registration(
+    #[case] named: bool,
+    #[values(false, true)] local: bool,
+) {
+    let default_calls = Arc::new(AtomicUsize::new(0));
+    let named_calls = Arc::new(AtomicUsize::new(0));
+
+    let callback = |calls: &Arc<AtomicUsize>| {
+        let calls = calls.clone();
+        let callback = move |_: TimeEvent| {
+            calls.fetch_add(1, Ordering::Relaxed);
+        };
+
+        if local {
+            TimeEventCallback::RustLocal(Rc::new(callback))
+        } else {
+            TimeEventCallback::from(callback)
+        }
+    };
+
+    let mut registry = CallbackRegistry::new();
+    let name = Ustr::from("named");
+    registry.register_default_handler(callback(&default_calls));
+    registry.register_callback(name, callback(&named_calls));
+    let event = |name| TimeEvent::new(name, nautilus_core::UUID4::new(), 10.into(), 11.into());
+    let old_default = registry.get_handler(event(Ustr::from("default")));
+    let old_named = registry.get_handler(event(name));
+    if named {
+        registry.clear();
+    } else {
+        registry.cancel_default_handler();
+    }
+
+    old_default.run();
+    old_named.run();
+    assert_eq!(default_calls.load(Ordering::Relaxed), usize::from(named));
+    assert_eq!(named_calls.load(Ordering::Relaxed), usize::from(!named));
+
+    if named {
+        registry.register_callback(name, callback(&named_calls));
+    } else {
+        registry.register_default_handler(callback(&default_calls));
+    }
+
+    registry.get_handler(event(name)).run();
+    registry.get_handler(event(Ustr::from("default"))).run();
+    assert_eq!(
+        default_calls.load(Ordering::Relaxed),
+        1 + usize::from(named)
+    );
+    assert_eq!(named_calls.load(Ordering::Relaxed), 1 + usize::from(!named));
+}
+
+#[rstest]
+#[case::default(false)]
+#[case::named(true)]
+fn test_replaced_callbacks_remain_queued_until_scope_revocation(#[case] named: bool) {
+    let calls = Arc::new(AtomicUsize::new(0));
+    let mut registry = CallbackRegistry::new();
+    let name = Ustr::from("replaced");
+    let event = || TimeEvent::new(name, nautilus_core::UUID4::new(), 20.into(), 21.into());
+    let mut handlers = Vec::new();
+
+    for _ in 0..2 {
+        let calls = calls.clone();
+        let callback = TimeEventCallback::from(move |_| {
+            calls.fetch_add(1, Ordering::Relaxed);
+        });
+
+        if named {
+            registry.register_callback(name, callback);
+        } else {
+            registry.register_default_handler(callback);
+        }
+
+        handlers.push(registry.get_handler(event()));
+    }
+
+    for handler in &handlers {
+        handler.clone().run();
+    }
+
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+
+    if named {
+        registry.clear();
+    } else {
+        registry.cancel_default_handler();
+    }
+
+    for handler in handlers {
+        handler.run();
+    }
+
+    assert_eq!(calls.load(Ordering::Relaxed), 2);
+}
+
+#[cfg(feature = "python")]
+#[rstest]
+#[case::default(false)]
+#[case::named(true)]
+fn test_python_callback_revocation_survives_reregistration(#[case] named: bool) {
+    Python::initialize();
+    Python::attach(|py| {
+        let received = PyList::empty(py);
+        let callback = TimeEventCallback::from(received.getattr("append").unwrap().unbind());
+        let mut original = CallbackRegistry::new();
+        let mut replacement = CallbackRegistry::new();
+        let name = Ustr::from("python-queued");
+        let event = || TimeEvent::new(name, nautilus_core::UUID4::new(), 30.into(), 31.into());
+        if named {
+            original.register_callback(name, callback);
+        } else {
+            original.register_default_handler(callback);
+        }
+
+        original.get_handler(event()).run();
+        assert_eq!(received.len(), 1);
+        let callback = original.get_callback(&name).unwrap();
+        replacement.register_default_handler(callback);
+        let queued = replacement.get_handler(event());
+
+        if named {
+            original.clear();
+        } else {
+            original.cancel_default_handler();
+        }
+
+        queued.run();
+        assert_eq!(received.len(), 1);
+    });
+}
+
+#[rstest]
+fn test_clock_reset_revokes_queued_named_callbacks_only() {
+    let mut clock = VirtualClock::new();
+    let default_calls = Arc::new(AtomicUsize::new(0));
+    let named_calls = Arc::new(AtomicUsize::new(0));
+
+    let callback = |calls: Arc<AtomicUsize>| {
+        TimeEventCallback::from(move |_| {
+            calls.fetch_add(1, Ordering::Relaxed);
+        })
+    };
+
+    clock.register_default_handler(callback(default_calls.clone()));
+    clock
+        .set_time_alert_ns("default", 1.into(), None, None)
+        .unwrap();
+    clock
+        .set_time_alert_ns("named", 1.into(), Some(callback(named_calls.clone())), None)
+        .unwrap();
+    let events = clock.advance_time(1.into(), true);
+    let handlers = clock.match_handlers(events);
+    assert_eq!(handlers.len(), 2);
+
+    clock.reset();
+
+    for handler in handlers {
+        handler.run();
+    }
+
+    assert_eq!(default_calls.load(Ordering::Relaxed), 1);
+    assert_eq!(named_calls.load(Ordering::Relaxed), 0);
+    assert_eq!(clock.timestamp_ns(), UnixNanos::default());
+    assert_eq!(clock.timer_count(), 0);
+
+    clock
+        .set_time_alert_ns("after-reset", 1.into(), None, None)
+        .unwrap();
+    let events = clock.advance_time(1.into(), true);
+    let handlers = clock.match_handlers(events);
+    assert_eq!(handlers.len(), 1);
+
+    for handler in handlers {
+        handler.run();
+    }
+
+    assert_eq!(default_calls.load(Ordering::Relaxed), 2);
+    assert_eq!(named_calls.load(Ordering::Relaxed), 0);
 }

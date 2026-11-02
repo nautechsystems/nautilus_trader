@@ -20,7 +20,13 @@
 //! Tests that arm shutdown-on-error use global logging state. Run with cargo-nextest for process
 //! isolation, or use --test-threads=1.
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc, str::FromStr};
+use std::{
+    cell::RefCell,
+    fmt::Debug,
+    rc::Rc,
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
 
 use nautilus_backtest::{
     config::{BacktestDataConfig, BacktestEngineConfig, BacktestRunConfig, BacktestVenueConfig},
@@ -50,8 +56,9 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_persistence::{
-    backend::parquet::catalog::ParquetDataCatalog,
+    backend::{extend_catalog_factories, parquet::catalog::ParquetDataCatalog},
     catalog::{
+        factory::{CatalogFactory, CatalogFactoryRegistry},
         traits::{CatalogReader, CatalogWriter},
         types::{CatalogInstrumentQuery, CatalogQuery},
     },
@@ -488,14 +495,18 @@ impl DataActor for LogErrorOnTick {
 }
 
 #[rstest]
-fn test_new_rejects_empty_configs() {
-    let result = BacktestNode::new(vec![]);
-    assert!(result.is_err());
-    assert!(
-        result
-            .unwrap_err()
-            .to_string()
-            .contains("At least one run config")
+#[case::constructor(false)]
+#[case::builder(true)]
+fn test_node_rejects_empty_configs(#[case] use_builder: bool) {
+    let result = if use_builder {
+        BacktestNode::builder(vec![]).build()
+    } else {
+        BacktestNode::new(vec![])
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "At least one run config is required",
     );
 }
 
@@ -607,7 +618,12 @@ fn test_run_clears_data_after_suppressed_error(crypto_perpetual_ethusdt: CryptoP
 }
 
 #[rstest]
-fn test_new_validates_venue_exists_for_instruments(crypto_perpetual_ethusdt: CryptoPerpetual) {
+#[case::constructor(false)]
+#[case::builder(true)]
+fn test_node_validates_venue_exists_for_instruments(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] use_builder: bool,
+) {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
     let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
 
@@ -628,9 +644,19 @@ fn test_new_validates_venue_exists_for_instruments(crypto_perpetual_ethusdt: Cry
         .build()
         .unwrap();
 
-    let result = BacktestNode::new(vec![config]);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("No venue config"));
+    let result = if use_builder {
+        BacktestNode::builder(vec![config]).build()
+    } else {
+        BacktestNode::new(vec![config])
+    };
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        format!(
+            "No venue config found for venue 'BINANCE' (required by instrument {})",
+            instrument.id(),
+        ),
+    );
 }
 
 #[rstest]
@@ -1002,6 +1028,111 @@ fn test_load_catalog(crypto_perpetual_ethusdt: CryptoPerpetual) {
 
     let instruments = catalog.instruments(&CatalogInstrumentQuery::new()).unwrap();
     assert_eq!(instruments.len(), 1);
+}
+
+#[rstest]
+#[case::oneshot(None)]
+#[case::streaming(Some(2))]
+fn test_node_uses_extended_catalog_factories(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+    #[case] chunk_size: Option<usize>,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let (_temp_dir, catalog_path) = create_catalog_with_quotes(&instrument, 5, 1_000_000_000);
+
+    let expected_quotes =
+        BacktestNode::load_data_config(&data_config(&catalog_path, instrument.id()), None, None)
+            .unwrap()
+            .into_iter()
+            .rev()
+            .map(|data| match data {
+                Data::Quote(quote) => quote,
+                _ => panic!("Expected a quote"),
+            })
+            .collect::<Vec<_>>();
+
+    let connections = Arc::new(Mutex::new(Vec::new()));
+    let factory_connections = Arc::clone(&connections);
+    let factory: CatalogFactory = Arc::new(move |config| {
+        factory_connections.lock().unwrap().push(config.uri.clone());
+        let catalog = ParquetDataCatalog::from_uri(&catalog_path, None, None, None, None)?;
+        Ok(Box::new(catalog))
+    });
+
+    let factories = extend_catalog_factories([("Indexed".to_string(), factory)]).unwrap();
+
+    let catalog = DataCatalogConfig::new(
+        "indexed://quotes".to_string(),
+        None,
+        Some(CatalogBackendType::External("Indexed".to_string())),
+    );
+    let data = BacktestDataConfig::builder()
+        .data_type(NautilusDataType::QuoteTick)
+        .catalog(catalog)
+        .instrument_id(instrument.id())
+        .build()
+        .unwrap();
+    let run = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![data])
+        .maybe_chunk_size(chunk_size)
+        .raise_exception(true)
+        .dispose_on_completion(false)
+        .build()
+        .unwrap();
+    let run_id = run.id().to_string();
+    let mut node = BacktestNode::builder(vec![run])
+        .with_catalog_factories(factories)
+        .build()
+        .unwrap();
+
+    assert!(node.get_engines().is_empty());
+
+    let results = node.run().unwrap();
+    let engine = node.get_engine(&run_id).unwrap();
+    let cache = engine.kernel().cache();
+    let cache = cache.borrow();
+    let cached_instrument = cache.instrument(&instrument.id()).unwrap();
+
+    assert_eq!(
+        *connections.lock().unwrap(),
+        vec!["indexed://quotes", "indexed://quotes"],
+    );
+    assert_eq!(
+        serde_json::to_value(cached_instrument).unwrap(),
+        serde_json::to_value(&instrument).unwrap(),
+    );
+    assert_eq!(cache.quotes(&instrument.id()), Some(expected_quotes));
+    assert_eq!(results.len(), 1);
+    assert_eq!(results[0].iterations, 5);
+}
+
+#[rstest]
+fn test_node_rejects_unregistered_builtin_catalog_factory(
+    crypto_perpetual_ethusdt: CryptoPerpetual,
+) {
+    let temp_dir = TempDir::new().unwrap();
+    let data = data_config(
+        temp_dir.path().to_str().unwrap(),
+        crypto_perpetual_ethusdt.id(),
+    );
+    let config = BacktestRunConfig::builder()
+        .venues(vec![binance_venue_config()])
+        .data(vec![data])
+        .raise_exception(true)
+        .build()
+        .unwrap();
+    let mut node = BacktestNode::builder(vec![config])
+        .with_catalog_factories(CatalogFactoryRegistry::new())
+        .build()
+        .unwrap();
+
+    let error = node.build().unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "No catalog factory registered for 'Parquet'",
+    );
 }
 
 #[rstest]

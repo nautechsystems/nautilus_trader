@@ -180,6 +180,11 @@ path = "benches/throttler.rs"
 harness = false
 
 [[bench]]
+name = "timer"
+path = "benches/timer.rs"
+harness = false
+
+[[bench]]
 name = "trading_commands"
 path = "benches/trading_commands.rs"
 harness = false

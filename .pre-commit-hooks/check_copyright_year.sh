@@ -41,18 +41,18 @@ while IFS=: read -r file _ line_content; do
   fi
 done < "$COPYRIGHT_TMP_DIR/year_headers"
 
-# Get list of files with copyright headers (sorted for comm)
+# Keep inventory sorting and comparison independent of the caller's locale
 { git grep -l -I -F "Copyright (C)" -- '*.rs' '*.py' || {
   status=$?
   [[ $status -eq 1 ]] || exit "$status"
 }; } |
-  sort > "$COPYRIGHT_TMP_DIR/files_with_headers"
+  LC_ALL=C sort > "$COPYRIGHT_TMP_DIR/files_with_headers"
 
 # Get all tracked files (sorted for comm)
-git ls-files '*.rs' '*.py' | sort > "$COPYRIGHT_TMP_DIR/all_files"
+git ls-files '*.rs' '*.py' | LC_ALL=C sort > "$COPYRIGHT_TMP_DIR/all_files"
 
 # Find files without headers (in all_files but not in files_with_headers)
-comm -23 "$COPYRIGHT_TMP_DIR/all_files" "$COPYRIGHT_TMP_DIR/files_with_headers" \
+LC_ALL=C comm -23 "$COPYRIGHT_TMP_DIR/all_files" "$COPYRIGHT_TMP_DIR/files_with_headers" \
   > "$COPYRIGHT_TMP_DIR/missing_headers"
 while IFS= read -r file; do
   if ! is_excluded_from_header_check "$file"; then

@@ -20,13 +20,15 @@ use nautilus_model::{
     data::{QuoteTick, TradeTick},
     identifiers::{InstrumentId, TradeId},
 };
-use ustr::Ustr;
 
 use super::{
     Decode,
     rows::{Precision, Rows, date_time, number, text},
 };
-use crate::websocket::parse::{parse_aggressor_side, price_at, quantity_at};
+use crate::{
+    common::enums::TakerSide,
+    websocket::parse::{parse_aggressor_side, price_at, quantity_at},
+};
 
 /// Converts `T-TRADES` rows to [`TradeTick`]s, skipping zero-size trades.
 #[derive(Debug)]
@@ -93,7 +95,7 @@ impl Decode for TradeDecoder {
             self.instrument_id,
             price_at(trade_price, price.value, "price")?,
             quantity_at(trade_size, size.value, "base_amount")?,
-            parse_aggressor_side(Ustr::from(text(record, self.taker_side)?)),
+            parse_aggressor_side(TakerSide::from(text(record, self.taker_side)?)),
             TradeId::new_checked(text(record, self.guid)?)?,
             date_time(text(record, self.time_exchange)?, "time_exchange")?,
             date_time(text(record, self.time_coinapi)?, "time_coinapi")?,

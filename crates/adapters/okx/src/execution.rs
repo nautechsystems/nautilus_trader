@@ -36,7 +36,7 @@ use nautilus_common::{
     },
 };
 use nautilus_core::{
-    DurationNanos, UnixNanos,
+    DurationNanos, UUID4, UnixNanos,
     params::Params,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
@@ -220,6 +220,7 @@ impl OKXExecutionClient {
             ws_private.pending_orders.clone(),
             ws_private.pending_cancels.clone(),
             ws_private.pending_amends.clone(),
+            ws_private.pending_command_ids.clone(),
         ));
 
         Ok(Self {
@@ -756,6 +757,7 @@ impl OKXExecutionClient {
                     cmd.instrument_id,
                     cmd.client_order_id,
                     cmd.venue_order_id,
+                    Some(cmd.command_id),
                 );
                 return;
             }
@@ -795,6 +797,7 @@ impl OKXExecutionClient {
                     command.instrument_id,
                     command.client_order_id,
                     command.venue_order_id,
+                    Some(command.command_id),
                 );
             }
 
@@ -818,12 +821,13 @@ impl OKXExecutionClient {
 
         self.spawn_task("cancel_order", async move {
             let result = ws_private
-                .cancel_order(
+                .cancel_order_with_causation(
                     command.trader_id,
                     command.strategy_id,
                     command.instrument_id,
                     Some(command.client_order_id),
                     command.venue_order_id,
+                    Some(command.command_id),
                 )
                 .await;
 
@@ -838,15 +842,19 @@ impl OKXExecutionClient {
                         clock,
                         command.client_order_id,
                         command.venue_order_id,
+                        Some(command.command_id),
                     );
                 } else {
+                    let emit_local =
+                        matches!(&failure, CommandFailure::NotSent(_)).then_some((&emitter, clock));
                     emit_cancel_failure(
                         failure,
-                        None,
+                        emit_local,
                         command.client_order_id,
                         command.instrument_id,
                         command.strategy_id,
                         command.venue_order_id,
+                        Some(command.command_id),
                     );
                 }
 
@@ -882,6 +890,7 @@ impl OKXExecutionClient {
                     command.instrument_id,
                     command.strategy_id,
                     command.venue_order_id,
+                    Some(command.command_id),
                 );
                 return Err(anyhow::Error::new(e).context("cancel order failed"));
             }
@@ -929,6 +938,7 @@ impl OKXExecutionClient {
                         command.instrument_id,
                         command.strategy_id,
                         command.venue_order_id,
+                        Some(command.command_id),
                     );
                     return Err(anyhow::Error::new(e).context("cancel algo order failed"));
                 }
@@ -949,6 +959,7 @@ impl OKXExecutionClient {
                             command.instrument_id,
                             command.strategy_id,
                             command.venue_order_id,
+                            Some(command.command_id),
                         );
 
                         if is_rejected {
@@ -1091,9 +1102,11 @@ impl OKXExecutionClient {
                         emit_algo_cancel_rejections(&responses, &regular_contexts, &emitter, clock);
                     }
                     Err(e) => {
-                        log_algo_batch_cancel_failure(
+                        emit_algo_batch_cancel_failure(
                             classify_okx_http_failure(&e),
                             &regular_contexts,
+                            &emitter,
+                            clock,
                         );
                         return Err(anyhow::Error::new(e).context("cancel algo orders failed"));
                     }
@@ -1118,9 +1131,11 @@ impl OKXExecutionClient {
                         emit_algo_cancel_rejections(&responses, &advance_contexts, &emitter, clock);
                     }
                     Err(e) => {
-                        log_algo_batch_cancel_failure(
+                        emit_algo_batch_cancel_failure(
                             classify_okx_http_failure(&e),
                             &advance_contexts,
+                            &emitter,
+                            clock,
                         );
                         return Err(
                             anyhow::Error::new(e).context("cancel advance algo orders failed")
@@ -2316,6 +2331,7 @@ impl ExecutionClient for OKXExecutionClient {
                 context.trigger_price,
                 Some(context.is_post_only),
                 Some(context.is_reduce_only),
+                Some(context.is_quote_quantity),
                 outcome.clone(),
                 rpi,
                 rpi_taker_access,
@@ -2378,13 +2394,14 @@ impl ExecutionClient for OKXExecutionClient {
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         if self.http_client.is_spread(cmd.instrument_id) {
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.client_order_id,
                 cmd.venue_order_id,
                 "OKX spread orders do not support modify requests",
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -2431,7 +2448,7 @@ impl ExecutionClient for OKXExecutionClient {
 
         self.spawn_task("modify_order", async move {
             let result = ws_private
-                .modify_order(
+                .modify_order_with_causation(
                     command.trader_id,
                     command.strategy_id,
                     command.instrument_id,
@@ -2443,6 +2460,7 @@ impl ExecutionClient for OKXExecutionClient {
                     new_px_vol,
                     rpi_taker_access,
                     rpi_px_round,
+                    Some(command.command_id),
                 )
                 .await;
 
@@ -2455,6 +2473,7 @@ impl ExecutionClient for OKXExecutionClient {
                     command.instrument_id,
                     command.client_order_id,
                     command.venue_order_id,
+                    Some(command.command_id),
                 );
                 return Err(anyhow::Error::new(e).context("modify order failed"));
             }
@@ -2546,6 +2565,7 @@ impl ExecutionClient for OKXExecutionClient {
         let cache = self.core.cache();
 
         let mut regular_payload = Vec::new();
+        let mut regular_causes = Vec::new();
         let mut algo_orders = Vec::new();
         let mut http_orders = Vec::new();
 
@@ -2572,6 +2592,7 @@ impl ExecutionClient for OKXExecutionClient {
                         cancel.strategy_id,
                         cancel.instrument_id,
                     );
+                    regular_causes.push((cancel.client_order_id, cancel.command_id));
                     regular_payload.push((
                         cancel.instrument_id,
                         Some(cancel.client_order_id),
@@ -2594,6 +2615,7 @@ impl ExecutionClient for OKXExecutionClient {
                         cancel.instrument_id,
                         cancel.strategy_id,
                         authoritative_venue_order_id,
+                        cancel.command_id,
                     ));
                 }
             }
@@ -2606,15 +2628,23 @@ impl ExecutionClient for OKXExecutionClient {
             let emitter = self.emitter.clone();
             let clock = self.clock;
             self.spawn_task("batch_cancel_orders", async move {
-                const BATCH_SIZE: usize = 20;
+                let mut offset = 0;
+                while offset < regular_payload.len() {
+                    let end = offset + cancel_batch_len(&regular_causes[offset..]);
+                    let batch = &regular_payload[offset..end];
+                    let causes = regular_causes[offset..end].to_vec();
 
-                for (index, batch) in regular_payload.chunks(BATCH_SIZE).enumerate() {
-                    if let Err(e) = ws_private.batch_cancel_orders(batch.to_vec()).await {
+                    if let Err(e) = ws_private
+                        .batch_cancel_orders_with_causation(batch.to_vec(), causes)
+                        .await
+                    {
                         let failure = classify_okx_ws_failure(&e);
 
-                        if matches!(e, OKXWsError::HandlerUnavailable(_)) {
-                            for (_, client_order_id, venue_order_id) in
-                                &regular_payload[index * BATCH_SIZE..]
+                        if matches!(failure, CommandFailure::NotSent(_)) {
+                            for ((_, client_order_id, venue_order_id), (_, command_id)) in
+                                regular_payload[offset..]
+                                    .iter()
+                                    .zip(&regular_causes[offset..])
                             {
                                 let Some(client_order_id) = client_order_id else {
                                     continue;
@@ -2627,6 +2657,7 @@ impl ExecutionClient for OKXExecutionClient {
                                     clock,
                                     *client_order_id,
                                     *venue_order_id,
+                                    Some(*command_id),
                                 );
                             }
                         } else {
@@ -2635,6 +2666,8 @@ impl ExecutionClient for OKXExecutionClient {
 
                         return Err(anyhow::Error::new(e).context("batch cancel orders failed"));
                     }
+
+                    offset = end;
                 }
                 Ok(())
             });
@@ -2656,6 +2689,7 @@ impl ExecutionClient for OKXExecutionClient {
                         },
                     };
                     let ctx = AlgoCancelContext {
+                        causation_id: Some(cancel.command_id),
                         client_order_id: cancel.client_order_id,
                         instrument_id: cancel.instrument_id,
                         strategy_id: cancel.strategy_id,
@@ -2673,7 +2707,9 @@ impl ExecutionClient for OKXExecutionClient {
             let clock = self.clock;
 
             self.spawn_task("cancel_http_orders", async move {
-                for (client_order_id, instrument_id, strategy_id, venue_order_id) in http_orders {
+                for (client_order_id, instrument_id, strategy_id, venue_order_id, command_id) in
+                    http_orders
+                {
                     if let Err(e) = client
                         .cancel_order(instrument_id, Some(client_order_id), venue_order_id)
                         .await
@@ -2685,6 +2721,7 @@ impl ExecutionClient for OKXExecutionClient {
                             instrument_id,
                             strategy_id,
                             venue_order_id,
+                            Some(command_id),
                         );
                     }
                 }
@@ -3747,6 +3784,10 @@ fn emit_submit_failure(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
 fn emit_modify_failure(
     failure: CommandFailure,
     emitter: &ExecutionEventEmitter,
@@ -3755,9 +3796,21 @@ fn emit_modify_failure(
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
+    causation_id: Option<UUID4>,
 ) {
     match failure {
-        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+        CommandFailure::NotSent(reason) => {
+            emitter.emit_order_modify_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &reason,
+                clock.get_time_ns(),
+                causation_id,
+            );
+        }
+        CommandFailure::VenueRejected(reason) => {
             emitter.emit_order_modify_rejected_event(
                 strategy_id,
                 instrument_id,
@@ -3765,6 +3818,7 @@ fn emit_modify_failure(
                 venue_order_id,
                 &reason,
                 clock.get_time_ns(),
+                causation_id,
             );
         }
         CommandFailure::Ambiguous(reason) => {
@@ -3843,6 +3897,7 @@ fn emit_cancel_failure(
     instrument_id: InstrumentId,
     strategy_id: StrategyId,
     venue_order_id: Option<VenueOrderId>,
+    causation_id: Option<UUID4>,
 ) {
     match failure {
         CommandFailure::VenueRejected(reason) => {
@@ -3854,6 +3909,7 @@ fn emit_cancel_failure(
                     venue_order_id,
                     &reason,
                     clock.get_time_ns(),
+                    causation_id,
                 );
             } else {
                 log::warn!(
@@ -3862,7 +3918,17 @@ fn emit_cancel_failure(
             }
         }
         CommandFailure::NotSent(reason) => {
-            log::warn!("Cancel command failed local validation for {client_order_id}: {reason}");
+            if let Some((emitter, clock)) = emit_venue {
+                emitter.emit_order_cancel_denied_event(
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    causation_id,
+                );
+            }
         }
         CommandFailure::Ambiguous(reason) => {
             log::warn!(
@@ -3870,6 +3936,16 @@ fn emit_cancel_failure(
             );
         }
     }
+}
+
+// Responses identify children by order ID, so repeated targets need separate requests
+fn cancel_batch_len(commands: &[(ClientOrderId, UUID4)]) -> usize {
+    let mut targets = AHashSet::new();
+    commands
+        .iter()
+        .take(20)
+        .take_while(|(id, _)| targets.insert(*id))
+        .count()
 }
 
 fn log_batch_cancel_failure(failure: CommandFailure, order_count: usize) {
@@ -3900,13 +3976,23 @@ fn log_mass_cancel_failure(failure: CommandFailure, instrument_id: InstrumentId)
     }
 }
 
-fn log_algo_batch_cancel_failure(failure: CommandFailure, contexts: &[AlgoCancelContext]) {
+fn emit_algo_batch_cancel_failure(
+    failure: CommandFailure,
+    contexts: &[AlgoCancelContext],
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+) {
     match failure {
         CommandFailure::NotSent(reason) => {
             for ctx in contexts {
-                log::warn!(
-                    "Algo batch cancel command failed local validation for {}: {reason}",
-                    ctx.client_order_id
+                emitter.emit_order_cancel_denied_event(
+                    ctx.strategy_id,
+                    ctx.instrument_id,
+                    ctx.client_order_id,
+                    ctx.venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    ctx.causation_id,
                 );
             }
         }
@@ -4109,9 +4195,12 @@ mod tests {
     use ustr::Ustr;
 
     use super::*;
-    use crate::common::{
-        consts::OKX_CLIENT_ID, enums::OKXEnvironment, models::OKXInstrument,
-        parse::parse_instrument_any,
+    use crate::{
+        common::{
+            consts::OKX_CLIENT_ID, enums::OKXEnvironment, models::OKXInstrument,
+            parse::parse_instrument_any,
+        },
+        websocket::enums::OKXWsOperation,
     };
 
     struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
@@ -5070,7 +5159,7 @@ mod tests {
         true,
         "OKX does not support modification of this algo order type"
     )]
-    fn test_modify_algo_order_rejects_locally(
+    fn test_modify_algo_order_denies_locally(
         #[case] algo_type: Option<OKXAlgoOrderType>,
         #[case] has_context: bool,
         #[case] has_id: bool,
@@ -5105,6 +5194,7 @@ mod tests {
             );
         }
 
+        let cause = UUID4::new();
         let venue_order_id = has_id.then(|| VenueOrderId::from("7004"));
         client.modify_algo_order(&ModifyOrder::new(
             TraderId::from("TESTER-001"),
@@ -5116,18 +5206,19 @@ mod tests {
             None,
             None,
             Some(Price::from("54000.0")),
-            UUID4::new(),
+            cause,
             UnixNanos::default(),
             None,
             None,
         ));
 
-        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) =
+        let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) =
             event_rx.try_recv().unwrap()
         else {
-            panic!("expected OrderModifyRejected");
+            panic!("expected OrderModifyDenied");
         };
 
+        assert_eq!(rejected.causation_id, Some(cause));
         assert_eq!(rejected.client_order_id, client_order_id);
         assert_eq!(rejected.venue_order_id, venue_order_id);
         assert_eq!(rejected.instrument_id, instrument_id);
@@ -5307,53 +5398,7 @@ mod tests {
     ) {
         let (mut client, cache) = build_test_exec_client_with_cache();
         client.config.use_mm_mass_cancel = use_mm_mass_cancel;
-        let (request_tx, mut request_rx) = tokio::sync::mpsc::unbounded_channel();
-
-        let router = Router::new().route(
-            "/ws",
-            get(move |ws: WebSocketUpgrade| {
-                let tx = request_tx.clone();
-                async move {
-                    ws.on_upgrade(move |mut socket| async move {
-                        while let Some(Ok(Message::Text(text))) = socket.next().await {
-                            let request: Value = serde_json::from_str(&text).unwrap();
-                            if request["op"] == "login" {
-                                let response =
-                                    serde_json::json!({"event": "login", "code": "0", "msg": "", "connId": "test-conn"});
-                                socket
-                                    .send(Message::Text(response.to_string().into()))
-                                    .await
-                                    .unwrap();
-                            } else {
-                                tx.send(request).unwrap();
-                            }
-                        }
-                    })
-                }
-            }),
-        );
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("ws://{}/ws", listener.local_addr().unwrap());
-
-        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        client.ws_private = OKXWebSocketClient::with_credentials(
-            Some(url),
-            Some("test_key".into()),
-            Some("test_secret".into()),
-            Some("test_pass".into()),
-            Some(client.core.account_id),
-            None,
-            None,
-            client.config.transport_backend,
-            None,
-        )
-        .unwrap();
-        client
-            .ws_private
-            .cache_inst_id_code(ustr::Ustr::from("BTC-USDT"), 10459);
-        client.ws_private.connect().await.unwrap();
-        client.ws_private.wait_until_active(5.0).await.unwrap();
+        let (server, mut request_rx) = connect_cancel_websocket(&mut client).await;
         let instrument_id = InstrumentId::from("BTC-USDT.OKX");
 
         let expected_ids: Vec<_> = (0..copies)
@@ -6394,10 +6439,160 @@ mod tests {
     }
 
     #[rstest]
-    #[case::single(1, false)]
-    #[case::batch(23, true)]
     #[tokio::test]
-    async fn closed_handler_rejects_every_unsent_cancel(#[case] count: usize, #[case] batch: bool) {
+    async fn repeated_cancel_targets_use_distinct_request_contexts() {
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        let (server, mut request_rx) = connect_cancel_websocket(&mut client).await;
+        let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+        let strategy_id = StrategyId::from("S-BATCH-CANCEL");
+        let target = ClientOrderId::from("OREPEATEDCANCEL");
+        let venue = VenueOrderId::from("repeat-venue");
+        let mut order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(target)
+            .strategy_id(strategy_id)
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("0.005"))
+            .price(Price::from("110000"))
+            .build();
+        order
+            .apply(TestOrderEventStubs::accepted(
+                &order,
+                client.core.account_id,
+                venue,
+            ))
+            .unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+        let causes = [UUID4::new(), UUID4::new()];
+
+        let cancels = causes.map(|cause| {
+            CancelOrder::new(
+                client.core.trader_id,
+                Some(*OKX_CLIENT_ID),
+                strategy_id,
+                instrument_id,
+                target,
+                Some(venue),
+                cause,
+                UnixNanos::default(),
+                None,
+                None,
+            )
+        });
+
+        client
+            .batch_cancel_orders(BatchCancelOrders::new(
+                client.core.trader_id,
+                Some(*OKX_CLIENT_ID),
+                strategy_id,
+                instrument_id,
+                cancels.to_vec(),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        let mut request_ids = Vec::new();
+
+        for cause in causes {
+            let request = tokio::time::timeout(Duration::from_secs(5), request_rx.recv())
+                .await
+                .unwrap()
+                .unwrap();
+            let id = request["id"].as_str().unwrap().to_string();
+            assert_eq!(
+                request,
+                serde_json::json!({
+                    "id": id.as_str(), "op": "batch-cancel-orders",
+                    "args": [{"instIdCode":10459, "clOrdId":target.as_str(), "ordId":venue.as_str()}],
+                })
+            );
+            assert_eq!(
+                *client.ws_private.pending_command_ids.get(&id).unwrap(),
+                vec![(target, cause)]
+            );
+            request_ids.push(id);
+        }
+
+        assert_ne!(request_ids[0], request_ids[1]);
+        wait_until_async(
+            || async { client.pending_tasks.all_finished() },
+            Duration::from_secs(5),
+        )
+        .await;
+        client.ws_private.close().await.unwrap();
+        server.abort();
+        let _ = server.await;
+    }
+
+    async fn connect_cancel_websocket(
+        client: &mut OKXExecutionClient,
+    ) -> (
+        tokio::task::JoinHandle<()>,
+        tokio::sync::mpsc::UnboundedReceiver<Value>,
+    ) {
+        let (request_tx, request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let router = Router::new().route(
+            "/ws",
+            get(move |ws: WebSocketUpgrade| {
+                let tx = request_tx.clone();
+                async move {
+                    ws.on_upgrade(move |mut socket| async move {
+                        while let Some(Ok(Message::Text(text))) = socket.next().await {
+                            let request: Value = serde_json::from_str(&text).unwrap();
+                            if request["op"] == "login" {
+                                let response =
+                                    serde_json::json!({"event": "login", "code": "0", "msg": "", "connId": "test-conn"});
+                                socket
+                                    .send(Message::Text(response.to_string().into()))
+                                    .await
+                                    .unwrap();
+                            } else {
+                                tx.send(request).unwrap();
+                            }
+                        }
+                    })
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}/ws", listener.local_addr().unwrap());
+
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        client.ws_private = OKXWebSocketClient::with_credentials(
+            Some(url),
+            Some("test_key".into()),
+            Some("test_secret".into()),
+            Some("test_pass".into()),
+            Some(client.core.account_id),
+            None,
+            None,
+            client.config.transport_backend,
+            None,
+        )
+        .unwrap();
+        client
+            .ws_private
+            .cache_inst_id_code(ustr::Ustr::from("BTC-USDT"), 10459);
+        client.ws_private.connect().await.unwrap();
+        client.ws_private.wait_until_active(5.0).await.unwrap();
+        (server, request_rx)
+    }
+
+    #[rstest]
+    #[case::single(1, false, false)]
+    #[case::batch(23, true, false)]
+    #[case::repeated(2, true, true)]
+    #[tokio::test]
+    async fn closed_handler_denies_every_unsent_cancel(
+        #[case] count: usize,
+        #[case] batch: bool,
+        #[case] repeated: bool,
+    ) {
         let (mut client, cache) = build_test_exec_client_with_cache();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(event_tx);
@@ -6448,6 +6643,13 @@ mod tests {
             ));
         }
 
+        let target = cancels[0].client_order_id;
+        let venue = cancels[0].venue_order_id;
+        for cancel in cancels.iter_mut().skip(1).filter(|_| repeated) {
+            cancel.client_order_id = target;
+            cancel.venue_order_id = venue;
+        }
+
         if batch {
             let command = BatchCancelOrders::new(
                 TraderId::from("TESTER-001"),
@@ -6478,14 +6680,17 @@ mod tests {
         assert_eq!(events.len(), count);
 
         for (index, (event, cancel)) in events.iter().zip(cancels).enumerate() {
-            let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event else {
-                panic!("Expected cancel rejection, received {event:?}");
+            let ExecutionEvent::Order(OrderEventAny::CancelDenied(rejected)) = event else {
+                panic!("Expected cancel denial, received {event:?}");
             };
 
             assert_eq!(rejected.trader_id, client.core.trader_id);
             assert_eq!(rejected.strategy_id, strategy_id);
             assert_eq!(rejected.instrument_id, instrument_id);
             assert_eq!(rejected.client_order_id, cancel.client_order_id);
+            assert_eq!(rejected.causation_id, Some(cancel.command_id));
+
+            let index = if repeated { 0 } else { index };
 
             let expected_venue_order_id = if index % 2 == 0 {
                 Some(VenueOrderId::from(format!("authoritative-venue-{index}")))
@@ -6499,8 +6704,6 @@ mod tests {
                 rejected.reason.as_str(),
                 "Handler not available: channel closed"
             );
-            assert!(!rejected.reconciliation);
-            assert_eq!(rejected.causation_id, None);
             assert_eq!(
                 cache
                     .borrow()
@@ -6516,7 +6719,7 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_local_cancel_validation_failure_does_not_emit_order_cancel_rejected() {
+    async fn test_local_cancel_validation_emits_correlated_denial() {
         let (mut client, cache) = build_test_exec_client_with_cache();
         let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
         client.emitter.set_sender(event_tx);
@@ -6549,6 +6752,9 @@ mod tests {
             causation_id: None,
         };
 
+        let cause = command.command_id;
+        let before =
+            serde_json::to_value(cache.borrow().order_owned(&client_order_id).unwrap()).unwrap();
         client.cancel_order(command).expect("cancel order");
         wait_until_async(
             || async { client.pending_tasks.all_finished() },
@@ -6560,13 +6766,19 @@ mod tests {
             .expect("execution task terminated");
 
         let events: Vec<_> = std::iter::from_fn(|| event_rx.try_recv().ok()).collect();
-        assert!(
-            !events.iter().any(|event| matches!(
-                event,
-                ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected))
-                    if rejected.client_order_id == client_order_id
-            )),
-            "local cancel validation failure should not emit OrderCancelRejected: {events:?}",
+
+        let [ExecutionEvent::Order(OrderEventAny::CancelDenied(event))] = events.as_slice() else {
+            panic!("expected one cancel denial: {events:?}")
+        };
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(event.strategy_id, strategy_id);
+        assert_eq!(event.instrument_id, instrument_id);
+        assert_eq!(event.venue_order_id, Some(VenueOrderId::from("v-1")));
+        assert_eq!(event.causation_id, Some(cause));
+        assert_eq!(
+            serde_json::to_value(cache.borrow().order_owned(&client_order_id).unwrap()).unwrap(),
+            before
         );
     }
 
@@ -7353,6 +7565,264 @@ mod tests {
             assert_eq!(body["sz"], "2");
         }
 
+        client.disconnect().await.unwrap();
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::accepted("0", OKXTradeMode::Cross, "0")]
+    #[case::accepted_isolated("0", OKXTradeMode::Isolated, "0")]
+    #[case::accepted_spot_isolated("0", OKXTradeMode::SpotIsolated, "0")]
+    #[case::rejected("51000", OKXTradeMode::Cash, "1")]
+    #[case::ambiguous("50004", OKXTradeMode::Cross, "1")]
+    #[tokio::test]
+    async fn test_spot_market_submission_preserves_quantity_intent(
+        #[case] response_code: &str,
+        #[case] trade_mode: OKXTradeMode,
+        #[case] overall_code: &str,
+        #[values(
+            (OrderSide::Buy, false, Some("base_ccy"), "0.12345"),
+            (OrderSide::Buy, true, Some("quote_ccy"), "12.34500"),
+            (OrderSide::Sell, false, None, "0.12345"),
+            (OrderSide::Sell, true, Some("quote_ccy"), "12.34500")
+        )]
+        sizing: (OrderSide, bool, Option<&str>, &str),
+        #[values(false, true)] batch: bool,
+    ) {
+        let (side, quote_quantity, target, quantity) = sizing;
+
+        let (operation, wire_operation) = if batch {
+            (OKXWsOperation::BatchOrders, "batch-orders")
+        } else {
+            (OKXWsOperation::Order, "order")
+        };
+
+        let (request_tx, mut request_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (barrier_tx, mut barrier_rx) = tokio::sync::mpsc::unbounded_channel();
+        let ws_tx = request_tx.clone();
+        let router = Router::new().route("/ws", get(move |ws: WebSocketUpgrade| {
+            let tx = ws_tx.clone();
+            let barrier_tx = barrier_tx.clone();
+            async move { ws.on_upgrade(move |mut socket| async move {
+                while let Some(Ok(Message::Text(text))) = socket.next().await {
+                    let request: Value = serde_json::from_str(&text).unwrap();
+                    match request["op"].as_str() {
+                        Some("login") => {
+                            let response = serde_json::json!({"event":"login", "code":"0", "msg":"", "connId":"test"});
+                            socket.send(Message::Text(response.to_string().into())).await.unwrap();
+                        }
+                        Some("subscribe") => {
+                            let response = serde_json::json!({"event":"subscribe", "arg":request["args"][0], "connId":"test"});
+                            socket.send(Message::Text(response.to_string().into())).await.unwrap();
+                            barrier_tx.send(()).unwrap();
+                        }
+                        _ => tx.send(request).unwrap(),
+                    }
+                }
+            }) }
+        })).route("/api/v5/trade/order", post(move |Json(request): Json<Value>| {
+            let tx = request_tx.clone();
+            async move {
+                tx.send(request).unwrap();
+                let response = serde_json::from_str::<Value>(include_str!("../test_data/http_place_order_response.json")).unwrap();
+                Json(serde_json::json!({"code":"0", "msg":"", "data":[response]}))
+            }
+        }));
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (mut client, cache) = build_test_exec_client_with_cache();
+
+        client.http_client = OKXHttpClient::with_credentials(
+            Some("key".into()),
+            Some("secret".into()),
+            Some("pass".into()),
+            Some(format!("http://{address}")),
+            5,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        client.ws_private = OKXWebSocketClient::with_credentials(
+            Some(format!("ws://{address}/ws")),
+            Some("key".into()),
+            Some("secret".into()),
+            Some("pass".into()),
+            Some(client.core.account_id),
+            None,
+            None,
+            client.config.transport_backend,
+            None,
+        )
+        .unwrap();
+        let raw: Value = serde_json::from_str(include_str!(
+            "../test_data/http_get_instruments_spot_usdc.json"
+        ))
+        .unwrap();
+        let raw: OKXInstrument = serde_json::from_value(raw["data"][0].clone()).unwrap();
+        let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
+            .unwrap()
+            .unwrap();
+        let instrument_id = instrument.id();
+        client.on_instrument(instrument);
+        client
+            .ws_private
+            .cache_inst_id_code(Ustr::from("BTC-USDC"), 20459);
+        client.ws_private.connect().await.unwrap();
+        client.ws_private.wait_until_active(5.0).await.unwrap();
+        let (event_tx, mut event_rx) = tokio::sync::mpsc::unbounded_channel();
+        client.emitter.set_sender(event_tx);
+
+        let quantity = Quantity::from(quantity);
+
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from("OSPOTUNITS"))
+            .side(side)
+            .quantity(quantity)
+            .quote_quantity(quote_quantity)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*OKX_CLIENT_ID), false)
+            .unwrap();
+
+        let params = Params::new(
+            [(
+                "td_mode".into(),
+                Value::from(trade_mode.to_string().to_lowercase()),
+            )]
+            .into(),
+        );
+
+        if batch {
+            let list = OrderList::new(
+                OrderListId::from("OL-UNITS"),
+                instrument_id,
+                order.strategy_id(),
+                vec![order.client_order_id()],
+                UnixNanos::default(),
+            );
+            client
+                .submit_order_list(SubmitOrderList::new(
+                    client.core.trader_id,
+                    Some(*OKX_CLIENT_ID),
+                    order.strategy_id(),
+                    list,
+                    vec![OrderInitialized::from(&order)],
+                    None,
+                    None,
+                    Some(params),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                ))
+                .unwrap();
+        } else {
+            let mut command = SubmitOrder::from_order(
+                &order,
+                client.core.trader_id,
+                Some(*OKX_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+            );
+            command.params = Some(params);
+            client.submit_order(command).unwrap();
+        }
+
+        let request = tokio::time::timeout(Duration::from_secs(5), request_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        let mut fee_cache = FeeCache::new();
+        let mut filled_qty_cache = FilledQtyCache::new();
+        let mut snapshots = AHashMap::new();
+
+        let message = OKXWsMessage::OrderResponse {
+            id: Some("quantity-response".into()),
+            op: operation,
+            code: overall_code.into(),
+            msg: String::new(),
+            client_order_ids: Vec::new(),
+            data: vec![serde_json::json!({
+                "clOrdId": "OSPOTUNITS", "ordId": "98765",
+                "sCode": response_code, "sMsg": "Parameter tdMode error",
+            })],
+        };
+
+        dispatch_ws_message(
+            message,
+            &client.emitter,
+            &client.ws_dispatch_state,
+            client.core.account_id,
+            client.core.account_type,
+            &client.ws_private.instruments_cache_arc(),
+            &mut fee_cache,
+            &mut filled_qty_cache,
+            &mut snapshots,
+            client.clock,
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) =
+            event_rx.try_recv().unwrap()
+        else {
+            panic!("expected submitted event")
+        };
+
+        assert_eq!(submitted.client_order_id, order.client_order_id());
+        assert_eq!(submitted.instrument_id, instrument_id);
+        assert_eq!(submitted.strategy_id, order.strategy_id());
+        assert_eq!(submitted.account_id, client.core.account_id);
+        assert_eq!(request["op"], wire_operation);
+        assert_eq!(
+            request["args"][0]["tdMode"],
+            trade_mode.to_string().to_lowercase()
+        );
+        assert_eq!(request["args"][0]["sz"], quantity.to_string());
+        assert_eq!(
+            request["args"][0].get("tgtCcy").and_then(Value::as_str),
+            target
+        );
+
+        if response_code == "51000" {
+            let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) =
+                event_rx.try_recv().unwrap()
+            else {
+                panic!("expected rejection")
+            };
+
+            assert_eq!(rejected.client_order_id, order.client_order_id());
+            assert_eq!(rejected.instrument_id, instrument_id);
+            assert_eq!(
+                rejected.reason.as_str(),
+                "OKX error 51000: Parameter tdMode error"
+            );
+        }
+
+        wait_until_async(
+            || async { client.pending_tasks.is_empty() },
+            Duration::from_secs(1),
+        )
+        .await;
+
+        // Wait for a later frame so the absence check includes queued order sends
+        client
+            .ws_private
+            .subscribe_orders(OKXInstrumentType::Spot)
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(1), barrier_rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(event_rx.try_recv().is_err());
+        assert!(request_rx.try_recv().is_err());
         client.disconnect().await.unwrap();
         server.abort();
     }

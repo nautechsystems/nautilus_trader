@@ -863,6 +863,7 @@ fn test_process_modify_rejects_invalid_price(
         other => panic!("Expected OrderModifyRejected, was {other:?}"),
     };
 
+    assert_eq!(rejected.causation_id, Some(modify.command_id));
     assert_eq!(rejected.client_order_id, order.client_order_id());
     assert_eq!(rejected.reason, Ustr::from(expected_reason));
     assert_eq!(
@@ -3209,6 +3210,8 @@ fn test_process_cancel_command_order_not_found(
         OrderEventAny::CancelRejected(rejected) => rejected,
         _ => panic!("Expected OrderRejected event in first message"),
     };
+
+    assert_eq!(rejected.causation_id, Some(cancel_command.command_id));
     assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(
         rejected.reason,
@@ -4068,6 +4071,8 @@ fn test_process_modify_order_rejected_not_found(
         OrderEventAny::ModifyRejected(rejected) => rejected,
         _ => panic!("Expected OrderRejected event in first message"),
     };
+
+    assert_eq!(rejected.causation_id, Some(modify_order_command.command_id));
     assert_eq!(rejected.client_order_id, client_order_id);
 }
 

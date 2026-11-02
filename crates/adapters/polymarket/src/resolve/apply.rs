@@ -37,11 +37,15 @@ use super::{
     watchlist::{ResolveWatchlist, TrackedInstrument},
 };
 use crate::{
-    common::consts::{GAMMA_CONDITION_IDS_BATCH_SIZE, POLYMARKET_PRICE_PRECISION},
+    common::consts::{
+        GAMMA_CONDITION_IDS_BATCH_SIZE, MARKET_VERSION_KEY, MARKET_VERSION_V2,
+        POLYMARKET_PRICE_PRECISION, SUPPORTED_MARKET_VERSION,
+    },
     http::{
-        clob::PolymarketClobPublicClient, gamma::PolymarketGammaHttpClient,
+        clob::PolymarketClobPublicClient, gamma::PolymarketGammaHttpClient, models::GammaMarket,
         query::GetGammaMarketsParams,
     },
+    providers::extract_condition_id,
 };
 
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -210,15 +214,31 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
 
     for chunk in unique_condition_ids.chunks(GAMMA_CONDITION_IDS_BATCH_SIZE) {
         let mut unresolved_in_chunk: Vec<String> = chunk.to_vec();
-        let params = GetGammaMarketsParams {
-            condition_ids: Some(chunk.to_vec()),
-            closed: Some(true),
-            ..Default::default()
-        };
 
-        match gamma_client.request_markets_by_params(params).await {
-            Ok(markets) => {
+        let ctf_only = chunk.iter().all(|condition_id| {
+            ctx.watchlist.read().get(condition_id).is_some_and(|entry| {
+                !entry.tracked.is_empty()
+                    && entry
+                        .tracked
+                        .values()
+                        .all(|tracked| tracked.market_version == SUPPORTED_MARKET_VERSION)
+            })
+        });
+
+        let mut gamma_failures = AHashMap::new();
+
+        match request_resolution_markets(gamma_client, chunk, ctf_only).await {
+            Ok(lookup) => {
+                let ResolutionMarketLookup { markets, failures } = lookup;
+                gamma_failures = failures;
                 stats.fetched_markets += markets.len();
+                // Gamma's non-CTF evidence must never fall back to a CTF result
+                let no_ctf_fallback: AHashSet<_> = markets
+                    .iter()
+                    .filter(|market| market.version.as_deref() != Some(SUPPORTED_MARKET_VERSION))
+                    .map(|market| market.condition_id.clone())
+                    .collect();
+                unresolved_in_chunk.retain(|id| !no_ctf_fallback.contains(id));
                 let mut skipped_in_chunk = 0;
                 let resolved_by_condition = markets
                     .into_iter()
@@ -237,17 +257,8 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
                         continue;
                     };
 
-                    stats.resolved_markets += 1;
-                    let result =
-                        apply_fetched_resolution(ctx, resolved, include_pending_intents).await;
-
-                    if let ResolveApplyResult::Applied { emitted_closes } = result
-                        && emitted_closes > 0
-                    {
-                        stats
-                            .emitted_condition_ids
-                            .push(resolved.condition_id.clone());
-                    }
+                    apply_fetched_resolution(ctx, resolved, include_pending_intents, &mut stats)
+                        .await;
                 }
 
                 unresolved_in_chunk
@@ -259,13 +270,44 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
                     chunk.len()
                 );
                 log::warn!("{message}");
+                gamma_failures.extend(chunk.iter().cloned().map(|id| (id, message.clone())));
             }
         }
 
         for condition_id in unresolved_in_chunk {
+            if !allow_ctf_fallback(ctx, &condition_id) {
+                record_resolution_failure(
+                    &mut stats,
+                    &condition_id,
+                    gamma_failures.get(&condition_id),
+                );
+                continue;
+            }
+
             match clob_public_client.get_market(&condition_id).await {
                 Ok(market) => {
+                    if market.condition_id != condition_id {
+                        log::warn!(
+                            "Ignoring CLOB resolution with conflicting condition ID {} for {condition_id}",
+                            market.condition_id
+                        );
+                        record_resolution_failure(
+                            &mut stats,
+                            &condition_id,
+                            gamma_failures.get(&condition_id),
+                        );
+                        continue;
+                    }
+
                     let Some(resolved) = build_resolved_market_from_clob_market(&market) else {
+                        if market.version.as_deref() != Some(SUPPORTED_MARKET_VERSION) {
+                            record_resolution_failure(
+                                &mut stats,
+                                &condition_id,
+                                gamma_failures.get(&condition_id),
+                            );
+                        }
+
                         continue;
                     };
 
@@ -274,27 +316,15 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
                         resolved.condition_id
                     );
                     stats.clob_fallback_successes += 1;
-                    stats.resolved_markets += 1;
-                    let result =
-                        apply_fetched_resolution(ctx, &resolved, include_pending_intents).await;
-
-                    if let ResolveApplyResult::Applied { emitted_closes } = result
-                        && emitted_closes > 0
-                    {
-                        stats
-                            .emitted_condition_ids
-                            .push(resolved.condition_id.clone());
-                    }
+                    apply_fetched_resolution(ctx, &resolved, include_pending_intents, &mut stats)
+                        .await;
                 }
                 Err(e) => {
                     let message = format!(
                         "Resolve fallback via CLOB failed for condition_id={condition_id}: {e}"
                     );
                     log::warn!("{message}");
-                    if stats.error.is_none() {
-                        stats.error = Some(message);
-                    }
-                    stats.failed_condition_ids.push(condition_id);
+                    record_resolution_failure(&mut stats, &condition_id, Some(&message));
                 }
             }
         }
@@ -327,12 +357,90 @@ pub(crate) async fn fetch_and_apply_resolutions_by_condition_ids(
     stats
 }
 
+fn record_resolution_failure(
+    stats: &mut ResolveApplyBatchStats,
+    condition_id: &str,
+    message: Option<&String>,
+) {
+    if let Some(message) = message {
+        stats.error.get_or_insert_with(|| message.clone());
+        stats.failed_condition_ids.push(condition_id.to_string());
+    }
+}
+
+pub(crate) struct ResolutionMarketLookup {
+    pub(crate) markets: Vec<GammaMarket>,
+    pub(crate) failures: AHashMap<String, String>,
+}
+
+pub(crate) async fn request_resolution_markets(
+    client: &PolymarketGammaHttpClient,
+    condition_ids: &[String],
+    ctf_only: bool,
+) -> anyhow::Result<ResolutionMarketLookup> {
+    let mut failures = AHashMap::new();
+
+    let mut markets = client
+        .request_markets_by_params(GetGammaMarketsParams {
+            condition_ids: Some(condition_ids.to_vec()),
+            closed: ctf_only.then_some(true),
+            ..Default::default()
+        })
+        .await?;
+
+    if !ctf_only {
+        let missing: Vec<_> = condition_ids
+            .iter()
+            .filter(|id| !markets.iter().any(|market| market.condition_id == **id))
+            .cloned()
+            .collect();
+
+        if !missing.is_empty() {
+            match client
+                .request_markets_by_params(GetGammaMarketsParams {
+                    condition_ids: Some(missing.clone()),
+                    closed: Some(true),
+                    ..Default::default()
+                })
+                .await
+            {
+                Ok(closed) => markets.extend(closed),
+                Err(e) => {
+                    let message = format!("Closed-market resolution lookup failed: {e}");
+                    log::warn!("{message}");
+                    failures.extend(missing.into_iter().map(|id| (id, message.clone())));
+                }
+            }
+        }
+    }
+
+    Ok(ResolutionMarketLookup { markets, failures })
+}
+
+fn allow_ctf_fallback(ctx: &ResolveContext, condition_id: &str) -> bool {
+    !(ctx.watchlist.read().get(condition_id).is_some_and(|entry| {
+        entry
+            .tracked
+            .values()
+            .any(|tracked| tracked.market_version != SUPPORTED_MARKET_VERSION)
+    }) || ctx.instruments.load().values().any(|instrument| {
+        extract_condition_id(&instrument.id()).is_ok_and(|id| id == condition_id)
+            && instrument
+                .info()
+                .and_then(|info| info.get_str(MARKET_VERSION_KEY))
+                != Some(SUPPORTED_MARKET_VERSION)
+    }))
+}
+
 async fn apply_fetched_resolution(
     ctx: &ResolveContext,
     resolved: &StrictResolvedMarket,
     include_pending_intents: bool,
-) -> ResolveApplyResult {
-    if include_pending_intents {
+    stats: &mut ResolveApplyBatchStats,
+) {
+    stats.resolved_markets += 1;
+
+    let result = if include_pending_intents && resolved.market_version == SUPPORTED_MARKET_VERSION {
         apply_condition_resolution(
             ctx,
             &resolved.condition_id,
@@ -340,8 +448,27 @@ async fn apply_fetched_resolution(
             &resolved.winning_outcome,
         )
         .await
+    } else if include_pending_intents {
+        apply_condition_resolution_with_owners(
+            ctx,
+            &resolved.condition_id,
+            &resolved.winning_asset_id,
+            &resolved.winning_outcome,
+            ResolveOwnerSelection::IncludePendingAssets(&resolved.asset_ids),
+            &resolved.market_version,
+            Some(resolved),
+        )
+        .await
     } else {
         apply_watched_condition_resolution(ctx, resolved).await
+    };
+
+    if let ResolveApplyResult::Applied { emitted_closes } = result
+        && emitted_closes > 0
+    {
+        stats
+            .emitted_condition_ids
+            .push(resolved.condition_id.clone());
     }
 }
 
@@ -357,6 +484,8 @@ pub(crate) async fn apply_condition_resolution(
         winning_asset_id,
         winning_outcome,
         ResolveOwnerSelection::IncludePendingIntents,
+        SUPPORTED_MARKET_VERSION,
+        None,
     )
     .await
 }
@@ -367,6 +496,8 @@ pub(crate) async fn apply_condition_resolution_with_assets(
     winning_asset_id: &str,
     winning_outcome: &str,
     asset_ids: &[String],
+    market_version: &str,
+    evidence: Option<&StrictResolvedMarket>,
 ) -> ResolveApplyResult {
     apply_condition_resolution_with_owners(
         ctx,
@@ -374,6 +505,8 @@ pub(crate) async fn apply_condition_resolution_with_assets(
         winning_asset_id,
         winning_outcome,
         ResolveOwnerSelection::PayloadAssets(asset_ids),
+        market_version,
+        evidence,
     )
     .await
 }
@@ -390,6 +523,8 @@ pub(crate) async fn apply_watched_condition_resolution(
         &resolution.winning_asset_id,
         &resolution.winning_outcome,
         ResolveOwnerSelection::Watched(&resolution.asset_ids),
+        &resolution.market_version,
+        Some(resolution),
     )
     .await
 }
@@ -398,6 +533,7 @@ pub(crate) async fn apply_watched_condition_resolution(
 enum ResolveOwnerSelection<'a> {
     Watched(&'a [String]),
     IncludePendingIntents,
+    IncludePendingAssets(&'a [String]),
     PayloadAssets(&'a [String]),
     AdmittedInstrument(&'a InstrumentAny),
 }
@@ -439,6 +575,8 @@ pub(crate) async fn admit_data_resolution_instrument(
             &resolution.winning_asset_id,
             &resolution.winning_outcome,
             ResolveOwnerSelection::AdmittedInstrument(instrument),
+            &resolution.market_version,
+            Some(&resolution),
         )
         .await;
     }
@@ -450,6 +588,8 @@ async fn apply_condition_resolution_with_owners(
     winning_asset_id: &str,
     winning_outcome: &str,
     owner_selection: ResolveOwnerSelection<'_>,
+    market_version: &str,
+    evidence: Option<&StrictResolvedMarket>,
 ) -> ResolveApplyResult {
     if ctx.cancellation_token.is_cancelled() {
         return ResolveApplyResult::Ignored;
@@ -471,6 +611,8 @@ async fn apply_condition_resolution_with_owners(
         winning_asset_id,
         winning_outcome,
         owner_selection,
+        market_version,
+        evidence,
     )
     .await
 }
@@ -481,6 +623,8 @@ async fn apply_condition_resolution_inner(
     winning_asset_id: &str,
     winning_outcome: &str,
     owner_selection: ResolveOwnerSelection<'_>,
+    market_version: &str,
+    evidence: Option<&StrictResolvedMarket>,
 ) -> ResolveApplyResult {
     let condition_id_string = condition_id.to_string();
     let reconcile_guard = tokio::select! {
@@ -489,33 +633,19 @@ async fn apply_condition_resolution_inner(
     };
     let (reconciliation_targets, emitted_closes) = {
         let _guard = ctx.apply_mutex.lock();
+        // Metadata writers hold this boundary through publication; keep the validated mapping
+        // stable until every terminal event and the terminal marker have been published.
+        let mut terminal_conditions = ctx.subscriptions.lock_closed_conditions();
 
-        // Reset takes the same lock, so an old context cannot publish after reset returns
+        // Reset takes the same locks, so an old context cannot publish after reset returns
         if ctx.cancellation_token.is_cancelled() {
             return ResolveApplyResult::Ignored;
         }
 
         let entry = ctx.watchlist.read().get(&condition_id_string).cloned();
 
-        // Ownership can grow while waiting for reconciliation, so validate the retained
-        // payload again against every known leg before emitting or removing any owner.
-        if let ResolveOwnerSelection::PayloadAssets(asset_ids) = owner_selection
-            && entry.as_ref().is_some_and(|entry| {
-                entry
-                    .tracked
-                    .values()
-                    .any(|tracked| !asset_ids.contains(&tracked.token_id))
-            })
-        {
-            log::warn!(
-                "Ignoring resolution for condition_id={condition_id}: payload assets conflict with known resolution owners"
-            );
-            return ResolveApplyResult::Ignored;
-        }
-
         let matches_condition = |instrument_id: &InstrumentId| {
-            crate::providers::extract_condition_id(instrument_id)
-                .is_ok_and(|candidate| candidate == condition_id)
+            extract_condition_id(instrument_id).is_ok_and(|candidate| candidate == condition_id)
         };
         let watched_instrument_ids: AHashSet<InstrumentId> = entry
             .iter()
@@ -562,6 +692,7 @@ async fn apply_condition_resolution_inner(
         if matches!(
             owner_selection,
             ResolveOwnerSelection::IncludePendingIntents
+                | ResolveOwnerSelection::IncludePendingAssets(_)
                 | ResolveOwnerSelection::AdmittedInstrument(_)
         ) {
             for instrument_id in active_status_ids.union(&active_close_ids).copied() {
@@ -578,6 +709,7 @@ async fn apply_condition_resolution_inner(
                     }
                     _ => None,
                 };
+
                 let token_id = admitted
                     .or_else(|| loaded.get(&instrument_id))
                     .map(|instrument| instrument.raw_symbol().as_str().to_string())
@@ -597,6 +729,7 @@ async fn apply_condition_resolution_inner(
                 tracked_instruments.insert(
                     instrument_id,
                     TrackedInstrument {
+                        market_version: market_version.into(),
                         instrument_id,
                         token_id,
                         price_precision,
@@ -605,6 +738,20 @@ async fn apply_condition_resolution_inner(
                     },
                 );
             }
+        }
+
+        // Ownership can grow while waiting, so check every assembled owner before publication
+        if !resolution_owners_match(
+            &tracked_instruments,
+            &loaded,
+            owner_selection,
+            market_version,
+            evidence,
+        ) {
+            log::warn!(
+                "Ignoring resolution for {condition_id}: metadata conflicts with resolution owners"
+            );
+            return ResolveApplyResult::Ignored;
         }
 
         let mut deferred_ids = active_status_ids
@@ -630,8 +777,14 @@ async fn apply_condition_resolution_inner(
                     entries
                         .entry(instrument_id)
                         .or_insert_with(|| StrictResolvedMarket {
+                            market_version: market_version.into(),
                             condition_id: condition_id_string.clone(),
-                            asset_ids: asset_ids.to_vec(),
+                            asset_ids: evidence.map_or_else(
+                                || asset_ids.to_vec(),
+                                |resolved| resolved.asset_ids.clone(),
+                            ),
+                            outcomes: evidence
+                                .map_or_else(Vec::new, |resolved| resolved.outcomes.clone()),
                             winning_asset_id: winning_asset_id.to_string(),
                             winning_outcome: winning_outcome.to_string(),
                         });
@@ -742,11 +895,10 @@ async fn apply_condition_resolution_inner(
         }
 
         let tracked_ids = tracked_instruments.keys().copied().collect();
-        let newly_closed =
-            ctx.subscriptions
-                .finish_resolution(condition_id, &tracked_ids, &deferred_ids);
+        ctx.subscriptions
+            .finish_resolution(condition_id, &tracked_ids, &deferred_ids);
 
-        if newly_closed {
+        if terminal_conditions.insert(condition_id_string.clone()) {
             log::info!("Market resolved for condition {condition_id}, reconciling live data state");
         }
         (reconciliation_targets, emitted_closes)
@@ -769,19 +921,98 @@ async fn apply_condition_resolution_inner(
     ResolveApplyResult::Applied { emitted_closes }
 }
 
+fn resolution_owners_match(
+    tracked: &AHashMap<InstrumentId, TrackedInstrument>,
+    loaded: &AHashMap<InstrumentId, InstrumentAny>,
+    selection: ResolveOwnerSelection<'_>,
+    market_version: &str,
+    evidence: Option<&StrictResolvedMarket>,
+) -> bool {
+    let asset_ids = match selection {
+        ResolveOwnerSelection::PayloadAssets(ids)
+        | ResolveOwnerSelection::Watched(ids)
+        | ResolveOwnerSelection::IncludePendingAssets(ids) => Some(ids),
+        _ => None,
+    };
+
+    let admitted = match selection {
+        ResolveOwnerSelection::AdmittedInstrument(instrument) => Some(instrument),
+        _ => None,
+    };
+
+    for tracked in tracked.values() {
+        if tracked.market_version != market_version
+            || asset_ids.is_some_and(|ids| !ids.contains(&tracked.token_id))
+        {
+            return false;
+        }
+
+        for instrument in loaded
+            .get(&tracked.instrument_id)
+            .into_iter()
+            .chain(admitted.filter(|instrument| instrument.id() == tracked.instrument_id))
+        {
+            if instrument
+                .info()
+                .and_then(|info| info.get_str(MARKET_VERSION_KEY))
+                != Some(market_version)
+                || instrument.raw_symbol().as_str() != tracked.token_id
+                || !resolution_outcome_matches(instrument, evidence)
+            {
+                return false;
+            }
+        }
+    }
+
+    true
+}
+
+fn resolution_outcome_matches(
+    instrument: &InstrumentAny,
+    evidence: Option<&StrictResolvedMarket>,
+) -> bool {
+    let Some(resolved) = evidence.filter(|resolved| resolved.market_version == MARKET_VERSION_V2)
+    else {
+        return true;
+    };
+
+    let InstrumentAny::BinaryOption(binary) = instrument else {
+        return false;
+    };
+
+    let Some(index) = resolved
+        .asset_ids
+        .iter()
+        .position(|id| id == binary.raw_symbol.as_str())
+    else {
+        return false;
+    };
+
+    binary.outcome.as_ref().is_some_and(|outcome| {
+        resolved
+            .outcomes
+            .get(index)
+            .is_some_and(|expected| outcome.as_str() == expected)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use ahash::AHashSet;
+    use ahash::{AHashMap, AHashSet};
+    use indexmap::IndexMap;
     use nautilus_common::messages::DataEvent;
-    use nautilus_core::{AtomicMap, UnixNanos, time::get_atomic_clock_realtime};
-    use nautilus_model::identifiers::{InstrumentId, PositionId};
+    use nautilus_core::{AtomicMap, Params, UnixNanos, time::get_atomic_clock_realtime};
+    use nautilus_model::{
+        identifiers::{InstrumentId, PositionId, Symbol},
+        instruments::stubs::binary_option,
+    };
     use parking_lot::Mutex;
     use rstest::rstest;
 
     use super::*;
-    use crate::resolve::ResolveWatchEntry;
+    use crate::{filters::set_market_closed, resolve::ResolveWatchEntry};
 
     fn make_resolve_context() -> (
         ResolveContext,
@@ -819,6 +1050,244 @@ mod tests {
     }
 
     #[rstest]
+    #[case(Some("v1"), true)]
+    #[case(Some("v2"), false)]
+    #[case(None, false)]
+    #[tokio::test]
+    async fn current_cached_protocol_overrides_stale_watch(
+        #[case] version: Option<&str>,
+        #[case] accepted: bool,
+        #[values("watched", "payload", "admitted")] ownership: &str,
+    ) {
+        let (ctx, mut data_rx) = make_resolve_context();
+        let mut binary = binary_option();
+        binary.id = InstrumentId::from("0xCOND-101.POLYMARKET");
+        binary.raw_symbol = Symbol::new("101");
+        binary.info = Some(Params::new(IndexMap::from([(
+            "market_version".into(),
+            serde_json::json!(version),
+        )])));
+        let instrument_id = binary.id;
+        let mut admitted = binary.clone();
+        admitted.info = Some(Params::new(IndexMap::from([(
+            "market_version".into(),
+            serde_json::json!("v1"),
+        )])));
+        let admitted = InstrumentAny::BinaryOption(admitted);
+        ctx.instruments
+            .insert(instrument_id, InstrumentAny::BinaryOption(binary));
+        ctx.subscriptions
+            .close_subscriptions()
+            .insert(instrument_id);
+        ctx.watchlist.write().insert(
+            "0xCOND".into(),
+            ResolveWatchEntry {
+                condition_id: "0xCOND".into(),
+                expiration_ns: UnixNanos::default(),
+                paused: false,
+                tracked: AHashMap::from_iter([(
+                    "101".into(),
+                    TrackedInstrument {
+                        market_version: "v1".into(),
+                        instrument_id,
+                        token_id: "101".into(),
+                        price_precision: 3,
+                        open_position_ids: AHashSet::new(),
+                        has_data_subscription: true,
+                    },
+                )]),
+            },
+        );
+
+        let resolution = StrictResolvedMarket {
+            market_version: "v1".into(),
+            condition_id: "0xCOND".into(),
+            asset_ids: vec!["101".into(), "202".into()],
+            outcomes: Vec::new(),
+            winning_asset_id: "101".into(),
+            winning_outcome: "Yes".into(),
+        };
+
+        let result = if ownership == "admitted" {
+            apply_condition_resolution_with_owners(
+                &ctx,
+                "0xCOND",
+                "101",
+                "Yes",
+                ResolveOwnerSelection::AdmittedInstrument(&admitted),
+                "v1",
+                None,
+            )
+            .await
+        } else if ownership == "watched" {
+            apply_watched_condition_resolution(&ctx, &resolution).await
+        } else {
+            apply_condition_resolution_with_assets(
+                &ctx,
+                "0xCOND",
+                "101",
+                "Yes",
+                &resolution.asset_ids,
+                "v1",
+                None,
+            )
+            .await
+        };
+
+        assert_eq!(
+            result,
+            if accepted {
+                ResolveApplyResult::Applied { emitted_closes: 1 }
+            } else {
+                ResolveApplyResult::Ignored
+            }
+        );
+        assert_eq!(ctx.subscriptions.is_condition_closed("0xCOND"), accepted);
+
+        if accepted {
+            let updated = if ownership == "admitted" {
+                let DataEvent::Data(NautilusData::Instrument(updated)) =
+                    data_rx.try_recv().unwrap()
+                else {
+                    panic!("expected admitted instrument");
+                };
+
+                Some(*updated)
+            } else {
+                None
+            };
+
+            let DataEvent::Data(NautilusData::InstrumentClose(close)) = data_rx.try_recv().unwrap()
+            else {
+                panic!("expected close")
+            };
+
+            assert_eq!(close.instrument_id, instrument_id);
+            assert_eq!(close.close_price, Price::from("1.000"));
+            assert_eq!(close.close_type, InstrumentCloseType::ContractExpired);
+            assert_eq!(close.ts_event, close.ts_init);
+
+            if let Some(updated) = updated {
+                let InstrumentAny::BinaryOption(mut expected) = admitted else {
+                    unreachable!()
+                };
+
+                set_market_closed(&mut expected, true);
+                expected.ts_event = close.ts_init;
+                expected.ts_init = close.ts_init;
+                assert_eq!(updated, InstrumentAny::BinaryOption(expected));
+            }
+        }
+
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn deferred_v2_resolution_retains_outcome_pairs(
+        #[values(0, 1)] index: usize,
+        #[values("none", "cached", "admitted")] conflict: &str,
+    ) {
+        let (ctx, mut data_rx) = make_resolve_context();
+
+        let resolution = StrictResolvedMarket {
+            market_version: "v2".into(),
+            condition_id: "0xCOND".into(),
+            asset_ids: vec!["101".into(), "202".into()],
+            outcomes: vec!["Yes".into(), "No".into()],
+            winning_asset_id: "101".into(),
+            winning_outcome: "Yes".into(),
+        };
+
+        let mut binary = binary_option();
+        binary.id =
+            InstrumentId::from(format!("0xCOND-{}.POLYMARKET", resolution.asset_ids[index]));
+        binary.raw_symbol = Symbol::new(&resolution.asset_ids[index]);
+        binary.outcome = Some(Ustr::from(&resolution.outcomes[index]));
+        binary.info = Some(Params::new(IndexMap::from([(
+            "market_version".into(),
+            serde_json::json!("v2"),
+        )])));
+        let instrument_id = binary.id;
+        ctx.subscriptions
+            .close_subscriptions()
+            .insert(instrument_id);
+        let reversed = vec!["202".into(), "101".into()];
+
+        let result = apply_condition_resolution_with_assets(
+            &ctx,
+            "0xCOND",
+            "101",
+            "Yes",
+            &reversed,
+            "v2",
+            Some(&resolution),
+        )
+        .await;
+
+        assert_eq!(result, ResolveApplyResult::Applied { emitted_closes: 0 });
+        assert_eq!(
+            ctx.deferred_resolutions.get_cloned(&instrument_id),
+            Some(resolution.clone())
+        );
+        assert!(data_rx.try_recv().is_err());
+        let mut cached = binary.clone();
+        if conflict == "cached" {
+            cached.outcome = Some(Ustr::from("Conflict"));
+        }
+
+        if conflict == "admitted" {
+            binary.outcome = Some(Ustr::from("Conflict"));
+        }
+
+        ctx.instruments
+            .insert(instrument_id, InstrumentAny::BinaryOption(cached));
+        let admitted = InstrumentAny::BinaryOption(binary);
+
+        admit_data_resolution_instrument(&ctx, &admitted).await;
+
+        if conflict == "none" {
+            let DataEvent::Data(NautilusData::Instrument(updated)) = data_rx.try_recv().unwrap()
+            else {
+                panic!("expected instrument")
+            };
+
+            let DataEvent::Data(NautilusData::InstrumentClose(close)) = data_rx.try_recv().unwrap()
+            else {
+                panic!("expected close")
+            };
+
+            let InstrumentAny::BinaryOption(mut expected) = admitted else {
+                unreachable!()
+            };
+
+            set_market_closed(&mut expected, true);
+            expected.ts_event = close.ts_init;
+            expected.ts_init = close.ts_init;
+            assert_eq!(*updated, InstrumentAny::BinaryOption(expected));
+            assert_eq!(close.instrument_id, instrument_id);
+            assert_eq!(
+                close.close_price,
+                if index == 0 {
+                    Price::from("1.000")
+                } else {
+                    Price::from("0.000")
+                }
+            );
+            assert_eq!(close.close_type, InstrumentCloseType::ContractExpired);
+            assert_eq!(close.ts_event, close.ts_init);
+            assert!(!ctx.deferred_resolutions.contains_key(&instrument_id));
+        } else {
+            assert_eq!(
+                ctx.deferred_resolutions.get_cloned(&instrument_id),
+                Some(resolution)
+            );
+        }
+
+        assert!(data_rx.try_recv().is_err());
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn data_status_subscription_emits_status_without_close() {
         let (ctx, mut data_rx) = make_resolve_context();
@@ -833,6 +1302,7 @@ mod tests {
                 tracked: ahash::AHashMap::from_iter([(
                     "0xYES".to_string(),
                     TrackedInstrument {
+                        market_version: "v1".into(),
                         instrument_id: InstrumentId::from("0xCOND-0xYES.POLYMARKET"),
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
@@ -971,6 +1441,7 @@ mod tests {
                 tracked: ahash::AHashMap::from_iter([(
                     "0xYES".to_string(),
                     TrackedInstrument {
+                        market_version: "v1".into(),
                         instrument_id,
                         token_id: "0xYES".to_string(),
                         price_precision: 3,
@@ -1012,8 +1483,10 @@ mod tests {
             .insert(instrument_id);
 
         let resolution = StrictResolvedMarket {
+            market_version: "v1".into(),
             condition_id: "0xCOND".to_string(),
             asset_ids: vec!["0xYES".to_string(), "0xNO".to_string()],
+            outcomes: Vec::new(),
             winning_asset_id: "0xYES".to_string(),
             winning_outcome: "Yes".to_string(),
         };
@@ -1098,6 +1571,7 @@ mod tests {
                 tracked: ahash::AHashMap::from_iter([(
                     "0xYES".to_string(),
                     TrackedInstrument {
+                        market_version: "v1".into(),
                         instrument_id,
                         token_id: "0xYES".to_string(),
                         price_precision: 3,

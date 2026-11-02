@@ -118,6 +118,7 @@ pub struct HyperliquidExecutionClient {
     emitter: ExecutionEventEmitter,
     http_client: HyperliquidHttpClient,
     ws_client: HyperliquidWebSocketClient,
+    instruments_pending: Vec<InstrumentAny>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
     shutdown_errors: Vec<String>,
@@ -480,6 +481,7 @@ impl HyperliquidExecutionClient {
             emitter,
             http_client,
             ws_client,
+            instruments_pending: Vec::new(),
             session_tasks,
             pending_tasks,
             shutdown_errors: Vec::new(),
@@ -489,7 +491,7 @@ impl HyperliquidExecutionClient {
         })
     }
 
-    async fn ensure_instruments_initialized_async(&self) -> anyhow::Result<()> {
+    async fn ensure_instruments_initialized_async(&mut self) -> anyhow::Result<()> {
         if self.core.instruments_initialized() {
             return Ok(());
         }
@@ -506,15 +508,25 @@ impl HyperliquidExecutionClient {
             );
         } else {
             log::debug!("Initialized {} instruments", instruments.len());
-
-            self.http_client.merge_instruments(&instruments);
         }
+
+        // Preserve arrival order for spot aliases, then let fetched definitions replace updates
+        let mut pending = std::mem::take(&mut self.instruments_pending);
+        pending.extend(instruments);
+        self.http_client.merge_instruments(&pending);
+        self.ws_client.merge_instruments(&pending);
 
         self.core.set_instruments_initialized();
         Ok(())
     }
 
-    async fn refresh_account_state(&self) -> anyhow::Result<()> {
+    async fn refresh_account_state(
+        &self,
+    ) -> anyhow::Result<(
+        ClearinghouseState,
+        SpotClearinghouseState,
+        HyperliquidAccountAbstraction,
+    )> {
         let account_address = self.get_account_address()?;
 
         let (perp_state, spot_state, abstraction) = self
@@ -528,18 +540,18 @@ impl HyperliquidExecutionClient {
             spot_state.balances.len(),
         );
 
-        let (balances, margins) =
-            parse_combined_account_balances_and_margins(&perp_state, &spot_state, abstraction)
-                .context("failed to parse combined account balances and margins")?;
-
         // Emit for unfunded wallets too, which carry only zero balances, so the account
         // registers for await_account_registered.
-        let ts_event = self.clock.get_time_ns();
-        self.emitter
-            .emit_account_state(balances, margins, true, ts_event, None);
+        emit_account_state(
+            &self.emitter,
+            &perp_state,
+            &spot_state,
+            abstraction,
+            self.clock.get_time_ns(),
+        )?;
 
         log::debug!("Account state updated successfully");
-        Ok(())
+        Ok((perp_state, spot_state, abstraction))
     }
 
     async fn fetch_combined_clearinghouse_state(
@@ -604,6 +616,9 @@ impl HyperliquidExecutionClient {
     }
 
     fn report_client(&self) -> anyhow::Result<HyperliquidReportClient> {
+        // Reports can be collected before connect() initializes the transport caches
+        self.http_client
+            .merge_instruments(&self.instruments_pending);
         Ok(HyperliquidReportClient {
             http_client: self.http_client.clone(),
             account_address: self.get_account_address()?,
@@ -875,10 +890,18 @@ impl ExecutionClient for HyperliquidExecutionClient {
     /// Registers an instrument published by the data client so a market listed
     /// after this client bootstrapped becomes submittable without a restart.
     ///
+    /// Before bootstrap, updates are buffered for batch caching.
+    ///
     /// The HTTP client takes the venue asset index from the instrument's `info`
     /// map. WebSocket submissions sign through `&self.http_client`, so that one
     /// write serves both submission paths.
     fn on_instrument(&mut self, instrument: InstrumentAny) {
+        if !self.core.instruments_initialized() {
+            // Batch the startup drain to avoid cloning growing caches for every instrument
+            self.instruments_pending.push(instrument);
+            return;
+        }
+
         // this is the only step that makes a market listed after our bootstrap
         // submittable, so it is traceable rather than silent
         log::debug!(
@@ -1295,13 +1318,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
             None => {
                 let reason = "order not found in cache";
                 log::warn!("Cannot modify order {client_order_id}: {reason}");
-                self.emitter.emit_order_modify_rejected_event(
+                self.emitter.emit_order_modify_denied_event(
                     cmd.strategy_id,
                     cmd.instrument_id,
                     client_order_id,
                     venue_order_id,
                     reason,
                     self.clock.get_time_ns(),
+                    Some(cmd.command_id),
                 );
                 return Ok(());
             }
@@ -1318,13 +1342,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
             let reason =
                 "quote-denominated quantity orders cannot be modified; cancel and resubmit";
             log::warn!("Cannot modify order {client_order_id}: {reason}");
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 client_order_id,
                 venue_order_id,
                 reason,
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1336,13 +1361,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 let Some(venue_order_id) = venue_order_id.as_ref() else {
                     let reason = "venue_order_id or unique cached CLOID is required for modify";
                     log::warn!("Cannot modify order {client_order_id}: {reason}");
-                    self.emitter.emit_order_modify_rejected_event(
+                    self.emitter.emit_order_modify_denied_event(
                         cmd.strategy_id,
                         cmd.instrument_id,
                         client_order_id,
                         None,
                         reason,
                         self.clock.get_time_ns(),
+                        Some(cmd.command_id),
                     );
                     return Ok(());
                 };
@@ -1353,13 +1379,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                         let reason =
                             format!("Failed to parse venue_order_id '{venue_order_id}': {e}");
                         log::warn!("{reason}");
-                        self.emitter.emit_order_modify_rejected_event(
+                        self.emitter.emit_order_modify_denied_event(
                             cmd.strategy_id,
                             cmd.instrument_id,
                             client_order_id,
                             Some(*venue_order_id),
                             &reason,
                             self.clock.get_time_ns(),
+                            Some(cmd.command_id),
                         );
                         return Ok(());
                     }
@@ -1372,13 +1399,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
         {
             let reason = "cached venue_order_id is required for CLOID modify";
             log::warn!("Cannot modify order {client_order_id}: {reason}");
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 client_order_id,
                 venue_order_id,
                 reason,
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1391,13 +1419,14 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 format!("modify quantity {target_total_qty} not greater than filled {filled_qty}",);
             log::warn!("Cannot modify order {}: {reason}", cmd.client_order_id);
 
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 client_order_id,
                 venue_order_id,
                 &reason,
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1611,6 +1640,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         )
         .then_some(true);
         let entry = CancelEntry {
+            command_id: cmd.command_id,
             strategy_id,
             instrument_id,
             client_order_id,
@@ -1715,6 +1745,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         let entries: Vec<CancelEntry> = open_orders
             .iter()
             .map(|o| CancelEntry {
+                command_id: cmd.command_id,
                 strategy_id,
                 instrument_id,
                 client_order_id: o.client_order_id(),
@@ -1799,6 +1830,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
             .cancels
             .iter()
             .map(|c| CancelEntry {
+                command_id: c.command_id,
                 strategy_id: c.strategy_id,
                 instrument_id: c.instrument_id,
                 client_order_id: c.client_order_id,
@@ -1902,13 +1934,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
                 .await
                 .context("failed to fetch user abstraction")?;
 
-            let (balances, margins) =
-                parse_combined_account_balances_and_margins(&perp_state, &spot_state, abstraction)
-                    .context("failed to parse combined account balances and margins")?;
             let ts_event = clock.get_time_ns();
-            emitter.emit_account_state(balances, margins, true, ts_event, None);
-
-            Ok(())
+            emit_account_state(&emitter, &perp_state, &spot_state, abstraction, ts_event)
         });
 
         Ok(())
@@ -2073,14 +2100,7 @@ impl ExecutionClient for HyperliquidExecutionClient {
         }
 
         // Post-WS setup: if any step fails, tear down WS before returning
-        let post_ws = async {
-            self.refresh_account_state().await?;
-            self.await_account_registered(30.0).await?;
-
-            Ok::<(), anyhow::Error>(())
-        };
-
-        if let Err(e) = post_ws.await {
+        if let Err(e) = self.await_account_registered(30.0).await {
             log::warn!("Connect failed after WS started, tearing down: {e}");
             if let Err(teardown_error) = self.teardown_partial_connect().await {
                 return Err(e.context(format!(
@@ -2246,6 +2266,8 @@ impl ExecutionClient for HyperliquidExecutionClient {
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
         let ts_init = self.clock.get_time_ns();
         let account_address = self.get_account_address()?;
+        self.http_client
+            .merge_instruments(&self.instruments_pending);
 
         let lookback_start = lookback_mins
             .map(DurationNanos::try_from_mins)
@@ -2707,14 +2729,7 @@ impl HyperliquidExecutionClient {
 
         let mut ws_client = self.ws_client.clone();
 
-        let instruments = self
-            .http_client
-            .request_instruments()
-            .await
-            .unwrap_or_default();
-
-        ws_client.merge_instruments(&instruments);
-
+        let ts_start = self.clock.get_time_ns();
         ws_client.connect().await?;
         if let Err(e) = ws_client
             .subscribe_order_updates(&subscription_address)
@@ -2728,6 +2743,14 @@ impl HyperliquidExecutionClient {
             let _ = ws_client.disconnect().await;
             return Err(e);
         }
+
+        let (mut perp_state, mut spot_state, abstraction) = self.refresh_account_state().await?;
+        ws_client
+            .subscribe_account_state(
+                &subscription_address,
+                abstraction == HyperliquidAccountAbstraction::PortfolioMargin,
+            )
+            .await?;
         log::debug!("Subscribed to Hyperliquid execution updates for {subscription_address}");
 
         let emitter = self.emitter.clone();
@@ -2756,7 +2779,7 @@ impl HyperliquidExecutionClient {
 
             // Venue time of the latest delivered report (the stream start before any), so a
             // stalled stream cannot push the recovery window past events lost after it.
-            let mut ts_last_report = clock.get_time_ns();
+            let mut ts_last_report = ts_start;
             let mut recovery_window: Option<RecoveryWindow> = None;
             let mut reconnect_generation = 0;
             let mut recovered_reports = None;
@@ -2946,6 +2969,28 @@ impl HyperliquidExecutionClient {
                                 }
                             }
                         }
+                        NautilusWsMessage::ClearinghouseState(state) => {
+                            emit_account_state(
+                                &emitter,
+                                &state,
+                                &spot_state,
+                                abstraction,
+                                clock.get_time_ns(),
+                            )
+                            .inspect(|()| perp_state = state)
+                            .unwrap_or_else(|e| log::error!("Failed to update account state: {e:#}"));
+                        }
+                        NautilusWsMessage::SpotState(state) => {
+                            emit_account_state(
+                                &emitter,
+                                &perp_state,
+                                &state,
+                                abstraction,
+                                clock.get_time_ns(),
+                            )
+                            .inspect(|()| spot_state = state)
+                            .unwrap_or_else(|e| log::error!("Failed to update account state: {e:#}"));
+                        }
                         NautilusWsMessage::Reconnected => {
                             log::info!("WebSocket reconnected");
 
@@ -3013,6 +3058,20 @@ impl HyperliquidExecutionClient {
         log::debug!("Hyperliquid WebSocket execution stream started");
         Ok(())
     }
+}
+
+fn emit_account_state(
+    emitter: &ExecutionEventEmitter,
+    perp_state: &ClearinghouseState,
+    spot_state: &SpotClearinghouseState,
+    abstraction: HyperliquidAccountAbstraction,
+    ts_event: UnixNanos,
+) -> anyhow::Result<()> {
+    let (balances, margins) =
+        parse_combined_account_balances_and_margins(perp_state, spot_state, abstraction)
+            .context("failed to parse combined account balances and margins")?;
+    emitter.emit_account_state(balances, margins, true, ts_event, None);
+    Ok(())
 }
 
 async fn refresh_scheduled_cancel(
@@ -3688,6 +3747,7 @@ fn remove_generated_modify_cloid(
 
 #[derive(Clone)]
 struct CancelEntry {
+    command_id: UUID4,
     strategy_id: StrategyId,
     instrument_id: InstrumentId,
     client_order_id: ClientOrderId,
@@ -3774,7 +3834,18 @@ fn emit_modify_failure(
     ts_event: UnixNanos,
 ) {
     match failure {
-        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+        CommandFailure::NotSent(reason) => {
+            emitter.emit_order_modify_denied_event(
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                venue_order_id,
+                &reason,
+                ts_event,
+                Some(command.command_id),
+            );
+        }
+        CommandFailure::VenueRejected(reason) => {
             emitter.emit_order_modify_rejected_event(
                 command.strategy_id,
                 command.instrument_id,
@@ -3782,6 +3853,7 @@ fn emit_modify_failure(
                 venue_order_id,
                 &reason,
                 ts_event,
+                Some(command.command_id),
             );
         }
         CommandFailure::Ambiguous(reason) => {
@@ -3800,7 +3872,18 @@ fn emit_cancel_failure(
     ts_event: UnixNanos,
 ) {
     match failure {
-        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+        CommandFailure::NotSent(reason) => {
+            emitter.emit_order_cancel_denied_event(
+                entry.strategy_id,
+                entry.instrument_id,
+                entry.client_order_id,
+                entry.venue_order_id,
+                &reason,
+                ts_event,
+                Some(entry.command_id),
+            );
+        }
+        CommandFailure::VenueRejected(reason) => {
             emitter.emit_order_cancel_rejected_event(
                 entry.strategy_id,
                 entry.instrument_id,
@@ -3808,6 +3891,7 @@ fn emit_cancel_failure(
                 entry.venue_order_id,
                 &reason,
                 ts_event,
+                Some(entry.command_id),
             );
         }
         CommandFailure::Ambiguous(reason) => {
@@ -4312,6 +4396,7 @@ fn spawn_active_sibling_cancel(
                         venue_order_id,
                         &error,
                         get_atomic_clock_realtime().get_time_ns(),
+                        None,
                     );
                 }
             }
@@ -4803,16 +4888,28 @@ use crate::common::parse::determine_order_list_grouping;
 
 #[cfg(test)]
 mod tests {
-    use std::{cell::RefCell, rc::Rc, sync::Arc};
+    use std::{cell::RefCell, rc::Rc, sync::Arc, time::Duration};
 
     use alloy::signers::local::PrivateKeySigner;
+    use axum::{
+        Json, Router,
+        extract::{
+            State,
+            ws::{Message, WebSocketUpgrade},
+        },
+        response::Response,
+        routing::{get, post},
+    };
+    use futures_util::StreamExt;
     use nautilus_common::{
         cache::Cache,
         clock::VirtualClock,
         messages::{ExecutionEvent, ExecutionReport as EngineExecutionReport},
     };
     use nautilus_core::{
-        UUID4, UnixNanos, string::secret::SecretString, time::get_atomic_clock_realtime,
+        DurationNanos, UUID4, UnixNanos,
+        string::secret::SecretString,
+        time::{AtomicTime, get_atomic_clock_realtime},
     };
     use nautilus_execution::engine::ExecutionEngine;
     use nautilus_live::{
@@ -4834,14 +4931,15 @@ mod tests {
             AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
             VenueOrderId,
         },
-        instruments::{CryptoPerpetual, InstrumentAny},
+        instruments::{CryptoPerpetual, Instrument, InstrumentAny},
         orders::{Order, OrderAny, limit::LimitOrder, stop_market::StopMarketOrder},
         reports::{FillReport, OrderStatusReport},
         types::{AccountBalance, Currency, Money, Price, Quantity},
     };
-    use nautilus_network::websocket::TransportBackend;
+    use nautilus_network::{RECONNECTED, websocket::TransportBackend};
     use rstest::rstest;
     use rust_decimal::Decimal;
+    use serde_json::{Value, json};
     use ustr::Ustr;
     use zeroize::Zeroizing;
 
@@ -4874,6 +4972,7 @@ mod tests {
     };
 
     const TEST_INSTRUMENT_ID: &str = "BTC-USD-PERP.HYPERLIQUID";
+    const BOOTSTRAP_DELAY: DurationNanos = DurationNanos::from_secs(60);
 
     fn test_emitter() -> (
         ExecutionEventEmitter,
@@ -4963,10 +5062,223 @@ mod tests {
     }
 
     #[rstest]
+    fn test_on_instrument_defers_caching_until_bootstrap() {
+        let mut client = make_execution_client();
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+
+        for def in &defs {
+            let instrument = create_instrument_from_def(def, UnixNanos::from(123)).unwrap();
+            client.on_instrument(instrument);
+        }
+
+        for def in &defs {
+            assert_eq!(
+                client.http_client.get_asset_index(def.symbol.as_str()),
+                None
+            );
+            assert_eq!(
+                client.http_client.get_price_precision(def.symbol.as_str()),
+                None
+            );
+        }
+
+        assert!(client.ws_client.instruments_cache().is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_bootstrap_merges_buffered_instruments(
+        #[values(false, true)] empty_universe: bool,
+        #[values(false, true)] fail_initial: bool,
+    ) {
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let buffered_meta: PerpMeta = serde_json::from_value(json!({"universe": [
+            {"name": "NEW", "szDecimals": 3, "maxLeverage": 10},
+            {"name": "BTC", "szDecimals": 4, "maxLeverage": 20},
+        ]}))
+        .unwrap();
+        let mut buffered_defs = parse_perp_instruments(&buffered_meta, 0).unwrap();
+        buffered_defs[0].asset_index = 42;
+        buffered_defs[1].asset_index = 73;
+        let buffered: Vec<_> = buffered_defs
+            .iter()
+            .map(|def| create_instrument_from_def(def, UnixNanos::from(123)).unwrap())
+            .collect();
+        let failing = Arc::new(std::sync::atomic::AtomicBool::new(fail_initial));
+        let failing_request = failing.clone();
+        let app = Router::new().route(
+            "/info",
+            post(move |Json(request): Json<Value>| {
+                let failing = failing_request.clone();
+                let meta = serde_json::to_value(&meta).unwrap();
+                async move {
+                    Json(match request["type"].as_str().unwrap() {
+                        "spotMeta" => json!({"universe": [], "tokens": []}),
+                        "allPerpMetas" if failing.load(std::sync::atomic::Ordering::Relaxed) => {
+                            json!([{"universe": [], "collateralToken": 999}])
+                        }
+                        "allPerpMetas" if empty_universe => json!([{"universe": []}]),
+                        "allPerpMetas" => json!([meta]),
+                        _ => json!([]),
+                    })
+                }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let mut client = make_execution_client();
+        client
+            .http_client
+            .set_base_info_url(format!("http://{address}/info"));
+        client.on_instrument(buffered[0].clone());
+        client.on_instrument(buffered[1].clone());
+        let refreshed =
+            create_instrument_from_def(&buffered_defs[0], UnixNanos::from(456)).unwrap();
+        client.on_instrument(refreshed.clone());
+        if fail_initial {
+            let error = client
+                .ensure_instruments_initialized_async()
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "failed to request Hyperliquid instruments"
+            );
+            assert!(!client.core.instruments_initialized());
+            assert_eq!(client.instruments_pending.len(), 3);
+            assert!(client.ws_client.instruments_cache().is_empty());
+            failing.store(false, std::sync::atomic::Ordering::Relaxed);
+        }
+
+        client.ensure_instruments_initialized_async().await.unwrap();
+
+        let (btc_asset_index, btc_price_precision, btc_size_precision) = if empty_universe {
+            (73, 2, 4)
+        } else {
+            (0, 1, 5)
+        };
+
+        let cache = client.ws_client.instruments_cache();
+        let snapshot = cache.load();
+        let btc = snapshot.get(&Ustr::from("BTC")).unwrap();
+
+        assert!(client.core.instruments_initialized());
+        assert!(client.instruments_pending.is_empty());
+        assert_eq!(snapshot.len(), if empty_universe { 2 } else { 4 });
+        assert_eq!(client.http_client.get_asset_index("NEW-USD-PERP"), Some(42));
+        assert_eq!(
+            client.http_client.get_price_precision("NEW-USD-PERP"),
+            Some(3)
+        );
+        assert_eq!(
+            serde_json::to_value(snapshot.get(&Ustr::from("NEW")).unwrap()).unwrap(),
+            serde_json::to_value(refreshed).unwrap()
+        );
+        assert_eq!(
+            client.http_client.get_asset_index("BTC-USD-PERP"),
+            Some(btc_asset_index)
+        );
+        assert_eq!(
+            client.http_client.get_price_precision("BTC-USD-PERP"),
+            Some(btc_price_precision)
+        );
+        assert_eq!(btc.price_precision(), btc_price_precision);
+        assert_eq!(btc.size_precision(), btc_size_precision);
+        server.abort();
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[ignore = "requires explicit live testnet bootstrap validation"]
+    async fn test_live_testnet_execution_bootstrap() {
+        let source = HyperliquidHttpClient::new(HyperliquidEnvironment::Testnet, 30, None).unwrap();
+        let mut client = make_execution_client();
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::set_exec_event_sender(sender);
+        client.start().unwrap();
+
+        let result = tokio::time::timeout(Duration::from_secs(60), async {
+            let instruments = source.request_instruments().await.unwrap();
+            assert!(!instruments.is_empty());
+            let count = instruments.len();
+            for instrument in &instruments {
+                client.on_instrument(instrument.clone());
+            }
+
+            assert!(client.ws_client.instruments_cache().is_empty());
+
+            let mass = client.generate_mass_status(None).await.unwrap().unwrap();
+            assert!(mass.reports_complete());
+            assert!(mass.order_reports().is_empty());
+            assert!(mass.fill_reports().is_empty());
+            assert!(mass.position_reports().is_empty());
+
+            let started = std::time::Instant::now();
+            client.ensure_instruments_initialized_async().await.unwrap();
+            client.start_ws_stream().await.unwrap();
+            let cache = client.ws_client.instruments_cache();
+            let snapshot = cache.load();
+            for instrument in &instruments {
+                let cached = snapshot.get(&instrument.raw_symbol().inner()).unwrap();
+                assert_eq!(cached.id(), instrument.id());
+                assert_eq!(
+                    client
+                        .http_client
+                        .get_price_precision(cached.symbol().as_str()),
+                    Some(cached.price_precision()),
+                );
+            }
+
+            let btc = snapshot.get(&Ustr::from("BTC")).unwrap();
+            let mut fill = btc_user_fill(
+                101,
+                "0xabc",
+                1_700_000_000_000,
+                "0x0000000000000000000000000000000a",
+            );
+            fill.sz = btc.size_increment().as_decimal();
+            let parsed = client
+                .http_client
+                .fill_reports_from_response(vec![fill.clone()], None)
+                .unwrap();
+            let ws_fill = serde_json::from_value(serde_json::to_value(&fill).unwrap()).unwrap();
+            let report = crate::websocket::parse::parse_ws_fill_report(
+                &ws_fill,
+                btc,
+                client.core.account_id,
+                client.clock.get_time_ns(),
+            )
+            .unwrap();
+
+            assert!(client.core.instruments_initialized());
+            assert!(client.instruments_pending.is_empty());
+            assert!(client.ws_client.is_active());
+            assert!(parsed.complete);
+            assert_eq!(parsed.reports.len(), 1);
+            assert_eq!(parsed.reports[0].instrument_id, btc.id());
+            assert_eq!(report.instrument_id, btc.id());
+            assert_eq!(report.last_qty, btc.size_increment());
+            assert_eq!(parsed.reports[0].last_qty, report.last_qty);
+            assert_eq!(parsed.reports[0].last_px, report.last_px);
+            println!(
+                "Testnet: {count} instruments, fills parsed, elapsed={:?}",
+                started.elapsed()
+            );
+        })
+        .await;
+
+        client.disconnect().await.unwrap();
+        result.expect("live testnet bootstrap must complete within 60 seconds");
+    }
+
+    #[rstest]
     fn test_on_instrument_registers_asset_index_for_a_new_market() {
         // A market listed after the client bootstrapped arrives through the
         // message bus, and must become submittable without a restart.
         let mut client = make_execution_client();
+        client.core.set_instruments_initialized();
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
         let defs = parse_perp_instruments(&meta, 0).unwrap();
         let def = &defs[1];
@@ -4988,6 +5300,7 @@ mod tests {
     #[rstest]
     fn test_on_instrument_replaces_asset_index_and_precision() {
         let mut client = make_execution_client();
+        client.core.set_instruments_initialized();
         let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
         let mut defs = parse_perp_instruments(&meta, 0).unwrap();
         let def = &mut defs[0];
@@ -5483,6 +5796,7 @@ mod tests {
 
     fn cancel_entry(client_order_id: &str, fast: bool) -> CancelEntry {
         CancelEntry {
+            command_id: UUID4::default(),
             strategy_id: StrategyId::from("S-001"),
             instrument_id: InstrumentId::from(TEST_INSTRUMENT_ID),
             client_order_id: ClientOrderId::from(client_order_id),
@@ -7804,6 +8118,140 @@ mod tests {
                 assert!(rx.try_recv().is_err());
             }
         }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_reconnect_recovers_fills_during_account_bootstrap() {
+        let frames: Value = load_test_data("ws_account_states.json");
+        let time = frames["perp"]["data"]["clearinghouseState"]["time"]
+            .as_u64()
+            .unwrap();
+        let ts_start = UnixNanos::from_millis(time);
+        let clock: &'static AtomicTime = Box::leak(Box::new(AtomicTime::new(false, ts_start)));
+        let app = Router::new()
+            .route("/info", post(bootstrap_info))
+            .route("/ws", get(bootstrap_ws))
+            .with_state(clock);
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        let wallet = PrivateKeySigner::random();
+        let key = Zeroizing::new(format!("{:#x}", wallet.to_bytes()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            *HYPERLIQUID_CLIENT_ID,
+            *HYPERLIQUID_VENUE,
+            OmsType::Netting,
+            AccountId::from("HYPERLIQUID-001"),
+            AccountType::Margin,
+            None,
+            Rc::new(RefCell::new(Cache::default())),
+        );
+
+        let config = HyperliquidExecutionClientConfig {
+            private_key: Some(SecretString::from(key.to_string())),
+            environment: HyperliquidEnvironment::Testnet,
+            base_url_http: Some(format!("http://{address}/info")),
+            base_url_exchange: Some(format!("http://{address}/exchange")),
+            base_url_ws: Some(format!("ws://{address}/ws")),
+            max_retries: 0,
+            ..Default::default()
+        };
+
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        nautilus_common::live::runner::set_exec_event_sender(sender);
+        let mut client = HyperliquidExecutionClient::new(core, config).unwrap();
+        client.clock = clock;
+        let meta: PerpMeta = load_test_data("http_meta_perp_sample.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let instrument = create_instrument_from_def(&defs[0], ts_start).unwrap();
+        client.http_client.cache_instrument(&instrument);
+        client.ws_client.merge_instruments(&[instrument]);
+        client.start().unwrap();
+        client.start_ws_stream().await.unwrap();
+
+        let fill = tokio::time::timeout(Duration::from_secs(2), async {
+            loop {
+                let event = receiver
+                    .recv()
+                    .await
+                    .expect("execution event channel closed");
+
+                if let ExecutionEvent::Report(EngineExecutionReport::Fill(fill)) = event {
+                    break fill;
+                }
+            }
+        })
+        .await
+        .expect("reconnect must recover fills preceding bootstrap completion");
+
+        assert_eq!(clock.get_time_ns(), ts_start + BOOTSTRAP_DELAY);
+        assert_eq!(fill.instrument_id, InstrumentId::from(TEST_INSTRUMENT_ID));
+        assert_eq!(fill.venue_order_id, VenueOrderId::from("101"));
+        assert_eq!(fill.last_qty.as_decimal(), Decimal::new(1, 3));
+        assert_eq!(fill.last_px.as_decimal(), Decimal::from(100_000));
+        assert_eq!(fill.ts_event, ts_start);
+        client.disconnect().await.unwrap();
+        server.abort();
+    }
+
+    async fn bootstrap_info(
+        State(clock): State<&'static AtomicTime>,
+        Json(request): Json<Value>,
+    ) -> Json<Value> {
+        let frames: Value = load_test_data("ws_account_states.json");
+
+        let response = match request["type"].as_str().unwrap_or_default() {
+            "clearinghouseState" => {
+                clock.increment_time(BOOTSTRAP_DELAY).unwrap();
+                frames["perp"]["data"]["clearinghouseState"].clone()
+            }
+            "spotClearinghouseState" => frames["spot"]["data"]["spotState"].clone(),
+            "userAbstraction" => Value::String("disabled".to_owned()),
+            "userFills" => {
+                let time = frames["perp"]["data"]["clearinghouseState"]["time"]
+                    .as_u64()
+                    .unwrap();
+                let fill = btc_user_fill(101, "0xabc", time, "0x0000000000000000000000000000000a");
+                serde_json::to_value(vec![fill]).unwrap()
+            }
+            _ => Value::Array(vec![]),
+        };
+
+        Json(response)
+    }
+
+    async fn bootstrap_ws(upgrade: WebSocketUpgrade) -> Response {
+        upgrade.on_upgrade(|mut socket| async move {
+            let mut reconnected = false;
+
+            while let Some(Ok(Message::Text(text))) = socket.next().await {
+                let request: Value = serde_json::from_str(&text).unwrap();
+                if request["method"] != "subscribe" {
+                    continue;
+                }
+
+                let subscription = &request["subscription"];
+                let response = json!({
+                    "channel": "subscriptionResponse",
+                    "data": { "method": "subscribe", "subscription": subscription },
+                });
+                socket
+                    .send(Message::Text(response.to_string().into()))
+                    .await
+                    .unwrap();
+
+                if !reconnected && subscription["type"] == "userEvents" {
+                    reconnected = true;
+                    socket
+                        .send(Message::Text(RECONNECTED.into()))
+                        .await
+                        .unwrap();
+                }
+            }
+        })
     }
 
     #[rstest]

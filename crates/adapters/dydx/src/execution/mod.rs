@@ -66,7 +66,7 @@ use nautilus_core::{
 };
 use nautilus_live::{
     ExecutionClientCore, ExecutionEventEmitter, SocketControlFactory,
-    execution::reports::retain_order_status_reports,
+    execution::{failure::CommandFailure, reports::retain_order_status_reports},
     task::{TaskGroup, TaskGroupGuard},
 };
 use nautilus_model::{
@@ -1003,22 +1003,24 @@ impl DydxExecutionClient {
         shutdown_result
     }
 
-    fn send_modify_rejected(
+    fn send_modify_denied(
         &self,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
+        causation_id: UUID4,
     ) {
         let ts_event = self.clock.get_time_ns();
-        self.emitter.emit_order_modify_rejected_event(
+        self.emitter.emit_order_modify_denied_event(
             strategy_id,
             instrument_id,
             client_order_id,
             venue_order_id,
             reason,
             ts_event,
+            Some(causation_id),
         );
     }
 
@@ -1109,11 +1111,11 @@ async fn broadcast_partitioned_cancels(
                         // A CheckTx rejection refuses the whole transaction
                         // atomically: a venue result for every cancel in it.
                         if e.is_definitive_broadcast_rejection() {
-                            emit_partitioned_cancel_rejections(
+                            emit_partitioned_cancel_failure(
                                 &short_term_orders,
                                 &emitter,
                                 clock,
-                                &msg,
+                                &CommandFailure::venue_rejected(&msg),
                             );
                         }
                         errors.push(msg);
@@ -1123,6 +1125,12 @@ async fn broadcast_partitioned_cancels(
             Err(e) => {
                 let msg = format!("Failed to build MsgBatchCancel: {e:?}");
                 log::error!("{msg}");
+                emit_partitioned_cancel_failure(
+                    &short_term_orders,
+                    &emitter,
+                    clock,
+                    &CommandFailure::not_sent(&msg),
+                );
                 errors.push(msg);
             }
         }
@@ -1158,11 +1166,11 @@ async fn broadcast_partitioned_cancels(
                         log::warn!("{msg}");
 
                         if e.is_definitive_broadcast_rejection() {
-                            emit_partitioned_cancel_rejections(
+                            emit_partitioned_cancel_failure(
                                 &long_term_orders,
                                 &emitter,
                                 clock,
-                                &msg,
+                                &CommandFailure::venue_rejected(&msg),
                             );
                         }
                         errors.push(msg);
@@ -1172,6 +1180,12 @@ async fn broadcast_partitioned_cancels(
             Err(e) => {
                 let msg = format!("Failed to build long-term cancel messages: {e:?}");
                 log::error!("{msg}");
+                emit_partitioned_cancel_failure(
+                    &long_term_orders,
+                    &emitter,
+                    clock,
+                    &CommandFailure::not_sent(&msg),
+                );
                 errors.push(msg);
             }
         }
@@ -1184,21 +1198,34 @@ async fn broadcast_partitioned_cancels(
     Ok(())
 }
 
-fn emit_partitioned_cancel_rejections(
+fn emit_partitioned_cancel_failure(
     orders: &[DydxCancelOrderRequest],
     emitter: &ExecutionEventEmitter,
     clock: &AtomicTime,
-    reason: &str,
+    failure: &CommandFailure,
 ) {
     for order in orders {
-        emitter.emit_order_cancel_rejected_event(
-            order.strategy_id,
-            order.instrument_id,
-            order.client_order_id,
-            order.venue_order_id,
-            reason,
-            clock.get_time_ns(),
-        );
+        match failure {
+            CommandFailure::NotSent(reason) => emitter.emit_order_cancel_denied_event(
+                order.strategy_id,
+                order.instrument_id,
+                order.client_order_id,
+                order.venue_order_id,
+                reason,
+                clock.get_time_ns(),
+                Some(order.command_id),
+            ),
+            CommandFailure::VenueRejected(reason) => emitter.emit_order_cancel_rejected_event(
+                order.strategy_id,
+                order.instrument_id,
+                order.client_order_id,
+                order.venue_order_id,
+                reason,
+                clock.get_time_ns(),
+                Some(order.command_id),
+            ),
+            CommandFailure::Ambiguous(_) => {}
+        }
     }
 }
 
@@ -1883,24 +1910,38 @@ impl ExecutionClient for DydxExecutionClient {
 
     /// dYdX does not support native order modification.
     ///
-    /// Strategies should handle `OrderModifyRejected` by canceling and resubmitting.
+    /// Strategies should handle `OrderModifyDenied` by canceling and resubmitting.
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
         let reason = "dYdX does not support order modification. Use cancel and resubmit instead.";
         log::warn!("{reason}");
 
-        self.send_modify_rejected(
+        self.send_modify_denied(
             cmd.strategy_id,
             cmd.instrument_id,
             cmd.client_order_id,
             cmd.venue_order_id,
             reason,
+            cmd.command_id,
         );
         Ok(())
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
+        let deny = |reason: &str| {
+            self.emitter.emit_order_cancel_denied_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                reason,
+                self.clock.get_time_ns(),
+                Some(cmd.command_id),
+            );
+        };
+
         if !self.is_connected() {
-            anyhow::bail!("Cannot cancel order: not connected");
+            deny("Cannot cancel order: not connected");
+            return Ok(());
         }
 
         let client_order_id = cmd.client_order_id;
@@ -1914,8 +1955,8 @@ impl ExecutionClient for DydxExecutionClient {
             let order = match cache.order(&client_order_id) {
                 Some(order) => order,
                 None => {
-                    log::error!("Cannot cancel order {client_order_id}: not found in cache");
-                    return Ok(()); // Not an error - order may have been filled/canceled already
+                    deny("Order not found in cache for cancel");
+                    return Ok(());
                 }
             };
 
@@ -1925,6 +1966,7 @@ impl ExecutionClient for DydxExecutionClient {
                     client_order_id,
                     order.status()
                 );
+                deny("Cannot cancel a closed order");
                 return Ok(());
             }
 
@@ -1932,7 +1974,8 @@ impl ExecutionClient for DydxExecutionClient {
                 log::error!(
                     "Cannot cancel order {client_order_id}: instrument {instrument_id} not found in cache"
                 );
-                return Ok(()); // Not an error - missing instrument is a cache issue
+                deny("Instrument not found in cache for cancel");
+                return Ok(());
             }
 
             (
@@ -1946,7 +1989,9 @@ impl ExecutionClient for DydxExecutionClient {
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
             Ok(components) => components,
             Err(e) => {
-                log::error!("Failed to get execution components for cancel: {e}");
+                deny(&format!(
+                    "Failed to get execution components for cancel: {e}"
+                ));
                 return Ok(());
             }
         };
@@ -1956,8 +2001,8 @@ impl ExecutionClient for DydxExecutionClient {
         let encoded = match self.encoder.get(&client_order_id) {
             Some(enc) => enc,
             None => {
-                log::error!("Client order ID {client_order_id} not found in cache");
-                anyhow::bail!("Client order ID not found in cache")
+                deny("Client order ID not found in encoder for cancel");
+                return Ok(());
             }
         };
         let client_id_u32 = encoded.client_id;
@@ -1995,10 +2040,14 @@ impl ExecutionClient for DydxExecutionClient {
             ) {
                 Ok(msg) => msg,
                 Err(e) => {
-                    // Local validation failure: leave the cancel outcome for
-                    // in-flight resolution.
-                    log::warn!(
-                        "Cancel command failed local validation for {client_order_id}: {e:?}"
+                    emitter.emit_order_cancel_denied_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        &format!("Cancel command failed local validation: {e:?}"),
+                        clock.get_time_ns(),
+                        Some(cmd.command_id),
                     );
                     return Ok(());
                 }
@@ -2031,6 +2080,7 @@ impl ExecutionClient for DydxExecutionClient {
                         venue_order_id,
                         &format!("Cancel order failed: {e:?}"),
                         ts_event,
+                        Some(cmd.command_id),
                     );
                 }
                 Err(e) => {
@@ -2113,6 +2163,7 @@ impl ExecutionClient for DydxExecutionClient {
                 continue;
             };
             orders_to_cancel.push(DydxCancelOrderRequest {
+                command_id: cmd.command_id,
                 instrument_id,
                 client_id: client_id_u32,
                 order_flags: ctx.order_flags,
@@ -2164,13 +2215,36 @@ impl ExecutionClient for DydxExecutionClient {
         }
 
         if !self.is_connected() {
-            anyhow::bail!("Cannot cancel orders: not connected");
+            for cancel in &cmd.cancels {
+                self.emitter.emit_order_cancel_denied_event(
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                    cancel.client_order_id,
+                    cancel.venue_order_id,
+                    "Cannot cancel orders: not connected",
+                    self.clock.get_time_ns(),
+                    Some(cancel.command_id),
+                );
+            }
+
+            return Ok(());
         }
 
         let (tx_manager, broadcaster, order_builder) = match self.get_execution_components() {
             Ok(components) => components,
             Err(e) => {
-                log::error!("Failed to get execution components for batch cancel: {e}");
+                for cancel in &cmd.cancels {
+                    self.emitter.emit_order_cancel_denied_event(
+                        cancel.strategy_id,
+                        cancel.instrument_id,
+                        cancel.client_order_id,
+                        cancel.venue_order_id,
+                        &format!("Failed to get execution components for batch cancel: {e}"),
+                        self.clock.get_time_ns(),
+                        Some(cancel.command_id),
+                    );
+                }
+
                 return Ok(());
             }
         };
@@ -2181,8 +2255,14 @@ impl ExecutionClient for DydxExecutionClient {
             let encoded = match self.encoder.get(&client_order_id) {
                 Some(enc) => enc,
                 None => {
-                    log::warn!(
-                        "No u32 mapping found for client_order_id={client_order_id}, skipping cancel"
+                    self.emitter.emit_order_cancel_denied_event(
+                        cancel.strategy_id,
+                        cancel.instrument_id,
+                        client_order_id,
+                        cancel.venue_order_id,
+                        "Client order ID not found in encoder for cancel",
+                        self.clock.get_time_ns(),
+                        Some(cancel.command_id),
                     );
                     continue;
                 }
@@ -2190,13 +2270,20 @@ impl ExecutionClient for DydxExecutionClient {
             let client_id_u32 = encoded.client_id;
 
             let Some(ctx) = self.get_order_context(client_id_u32) else {
-                log::debug!(
-                    "Skipping cancel for {client_order_id}: order context already cleaned up (terminal)"
+                self.emitter.emit_order_cancel_denied_event(
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                    client_order_id,
+                    cancel.venue_order_id,
+                    "Order context not found for cancel",
+                    self.clock.get_time_ns(),
+                    Some(cancel.command_id),
                 );
                 continue;
             };
 
             orders_to_cancel.push(DydxCancelOrderRequest {
+                command_id: cancel.command_id,
                 instrument_id: cancel.instrument_id,
                 client_id: client_id_u32,
                 order_flags: ctx.order_flags,
@@ -2945,6 +3032,7 @@ type CancelAllOrderData = (
 
 #[derive(Clone, Copy)]
 struct DydxCancelOrderRequest {
+    command_id: UUID4,
     instrument_id: InstrumentId,
     client_id: u32,
     order_flags: u32,
@@ -3732,7 +3820,9 @@ mod tests {
     }
 
     #[rstest]
-    fn test_emit_partitioned_cancel_rejections_emits_each_cancel() {
+    #[case(false)]
+    #[case(true)]
+    fn test_emit_partitioned_cancel_failure_emits_each_cancel(#[case] not_sent: bool) {
         let clock = get_atomic_clock_realtime();
         let mut emitter = ExecutionEventEmitter::new(
             clock,
@@ -3747,6 +3837,7 @@ mod tests {
         let instrument_id = InstrumentId::from("BTC-USD-PERP.DYDX");
         let orders = vec![
             DydxCancelOrderRequest {
+                command_id: UUID4::new(),
                 instrument_id,
                 client_id: 1,
                 order_flags: types::ORDER_FLAG_SHORT_TERM,
@@ -3755,6 +3846,7 @@ mod tests {
                 venue_order_id: Some(VenueOrderId::from("V-1")),
             },
             DydxCancelOrderRequest {
+                command_id: UUID4::new(),
                 instrument_id,
                 client_id: 2,
                 order_flags: types::ORDER_FLAG_LONG_TERM,
@@ -3764,11 +3856,25 @@ mod tests {
             },
         ];
 
-        emit_partitioned_cancel_rejections(&orders, &emitter, clock, "broadcast failed");
+        let failure = if not_sent {
+            CommandFailure::not_sent("broadcast failed")
+        } else {
+            CommandFailure::venue_rejected("broadcast failed")
+        };
+
+        emit_partitioned_cancel_failure(&orders, &emitter, clock, &failure);
 
         for order in &orders {
             match recv_order_event(&mut rx) {
-                OrderEventAny::CancelRejected(event) => {
+                OrderEventAny::CancelDenied(event) if not_sent => {
+                    assert_eq!(event.client_order_id, order.client_order_id);
+                    assert_eq!(event.instrument_id, order.instrument_id);
+                    assert_eq!(event.venue_order_id, order.venue_order_id);
+                    assert_eq!(event.reason, "broadcast failed");
+                    assert_eq!(event.causation_id, Some(order.command_id));
+                }
+                OrderEventAny::CancelRejected(event) if !not_sent => {
+                    assert_eq!(event.causation_id, Some(order.command_id));
                     assert_eq!(event.client_order_id, order.client_order_id);
                     assert_eq!(event.instrument_id, order.instrument_id);
                     assert_eq!(event.venue_order_id, order.venue_order_id);

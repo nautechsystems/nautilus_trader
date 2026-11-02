@@ -143,11 +143,14 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if the database fails to close properly.
     fn close(&mut self) -> anyhow::Result<()>;
 
-    /// Flushes any pending changes to the database.
+    /// Clears persisted data according to the backing's scope.
+    ///
+    /// Redis clears the entire logical database, including other traders and user keys.
+    /// PostgreSQL removes only this trader's rows and saved component state.
     ///
     /// # Errors
     ///
-    /// Returns an error if flushing changes fails.
+    /// Returns an error if removing the persisted data fails.
     fn flush(&mut self) -> anyhow::Result<()>;
 
     /// Loads all cached data into memory.
@@ -273,6 +276,30 @@ pub trait CacheDatabaseAdapter {
         &self,
         instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<SyntheticInstrument>>;
+
+    /// Loads an instrument for a synchronous cache caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading fails or synchronous reads are unsupported.
+    fn load_instrument_sync(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        anyhow::bail!("Synchronous instrument loading is not supported by this cache database")
+    }
+
+    /// Loads a synthetic instrument for a synchronous cache caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if loading fails or synchronous reads are unsupported.
+    fn load_synthetic_sync(
+        &self,
+        _instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<SyntheticInstrument>> {
+        anyhow::bail!("Synchronous synthetic loading is not supported by this cache database")
+    }
 
     /// Loads a single account by ID.
     ///
@@ -542,7 +569,10 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if deleting a position fails.
     fn delete_position(&self, position_id: &PositionId) -> anyhow::Result<()>;
 
-    /// Deletes an account event from the cache.
+    /// Requests deletion of an account event from the database.
+    ///
+    /// Redis and PostgreSQL retain the full account history for balance and margin replay;
+    /// their implementations log the request and return success without deleting it.
     ///
     /// # Errors
     ///

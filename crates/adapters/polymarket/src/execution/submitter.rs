@@ -29,7 +29,6 @@ use std::{
     },
 };
 
-use nautilus_core::UnixNanos;
 use nautilus_model::{
     enums::{OrderSide, TimeInForce},
     events::OrderDeniedReason,
@@ -54,6 +53,7 @@ use crate::{
         models::{PolymarketOpenOrder, PolymarketOrder},
         query::{CancelMarketOrdersParams, CancelResponse, OrderResponse},
     },
+    signing::eip712::OrderSigningContext,
 };
 
 /// Fee-adjustment context for market BUYs sized to the user's pUSD balance.
@@ -76,7 +76,7 @@ pub(crate) struct MarketOrderSubmitRequest {
     pub(crate) side: OrderSide,
     pub(crate) amount: Quantity,
     pub(crate) time_in_force: TimeInForce,
-    pub(crate) neg_risk: bool,
+    pub(crate) signing_context: OrderSigningContext,
     pub(crate) tick_size: Price,
     pub(crate) tick_decimals: u32,
     pub(crate) fee_context: Option<MarketBuyFeeContext>,
@@ -158,7 +158,7 @@ impl OrderSubmitter {
             side,
             amount,
             time_in_force,
-            neg_risk,
+            signing_context,
             tick_size,
             tick_decimals,
             fee_context,
@@ -207,12 +207,12 @@ impl OrderSubmitter {
 
         let poly_order = self
             .order_builder
-            .build_market_order(
+            .build_market_order_with_context(
                 &token_id,
                 poly_side,
                 price,
                 signed_amount,
-                neg_risk,
+                signing_context,
                 tick_decimals,
             )
             .map_err(|e| anyhow::anyhow!("Failed to build market order: {e}"))?;
@@ -224,7 +224,7 @@ impl OrderSubmitter {
             signed_base_quantity(poly_order.maker_amount, poly_order.taker_amount, poly_side);
         let expected_venue_order_id = self
             .order_builder
-            .expected_order_id(&poly_order, neg_risk)?;
+            .expected_order_id_with_context(&poly_order, signing_context)?;
         Ok(SignedMarketOrderSubmission {
             order: poly_order,
             order_type,
@@ -500,7 +500,6 @@ impl OrderSubmitter {
         let order_type = PolymarketOrderType::try_from(request.time_in_force)
             .map_err(|e| anyhow::anyhow!("Unsupported time in force: {e}"))?;
         let side = PolymarketOrderSide::from(request.side);
-        let expiration = limit_order_expiration(request.expire_time);
 
         let order = if request.quote_quantity {
             anyhow::ensure!(
@@ -511,19 +510,19 @@ impl OrderSubmitter {
                 &request.token_id,
                 request.price.as_decimal(),
                 request.quantity.as_decimal(),
-                &expiration,
-                request.neg_risk,
+                request.expire_time,
+                request.signing_context,
                 request.tick_decimals,
             )
         } else {
-            self.order_builder.build_limit_order(
+            self.order_builder.build_limit_order_with_context(
                 &request.token_id,
                 side,
                 request.price.as_decimal(),
                 request.quantity.as_decimal(),
                 order_type,
-                &expiration,
-                request.neg_risk,
+                request.expire_time,
+                request.signing_context,
                 request.tick_decimals,
             )
         }
@@ -545,7 +544,7 @@ impl OrderSubmitter {
 
         let expected_venue_order_id = self
             .order_builder
-            .expected_order_id(&order, request.neg_risk)?;
+            .expected_order_id_with_context(&order, request.signing_context)?;
         self.settlement
             .note_order_submitted(expected_venue_order_id);
 
@@ -792,15 +791,6 @@ fn signed_base_quantity(
     match side {
         PolymarketOrderSide::Buy => taker_amount / usdc_scale,
         PolymarketOrderSide::Sell => maker_amount / usdc_scale,
-    }
-}
-
-// Converts a nanos expire time to the unix-seconds string expected by the
-// Polymarket API. Returns `"0"` when there is no expiration.
-fn limit_order_expiration(expire_time: Option<UnixNanos>) -> String {
-    match expire_time {
-        Some(ns) if !ns.is_zero() => ns.as_seconds().to_string(),
-        _ => "0".to_string(),
     }
 }
 
@@ -1215,16 +1205,6 @@ mod tests {
 
         assert!(error.response.canceled.is_empty());
         assert!(error.response.not_canceled.is_empty());
-    }
-
-    #[rstest]
-    #[case::none(None, "0")]
-    #[case::zero(Some(UnixNanos::from(0u64)), "0")]
-    #[case::one_second(Some(UnixNanos::from(1_000_000_000u64)), "1")]
-    #[case::sub_second_truncates(Some(UnixNanos::from(1_500_000_000u64)), "1")]
-    #[case::typical(Some(UnixNanos::from(1_735_689_600_000_000_000u64)), "1735689600")]
-    fn test_limit_order_expiration(#[case] expire_time: Option<UnixNanos>, #[case] expected: &str) {
-        assert_eq!(limit_order_expiration(expire_time), expected);
     }
 
     #[rstest]

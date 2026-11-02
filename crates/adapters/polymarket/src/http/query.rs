@@ -97,6 +97,8 @@ pub struct CancelMarketOrdersParams {
 pub enum AssetType {
     Collateral,
     Conditional,
+    #[serde(rename = "CONDITIONAL-V2")]
+    ConditionalV2,
 }
 
 /// Strict balance and allowance response for callers that require allowance evidence from
@@ -1166,6 +1168,10 @@ mod tests {
             serde_json::to_string(&AssetType::Conditional).unwrap(),
             "\"CONDITIONAL\""
         );
+        assert_eq!(
+            serde_json::to_string(&AssetType::ConditionalV2).unwrap(),
+            "\"CONDITIONAL-V2\""
+        );
     }
 
     #[rstest]
@@ -1178,6 +1184,11 @@ mod tests {
             serde_json::from_str::<AssetType>("\"CONDITIONAL\"").unwrap(),
             AssetType::Conditional
         );
+        assert_eq!(
+            serde_json::from_str::<AssetType>("\"CONDITIONAL-V2\"").unwrap(),
+            AssetType::ConditionalV2
+        );
+        assert!(serde_json::from_str::<AssetType>("\"CONDITIONAL_V2\"").is_err());
     }
 
     #[rstest]

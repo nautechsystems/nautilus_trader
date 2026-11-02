@@ -216,7 +216,7 @@ impl CanonicalScenario {
                     "blake3:7702ff4aa9ca1d26061419e9185a5bcfed0418fb0f24725ee36fd7d4323d79f5"
                         .to_string(),
                 result_digest:
-                    "blake3:bdf55fed6226757d296b891b8c0271c4e81571ad3e569dcc1304e29d1ec05a72"
+                    "blake3:c4c566002038cb04cef9311cb71afb90013f85fe631a65a96503dfb9fe86d52a"
                         .to_string(),
             },
             Self::BarEmaCross => CanonicalFingerprint {

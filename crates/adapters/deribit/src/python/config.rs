@@ -17,7 +17,7 @@
 
 use nautilus_common::python::config_error_to_pyvalue_err;
 use nautilus_core::string::secret::SecretString;
-use nautilus_model::identifiers::AccountId;
+use nautilus_model::identifiers::{AccountId, InstrumentId};
 use nautilus_network::websocket::TransportBackend;
 use pyo3::prelude::*;
 
@@ -49,6 +49,7 @@ impl DeribitDataClientConfig {
         update_instruments_interval_mins = None,
         auto_load_missing_instruments = None,
         transport_backend = None,
+        load_ids = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -68,6 +69,7 @@ impl DeribitDataClientConfig {
         update_instruments_interval_mins: Option<u64>,
         auto_load_missing_instruments: Option<bool>,
         transport_backend: Option<TransportBackend>,
+        load_ids: Option<Vec<InstrumentId>>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
 
@@ -92,6 +94,7 @@ impl DeribitDataClientConfig {
             auto_load_missing_instruments: auto_load_missing_instruments
                 .unwrap_or(defaults.auto_load_missing_instruments),
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            load_ids,
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;
@@ -128,6 +131,7 @@ impl DeribitExecutionClientConfig {
         retry_delay_max_ms = None,
         auth_timeout_secs = None,
         transport_backend = None,
+        load_ids = None,
     ))]
     #[expect(clippy::too_many_arguments)]
     fn py_new(
@@ -145,6 +149,7 @@ impl DeribitExecutionClientConfig {
         retry_delay_max_ms: Option<u64>,
         auth_timeout_secs: Option<u64>,
         transport_backend: Option<TransportBackend>,
+        load_ids: Option<Vec<InstrumentId>>,
     ) -> PyResult<Self> {
         let defaults = Self::default();
 
@@ -164,6 +169,7 @@ impl DeribitExecutionClientConfig {
             retry_delay_max_ms: retry_delay_max_ms.unwrap_or(defaults.retry_delay_max_ms),
             auth_timeout_secs,
             transport_backend: transport_backend.unwrap_or(defaults.transport_backend),
+            load_ids,
         };
 
         config.validate().map_err(config_error_to_pyvalue_err)?;

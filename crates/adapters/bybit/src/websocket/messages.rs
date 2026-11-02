@@ -122,6 +122,8 @@ pub enum BybitWsMessage {
     Auth(BybitWsAuthResponse),
     /// Order operation response (create/amend/cancel) from trade WebSocket.
     OrderResponse(BybitWsOrderResponse),
+    /// An order command fails before the transport writes it.
+    OrderNotSent { request_id: String, reason: String },
     /// Orderbook snapshot or delta.
     Orderbook(BybitWsOrderbookDepthMsg),
     /// Trade updates.

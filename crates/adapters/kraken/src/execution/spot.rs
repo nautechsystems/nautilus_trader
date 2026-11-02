@@ -532,6 +532,7 @@ impl KrakenSpotExecutionClient {
 
     fn cancel_via_rest(&self, cmd: &CancelOrder) {
         let account_id = self.core.account_id;
+        let command_id = cmd.command_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let strategy_id = cmd.strategy_id;
@@ -563,6 +564,7 @@ impl KrakenSpotExecutionClient {
                     client_order_id,
                     venue_order_id,
                     failure,
+                    command_id,
                 );
             }
             Ok(())
@@ -686,6 +688,7 @@ impl KrakenSpotExecutionClient {
     }
 
     fn amend_via_rest(&self, cmd: &ModifyOrder) {
+        let command_id = cmd.command_id;
         let client_order_id = cmd.client_order_id;
         let venue_order_id = cmd.venue_order_id;
         let strategy_id = cmd.strategy_id;
@@ -720,7 +723,19 @@ impl KrakenSpotExecutionClient {
                             "modify_order outcome is ambiguous for client_order_id={client_order_id}: {reason}"
                         );
                     }
-                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+                    CommandFailure::NotSent(reason) => {
+                        let ts_event = clock.get_time_ns();
+                        emitter.emit_order_modify_denied_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            &format!("modify-order error: {reason}"),
+                            ts_event,
+                            Some(command_id),
+                        );
+                    }
+                    CommandFailure::VenueRejected(reason) => {
                         let ts_event = clock.get_time_ns();
                         emitter.emit_order_modify_rejected_event(
                             strategy_id,
@@ -729,6 +744,7 @@ impl KrakenSpotExecutionClient {
                             venue_order_id,
                             &format!("modify-order error: {reason}"),
                             ts_event,
+                            Some(command_id),
                         );
                     }
                 },
@@ -1656,8 +1672,10 @@ impl ExecutionClient for KrakenSpotExecutionClient {
 
         let http = self.http.clone();
 
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
         self.spawn_task("cancel_all_orders", async move {
-            batch_cancel_orders_for_spot(&http, &cancels).await;
+            batch_cancel_orders_for_spot(&http, &cancels, &emitter, clock).await;
             Ok(())
         });
 
@@ -1683,8 +1701,10 @@ impl ExecutionClient for KrakenSpotExecutionClient {
         let http = self.http.clone();
         let cancels = cmd.cancels;
 
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
         self.spawn_task("batch_cancel_orders", async move {
-            batch_cancel_orders_for_spot(&http, &cancels).await;
+            batch_cancel_orders_for_spot(&http, &cancels, &emitter, clock).await;
             Ok(())
         });
 
@@ -1744,16 +1764,26 @@ enum SpotBatchCancelId {
 
 const SPOT_BATCH_CANCEL_LIMIT: usize = 50;
 
-async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[CancelOrder]) {
+async fn batch_cancel_orders_for_spot(
+    http: &KrakenSpotHttpClient,
+    cancels: &[CancelOrder],
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+) {
     let mut ids = Vec::new();
 
     for cancel in cancels {
         match batch_cancel_item_for_spot(http, cancel) {
-            Ok(id) => ids.push(id),
+            Ok(id) => ids.push((id, cancel)),
             Err(CommandFailure::NotSent(reason)) => {
-                log::warn!(
-                    "Batch cancel command failed local validation for {}: {reason}",
-                    cancel.client_order_id
+                emitter.emit_order_cancel_denied_event(
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                    cancel.client_order_id,
+                    cancel.venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(cancel.command_id),
                 );
             }
             Err(CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason)) => {
@@ -1770,7 +1800,7 @@ async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[Ca
         let mut orders = Vec::new();
         let mut cl_ord_ids = Vec::new();
 
-        for id in chunk {
+        for (id, _) in chunk {
             match id {
                 SpotBatchCancelId::VenueOrderId(venue_order_id) => {
                     orders.push(venue_order_id.clone());
@@ -1793,16 +1823,40 @@ async fn batch_cancel_orders_for_spot(http: &KrakenSpotHttpClient, cancels: &[Ca
                     );
                 }
             }
-            Err(e) => match command_failure_from_cancel_error(e) {
-                CommandFailure::NotSent(reason) => {
-                    log::warn!("Batch cancel failed local validation: {reason}");
-                }
-                CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
-                    log::warn!(
-                        "Batch cancel failed without per-order results, awaiting reconciliation: {reason}"
-                    );
-                }
-            },
+            Err(e) => handle_batch_cancel_failure(
+                command_failure_from_cancel_error(e),
+                chunk,
+                emitter,
+                clock,
+            ),
+        }
+    }
+}
+
+fn handle_batch_cancel_failure(
+    failure: CommandFailure,
+    chunk: &[(SpotBatchCancelId, &CancelOrder)],
+    emitter: &ExecutionEventEmitter,
+    clock: &AtomicTime,
+) {
+    match failure {
+        CommandFailure::NotSent(reason) => {
+            for (_, cancel) in chunk {
+                emitter.emit_order_cancel_denied_event(
+                    cancel.strategy_id,
+                    cancel.instrument_id,
+                    cancel.client_order_id,
+                    cancel.venue_order_id,
+                    &reason,
+                    clock.get_time_ns(),
+                    Some(cancel.command_id),
+                );
+            }
+        }
+        CommandFailure::Ambiguous(reason) | CommandFailure::VenueRejected(reason) => {
+            log::warn!(
+                "Batch cancel failed without per-order results, awaiting reconciliation: {reason}"
+            );
         }
     }
 }
@@ -1827,6 +1881,10 @@ fn batch_cancel_item_for_spot(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
 fn handle_cancel_failure(
     emitter: &ExecutionEventEmitter,
     clock: &'static AtomicTime,
@@ -1835,6 +1893,7 @@ fn handle_cancel_failure(
     client_order_id: ClientOrderId,
     venue_order_id: Option<VenueOrderId>,
     failure: CommandFailure,
+    causation_id: UUID4,
 ) {
     match failure {
         CommandFailure::VenueRejected(reason) => {
@@ -1845,10 +1904,19 @@ fn handle_cancel_failure(
                 venue_order_id,
                 &reason,
                 clock.get_time_ns(),
+                Some(causation_id),
             );
         }
         CommandFailure::NotSent(reason) => {
-            log::warn!("Cancel command failed local validation for {client_order_id}: {reason}");
+            emitter.emit_order_cancel_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &reason,
+                clock.get_time_ns(),
+                Some(causation_id),
+            );
         }
         CommandFailure::Ambiguous(reason) => {
             log::warn!(

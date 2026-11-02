@@ -100,6 +100,7 @@ use nautilus_model::{
     stubs::TestDefault,
     types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
 };
+use nautilus_testkit::cache::TestCacheDatabaseControl;
 use parking_lot::Mutex;
 use rstest::rstest;
 use rust_decimal::Decimal;
@@ -826,7 +827,7 @@ async fn test_observe_order_report_clears_inflight_tracking() {
     let order = create_submitted_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // Simulate venue responding with an OrderStatusReport
     let order_report = create_order_report(
@@ -871,7 +872,7 @@ async fn test_observe_pending_order_report_keeps_inflight_tracking() {
         create_submitted_order("O-PENDING", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // Venue reports PendingUpdate (interim acknowledgement, not terminal)
     let order_report = create_order_report(
@@ -6279,7 +6280,7 @@ async fn test_inflight_order_generates_rejection_after_max_retries(
         ctx.manager
             .register_submission(order.init_event(), Some(test_client_id()));
     } else {
-        ctx.manager.register_inflight(client_order_id);
+        ctx.manager.register_inflight(client_order_id, UUID4::new());
     }
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await; // 200ms, past threshold
@@ -6571,7 +6572,8 @@ async fn test_submission_registry_survives_unacknowledged_command_response(
     };
     ctx.manager.observe_order_event(&pending);
     ctx.cache.borrow_mut().update_order(&pending).unwrap();
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
+
     let event = match response {
         "cancel_rejected" => OrderEventAny::CancelRejected(
             OrderCancelRejectedSpec::builder()
@@ -6741,7 +6743,7 @@ async fn test_submission_registry_interleaved_missing_checks_preserve_budget(
         )
     };
     ctx.cache.borrow_mut().update_order(&pending).unwrap();
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     let client = MockExecutionClient::new(Vec::new());
     let tracked = policy == SubmissionRecoveryPolicy::RetainUnresolved && !acknowledged;
     let mut queries = 0;
@@ -6859,7 +6861,7 @@ async fn test_retained_submission_survives_recovery_and_accepts_late_evidence(
     duplicate.strategy_id = StrategyId::from("OTHER-002");
     ctx.manager
         .register_submission(&duplicate, Some(ClientId::from("OTHER")));
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     ctx.manager.clear_recon_tracking(&client_order_id, true);
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await;
@@ -7004,7 +7006,7 @@ async fn test_inflight_timeout_uses_monotonic_gate_and_domain_event_timestamp() 
     let order = create_submitted_order("O-SPLIT", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     let domain_ts = ctx.clock.borrow().timestamp_ns();
     advance_clock(dst::time::Duration::from_millis(200)).await;
 
@@ -7044,7 +7046,7 @@ async fn test_inflight_check_skips_filtered_order_ids() {
     );
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(filtered_id);
+    ctx.manager.register_inflight(filtered_id, UUID4::new());
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await;
 
@@ -7095,11 +7097,13 @@ fn test_purge_operations_respect_retention_config(
     #[case] accounts_mins: Option<u32>,
     #[case] elapsed_ns: u64,
     #[case] purged: [bool; 3],
+    #[values(false, true)] purge_from_database: bool,
 ) {
     let config = ExecutionManagerConfig {
         purge_closed_orders_buffer_mins: orders_mins,
         purge_closed_positions_buffer_mins: positions_mins,
         purge_account_events_lookback_mins: accounts_mins,
+        purge_from_database,
         ..Default::default()
     };
 
@@ -7169,10 +7173,33 @@ fn test_purge_operations_respect_retention_config(
     assert!(ctx.cache.borrow().is_order_closed(&order.client_order_id()));
     assert!(ctx.cache.borrow().is_position_closed(&position.id));
 
+    let (database, database_control) = TestCacheDatabaseControl::create();
+    ctx.cache.borrow_mut().set_database(Box::new(database));
+    let mut expected_database_events = Vec::new();
+
+    if purge_from_database {
+        if purged[0] {
+            expected_database_events.push(format!("delete_order:{}", order.client_order_id()));
+        }
+
+        if purged[1] {
+            expected_database_events.push(format!("delete_position:{}", position.id));
+        }
+
+        if purged[2] {
+            expected_database_events.push(format!(
+                "delete_account_event:{}:{}",
+                test_account_id(),
+                first.event_id
+            ));
+        }
+    }
+
     ctx.manager.purge_closed_orders();
     ctx.manager.purge_closed_positions();
     ctx.manager.purge_account_events();
 
+    assert_eq!(database_control.events(), expected_database_events);
     let cache = ctx.cache.borrow();
     assert_eq!(
         cache
@@ -7313,7 +7340,7 @@ async fn test_inflight_increments_retry_count_before_max() {
     let order = create_submitted_order("O-001", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // First check - past threshold, retry count becomes 1, generates QueryOrder
     ctx.advance_both(dst::time::Duration::from_millis(200))
@@ -7371,7 +7398,7 @@ async fn test_inflight_pending_update_generates_canceled(#[case] policy: Submiss
     );
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await; // 200ms, past threshold
 
@@ -7427,7 +7454,7 @@ async fn test_inflight_pending_cancel_generates_canceled(#[case] policy: Submiss
     );
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await;
 
@@ -7470,7 +7497,7 @@ async fn test_inflight_generates_query_before_max_retries() {
     let order = create_submitted_order("O-QUERY", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // First check - past threshold, retry 1 < max 3 -> generates QueryOrder
     ctx.advance_both(dst::time::Duration::from_millis(200))
@@ -7510,7 +7537,7 @@ async fn test_inflight_no_query_at_max_retries() {
     let order = create_submitted_order("O-MAX", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // First check - intermediate, generates query
     ctx.advance_both(dst::time::Duration::from_millis(200))
@@ -7557,7 +7584,7 @@ async fn test_inflight_query_preserves_client_id_routing() {
     let order = create_submitted_order("O-ROUTED", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order_with_client_id(order, client_id);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await;
 
@@ -7602,7 +7629,7 @@ async fn test_inflight_query_throttled_within_threshold() {
     );
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // First check past threshold generates a query
     ctx.advance_both(dst::time::Duration::from_millis(200))
@@ -7650,7 +7677,7 @@ async fn test_inflight_accepted_order_at_max_retries_no_event() {
     );
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await;
 
@@ -7683,7 +7710,7 @@ async fn test_inflight_order_not_in_cache_at_max_retries_no_event() {
     let client_order_id = ClientOrderId::from("O-MISSING");
 
     // Register inflight without adding order to cache
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await;
 
@@ -7719,7 +7746,7 @@ async fn test_inflight_terminal_event_clears_tracking() {
     let order = create_submitted_order("O-TERM", instrument_id, OrderSide::Buy, "1.0", "3000.00");
     ctx.add_order(order);
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
     ctx.advance_both(dst::time::Duration::from_millis(200))
         .await;
 
@@ -7756,7 +7783,7 @@ fn test_observe_fill_report_without_client_order_id_uses_cache_fallback() {
     insert_accepted_limit_order(&ctx, client_order_id, venue_order_id, test_client_id());
 
     // Register inflight so we can verify activity recording deferred the check
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // Create fill report without client_order_id
     let fill_report = FillReport::new(
@@ -7888,7 +7915,7 @@ async fn test_clear_recon_tracking_removes_inflight() {
     let mut ctx = TestContext::with_config(config);
     let client_order_id = ClientOrderId::from("O-001");
 
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // Simulate order being resolved externally (e.g., accepted by venue)
     ctx.manager.clear_recon_tracking(&client_order_id, true);
@@ -17615,7 +17642,7 @@ async fn test_check_open_orders_deferred_pending_order_keeps_inflight_registrati
         ctx.get_order(&client_order_id).unwrap().status(),
         OrderStatus::PendingCancel,
     );
-    ctx.manager.register_inflight(client_order_id);
+    ctx.manager.register_inflight(client_order_id, UUID4::new());
 
     // Prime one inflight retry so the retained check carries a nonzero count
     ctx.advance_both(dst::time::Duration::from_millis(200))

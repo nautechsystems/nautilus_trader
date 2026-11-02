@@ -30,11 +30,12 @@ use nautilus_model::{
         greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PortfolioSnapshot,
-        PositionAdjusted, PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PortfolioSnapshot, PositionAdjusted, PositionChanged, PositionClosed, PositionOpened,
+        PositionSnapshot,
     },
     instruments::{Instrument, InstrumentAny, NautilusInstrumentType},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -469,11 +470,13 @@ pub fn record_path_prefix(record_type: &NautilusRecordType) -> Cow<'static, str>
         NautilusRecordType::OrderRejected => Cow::Borrowed("order_rejected"),
         NautilusRecordType::OrderPendingCancel => Cow::Borrowed("order_pending_cancel"),
         NautilusRecordType::OrderCanceled => Cow::Borrowed("order_canceled"),
+        NautilusRecordType::OrderCancelDenied => Cow::Borrowed("order_cancel_denied"),
         NautilusRecordType::OrderCancelRejected => Cow::Borrowed("order_cancel_rejected"),
         NautilusRecordType::OrderExpired => Cow::Borrowed("order_expired"),
         NautilusRecordType::OrderTriggered => Cow::Borrowed("order_triggered"),
         NautilusRecordType::OrderPendingUpdate => Cow::Borrowed("order_pending_update"),
         NautilusRecordType::OrderReleased => Cow::Borrowed("order_released"),
+        NautilusRecordType::OrderModifyDenied => Cow::Borrowed("order_modify_denied"),
         NautilusRecordType::OrderModifyRejected => Cow::Borrowed("order_modify_rejected"),
         NautilusRecordType::OrderUpdated => Cow::Borrowed("order_updated"),
         NautilusRecordType::OrderFilled => Cow::Borrowed("order_filled"),
@@ -679,11 +682,13 @@ impl_catalog_record_family!(OrderAccepted, "order_accepted");
 impl_catalog_record_family!(OrderRejected, "order_rejected");
 impl_catalog_record_family!(OrderPendingCancel, "order_pending_cancel");
 impl_catalog_record_family!(OrderCanceled, "order_canceled");
+impl_catalog_record_family!(OrderCancelDenied, "order_cancel_denied");
 impl_catalog_record_family!(OrderCancelRejected, "order_cancel_rejected");
 impl_catalog_record_family!(OrderExpired, "order_expired");
 impl_catalog_record_family!(OrderTriggered, "order_triggered");
 impl_catalog_record_family!(OrderPendingUpdate, "order_pending_update");
 impl_catalog_record_family!(OrderReleased, "order_released");
+impl_catalog_record_family!(OrderModifyDenied, "order_modify_denied");
 impl_catalog_record_family!(OrderModifyRejected, "order_modify_rejected");
 impl_catalog_record_family!(OrderUpdated, "order_updated");
 impl_catalog_record_family!(OrderFilled, "order_filled");
@@ -985,11 +990,13 @@ mod tests {
             OrderRejected,
             OrderPendingCancel,
             OrderCanceled,
+            OrderCancelDenied,
             OrderCancelRejected,
             OrderExpired,
             OrderTriggered,
             OrderPendingUpdate,
             OrderReleased,
+            OrderModifyDenied,
             OrderModifyRejected,
             OrderUpdated,
             OrderFilled,

@@ -761,7 +761,9 @@ async fn test_order_command_send_failure_does_not_emit_rejection() {
                 message,
                 NautilusWsMessage::OrderRejected(_)
                     | NautilusWsMessage::OrderCancelRejected(_)
+                    | NautilusWsMessage::OrderModifyDenied(_)
                     | NautilusWsMessage::OrderModifyRejected(_)
+                    | NautilusWsMessage::OrderCancelDenied(_)
             ),
             "send failure emitted rejection: {message:?}"
         );

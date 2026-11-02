@@ -192,6 +192,9 @@ This matrix does not establish support for every 1.x release, instrument class, 
 families require their own source fixtures and cutover comparisons. Unknown fingerprints and unsupported custom
 timestamp types remain preflight errors.
 
+No released-source fixture covers record types such as `account_state` or order and position events.
+The develop-source fixture below includes account-state records; it does not extend this matrix.
+
 Additional end-to-end coverage comes from develop commit `1602043deb`, built with the `high-precision` feature
 enabled. It covers quotes, trades, bars, fixed-depth order books, `CurrencyPair` instruments, account-state records,
 and a generic custom data type. The tests compare decoded destination values against the original values and check

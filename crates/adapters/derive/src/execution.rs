@@ -1348,7 +1348,13 @@ impl ExecutionClient for DeriveExecutionClient {
                     log::warn!("Failed to resolve instrument {venue_symbol}: {e}");
                     dispatch_state.forget(&order_for_task.client_order_id());
                     let ts = clock.get_time_ns();
-                    emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(format!("instrument resolution failed: {e}")), ts, false);
+                    emit_submit_failure(
+                        &emitter,
+                        &order_for_task,
+                        CommandFailure::not_sent(format!("instrument resolution failed: {e}")),
+                        ts,
+                        false,
+                    );
                     return Ok(());
                 }
             };
@@ -1366,7 +1372,13 @@ impl ExecutionClient for DeriveExecutionClient {
                 log::warn!("{reason}");
                 dispatch_state.forget(&order_for_task.client_order_id());
                 let ts = clock.get_time_ns();
-                emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(&reason), ts, false);
+                emit_submit_failure(
+                    &emitter,
+                    &order_for_task,
+                    CommandFailure::not_sent(&reason),
+                    ts,
+                    false,
+                );
                 return Ok(());
             }
 
@@ -1389,7 +1401,13 @@ impl ExecutionClient for DeriveExecutionClient {
                         log::warn!("{reason}");
                         dispatch_state.forget(&order_for_task.client_order_id());
                         let ts = clock.get_time_ns();
-                        emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(&reason), ts, false);
+                        emit_submit_failure(
+                            &emitter,
+                            &order_for_task,
+                            CommandFailure::not_sent(&reason),
+                            ts,
+                            false,
+                        );
                         return Ok(());
                     }
                 };
@@ -1410,7 +1428,13 @@ impl ExecutionClient for DeriveExecutionClient {
                         log::warn!("{reason}");
                         dispatch_state.forget(&order_for_task.client_order_id());
                         let ts = clock.get_time_ns();
-                        emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(&reason), ts, false);
+                        emit_submit_failure(
+                            &emitter,
+                            &order_for_task,
+                            CommandFailure::not_sent(&reason),
+                            ts,
+                            false,
+                        );
                         return Ok(());
                     }
                 }
@@ -1428,7 +1452,13 @@ impl ExecutionClient for DeriveExecutionClient {
                         log::warn!("{reason}");
                         dispatch_state.forget(&order_for_task.client_order_id());
                         let ts = clock.get_time_ns();
-                        emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(&reason), ts, false);
+                        emit_submit_failure(
+                            &emitter,
+                            &order_for_task,
+                            CommandFailure::not_sent(&reason),
+                            ts,
+                            false,
+                        );
                         return Ok(());
                     }
                 };
@@ -1449,7 +1479,13 @@ impl ExecutionClient for DeriveExecutionClient {
                         log::warn!("{reason}");
                         dispatch_state.forget(&order_for_task.client_order_id());
                         let ts = clock.get_time_ns();
-                        emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(&reason), ts, false);
+                        emit_submit_failure(
+                            &emitter,
+                            &order_for_task,
+                            CommandFailure::not_sent(&reason),
+                            ts,
+                            false,
+                        );
                         return Ok(());
                     }
                 }
@@ -1473,7 +1509,13 @@ impl ExecutionClient for DeriveExecutionClient {
                     );
                     dispatch_state.forget(&order_for_task.client_order_id());
                     let ts = clock.get_time_ns();
-                    emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(&reason), ts, due_post_only);
+                    emit_submit_failure(
+                        &emitter,
+                        &order_for_task,
+                        CommandFailure::not_sent(&reason),
+                        ts,
+                        due_post_only,
+                    );
                     return Ok(());
                 }
             };
@@ -1495,7 +1537,15 @@ impl ExecutionClient for DeriveExecutionClient {
                         );
                         dispatch_state.forget(&order_for_task.client_order_id());
                         let ts = clock.get_time_ns();
-                        emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(format!("order expiry validation failed: {e}")), ts, false);
+                        emit_submit_failure(
+                            &emitter,
+                            &order_for_task,
+                            CommandFailure::not_sent(format!(
+                                "order expiry validation failed: {e}"
+                            )),
+                            ts,
+                            false,
+                        );
                         return Ok(());
                     }
                 };
@@ -1552,7 +1602,13 @@ impl ExecutionClient for DeriveExecutionClient {
                     log::warn!("Order encode failed for {}: {e}", order_for_task.client_order_id());
                     dispatch_state.forget(&order_for_task.client_order_id());
                     let ts = clock.get_time_ns();
-                    emit_submit_failure(&emitter, &order_for_task, CommandFailure::not_sent(format!("order encoding failed: {e}")), ts, false);
+                    emit_submit_failure(
+                        &emitter,
+                        &order_for_task,
+                        CommandFailure::not_sent(format!("order encoding failed: {e}")),
+                        ts,
+                        false,
+                    );
                     return Ok(());
                 }
             };
@@ -1687,6 +1743,7 @@ impl ExecutionClient for DeriveExecutionClient {
                     .or(cmd.venue_order_id),
                 CommandFailure::not_sent(e.to_string()),
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1719,7 +1776,16 @@ impl ExecutionClient for DeriveExecutionClient {
                     Ok(id) => Some(id),
                     Err(reason) => {
                         log::warn!("Cannot cancel trigger order {client_order_id}: {reason}");
-                        emit_cancel_failure(&emitter, strategy_id, instrument_id, client_order_id, None, CommandFailure::not_sent(&reason), clock.get_time_ns());
+                        emit_cancel_failure(
+                            &emitter,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            None,
+                            CommandFailure::not_sent(&reason),
+                            clock.get_time_ns(),
+                            Some(cmd.command_id),
+                        );
                         return Ok(());
                     }
                 }
@@ -1759,7 +1825,16 @@ impl ExecutionClient for DeriveExecutionClient {
                                 "Derive rejected cancel for {client_order_id}: {reason}"
                             );
                             let ts = clock.get_time_ns();
-                            emit_cancel_failure(&emitter, strategy_id, instrument_id, client_order_id, None, CommandFailure::venue_rejected(reason), ts);
+                            emit_cancel_failure(
+                                &emitter,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                None,
+                                CommandFailure::venue_rejected(reason),
+                                ts,
+                                Some(cmd.command_id),
+                            );
                         }
 
                         None
@@ -1780,7 +1855,16 @@ impl ExecutionClient for DeriveExecutionClient {
                 Err((failure, _)) => {
                     log::debug!("Derive rejected cancel for {client_order_id}: {failure:?}");
                     let ts = clock.get_time_ns();
-                    emit_cancel_failure(&emitter, strategy_id, instrument_id, client_order_id, venue_order_id, failure, ts);
+                    emit_cancel_failure(
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        venue_order_id,
+                        failure,
+                        ts,
+                        Some(cmd.command_id),
+                    );
                 }
             }
 
@@ -1901,6 +1985,7 @@ impl ExecutionClient for DeriveExecutionClient {
                     .or(cmd.venue_order_id),
                 CommandFailure::not_sent(e.to_string()),
                 ts_now,
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1920,6 +2005,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 None,
                 CommandFailure::not_sent(reason),
                 ts_now,
+                Some(cmd.command_id),
             );
             return Ok(());
         };
@@ -1935,6 +2021,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 Some(venue_order_id),
                 CommandFailure::not_sent(reason),
                 ts_now,
+                Some(cmd.command_id),
             );
             return Ok(());
         };
@@ -1950,6 +2037,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 Some(venue_order_id),
                 CommandFailure::not_sent(reason),
                 ts_now,
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -1965,6 +2053,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 Some(venue_order_id),
                 CommandFailure::not_sent(format!("replace expiry validation failed: {e}")),
                 ts_now,
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -2006,6 +2095,7 @@ impl ExecutionClient for DeriveExecutionClient {
                     Some(stale_venue_order_id),
                     CommandFailure::not_sent("Another modify is pending"),
                     clock.get_time_ns(),
+                    Some(cmd.command_id),
                 );
                 return Ok(());
             }
@@ -2027,7 +2117,16 @@ impl ExecutionClient for DeriveExecutionClient {
                     let reason = format!("instrument resolution failed: {e}");
                     log::warn!("Cannot modify order {client_order_id}: {reason}");
                     let ts = clock.get_time_ns();
-                    emit_modify_failure(&emitter, strategy_id, instrument_id, client_order_id, Some(stale_venue_order_id), CommandFailure::not_sent(&reason), ts);
+                    emit_modify_failure(
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(stale_venue_order_id),
+                        CommandFailure::not_sent(&reason),
+                        ts,
+                        Some(cmd.command_id),
+                    );
                     dispatch_state.clear_pending_modify(&client_order_id);
                     return Ok(());
                 }
@@ -2042,7 +2141,16 @@ impl ExecutionClient for DeriveExecutionClient {
                     let (reason, _) = ws_rejection_reason(&e);
                     log::warn!("Cannot reserve Derive replace quota for {client_order_id}: {reason}");
                     let ts = clock.get_time_ns();
-                    emit_modify_failure(&emitter, strategy_id, instrument_id, client_order_id, Some(stale_venue_order_id), CommandFailure::not_sent(&reason), ts);
+                    emit_modify_failure(
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(stale_venue_order_id),
+                        CommandFailure::not_sent(&reason),
+                        ts,
+                        Some(cmd.command_id),
+                    );
                     dispatch_state.clear_pending_modify(&client_order_id);
                     return Ok(());
                 }
@@ -2059,7 +2167,16 @@ impl ExecutionClient for DeriveExecutionClient {
                 Ok(amounts) => amounts,
                 Err(e) => {
                     log::warn!("Cannot prepare Derive replace for {client_order_id}: {e:#}");
-                    emit_modify_failure(&emitter, strategy_id, instrument_id, client_order_id, Some(stale_venue_order_id), CommandFailure::not_sent(e.to_string()), clock.get_time_ns());
+                    emit_modify_failure(
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(stale_venue_order_id),
+                        CommandFailure::not_sent(e.to_string()),
+                        clock.get_time_ns(),
+                        Some(cmd.command_id),
+                    );
                     dispatch_state.clear_pending_modify(&client_order_id);
                     return Ok(());
                 }
@@ -2071,7 +2188,16 @@ impl ExecutionClient for DeriveExecutionClient {
                     let reason = format!("replace expiry validation failed: {e}");
                     log::warn!("Cannot modify order {client_order_id}: {reason}");
                     let ts = clock.get_time_ns();
-                    emit_modify_failure(&emitter, strategy_id, instrument_id, client_order_id, Some(stale_venue_order_id), CommandFailure::not_sent(&reason), ts);
+                    emit_modify_failure(
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(stale_venue_order_id),
+                        CommandFailure::not_sent(&reason),
+                        ts,
+                        Some(cmd.command_id),
+                    );
                     dispatch_state.clear_pending_modify(&client_order_id);
                     return Ok(());
                 }
@@ -2085,6 +2211,7 @@ impl ExecutionClient for DeriveExecutionClient {
                 client_order_id,
                 stale_venue_order_id,
                 clock,
+                Some(cmd.command_id),
             ) {
                 Some(nonce) => nonce,
                 None => {
@@ -2114,7 +2241,16 @@ impl ExecutionClient for DeriveExecutionClient {
                     let reason = format!("replace encoding failed: {e}");
                     log::warn!("Cannot modify order {client_order_id}: {reason}");
                     let ts = clock.get_time_ns();
-                    emit_modify_failure(&emitter, strategy_id, instrument_id, client_order_id, Some(stale_venue_order_id), CommandFailure::not_sent(&reason), ts);
+                    emit_modify_failure(
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(stale_venue_order_id),
+                        CommandFailure::not_sent(&reason),
+                        ts,
+                        Some(cmd.command_id),
+                    );
                     dispatch_state.clear_pending_modify(&client_order_id);
                     return Ok(());
                 }
@@ -2171,7 +2307,16 @@ impl ExecutionClient for DeriveExecutionClient {
                     dispatch_state.take_modify_target(&client_order_id);
                     log::debug!("Derive rejected modify for {client_order_id}: {failure:?}");
                     let ts = clock.get_time_ns();
-                    emit_modify_failure(&emitter, strategy_id, instrument_id, client_order_id, Some(stale_venue_order_id), failure, ts);
+                    emit_modify_failure(
+                        &emitter,
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(stale_venue_order_id),
+                        failure,
+                        ts,
+                        Some(cmd.command_id),
+                    );
                 }
             }
 
@@ -4348,6 +4493,10 @@ fn emit_submit_failure(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
 fn emit_cancel_failure(
     emitter: &ExecutionEventEmitter,
     strategy_id: StrategyId,
@@ -4356,19 +4505,39 @@ fn emit_cancel_failure(
     venue_order_id: Option<VenueOrderId>,
     failure: CommandFailure,
     ts: UnixNanos,
+    causation_id: Option<UUID4>,
 ) {
-    if let Some(reason) = command_rejection_reason(failure) {
-        emitter.emit_order_cancel_rejected_event(
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            &reason,
-            ts,
-        );
+    match failure {
+        CommandFailure::NotSent(reason) => {
+            emitter.emit_order_cancel_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &strategy_rejection_reason(&reason),
+                ts,
+                causation_id,
+            );
+        }
+        CommandFailure::VenueRejected(reason) => {
+            emitter.emit_order_cancel_rejected_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &strategy_rejection_reason(&reason),
+                ts,
+                causation_id,
+            );
+        }
+        CommandFailure::Ambiguous(_) => {}
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
 fn emit_modify_failure(
     emitter: &ExecutionEventEmitter,
     strategy_id: StrategyId,
@@ -4377,16 +4546,32 @@ fn emit_modify_failure(
     venue_order_id: Option<VenueOrderId>,
     failure: CommandFailure,
     ts: UnixNanos,
+    causation_id: Option<UUID4>,
 ) {
-    if let Some(reason) = command_rejection_reason(failure) {
-        emitter.emit_order_modify_rejected_event(
-            strategy_id,
-            instrument_id,
-            client_order_id,
-            venue_order_id,
-            &reason,
-            ts,
-        );
+    match failure {
+        CommandFailure::NotSent(reason) => {
+            emitter.emit_order_modify_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &strategy_rejection_reason(&reason),
+                ts,
+                causation_id,
+            );
+        }
+        CommandFailure::VenueRejected(reason) => {
+            emitter.emit_order_modify_rejected_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                venue_order_id,
+                &strategy_rejection_reason(&reason),
+                ts,
+                causation_id,
+            );
+        }
+        CommandFailure::Ambiguous(_) => {}
     }
 }
 
@@ -5908,6 +6093,10 @@ fn resolve_submit_nonce(
     }
 }
 
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Failure emission retains order identity and command correlation"
+)]
 fn resolve_modify_nonce(
     nonce: Result<u64, NonceError>,
     emitter: &ExecutionEventEmitter,
@@ -5916,6 +6105,7 @@ fn resolve_modify_nonce(
     client_order_id: ClientOrderId,
     venue_order_id: VenueOrderId,
     clock: &'static AtomicTime,
+    causation_id: Option<UUID4>,
 ) -> Option<u64> {
     match nonce {
         Ok(nonce) => Some(nonce),
@@ -5930,6 +6120,7 @@ fn resolve_modify_nonce(
                 Some(venue_order_id),
                 CommandFailure::not_sent(&reason),
                 clock.get_time_ns(),
+                causation_id,
             );
             None
         }
@@ -6896,12 +7087,13 @@ mod tests {
             client_order_id,
             venue_order_id,
             clock,
+            Some(UUID4::default()),
         );
-        let event = rx.try_recv().expect("OrderModifyRejected event");
+        let event = rx.try_recv().expect("OrderModifyDenied event");
 
         assert!(nonce.is_none());
 
-        if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+        if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
             assert_eq!(rejected.client_order_id, client_order_id);
             assert_eq!(rejected.venue_order_id, Some(venue_order_id));
             assert_eq!(
@@ -6909,7 +7101,7 @@ mod tests {
                 "nonce allocation failed: system clock is before UNIX epoch",
             );
         } else {
-            panic!("expected OrderModifyRejected, event was {event:?}");
+            panic!("expected OrderModifyDenied, event was {event:?}");
         }
     }
 

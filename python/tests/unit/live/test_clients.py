@@ -17,12 +17,15 @@ Verify Python client base contracts independently of node registration.
 """
 
 from types import SimpleNamespace
+from unittest.mock import Mock
+from unittest.mock import call
 
 import pytest
 
 from nautilus_trader.common import Clock
 from nautilus_trader.config import DataClientConfig
 from nautilus_trader.config import ExecutionClientConfig
+from nautilus_trader.core import UUID4
 from nautilus_trader.live.clients import DataClient
 from nautilus_trader.live.clients import DataClientFactory
 from nautilus_trader.live.clients import ExecutionClient
@@ -38,6 +41,7 @@ from nautilus_trader.model import Quantity
 from nautilus_trader.model import StrategyId
 from nautilus_trader.model import TraderId
 from nautilus_trader.model import Venue
+from nautilus_trader.model import VenueOrderId
 from nautilus_trader.testkit.providers import TestInstrumentProvider
 
 
@@ -65,6 +69,41 @@ def execution_client() -> ExecutionClient:
         account_type=AccountType.CASH,
         oms_type=OmsType.NETTING,
     )
+
+
+@pytest.mark.parametrize(
+    "event",
+    [
+        "order_modify_denied",
+        "order_cancel_denied",
+        "order_modify_rejected",
+        "order_cancel_rejected",
+    ],
+)
+@pytest.mark.parametrize("correlation", ["omitted", "none", "known"])
+def test_command_refusal_emission_preserves_arguments(execution_client, event, correlation) -> None:
+    """
+    Forward command identity and event times exactly once through the native output.
+    """
+    output = Mock()
+    execution_client._output = output
+    execution_client.clock.set_time(173)
+    order = object()
+    cause = UUID4() if correlation == "known" else None
+    arguments = {"order": order, "reason": "command refused", "ts_event": 137}
+    expected = [order]
+
+    if event.endswith("rejected"):
+        arguments["venue_order_id"] = VenueOrderId("VENUE-29")
+        expected.append(arguments["venue_order_id"])
+    if correlation != "omitted":
+        arguments["causation_id"] = cause
+
+    getattr(execution_client, f"generate_{event}")(**arguments)
+
+    assert output.mock_calls == [
+        getattr(call, event)(*expected, "command refused", 137, 173, cause),
+    ]
 
 
 def test_client_constructors_reject_other_config_family(execution_client) -> None:

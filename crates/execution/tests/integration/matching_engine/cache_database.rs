@@ -33,7 +33,7 @@ use nautilus_model::{
         AccountId, ActorId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId,
         VenueOrderId,
     },
-    instruments::{InstrumentAny, SyntheticInstrument},
+    instruments::{Instrument, InstrumentAny, SyntheticInstrument},
     orderbook::OrderBook,
     orders::{Order, OrderAny},
     position::Position,
@@ -49,8 +49,13 @@ struct FailNthAddOrderState {
     fail_index_order_position: bool,
     add_order_calls: usize,
     accounts: AHashMap<AccountId, AccountAny>,
+    instruments: AHashMap<InstrumentId, InstrumentAny>,
+    instrument_loads: Vec<InstrumentId>,
     orders: AHashMap<ClientOrderId, OrderAny>,
     order_events: Vec<OrderEventAny>,
+    deleted_orders: Vec<ClientOrderId>,
+    deleted_positions: Vec<PositionId>,
+    deleted_account_events: Vec<(AccountId, String)>,
     order_snapshots: Vec<OrderSnapshot>,
     position_snapshots: Vec<PositionSnapshot>,
 }
@@ -101,6 +106,34 @@ impl FailNthAddOrderDatabaseControl {
     #[allow(dead_code, reason = "used by the sibling exec_engine test module")]
     pub(super) fn position_snapshots(&self) -> Vec<PositionSnapshot> {
         self.state.lock().position_snapshots.clone()
+    }
+
+    #[allow(dead_code, reason = "used by the sibling exec_engine test module")]
+    pub(super) fn deleted_orders(&self) -> Vec<ClientOrderId> {
+        self.state.lock().deleted_orders.clone()
+    }
+
+    #[allow(dead_code, reason = "used by the sibling exec_engine test module")]
+    pub(super) fn deleted_positions(&self) -> Vec<PositionId> {
+        self.state.lock().deleted_positions.clone()
+    }
+
+    #[allow(dead_code, reason = "used by the sibling exec_engine test module")]
+    pub(super) fn deleted_account_events(&self) -> Vec<(AccountId, String)> {
+        self.state.lock().deleted_account_events.clone()
+    }
+
+    #[allow(dead_code, reason = "used by the sibling exec_engine test module")]
+    pub(super) fn set_instruments(&self, instruments: impl IntoIterator<Item = InstrumentAny>) {
+        self.state.lock().instruments = instruments
+            .into_iter()
+            .map(|instrument| (instrument.id(), instrument))
+            .collect();
+    }
+
+    #[allow(dead_code, reason = "used by the sibling exec_engine test module")]
+    pub(super) fn instrument_loads(&self) -> Vec<InstrumentId> {
+        self.state.lock().instrument_loads.clone()
     }
 }
 
@@ -198,6 +231,15 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
         _instrument_id: &InstrumentId,
     ) -> anyhow::Result<Option<SyntheticInstrument>> {
         Ok(None)
+    }
+
+    fn load_instrument_sync(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<Option<InstrumentAny>> {
+        let mut state = self.control.state.lock();
+        state.instrument_loads.push(*instrument_id);
+        Ok(state.instruments.get(instrument_id).cloned())
     }
 
     async fn load_account(&self, _account_id: &AccountId) -> anyhow::Result<Option<AccountAny>> {
@@ -357,15 +399,22 @@ impl CacheDatabaseAdapter for FailNthAddOrderDatabase {
         Ok(())
     }
 
-    fn delete_order(&self, _client_order_id: &ClientOrderId) -> anyhow::Result<()> {
+    fn delete_order(&self, id: &ClientOrderId) -> anyhow::Result<()> {
+        self.control.state.lock().deleted_orders.push(*id);
         Ok(())
     }
 
-    fn delete_position(&self, _position_id: &PositionId) -> anyhow::Result<()> {
+    fn delete_position(&self, id: &PositionId) -> anyhow::Result<()> {
+        self.control.state.lock().deleted_positions.push(*id);
         Ok(())
     }
 
-    fn delete_account_event(&self, _account_id: &AccountId, _event_id: &str) -> anyhow::Result<()> {
+    fn delete_account_event(&self, account_id: &AccountId, event_id: &str) -> anyhow::Result<()> {
+        self.control
+            .state
+            .lock()
+            .deleted_account_events
+            .push((*account_id, event_id.to_string()));
         Ok(())
     }
 

@@ -1917,3 +1917,632 @@ def test_create_tearsheet_figure_requires_plotly(
             returns=two_month_returns,
             title="X",
         )
+
+
+def test_hex_to_rgba_handles_short_hex_and_clamps_alpha() -> None:
+    """
+    Test hex to rgba handles short hex and clamps alpha.
+    """
+    assert tearsheet._hex_to_rgba("#fff") == "rgba(255, 255, 255, 1.0)"
+    assert tearsheet._hex_to_rgba("#0f4c75", 0.5) == "rgba(15, 76, 117, 0.5)"
+    assert tearsheet._hex_to_rgba("#000000", 2.0) == "rgba(0, 0, 0, 1.0)"
+
+
+def test_hex_to_rgba_rejects_invalid_hex() -> None:
+    """
+    Test hex to rgba rejects invalid hex.
+    """
+    with pytest.raises(ValueError, match="hex code"):
+        tearsheet._hex_to_rgba("#zzzzzz")
+
+    with pytest.raises(ValueError, match="hex code"):
+        tearsheet._hex_to_rgba("#12345")
+
+
+def test_register_theme_rejects_non_hex_color() -> None:
+    """
+    Test register theme rejects non hex color.
+    """
+    with pytest.raises(ValueError, match="hex code"):
+        register_theme(
+            "unit_test_bad_hex",
+            "plotly_white",
+            {
+                "primary": "red",
+                "positive": "#00ff00",
+                "negative": "#ff0000",
+                "neutral": "#808080",
+                "background": "#ffffff",
+                "grid": "#dddddd",
+            },
+        )
+
+
+def test_grid_layout_validates_dimensions() -> None:
+    """
+    Test grid layout validates dimensions.
+    """
+    from nautilus_trader.analysis.config import GridLayout
+
+    with pytest.raises(ValueError, match="one entry per row"):
+        GridLayout(rows=2, cols=1, heights=[1.0])
+
+    with pytest.raises(ValueError, match="rows must be positive"):
+        GridLayout(rows=0, cols=1, heights=[])
+
+
+def test_normalize_theme_config_fills_text_and_header_colors() -> None:
+    """
+    Test normalize theme config fills text and header colors.
+    """
+    minimal = {
+        "template": "plotly_white",
+        "colors": {
+            "primary": "#000000",
+            "positive": "#00ff00",
+            "negative": "#ff0000",
+            "neutral": "#808080",
+            "background": "#ffffff",
+            "grid": "#dddddd",
+        },
+    }
+
+    colors = tearsheet._normalize_theme_config(minimal)["colors"]
+
+    assert colors["text"] == "#333333"
+    assert colors["muted"] == "#737373"
+    assert colors["table_header"] == colors["table_section"]
+
+
+def test_default_grid_balances_table_and_chart_rows() -> None:
+    """
+    Test default grid balances table and chart rows.
+    """
+    rows, cols, _, _, heights, v_spacing, h_spacing = tearsheet._calculate_grid_layout(
+        TearsheetConfig().charts,
+    )
+
+    assert (rows, cols) == (4, 2)
+    assert heights == pytest.approx([0.40, 0.24, 0.18, 0.18])
+    assert (v_spacing, h_spacing) == (0.08, 0.08)
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_standalone_builders_apply_theme_colors() -> None:
+    """
+    Test standalone builders apply theme colors.
+    """
+    theme = get_theme("nautilus_dark")
+    colors = theme["colors"]
+
+    equity = create_equity_curve(_sample_returns(), theme="nautilus_dark")
+    assert equity.data[0].line.color == colors["primary"]
+
+    drawdown = create_drawdown_chart(_sample_returns(), theme="nautilus_dark")
+    assert drawdown.data[0].line.color == colors["negative"]
+
+    heatmap = create_monthly_returns_heatmap(_sample_returns(), theme="nautilus_dark").data[0]
+    assert heatmap.zmin == pytest.approx(-heatmap.zmax)
+
+    distribution = create_returns_distribution(_sample_returns(), theme="nautilus_dark")
+    assert distribution.data[0].marker.color == colors["neutral"]
+
+    rolling = create_rolling_sharpe(_sample_returns(), window=2, theme="nautilus_dark")
+    assert rolling.data[0].line.color == colors["primary"]
+
+    yearly = create_yearly_returns(_yearly_returns(), theme="nautilus_dark").data[0]
+    assert list(yearly.marker.color) == [colors["positive"], colors["negative"]]
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_tearsheet_footer_branding_toggle() -> None:
+    """
+    Test tearsheet footer branding toggle.
+    """
+    base_kwargs: dict[str, object] = {
+        "stats_returns": {},
+        "stats_general": {},
+        "stats_pnls": {},
+        "returns": _sample_returns(),
+        "title": "Footer",
+    }
+
+    branded = tearsheet._create_tearsheet_figure(
+        **base_kwargs,
+        config=TearsheetConfig(charts=[TearsheetEquityChart()]),
+    )
+    assert any("NautilusTrader v" in (a.text or "") for a in branded.layout.annotations)
+
+    unbranded = tearsheet._create_tearsheet_figure(
+        **base_kwargs,
+        config=TearsheetConfig(charts=[TearsheetEquityChart()], show_logo=False),
+    )
+    assert not any("NautilusTrader v" in (a.text or "") for a in unbranded.layout.annotations)
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_empty_returns_render_empty_states() -> None:
+    """
+    Test empty returns render empty states.
+    """
+    empty = pd.Series(dtype=float)
+
+    fig = tearsheet._create_tearsheet_figure(
+        stats_returns={},
+        stats_general={},
+        stats_pnls={},
+        returns=empty,
+        title="Empty",
+        config=TearsheetConfig(charts=[TearsheetEquityChart(), TearsheetStatsTableChart()]),
+    )
+
+    assert any("No data available" in str(getattr(trace, "text", "")) for trace in fig.data)
+
+    standalone = create_monthly_returns_heatmap(empty)
+
+    assert any("No data available" in (a.text or "") for a in standalone.layout.annotations)
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_stats_table_formats_nan_as_na() -> None:
+    """
+    Test stats table formats nan as na.
+    """
+    table = tearsheet._create_stats_table({"Avg Loser": float("nan")}, {}, {}, None)
+
+    assert list(table.cells.values[1]) == ["", "N/A"]
+
+
+def test_group_thousands_formats_plain_decimals_only() -> None:
+    """
+    Test group thousands formats plain decimals only.
+    """
+    assert tearsheet._group_thousands("1048210.55") == "1,048,210.55"
+    assert tearsheet._group_thousands("-1234567.891") == "-1,234,567.891"
+    assert tearsheet._group_thousands("100.0") == "100.0"
+    assert tearsheet._group_thousands("N/A") == "N/A"
+    assert tearsheet._group_thousands("2023-12-30T09:14:02Z") == "2023-12-30T09:14:02Z"
+    assert tearsheet._group_thousands("1,842,119") == "1,842,119"
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_stats_table_groups_thousands() -> None:
+    """
+    Test stats table groups thousands.
+    """
+    table = tearsheet._create_stats_table({"PnL (total)": 1234567.891}, {}, {}, None)
+
+    assert list(table.cells.values[1]) == ["", "1,234,567.8910"]
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_run_info_table_groups_thousands() -> None:
+    """
+    Test run info table groups thousands.
+    """
+    from plotly.subplots import make_subplots
+
+    fig = make_subplots(rows=1, cols=1, specs=[[{"type": "table"}]])
+    tearsheet._render_run_info(
+        fig,
+        row=1,
+        col=1,
+        theme_config=tearsheet._normalize_theme_config(get_theme("plotly_white")),
+        run_info={
+            "Total orders": 1842119,
+            "Run started": "2023-12-30T09:14:02Z",
+            "Elapsed seconds": 1842.5,
+            "Live trading": False,
+        },
+        account_info={"Ending balance (SIM USD)": "1048210.55"},
+    )
+
+    rendered = list(fig.data[0].cells.values[1])
+
+    assert "1,842,119" in rendered
+    assert "1,842.5" in rendered
+    assert "False" in rendered
+    assert "1,048,210.55" in rendered
+    assert "2023-12-30T09:14:02Z" in rendered
+
+
+def test_result_run_info_uses_comma_separators() -> None:
+    """
+    Test result run info uses comma separators.
+    """
+
+    class DummyResult:
+        """
+        Collect dummy result tests.
+        """
+
+        run_id = "R-001"
+        run_started = 1_577_836_800_000_000_000
+        run_finished = 1_577_836_801_000_000_000
+        backtest_start = 1_577_836_800_000_000_000
+        backtest_end = 1_577_923_200_000_000_000
+        iterations = 12480
+        total_events = 1842119
+        total_orders = 308
+        total_positions = 154
+
+    run_info = tearsheet._result_run_info(DummyResult())
+
+    assert run_info["Iterations"] == "12,480"
+    assert run_info["Total events"] == "1,842,119"
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_stats_table_right_aligns_values() -> None:
+    """
+    Test stats table right aligns values.
+    """
+    table = tearsheet._create_stats_table({"PnL (total)": 1.0}, {}, {}, None)
+
+    assert list(table.cells.align) == ["left", "right"]
+    assert list(table.header.align) == ["left", "right"]
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_bars_with_fills_rangeslider_only_standalone() -> None:
+    """
+    Test bars with fills rangeslider only standalone.
+    """
+    from plotly.subplots import make_subplots
+
+    class DummyBarType:
+        """
+        Collect dummy bar type tests.
+        """
+
+        instrument_id = "AUD/USD.SIM"
+
+        def __str__(self) -> str:
+            """
+            Str.
+            """
+            return "AUD/USD.SIM-1-MINUTE-BID-INTERNAL"
+
+    class DummyBar:
+        """
+        Collect dummy bar tests.
+        """
+
+        @staticmethod
+        def to_dict() -> object:
+            """
+            To dict.
+            """
+            return {
+                "open": "1.00000",
+                "high": "1.00010",
+                "low": "0.99990",
+                "close": "1.00005",
+                "ts_init": 1_577_836_800_000_000_000,
+            }
+
+    class DummyCache:
+        """
+        Collect dummy cache tests.
+        """
+
+        @staticmethod
+        def bars(bar_type: object) -> object:
+            """
+            Bars.
+            """
+            return [DummyBar()]
+
+    class DummyEngine:
+        """
+        Collect dummy engine tests.
+        """
+
+        cache = DummyCache()
+
+        @staticmethod
+        def generate_fills_report() -> object:
+            """
+            Generate fills report.
+            """
+            return pd.DataFrame()
+
+    standalone = create_bars_with_fills(DummyEngine(), DummyBarType(), output_path=None)
+
+    assert standalone.layout.xaxis.rangeslider.visible is True
+
+    grid_fig = make_subplots(rows=1, cols=1)
+    tearsheet._render_bars_with_fills(
+        grid_fig,
+        row=1,
+        col=1,
+        engine=DummyEngine(),
+        bar_type=DummyBarType(),
+    )
+
+    assert grid_fig.layout.xaxis.rangeslider.visible is False
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_write_figure_defaults_static_width_and_creates_dirs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """
+    Test write figure defaults static width and creates dirs.
+    """
+    from plotly.graph_objects import Figure
+    from plotly.graph_objects import Scatter
+
+    captured: dict[str, object] = {}
+
+    def fake_write_image(self: object, path: str, *args: object, **kwargs: object) -> None:
+        captured["width"] = self.layout.width
+        Path(path).touch()
+
+    monkeypatch.setattr(Figure, "write_image", fake_write_image)
+
+    fig = Figure(data=[Scatter(y=[0, 1])])
+    nested = tmp_path / "nested" / "dir" / "fig.png"
+    tearsheet._write_figure(fig, str(nested))
+
+    assert nested.parent.is_dir()
+    assert captured["width"] == 1200
+
+    preset = Figure(data=[Scatter(y=[0, 1])])
+    preset.update_layout(width=800)
+    tearsheet._write_figure(preset, str(tmp_path / "fig2.png"))
+
+    assert captured["width"] == 800
+
+
+def test_heatmap_colorscale_derives_muted_theme_scale() -> None:
+    """
+    Test heatmap colorscale derives muted theme scale.
+    """
+    theme = tearsheet._normalize_theme_config(get_theme("nautilus"))
+    scale = tearsheet._heatmap_colorscale(theme)
+    colors = theme["colors"]
+
+    assert [stop for stop, _ in scale] == [0.0, 0.5, 1.0]
+    assert scale[1][1] == colors["table_section"]
+    assert scale[0][1] != colors["negative"]
+    assert scale[2][1] != colors["positive"]
+
+
+def test_symmetric_heatmap_range_handles_all_zero_values() -> None:
+    """
+    Test symmetric heatmap range handles all zero values.
+    """
+    assert tearsheet._symmetric_heatmap_range([[0.0, 0.0]]) == (-1.0, 1.0)
+
+
+def _minimal_theme_config(background: str) -> dict[str, object]:
+    return {
+        "template": "plotly_white",
+        "colors": {
+            "primary": "#000000",
+            "positive": "#00ff00",
+            "negative": "#ff0000",
+            "neutral": "#808080",
+            "background": background,
+            "grid": "#dddddd",
+        },
+    }
+
+
+def test_normalize_theme_config_detects_off_white_background_as_light() -> None:
+    """
+    Test normalize theme config detects off white background as light.
+    """
+    colors = tearsheet._normalize_theme_config(_minimal_theme_config("#fafafa"))["colors"]
+
+    assert colors["text"] == "#333333"
+    assert colors["muted"] == "#737373"
+
+
+def test_normalize_theme_config_detects_near_black_background_as_dark() -> None:
+    """
+    Test normalize theme config detects near black background as dark.
+    """
+    colors = tearsheet._normalize_theme_config(_minimal_theme_config("#1a1a1a"))["colors"]
+
+    assert colors["text"] == "#e5e7eb"
+    assert colors["muted"] == "#9ca3af"
+
+
+def test_padded_range_excludes_zero_and_covers_data() -> None:
+    """
+    Test padded range excludes zero and covers data.
+    """
+    lo, hi = tearsheet._padded_range(1.0, 1.08)
+
+    assert lo > 0.0
+    assert lo < 1.0
+    assert hi > 1.08
+
+
+def test_padded_range_handles_degenerate_span() -> None:
+    """
+    Test padded range handles degenerate span.
+    """
+    lo, hi = tearsheet._padded_range(2.0, 2.0)
+
+    assert lo < 2.0
+    assert hi > 2.0
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_equity_curve_sets_padded_y_range_excluding_zero() -> None:
+    """
+    Test equity curve sets padded y range excluding zero.
+    """
+    equity = (1 + _sample_returns()).cumprod()
+
+    fig = create_equity_curve(_sample_returns())
+
+    lo, hi = fig.layout.yaxis.range
+    assert lo > 0.0
+    assert lo < equity.min()
+    assert hi > equity.max()
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_tearsheet_equity_cell_sets_padded_y_range_excluding_zero() -> None:
+    """
+    Test tearsheet equity cell sets padded y range excluding zero.
+    """
+    equity = (1 + _sample_returns()).cumprod()
+
+    fig = tearsheet._create_tearsheet_figure(
+        stats_returns={},
+        stats_general={},
+        stats_pnls={},
+        returns=_sample_returns(),
+        title="Range",
+        config=TearsheetConfig(charts=[TearsheetEquityChart()]),
+    )
+
+    lo, hi = fig.layout.yaxis.range
+    assert lo > 0.0
+    assert lo < equity.min()
+    assert hi > equity.max()
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_equity_curve_empty_strategy_keeps_benchmark() -> None:
+    """
+    Test equity curve empty strategy keeps benchmark.
+    """
+    fig = create_equity_curve(
+        pd.Series(dtype=float),
+        benchmark_returns=_sample_returns(),
+    )
+
+    assert [trace.name for trace in fig.data] == ["Benchmark"]
+    assert not any("No data available" in (a.text or "") for a in fig.layout.annotations)
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_tearsheet_equity_cell_empty_strategy_keeps_benchmark() -> None:
+    """
+    Test tearsheet equity cell empty strategy keeps benchmark.
+    """
+    fig = tearsheet._create_tearsheet_figure(
+        stats_returns={},
+        stats_general={},
+        stats_pnls={},
+        returns=pd.Series(dtype=float),
+        title="Benchmark Only",
+        config=TearsheetConfig(charts=[TearsheetEquityChart()]),
+        benchmark_returns=_sample_returns(),
+    )
+
+    assert [trace.name for trace in fig.data] == ["Benchmark"]
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_grid_chart_traces_use_default_hover_precision() -> None:
+    """
+    Test grid chart traces use default hover precision.
+    """
+    import plotly.graph_objects as go
+
+    fig = tearsheet._create_tearsheet_figure(
+        stats_returns={},
+        stats_general={},
+        stats_pnls={},
+        returns=_sample_returns(),
+        title="Hover",
+        config=TearsheetConfig(),
+    )
+
+    assert any(isinstance(trace, go.Heatmap) for trace in fig.data)
+    for trace in fig.data:
+        assert getattr(trace, "hovertemplate", None) is None
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_standalone_heatmap_keeps_hover_template() -> None:
+    """
+    Test standalone heatmap keeps hover template.
+    """
+    heatmap = create_monthly_returns_heatmap(_sample_returns()).data[0]
+
+    assert heatmap.hovertemplate == "<b>%{y} %{x}</b><br>Return: %{z:.2f}%<extra></extra>"
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_custom_chart_annotation_keeps_own_font() -> None:
+    """
+    Test custom chart annotation keeps own font.
+    """
+    import plotly.graph_objects as go
+
+    def _render_annotated(
+        fig: object,
+        row: object,
+        col: object,
+        returns: object,
+        theme_config: object,
+        **kwargs: object,
+    ) -> None:
+        fig.add_trace(go.Scatter(x=[1], y=[1], name="Annotated"), row=row, col=col)
+        fig.add_annotation(
+            text="CustomNote",
+            x=1,
+            y=1,
+            showarrow=False,
+            font={"family": "Courier New", "size": 20, "color": "#ff0000"},
+        )
+
+    try:
+        register_tearsheet_chart("unit_test_annotated", "scatter", "Annotated", _render_annotated)
+
+        fig = tearsheet._create_tearsheet_figure(
+            stats_returns={},
+            stats_general={},
+            stats_pnls={},
+            returns=pd.Series(dtype=float),
+            title="Annotation Test",
+            config=TearsheetConfig(charts=[TearsheetCustomChart(chart="unit_test_annotated")]),
+        )
+    finally:
+        tearsheet._TEARSHEET_CHART_SPECS.pop("unit_test_annotated", None)
+
+    note = next(a for a in fig.layout.annotations if a.text == "CustomNote")
+    assert note.font.family == "Courier New"
+    assert note.font.size == 20
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_yearly_returns_bar_labels_group_thousands() -> None:
+    """
+    Test yearly returns bar labels group thousands.
+    """
+    standalone = create_yearly_returns(_yearly_returns()).data[0]
+
+    assert standalone.texttemplate == "%{y:,.1f}%"
+
+    grid_fig = tearsheet._create_tearsheet_figure(
+        stats_returns={},
+        stats_general={},
+        stats_pnls={},
+        returns=_yearly_returns(),
+        title="Yearly Labels",
+        config=TearsheetConfig(charts=[TearsheetYearlyReturnsChart()]),
+    )
+
+    bar = next(trace for trace in grid_fig.data if trace.type == "bar")
+    assert bar.texttemplate == "%{y:,.1f}%"
+
+
+@pytest.mark.skipif(not tearsheet.PLOTLY_AVAILABLE, reason="plotly is not installed")
+def test_empty_stats_table_renders_note_row() -> None:
+    """
+    Test empty stats table renders note row.
+    """
+    table = tearsheet._create_stats_table({}, {}, {}, None)
+
+    assert list(table.cells.values[0]) == ["No data available"]
+    assert list(table.cells.values[1]) == [""]

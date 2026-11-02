@@ -547,16 +547,18 @@ pub(crate) enum PendingSendTxKind {
     },
     /// One native grouped transaction owning all of its order identities.
     CreateGroup { orders: Vec<(OrderAny, i64)> },
-    /// Cancel-order submit. Emit a rejection only for a pending cancellation.
+    /// Cancel-order submit. An implicit OCO peer has no command ID.
     Cancel {
+        command_id: Option<UUID4>,
         emit_cancel_rejected: bool,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
         venue_order_id: Option<VenueOrderId>,
     },
-    /// Modify-order submit. On rejection: emit `OrderModifyRejected`.
+    /// Modify-order submit. Emit a denial if not sent, or a rejection on a venue refusal.
     Modify {
+        command_id: UUID4,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
         client_order_id: ClientOrderId,
@@ -747,11 +749,31 @@ struct PendingOrderActionState {
     action: PendingOrderAction,
     submission: Option<PendingCancel>,
     modify: Option<PendingModify>,
+    cancel_commands: Vec<(UUID4, PendingOrderAction)>,
+}
+
+impl PendingOrderActionState {
+    fn refresh_action(&mut self) -> bool {
+        let action = self
+            .submission
+            .as_ref()
+            .map(|_| self.action)
+            .or_else(|| self.cancel_commands.last().map(|(_, action)| *action))
+            .or_else(|| self.modify.as_ref().map(|_| PendingOrderAction::Modify));
+
+        if let Some(action) = action {
+            self.action = action;
+            true
+        } else {
+            false
+        }
+    }
 }
 
 // Pending state owns the probe lifetime, including waits for REST quota
 #[derive(Debug)]
 struct PendingCancel {
+    command_id: UUID4,
     identity: (u64, i64),
     cancellation: DropGuard,
 }
@@ -1300,24 +1322,6 @@ impl WsDispatchState {
         self.order_snapshots.insert(cloid, snapshot);
     }
 
-    pub(crate) fn set_pending_order_action(
-        &self,
-        cloid: ClientOrderId,
-        action: PendingOrderAction,
-    ) {
-        let mut state =
-            self.pending_order_actions
-                .entry(cloid)
-                .or_insert(PendingOrderActionState {
-                    action,
-                    submission: None,
-                    modify: None,
-                });
-
-        state.action = action;
-        state.submission = None;
-    }
-
     pub(crate) fn set_pending_modify_action(&self, cmd: &ModifyOrder) -> bool {
         let mut state = self
             .pending_order_actions
@@ -1326,6 +1330,7 @@ impl WsDispatchState {
                 action: PendingOrderAction::Modify,
                 submission: None,
                 modify: None,
+                cancel_commands: Vec::new(),
             });
 
         if state.modify.is_some() || state.action != PendingOrderAction::Modify {
@@ -1450,55 +1455,121 @@ impl WsDispatchState {
             .map(|entry| entry.action)
     }
 
-    pub(crate) fn clear_pending_order_action_if(
+    pub(crate) fn register_cancel_command(
+        &self,
+        cloid: ClientOrderId,
+        command_id: UUID4,
+        emit_cancel_rejected: bool,
+    ) {
+        let action = PendingOrderAction::cancel(emit_cancel_rejected);
+
+        let mut state =
+            self.pending_order_actions
+                .entry(cloid)
+                .or_insert(PendingOrderActionState {
+                    action,
+                    submission: None,
+                    modify: None,
+                    cancel_commands: Vec::new(),
+                });
+
+        if !state
+            .cancel_commands
+            .iter()
+            .any(|(id, _)| *id == command_id)
+        {
+            state.cancel_commands.push((command_id, action));
+        }
+
+        state.refresh_action();
+    }
+
+    pub(crate) fn clear_pending_cancel_if_command(
         &self,
         cloid: &ClientOrderId,
-        action: PendingOrderAction,
+        command_id: UUID4,
     ) -> bool {
         let Entry::Occupied(mut entry) = self.pending_order_actions.entry(*cloid) else {
             return false;
         };
 
-        if entry.get().action != action {
+        let mut removed = false;
+
+        if let Some(index) = entry
+            .get()
+            .cancel_commands
+            .iter()
+            .position(|(id, _)| *id == command_id)
+        {
+            entry.get_mut().cancel_commands.remove(index);
+            removed = true;
+        }
+
+        if entry
+            .get()
+            .submission
+            .as_ref()
+            .is_some_and(|submission| submission.command_id == command_id)
+        {
+            entry.get_mut().submission = None;
+            removed = true;
+        }
+
+        if !removed {
             return false;
         }
 
-        if action != PendingOrderAction::Modify && entry.get().modify.is_some() {
-            entry.get_mut().action = PendingOrderAction::Modify;
-            entry.get_mut().submission = None;
-        } else {
+        if !entry.get_mut().refresh_action() {
             entry.remove();
         }
 
         true
     }
 
-    pub(crate) fn set_pending_cancel_nonce(
+    pub(crate) fn promote_pending_cancel(
         &self,
         cloid: &ClientOrderId,
+        command_id: UUID4,
         connection_epoch: u64,
         nonce: i64,
         emit_cancel_rejected: bool,
-    ) {
-        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
-            && state.action == PendingOrderAction::cancel(emit_cancel_rejected)
-        {
-            if state
-                .submission
-                .as_ref()
-                .is_some_and(|submission| submission.identity == (connection_epoch, nonce))
-            {
-                return;
-            }
+    ) -> bool {
+        let _events = self.order_events.lock();
 
-            state.submission = Some(PendingCancel {
-                identity: (connection_epoch, nonce),
-                cancellation: CancellationToken::new().drop_guard(),
-            });
-        }
+        let Entry::Occupied(mut entry) = self.pending_order_actions.entry(*cloid) else {
+            return false;
+        };
+
+        let Some(index) = entry
+            .get()
+            .cancel_commands
+            .iter()
+            .position(|(id, _)| *id == command_id)
+        else {
+            return false;
+        };
+
+        entry.get_mut().cancel_commands.remove(index);
+        let state = entry.get_mut();
+        state.action = PendingOrderAction::cancel(emit_cancel_rejected);
+        state.submission = Some(PendingCancel {
+            command_id,
+            identity: (connection_epoch, nonce),
+            cancellation: CancellationToken::new().drop_guard(),
+        });
+
+        true
     }
 
     pub(crate) fn pending_cancel_nonce(&self, cloid: &ClientOrderId) -> Option<(u64, i64)> {
+        self.pending_cancel_identity(cloid)
+            .map(|(_, identity)| identity)
+    }
+
+    pub(crate) fn pending_cancel_identity(
+        &self,
+        cloid: &ClientOrderId,
+    ) -> Option<(UUID4, (u64, i64))> {
         self.pending_order_actions
             .get(cloid)
             .filter(|state| {
@@ -1511,7 +1582,7 @@ impl WsDispatchState {
                 state
                     .submission
                     .as_ref()
-                    .map(|submission| submission.identity)
+                    .map(|submission| (submission.command_id, submission.identity))
             })
     }
 
@@ -1569,10 +1640,8 @@ impl WsDispatchState {
             return false;
         }
 
-        if entry.get().modify.is_some() {
-            entry.get_mut().action = PendingOrderAction::Modify;
-            entry.get_mut().submission = None;
-        } else {
+        entry.get_mut().submission = None;
+        if !entry.get_mut().refresh_action() {
             entry.remove();
         }
 
@@ -3086,6 +3155,76 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    impl WsDispatchState {
+        pub(crate) fn set_pending_order_action(
+            &self,
+            cloid: ClientOrderId,
+            action: PendingOrderAction,
+        ) {
+            let mut state =
+                self.pending_order_actions
+                    .entry(cloid)
+                    .or_insert(PendingOrderActionState {
+                        action,
+                        submission: None,
+                        modify: None,
+                        cancel_commands: Vec::new(),
+                    });
+
+            state.action = action;
+            state.submission = None;
+        }
+
+        pub(crate) fn clear_pending_order_action_if(
+            &self,
+            cloid: &ClientOrderId,
+            action: PendingOrderAction,
+        ) -> bool {
+            let Entry::Occupied(mut entry) = self.pending_order_actions.entry(*cloid) else {
+                return false;
+            };
+
+            if entry.get().action != action {
+                return false;
+            }
+
+            if action != PendingOrderAction::Modify && entry.get().modify.is_some() {
+                entry.get_mut().action = PendingOrderAction::Modify;
+                entry.get_mut().submission = None;
+            } else {
+                entry.remove();
+            }
+
+            true
+        }
+
+        pub(crate) fn set_pending_cancel_nonce(
+            &self,
+            cloid: &ClientOrderId,
+            connection_epoch: u64,
+            nonce: i64,
+            emit_cancel_rejected: bool,
+        ) {
+            if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+                && state.action == PendingOrderAction::cancel(emit_cancel_rejected)
+            {
+                if state
+                    .submission
+                    .as_ref()
+                    .is_some_and(|submission| submission.identity == (connection_epoch, nonce))
+                {
+                    return;
+                }
+
+                state.submission = Some(PendingCancel {
+                    command_id: UUID4::new(),
+                    identity: (connection_epoch, nonce),
+                    cancellation: CancellationToken::new().drop_guard(),
+                });
+            }
+        }
+    }
 
     fn cloid(s: &str) -> ClientOrderId {
         ClientOrderId::new(s)
@@ -5112,6 +5251,116 @@ mod tests {
             state.pending_order_action(&id),
             Some(PendingOrderAction::Modify)
         );
+    }
+
+    #[rstest]
+    #[case::new_nonce(42)]
+    #[case::reused_nonce(41)]
+    fn cancel_promotion_consumes_command_once(#[case] nonce: i64) {
+        let state = WsDispatchState::new();
+        let id = cloid("CANCEL-PROMOTION");
+        let first = UUID4::new();
+        let second = UUID4::new();
+        state.register_cancel_command(id, first, true);
+        assert!(state.promote_pending_cancel(&id, first, 3, 41, true));
+        let old = state.pending_cancel_token(&id, 3, 41).unwrap();
+        state.register_cancel_command(id, second, false);
+
+        assert_eq!(state.pending_cancel_identity(&id), Some((first, (3, 41))));
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::Cancel)
+        );
+        assert!(!old.is_cancelled());
+        assert!(state.promote_pending_cancel(&id, second, 3, nonce, false));
+
+        let current = state.pending_cancel_token(&id, 3, nonce).unwrap();
+        assert!(!state.promote_pending_cancel(&id, second, 3, nonce, false));
+        assert!(!state.promote_pending_cancel(&id, first, 3, 41, true));
+        assert!(!state.clear_pending_cancel_if_command(&id, first));
+        assert_eq!(
+            state.pending_cancel_identity(&id),
+            Some((second, (3, nonce)))
+        );
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::CancelUnmarked)
+        );
+        assert!(old.is_cancelled());
+        assert!(!current.is_cancelled());
+    }
+
+    #[rstest]
+    #[case::marked(true)]
+    #[case::unmarked(false)]
+    fn cancel_refusal_preserves_submitted_and_queued_commands(#[case] marked: bool) {
+        let state = WsDispatchState::new();
+        let id = cloid("CANCEL-QUEUED");
+        let first = UUID4::new();
+        let refused = UUID4::new();
+        let queued = UUID4::new();
+
+        let modification = ModifyOrder::new(
+            TraderId::from("TESTER-001"),
+            None,
+            StrategyId::from("S-001"),
+            InstrumentId::from("ETH-PERP.LIGHTER"),
+            id,
+            Some(VenueOrderId::from("789")),
+            Some(Quantity::from("0.2000")),
+            Some(Price::from("2362.00")),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        );
+        state.register_cancel_command(id, first, marked);
+        state.promote_pending_cancel(&id, first, 3, 41, marked);
+        let token = state.pending_cancel_token(&id, 3, 41).unwrap();
+        state.register_cancel_command(id, refused, !marked);
+        state.register_cancel_command(id, queued, !marked);
+
+        assert!(state.clear_pending_cancel_if_command(&id, refused));
+        assert!(!state.promote_pending_cancel(&id, refused, 3, 42, !marked));
+        assert_eq!(state.pending_cancel_identity(&id), Some((first, (3, 41))));
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::cancel(marked))
+        );
+        assert!(!token.is_cancelled());
+        assert!(state.clear_pending_cancel_if_command(&id, first));
+        assert_eq!(state.pending_cancel_identity(&id), None);
+        assert_eq!(
+            state.pending_order_action(&id),
+            Some(PendingOrderAction::cancel(!marked))
+        );
+        assert!(!state.set_pending_modify_action(&modification));
+        assert!(token.is_cancelled());
+        assert!(state.clear_pending_cancel_if_command(&id, queued));
+        assert_eq!(state.pending_order_action(&id), None);
+        assert!(state.set_pending_modify_action(&modification));
+    }
+
+    #[rstest]
+    fn cancel_terminal_report_invalidates_queued_promotions() {
+        let state = WsDispatchState::new();
+        let id = cloid("CANCEL-TERMINAL");
+        let first = UUID4::new();
+        let second = UUID4::new();
+        state.register_cancel_command(id, first, true);
+        state.promote_pending_cancel(&id, first, 3, 41, true);
+        let token = state.pending_cancel_token(&id, 3, 41).unwrap();
+        state.register_cancel_command(id, second, false);
+        let mut report = stub_open_order_status_report(id.as_str());
+        report.order_status = OrderStatus::Canceled;
+        let report = state.preserve_pending_order_status(report);
+
+        assert_eq!(report.order_status, OrderStatus::Canceled);
+        assert!(!state.promote_pending_cancel(&id, second, 3, 42, false));
+        assert_eq!(state.pending_cancel_identity(&id), None);
+        assert_eq!(state.pending_order_action(&id), None);
+        assert!(token.is_cancelled());
     }
 
     #[rstest]

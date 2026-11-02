@@ -9,6 +9,45 @@ Feature: Startup reconciliation
     And missing-order generation is enabled
     And the cache has an ETH/USDT perpetual instrument and margin account but no orders or positions
 
+  Rule: NETTING startup exposes reconciled state before strategies start
+
+    @netting @flat
+    Scenario Outline: Start flat with an empty cache using <entrypoint>
+      Given the execution client uses NETTING accounting
+      And the venue reports no orders, fills, or positions
+      When the live node starts using <entrypoint>
+      Then startup succeeds
+      And the strategy observes no open orders or positions when it starts
+      And the portfolio exposes 0 ETH when the strategy starts
+      And no position is cached
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
+
+      Examples:
+        | entrypoint |
+        | start      |
+        | run        |
+
+    @netting @recovery
+    Scenario Outline: Recover a reported NETTING <side> position with an empty cache using <entrypoint>
+      Given the execution client uses NETTING accounting
+      And the venue reports a <side> position of 5.000 ETH
+      And the position report has no venue position ID
+      And its average opening price is 2500.25 USDT
+      When the live node starts using <entrypoint>
+      Then startup succeeds
+      And the strategy observes a <side> position of 5.000 ETH at 2500.25 USDT when it starts
+      And the portfolio exposes <signed_qty> ETH when the strategy starts
+      And the actor and strategy each start once
+      And the venue receives a startup mass-status request
+
+      Examples:
+        | side  | entrypoint | signed_qty |
+        | long  | start      | 5.000      |
+        | long  | run        | 5.000      |
+        | short | start      | -5.000     |
+        | short | run        | -5.000     |
+
   Rule: Included position reports must be reconciled before actors and strategies start
 
     @recovery

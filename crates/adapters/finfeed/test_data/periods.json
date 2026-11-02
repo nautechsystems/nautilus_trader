@@ -1,0 +1,346 @@
+[
+  {
+    "period_id": "1SEC",
+    "length_seconds": 1,
+    "length_months": 0,
+    "unit_count": 1,
+    "unit_name": "second",
+    "display_name": "Authored 1 second interval"
+  },
+  {
+    "period_id": "2SEC",
+    "length_seconds": 2,
+    "length_months": 0,
+    "unit_count": 2,
+    "unit_name": "second",
+    "display_name": "Authored 2 second interval"
+  },
+  {
+    "period_id": "3SEC",
+    "length_seconds": 3,
+    "length_months": 0,
+    "unit_count": 3,
+    "unit_name": "second",
+    "display_name": "Authored 3 second interval"
+  },
+  {
+    "period_id": "4SEC",
+    "length_seconds": 4,
+    "length_months": 0,
+    "unit_count": 4,
+    "unit_name": "second",
+    "display_name": "Authored 4 second interval"
+  },
+  {
+    "period_id": "5SEC",
+    "length_seconds": 5,
+    "length_months": 0,
+    "unit_count": 5,
+    "unit_name": "second",
+    "display_name": "Authored 5 second interval"
+  },
+  {
+    "period_id": "6SEC",
+    "length_seconds": 6,
+    "length_months": 0,
+    "unit_count": 6,
+    "unit_name": "second",
+    "display_name": "Authored 6 second interval"
+  },
+  {
+    "period_id": "10SEC",
+    "length_seconds": 10,
+    "length_months": 0,
+    "unit_count": 10,
+    "unit_name": "second",
+    "display_name": "Authored 10 second interval"
+  },
+  {
+    "period_id": "15SEC",
+    "length_seconds": 15,
+    "length_months": 0,
+    "unit_count": 15,
+    "unit_name": "second",
+    "display_name": "Authored 15 second interval"
+  },
+  {
+    "period_id": "20SEC",
+    "length_seconds": 20,
+    "length_months": 0,
+    "unit_count": 20,
+    "unit_name": "second",
+    "display_name": "Authored 20 second interval"
+  },
+  {
+    "period_id": "30SEC",
+    "length_seconds": 30,
+    "length_months": 0,
+    "unit_count": 30,
+    "unit_name": "second",
+    "display_name": "Authored 30 second interval"
+  },
+  {
+    "period_id": "1MIN",
+    "length_seconds": 60,
+    "length_months": 0,
+    "unit_count": 1,
+    "unit_name": "minute",
+    "display_name": "Authored 1 minute interval"
+  },
+  {
+    "period_id": "2MIN",
+    "length_seconds": 120,
+    "length_months": 0,
+    "unit_count": 2,
+    "unit_name": "minute",
+    "display_name": "Authored 2 minute interval"
+  },
+  {
+    "period_id": "3MIN",
+    "length_seconds": 180,
+    "length_months": 0,
+    "unit_count": 3,
+    "unit_name": "minute",
+    "display_name": "Authored 3 minute interval"
+  },
+  {
+    "period_id": "4MIN",
+    "length_seconds": 240,
+    "length_months": 0,
+    "unit_count": 4,
+    "unit_name": "minute",
+    "display_name": "Authored 4 minute interval"
+  },
+  {
+    "period_id": "5MIN",
+    "length_seconds": 300,
+    "length_months": 0,
+    "unit_count": 5,
+    "unit_name": "minute",
+    "display_name": "Authored 5 minute interval"
+  },
+  {
+    "period_id": "6MIN",
+    "length_seconds": 360,
+    "length_months": 0,
+    "unit_count": 6,
+    "unit_name": "minute",
+    "display_name": "Authored 6 minute interval"
+  },
+  {
+    "period_id": "10MIN",
+    "length_seconds": 600,
+    "length_months": 0,
+    "unit_count": 10,
+    "unit_name": "minute",
+    "display_name": "Authored 10 minute interval"
+  },
+  {
+    "period_id": "15MIN",
+    "length_seconds": 900,
+    "length_months": 0,
+    "unit_count": 15,
+    "unit_name": "minute",
+    "display_name": "Authored 15 minute interval"
+  },
+  {
+    "period_id": "20MIN",
+    "length_seconds": 1200,
+    "length_months": 0,
+    "unit_count": 20,
+    "unit_name": "minute",
+    "display_name": "Authored 20 minute interval"
+  },
+  {
+    "period_id": "30MIN",
+    "length_seconds": 1800,
+    "length_months": 0,
+    "unit_count": 30,
+    "unit_name": "minute",
+    "display_name": "Authored 30 minute interval"
+  },
+  {
+    "period_id": "1HRS",
+    "length_seconds": 3600,
+    "length_months": 0,
+    "unit_count": 1,
+    "unit_name": "hour",
+    "display_name": "Authored 1 hour interval"
+  },
+  {
+    "period_id": "2HRS",
+    "length_seconds": 7200,
+    "length_months": 0,
+    "unit_count": 2,
+    "unit_name": "hour",
+    "display_name": "Authored 2 hour interval"
+  },
+  {
+    "period_id": "3HRS",
+    "length_seconds": 10800,
+    "length_months": 0,
+    "unit_count": 3,
+    "unit_name": "hour",
+    "display_name": "Authored 3 hour interval"
+  },
+  {
+    "period_id": "4HRS",
+    "length_seconds": 14400,
+    "length_months": 0,
+    "unit_count": 4,
+    "unit_name": "hour",
+    "display_name": "Authored 4 hour interval"
+  },
+  {
+    "period_id": "6HRS",
+    "length_seconds": 21600,
+    "length_months": 0,
+    "unit_count": 6,
+    "unit_name": "hour",
+    "display_name": "Authored 6 hour interval"
+  },
+  {
+    "period_id": "8HRS",
+    "length_seconds": 28800,
+    "length_months": 0,
+    "unit_count": 8,
+    "unit_name": "hour",
+    "display_name": "Authored 8 hour interval"
+  },
+  {
+    "period_id": "12HRS",
+    "length_seconds": 43200,
+    "length_months": 0,
+    "unit_count": 12,
+    "unit_name": "hour",
+    "display_name": "Authored 12 hour interval"
+  },
+  {
+    "period_id": "1DAY",
+    "length_seconds": 86400,
+    "length_months": 0,
+    "unit_count": 1,
+    "unit_name": "day",
+    "display_name": "Authored 1 day interval"
+  },
+  {
+    "period_id": "2DAY",
+    "length_seconds": 172800,
+    "length_months": 0,
+    "unit_count": 2,
+    "unit_name": "day",
+    "display_name": "Authored 2 day interval"
+  },
+  {
+    "period_id": "3DAY",
+    "length_seconds": 259200,
+    "length_months": 0,
+    "unit_count": 3,
+    "unit_name": "day",
+    "display_name": "Authored 3 day interval"
+  },
+  {
+    "period_id": "5DAY",
+    "length_seconds": 432000,
+    "length_months": 0,
+    "unit_count": 5,
+    "unit_name": "day",
+    "display_name": "Authored 5 day interval"
+  },
+  {
+    "period_id": "7DAY",
+    "length_seconds": 604800,
+    "length_months": 0,
+    "unit_count": 7,
+    "unit_name": "day",
+    "display_name": "Authored 7 day interval"
+  },
+  {
+    "period_id": "10DAY",
+    "length_seconds": 864000,
+    "length_months": 0,
+    "unit_count": 10,
+    "unit_name": "day",
+    "display_name": "Authored 10 day interval"
+  },
+  {
+    "period_id": "1MTH",
+    "length_seconds": 0,
+    "length_months": 1,
+    "unit_count": 1,
+    "unit_name": "month",
+    "display_name": "Authored 1 month interval"
+  },
+  {
+    "period_id": "2MTH",
+    "length_seconds": 0,
+    "length_months": 2,
+    "unit_count": 2,
+    "unit_name": "month",
+    "display_name": "Authored 2 month interval"
+  },
+  {
+    "period_id": "3MTH",
+    "length_seconds": 0,
+    "length_months": 3,
+    "unit_count": 3,
+    "unit_name": "month",
+    "display_name": "Authored 3 month interval"
+  },
+  {
+    "period_id": "4MTH",
+    "length_seconds": 0,
+    "length_months": 4,
+    "unit_count": 4,
+    "unit_name": "month",
+    "display_name": "Authored 4 month interval"
+  },
+  {
+    "period_id": "6MTH",
+    "length_seconds": 0,
+    "length_months": 6,
+    "unit_count": 6,
+    "unit_name": "month",
+    "display_name": "Authored 6 month interval"
+  },
+  {
+    "period_id": "1YRS",
+    "length_seconds": 0,
+    "length_months": 12,
+    "unit_count": 1,
+    "unit_name": "year",
+    "display_name": "Authored 1 year interval"
+  },
+  {
+    "period_id": "2YRS",
+    "length_seconds": 0,
+    "length_months": 24,
+    "unit_count": 2,
+    "unit_name": "year",
+    "display_name": "Authored 2 year interval"
+  },
+  {
+    "period_id": "3YRS",
+    "length_seconds": 0,
+    "length_months": 36,
+    "unit_count": 3,
+    "unit_name": "year",
+    "display_name": "Authored 3 year interval"
+  },
+  {
+    "period_id": "4YRS",
+    "length_seconds": 0,
+    "length_months": 48,
+    "unit_count": 4,
+    "unit_name": "year",
+    "display_name": "Authored 4 year interval"
+  },
+  {
+    "period_id": "5YRS",
+    "length_seconds": 0,
+    "length_months": 60,
+    "unit_count": 5,
+    "unit_name": "year",
+    "display_name": "Authored 5 year interval"
+  }
+]

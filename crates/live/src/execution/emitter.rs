@@ -41,8 +41,9 @@ use nautilus_core::{Params, UUID4, UnixNanos, time::AtomicTime};
 use nautilus_model::{
     enums::{AccountType, LiquiditySide},
     events::{
-        AccountState, OrderAcceptedBatch, OrderCancelRejected, OrderCanceledBatch, OrderEventAny,
-        OrderModifyRejected, OrderRejected, OrderSubmittedBatch,
+        AccountState, OrderAcceptedBatch, OrderCancelDenied, OrderCancelRejected,
+        OrderCanceledBatch, OrderEventAny, OrderModifyDenied, OrderModifyRejected, OrderRejected,
+        OrderSubmittedBatch,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
@@ -225,6 +226,24 @@ impl ExecutionEventEmitter {
         self.send_order_event(event);
     }
 
+    /// Generates and emits an order modify denied event.
+    pub fn emit_order_modify_denied(
+        &self,
+        order: &OrderAny,
+        reason: &str,
+        ts_event: UnixNanos,
+        causation_id: Option<UUID4>,
+    ) {
+        let event = self.factory.generate_order_modify_denied(
+            order,
+            reason,
+            causation_id,
+            ts_event,
+            self.ts_init(),
+        );
+        self.send_order_event(event);
+    }
+
     /// Generates and emits an order modify rejected event.
     pub fn emit_order_modify_rejected(
         &self,
@@ -232,11 +251,31 @@ impl ExecutionEventEmitter {
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
         ts_event: UnixNanos,
+        causation_id: Option<UUID4>,
     ) {
         let event = self.factory.generate_order_modify_rejected(
             order,
             venue_order_id,
             reason,
+            ts_event,
+            self.ts_init(),
+            causation_id,
+        );
+        self.send_order_event(event);
+    }
+
+    /// Generates and emits an order cancel denied event.
+    pub fn emit_order_cancel_denied(
+        &self,
+        order: &OrderAny,
+        reason: &str,
+        ts_event: UnixNanos,
+        causation_id: Option<UUID4>,
+    ) {
+        let event = self.factory.generate_order_cancel_denied(
+            order,
+            reason,
+            causation_id,
             ts_event,
             self.ts_init(),
         );
@@ -250,6 +289,7 @@ impl ExecutionEventEmitter {
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
         ts_event: UnixNanos,
+        causation_id: Option<UUID4>,
     ) {
         let event = self.factory.generate_order_cancel_rejected(
             order,
@@ -257,6 +297,7 @@ impl ExecutionEventEmitter {
             reason,
             ts_event,
             self.ts_init(),
+            causation_id,
         );
         self.send_order_event(event);
     }
@@ -382,7 +423,42 @@ impl ExecutionEventEmitter {
         self.send_order_event(OrderEventAny::Rejected(event));
     }
 
+    /// Constructs and emits an order modify denied event from raw fields.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Event emission preserves order identity and command correlation"
+    )]
+    pub fn emit_order_modify_denied_event(
+        &self,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        reason: &str,
+        ts_event: UnixNanos,
+        causation_id: Option<UUID4>,
+    ) {
+        let mut event = OrderModifyDenied::new(
+            self.factory.trader_id(),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            self.ts_init(),
+            venue_order_id,
+            Some(self.factory.account_id()),
+        );
+        event.causation_id = causation_id;
+        self.send_order_event(OrderEventAny::ModifyDenied(event));
+    }
+
     /// Constructs and emits an order modify rejected event from raw fields.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Event emission preserves order identity and command correlation"
+    )]
     pub fn emit_order_modify_rejected_event(
         &self,
         strategy_id: StrategyId,
@@ -391,8 +467,9 @@ impl ExecutionEventEmitter {
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
         ts_event: UnixNanos,
+        causation_id: Option<UUID4>,
     ) {
-        let event = OrderModifyRejected::new(
+        let mut event = OrderModifyRejected::new(
             self.factory.trader_id(),
             strategy_id,
             instrument_id,
@@ -405,10 +482,46 @@ impl ExecutionEventEmitter {
             venue_order_id,
             Some(self.factory.account_id()),
         );
+        event.causation_id = causation_id;
         self.send_order_event(OrderEventAny::ModifyRejected(event));
     }
 
+    /// Constructs and emits an order cancel denied event from raw fields.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Event emission preserves order identity and command correlation"
+    )]
+    pub fn emit_order_cancel_denied_event(
+        &self,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        reason: &str,
+        ts_event: UnixNanos,
+        causation_id: Option<UUID4>,
+    ) {
+        let mut event = OrderCancelDenied::new(
+            self.factory.trader_id(),
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_event,
+            self.ts_init(),
+            venue_order_id,
+            Some(self.factory.account_id()),
+        );
+        event.causation_id = causation_id;
+        self.send_order_event(OrderEventAny::CancelDenied(event));
+    }
+
     /// Constructs and emits an order cancel rejected event from raw fields.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Event emission preserves order identity and command correlation"
+    )]
     pub fn emit_order_cancel_rejected_event(
         &self,
         strategy_id: StrategyId,
@@ -417,8 +530,9 @@ impl ExecutionEventEmitter {
         venue_order_id: Option<VenueOrderId>,
         reason: &str,
         ts_event: UnixNanos,
+        causation_id: Option<UUID4>,
     ) {
-        let event = OrderCancelRejected::new(
+        let mut event = OrderCancelRejected::new(
             self.factory.trader_id(),
             strategy_id,
             instrument_id,
@@ -431,6 +545,7 @@ impl ExecutionEventEmitter {
             venue_order_id,
             Some(self.factory.account_id()),
         );
+        event.causation_id = causation_id;
         self.send_order_event(OrderEventAny::CancelRejected(event));
     }
 

@@ -77,9 +77,9 @@ pub(super) use nautilus_model::{
         LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, TrailingOffsetType,
     },
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderDeniedReason,
-        OrderEventAny, OrderFilled, OrderModifyRejected, OrderPendingCancel, OrderRejected,
-        OrderSubmitted, OrderUpdated,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderDeniedReason, OrderEventAny, OrderFilled, OrderModifyDenied, OrderModifyRejected,
+        OrderPendingCancel, OrderRejected, OrderSubmitted, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, TraderId, Venue,
@@ -1875,7 +1875,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             .group_for_client(cmd.client_order_id)
             .is_some()
         {
-            Self::send_order_modify_rejected(
+            Self::send_order_modify_denied(
                 &cmd,
                 "Cannot modify an order with unresolved duplicate broker identities; cancel and reconcile it first",
                 &get_exec_event_sender(),
@@ -1886,7 +1886,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         }
 
         if let Err(reason) = self.ensure_client_ready_for_order_request("modify order") {
-            Self::send_order_modify_rejected(
+            Self::send_order_modify_denied(
                 &cmd,
                 &reason,
                 &get_exec_event_sender(),
@@ -1923,14 +1923,14 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             {
                 let reason = format!("Failed to route modify order to IB: {e:#}");
 
-                if let Err(send_error) = Self::send_order_modify_rejected(
+                if let Err(send_error) = Self::send_order_modify_denied(
                     &cmd,
                     &reason,
                     &exec_sender,
                     clock.get_time_ns(),
                     account_id,
                 ) {
-                    tracing::error!("{reason}; failed to emit OrderModifyRejected: {send_error}");
+                    tracing::error!("{reason}; failed to emit OrderModifyDenied: {send_error}");
                 }
             }
         };
@@ -1943,15 +1943,30 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        let target_order = Arc::new(self.core.get_order(&cmd.client_order_id)?);
+        let target_order = self.core.get_order(&cmd.client_order_id);
         let exec_sender = get_exec_event_sender();
         let clock = get_atomic_clock_realtime();
         let account_id = self.core.account_id;
 
+        let target_order = match target_order {
+            Ok(order) => Arc::new(order),
+            Err(e) => {
+                return Self::send_order_cancel_denied(
+                    None,
+                    &cmd,
+                    &e.to_string(),
+                    &exec_sender,
+                    clock.get_time_ns(),
+                    account_id,
+                );
+            }
+        };
+
         if let Err(e) = Self::validate_cancel_order_target(&cmd, &target_order) {
             let reason = format!("Failed to resolve cancel order target: {e:#}");
-            Self::send_order_cancel_rejected(
-                &target_order,
+            Self::send_order_cancel_denied(
+                Some(&target_order),
+                &cmd,
                 &reason,
                 &exec_sender,
                 clock.get_time_ns(),
@@ -1978,8 +1993,9 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         }
 
         if let Err(reason) = self.ensure_client_ready_for_order_request("cancel order") {
-            Self::send_order_cancel_rejected(
-                &target_order,
+            Self::send_order_cancel_denied(
+                Some(&target_order),
+                &cmd,
                 &reason,
                 &exec_sender,
                 clock.get_time_ns(),
@@ -2016,15 +2032,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
             {
                 let reason = format!("Failed to route cancel order to IB: {e:#}");
 
-                if let Err(send_error) = Self::send_order_cancel_rejected(
-                    &target_order,
-                    &reason,
-                    &exec_sender,
-                    clock.get_time_ns(),
-                    account_id,
-                ) {
-                    tracing::error!("{reason}; failed to emit OrderCancelRejected: {send_error}");
-                }
+                tracing::warn!("{reason}; cancellation remains unresolved");
             }
         };
 
@@ -2442,14 +2450,14 @@ impl InteractiveBrokersExecutionClient {
             .map_err(|e| anyhow::anyhow!("Failed to send order denied event: {e}"))
     }
 
-    fn send_order_modify_rejected(
+    fn send_order_modify_denied(
         cmd: &ModifyOrder,
         reason: &str,
         exec_sender: &EventSender<ExecutionEvent>,
         ts_event: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
-        let event = OrderModifyRejected::new(
+        let mut event = OrderModifyDenied::new(
             cmd.trader_id,
             cmd.strategy_id,
             cmd.instrument_id,
@@ -2458,23 +2466,52 @@ impl InteractiveBrokersExecutionClient {
             UUID4::new(),
             ts_event,
             ts_event,
-            false,
             cmd.venue_order_id,
             Some(account_id),
         );
+        event.causation_id = Some(cmd.command_id);
         exec_sender
-            .send(ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)))
-            .map_err(|e| anyhow::anyhow!("Failed to send order modify rejected event: {e}"))
+            .send(ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)))
+            .map_err(|e| anyhow::anyhow!("Failed to send order modify denied event: {e}"))
     }
 
-    fn send_order_cancel_rejected(
-        target_order: &OrderAny,
+    fn send_order_cancel_denied(
+        target_order: Option<&OrderAny>,
+        cmd: &CancelOrder,
         reason: &str,
         exec_sender: &EventSender<ExecutionEvent>,
         ts_event: UnixNanos,
         account_id: AccountId,
     ) -> anyhow::Result<()> {
-        let event = OrderCancelRejected::new(
+        let mut event = OrderCancelDenied::new(
+            target_order.map_or(cmd.trader_id, |order| order.trader_id()),
+            target_order.map_or(cmd.strategy_id, |order| order.strategy_id()),
+            target_order.map_or(cmd.instrument_id, |order| order.instrument_id()),
+            target_order.map_or(cmd.client_order_id, |order| order.client_order_id()),
+            Ustr::from(reason),
+            UUID4::new(),
+            ts_event,
+            ts_event,
+            target_order
+                .and_then(|order| order.venue_order_id())
+                .or(cmd.venue_order_id),
+            Some(account_id),
+        );
+        event.causation_id = Some(cmd.command_id);
+        exec_sender
+            .send(ExecutionEvent::Order(OrderEventAny::CancelDenied(event)))
+            .map_err(|e| anyhow::anyhow!("Failed to send order cancel denied event: {e}"))
+    }
+
+    fn send_order_cancel_rejected(
+        target_order: &OrderAny,
+        causation_id: UUID4,
+        reason: &str,
+        exec_sender: &EventSender<ExecutionEvent>,
+        ts_event: UnixNanos,
+        account_id: AccountId,
+    ) -> anyhow::Result<()> {
+        let mut event = OrderCancelRejected::new(
             target_order.trader_id(),
             target_order.strategy_id(),
             target_order.instrument_id(),
@@ -2487,6 +2524,7 @@ impl InteractiveBrokersExecutionClient {
             target_order.venue_order_id(),
             Some(account_id),
         );
+        event.causation_id = Some(causation_id);
         exec_sender
             .send(ExecutionEvent::Order(OrderEventAny::CancelRejected(event)))
             .map_err(|e| anyhow::anyhow!("Failed to send order cancel rejected event: {e}"))
@@ -2546,7 +2584,7 @@ impl InteractiveBrokersExecutionClient {
         request_timeout_secs: u64,
     ) -> anyhow::Result<()> {
         if orders.lock()?.groups.contains_key(&cmd.client_order_id) {
-            return Self::cancel_incarnation_group(
+            let result = Self::cancel_incarnation_group(
                 cmd.client_order_id,
                 client,
                 orders,
@@ -2560,24 +2598,67 @@ impl InteractiveBrokersExecutionClient {
                 target_order.is_pending_cancel(),
             )
             .await;
+
+            return match result {
+                Ok(()) => Ok(()),
+                Err(CommandFailure::NotSent(reason)) => Self::send_order_cancel_denied(
+                    Some(target_order),
+                    cmd,
+                    &reason,
+                    exec_sender,
+                    ts_init,
+                    account_id,
+                ),
+                Err(CommandFailure::VenueRejected(reason)) => Self::send_order_cancel_rejected(
+                    target_order,
+                    cmd.command_id,
+                    &reason,
+                    exec_sender,
+                    ts_init,
+                    account_id,
+                ),
+                Err(CommandFailure::Ambiguous(reason)) => {
+                    tracing::warn!("Grouped cancel remains unresolved: {reason}");
+                    Ok(())
+                }
+            };
         }
 
-        let order_selector = if let Some(venue_order_id) = &cmd.venue_order_id {
-            IbOrderSelector::from_venue_order_id(venue_order_id)?
-        } else {
-            let state = orders.lock()?;
-            IbOrderSelector::OrderId(
-                *state
-                    .order_id_map
-                    .get(&cmd.client_order_id)
-                    .context("No IB order ID mapping found for client order ID")?,
-            )
+        let route = async {
+            let order_selector = if let Some(venue_order_id) = &cmd.venue_order_id {
+                IbOrderSelector::from_venue_order_id(venue_order_id)?
+            } else {
+                let state = orders.lock()?;
+                IbOrderSelector::OrderId(
+                    *state
+                        .order_id_map
+                        .get(&cmd.client_order_id)
+                        .context("No IB order ID mapping found for client order ID")?,
+                )
+            };
+
+            let ib_order_id =
+                Self::resolve_ib_order_id(client, order_selector, ib_account, request_timeout_secs)
+                    .await?;
+            Self::cache_recovered_order_tracking(ib_order_id, target_order, orders)?;
+            Ok::<_, anyhow::Error>((order_selector, ib_order_id))
+        }
+        .await;
+
+        let (order_selector, ib_order_id) = match route {
+            Ok(route) => route,
+            Err(e) => {
+                return Self::send_order_cancel_denied(
+                    Some(target_order),
+                    cmd,
+                    &format!("Failed to resolve cancel route: {e:#}"),
+                    exec_sender,
+                    ts_init,
+                    account_id,
+                );
+            }
         };
 
-        let ib_order_id =
-            Self::resolve_ib_order_id(client, order_selector, ib_account, request_timeout_secs)
-                .await?;
-        Self::cache_recovered_order_tracking(ib_order_id, target_order, orders)?;
         let venue_order_id = target_order
             .venue_order_id()
             .unwrap_or_else(|| VenueOrderId::from(ib_order_id.to_string()));
@@ -2588,8 +2669,25 @@ impl InteractiveBrokersExecutionClient {
             match tokio::time::timeout(timeout_dur, client.cancel_order(ib_order_id, "")).await {
                 Ok(Ok(_subscription)) => None,
                 Ok(Err(e)) => match Self::classify_order_submit_error(&e) {
-                    CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
-                        anyhow::bail!(reason)
+                    CommandFailure::NotSent(reason) => {
+                        return Self::send_order_cancel_denied(
+                            Some(target_order),
+                            cmd,
+                            &reason,
+                            exec_sender,
+                            ts_init,
+                            account_id,
+                        );
+                    }
+                    CommandFailure::VenueRejected(reason) => {
+                        return Self::send_order_cancel_rejected(
+                            target_order,
+                            cmd.command_id,
+                            &reason,
+                            exec_sender,
+                            ts_init,
+                            account_id,
+                        );
                     }
                     CommandFailure::Ambiguous(reason) => Some(reason),
                 },
@@ -2689,16 +2787,11 @@ impl InteractiveBrokersExecutionClient {
         .context("Timed out querying open orders after ambiguous cancel")??;
 
         if remains_open {
-            let reason = format!(
-                "Cancel was not confirmed after transport error; order remains open at IB: {send_error}"
+            tracing::warn!(
+                "Cancel outcome remains unresolved after transport error; order {} remains open at IB: {send_error}",
+                target_order.client_order_id()
             );
-            return Self::send_order_cancel_rejected(
-                target_order,
-                &reason,
-                exec_sender,
-                ts_init,
-                account_id,
-            );
+            return Ok(());
         }
 
         let completed_status = tokio::time::timeout(timeout_dur, async {
@@ -2767,7 +2860,8 @@ impl InteractiveBrokersExecutionClient {
             },
         );
 
-        Self::send_order_cancel_rejected(target_order, &reason, exec_sender, ts_init, account_id)
+        tracing::warn!("{reason}");
+        Ok(())
     }
 
     pub(super) async fn resolve_ib_order_id(
@@ -2864,7 +2958,8 @@ impl InteractiveBrokersExecutionClient {
                         order_side,
                         false,
                     )
-                    .await?;
+                    .await
+                    .map_err(|failure| anyhow::anyhow!("Grouped cancel-all failed: {failure:?}"))?;
                 }
             } else {
                 individual.push((id, venue_id));

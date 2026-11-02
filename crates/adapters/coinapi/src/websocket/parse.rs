@@ -35,10 +35,13 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use rust_decimal::{Decimal, RoundingStrategy};
-use ustr::Ustr;
+use strum::VariantNames;
 
 use super::messages::{Book, Ohlcv, Quote, Trade};
-use crate::http::{models::BookLevel, parse::unix_nanos};
+use crate::{
+    common::enums::{OhlcvPeriod, TakerSide},
+    http::{models::BookLevel, parse::unix_nanos},
+};
 
 /// Converts a full L2 `book` snapshot or update into deltas, taking `ts_event` from
 /// `time_exchange` and `ts_init` from `time_coinapi`.
@@ -216,12 +219,14 @@ pub fn parse_bar(
 
 /// Maps an exchange taker side to the aggressor side.
 #[must_use]
-pub fn parse_aggressor_side(taker_side: Ustr) -> AggressorSide {
-    match taker_side.as_str() {
-        "BUY" => AggressorSide::Buy,
-        "SELL" => AggressorSide::Sell,
-        "BUY_ESTIMATED" | "SELL_ESTIMATED" | "UNKNOWN" => AggressorSide::NoAggressor,
-        other => {
+pub fn parse_aggressor_side(taker_side: TakerSide) -> AggressorSide {
+    match taker_side {
+        TakerSide::Buy => AggressorSide::Buy,
+        TakerSide::Sell => AggressorSide::Sell,
+        TakerSide::BuyEstimated | TakerSide::SellEstimated | TakerSide::Unknown => {
+            AggressorSide::NoAggressor
+        }
+        TakerSide::Other(other) => {
             log::warn!("Unknown CoinAPI taker_side {other}, using no aggressor");
             AggressorSide::NoAggressor
         }
@@ -235,7 +240,7 @@ pub fn parse_aggressor_side(taker_side: Ustr) -> AggressorSide {
 /// # Errors
 ///
 /// Returns an error if the price type is not last or CoinAPI has no matching period.
-pub fn bar_spec_to_period_id(spec: BarSpecification) -> anyhow::Result<Ustr> {
+pub fn bar_spec_to_period_id(spec: BarSpecification) -> anyhow::Result<OhlcvPeriod> {
     anyhow::ensure!(
         spec.price_type == PriceType::Last,
         "CoinAPI OHLCV bars use last prices, was {}",
@@ -243,21 +248,27 @@ pub fn bar_spec_to_period_id(spec: BarSpecification) -> anyhow::Result<Ustr> {
     );
 
     let step = spec.step.get();
+
     let unit = match spec.aggregation {
-        BarAggregation::Second if SUB_HOUR_STEPS.contains(&step) => "SEC",
-        BarAggregation::Minute if SUB_HOUR_STEPS.contains(&step) => "MIN",
-        BarAggregation::Hour if HOUR_STEPS.contains(&step) => "HRS",
+        BarAggregation::Second => "SEC",
+        BarAggregation::Minute => "MIN",
+        BarAggregation::Hour => "HRS",
         BarAggregation::Day if step == 1 => "DAY",
         _ => anyhow::bail!("CoinAPI has no streaming OHLCV period for {spec}"),
     };
 
-    Ok(Ustr::from(&format!("{step}{unit}")))
+    let period = format!("{step}{unit}");
+    anyhow::ensure!(
+        OhlcvPeriod::VARIANTS.contains(&period.as_str()),
+        "CoinAPI has no streaming OHLCV period for {spec}"
+    );
+    Ok(period.as_str().into())
 }
 
 /// Returns the last-price bar specification for a CoinAPI streaming `period_id`.
 #[must_use]
-pub fn period_id_to_bar_spec(period_id: Ustr) -> Option<BarSpecification> {
-    let period = period_id.as_str();
+pub fn period_id_to_bar_spec(period_id: OhlcvPeriod) -> Option<BarSpecification> {
+    let period = period_id.as_ref();
     let split = period.find(|c: char| !c.is_ascii_digit())?;
     let (step, unit) = period.split_at(split);
 
@@ -294,9 +305,6 @@ fn book_order(
         0,
     ))
 }
-
-const SUB_HOUR_STEPS: [usize; 10] = [1, 2, 3, 4, 5, 6, 10, 15, 20, 30];
-const HOUR_STEPS: [usize; 7] = [1, 2, 3, 4, 6, 8, 12];
 
 pub(crate) fn price(
     value: Decimal,
@@ -361,6 +369,7 @@ pub(crate) fn timestamp(value: Timestamp, field: &str) -> anyhow::Result<UnixNan
 mod tests {
     use nautilus_model::{identifiers::InstrumentId, instruments::CurrencyPair, types::Currency};
     use rstest::rstest;
+    use ustr::Ustr;
 
     use super::*;
 
@@ -760,7 +769,7 @@ mod tests {
     #[case("UNKNOWN", AggressorSide::NoAggressor)]
     #[case("NEW_SIDE", AggressorSide::NoAggressor)]
     fn taker_side_maps_only_reported_sides(#[case] wire: &str, #[case] expected: AggressorSide) {
-        assert_eq!(parse_aggressor_side(Ustr::from(wire)), expected);
+        assert_eq!(parse_aggressor_side(TakerSide::from(wire)), expected);
     }
 
     #[rstest]
@@ -774,8 +783,11 @@ mod tests {
     fn bar_spec_maps_to_period_id_and_back(#[case] spec: &str, #[case] period_id: &str) {
         let spec = bar_spec(spec);
 
-        assert_eq!(bar_spec_to_period_id(spec).unwrap(), period_id);
-        assert_eq!(period_id_to_bar_spec(Ustr::from(period_id)), Some(spec));
+        assert_eq!(bar_spec_to_period_id(spec).unwrap().as_ref(), period_id);
+        assert_eq!(
+            period_id_to_bar_spec(OhlcvPeriod::from(period_id)),
+            Some(spec)
+        );
     }
 
     #[rstest]
@@ -790,6 +802,17 @@ mod tests {
     }
 
     #[rstest]
+    fn unsupported_bar_period_is_not_interned() {
+        let period = "12SEC";
+        assert_eq!(Ustr::from_existing(period), None);
+
+        let result = bar_spec_to_period_id(bar_spec("12-SECOND-LAST"));
+
+        assert!(result.is_err());
+        assert_eq!(Ustr::from_existing(period), None);
+    }
+
+    #[rstest]
     #[case("01MIN")]
     #[case("7SEC")]
     #[case("1MTH")]
@@ -797,6 +820,6 @@ mod tests {
     #[case("1")]
     #[case("")]
     fn unsupported_period_id_has_no_bar_spec(#[case] period_id: &str) {
-        assert_eq!(period_id_to_bar_spec(Ustr::from(period_id)), None);
+        assert_eq!(period_id_to_bar_spec(OhlcvPeriod::from(period_id)), None);
     }
 }

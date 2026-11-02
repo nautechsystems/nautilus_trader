@@ -3,7 +3,7 @@
   "conditionId": "0xcondition",
   "question": "Will the outcome occur?",
   "version": "v1",
-  "clobTokenIds": "[\"yes-token\",\"no-token\"]",
+  "clobTokenIds": "[\"101\",\"202\"]",
   "outcomes": "[\"Yes\",\"No\"]",
   "orderPriceMinTickSize": 0.01,
   "orderMinSize": 5,

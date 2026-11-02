@@ -5806,32 +5806,52 @@ impl ExecutionClient for BlockchainExecutionClient {
     }
 
     fn modify_order(&self, cmd: ModifyOrder) -> anyhow::Result<()> {
-        let Ok(order) = self.core.cache().try_order_owned(&cmd.client_order_id) else {
-            log::warn!("Cannot modify unknown order {}", cmd.client_order_id);
-            return Ok(());
-        };
+        let ts_event = get_atomic_clock_realtime().get_time_ns();
 
-        self.emitter.emit_order_modify_rejected(
-            &order,
-            cmd.venue_order_id,
-            ORDER_MODIFY_UNSUPPORTED,
-            get_atomic_clock_realtime().get_time_ns(),
-        );
+        if let Ok(order) = self.core.get_order(&cmd.client_order_id) {
+            self.emitter.emit_order_modify_denied(
+                &order,
+                ORDER_MODIFY_UNSUPPORTED,
+                ts_event,
+                Some(cmd.command_id),
+            );
+        } else {
+            self.emitter.emit_order_modify_denied_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                ORDER_MODIFY_UNSUPPORTED,
+                ts_event,
+                Some(cmd.command_id),
+            );
+        }
+
         Ok(())
     }
 
     fn cancel_order(&self, cmd: CancelOrder) -> anyhow::Result<()> {
-        let Ok(order) = self.core.cache().try_order_owned(&cmd.client_order_id) else {
-            log::warn!("Cannot cancel unknown order {}", cmd.client_order_id);
-            return Ok(());
-        };
+        let ts_event = get_atomic_clock_realtime().get_time_ns();
 
-        self.emitter.emit_order_cancel_rejected(
-            &order,
-            cmd.venue_order_id,
-            ORDER_CANCEL_UNSUPPORTED,
-            get_atomic_clock_realtime().get_time_ns(),
-        );
+        if let Ok(order) = self.core.get_order(&cmd.client_order_id) {
+            self.emitter.emit_order_cancel_denied(
+                &order,
+                ORDER_CANCEL_UNSUPPORTED,
+                ts_event,
+                Some(cmd.command_id),
+            );
+        } else {
+            self.emitter.emit_order_cancel_denied_event(
+                cmd.strategy_id,
+                cmd.instrument_id,
+                cmd.client_order_id,
+                cmd.venue_order_id,
+                ORDER_CANCEL_UNSUPPORTED,
+                ts_event,
+                Some(cmd.command_id),
+            );
+        }
+
         Ok(())
     }
 
@@ -6382,13 +6402,14 @@ mod tests {
             tick_map::{tick::PoolTick, tick_math::get_tick_at_sqrt_ratio},
         },
         enums::AccountType,
-        events::OrderEventAny,
+        events::{OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
         identifiers::{OrderListId, StrategyId, TraderId},
-        orders::{OrderList, OrderTestBuilder},
+        orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
         types::Price,
     };
     use rstest::rstest;
     use sqlx::postgres::{PgAdvisoryLock, PgAdvisoryLockKey, PgPoolOptions};
+    use ustr::Ustr;
 
     use super::*;
     use crate::{
@@ -18253,23 +18274,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn modify_order_rejects_without_side_effects() {
+    async fn modify_order_denies_without_side_effects() {
         let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
 
-        client
-            .modify_order(modify_order_cmd(
-                order.instrument_id(),
-                order.client_order_id(),
-            ))
-            .unwrap();
+        let command = modify_order_cmd(order.instrument_id(), order.client_order_id());
+        let cause = command.command_id;
+        client.modify_order(command).unwrap();
 
         let events = collect_order_events(&mut receiver);
         assert_eq!(events.len(), 1, "was: {events:?}");
-        let OrderEventAny::ModifyRejected(rejected) = &events[0] else {
-            panic!("expected OrderModifyRejected, was {:?}", events[0]);
+
+        let OrderEventAny::ModifyDenied(rejected) = &events[0] else {
+            panic!("expected OrderModifyDenied, was {:?}", events[0]);
         };
+
+        assert_eq!(rejected.causation_id, Some(cause));
         assert_eq!(rejected.client_order_id, order.client_order_id());
         assert_eq!(rejected.reason, ORDER_MODIFY_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
@@ -18280,23 +18301,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn cancel_order_rejects_without_side_effects() {
+    async fn cancel_order_denies_without_side_effects() {
         let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
         let order = test_market_sell_order(test_pool().instrument_id);
         let mut receiver = start_with_events(&mut client);
 
-        client
-            .cancel_order(cancel_order_cmd(
-                order.instrument_id(),
-                order.client_order_id(),
-            ))
-            .unwrap();
+        let command = cancel_order_cmd(order.instrument_id(), order.client_order_id());
+        let cause = command.command_id;
+        client.cancel_order(command).unwrap();
 
         let events = collect_order_events(&mut receiver);
         assert_eq!(events.len(), 1, "was: {events:?}");
-        let OrderEventAny::CancelRejected(rejected) = &events[0] else {
-            panic!("expected OrderCancelRejected, was {:?}", events[0]);
+
+        let OrderEventAny::CancelDenied(rejected) = &events[0] else {
+            panic!("expected OrderCancelDenied, was {:?}", events[0]);
         };
+
+        assert_eq!(rejected.causation_id, Some(cause));
         assert_eq!(rejected.client_order_id, order.client_order_id());
         assert_eq!(rejected.reason, ORDER_CANCEL_UNSUPPORTED);
         assert!(state.recorded_requests().is_empty());
@@ -18307,7 +18328,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn batch_cancel_orders_rejects_each_order_without_side_effects() {
+    async fn batch_cancel_orders_denies_each_order_without_side_effects() {
         let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
         let pool = test_pool();
         let first = test_market_sell_order(pool.instrument_id);
@@ -18320,6 +18341,10 @@ mod tests {
         let cancels = orders
             .iter()
             .map(|order| cancel_order_cmd(order.instrument_id(), order.client_order_id()))
+            .collect::<Vec<_>>();
+        let causes: std::collections::HashMap<_, _> = cancels
+            .iter()
+            .map(|command| (command.client_order_id, command.command_id))
             .collect();
         let mut receiver = start_with_events(&mut client);
 
@@ -18331,9 +18356,14 @@ mod tests {
         let mut rejected_ids = Vec::new();
 
         for event in &events {
-            let OrderEventAny::CancelRejected(rejected) = event else {
-                panic!("expected OrderCancelRejected, was {event:?}");
+            let OrderEventAny::CancelDenied(rejected) = event else {
+                panic!("expected OrderCancelDenied, was {event:?}");
             };
+
+            assert_eq!(
+                rejected.causation_id,
+                Some(causes[&rejected.client_order_id])
+            );
             assert_eq!(rejected.reason, ORDER_CANCEL_UNSUPPORTED);
             rejected_ids.push(rejected.client_order_id);
         }
@@ -18342,6 +18372,132 @@ mod tests {
             rejected_ids,
             [first.client_order_id(), second.client_order_id()]
         );
+        assert!(state.recorded_requests().is_empty());
+        assert!(client.in_flight.lock().is_none());
+    }
+
+    #[rstest]
+    #[case::modify(true)]
+    #[case::cancel(false)]
+    #[tokio::test]
+    async fn command_denial_preserves_cached_owner(
+        #[case] modify: bool,
+        #[values(false, true)] cached: bool,
+    ) {
+        let (mut client, state, cache) = unsupported_client_with_mock_rpc().await;
+        let mut order = test_market_sell_order(test_pool().instrument_id);
+        let venue = VenueOrderId::from("V-OWNER-029");
+        let account = AccountId::from("BLOCKCHAIN-001");
+        let accepted = TestOrderEventStubs::accepted(&order, account, venue);
+        order.apply(accepted.clone()).unwrap();
+        cache.borrow_mut().update_order(&accepted).unwrap();
+
+        let target = if cached {
+            order.client_order_id()
+        } else {
+            ClientOrderId::from("O-UNCACHED")
+        };
+
+        let requester = StrategyId::from("REQUESTER-031");
+        let explicit_venue = VenueOrderId::from("V-REQUESTER-037");
+        let command_id = UUID4::new();
+
+        let pending = if modify {
+            let mut event = OrderPendingUpdate::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Some(account),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue),
+            );
+            event.causation_id = Some(command_id);
+            OrderEventAny::PendingUpdate(event)
+        } else {
+            let mut event = OrderPendingCancel::new(
+                order.trader_id(),
+                order.strategy_id(),
+                order.instrument_id(),
+                order.client_order_id(),
+                Some(account),
+                UUID4::new(),
+                UnixNanos::default(),
+                UnixNanos::default(),
+                false,
+                Some(venue),
+            );
+            event.causation_id = Some(command_id);
+            OrderEventAny::PendingCancel(event)
+        };
+
+        if cached {
+            cache.borrow_mut().update_order(&pending).unwrap();
+        }
+
+        let mut receiver = start_with_events(&mut client);
+
+        if modify {
+            let mut command = modify_order_cmd(order.instrument_id(), target);
+            command.strategy_id = requester;
+            command.venue_order_id = Some(explicit_venue);
+            command.command_id = command_id;
+            client.modify_order(command).unwrap();
+        } else {
+            let mut command = cancel_order_cmd(order.instrument_id(), target);
+            command.strategy_id = requester;
+            command.venue_order_id = Some(explicit_venue);
+            command.command_id = command_id;
+            client.cancel_order(command).unwrap();
+        }
+
+        let events = collect_order_events(&mut receiver);
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(
+            event.strategy_id(),
+            if cached {
+                order.strategy_id()
+            } else {
+                requester
+            }
+        );
+        assert_eq!(event.client_order_id(), target);
+        assert_eq!(event.instrument_id(), order.instrument_id());
+        assert_eq!(
+            event.venue_order_id(),
+            Some(if cached { venue } else { explicit_venue })
+        );
+
+        let cause = match event {
+            OrderEventAny::ModifyDenied(denied) => {
+                assert!(modify);
+                denied.causation_id
+            }
+            OrderEventAny::CancelDenied(denied) => {
+                assert!(!modify);
+                denied.causation_id
+            }
+            other => panic!("expected command denial, was {other:?}"),
+        };
+
+        assert_eq!(cause, Some(command_id));
+
+        if cached {
+            cache.borrow_mut().update_order(event).unwrap();
+            let after = cache.borrow().try_order_owned(&target).unwrap();
+            assert_eq!(after.status(), OrderStatus::Accepted);
+            assert_eq!(after.quantity(), order.quantity());
+            assert_eq!(after.filled_qty(), order.filled_qty());
+            assert!(!after.has_pending_update_command());
+            assert!(!after.has_pending_cancel_command());
+        } else {
+            assert!(cache.borrow().order_ref(&target).is_none());
+        }
+
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
     }
@@ -18378,24 +18534,65 @@ mod tests {
         let unknown = ClientOrderId::from("O-UNKNOWN");
         let mut receiver = start_with_events(&mut client);
 
-        client
-            .modify_order(modify_order_cmd(instrument_id, unknown))
-            .unwrap();
-        client
-            .cancel_order(cancel_order_cmd(instrument_id, unknown))
-            .unwrap();
-        client
-            .batch_cancel_orders(batch_cancel_orders_cmd(vec![cancel_order_cmd(
+        let modify = modify_order_cmd(instrument_id, unknown);
+        let cancel = cancel_order_cmd(instrument_id, unknown);
+        let batch_cancel = cancel_order_cmd(instrument_id, unknown);
+        let expected = vec![
+            (
+                true,
                 instrument_id,
                 unknown,
-            )]))
+                Ustr::from(ORDER_MODIFY_UNSUPPORTED),
+                Some(modify.command_id),
+            ),
+            (
+                false,
+                instrument_id,
+                unknown,
+                Ustr::from(ORDER_CANCEL_UNSUPPORTED),
+                Some(cancel.command_id),
+            ),
+            (
+                false,
+                instrument_id,
+                unknown,
+                Ustr::from(ORDER_CANCEL_UNSUPPORTED),
+                Some(batch_cancel.command_id),
+            ),
+        ];
+        client.modify_order(modify).unwrap();
+        client.cancel_order(cancel).unwrap();
+        client
+            .batch_cancel_orders(batch_cancel_orders_cmd(vec![batch_cancel]))
             .unwrap();
         client
             .query_order(query_order_cmd(instrument_id, unknown))
             .unwrap();
 
         let events = collect_order_events(&mut receiver);
-        assert!(events.is_empty(), "was: {events:?}");
+
+        let outcomes: Vec<_> = events
+            .iter()
+            .map(|event| match event {
+                OrderEventAny::ModifyDenied(event) => (
+                    true,
+                    event.instrument_id,
+                    event.client_order_id,
+                    event.reason,
+                    event.causation_id,
+                ),
+                OrderEventAny::CancelDenied(event) => (
+                    false,
+                    event.instrument_id,
+                    event.client_order_id,
+                    event.reason,
+                    event.causation_id,
+                ),
+                other => panic!("Expected unsupported command denial, was {other:?}"),
+            })
+            .collect();
+
+        assert_eq!(outcomes, expected);
         assert!(state.recorded_requests().is_empty());
         assert!(client.in_flight.lock().is_none());
     }

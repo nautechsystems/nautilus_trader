@@ -1,0 +1,21 @@
+[
+  {
+    "market_id": "WILL-TRUMP-SELL-10K-25K-GOLD-CARDS-IN-2025_YES",
+    "title": "Will Trump sell 10k-25k Gold Cards in 2025?",
+    "description": "Resolves based on official reporting by the Trump Administration.",
+    "outcome_name": "Yes",
+    "price": 0.12,
+    "status": "Open",
+    "exchange_id": "POLYMARKET",
+    "outcome_type": "Binary"
+  },
+  {
+    "market_id": "WILL-TRUMP-SELL-10K-25K-GOLD-CARDS-IN-2025_NO",
+    "title": "Will Trump sell 10k-25k Gold Cards in 2025?",
+    "outcome_name": "No",
+    "price": 0.88,
+    "status": "Open",
+    "exchange_id": "POLYMARKET",
+    "outcome_type": "Binary"
+  }
+]

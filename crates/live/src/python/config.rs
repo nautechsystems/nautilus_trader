@@ -430,7 +430,7 @@ impl LiveExecutionEngineConfig {
     /// Configuration for live execution engines.
     #[new]
     #[expect(clippy::too_many_arguments)]
-    #[pyo3(signature = (load_cache=None, manage_own_order_books=None, snapshot_positions_interval_secs=None, external_clients=None, allow_overfills=None, reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, own_books_audit_interval_secs=None, debug=None, snapshot_orders=None, snapshot_positions=None, submission_recovery_policy=None))]
+    #[pyo3(signature = (load_cache=None, manage_own_order_books=None, snapshot_positions_interval_secs=None, external_clients=None, allow_overfills=None, reconciliation=None, reconciliation_startup_delay_secs=None, reconciliation_lookback_mins=None, reconciliation_instrument_ids=None, filter_unclaimed_external_orders=None, filter_position_reports=None, filtered_client_order_ids=None, generate_missing_orders=None, inflight_check_interval_ms=None, inflight_check_threshold_ms=None, inflight_check_retries=None, open_check_interval_secs=None, open_check_lookback_mins=None, open_check_threshold_ms=None, open_check_missing_retries=None, open_check_open_only=None, max_single_order_queries_per_cycle=None, single_order_query_delay_ms=None, position_check_interval_secs=None, position_check_lookback_mins=None, position_check_threshold_ms=None, position_check_retries=None, purge_closed_orders_interval_mins=None, purge_closed_orders_buffer_mins=None, purge_closed_positions_interval_mins=None, purge_closed_positions_buffer_mins=None, purge_account_events_interval_mins=None, purge_account_events_lookback_mins=None, own_books_audit_interval_secs=None, debug=None, snapshot_orders=None, snapshot_positions=None, submission_recovery_policy=None, purge_from_database=None))]
     fn py_new(
         load_cache: Option<bool>,
         manage_own_order_books: Option<bool>,
@@ -470,6 +470,7 @@ impl LiveExecutionEngineConfig {
         snapshot_orders: Option<bool>,
         snapshot_positions: Option<bool>,
         submission_recovery_policy: Option<SubmissionRecoveryPolicy>,
+        purge_from_database: Option<bool>,
     ) -> PyResult<Self> {
         let default = Self::default();
 
@@ -526,7 +527,7 @@ impl LiveExecutionEngineConfig {
             purge_closed_positions_buffer_mins,
             purge_account_events_interval_mins,
             purge_account_events_lookback_mins,
-            purge_from_database: default.purge_from_database,
+            purge_from_database: purge_from_database.unwrap_or(default.purge_from_database),
             debug: debug.unwrap_or(default.debug),
             own_books_audit_interval_secs,
             qsize: default.qsize,
@@ -752,6 +753,12 @@ impl LiveExecutionEngineConfig {
     #[pyo3(name = "purge_account_events_lookback_mins")]
     const fn py_purge_account_events_lookback_mins(&self) -> Option<u32> {
         self.purge_account_events_lookback_mins
+    }
+
+    #[getter]
+    #[pyo3(name = "purge_from_database")]
+    const fn py_purge_from_database(&self) -> bool {
+        self.purge_from_database
     }
 
     #[getter]

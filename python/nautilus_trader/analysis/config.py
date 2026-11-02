@@ -24,7 +24,7 @@ from typing import Any
 
 
 def _default_heights() -> list[float]:
-    return [0.50, 0.22, 0.16, 0.12]
+    return [0.40, 0.24, 0.18, 0.18]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -254,11 +254,11 @@ class GridLayout:
         Number of rows in the grid.
     cols : int, default 2
         Number of columns in the grid.
-    heights : list[float], default [0.50, 0.22, 0.16, 0.12]
+    heights : list[float], default [0.40, 0.24, 0.18, 0.18]
         Relative heights for each row (must sum to 1.0 or be proportional).
-    vertical_spacing : float, default 0.10
+    vertical_spacing : float, default 0.08
         Vertical spacing between subplots (0.0 to 1.0).
-    horizontal_spacing : float, default 0.10
+    horizontal_spacing : float, default 0.08
         Horizontal spacing between subplots (0.0 to 1.0).
 
     """
@@ -266,8 +266,31 @@ class GridLayout:
     rows: int = 4
     cols: int = 2
     heights: list[float] = field(default_factory=_default_heights)
-    vertical_spacing: float = 0.10
-    horizontal_spacing: float = 0.10
+    vertical_spacing: float = 0.08
+    horizontal_spacing: float = 0.08
+
+    def __post_init__(self) -> None:
+        """
+        Validate the layout specification.
+        """
+        if self.rows <= 0:
+            raise ValueError(f"rows must be positive, was {self.rows}")
+        if self.cols <= 0:
+            raise ValueError(f"cols must be positive, was {self.cols}")
+        if len(self.heights) != self.rows:
+            raise ValueError(
+                f"heights must have one entry per row ({self.rows}), was {len(self.heights)}",
+            )
+        if any(height <= 0 for height in self.heights):
+            raise ValueError(f"heights must all be positive, was {self.heights}")
+        if not 0.0 <= self.vertical_spacing < 1.0:
+            raise ValueError(
+                f"vertical_spacing must be in [0.0, 1.0), was {self.vertical_spacing}",
+            )
+        if not 0.0 <= self.horizontal_spacing < 1.0:
+            raise ValueError(
+                f"horizontal_spacing must be in [0.0, 1.0), was {self.horizontal_spacing}",
+            )
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -295,7 +318,7 @@ class TearsheetConfig:
     height : int, default 1500
         Total height of the tearsheet in pixels.
     show_logo : bool, default True
-        Whether to display NautilusTrader logo in the tearsheet.
+        Whether to display NautilusTrader footer branding in the tearsheet.
 
     """
 

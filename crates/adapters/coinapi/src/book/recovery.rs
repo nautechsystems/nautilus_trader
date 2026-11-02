@@ -16,12 +16,13 @@
 //! Recovery tasks that restart CoinAPI book streams.
 //!
 //! Each attempt takes the book's pair out of the session scope and restores it through
-//! [`CoinApiWebSocketClient::resubscribe`], and the restarted stream delivers the snapshot. The
+//! `CoinApiWebSocketClient::resubscribe_book`, and the restarted stream delivers the snapshot. The
 //! shared [`BookRecovery`](Recovery) runner owns snapshot waits, backoff, the retry budget, and the
 //! retry ceiling that follows it. A completed write alone does not complete recovery: the tracker
 //! must accept a snapshot. A restart that pauses the symbol's other channels also discards its
 //! retained OHLCV periods, which could otherwise close without the paused updates: once when the
-//! pause begins, in case the restart is cancelled, and again once the restored scope is written.
+//! pause begins, in case the restart is cancelled, and again once the restored scope is written,
+//! before opening the book's snapshot gate.
 
 use std::sync::{
     Arc,
@@ -155,18 +156,18 @@ async fn restart(
         () = cancel.cancelled() => {
             Err(CoinApiBookError::Retryable("book recovery attempt cancelled".to_string()))
         }
-        result = ws.resubscribe(subscription, || {
+        result = ws.resubscribe_book(subscription, || {
             discard();
             paused.store(true, Ordering::Relaxed);
-        }) => {
-            result?;
+        }, gate) => {
+            let writes = result?;
 
             // Updates sent before the removal took effect can restore a period during the pause
             if paused.load(Ordering::Relaxed) {
                 discard();
             }
 
-            gate.open();
+            if let Some(writes) = writes { writes.commit(); }
             Ok(())
         }
     }

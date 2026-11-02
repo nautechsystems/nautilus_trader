@@ -51,7 +51,7 @@ pub struct OKXTrade {
 }
 
 /// Represents a candlestick from the GET /api/v5/market/history-candles endpoint.
-/// The tuple contains [timestamp(ms), open, high, low, close, volume, turnover, `base_volume`, count].
+/// The tuple contains [timestamp(ms), open, high, low, close, volume, turnover, `base_volume`, confirm].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct OKXCandlestick(
     /// Timestamp in milliseconds.
@@ -70,7 +70,7 @@ pub struct OKXCandlestick(
     pub String,
     /// Base volume.
     pub String,
-    /// Record count.
+    /// Confirmation flag: `1` for a completed candle, `0` for one still forming.
     pub String,
 );
 

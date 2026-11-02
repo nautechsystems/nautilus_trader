@@ -1254,6 +1254,7 @@ mod tests {
         binary.outcome = Some(Ustr::from(trade.outcome.as_str()));
         binary.info = Some(
             serde_json::from_value(serde_json::json!({
+                "market_version": "v1",
                 "condition_id": trade.market.as_str(),
                 "token_id": trade.asset_id.as_str(),
             }))
@@ -1292,6 +1293,7 @@ mod tests {
         binary.outcome = Some(trade.outcome.inner());
         binary.info = Some(
             serde_json::from_value(serde_json::json!({
+                "market_version": "v1",
                 "condition_id": trade.market.as_str(),
                 "token_id": trade.asset_id.as_str(),
             }))
@@ -2468,7 +2470,7 @@ mod tests {
         let settlement = SettlementRegistry::new(AccountId::from("POLY-001"));
         let order_contexts = OrderContextRegistry::default();
         let pending_cancels = PendingCancelTracker::default();
-        pending_cancels.insert(order.client_order_id());
+        pending_cancels.insert(order.client_order_id(), None);
 
         let deferred = handle_order_response(
             Ok(response),
@@ -4551,7 +4553,7 @@ mod tests {
         let order = test_limit_order("O-REJECT-SUBMIT", instrument.id());
         let (emitter, mut receiver) = test_emitter();
         let pending_cancels = PendingCancelTracker::default();
-        pending_cancels.insert(order.client_order_id());
+        pending_cancels.insert(order.client_order_id(), None);
 
         reject_submit_order(
             &order,

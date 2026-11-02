@@ -224,9 +224,12 @@ impl SettlementRecord {
             && (self.settlement == SettlementState::Quarantined || self.refresh_requested)
     }
 
-    /// Returns `true` while the record holds evidence that reconciliation must not treat as
-    /// covered: a hard fault, a targeted REST read still owed, a pending application, or a leg
-    /// awaiting application before terminal settlement.
+    /// Returns `true` while the record holds evidence that fill, position, and mass-status reports
+    /// must not treat as covered: a hard fault, a targeted REST read still owed, a pending
+    /// application, or a leg awaiting application before terminal settlement.
+    ///
+    /// Order-status reports use [`Self::blocks_order_status`], so a leg that only awaits
+    /// application does not fail the check.
     pub(crate) fn is_unresolved(&self) -> bool {
         self.hard_fault.is_some()
             || self.awaits_resolution()
@@ -238,5 +241,13 @@ impl SettlementRecord {
                     && leg.application == LegApplication::Absent
                     && !leg.report_routed)
             })
+    }
+
+    /// Returns `true` when an order-status report must not treat this record's fills as covered.
+    ///
+    /// A leg that only awaits application does not block. A hard fault, quarantine, or owed
+    /// targeted REST read does, because those can report fills incorrectly.
+    pub(crate) fn blocks_order_status(&self) -> bool {
+        self.hard_fault.is_some() || self.awaits_resolution()
     }
 }

@@ -1796,7 +1796,7 @@ impl TimeBarAggregator {
             ))
     }
 
-    fn preprocess_historical_events(&mut self, ts_init: UnixNanos) {
+    fn preprocess_historical_events(&mut self, ts_init: UnixNanos, include_close: bool) {
         if self.clock.borrow().timestamp_ns() == UnixNanos::default() {
             // In historical mode, clock is always a VirtualClock (set by data engine)
             {
@@ -1809,6 +1809,12 @@ impl TimeBarAggregator {
             }
             // In historical mode, weak reference should already be set
             self.start_timer_internal(None);
+        }
+
+        if let Some(event) = &self.historical_event_at_ts_init
+            && event.ts_event < ts_init
+        {
+            self.flush_pending_historical_bar();
         }
 
         // Advance this aggregator's independent clock and collect timer events. Month and year
@@ -1829,7 +1835,7 @@ impl TimeBarAggregator {
             }
 
             for event in events {
-                if event.ts_event == ts_init {
+                if include_close && event.ts_event == ts_init {
                     self.historical_event_at_ts_init = Some(event);
                 } else {
                     self.build_bar(&event);
@@ -1845,7 +1851,10 @@ impl TimeBarAggregator {
         test_clock.set_time(ts_init);
     }
 
-    fn postprocess_historical_events(&mut self, _ts_init: UnixNanos) {
+    /// Flushes the deferred historical close, if any.
+    ///
+    /// Call once no more updates can arrive at its timestamp.
+    pub(crate) fn flush_pending_historical_bar(&mut self) {
         if let Some(ref event) = self.historical_event_at_ts_init.take() {
             self.build_bar(event);
         }
@@ -1882,14 +1891,10 @@ impl BarAggregator for TimeBarAggregator {
                 return;
             }
 
-            self.preprocess_historical_events(ts_init);
+            self.preprocess_historical_events(ts_init, self.is_left_open);
         }
 
         self.core.builder.update(price, size, ts_init);
-
-        if self.historical_mode {
-            self.postprocess_historical_events(ts_init);
-        }
     }
 
     fn update_bar(&mut self, bar: Bar, volume: Quantity, ts_init: UnixNanos) {
@@ -1898,13 +1903,15 @@ impl BarAggregator for TimeBarAggregator {
                 return;
             }
 
-            self.preprocess_historical_events(ts_init);
+            // Completed source bars belong to the interval ending at their init timestamp
+            self.preprocess_historical_events(ts_init, true);
         }
 
         self.core.builder.update_bar(bar, volume, ts_init);
 
+        // A completed source interval needs no later update to confirm its close
         if self.historical_mode {
-            self.postprocess_historical_events(ts_init);
+            self.flush_pending_historical_bar();
         }
     }
 
@@ -7117,57 +7124,63 @@ mod tests {
         assert_ne!(results[0], results[1]);
     }
 
-    /// Historical time-bar: event at `ts_init` is deferred until after the update.
     #[rstest]
-    fn test_time_bar_historical_defers_event_at_ts_init_until_after_update(equity_aapl: Equity) {
-        let instrument = InstrumentAny::Equity(equity_aapl);
-        let bar_spec = BarSpecification::new(1, BarAggregation::Second, PriceType::Last);
-        let bar_type = BarType::new(instrument.id(), bar_spec, AggregationSource::Internal);
+    #[case::right_open(BarIntervalType::RightOpen, "100.00", 1)]
+    #[case::left_open(BarIntervalType::LeftOpen, "102.00", 3)]
+    fn test_time_bar_historical_boundary_waits_for_equal_timestamp_ticks(
+        equity_aapl: Equity,
+        #[case] interval: BarIntervalType,
+        #[case] close: &str,
+        #[case] volume: u64,
+    ) {
+        let bar_type = BarType::from(format!("{}-1-SECOND-LAST-INTERNAL", equity_aapl.id).as_str());
         let (handler, record) = recording_handler();
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
 
         let mut agg = TimeBarAggregator::new(
             bar_type,
-            instrument.price_precision(),
-            instrument.size_precision(),
-            Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+            2,
+            0,
+            clock,
             record,
             true,
             true,
-            BarIntervalType::LeftOpen,
+            interval,
             None,
             TimeZone::UTC,
             0,
             false,
         );
         agg.historical_mode = true;
-        agg.set_clock_internal(clock);
-        let boxed: Box<dyn BarAggregator> = Box::new(agg);
-        let rc = Rc::new(RefCell::new(boxed));
+        let rc: Rc<RefCell<Box<dyn BarAggregator>>> = Rc::new(RefCell::new(Box::new(agg)));
         rc.borrow_mut().set_aggregator_weak(Rc::downgrade(&rc));
+        for (ts, price) in [
+            (10_500_000_000_u64, "100.00"),
+            (11_000_000_000, "101.00"),
+            (11_000_000_000, "102.00"),
+            (10_750_000_000, "999.00"),
+            (11_500_000_000, "103.00"),
+        ] {
+            rc.borrow_mut()
+                .update(Price::from(price), Quantity::from(1), UnixNanos::from(ts));
+        }
 
-        rc.borrow_mut().update(
+        let expected = Bar::new(
+            bar_type,
             Price::from("100.00"),
-            Quantity::from(1),
-            UnixNanos::default(),
-        );
-        rc.borrow_mut().update(
+            Price::from(close),
             Price::from("100.00"),
-            Quantity::from(1),
-            UnixNanos::from(1_000_000_000),
+            Price::from(close),
+            Quantity::from(volume),
+            UnixNanos::from(if interval == BarIntervalType::LeftOpen {
+                11_000_000_000
+            } else {
+                10_000_000_000
+            }),
+            UnixNanos::from(11_000_000_000),
         );
 
-        let bars = handler.lock();
-        assert!(
-            !bars.is_empty(),
-            "deferred event at ts_init should produce a bar that includes the update"
-        );
-        let last_bar = bars.last().unwrap();
-        assert_eq!(last_bar.close, Price::from("100.00"));
-        assert!(
-            last_bar.volume.as_f64() >= 1.0,
-            "bar built after deferred event should include the update at ts_init"
-        );
+        assert_eq!(*handler.lock(), vec![expected]);
     }
 
     #[rstest]
@@ -8615,28 +8628,42 @@ mod tests {
         let rc = Rc::new(RefCell::new(boxed));
         rc.borrow_mut().set_aggregator_weak(Rc::downgrade(&rc));
 
-        // The update after the gap crosses both the February and March alerts
         for (price, ts) in [
-            ("100.00", JAN_15_2024),
-            ("101.00", MAR_10_2024),
-            ("102.00", APR_01_2024),
+            ("100.00", "2024-01-15T00:00:00Z"),
+            ("101.00", "2024-02-01T00:00:00Z"),
+            ("102.00", "2024-02-01T00:00:00Z"),
+            ("103.00", "2024-04-01T00:00:00Z"),
+            ("104.00", "2024-05-10T00:00:00Z"),
         ] {
+            let ts = UnixNanos::from(ts.parse::<jiff::Timestamp>().unwrap());
             rc.borrow_mut()
-                .update(Price::from(price), Quantity::from(1), UnixNanos::from(ts));
+                .update(Price::from(price), Quantity::from(1), ts);
         }
 
-        let bars = handler.lock();
-        assert_eq!(bars.len(), 3);
-        assert_eq!(bars[0].close, Price::from("100.00"));
-        assert_eq!(bars[0].volume, Quantity::from(1));
-        assert_eq!(bars[0].ts_event, UnixNanos::from(FEB_01_2024));
-        assert_eq!(bars[1].close, Price::from("100.00"));
-        assert_eq!(bars[1].volume, Quantity::from(0));
-        assert_eq!(bars[1].ts_event, UnixNanos::from(MAR_01_2024));
-        assert_eq!(bars[2].open, Price::from("101.00"));
-        assert_eq!(bars[2].close, Price::from("102.00"));
-        assert_eq!(bars[2].volume, Quantity::from(2));
-        assert_eq!(bars[2].ts_event, UnixNanos::from(APR_01_2024));
+        let expected: Vec<_> = [
+            ("100.00", "102.00", 3, "2024-02-01T00:00:00Z"),
+            ("102.00", "102.00", 0, "2024-03-01T00:00:00Z"),
+            ("103.00", "103.00", 1, "2024-04-01T00:00:00Z"),
+            ("103.00", "103.00", 0, "2024-05-01T00:00:00Z"),
+        ]
+        .into_iter()
+        .map(|(open, close, volume, ts)| {
+            let ts = UnixNanos::from(ts.parse::<jiff::Timestamp>().unwrap());
+
+            Bar::new(
+                bar_type,
+                Price::from(open),
+                Price::from(close),
+                Price::from(open),
+                Price::from(close),
+                Quantity::from(volume),
+                ts,
+                ts,
+            )
+        })
+        .collect();
+
+        assert_eq!(*handler.lock(), expected);
     }
 
     #[rstest]

@@ -40,11 +40,11 @@ use nautilus_model::{
         greeks::{GreeksData, PortfolioGreeks},
     },
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted,
-        PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEmulated, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
+        OrderModifyDenied, OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate,
+        OrderRejected, OrderReleased, OrderSnapshot, OrderSubmitted, OrderTriggered, OrderUpdated,
+        PositionAdjusted, PositionChanged, PositionClosed, PositionOpened, PositionSnapshot,
     },
     python::instruments::pyobject_to_instrument_any,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -330,11 +330,13 @@ impl PyStreamingFeatherWriter {
         try_write!(OrderRejected, "OrderRejected");
         try_write!(OrderPendingCancel, "OrderPendingCancel");
         try_write!(OrderCanceled, "OrderCanceled");
+        try_write!(OrderCancelDenied, "OrderCancelDenied");
         try_write!(OrderCancelRejected, "OrderCancelRejected");
         try_write!(OrderExpired, "OrderExpired");
         try_write!(OrderTriggered, "OrderTriggered");
         try_write!(OrderPendingUpdate, "OrderPendingUpdate");
         try_write!(OrderReleased, "OrderReleased");
+        try_write!(OrderModifyDenied, "OrderModifyDenied");
         try_write!(OrderModifyRejected, "OrderModifyRejected");
         try_write!(OrderUpdated, "OrderUpdated");
         try_write!(OrderFilled, "OrderFilled");

@@ -153,7 +153,8 @@ pub(crate) fn dispatch_ws_trading_message(
                     .get(&pending.client_order_id)
                 {
                     let ts_now = clock.get_time_ns();
-                    let rejected = OrderCancelRejected::new(
+
+                    let mut rejected = OrderCancelRejected::new(
                         emitter.trader_id(),
                         identity.strategy_id,
                         identity.instrument_id,
@@ -166,6 +167,7 @@ pub(crate) fn dispatch_ws_trading_message(
                         pending.venue_order_id,
                         Some(account_id),
                     );
+                    rejected.causation_id = pending.command_id;
                     emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
                 }
             }
@@ -210,7 +212,8 @@ pub(crate) fn dispatch_ws_trading_message(
                     .get(&pending.client_order_id)
                 {
                     let ts_now = clock.get_time_ns();
-                    let rejected = OrderModifyRejected::new(
+
+                    let mut rejected = OrderModifyRejected::new(
                         emitter.trader_id(),
                         identity.strategy_id,
                         identity.instrument_id,
@@ -223,6 +226,7 @@ pub(crate) fn dispatch_ws_trading_message(
                         pending.venue_order_id,
                         Some(account_id),
                     );
+                    rejected.causation_id = pending.command_id;
                     emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
                 }
             }
@@ -273,6 +277,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-cancel".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id: ClientOrderId::from("TEST"),
                 venue_order_id: Some(VenueOrderId::from("12345")),
                 operation: PendingOperation::Cancel,
@@ -319,6 +324,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-submit".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id,
                 venue_order_id: None,
                 operation: PendingOperation::Place,
@@ -383,6 +389,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-submit".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id,
                 venue_order_id: None,
                 operation: PendingOperation::Place,
@@ -423,6 +430,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-modify".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id: ClientOrderId::from("TEST"),
                 venue_order_id: Some(VenueOrderId::from("12345")),
                 operation: PendingOperation::Modify,

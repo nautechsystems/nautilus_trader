@@ -53,6 +53,7 @@ pub enum PendingOperation {
 /// the pending request is removed and used to emit the correct order event.
 #[derive(Debug, Clone)]
 pub struct PendingRequest {
+    pub command_id: Option<UUID4>,
     pub client_order_id: ClientOrderId,
     pub venue_order_id: Option<VenueOrderId>,
     pub operation: PendingOperation,

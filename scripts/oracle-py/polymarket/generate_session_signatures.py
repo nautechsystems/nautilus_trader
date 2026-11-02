@@ -14,7 +14,7 @@
 #  limitations under the License.
 # -------------------------------------------------------------------------------------------------
 """
-Generate session signatures with the pinned official Polymarket Python SDK.
+Generate wallet signatures and order hashes with the pinned Polymarket SDK.
 
 Clone https://github.com/Polymarket/py-sdk, check out UPSTREAM_REVISION below,
 then run `uv sync --locked --no-dev` in that checkout. Run this script with
@@ -23,25 +23,28 @@ that checkout's `.venv/bin/python`. No network or wallet access is required.
 """
 
 import json
+from dataclasses import replace
 from importlib.metadata import version
 from pathlib import Path
 
 from eth_account import Account
 from eth_account.messages import encode_typed_data
+from eth_utils import keccak
 from polymarket._internal.actions.orders.typed_data import build_order_signature
 from polymarket._internal.actions.orders.typed_data import build_order_typed_data
 from polymarket._internal.actions.orders.types import UnsignedOrder
 from polymarket._internal.wallet import wrap_deposit_wallet_signature
 
 
-UPSTREAM_VERSION = "0.10.0"
-UPSTREAM_REVISION = "579bb2e56be9cc5d152546985870ee6ad795ec52"
+UPSTREAM_VERSION = "0.15.0"
+UPSTREAM_REVISION = "d26958d68a054edb01787825ff63c8c0d175d127"
 UPSTREAM_SOURCE = "https://github.com/Polymarket/py-sdk"
 
 # Public Hardhat test account; never use this key for funds.
 PRIVATE_KEY = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
 WALLET = "0x1111111111111111111111111111111111111111"
 ZERO_BYTES32 = "0x" + "00" * 32
+SIGNATURE_TYPE_POLY_1271 = 3
 
 
 def main() -> None:
@@ -60,7 +63,7 @@ def main() -> None:
         "makerAmount": "100000000",
         "takerAmount": "50000000",
         "side": "BUY",
-        "signatureType": 3,
+        "signatureType": SIGNATURE_TYPE_POLY_1271,
         "expiration": "0",
         "timestamp": "1713398400000",
         "metadata": ZERO_BYTES32,
@@ -108,6 +111,77 @@ def main() -> None:
                 "signature_chunks": [session[i : i + 96] for i in range(0, len(session), 96)],
             },
         )
+
+    protocol_vectors = []
+    for market_version, domain_version, neg_risk, exchange in [
+        ("v1", "2", False, "0xE111180000d2663C0091e4f400237545B87B996B"),
+        ("v1", "2", True, "0xe2222d279d744050d28e00520010520000310F59"),
+        ("v2", "3", False, "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa"),
+        ("v2", "3", True, "0xe3333700cA9d93003F00f0F71f8515005F6c00Aa"),
+    ]:
+        for signature_type, signer_type in [
+            (0, "OWNER"),
+            (1, "OWNER"),
+            (2, "OWNER"),
+            (SIGNATURE_TYPE_POLY_1271, "OWNER"),
+            (SIGNATURE_TYPE_POLY_1271, "SESSION_KEY"),
+        ]:
+            sample = dict(order)
+            sample["signatureType"] = signature_type
+            sample["signer"] = (
+                WALLET if signature_type == SIGNATURE_TYPE_POLY_1271 else account.address
+            )
+            sample["maker"] = account.address if signature_type == 0 else WALLET
+            unsigned = replace(
+                unsigned,
+                exchange_address=exchange,
+                protocol_version=domain_version,
+                signature_type=signature_type,
+                maker=sample["maker"],
+                signer=sample["signer"],
+            )
+            typed = build_order_typed_data(unsigned)
+            signature = (
+                "0x" + account.sign_message(encode_typed_data(full_message=typed)).signature.hex()
+            )
+            wrapped = build_order_signature(unsigned, signature)
+            if signature_type == SIGNATURE_TYPE_POLY_1271:
+                wrapped = wrap_deposit_wallet_signature(
+                    signer=account.address,
+                    signer_type=signer_type,
+                    signature=wrapped,
+                )
+            standard = build_order_typed_data(replace(unsigned, signature_type=0))
+            standard["message"]["signatureType"] = signature_type
+            encoded = encode_typed_data(full_message=standard)
+            order_hash = (
+                "0x" + keccak(b"\x19" + encoded.version + encoded.header + encoded.body).hex()
+            )
+            protocol_vectors.append(
+                {
+                    "market_version": market_version,
+                    "neg_risk": neg_risk,
+                    "signer_type": signer_type,
+                    "exchange": exchange,
+                    "domain_version": domain_version,
+                    "order": sample,
+                    "order_hash": order_hash,
+                    "signature_chunks": [wrapped[i : i + 96] for i in range(0, len(wrapped), 96)],
+                },
+            )
+    protocol_fixture = {
+        "source": UPSTREAM_SOURCE,
+        "upstream_revision": UPSTREAM_REVISION,
+        "upstream_version": UPSTREAM_VERSION,
+        "generated_by": "scripts/oracle-py/polymarket/generate_session_signatures.py",
+        "private_key": PRIVATE_KEY,
+        "vectors": protocol_vectors,
+    }
+    fixture_dir = Path(__file__).resolve().parents[3] / "crates/adapters/polymarket/test_data"
+    (fixture_dir / "protocol_signatures.json").write_text(
+        json.dumps(protocol_fixture, indent=2) + "\n",
+        encoding="utf-8",
+    )
 
     fixture = {
         "source": UPSTREAM_SOURCE,

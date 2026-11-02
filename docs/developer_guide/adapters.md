@@ -1520,12 +1520,13 @@ Separate three evidence classes:
 
 - **Definitive local failure**: local evidence proves that the command was never transmitted. Deterministic
   validation before a submit is one example. Emit `OrderDenied` before `OrderSubmitted`. During cancel or
-  modify preparation, emit the matching rejection only when both conditions hold:
+  modify preparation, emit `OrderModifyDenied` or `OrderCancelDenied` with the command ID only when both
+  conditions hold:
 
   - The failure is attributable to that command.
   - The failure proves that the command was not sent.
 
-  Otherwise, log the failure without inventing a rejection.
+  Otherwise, log the failure without inventing a command outcome.
 - **Definitive venue result**: a structured venue response or status explicitly accepts, updates,
   or rejects one command. Emit the matching domain event.
 - **Unknown outcome**: the request may have reached the venue, but no definitive result is
@@ -1567,13 +1568,13 @@ Use consistent names so command failure classifications can be compared across a
 same wire condition is classified consistently. Classify every state-changing order command failure as one
 [`CommandFailure`](../../crates/live/src/execution/failure.rs) variant:
 
-| Evidence class             | `CommandFailure` variant | Terminal event from this evidence |
-| -------------------------- | ------------------------ | --------------------------------- |
-| Definitive local failure   | `NotSent`                | Valid                             |
-| Definitive venue rejection | `VenueRejected`          | Valid                             |
-| Unknown outcome            | `Ambiguous`              | Never                             |
+| Evidence class             | `CommandFailure` variant | Definitive event from this evidence |
+| -------------------------- | ------------------------ | ----------------------------------- |
+| Definitive local failure   | `NotSent`                | Valid                               |
+| Definitive venue rejection | `VenueRejected`          | Valid                               |
+| Unknown outcome            | `Ambiguous`              | Never                               |
 
-An `Ambiguous` classification never emits a terminal event by itself. Later definitive evidence
+An `Ambiguous` classification never emits a definitive event by itself. Later definitive evidence
 from a stream update, query, poll, or reconciliation still resolves the command either way.
 
 A definitive venue acceptance or update is not a failure and carries no variant. Apply the venue

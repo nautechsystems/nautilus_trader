@@ -175,20 +175,23 @@ struct Batch {
     instrument_id: InstrumentId,
     sequence: u64,
     flags: u8,
+    deltas: Vec<OrderBookDelta>,
     ts_event: UnixNanos,
     ts_init: UnixNanos,
-    deltas: Vec<OrderBookDelta>,
 }
 
 impl Batch {
     fn new(book: &BookL3, instrument: &InstrumentAny, flags: u8) -> anyhow::Result<Self> {
+        let ts_event = timestamp(book.time_exchange, "time_exchange")?;
+        let ts_init = timestamp(book.time_coinapi, "time_coinapi")?;
+
         Ok(Self {
             instrument_id: instrument.id(),
             sequence: book.sequence,
             flags,
-            ts_event: timestamp(book.time_exchange, "time_exchange")?,
-            ts_init: timestamp(book.time_coinapi, "time_coinapi")?,
             deltas: Vec::with_capacity(book.bids.len() + book.asks.len() + 1),
+            ts_event,
+            ts_init,
         })
     }
 

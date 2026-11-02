@@ -35,7 +35,7 @@ use nautilus_core::{
 use nautilus_model::{
     enums::{OrderSide, OrderType, TimeInForce},
     events::AccountState,
-    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, VenueOrderId},
+    identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
     instruments::{Instrument, InstrumentAny},
     reports::{FillReport, OrderStatusReport, PositionStatusReport},
     types::{MarginBalance, Price, Quantity},
@@ -1319,6 +1319,38 @@ impl CoinbaseHttpClient {
                 m.insert(*product_id, *alias);
             }
         });
+    }
+
+    pub(crate) async fn request_server_time(&self) -> anyhow::Result<UnixNanos> {
+        let value = self.inner.get_public("/time").await?;
+        let iso = value["iso"]
+            .as_str()
+            .context("server time response is missing iso")?;
+        crate::http::parse::parse_rfc3339_timestamp(iso)
+    }
+
+    pub(crate) async fn request_fill_ids(
+        &self,
+        start: UnixNanos,
+    ) -> anyhow::Result<Vec<(VenueOrderId, InstrumentId, TradeId)>> {
+        let query = FillListQuery {
+            start: Some(start.to_datetime_utc()),
+            ..Default::default()
+        };
+
+        let fills = self.inner.fetch_all_fills(&query).await?;
+        Ok(fills
+            .into_iter()
+            .map(|fill| {
+                let venue_order_id = VenueOrderId::new(fill.order_id);
+
+                let instrument_id = InstrumentId::new(
+                    Symbol::new(fill.product_id),
+                    *crate::common::consts::COINBASE_VENUE,
+                );
+                (venue_order_id, instrument_id, TradeId::new(fill.trade_id))
+            })
+            .collect())
     }
 
     // Returns the cached instrument for a product ID, fetching it on miss.

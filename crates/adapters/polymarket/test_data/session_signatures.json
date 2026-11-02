@@ -1,7 +1,7 @@
 {
   "source": "https://github.com/Polymarket/py-sdk",
-  "upstream_version": "0.10.0",
-  "upstream_revision": "579bb2e56be9cc5d152546985870ee6ad795ec52",
+  "upstream_version": "0.15.0",
+  "upstream_revision": "d26958d68a054edb01787825ff63c8c0d175d127",
   "generated_by": "scripts/oracle-py/polymarket/generate_session_signatures.py",
   "procedure": "EIP-712 order -> Deposit Wallet signature -> SESSION_KEY envelope",
   "chain_id": 137,

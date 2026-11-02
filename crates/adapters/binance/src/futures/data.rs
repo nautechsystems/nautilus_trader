@@ -74,7 +74,7 @@ use ustr::Ustr;
 use crate::{
     book::{
         BinanceBookError,
-        pacing::SnapshotPacer,
+        pacing::{SnapshotPacer, SnapshotPermit},
         recovery::spawn_recovery,
         sync::{BookSyncTracker, DepthSequencing, DepthSnapshot, DepthUpdate},
     },
@@ -82,6 +82,7 @@ use crate::{
         bar::{binance_bar_data_type, binance_bars_to_custom_data, parse_binance_bar_type},
         consts::{BINANCE_BOOK_DEPTHS, BINANCE_VENUE, BINANCE_WS_HEARTBEAT_SECS},
         enums::{BinanceEnvironment, BinanceProductType},
+        http_weights::depth_weight_futures as depth_request_weight,
         parse::{
             bar_spec_to_binance_interval, parse_millis, parse_millis_or_init,
             parse_price_at_precision, parse_quantity_at_precision,
@@ -759,13 +760,14 @@ impl BinanceFuturesDataClient {
                             instrument_id,
                             recovery,
                             book_sync.clone(),
-                            move || {
+                            move |permit| {
                                 Self::fetch_depth_snapshot(
                                     http.clone(),
                                     instruments.clone(),
                                     instrument_id,
                                     depth,
                                     clock,
+                                    permit,
                                 )
                             },
                             depth_request_weight(depth),
@@ -976,6 +978,7 @@ impl BinanceFuturesDataClient {
         instrument_id: InstrumentId,
         depth: u32,
         clock: &'static AtomicTime,
+        permit: SnapshotPermit,
     ) -> Result<DepthSnapshot, BinanceBookError> {
         let symbol = format_binance_stream_symbol(&instrument_id).to_uppercase();
         let params = BinanceDepthParams {
@@ -984,7 +987,8 @@ impl BinanceFuturesDataClient {
         };
 
         let order_book = http
-            .depth(&params)
+            .inner()
+            .depth_paced(&params, permit)
             .await
             .map_err(|e| depth_snapshot_error(instrument_id, &e))?;
 
@@ -1118,16 +1122,6 @@ fn parse_order_book_snapshot(
     }
 
     OrderBookDeltas::new(instrument_id, deltas)
-}
-
-// Futures `/depth` request weight by level limit, shared by USD-M and COIN-M
-fn depth_request_weight(limit: u32) -> u32 {
-    match limit {
-        ..=50 => 2,
-        51..=100 => 5,
-        101..=500 => 10,
-        _ => 20,
-    }
 }
 
 // The HTTP client has already spent its own retries, so an exhausted budget stays retryable
@@ -2835,9 +2829,12 @@ impl DataClient for BinanceFuturesDataClient {
         let clock = self.clock;
 
         self.spawn_command(async move {
-            book_sync.pacer().acquire(depth_request_weight(depth)).await;
+            let permit = book_sync.pacer().acquire(depth_request_weight(depth)).await;
 
-            match http.request_book_snapshot(instrument_id, Some(depth)).await {
+            match http
+                .request_book_snapshot_with_permit(instrument_id, Some(depth), Some(permit))
+                .await
+            {
                 Ok(book) => {
                     let response = DataResponse::Book(BookResponse::new(
                         request_id,

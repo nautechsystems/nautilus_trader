@@ -13,12 +13,22 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Sets the Polygon pUSD and CTF approvals required by the Polymarket CLOB.
+//! Sets Polygon CTF approvals, or V2 trading approvals with `--v2-pusd-limit <amount>`.
+//!
+//! V2 uses the Deposit Wallet funder when distinct from the signer, otherwise the EOA.
+//! The Relayer rejects bounded Deposit Wallet exchange approvals; trading requires existing
+//! approvals. EOA mode submits directly on-chain.
 //!
 //! # Usage
 //!
 //! ```sh
 //! POLYMARKET_PK=0x... cargo run -p nautilus-polymarket --bin polymarket-set-allowances
+//! ```
+//!
+//! Set an explicit V2 pUSD limit, including BUY fees:
+//!
+//! ```sh
+//! cargo run -p nautilus-polymarket --bin polymarket-set-allowances -- --v2-pusd-limit 5
 //! ```
 
 use std::str::FromStr;
@@ -29,10 +39,13 @@ use alloy::{
     signers::local::PrivateKeySigner,
     transports::http::reqwest::{Client, redirect::Policy},
 };
+use alloy_primitives::Address;
 use nautilus_polymarket::{
-    common::credential::EvmPrivateKey,
-    signing::eip712::{PolymarketApproval, approval_plan},
+    common::credential::{EvmPrivateKey, RelayerApiKey},
+    positions::{PolymarketPositionClient, PolymarketPositionOutcome, amounts::pusd_to_base_units},
+    signing::eip712::{PolymarketApproval, approval_plan, approval_plan_v2},
 };
+use rust_decimal::Decimal;
 
 const DEFAULT_POLYGON_RPC_URL: &str = "https://polygon.drpc.org";
 const POLYGON_CHAIN_ID: u64 = 137;
@@ -57,10 +70,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc_url =
         std::env::var("POLYGON_RPC_URL").unwrap_or_else(|_| DEFAULT_POLYGON_RPC_URL.to_string());
 
-    run(&private_key, &rpc_url).await
+    let mut args = std::env::args().skip(1);
+
+    let limit = match args.next().as_deref() {
+        None => None,
+        Some("--v2-pusd-limit") => Some(Decimal::from_str(
+            &args.next().ok_or("Missing V2 pUSD limit")?,
+        )?),
+        Some(_) => return Err("Expected --v2-pusd-limit <amount>".into()),
+    };
+
+    if args.next().is_some() {
+        return Err("Unexpected allowance argument".into());
+    }
+
+    let funder = std::env::var("POLYMARKET_FUNDER").ok();
+    let deposit_wallet = if limit.is_some() {
+        match funder {
+            Some(funder)
+                if Address::from_str(&funder)?
+                    != PrivateKeySigner::from_str(&private_key)?.address() =>
+            {
+                Some(funder)
+            }
+            _ => None,
+        }
+    } else {
+        None
+    };
+
+    if let Some(funder) = deposit_wallet {
+        let key = EvmPrivateKey::new(&private_key)?;
+        let limit = limit.ok_or("Deposit Wallet approvals require --v2-pusd-limit <amount>")?;
+        let relayer_key = RelayerApiKey::resolve(None, None)?;
+        let client =
+            PolymarketPositionClient::new(&key, &funder, relayer_key, None, None, None, None)?
+                .with_rpc_url(rpc_url);
+        let outcome = client.approve_v2_trading(limit).await?.wait().await?;
+        match outcome {
+            PolymarketPositionOutcome::Confirmed { .. } => {
+                println!("Confirmed Deposit Wallet V2 trading approvals");
+            }
+            _ => return Err("Deposit Wallet approvals were not confirmed".into()),
+        }
+
+        Ok(())
+    } else {
+        run(&private_key, &rpc_url, limit).await
+    }
 }
 
-async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error::Error>> {
+async fn run(
+    private_key: &str,
+    rpc_url: &str,
+    v2_pusd_limit: Option<Decimal>,
+) -> Result<(), Box<dyn std::error::Error>> {
     let private_key = EvmPrivateKey::new(private_key)?;
     let signer = PrivateKeySigner::from_str(private_key.as_hex())?;
     let wallet = EthereumWallet::from(signer);
@@ -70,7 +134,14 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
         .wallet(wallet)
         .connect_reqwest(client, rpc_url.parse()?);
 
-    for approval in approval_plan() {
+    let approvals: Vec<_> = match v2_pusd_limit {
+        Some(limit) => approval_plan_v2(pusd_to_base_units(limit)?)
+            .into_iter()
+            .collect(),
+        None => approval_plan().collect(),
+    };
+
+    for approval in approvals {
         match approval {
             PolymarketApproval::Collateral {
                 contract,
@@ -96,7 +167,7 @@ async fn run(private_key: &str, rpc_url: &str) -> Result<(), Box<dyn std::error:
                 let receipt = call.send().await?.get_receipt().await?;
                 receipt.ensure_success()?;
                 println!(
-                    "Approved CTF tokens for {operator}: {}",
+                    "Approved position ledger {contract} for {operator}: {}",
                     receipt.transaction_hash(),
                 );
             }
@@ -151,6 +222,7 @@ mod tests {
             run(
                 "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
                 &format!("http://{addr}/rpc"),
+                None,
             ),
         )
         .await;

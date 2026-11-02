@@ -72,8 +72,9 @@
 //! [`TransportError`](crate::transport::TransportError) types keep lifecycle code independent of
 //! the concrete library. [`tokio-tungstenite`](https://crates.io/crates/tokio-tungstenite) is
 //! always available. [`sockudo-ws`](https://crates.io/crates/sockudo-ws) is enabled and selected
-//! by default through the `transport-sockudo` feature. Both accept custom upgrade headers. Proxy
-//! connections use Tungstenite; selecting Sockudo with a proxy falls back to that backend.
+//! by default through the `transport-sockudo` feature. Both accept custom upgrade headers. Both
+//! backends honor `proxy_url` via an HTTP `CONNECT` tunnel; recognized SOCKS schemes log a warning
+//! and connect directly.
 
 pub mod auth;
 pub mod client;
@@ -82,6 +83,8 @@ pub mod consts;
 pub mod proxy;
 pub mod subscription;
 pub mod types;
+
+mod frame;
 
 // Re-export main types for convenience
 pub use auth::AuthTracker;

@@ -27,7 +27,7 @@ fuzz_target!(|data: &[u8]| {
 
     let supported = symbols
         .iter()
-        .filter(|symbol| CoinApiSymbolType::from_str(&symbol.symbol_type).is_ok())
+        .filter(|symbol| CoinApiSymbolType::from_str(symbol.symbol_type.as_ref()).is_ok())
         .count();
     assert_eq!(instruments.len() + errors.len(), supported);
 
@@ -51,7 +51,7 @@ fuzz_target!(|data: &[u8]| {
 });
 
 fn describes(symbol: &Symbol, instrument: &InstrumentAny) -> bool {
-    let Ok(symbol_type) = CoinApiSymbolType::from_str(&symbol.symbol_type) else {
+    let Ok(symbol_type) = CoinApiSymbolType::from_str(symbol.symbol_type.as_ref()) else {
         return false;
     };
 

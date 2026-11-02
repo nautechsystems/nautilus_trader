@@ -5289,7 +5289,7 @@ async fn test_cancel_trigger_order_without_venue_id_resolves_label() {
     2
 )]
 #[tokio::test]
-async fn test_cancel_trigger_order_without_venue_id_rejects_lookup_failure(
+async fn test_cancel_trigger_order_without_venue_id_denies_lookup_failure(
     #[case] trigger_orders_response: Value,
     #[case] expected_reason: &str,
     #[case] expected_calls: usize,
@@ -5331,13 +5331,8 @@ async fn test_cancel_trigger_order_without_venue_id_rejects_lookup_failure(
 
     let event = drain_until(
         &mut tc.rx,
-        |event| {
-            matches!(
-                event,
-                ExecutionEvent::Order(OrderEventAny::CancelRejected(_))
-            )
-        },
-        "OrderCancelRejected from trigger lookup",
+        |event| matches!(event, ExecutionEvent::Order(OrderEventAny::CancelDenied(_))),
+        "OrderCancelDenied from trigger lookup",
     )
     .await;
 
@@ -5350,7 +5345,7 @@ async fn test_cancel_trigger_order_without_venue_id_rejects_lookup_failure(
     assert!(ws_state.cancelled_trigger_orders.lock().await.is_empty());
     assert!(ws_state.cancelled_labels.lock().await.is_empty());
 
-    if let ExecutionEvent::Order(OrderEventAny::CancelRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::CancelDenied(rejected)) = event {
         assert_eq!(rejected.client_order_id, client_order_id);
         assert!(rejected.venue_order_id.is_none());
         assert!(rejected.reason.contains(expected_reason));
@@ -6313,7 +6308,7 @@ async fn test_modify_order_posts_replace_and_emits_order_updated(
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_rejects_missing_cached_order_with_canonical_reason() {
+async fn test_modify_order_denies_missing_cached_order_with_canonical_reason() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let mut tc = build_client(rest_state, ws_state).await;
@@ -6340,12 +6335,12 @@ async fn test_modify_order_rejects_missing_cached_order_with_canonical_reason() 
 
     let event = drain_until(
         &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
-        "OrderModifyRejected event",
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "OrderModifyDenied event",
     )
     .await;
 
-    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
         assert_eq!(rejected.client_order_id, client_order_id);
         assert_eq!(rejected.reason, ORDER_NOT_FOUND);
         assert_eq!(
@@ -6370,7 +6365,7 @@ async fn test_modify_order_rejects_missing_cached_order_with_canonical_reason() 
 )]
 #[case(i64::MAX as u64, "exceeds the Derive maximum")]
 #[tokio::test]
-async fn test_modify_order_rejects_invalid_signature_ttl_before_posting_replace(
+async fn test_modify_order_denies_invalid_signature_ttl_before_posting_replace(
     #[case] signature_expiry_secs: u64,
     #[case] reason_fragment: &str,
 ) {
@@ -6424,12 +6419,12 @@ async fn test_modify_order_rejects_invalid_signature_ttl_before_posting_replace(
 
     let event = drain_until(
         &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
-        "OrderModifyRejected event",
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "OrderModifyDenied event",
     )
     .await;
 
-    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
         let reason = rejected.reason.as_str();
         assert!(
             reason.contains("replace expiry validation failed") && reason.contains(reason_fragment),
@@ -7280,7 +7275,7 @@ async fn test_modify_order_jsonrpc_ambiguous_does_not_emit_modify_rejected(#[cas
 #[case::no_venue_order_id(None, true, "venue_order_id is required")]
 #[case::order_not_in_cache(Some(VenueOrderId::from("ord-x")), false, "order not found in cache")]
 #[tokio::test]
-async fn test_modify_order_rejects_invalid_command(
+async fn test_modify_order_denies_invalid_command(
     #[case] venue_order_id: Option<VenueOrderId>,
     #[case] pre_insert_order: bool,
     #[case] reason_fragment: &str,
@@ -7333,12 +7328,12 @@ async fn test_modify_order_rejects_invalid_command(
 
     let event = drain_until(
         &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
-        "OrderModifyRejected event",
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "OrderModifyDenied event",
     )
     .await;
 
-    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
         assert!(
             rejected.reason.contains(reason_fragment),
             "expected reason to contain `{reason_fragment}`, was `{}`",
@@ -7358,7 +7353,7 @@ async fn test_modify_order_rejects_invalid_command(
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_rejects_trigger_order() {
+async fn test_modify_order_denies_trigger_order() {
     let rest_state = RestState::default();
     let ws_state = WsState::default();
     let mut tc = build_client(rest_state, ws_state.clone()).await;
@@ -7398,12 +7393,12 @@ async fn test_modify_order_rejects_trigger_order() {
 
     let event = drain_until(
         &mut tc.rx,
-        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyRejected(_))),
-        "OrderModifyRejected event",
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::ModifyDenied(_))),
+        "OrderModifyDenied event",
     )
     .await;
 
-    if let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event {
+    if let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event {
         assert_eq!(
             rejected.reason,
             "Derive trigger orders cannot be modified; cancel and resubmit",
@@ -14945,7 +14940,7 @@ async fn test_startup_refuses_unproved_replacement_before_private_connection(
     "requested quantity is below native cumulative fills"
 )]
 #[tokio::test]
-async fn test_modify_order_rejects_invalid_native_replacement_chain_before_write(
+async fn test_modify_order_denies_invalid_native_replacement_chain_before_write(
     #[case] invalid_field: &str,
     #[case] expected_reason: &str,
 ) {
@@ -15045,7 +15040,7 @@ async fn test_modify_order_rejects_invalid_native_replacement_chain_before_write
         ))
         .unwrap();
 
-    let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = drain_until(
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = drain_until(
         &mut tc.rx,
         |event| matches!(event, ExecutionEvent::Order(_)),
         "native chain rejection",
@@ -16911,7 +16906,7 @@ async fn test_reports_defer_unproved_tracked_replacement_binding(#[case] operati
         }
 
         if operation == 7 || operation == 8 {
-            assert_unresolved_command_rejection(&mut tc, operation, cid, old_id).await;
+            assert_unresolved_command_denial(&mut tc, operation, cid, old_id).await;
         }
     }
 
@@ -16995,7 +16990,7 @@ async fn test_reports_defer_unproved_tracked_replacement_binding(#[case] operati
     assert!(ws_state.replace_orders.lock().await.is_empty());
 }
 
-async fn assert_unresolved_command_rejection(
+async fn assert_unresolved_command_denial(
     tc: &mut TestClient,
     operation: u8,
     cid: ClientOrderId,
@@ -17009,7 +17004,7 @@ async fn assert_unresolved_command_rejection(
     .await;
 
     match event {
-        ExecutionEvent::Order(OrderEventAny::CancelRejected(event)) if operation == 7 => {
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) if operation == 7 => {
             assert_eq!(event.client_order_id, cid);
             assert_eq!(event.venue_order_id, Some(old_id));
             assert_eq!(
@@ -17017,7 +17012,7 @@ async fn assert_unresolved_command_rejection(
                 "unresolved Derive venue binding for COLD-BINDING"
             );
         }
-        ExecutionEvent::Order(OrderEventAny::ModifyRejected(event)) if operation == 8 => {
+        ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) if operation == 8 => {
             assert_eq!(event.client_order_id, cid);
             assert_eq!(event.venue_order_id, Some(old_id));
             assert_eq!(
@@ -17025,7 +17020,7 @@ async fn assert_unresolved_command_rejection(
                 "unresolved Derive venue binding for COLD-BINDING"
             );
         }
-        other => panic!("expected matching local command rejection, received {other:?}"),
+        other => panic!("expected matching local command denial, received {other:?}"),
     }
 }
 

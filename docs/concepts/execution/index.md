@@ -205,7 +205,7 @@ Unless bypassed in `RiskEngineConfig`, the engine validates:
 
 If a submit-time risk check fails, the system generates an `OrderDenied` event with a
 standardized [reason code](#order-denied-reasons). If a modify-time risk check fails, it
-generates an `OrderModifyRejected` event.
+generates an `OrderModifyDenied` event.
 
 ### Account selection
 
@@ -225,7 +225,7 @@ in this order:
 
 An order list selects one account from the command's `client_id` and instrument. When no account
 resolves, or the selected client's account is not cached yet, the risk engine denies the order or
-rejects the modification with `VALIDATION_FAILED`. It never falls back to another account. Positions
+denies the modification with `VALIDATION_FAILED`. It never falls back to another account. Positions
 and open orders count toward position-reducing checks only when they belong to the selected account.
 
 ### Whole-position conditional exits
@@ -418,7 +418,7 @@ execution engines. These codes are the source of truth for locally denied orders
 - **Synthetic reconciliation rejections**: use the reasons documented under
   [Terminal reconciliation provenance](policies.md#terminal-reconciliation-provenance).
 
-Price and quantity checks can also emit these code-led reasons on `OrderModifyRejected`:
+Price and quantity checks can also emit these code-led reasons on `OrderModifyDenied`:
 
 - `PRICE_PRECISION_EXCEEDS_MAXIMUM`
 - `PRICE_NOT_POSITIVE`
@@ -427,7 +427,7 @@ Price and quantity checks can also emit these code-led reasons on `OrderModifyRe
 - `QUANTITY_BELOW_MINIMUM`
 
 For price reasons, `field` is `PRICE` or `TRIGGER_PRICE` and names the rejected command field. Other
-modification rejection reasons stay free-form. `OrderDeniedCode` does not classify them.
+modification denial reasons stay free-form. `OrderDeniedCode` does not classify them.
 
 `OrderRejected.due_post_only` is `true` only when venue evidence proves that a post-only order would
 cross or immediately match. Other venue rejections leave it `false`.

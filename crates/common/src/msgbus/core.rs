@@ -89,6 +89,7 @@ use std::{
     collections::HashMap,
     fmt::Debug,
     hash::{Hash, Hasher},
+    ptr::eq,
     rc::Rc,
 };
 
@@ -112,7 +113,7 @@ use smallvec::SmallVec;
 use ustr::Ustr;
 
 use super::{
-    HAS_EXTERNAL_EGRESS, ShareableMessageHandler, TypedHandler,
+    HAS_EXTERNAL_DATA_INGRESS, HAS_EXTERNAL_EGRESS, ShareableMessageHandler, TypedHandler,
     backing::MessageBusExternalEgress,
     config::MessageBusConfig,
     matching::is_matching_backtracking,
@@ -120,6 +121,7 @@ use super::{
     mstr::{Endpoint, MStr, Pattern, Topic},
     set_message_bus,
     switchboard::MessagingSwitchboard,
+    try_get_message_bus,
     typed_endpoints::{EndpointMap, IntoEndpointMap},
     typed_router::TopicRouter,
 };
@@ -288,6 +290,7 @@ pub struct MessageBus {
     pub_count: u64,
     external_egress: Option<Rc<RefCell<Box<dyn MessageBusExternalEgress>>>>,
     has_external_streams: bool,
+    has_external_data_ingress: bool,
     encoding: SerializationEncoding,
     encoding_market_data: Option<SerializationEncoding>,
     encoding_builtin: Option<SerializationEncoding>,
@@ -384,6 +387,7 @@ impl MessageBus {
             pub_count: 0,
             external_egress: None,
             has_external_streams: false,
+            has_external_data_ingress: false,
             encoding: SerializationEncoding::Json,
             encoding_market_data: None,
             encoding_builtin: None,
@@ -513,6 +517,21 @@ impl MessageBus {
         self.has_external_streams
     }
 
+    /// Sets whether inbound market data can use the `DataEngine` process-data endpoint.
+    ///
+    /// `DataEngine` sets this when registering its message bus handlers. The active bus mirrors
+    /// this value in thread-local storage for a fast eligibility check.
+    pub fn set_external_data_ingress(&mut self, enabled: bool) {
+        self.has_external_data_ingress = enabled;
+        if try_get_message_bus().is_some_and(|bus| eq(bus.as_ptr(), self)) {
+            HAS_EXTERNAL_DATA_INGRESS.with(|flag| flag.set(enabled));
+        }
+    }
+
+    pub(super) fn has_external_data_ingress(&self) -> bool {
+        self.has_external_data_ingress
+    }
+
     pub(crate) fn external_egress(&self) -> Option<Rc<RefCell<Box<dyn MessageBusExternalEgress>>>> {
         self.external_egress.clone()
     }
@@ -578,6 +597,7 @@ impl MessageBus {
         self.endpoints_exec_reports.clear();
         self.endpoints_order_events.clear();
         self.endpoints_data.clear();
+        self.set_external_data_ingress(false);
         self.routers_typed.clear();
         self.endpoints_typed.clear();
         self.clear_streaming_types();

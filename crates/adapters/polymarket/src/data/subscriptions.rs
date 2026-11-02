@@ -30,12 +30,13 @@ use nautilus_model::{
     instruments::{Instrument, InstrumentAny},
     orderbook::OrderBook,
 };
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use ustr::Ustr;
 
 use super::instruments::TokenMeta;
 use crate::{
     book::{integrity::BookIntegrity, recovery::spawn_recovery_monitor, sync::BookSyncTracker},
+    common::{consts::MARKET_VERSION_KEY, parse::validate_data_market_version},
     resolve::{
         ResolveWatchEntry, ResolveWatchlist, StrictResolvedMarket, remove_data_resolve_watch_entry,
         upsert_data_resolve_watch_entry_from_instrument,
@@ -193,6 +194,10 @@ impl DataSubscriptions {
         &self.active_instrument_close_subs
     }
 
+    pub(crate) fn lock_closed_conditions(&self) -> MutexGuard<'_, AHashSet<String>> {
+        self.closed_condition_ids.lock()
+    }
+
     pub(crate) fn is_condition_closed(&self, condition_id: &str) -> bool {
         self.closed_condition_ids.lock().contains(condition_id)
     }
@@ -236,7 +241,7 @@ impl DataSubscriptions {
         condition_id: &str,
         tracked_ids: &AHashSet<InstrumentId>,
         deferred_ids: &AHashSet<InstrumentId>,
-    ) -> bool {
+    ) {
         let matches_condition = |id: &InstrumentId| {
             crate::providers::extract_condition_id(id)
                 .is_ok_and(|candidate| candidate == condition_id)
@@ -270,10 +275,6 @@ impl DataSubscriptions {
         for subscriptions in [&self.active_quote_subs, &self.active_trade_subs] {
             subscriptions.retain(|id| !matches_condition(id) && !tracked_ids.contains(id));
         }
-
-        self.closed_condition_ids
-            .lock()
-            .insert(condition_id.to_string())
     }
 
     // Hold the mutex across wire sends so subscription commands arrive in last-writer order
@@ -476,6 +477,11 @@ pub(crate) fn resolve_token_id_from(
     let instrument = loaded
         .get(&instrument_id)
         .ok_or_else(|| InstrumentLookupError::not_found(instrument_id))?;
+    validate_data_market_version(
+        instrument
+            .info()
+            .and_then(|info| info.get_str(MARKET_VERSION_KEY)),
+    )?;
     Ok(instrument.raw_symbol().as_str().to_string())
 }
 
@@ -539,6 +545,7 @@ mod tests {
                 tracked: ahash::AHashMap::from_iter([(
                     "0xTOKEN".to_string(),
                     crate::resolve::TrackedInstrument {
+                        market_version: "v1".into(),
                         instrument_id,
                         token_id: "0xTOKEN".to_string(),
                         price_precision: 2,
@@ -706,6 +713,7 @@ mod tests {
                     tracked: ahash::AHashMap::from_iter([(
                         token_id.clone(),
                         crate::resolve::TrackedInstrument {
+                            market_version: "v1".into(),
                             instrument_id,
                             token_id: token_id.clone(),
                             price_precision: 4,

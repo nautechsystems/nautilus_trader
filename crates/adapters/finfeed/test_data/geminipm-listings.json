@@ -1,0 +1,18 @@
+{
+  "data": [
+    {
+      "market_id": "TEST-OIL27JAN01-HI42",
+      "title": "Authored GEMINIPM outcome",
+      "description": "Authored unsupported-venue definition.",
+      "outcome_name": "No",
+      "price": 0,
+      "status": "Open",
+      "exchange_id": "GEMINIPM",
+      "outcome_type": "Binary",
+      "source_specific_data": {
+        "unknown": "preserved"
+      }
+    }
+  ],
+  "next_cursor": "authored-cursor"
+}

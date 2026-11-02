@@ -803,11 +803,11 @@ Equal `Token::get_token_priority` values are ambiguous and reject the order.
 Venue routing admits Uniswap V3 on any configured chain whose venue matches. Swap preparation also
 requires a registered Uniswap V3 deployment and factory for that chain.
 
-Order lists deny each open order with `OrderDenied`. Modify, cancel, and batch-cancel commands reject each
-referenced cached order with `OrderModifyRejected` or `OrderCancelRejected`. Cancel-all commands and order
-queries log a warning without an event. Mass status returns `Ok(None)` so startup reconciliation logs and
-continues. Order, fill, and position report probes return an error so LiveNode does not treat an empty answer
-as absence. These paths never sign, broadcast, or persist an intent.
+Order lists deny each open order with `OrderDenied`. Modify, cancel, and batch-cancel commands produce
+`OrderModifyDenied` or `OrderCancelDenied` for each targeted command, including uncached orders.
+Cancel-all commands and order queries log a warning without an event. Mass status returns `Ok(None)` so
+startup reconciliation logs and continues. Order, fill, and position report probes return an error so
+LiveNode does not treat an empty answer as absence. These paths never sign, broadcast, or persist an intent.
 
 A swap stays `Submitted` until finality, and venue status queries cannot resolve it. The client requires
 submission retention. When the in-flight check exhausts its retries, LiveNode logs a warning and keeps the
@@ -1432,7 +1432,7 @@ Execution validation on public networks must remain read-only and must not load 
 ## Limitations
 
 - Order submission supports BUY and SELL market orders through a registered Uniswap V3 deployment on the
-  client's chain. Order lists are denied, and modify and cancel operations are rejected. Venue report probes
+  client's chain. Order lists are denied, and modify and cancel operations are denied. Venue report probes
   return an error, except mass status, which returns `Ok(None)`. All these unsupported paths fail closed with
   no on-chain or durable side effects. LiveNode must leave open-order checks off.
 

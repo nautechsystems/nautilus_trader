@@ -48,7 +48,10 @@ use crate::{
         },
         parse::is_false_or_none,
     },
-    http::models::{HyperliquidExchangeAction, HyperliquidExchangeRequest, LeverageInfo},
+    http::models::{
+        ClearinghouseState, HyperliquidExchangeAction, HyperliquidExchangeRequest, LeverageInfo,
+        SpotClearinghouseState,
+    },
 };
 
 /// Represents an outbound WebSocket message from client to Hyperliquid.
@@ -136,6 +139,14 @@ pub enum SubscriptionRequest {
     UserTwapHistory { user: String },
     /// Best bid/offer updates.
     Bbo { coin: Ustr },
+    /// Default perp dex account state.
+    ClearinghouseState { user: String },
+    /// Spot balances and holds.
+    SpotState {
+        user: String,
+        #[serde(default, rename = "isPortfolioMargin")]
+        is_portfolio_margin: bool,
+    },
 }
 
 /// Post request wrapper for info and action requests.
@@ -396,6 +407,10 @@ pub enum HyperliquidWsMessage {
     Error { data: String },
     /// Pong response.
     Pong,
+    /// Default perp dex account state.
+    ClearinghouseState { data: WsClearinghouseState },
+    /// Spot balances and holds.
+    SpotState { data: WsSpotState },
 }
 
 impl<'de> Deserialize<'de> for HyperliquidWsMessage {
@@ -426,6 +441,48 @@ struct WsMessageHeader<'a> {
 #[derive(Deserialize)]
 struct WsActiveAssetDataMessage {
     data: WsActiveAssetData,
+}
+
+/// Perp account snapshot from the clearinghouse state channel.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsClearinghouseState {
+    #[serde(deserialize_with = "deserialize_clearinghouse_state")]
+    pub clearinghouse_state: ClearinghouseState,
+}
+
+fn deserialize_clearinghouse_state<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<ClearinghouseState, D::Error> {
+    let state = ClearinghouseState::deserialize(deserializer)?;
+    if state.cross_margin_summary.is_none() {
+        return Err(D::Error::missing_field("crossMarginSummary"));
+    }
+
+    if state.withdrawable.is_none() {
+        return Err(D::Error::missing_field("withdrawable"));
+    }
+
+    Ok(state)
+}
+
+/// Spot account snapshot from the spot state channel.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WsSpotState {
+    #[serde(deserialize_with = "deserialize_spot_state")]
+    pub spot_state: SpotClearinghouseState,
+}
+
+fn deserialize_spot_state<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<SpotClearinghouseState, D::Error> {
+    let value = serde_json::Value::deserialize(deserializer)?;
+    if value.get("balances").is_none() {
+        return Err(D::Error::missing_field("balances"));
+    }
+
+    serde_json::from_value(value).map_err(D::Error::custom)
 }
 
 /// Post response data.
@@ -977,6 +1034,36 @@ mod tests {
 
     use super::*;
     use crate::common::enums::HyperliquidLeverageType;
+
+    #[rstest]
+    fn test_clearinghouse_state_accepts_zero_balances() {
+        let mut frame: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/ws_account_states.json")).unwrap();
+        let state = &mut frame["perp"]["data"]["clearinghouseState"];
+        state["withdrawable"] = serde_json::json!("0");
+        for field in [
+            "accountValue",
+            "totalNtlPos",
+            "totalRawUsd",
+            "totalMarginUsed",
+        ] {
+            state["crossMarginSummary"][field] = serde_json::json!("0");
+        }
+
+        let message = decode_ws_message(&frame["perp"].to_string()).unwrap();
+
+        let HyperliquidWsMessage::ClearinghouseState { data } = message else {
+            panic!("expected clearinghouse state");
+        };
+
+        let summary = data.clearinghouse_state.cross_margin_summary.unwrap();
+
+        assert_eq!(data.clearinghouse_state.withdrawable, Some(Decimal::ZERO));
+        assert_eq!(summary.account_value, Decimal::ZERO);
+        assert_eq!(summary.total_ntl_pos, Decimal::ZERO);
+        assert_eq!(summary.total_raw_usd, Decimal::ZERO);
+        assert_eq!(summary.total_margin_used, Decimal::ZERO);
+    }
 
     #[rstest]
     fn test_cancel_action_serialization(
@@ -1575,6 +1662,10 @@ pub enum NautilusWsMessage {
     Error(String),
     /// WebSocket reconnected.
     Reconnected,
+    /// Default perp dex account state.
+    ClearinghouseState(ClearinghouseState),
+    /// Spot balances and holds.
+    SpotState(SpotClearinghouseState),
 }
 
 /// Execution report wrapper for order status and fill reports.

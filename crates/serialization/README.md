@@ -22,6 +22,10 @@ This enables efficient data storage, retrieval, and interoperability across diff
 > [!WARNING]
 >
 > SBE schemas are not yet stable and may break between releases.
+>
+> Native market data messages use schema version 9 for standard precision and 16 for high precision.
+> Readers reject other versions, including version 0, which does not identify the raw scale.
+> Upgrade readers and writers together and use the same precision mode.
 
 ## NautilusTrader
 

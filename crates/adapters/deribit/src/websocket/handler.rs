@@ -39,8 +39,8 @@ use nautilus_model::{
     data::{Bar, CustomData, Data, DataType, InstrumentStatus},
     enums::{MarketStatusAction, OrderSide, OrderType},
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderFilled, OrderModifyRejected,
-        OrderRejected,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderFilled,
+        OrderModifyDenied, OrderModifyRejected, OrderRejected,
     },
     identifiers::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
@@ -125,6 +125,8 @@ pub enum PendingRequestType {
     },
     /// Edit order request.
     Edit {
+        causation_id: Option<UUID4>,
+        venue_order_id: Option<VenueOrderId>,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -132,6 +134,8 @@ pub enum PendingRequestType {
     },
     /// Cancel order request.
     Cancel {
+        causation_id: Option<UUID4>,
+        venue_order_id: Option<VenueOrderId>,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
         strategy_id: StrategyId,
@@ -188,6 +192,7 @@ pub enum HandlerCommand {
     },
     /// Edit an existing order.
     Edit {
+        causation_id: Option<UUID4>,
         params: DeribitEditParams,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
@@ -196,6 +201,7 @@ pub enum HandlerCommand {
     },
     /// Cancel an existing order.
     Cancel {
+        causation_id: Option<UUID4>,
         params: DeribitCancelParams,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
@@ -384,13 +390,87 @@ impl DeribitWsFeedHandler {
         rate_limit_keys: Option<&[Ustr]>,
     ) -> Result<(), DeribitWsError> {
         let payload = match payload {
-            Ok(p) => p,
+            Ok(payload) => payload,
             Err(e) => {
-                self.pending_requests.remove(&request_id);
+                self.deny_unsent_request(request_id, &e.to_string());
                 return Err(e);
             }
         };
-        self.send_with_retry(payload, rate_limit_keys).await
+
+        let result = self.send_with_retry(payload, rate_limit_keys).await;
+
+        if matches!(&result, Err(DeribitWsError::NotConnected))
+            && matches!(
+                self.pending_requests.get(&request_id),
+                Some(PendingRequestType::Edit { .. } | PendingRequestType::Cancel { .. })
+            )
+        {
+            self.deny_unsent_request(request_id, "WebSocket not connected");
+        }
+
+        result
+    }
+
+    fn deny_unsent_request(&mut self, request_id: u64, reason: &str) {
+        let Some(pending) = self.pending_requests.remove(&request_id) else {
+            return;
+        };
+
+        let ts_init = self.ts_init();
+
+        let message = match pending {
+            PendingRequestType::Edit {
+                venue_order_id,
+                causation_id,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            } => {
+                let mut event = OrderModifyDenied::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    reason.into(),
+                    UUID4::new(),
+                    ts_init,
+                    ts_init,
+                    venue_order_id,
+                    self.account_id,
+                );
+                event.causation_id = causation_id;
+                Some(NautilusWsMessage::OrderModifyDenied(event))
+            }
+            PendingRequestType::Cancel {
+                venue_order_id,
+                causation_id,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            } => {
+                let mut event = OrderCancelDenied::new(
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    reason.into(),
+                    UUID4::new(),
+                    ts_init,
+                    ts_init,
+                    venue_order_id,
+                    self.account_id,
+                );
+                event.causation_id = causation_id;
+                Some(NautilusWsMessage::OrderCancelDenied(event))
+            }
+            _ => None,
+        };
+
+        if let Some(message) = message {
+            self.pending_outgoing.push_back(message);
+        }
     }
 
     /// Sends a message over the WebSocket with retry logic.
@@ -720,6 +800,7 @@ impl DeribitWsFeedHandler {
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
+        causation_id: Option<UUID4>,
     ) -> Result<(), DeribitWsError> {
         let request_id = self.next_request_id();
         let order_id = params.order_id.clone();
@@ -727,6 +808,8 @@ impl DeribitWsFeedHandler {
         self.pending_requests.insert(
             request_id,
             PendingRequestType::Edit {
+                venue_order_id: VenueOrderId::new_checked(order_id.clone()).ok(),
+                causation_id,
                 client_order_id,
                 trader_id,
                 strategy_id,
@@ -757,6 +840,7 @@ impl DeribitWsFeedHandler {
         trader_id: TraderId,
         strategy_id: StrategyId,
         instrument_id: InstrumentId,
+        causation_id: Option<UUID4>,
     ) -> Result<(), DeribitWsError> {
         let request_id = self.next_request_id();
         let order_id = params.order_id.clone();
@@ -764,6 +848,8 @@ impl DeribitWsFeedHandler {
         self.pending_requests.insert(
             request_id,
             PendingRequestType::Cancel {
+                venue_order_id: VenueOrderId::new_checked(order_id.clone()).ok(),
+                causation_id,
                 client_order_id,
                 trader_id,
                 strategy_id,
@@ -955,6 +1041,7 @@ impl DeribitWsFeedHandler {
                 }
             }
             HandlerCommand::Edit {
+                causation_id,
                 params,
                 client_order_id,
                 trader_id,
@@ -968,6 +1055,7 @@ impl DeribitWsFeedHandler {
                         trader_id,
                         strategy_id,
                         instrument_id,
+                        causation_id,
                     )
                     .await
                 {
@@ -975,6 +1063,7 @@ impl DeribitWsFeedHandler {
                 }
             }
             HandlerCommand::Cancel {
+                causation_id,
                 params,
                 client_order_id,
                 trader_id,
@@ -988,6 +1077,7 @@ impl DeribitWsFeedHandler {
                         trader_id,
                         strategy_id,
                         instrument_id,
+                        causation_id,
                     )
                     .await
                 {
@@ -1175,6 +1265,8 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         PendingRequestType::Cancel {
+                            venue_order_id,
+                            causation_id,
                             client_order_id,
                             trader_id,
                             strategy_id,
@@ -1269,24 +1361,22 @@ impl DeribitWsFeedHandler {
                                     error.message,
                                     client_order_id
                                 );
-                                return Some(NautilusWsMessage::OrderCancelRejected(
-                                    OrderCancelRejected::new(
-                                        trader_id,
-                                        strategy_id,
-                                        instrument_id,
-                                        client_order_id,
-                                        ustr::ustr(&format!(
-                                            "code={}: {}",
-                                            error.code, error.message
-                                        )),
-                                        UUID4::new(),
-                                        ts_init,
-                                        ts_init,
-                                        false,
-                                        None, // venue_order_id not available in error response
-                                        self.account_id,
-                                    ),
-                                ));
+
+                                let mut event = OrderCancelRejected::new(
+                                    trader_id,
+                                    strategy_id,
+                                    instrument_id,
+                                    client_order_id,
+                                    ustr::ustr(&format!("code={}: {}", error.code, error.message)),
+                                    UUID4::new(),
+                                    ts_init,
+                                    ts_init,
+                                    false,
+                                    venue_order_id,
+                                    self.account_id,
+                                );
+                                event.causation_id = causation_id;
+                                return Some(NautilusWsMessage::OrderCancelRejected(event));
                             }
                         }
                         PendingRequestType::CancelAllByInstrument { instrument_id } => {
@@ -1448,6 +1538,8 @@ impl DeribitWsFeedHandler {
                             }
                         }
                         PendingRequestType::Edit {
+                            venue_order_id,
+                            causation_id,
                             client_order_id,
                             trader_id,
                             strategy_id,
@@ -1539,7 +1631,10 @@ impl DeribitWsFeedHandler {
                                                     ts_init,
                                                 );
                                                 self.pending_outgoing.extend(outgoing);
-                                                return event.map(NautilusWsMessage::OrderUpdated);
+                                                return event.map(|mut event| {
+                                                    event.causation_id = causation_id;
+                                                    NautilusWsMessage::OrderUpdated(event)
+                                                });
                                             } else {
                                                 log::warn!(
                                                     "Cannot create OrderUpdated: account_id not set"
@@ -1564,24 +1659,22 @@ impl DeribitWsFeedHandler {
                                     error.message,
                                     client_order_id
                                 );
-                                return Some(NautilusWsMessage::OrderModifyRejected(
-                                    OrderModifyRejected::new(
-                                        trader_id,
-                                        strategy_id,
-                                        instrument_id,
-                                        client_order_id,
-                                        ustr::ustr(&format!(
-                                            "code={}: {}",
-                                            error.code, error.message
-                                        )),
-                                        UUID4::new(),
-                                        ts_init,
-                                        ts_init,
-                                        false,
-                                        None, // venue_order_id not available
-                                        self.account_id,
-                                    ),
-                                ));
+
+                                let mut event = OrderModifyRejected::new(
+                                    trader_id,
+                                    strategy_id,
+                                    instrument_id,
+                                    client_order_id,
+                                    ustr::ustr(&format!("code={}: {}", error.code, error.message)),
+                                    UUID4::new(),
+                                    ts_init,
+                                    ts_init,
+                                    false,
+                                    venue_order_id,
+                                    self.account_id,
+                                );
+                                event.causation_id = causation_id;
+                                return Some(NautilusWsMessage::OrderModifyRejected(event));
                             }
                         }
                         PendingRequestType::GetOrderState {
@@ -2893,7 +2986,9 @@ impl DeribitWsFeedHandler {
                                     | NautilusWsMessage::OrderUpdated(_)
                                     | NautilusWsMessage::OrderRejected(_)
                                     | NautilusWsMessage::OrderCancelRejected(_)
+                                    | NautilusWsMessage::OrderModifyDenied(_)
                                     | NautilusWsMessage::OrderModifyRejected(_)
+                                    | NautilusWsMessage::OrderCancelDenied(_)
                                     | NautilusWsMessage::AccountState(_) => {
                                         let _ = self.out_tx.send(nautilus_msg);
                                     }
@@ -2994,6 +3089,7 @@ mod tests {
     use futures_util::{SinkExt, StreamExt};
     use nautilus_model::{
         enums::{BookType, LiquiditySide},
+        events::OrderEventAny,
         instruments::Instrument,
         orderbook::OrderBook,
         types::{Currency, Money, Price, Quantity},
@@ -3806,12 +3902,144 @@ mod tests {
     }
 
     #[rstest]
+    #[case::modify(false)]
+    #[case::cancel(true)]
+    #[tokio::test]
+    async fn command_failure_preserves_causation_and_venue_identity(
+        #[case] cancel: bool,
+        #[values(false, true)] not_sent: bool,
+    ) {
+        let mut handler = routing_test_handler();
+        handler.clock = Box::leak(Box::new(AtomicTime::new(false, UnixNanos::from(17))));
+        let client_order_id = ClientOrderId::from("O-COMMAND-FAILURE");
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let causation_id = UUID4::new();
+
+        let message = if not_sent {
+            let command = if cancel {
+                HandlerCommand::Cancel {
+                    causation_id: Some(causation_id),
+                    params: DeribitCancelParams {
+                        order_id: venue_order_id.to_string(),
+                    },
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                }
+            } else {
+                HandlerCommand::Edit {
+                    causation_id: Some(causation_id),
+                    params: DeribitEditParams {
+                        order_id: venue_order_id.to_string(),
+                        amount: Decimal::from(2),
+                        price: Some(Decimal::from(205)),
+                        post_only: None,
+                        reject_post_only: None,
+                        reduce_only: None,
+                        trigger_price: None,
+                    },
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                }
+            };
+
+            handler.process_command(command).await;
+            handler
+                .pending_outgoing
+                .pop_front()
+                .expect("pre-send failure publishes a denial")
+        } else {
+            let pending = if cancel {
+                PendingRequestType::Cancel {
+                    venue_order_id: Some(venue_order_id),
+                    causation_id: Some(causation_id),
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                }
+            } else {
+                PendingRequestType::Edit {
+                    venue_order_id: Some(venue_order_id),
+                    causation_id: Some(causation_id),
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                }
+            };
+
+            handler.pending_requests.insert(1, pending);
+            handler
+                .process_raw_message(&load_test_json("ws_error.json"))
+                .await
+                .expect("venue refusal produces a rejection")
+        };
+
+        let (event, cause, reason, ts_init) = match message {
+            NautilusWsMessage::OrderModifyDenied(event) if not_sent && !cancel => (
+                OrderEventAny::ModifyDenied(event),
+                event.causation_id,
+                event.reason,
+                event.ts_init,
+            ),
+            NautilusWsMessage::OrderCancelDenied(event) if not_sent && cancel => (
+                OrderEventAny::CancelDenied(event),
+                event.causation_id,
+                event.reason,
+                event.ts_init,
+            ),
+            NautilusWsMessage::OrderModifyRejected(event) if !not_sent && !cancel => (
+                OrderEventAny::ModifyRejected(event),
+                event.causation_id,
+                event.reason,
+                event.ts_init,
+            ),
+            NautilusWsMessage::OrderCancelRejected(event) if !not_sent && cancel => (
+                OrderEventAny::CancelRejected(event),
+                event.causation_id,
+                event.reason,
+                event.ts_init,
+            ),
+            other => panic!("unexpected command outcome {other:?}"),
+        };
+
+        assert_eq!(event.trader_id(), trader_id);
+        assert_eq!(event.strategy_id(), strategy_id);
+        assert_eq!(event.instrument_id(), instrument_id);
+        assert_eq!(event.client_order_id(), client_order_id);
+        assert_eq!(event.venue_order_id(), Some(venue_order_id));
+        assert_eq!(event.account_id(), Some(AccountId::from("DERIBIT-001")));
+        assert_eq!(event.ts_event(), UnixNanos::from(17));
+        assert_eq!(ts_init, UnixNanos::from(17));
+        assert_eq!(cause, Some(causation_id));
+        assert_eq!(
+            reason,
+            if not_sent {
+                "WebSocket not connected"
+            } else {
+                "code=10028: too_many_requests"
+            }
+        );
+        assert!(handler.pending_requests.is_empty());
+        assert!(handler.pending_outgoing.is_empty());
+    }
+
+    #[rstest]
     #[tokio::test]
     async fn edit_response_without_tracked_context_uses_report_path() {
         let mut handler = routing_test_handler();
         handler.pending_requests.insert(
             42,
             PendingRequestType::Edit {
+                venue_order_id: None,
+                causation_id: None,
                 client_order_id: ClientOrderId::from("UNKNOWN-CLIENT-ID"),
                 trader_id: TraderId::from("TRADER-001"),
                 strategy_id: StrategyId::from("S-001"),
@@ -3861,6 +4089,8 @@ mod tests {
         handler.pending_requests.insert(
             42,
             PendingRequestType::Edit {
+                venue_order_id: None,
+                causation_id: None,
                 client_order_id,
                 trader_id: TraderId::from("TRADER-001"),
                 strategy_id: StrategyId::from("S-001"),
@@ -3926,6 +4156,8 @@ mod tests {
         handler.pending_requests.insert(
             42,
             PendingRequestType::Edit {
+                venue_order_id: None,
+                causation_id: None,
                 client_order_id,
                 trader_id: TraderId::from("TRADER-001"),
                 strategy_id: StrategyId::from("S-001"),
@@ -3993,6 +4225,8 @@ mod tests {
         handler.pending_requests.insert(
             42,
             PendingRequestType::Edit {
+                venue_order_id: None,
+                causation_id: None,
                 client_order_id,
                 trader_id: TraderId::from("TRADER-001"),
                 strategy_id: StrategyId::from("S-001"),

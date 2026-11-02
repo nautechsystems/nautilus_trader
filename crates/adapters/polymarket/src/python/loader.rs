@@ -42,7 +42,7 @@ use serde_json::{Value, json};
 
 use super::extract_string_map;
 use crate::{
-    common::parse::validate_market_version,
+    common::parse::validate_data_market_version,
     http::{
         clob::PolymarketClobPublicClient,
         data_api::PolymarketDataApiHttpClient,
@@ -336,7 +336,7 @@ impl PyPolymarketDataLoader {
         self.instrument.clone()
     }
 
-    /// Returns the selected CLOB token ID.
+    /// Returns the selected outcome asset ID.
     #[getter]
     fn token_id(&self) -> &str {
         &self.token_id
@@ -458,7 +458,7 @@ async fn build_loader(
     clob: &PolymarketClobPublicClient,
     data_api_client: PolymarketDataApiHttpClient,
 ) -> PyResult<PyPolymarketDataLoader> {
-    validate_market_version(market.version.as_deref()).map_err(to_pyvalue_err)?;
+    validate_data_market_version(market.version.as_deref()).map_err(to_pyvalue_err)?;
     if market.condition_id.trim().is_empty() {
         return Err(to_pyvalue_err("Gamma market has an empty condition ID"));
     }
@@ -488,40 +488,45 @@ async fn build_loader(
 }
 
 fn build_loader_from_details(
-    mut market: GammaMarket,
+    market: GammaMarket,
     details: &ClobMarketResponse,
     token_index: usize,
     data_api_client: PolymarketDataApiHttpClient,
 ) -> PyResult<PyPolymarketDataLoader> {
-    validate_market_version(market.version.as_deref()).map_err(to_pyvalue_err)?;
-    validate_market_version(details.version.as_deref()).map_err(to_pyvalue_err)?;
-    validate_market_details(details, &market.condition_id, token_index)?;
+    validate_data_market_version(market.version.as_deref()).map_err(to_pyvalue_err)?;
+    validate_data_market_version(details.version.as_deref()).map_err(to_pyvalue_err)?;
+    validate_market_details(details, &market.condition_id)?;
 
-    market.clob_token_ids = serde_json::to_string(
-        &details
-            .tokens
-            .iter()
-            .map(|token| token.token_id.as_str())
-            .collect::<Vec<_>>(),
-    )
-    .map_err(to_pyruntime_err)?;
-    market.outcomes = serde_json::to_string(
-        &details
-            .tokens
-            .iter()
-            .map(|token| token.outcome.as_str())
-            .collect::<Vec<_>>(),
-    )
-    .map_err(to_pyruntime_err)?;
+    if market.version != details.version {
+        return Err(to_pyvalue_err(
+            "CLOB market protocol does not match Gamma market protocol",
+        ));
+    }
 
-    let def = parse_gamma_market(&market)
-        .map_err(to_pyvalue_err)?
-        .into_iter()
-        .nth(token_index)
-        .ok_or_else(|| to_pyvalue_err("Selected token has no instrument definition"))?;
+    let defs = parse_gamma_market(&market).map_err(to_pyvalue_err)?;
+
+    let def = defs.get(token_index).ok_or_else(|| {
+        to_pyvalue_err(format!(
+            "Token index {token_index} out of range for market '{}' with {} tokens",
+            market.condition_id,
+            defs.len(),
+        ))
+    })?;
+
+    if defs.len() != details.tokens.len()
+        || defs.iter().any(|def| {
+            !details.tokens.iter().any(|token| {
+                def.token_id.as_str() == token.token_id && def.outcome.as_str() == token.outcome
+            })
+        })
+    {
+        return Err(to_pyvalue_err(
+            "CLOB outcome IDs or labels do not match Gamma market outcomes",
+        ));
+    }
 
     let mut instrument =
-        match create_instrument_from_def(&def, get_atomic_clock_realtime().get_time_ns())
+        match create_instrument_from_def(def, get_atomic_clock_realtime().get_time_ns())
             .map_err(to_pyvalue_err)?
         {
             InstrumentAny::BinaryOption(instrument) => instrument,
@@ -537,7 +542,7 @@ fn build_loader_from_details(
     }
 
     let resolution_metadata = resolution_metadata(&market, details);
-    let token_id = details.tokens[token_index].token_id.clone();
+    let token_id = def.token_id.to_string();
     let condition_id = market.condition_id;
 
     Ok(PyPolymarketDataLoader {
@@ -549,11 +554,7 @@ fn build_loader_from_details(
     })
 }
 
-fn validate_market_details(
-    details: &ClobMarketResponse,
-    condition_id: &str,
-    token_index: usize,
-) -> PyResult<()> {
+fn validate_market_details(details: &ClobMarketResponse, condition_id: &str) -> PyResult<()> {
     if details.condition_id != condition_id {
         return Err(to_pyvalue_err(format!(
             "CLOB market condition ID '{}' does not match Gamma condition ID '{condition_id}'",
@@ -567,23 +568,18 @@ fn validate_market_details(
         )));
     }
 
-    if token_index >= details.tokens.len() {
-        return Err(to_pyvalue_err(format!(
-            "Token index {token_index} out of range for market '{condition_id}' with {} tokens",
-            details.tokens.len()
-        )));
-    }
+    for (index, token) in details.tokens.iter().enumerate() {
+        if token.token_id.trim().is_empty() {
+            return Err(to_pyvalue_err(format!(
+                "CLOB token at index {index} for market '{condition_id}' has an empty token ID"
+            )));
+        }
 
-    if details.tokens[token_index].token_id.trim().is_empty() {
-        return Err(to_pyvalue_err(format!(
-            "Token index {token_index} for market '{condition_id}' has an empty token ID"
-        )));
-    }
-
-    if details.tokens[token_index].outcome.trim().is_empty() {
-        return Err(to_pyvalue_err(format!(
-            "Token index {token_index} for market '{condition_id}' has an empty outcome"
-        )));
+        if token.outcome.trim().is_empty() {
+            return Err(to_pyvalue_err(format!(
+                "CLOB token at index {index} for market '{condition_id}' has an empty outcome"
+            )));
+        }
     }
     Ok(())
 }
@@ -595,6 +591,8 @@ fn resolution_metadata(market: &GammaMarket, details: &ClobMarketResponse) -> Va
         "closed": details.closed,
         "closedTime": market.closed_time,
         "umaResolutionStatus": market.uma_resolution_status,
+        "resolutionStatus": market.resolution_status,
+        "version": market.version,
         "resolutionSource": market.resolution_source,
         "tokens": details.tokens,
     })
@@ -796,8 +794,8 @@ mod tests {
             "conditionId": "0xcondition",
             "questionID": "0xquestion",
             "version": "v1",
-            "clobTokenIds": "[]",
-            "outcomes": "[]",
+            "clobTokenIds": "[\"101\",\"202\"]",
+            "outcomes": "[\"Yes\",\"No\"]",
             "question": "Will the test pass?",
             "description": "Test market",
             "startDate": "2026-01-01T00:00:00Z",
@@ -842,8 +840,8 @@ mod tests {
             "condition_id": "0xcondition",
             "closed": true,
             "tokens": [
-                {"token_id": "yes-token", "outcome": "Yes", "winner": true},
-                {"token_id": "no-token", "outcome": "No", "winner": false}
+                {"token_id": "101", "outcome": "Yes", "winner": true},
+                {"token_id": "202", "outcome": "No", "winner": false}
             ]
         }))
         .expect("valid CLOB market")
@@ -873,6 +871,15 @@ mod tests {
             let expected_market = market.raw.clone();
             let mut details = clob_market();
             details.condition_id.clone_from(&market.condition_id);
+            for (token, def) in details
+                .tokens
+                .iter_mut()
+                .zip(parse_gamma_market(&market).unwrap())
+            {
+                token.token_id = def.token_id.to_string();
+                token.outcome = def.outcome.to_string();
+            }
+
             let loader =
                 build_loader_from_details(market, &details, token_index, data_api()).unwrap();
             let info = loader.instrument.info.as_ref().unwrap();
@@ -893,7 +900,7 @@ mod tests {
             .expect("loader should build");
         let info = loader.instrument.info.as_ref().expect("instrument info");
 
-        assert_eq!(loader.token_id, "no-token");
+        assert_eq!(loader.token_id, "202");
         assert_eq!(loader.condition_id, "0xcondition");
         assert_eq!(
             loader.instrument.outcome.map(|value| value.to_string()),
@@ -926,7 +933,7 @@ mod tests {
                     .expect("token ID getter")
                     .extract::<String>(py)
                     .expect("token ID string"),
-                "no-token",
+                "202",
             );
             assert_eq!(
                 py_loader
@@ -1037,7 +1044,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case(Some("v2"))]
     #[case(None)]
     #[case(Some("unknown"))]
     fn build_loader_rejects_unsupported_protocol(
@@ -1055,9 +1061,93 @@ mod tests {
 
         let error = build_loader_from_details(market, &details, 0, data_api()).unwrap_err();
         assert!(error.to_string().contains(&format!(
-            "Unsupported Polymarket market protocol {}; only v1 CTF markets are supported",
+            "Unsupported Polymarket data protocol {}; expected v1 or v2",
             version.unwrap_or("missing"),
         )));
+    }
+
+    #[rstest]
+    #[case("v1")]
+    #[case("v2")]
+    fn build_loader_preserves_selected_ids(
+        #[case] version: &str,
+        #[values(false, true)] reordered: bool,
+    ) {
+        let mut market = gamma_market();
+        let mut details = clob_market();
+        market.version = Some(version.into());
+        details.version = Some(version.into());
+        market.position_ids = Some(vec!["303".into(), "404".into()]);
+
+        if version == "v2" {
+            details.tokens[0].token_id = "303".into();
+            details.tokens[1].token_id = "404".into();
+        }
+
+        if reordered {
+            details.tokens.swap(0, 1);
+        }
+
+        let condition_id = market.condition_id.clone();
+        let loader = build_loader_from_details(market, &details, 1, data_api()).unwrap();
+
+        let expected = if version == "v2" { "404" } else { "202" };
+        assert_eq!(loader.token_id, expected);
+        assert_eq!(loader.instrument.raw_symbol.as_str(), expected);
+        assert_eq!(
+            loader.instrument.id.to_string(),
+            format!("{condition_id}-{expected}.POLYMARKET")
+        );
+        assert_eq!(
+            loader
+                .instrument
+                .info
+                .as_ref()
+                .unwrap()
+                .get_str("market_version"),
+            Some(version)
+        );
+    }
+
+    #[rstest]
+    #[case::protocol(0)]
+    #[case::selected_id(1)]
+    #[case::other_id(2)]
+    #[case::outcome(3)]
+    #[case::swapped_labels(4)]
+    fn build_loader_rejects_conflicting_metadata(
+        #[case] conflict: usize,
+        #[values("v1", "v2")] version: &str,
+    ) {
+        Python::initialize();
+        let mut market = gamma_market();
+        let mut details = clob_market();
+        market.version = Some(version.into());
+        details.version = Some(version.into());
+        market.position_ids = Some(vec!["101".into(), "202".into()]);
+
+        match conflict {
+            0 => details.version = Some(if version == "v1" { "v2" } else { "v1" }.into()),
+            1 => details.tokens[0].token_id = "303".into(),
+            2 => details.tokens[1].token_id = "404".into(),
+            3 => details.tokens[1].outcome = "Other".into(),
+            4 => {
+                let outcome = details.tokens[0].outcome.clone();
+                details.tokens[0].outcome = details.tokens[1].outcome.clone();
+                details.tokens[1].outcome = outcome;
+            }
+            _ => unreachable!(),
+        }
+
+        let error = build_loader_from_details(market, &details, 0, data_api()).unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("do not match Gamma market outcomes")
+                || error
+                    .to_string()
+                    .contains("does not match Gamma market protocol")
+        );
     }
 
     #[rstest]
@@ -1084,16 +1174,22 @@ mod tests {
     }
 
     #[rstest]
-    fn build_loader_rejects_transient_empty_token_id() {
+    fn build_loader_rejects_transient_empty_token_id(
+        #[values(0, 1)] token_index: usize,
+        #[values(0, 1)] clob_index: usize,
+    ) {
         Python::initialize();
 
         let mut details = clob_market();
-        details.tokens[0].token_id.clear();
+        details.tokens[clob_index].token_id.clear();
 
-        let error = build_loader_from_details(gamma_market(), &details, 0, data_api())
+        let error = build_loader_from_details(gamma_market(), &details, token_index, data_api())
             .expect_err("empty token ID should be rejected");
 
-        assert!(error.to_string().contains("has an empty token ID"));
+        assert!(error.to_string().contains(&format!(
+            "CLOB token at index {clob_index} for market '{}' has an empty token ID",
+            details.condition_id,
+        )));
     }
 
     #[rstest]
@@ -1106,7 +1202,11 @@ mod tests {
         let error = build_loader_from_details(gamma_market(), &details, 0, data_api())
             .expect_err("non-binary tokens should be rejected");
 
-        assert!(error.to_string().contains("Expected 2 token IDs"));
+        assert!(
+            error
+                .to_string()
+                .contains("CLOB outcome IDs or labels do not match Gamma market outcomes")
+        );
     }
 
     #[rstest]
@@ -1204,7 +1304,7 @@ mod tests {
         server.abort();
 
         assert_eq!(asserted.load(Ordering::SeqCst), 0);
-        assert_eq!(loader.token_id, "yes-token");
+        assert_eq!(loader.token_id, "101");
 
         let info = loader.instrument.info.as_ref().unwrap();
         let schedule: crate::http::models::FeeSchedule =

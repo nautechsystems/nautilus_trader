@@ -92,7 +92,8 @@ pub struct ExecutionEngineConfig {
     /// The time buffer (minutes) before account events can be purged.
     #[serde(default)]
     pub purge_account_events_lookback_mins: Option<u32>,
-    /// If purge operations should also delete from the backing database.
+    /// If purging also deletes orders and positions from the backing database.
+    /// Redis and PostgreSQL retain persisted account events for replay.
     #[serde(default)]
     #[builder(default)]
     pub purge_from_database: bool,

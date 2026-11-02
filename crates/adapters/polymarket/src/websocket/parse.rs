@@ -109,7 +109,7 @@ pub(crate) fn book_snapshot_hash(
         return Ok(None);
     };
 
-    // Keep field order aligned with the server-compatible payload in the official SDK:
+    // V2 appends the wire version; unversioned books retain the SDK field order
     // Polymarket/py-clob-client-v2@215fc63a8fd6ec3a10c7edb73997c9772d8686d3:utilities.py
     let preimage = BookSnapshotHashPreimage {
         market: snap.market.as_str(),
@@ -122,6 +122,7 @@ pub(crate) fn book_snapshot_hash(
         tick_size,
         neg_risk,
         last_trade_price,
+        version: snap.version.as_deref(),
     };
 
     let serialized = serde_json::to_vec(&preimage)?;
@@ -142,6 +143,8 @@ struct BookSnapshotHashPreimage<'a> {
     tick_size: &'a str,
     neg_risk: bool,
     last_trade_price: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    version: Option<&'a str>,
 }
 
 /// Parses a book snapshot into [`OrderBookDeltas`] (CLEAR + ADD).
@@ -629,6 +632,18 @@ mod tests {
     }
 
     #[rstest]
+    fn test_book_snapshot_hash_matches_captured_v2_snapshot() {
+        let snap: PolymarketBookSnapshot = load("ws_book_snapshot_v2_captured.json");
+
+        assert_eq!(snap.version.as_deref(), Some("v2"));
+        assert_eq!(
+            book_snapshot_hash(&snap, None, None).unwrap(),
+            Some("8a112445c8ac8c7fc9e66d9a404e3530a4668d88".to_string())
+        );
+        assert!(verify_book_snapshot_hash(&snap, None, None).unwrap());
+    }
+
+    #[rstest]
     fn test_book_snapshot_hash_matches_captured_snapshot() {
         let snap: PolymarketBookSnapshot = load("ws_book_snapshot_captured.json");
 
@@ -657,6 +672,49 @@ mod tests {
                 "350977769852917329387037893294763093471844346281449484439085576212613048126: ",
                 "expected ed47eb91f3c7985fac1cb18cb7c19535eddd3c0a, ",
                 "computed 6402b534c270a1ce46a75c62f1d7e3651182cc75"
+            )
+        );
+    }
+
+    #[rstest]
+    #[case::missing(None, "87898258384b99c2c750cffe88735ff1017aaca7")]
+    #[case::changed(Some("v1"), "baf7e0f98650e72eec1ae9f158f901731416b189")]
+    fn test_book_snapshot_hash_v2_requires_captured_version(
+        #[case] version: Option<&str>,
+        #[case] computed: &str,
+    ) {
+        let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot_v2_captured.json");
+        snap.version = version.map(str::to_string);
+
+        assert_eq!(
+            book_snapshot_hash(&snap, None, None).unwrap(),
+            Some(computed.to_string())
+        );
+        assert_eq!(
+            verify_book_snapshot_hash(&snap, None, None)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Book snapshot hash mismatch for {}: expected {}, computed {computed}",
+                snap.asset_id,
+                snap.hash.as_deref().unwrap()
+            )
+        );
+    }
+
+    #[rstest]
+    fn test_book_snapshot_hash_v2_rejects_corrupted_book() {
+        let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot_v2_captured.json");
+        snap.bids[0].size = "32".to_string();
+
+        assert_eq!(
+            verify_book_snapshot_hash(&snap, None, None)
+                .unwrap_err()
+                .to_string(),
+            format!(
+                "Book snapshot hash mismatch for {}: expected {}, computed a000d2ac896d14ce413a2f164eb6fb94dc98bf4a",
+                snap.asset_id,
+                snap.hash.as_deref().unwrap()
             )
         );
     }

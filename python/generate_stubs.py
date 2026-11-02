@@ -3132,6 +3132,12 @@ def inject_module_constants(root: Path, workspace_root: Path) -> None:
 
         const_block = "\n".join(f"{c.name}: {c.python_type}" for c in const_list)
         content = _insert_constants_after_all(content, const_block)
+        model_import = "from nautilus_trader import model"
+        if (
+            any(c.python_type.startswith("model.") for c in const_list)
+            and model_import not in content
+        ):
+            content = content.replace("__all__", f"{model_import}\n\n__all__", 1)
 
         if content != original:
             stub_file.write_text(content, encoding="utf-8")

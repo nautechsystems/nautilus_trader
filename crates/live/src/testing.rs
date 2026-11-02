@@ -274,7 +274,8 @@ impl ExecutionHarness {
         price: Option<Price>,
         quantity: Option<Quantity>,
     ) {
-        self.mark_pending_update(order);
+        let command_id = UUID4::new();
+        self.mark_pending_update(order, command_id);
         let venue_order_id = self
             .cache
             .borrow()
@@ -291,7 +292,7 @@ impl ExecutionHarness {
             quantity,
             price,
             None,
-            UUID4::new(),
+            command_id,
             UnixNanos::default(),
             None,
             None,
@@ -304,7 +305,8 @@ impl ExecutionHarness {
 
     /// Marks an order pending cancel and sends its cancellation through the execution engine.
     pub fn cancel_via_execution(&self, order: &OrderAny) {
-        self.mark_pending_cancel(order);
+        let command_id = UUID4::new();
+        self.mark_pending_cancel(order, Some(command_id));
         let venue_order_id = self
             .cache
             .borrow()
@@ -318,7 +320,7 @@ impl ExecutionHarness {
             order.instrument_id(),
             order.client_order_id(),
             venue_order_id,
-            UUID4::new(),
+            command_id,
             UnixNanos::default(),
             None,
             None,
@@ -391,10 +393,11 @@ impl ExecutionHarness {
     }
 
     /// Applies a pending-cancel event to the cached order.
-    pub fn mark_pending_cancel(&self, order: &OrderAny) {
+    pub fn mark_pending_cancel(&self, order: &OrderAny, causation_id: Option<UUID4>) {
         let cached = self.cached_order(order);
         let ts_now = self.clock.borrow().timestamp_ns();
-        let event = OrderEventAny::PendingCancel(OrderPendingCancel::new(
+
+        let mut pending = OrderPendingCancel::new(
             cached.trader_id(),
             cached.strategy_id(),
             cached.instrument_id(),
@@ -405,8 +408,9 @@ impl ExecutionHarness {
             ts_now,
             false,
             cached.venue_order_id(),
-        ));
-        self.apply_pending_event(&event);
+        );
+        pending.causation_id = causation_id;
+        self.apply_pending_event(&OrderEventAny::PendingCancel(pending));
     }
 
     /// Generates and applies execution mass status from the registered adapter client.
@@ -428,10 +432,11 @@ impl ExecutionHarness {
         mass_status
     }
 
-    fn mark_pending_update(&self, order: &OrderAny) {
+    fn mark_pending_update(&self, order: &OrderAny, command_id: UUID4) {
         let cached = self.cached_order(order);
         let ts_now = self.clock.borrow().timestamp_ns();
-        let event = OrderEventAny::PendingUpdate(OrderPendingUpdate::new(
+
+        let mut pending = OrderPendingUpdate::new(
             cached.trader_id(),
             cached.strategy_id(),
             cached.instrument_id(),
@@ -442,8 +447,9 @@ impl ExecutionHarness {
             ts_now,
             false,
             cached.venue_order_id(),
-        ));
-        self.apply_pending_event(&event);
+        );
+        pending.causation_id = Some(command_id);
+        self.apply_pending_event(&OrderEventAny::PendingUpdate(pending));
     }
 
     fn cached_order(&self, order: &OrderAny) -> OrderAny {

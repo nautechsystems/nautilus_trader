@@ -139,7 +139,7 @@ Environment variables: `BYBIT_DEMO_API_KEY`, `BYBIT_DEMO_API_SECRET`
 :::warning
 **Demo environment limitations**:
 
-- The WebSocket Trade API is **not supported** for demo trading. NautilusTrader automatically uses the HTTP REST API for order operations in demo mode, including order lists and batch cancels, which are sent as individual requests.
+- The WebSocket Trade API is **not supported** for demo trading. NautilusTrader automatically uses the HTTP REST API for order operations in demo mode, including order lists, batch modifies, and batch cancels, which are sent as individual requests.
 - Native TP/SL and option params (`order_iv`, `mmp`) on new orders work in demo via the HTTP create-order endpoint.
 - The custom TP/SL trigger prices `tp_trigger_price` and `sl_trigger_price` are not supported in demo (orders
   setting them are denied). The create-order endpoint cannot carry them.
@@ -357,12 +357,11 @@ Conditional orders also support trigger-price amendments.
 | Operation    | Spot | Linear | Inverse | Option | Notes                                     |
 | ------------ | ---- | ------ | ------- | ------ | ----------------------------------------- |
 | Batch Submit | ✓    | ✓      | ✓       | ✓      | Submit multiple orders in single request. |
-| Batch Modify | -    | -      | -       | -      | Not wired into the execution client.      |
+| Batch Modify | ✓    | ✓      | ✓       | ✓      | Modify multiple orders in single request. |
 | Batch Cancel | ✓    | ✓      | ✓       | ✓      | Cancel multiple orders in single request. |
 
-Batch submit and batch cancel use the trade WebSocket on mainnet and testnet. In demo mode the
-adapter falls back to individual HTTP requests, because the demo environment has no trade
-WebSocket.
+Batch submit, batch modify, and batch cancel use the trade WebSocket on mainnet and testnet. In demo
+mode the adapter falls back to individual HTTP requests, because the demo environment has no trade WebSocket.
 
 Bybit accepts at most 10 Spot orders, 20 Linear or Inverse orders, or 5 Option orders in one batch
 request. Linear, Inverse, and Spot batches consume UID quota per order, while an Option batch
@@ -387,6 +386,11 @@ With `LiveNode`, open-order and targeted order checks collect order reports on a
 node accepts the reports before finalization updates order identities on the core thread. Expired or
 canceled collections retain the identities needed for pending cancel and amend rejections. Startup
 mass status and direct asynchronous report methods still collect and finalize in one call.
+
+HTTP order reports keep a venue `rejectReason` on `cancel_reason`, except `EC_NoError`. When a
+rejected order has an empty `rejectReason`, the reason is `venue omitted rejectReason` rather than
+`UNKNOWN`. Bybit reports a post-only order that would take liquidity as `Cancelled` with
+`EC_PostOnlyWillTakeLiquidity`; reconciliation emits `OrderRejected` with `due_post_only=true`.
 
 ### Position management
 

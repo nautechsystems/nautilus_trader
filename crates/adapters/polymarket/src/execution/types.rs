@@ -27,6 +27,7 @@ use nautilus_model::{
 use crate::{
     common::enums::PolymarketOrderType,
     http::{error::Error, models::PolymarketOrder},
+    signing::eip712::OrderSigningContext,
 };
 
 /// Classifies a state-changing order command HTTP failure at the execution boundary.
@@ -49,7 +50,7 @@ pub(crate) struct LimitOrderSubmitRequest {
     pub(crate) quote_quantity: bool,
     pub(crate) time_in_force: TimeInForce,
     pub(crate) post_only: bool,
-    pub(crate) neg_risk: bool,
+    pub(crate) signing_context: OrderSigningContext,
     pub(crate) expire_time: Option<UnixNanos>,
     pub(crate) tick_decimals: u32,
     pub(crate) size_precision: u8,

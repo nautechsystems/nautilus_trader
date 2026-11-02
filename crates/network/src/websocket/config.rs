@@ -171,7 +171,8 @@ pub struct WebSocketConfig {
     ///
     /// When set, the read task stops and triggers reconnection if no inbound frame of any kind
     /// arrives within this duration. Ping and Pong both refresh it, so this detects a peer that has
-    /// gone silent rather than one whose feed is merely quiet. Set it above
+    /// gone silent rather than one whose feed is merely quiet. Continuation frames refresh it
+    /// before their message is complete. Set it above
     /// [`Self::heartbeat_interval_secs`] so a healthy connection cannot trip it; three intervals is
     /// the usual choice, tolerating two lost replies.
     ///

@@ -18,7 +18,7 @@ use std::time::Duration;
 use anyhow::Context;
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
-use nautilus_core::{string::secret::SecretString, time::AtomicTime};
+use nautilus_core::{UUID4, string::secret::SecretString, time::AtomicTime};
 use nautilus_live::execution::{context::OrderContext, failure::CommandFailure};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -61,12 +61,13 @@ use crate::{
     common::{
         consts::{BATCH_ORDER_LIMIT, LOT_SIZE_SCALE, MARKET_VERSION_KEY},
         enums::{PolymarketOrderSide, PolymarketOrderType},
-        parse::validate_market_version,
+        parse::validate_execution_market,
     },
     http::{
         error::{Error as HttpError, sanitize_error_text},
         query::GetTradesParams,
     },
+    signing::eip712::OrderSigningContext,
 };
 
 impl PolymarketExecutionClient {
@@ -83,7 +84,7 @@ impl PolymarketExecutionClient {
             return;
         }
 
-        let instrument = match self.resolve_instrument(&order) {
+        let (instrument, signing_context) = match self.resolve_instrument(&order) {
             Some(i) => i,
             None => return,
         };
@@ -95,7 +96,6 @@ impl PolymarketExecutionClient {
             return;
         }
 
-        let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_decimals = u32::from(instrument.min_price_increment_precision());
         let price = order.price().unwrap();
@@ -113,7 +113,7 @@ impl PolymarketExecutionClient {
             quote_quantity,
             time_in_force: tif,
             post_only,
-            neg_risk,
+            signing_context,
             expire_time,
             tick_decimals,
             size_precision: instrument.size_precision(),
@@ -192,12 +192,11 @@ impl PolymarketExecutionClient {
             return;
         }
 
-        let instrument = match self.resolve_instrument(&order) {
+        let (instrument, signing_context) = match self.resolve_instrument(&order) {
             Some(i) => i,
             None => return,
         };
 
-        let neg_risk = self.get_neg_risk(&order.instrument_id());
         let token_id = instrument.raw_symbol().to_string();
         let tick_size = instrument.price_increment();
         let tick_decimals = u32::from(instrument.min_price_increment_precision());
@@ -277,7 +276,7 @@ impl PolymarketExecutionClient {
                     side,
                     amount,
                     time_in_force,
-                    neg_risk,
+                    signing_context,
                     tick_size,
                     tick_decimals,
                     fee_context,
@@ -447,7 +446,10 @@ impl PolymarketExecutionClient {
         });
     }
 
-    pub(super) fn resolve_instrument(&self, order: &OrderAny) -> Option<InstrumentAny> {
+    pub(super) fn resolve_instrument(
+        &self,
+        order: &OrderAny,
+    ) -> Option<(InstrumentAny, OrderSigningContext)> {
         let instrument = self
             .core
             .cache()
@@ -457,12 +459,18 @@ impl PolymarketExecutionClient {
         match instrument {
             Some(i) => {
                 let version = i.info().and_then(|info| info.get_str(MARKET_VERSION_KEY));
-                if let Err(e) = validate_market_version(version) {
-                    self.emitter.emit_order_denied(order, &e.to_string());
-                    return None;
-                }
+                let context =
+                    validate_execution_market(version, i.raw_symbol().as_str()).and_then(|()| {
+                        OrderSigningContext::new(version, self.get_neg_risk(&order.instrument_id()))
+                    });
 
-                Some(i)
+                match context {
+                    Ok(context) => Some((i, context)),
+                    Err(e) => {
+                        self.emitter.emit_order_denied(order, &e.to_string());
+                        None
+                    }
+                }
             }
             None => {
                 self.emitter.emit_order_denied(
@@ -503,7 +511,6 @@ impl PolymarketExecutionClient {
 
     pub(super) fn submit_order_list_command(&self, cmd: &SubmitOrderList) {
         let mut batch_orders = Vec::with_capacity(cmd.order_inits.len());
-        let neg_risk_index = self.neg_risk_index.load();
         let ts_now = self.clock.get_time_ns();
 
         for order_init in &cmd.order_inits {
@@ -550,7 +557,7 @@ impl PolymarketExecutionClient {
                 continue;
             }
 
-            let instrument = match self.resolve_instrument(&order) {
+            let (instrument, signing_context) = match self.resolve_instrument(&order) {
                 Some(i) => i,
                 None => continue,
             };
@@ -574,10 +581,7 @@ impl PolymarketExecutionClient {
                     quote_quantity: order.is_quote_quantity(),
                     time_in_force: order.time_in_force(),
                     post_only: order.is_post_only(),
-                    neg_risk: Self::get_neg_risk_from_snapshot(
-                        &neg_risk_index,
-                        &order.instrument_id(),
-                    ),
+                    signing_context,
                     expire_time: order.expire_time(),
                     tick_decimals: u32::from(instrument.min_price_increment_precision()),
                     size_precision: instrument.size_precision(),
@@ -808,13 +812,14 @@ impl PolymarketExecutionClient {
 
     pub(super) fn modify_order_command(&self, cmd: &ModifyOrder) {
         let Some(order) = self.core.cache().order_owned(&cmd.client_order_id) else {
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.client_order_id,
                 cmd.venue_order_id,
                 "Order not found in cache",
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return;
         };
@@ -822,11 +827,11 @@ impl PolymarketExecutionClient {
         let venue_order_id = self.current_venue_order_id(&order);
 
         let reject = |reason: &str| {
-            self.emitter.emit_order_modify_rejected(
+            self.emitter.emit_order_modify_denied(
                 &order,
-                venue_order_id,
                 reason,
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
         };
 
@@ -878,24 +883,28 @@ impl PolymarketExecutionClient {
             .and_then(|info| info.get_str(MARKET_VERSION_KEY));
 
         let price = cmd.price.or_else(|| order.price()).unwrap();
-
-        let validation = validate_market_version(version)
+        let validation = validate_execution_market(version, instrument.raw_symbol().as_str())
             .and_then(|()| {
+                OrderSigningContext::new(version, self.get_neg_risk(&order.instrument_id()))
+            })
+            .and_then(|context| {
                 PolymarketOrderBuilder::validate_limit_price_value(
                     price,
                     instrument.price_increment(),
                 )
-                .map_err(anyhow::Error::from)
-            })
-            .and_then(|()| {
+                .map_err(anyhow::Error::from)?;
                 PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
-                    .map_err(anyhow::Error::from)
+                    .map_err(anyhow::Error::from)?;
+                Ok(context)
             });
 
-        if let Err(reason) = validation {
-            reject(&reason.to_string());
-            return;
-        }
+        let signing_context = match validation {
+            Ok(context) => context,
+            Err(reason) => {
+                reject(&reason.to_string());
+                return;
+            }
+        };
 
         let target_total_qty = cmd.quantity.unwrap_or_else(|| order.quantity());
         let filled_qty = order.filled_qty();
@@ -1006,7 +1015,6 @@ impl PolymarketExecutionClient {
         let instrument_id = order.instrument_id();
         let token_id = instrument.raw_symbol().to_string();
         let size_precision = instrument.size_precision();
-        let neg_risk = self.get_neg_risk(&instrument_id);
         let signer_type = self.config.signer_type;
         let user_address = self
             .secrets
@@ -1019,15 +1027,19 @@ impl PolymarketExecutionClient {
         let status_retry_delay_initial_ms = self.config.retry_delay_initial_ms;
         let status_retry_delay_max_ms = self.config.retry_delay_max_ms;
         let spawn_failure_order = order.clone();
+        let command_id = cmd.command_id;
 
         let spawned = self.spawn_task("modify_order", async move {
             let venue_order_id_str = venue_order_id.to_string();
+
             let reject_modify =
                 |reason: &str, cancellation_proven: bool, close_canceled_order: bool| {
-                    reject_modify_and_finish(
+                    finish_modify_command(
                         &order,
                         venue_order_id,
                         reason,
+                        &CommandFailure::venue_rejected(reason),
+                        command_id,
                         cancellation_proven,
                         close_canceled_order,
                         &emitter,
@@ -1041,15 +1053,45 @@ impl PolymarketExecutionClient {
             let response = match submitter.cancel_order(&venue_order_id_str).await {
                 Ok(response) => response,
                 Err(e) => {
-                    let reason = match classify_http_command_failure(&e) {
+                    match classify_http_command_failure(&e) {
                         CommandFailure::Ambiguous(reason) => {
-                            format!("Cancel outcome is unknown; replacement not submitted: {reason}")
+                            log::warn!(
+                                "Modify cancel outcome unknown for {client_order_id}, awaiting reconciliation: {reason}"
+                            );
+                            finish_modify_command(
+                                &order,
+                                venue_order_id,
+                                &reason,
+                                &CommandFailure::ambiguous(&reason),
+                                command_id,
+                                false,
+                                true,
+                                &emitter,
+                                clock,
+                                &fill_tracker,
+                                &ws_dispatch_state,
+                                &pending_cancels,
+                            );
                         }
-                        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
-                            format!("Cancel failed; replacement not submitted: {reason}")
+                        CommandFailure::NotSent(reason) => finish_modify_command(
+                            &order,
+                            venue_order_id,
+                            &reason,
+                            &CommandFailure::not_sent(&reason),
+                            command_id,
+                            false,
+                            false,
+                            &emitter,
+                            clock,
+                            &fill_tracker,
+                            &ws_dispatch_state,
+                            &pending_cancels,
+                        ),
+                        CommandFailure::VenueRejected(reason) => {
+                            reject_modify(&reason, false, true);
                         }
-                    };
-                    reject_modify(&reason, false, true);
+                    }
+
                     return Ok(());
                 }
             };
@@ -1059,18 +1101,37 @@ impl PolymarketExecutionClient {
                 .iter()
                 .any(|order_id| order_id == &venue_order_id_str)
             {
-                let reason = response
-                    .not_canceled
-                    .get(&venue_order_id_str)
-                    .and_then(|reason| reason.as_deref())
-                    .map_or_else(
-                        || "cancel response omitted the order result".to_string(),
-                        sanitize_error_text,
-                    );
-                reject_modify(
-                    &format!("Cancel not confirmed; replacement not submitted: {reason}"),
+                let reason = response.not_canceled.get(&venue_order_id_str).map(|reason| {
+                    let reason = sanitize_error_text(reason.as_deref().unwrap_or("unknown reason"));
+                    format!("Cancel not confirmed; replacement not submitted: {reason}")
+                });
+
+                let reason = reason.as_deref();
+                let missing_reason = "Cancel response omitted the order result";
+
+                let failure = reason.map_or_else(
+                    || {
+                        log::warn!(
+                            "Modify cancel outcome unknown for {client_order_id}, awaiting reconciliation: {missing_reason}"
+                        );
+                        CommandFailure::ambiguous(missing_reason)
+                    },
+                    CommandFailure::venue_rejected,
+                );
+
+                finish_modify_command(
+                    &order,
+                    venue_order_id,
+                    reason.unwrap_or(missing_reason),
+                    &failure,
+                    command_id,
                     false,
                     true,
+                    &emitter,
+                    clock,
+                    &fill_tracker,
+                    &ws_dispatch_state,
+                    &pending_cancels,
                 );
                 return Ok(());
             }
@@ -1092,6 +1153,7 @@ impl PolymarketExecutionClient {
                     Some(venue_order_id),
                     "Polymarket modification state was lost after canceling the old venue leg",
                     cancel_ts,
+                    Some(command_id),
                 );
 
                 if !fill_tracker.is_fully_filled(&venue_order_id) {
@@ -1374,7 +1436,7 @@ impl PolymarketExecutionClient {
                 quote_quantity: false,
                 time_in_force: order.time_in_force(),
                 post_only: order.is_post_only(),
-                neg_risk,
+                signing_context,
                 expire_time: order.expire_time(),
                 tick_decimals,
                 size_precision,
@@ -1483,10 +1545,12 @@ impl PolymarketExecutionClient {
         });
 
         if !spawned {
-            reject_modify_and_finish(
+            finish_modify_command(
                 &spawn_failure_order,
                 venue_order_id,
                 "Polymarket execution client is shutting down",
+                &CommandFailure::not_sent("Polymarket execution client is shutting down"),
+                command_id,
                 false,
                 false,
                 &self.emitter,
@@ -1616,10 +1680,12 @@ fn replacement_market_minimum_reason(
 }
 
 #[expect(clippy::too_many_arguments)]
-fn reject_modify_and_finish(
+fn finish_modify_command(
     order: &OrderAny,
     venue_order_id: VenueOrderId,
     reason: &str,
+    failure: &CommandFailure,
+    causation_id: UUID4,
     cancellation_proven: bool,
     close_canceled_order: bool,
     emitter: &nautilus_live::ExecutionEventEmitter,
@@ -1650,7 +1716,20 @@ fn reject_modify_and_finish(
     };
 
     let reason = sanitize_error_text(reason);
-    emitter.emit_order_modify_rejected(order, order.venue_order_id(), &reason, ts_event);
+
+    match failure {
+        CommandFailure::NotSent(_) => {
+            emitter.emit_order_modify_denied(order, &reason, ts_event, Some(causation_id));
+        }
+        CommandFailure::VenueRejected(_) => emitter.emit_order_modify_rejected(
+            order,
+            order.venue_order_id(),
+            &reason,
+            ts_event,
+            Some(causation_id),
+        ),
+        CommandFailure::Ambiguous(_) => {}
+    }
 
     if let (venue_order_id, Some(ts_event)) = finish
         && close_canceled_order

@@ -35,14 +35,13 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio_tungstenite::tungstenite::Message;
 use tokio_util::sync::CancellationToken;
-use ustr::Ustr;
 
 use super::{
     enums::BybitWsOperation,
     error::{BybitWsError, BybitWsResult, create_bybit_timeout_error, should_retry_bybit_error},
     messages::{
-        BybitSubscription, BybitWebSocketError, BybitWsFrame, BybitWsMessage, BybitWsOrderResponse,
-        BybitWsResponse, BybitWsSubscriptionMsg,
+        BybitSubscription, BybitWebSocketError, BybitWsFrame, BybitWsMessage, BybitWsResponse,
+        BybitWsSubscriptionMsg,
     },
     parse::parse_bybit_ws_frame,
 };
@@ -749,17 +748,10 @@ fn order_operation(op: BybitWsOrderRequestOp) -> (&'static str, &'static str) {
 }
 
 fn order_not_sent_message(command: &BybitWsOrderCommand, error: &BybitWsError) -> BybitWsMessage {
-    let (_, op) = order_operation(command.op);
-    BybitWsMessage::OrderResponse(BybitWsOrderResponse {
-        op: Ustr::from(op),
-        conn_id: None,
-        ret_code: -1,
-        ret_msg: error.to_string(),
-        data: Value::Object(serde_json::Map::new()),
-        req_id: Some(command.req_id.clone()),
-        header: None,
-        ret_ext_info: None,
-    })
+    BybitWsMessage::OrderNotSent {
+        request_id: command.req_id.clone(),
+        reason: error.to_string(),
+    }
 }
 
 fn is_already_subscribed_error(error_msg: &str) -> bool {
@@ -1140,15 +1132,15 @@ mod tests {
         let OrderSendFailure::NotSent(error) = failure else {
             panic!("Expected definitive not-sent failure, was {failure:?}");
         };
-        let BybitWsMessage::OrderResponse(response) = order_not_sent_message(&command, &error)
+
+        let BybitWsMessage::OrderNotSent { request_id, reason } =
+            order_not_sent_message(&command, &error)
         else {
             panic!("Expected order response");
         };
 
-        assert_eq!(response.op, "order.create");
-        assert_eq!(response.ret_code, -1);
-        assert_eq!(response.req_id.as_deref(), Some("not-sent-request"));
-        assert_eq!(response.ret_msg, "Client error: No active WebSocket client");
+        assert_eq!(request_id, "not-sent-request");
+        assert_eq!(reason, "Client error: No active WebSocket client");
     }
 
     #[rstest]

@@ -112,6 +112,7 @@ pub(super) const HANDLER_BUFFER_CAP: usize = 64;
 thread_local! {
     pub(super) static MESSAGE_BUS: RefCell<Option<Rc<RefCell<MessageBus>>>> = const { RefCell::new(None) };
     pub(super) static HAS_EXTERNAL_EGRESS: Cell<bool> = const { Cell::new(false) };
+    pub(super) static HAS_EXTERNAL_DATA_INGRESS: Cell<bool> = const { Cell::new(false) };
     pub(super) static SUPPRESS_EXTERNAL_DEPTH: Cell<u32> = const { Cell::new(0) };
 
     pub(super) static ANY_HANDLERS: RefCell<SmallVec<[ShareableMessageHandler; HANDLER_BUFFER_CAP]>> =
@@ -199,6 +200,7 @@ impl Drop for SuppressExternalGuard {
 /// Sets the thread-local message bus, replacing any existing one.
 pub fn set_message_bus(msgbus: Rc<RefCell<MessageBus>>) {
     HAS_EXTERNAL_EGRESS.with(|flag| flag.set(msgbus.borrow().has_external_egress()));
+    HAS_EXTERNAL_DATA_INGRESS.with(|flag| flag.set(msgbus.borrow().has_external_data_ingress()));
     MESSAGE_BUS.with(|bus| {
         *bus.borrow_mut() = Some(msgbus);
     });

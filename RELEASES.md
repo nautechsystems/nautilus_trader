@@ -4,19 +4,47 @@ Released on TBD (UTC).
 
 ### Enhancements
 
+- Added `BacktestNodeBuilder` with custom catalog factories for instrument loading and replay
+- Added FinFeedAPI prediction market data adapter with REST access, historical requests, and polling
+- Added `Cache` lazy instrument and synthetic loads, saved component-state deletion, and explicit heartbeat writes
+- Added `DataEngine` processing and managed books for external data clients (#5520), thanks @nicezic
+- Added `LiveExecutionEngineConfig.purge_from_database` support in Python and live nodes
 - Added `HttpClient` certificate support through `certs_dir`
+- Added Postgres cache support for actor and strategy state, synthetics, heartbeat writes, and entity deletion
+- Added `OrderModifyDenied` and `OrderCancelDenied` events and strategy and execution algorithm callbacks
+- Added sandbox execution matching against `OrderBookDepth` snapshots (#5436), thanks @graceyangfan
 - Added Betfair certificate login through `certs_dir`
+- Added CoinAPI flat-file support for numeric book update codes
+- Added Deribit `load_ids` so a scoped node can omit other instruments during reconciliation
 - Added Deribit routed spot metadata and local order and market data capability checks
+- Added Polymarket Protocol V2 market data, execution, account reporting, and resolution support
+- Added Polymarket Protocol V2 split, merge, and redemption support for Deposit Wallets
 
 ### Breaking Changes
 
+- Removed Python `RedisCacheDatabase` and `PostgresCacheDatabase`; configure cache persistence through node factories
+- Removed Python `RedisMessageBusBacking`; configure external message bus backing through node factories
+- Changed local modify/cancel refusals to denied events; handle `on_order_modify_denied` and `on_order_cancel_denied`
+- Changed modify/cancel rejection emitters and factories to take `causation_id`; pass the command ID or `None`
+- Changed `Strategy::mark_order_pending_update` and `mark_order_pending_cancel` to take the command's UUID
+- Changed `Strategy::generate_order_pending_update` and `generate_order_pending_cancel` to take the command's UUID
+- Changed SBE to require matching precision modes and reject version 0; upgrade readers and writers together
+- Changed `PostgresCacheDatabase::connect` to take `PostgresCacheConfig`; replace individual connection arguments
+- Changed Rust `Cache` order/position/account purges to return `Result`; pass `false` for memory only
 - Changed `CacheDatabaseAdapter` Greek and yield-curve defaults to errors; override supported reads and writes
 - Changed `Cache::cache_all` to replace preloaded Greeks and yield curves; add transient values after loading
 - Changed raw `Price` and `Quantity` construction and decoding to reject digits beyond precision; rescale or round first
 - Changed `Price.from_decimal` and `Quantity.from_decimal` to round excess decimal places half even
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
+- Changed Architect AX `AxWhoAmI.is_onboarded` and `is_frozen` to `Option<bool>`; handle missing flags as `None`
+- Changed Binance non-GET REST requests to fail at quota gates; retry `RateLimitBlocked` when quota is available
+- Changed Binance HTTP error enums to add `RateLimitBlocked`; update exhaustive matches
+- Changed Binance REST to block on 418 without `Retry-After`; confirm the ban has ended before restarting
 - Changed Bybit HTTP `modify_order` to take `trigger_price`; pass `None` when unchanged
+- Changed CoinAPI OHLCV fields and APIs to `OhlcvPeriod`; convert string literals with `.into()`
+- Changed CoinAPI symbol type and taker side APIs to `SymbolType` and `TakerSide`; use enum variants
+- Changed Coinbase live fills to use polled REST history; raise `retry_delay_max_ms` to reduce REST usage
 - Changed Databento and Interactive Brokers futures year settings to `FuturesYearDigits`; Python keeps `1`/`2`
 - Changed Databento futures IDs to two-digit years by default; `futures_year_digits=1` keeps old IDs, thanks @faysou
 - Changed Databento futures-option IDs and underlyings to match `futures_year_digits`
@@ -29,54 +57,104 @@ Released on TBD (UTC).
 - Changed Databento statistics to use at least nine decimal places
 - Changed Databento market decoding to reject extra price digits, including sub-penny equity trades and bars
 - Changed Deribit orders to require cached instruments; include traded product types in execution `product_types`
+- Changed Deribit reconciliation to fail on uncached in-scope records; set `load_ids` to limit scope
 - Changed Deribit spot orders to reject `GTD`; use `GTC`, `IOC`, or `FOK`
 - Changed `DeribitInstrument` literals; add `is_cbe_routed: None` and `is_csr: None`
 - Changed Derive endpoint overrides to `SecretString`; pass strings to builders or use `.into()` in struct literals
 - Changed Interactive Brokers futures IDs to two-digit years by default; use `futures_year_digits=1`, thanks @faysou
 - Changed Interactive Brokers futures-option IDs and underlyings to match `futures_year_digits`
 - Changed Interactive Brokers provider config literals; add `futures_year_digits: FuturesYearDigits::Two`
+- Changed OKX WebSocket batch order tuples; add `quote_quantity` after `reduce_only`
+- Changed Polymarket `AssetType` with `ConditionalV2`; update exhaustive matches
+- Changed Polymarket `build_limit_order` expiry to `Option<UnixNanos>`; pass `None` for no expiry
+- Changed Polymarket reports to require instruments for in-scope V2 orders and positions; set `load_ids`
 - Changed Polymarket data/execution credentials and funders to reject blanks; omit them for environment fallback
 - Changed Polymarket execution examples to dry run by default; disable `DRY_RUN` for live orders
+- Changed Polymarket `GammaMarket` literals; add `position_ids` and `resolution_status` fields
+- Changed Polymarket loaders to use Gamma outcome order; require matching Gamma/CLOB IDs and labels
 
 ### Security
 
 - Improved R2 publishing credential handling to avoid writing keys to disk
+- Fixed CoinAPI WebSocket diagnostics logging API keys from malformed frames
 - Fixed Derive configs and HTTP client exposing endpoint credentials in `Debug` output
+- Fixed `Throttler` timer deadline overflow that could panic during order submission or modification
 
 ### Fixes
 
+- Fixed catalog display queries failing on clear-book deltas with no order side
+- Fixed closed-order and position purges ignoring `purge_from_database` in execution timers
+- Fixed Redis order and position deletion leaving routine snapshots and restoring purged positions
 - Fixed `Cache` indexing closed positions as open and excluding them from purging after insertion
+- Fixed managed order book subscriptions reusing a cached book of a different type
+- Fixed command refusals clearing unrelated pending operations or rolling back later order state
 - Fixed mixed-key market data batches being cached under the first row's instrument or bar type
+- Fixed historical time bar boundary assignment for ticks sharing a timestamp
+- Fixed queued timer callbacks logging missing-actor errors or targeting reused actor IDs after retirement
+- Fixed `ExecTester` panicking on unsupported `GTD` brackets
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
+- Fixed exchange-rate conversions failing on overflow despite a representable route or returning zero on underflow
+- Fixed Sockudo WebSocket timeouts overriding the client heartbeat and idle policy
+- Fixed false WebSocket heartbeat timeouts while receiving fragmented messages
+- Fixed Architect AX clients failing to connect when `/whoami` omits onboarding and frozen states
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
+- Fixed Binance REST requests ignoring 429 and 418 cooldowns from other requests
+- Fixed Binance cancellations and COIN-M modifications consuming order-count quota
+- Fixed Binance snapshot HTTP retries bypassing request-weight pacing
+- Fixed Binance REST pacing ignoring endpoint weights and USD-M funding and open-interest limits
+- Fixed Bybit batch modify orders not using the trade WebSocket batch amend
+- Fixed Bybit data client ignoring environment credentials when config credentials are omitted
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments
+- Fixed Bybit demo cancels remaining pending cancel without an order stream update
+- Fixed Bybit HTTP order reports dropping venue reject reasons and `due_post_only`
+- Fixed CoinAPI dropping first book snapshots before subscription writes complete
+- Fixed CoinAPI L2 flat-file book loaders accepting unknown update types
 - Fixed Coinbase and OKX checks closing positions outside report scope (#5280), thanks for reporting @chaneyka1
+- Fixed Coinbase live fill IDs differing from REST reconciliation
+- Fixed Coinbase quote-sized fills being interpreted as base quantities
 - Fixed Databento statistics decoding with insufficient precision for VWAP, volatility, and delta
 - Fixed Databento statistics Arrow encoding accepting mixed instruments or precisions
 - Fixed Databento MBO decode errors delaying buffered book events at `F_LAST` boundaries
 - Fixed Databento option strikes rejecting values finer than the strike currency precision
 - Fixed Databento price scaling at explicitly selected 17- and 18-decimal precision
 - Fixed Deribit instrument loading panicking on invalid spot definitions
+- Fixed Deribit single-order recovery treating failed lookups as missing orders
+- Fixed Deribit fill report requests returning partial results when a required trade fails to parse
+- Fixed Deribit reconciliation omitting in-scope orders, fills, and positions when the instrument is not cached
+- Fixed Hyperliquid account state staying stale after fills (#5449), thanks for reporting @dxwil
+- Fixed Hyperliquid instrument caching stalling node startup (#5354), thanks for reporting @Karrenbelt
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects
+- Fixed OKX spot market base/quote sizing for margin-mode accounts and batch submissions
 - Fixed Polymarket accepting invalid funders, malformed `load_ids`, and unsafe retry delays
 - Fixed Polymarket settled BUY spend staying locked when collateral credits offset balance decreases
 - Fixed Polymarket explicit event slugs being ignored when an event-slug builder is configured
 - Fixed Polymarket data-client builder defaults disabling the 60-minute instrument refresh
+- Fixed Polymarket open-order checks failing while an admitted fill awaits application
 
 ### Internal Improvements
 
+- Added NETTING startup reconciliation scenarios for flat accounts and recovered positions
 - Improved Docker publishing with temporary digest directories isolated per job
-- Refined Polymarket limit submit responses and venue order ID lookup
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
-- Upgraded `socket-cli` tool to v1.10.1
+- Refined Polymarket limit submit responses and venue order ID lookup
+- Optimized empty command-queue drains and L1 order-book quote replacement
+- Upgraded `cargo-codspeed` tool to v6.0.0
+- Upgraded `cargo-nextest` tool to v0.9.150
+- Upgraded `socket-cli` tool to v1.11.1
+- Upgraded `arrow` and `parquet` crates to v59.3.2
+- Upgraded `aws-lc-rs` crate to v1.19.0
 - Upgraded `hypersync-client` crate to v2.0.0
-- Upgraded `ty` package (dev) to v0.0.90
+- Upgraded `ruff` package (dev) to v0.17.3
+- Upgraded `ty` package (dev) to v0.0.91
 
 ### Documentation Updates
 
+- Clarified Parquet migration coverage and CLEAR snapshot promotion limits
+- Fixed WebSocket module documentation for backend proxy support and SOCKS fallback
 - Improved Polymarket setup and configuration troubleshooting guidance
+- Updated Kraken Futures Maker Protection rollout and split-amendment guidance
 - Updated Python Polymarket examples with scoped reconciliation, risk checks, and 30-second shutdown waits
 
 ---

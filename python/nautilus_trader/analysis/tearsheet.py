@@ -22,12 +22,15 @@ results, using backtest result statistics and report DataFrames.
 
 from __future__ import annotations
 
+import math
 import numbers
+import re
 from collections.abc import Mapping
 from difflib import get_close_matches
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from nautilus_trader.analysis.config import GridLayout
 from nautilus_trader.analysis.config import TearsheetConfig
 from nautilus_trader.analysis.themes import get_theme
 from nautilus_trader.core import NAUTILUS_VERSION
@@ -44,7 +47,6 @@ if TYPE_CHECKING:
 
     import pandas as pd
 
-    from nautilus_trader.analysis.config import GridLayout
     from nautilus_trader.analysis.config import TearsheetChart
     from nautilus_trader.backtest import BacktestEngine
     from nautilus_trader.backtest import BacktestNode
@@ -96,8 +98,21 @@ _GRID_ONE_ROW_MAX_CHARTS = 2
 _GRID_TWO_ROWS_MAX_CHARTS = 4
 _GRID_THREE_ROWS_MAX_CHARTS = 6
 _GRID_DEFAULT_ROWS = 4
+_GRID_DEFAULT_SPACING = 0.08
+
+# Sourced from GridLayout defaults (the default 8-chart grid).
+_GRID_DEFAULT_HEIGHTS = list(GridLayout().heights)
 
 _STATIC_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp", ".svg", ".pdf"})
+
+# Inter for titles, IBM Plex Mono for data; both degrade to system fonts when absent.
+_FONT_HEADING = "Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+_FONT_MONO = "'IBM Plex Mono', 'SF Mono', Consolas, Menlo, monospace"
+
+_EMPTY_DATA_MESSAGE = "No data available"
+
+_HEX_SHORT_LENGTH = 3
+_HEX_FULL_LENGTH = 6
 
 _CHART_REGISTRY: dict[str, Callable] = {}
 
@@ -150,14 +165,50 @@ def _to_returns_series(returns: pd.Series | Mapping | list | None) -> pd.Series:
 
 def _write_figure(fig: go.Figure, output_path: str) -> None:
     # Static image export uses Kaleido (install via `nautilus_trader[visualization]`).
-    suffix = Path(output_path).suffix.lower()
+    path = Path(output_path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    suffix = path.suffix.lower()
     if suffix in _STATIC_IMAGE_SUFFIXES:
         # Kaleido serializes via orjson, which cannot encode the pandas Timestamp
         # values on datetime axes; a round-trip through plotly's JSON encoder
         # converts them so the resulting trace data is serializable.
-        pio.from_json(pio.to_json(fig)).write_image(output_path)
+        export = pio.from_json(pio.to_json(fig))
+        if export.layout.width is None:
+            export.update_layout(width=1200)
+        export.write_image(output_path)
     else:
         fig.write_html(output_path)
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    """
+    Parse a hex color code into an RGB triple.
+
+    Parameters
+    ----------
+    hex_color : str
+        Hex color code (e.g., "#d62728" or "#fff").
+
+    Returns
+    -------
+    tuple[int, int, int]
+        The red, green, and blue components.
+
+    Raises
+    ------
+    ValueError
+        If the value is not a 3- or 6-digit hex code.
+
+    """
+    code = hex_color.lstrip("#")
+    if len(code) == _HEX_SHORT_LENGTH:
+        code = "".join(char * 2 for char in code)
+    if len(code) != _HEX_FULL_LENGTH:
+        raise ValueError(f"Color must be a hex code like '#rrggbb', was {hex_color!r}")
+    try:
+        return int(code[0:2], 16), int(code[2:4], 16), int(code[4:6], 16)
+    except ValueError as e:
+        raise ValueError(f"Color must be a hex code like '#rrggbb', was {hex_color!r}") from e
 
 
 def _hex_to_rgba(hex_color: str, alpha: float = 1.0) -> str:
@@ -169,7 +220,7 @@ def _hex_to_rgba(hex_color: str, alpha: float = 1.0) -> str:
     hex_color : str
         Hex color code (e.g., "#d62728").
     alpha : float, default 1.0
-        Alpha/opacity value (0.0 to 1.0).
+        Alpha/opacity value, clamped to 0.0 to 1.0.
 
     Returns
     -------
@@ -177,11 +228,174 @@ def _hex_to_rgba(hex_color: str, alpha: float = 1.0) -> str:
         RGBA color string (e.g., "rgba(214, 39, 40, 0.3)").
 
     """
-    hex_color = hex_color.lstrip("#")
-    r = int(hex_color[0:2], 16)
-    g = int(hex_color[2:4], 16)
-    b = int(hex_color[4:6], 16)
-    return f"rgba({r}, {g}, {b}, {alpha})"
+    r, g, b = _hex_to_rgb(hex_color)
+    return f"rgba({r}, {g}, {b}, {min(max(alpha, 0.0), 1.0)})"
+
+
+_LIGHT_LUMINANCE_THRESHOLD = 0.5
+
+
+def _is_light_background(bg: str) -> bool:
+    """
+    Judge whether a theme background needs dark foreground colors.
+    """
+    try:
+        r, g, b = _hex_to_rgb(bg)
+    except ValueError:
+        return False
+    luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255
+    return luminance > _LIGHT_LUMINANCE_THRESHOLD
+
+
+def _padded_range(values_min: float, values_max: float, pad: float = 0.05) -> list[float]:
+    """
+    Build a padded axis range covering the data without forcing zero in view.
+
+    Filled traces with ``fill="tozeroy"`` make Plotly's autorange include zero,
+    which squashes series that live far from it (like an equity index starting
+    near 1.0). An explicit range keeps the fill and the detail.
+
+    """
+    span = values_max - values_min
+    if span <= 0:
+        delta = abs(values_max) * pad if values_max != 0 else pad
+        return [values_min - delta, values_max + delta]
+    return [values_min - span * pad, values_max + span * pad]
+
+
+def _mix_hex(first: str, second: str, weight: float) -> str:
+    """
+    Blend two hex colors; a weight of 1.0 returns the first color.
+    """
+    r1, g1, b1 = _hex_to_rgb(first)
+    r2, g2, b2 = _hex_to_rgb(second)
+    w = min(max(weight, 0.0), 1.0)
+    r = round(r1 * w + r2 * (1.0 - w))
+    g = round(g1 * w + g2 * (1.0 - w))
+    b = round(b1 * w + b2 * (1.0 - w))
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _group_thousands(text: str) -> str:
+    """
+    Add comma thousand separators to a plain decimal string.
+
+    Values that are not plain decimals (identifiers, timestamps, durations) are returned
+    unchanged, and decimal places are preserved exactly.
+
+    """
+    match = re.match(r"^([+-]?)(\d+)(\.\d+)?$", text.strip())
+    if match is None:
+        return text
+    sign, int_part, frac_part = match.groups()
+    if len(int_part) > 1 and int_part.startswith("0"):
+        return text
+    return f"{sign}{int(int_part):,}{frac_part or ''}"
+
+
+def _format_info_value(value: Any) -> str:
+    """
+    Format a run/account info value, grouping thousands where numeric.
+    """
+    if isinstance(value, bool):
+        return str(value)
+    if isinstance(value, int):
+        return f"{value:,}"
+    if isinstance(value, float):
+        return _group_thousands(str(value))
+    if isinstance(value, str):
+        return _group_thousands(value)
+    return str(value)
+
+
+def _heatmap_colorscale(theme_config: dict[str, Any]) -> list[list[float | str]]:
+    """
+    Build a muted diverging colorscale from the theme's semantic colors.
+    """
+    colors = theme_config["colors"]
+    midpoint = colors.get("table_section", colors["background"])
+    low = _mix_hex(colors["negative"], midpoint, 0.72)
+    high = _mix_hex(colors["positive"], midpoint, 0.72)
+    return [[0.0, low], [0.5, midpoint], [1.0, high]]
+
+
+_MONTH_ABBR = [
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+    "Dec",
+]
+
+
+def _monthly_pivot(returns: pd.Series, *, compounding: bool) -> Any:
+    """
+    Pivot period returns into a year-by-month table for heatmaps.
+    """
+    monthly = _aggregate_period_returns(returns, "ME", compounding=compounding)
+    pivot = pd.DataFrame(
+        {
+            "Year": monthly.index.year,
+            "Month": monthly.index.month,
+            "Return": monthly.to_numpy(),
+        },
+    )
+    return pivot.pivot_table(index="Year", columns="Month", values="Return")
+
+
+def _symmetric_heatmap_range(values: Any) -> tuple[float, float]:
+    """
+    Return a symmetric (min, max) range around zero for diverging heatmaps.
+    """
+    magnitudes = [abs(value) for row in values for value in row if not math.isnan(value)]
+    vmax = max(magnitudes, default=0.0) or 1.0
+    return -vmax, vmax
+
+
+def _heatmap_trace(
+    heatmap_data: Any,
+    theme_config: dict[str, Any],
+    *,
+    showscale: bool,
+    hovertemplate: str | None = "<b>%{y} %{x}</b><br>Return: %{z:.2f}%<extra></extra>",
+) -> go.Heatmap:
+    """
+    Build a monthly returns heatmap trace with symmetric diverging colors.
+    """
+    colors = theme_config["colors"]
+    zmin, zmax = _symmetric_heatmap_range(heatmap_data.values)
+    colorbar: dict[str, Any] | None = None
+    if showscale:
+        colorbar = {
+            "thickness": 12,
+            "len": 0.85,
+            "outlinewidth": 0,
+            "tickfont": {"family": _FONT_MONO, "size": 10, "color": colors["muted"]},
+        }
+    return go.Heatmap(
+        z=heatmap_data.values,
+        x=[_MONTH_ABBR[int(m) - 1] for m in heatmap_data.columns],
+        y=heatmap_data.index.astype(str),
+        colorscale=_heatmap_colorscale(theme_config),
+        zmid=0,
+        zmin=zmin,
+        zmax=zmax,
+        text=heatmap_data.values,
+        texttemplate="%{text:.1f}%",
+        textfont={"family": _FONT_MONO, "size": 9, "color": colors["text"]},
+        xgap=1,
+        ygap=1,
+        showscale=showscale,
+        colorbar=colorbar,
+        hovertemplate=hovertemplate,
+    )
 
 
 def _normalize_theme_config(theme_config: dict[str, Any]) -> dict[str, Any]:
@@ -189,7 +403,7 @@ def _normalize_theme_config(theme_config: dict[str, Any]) -> dict[str, Any]:
     Ensure theme config has all required color keys with sensible defaults.
 
     This provides backward compatibility for themes registered before
-    table-specific colors were added.
+    text- and table-specific colors were added.
 
     Parameters
     ----------
@@ -203,7 +417,15 @@ def _normalize_theme_config(theme_config: dict[str, Any]) -> dict[str, Any]:
 
     """
     colors = theme_config.get("colors", {})
+    bg = colors.get("background", "#ffffff")
+    is_light = _is_light_background(bg)
 
+    if "text" not in colors:
+        colors["text"] = "#333333" if is_light else "#e5e7eb"
+    if "muted" not in colors:
+        colors["muted"] = "#737373" if is_light else "#9ca3af"
+    if "table_header" not in colors:
+        colors["table_header"] = colors.get("table_section", colors.get("grid", "#e0e0e0"))
     if "table_section" not in colors:
         colors["table_section"] = colors.get("grid", "#e0e0e0")
     if "table_row_odd" not in colors:
@@ -211,11 +433,214 @@ def _normalize_theme_config(theme_config: dict[str, Any]) -> dict[str, Any]:
     if "table_row_even" not in colors:
         colors["table_row_even"] = colors.get("background", "#ffffff")
     if "table_text" not in colors:
-        bg = colors.get("background", "#ffffff")
-        colors["table_text"] = "#000000" if bg.lower() in ["#ffffff", "#fff"] else "#eeeeee"
+        colors["table_text"] = "#000000" if is_light else "#eeeeee"
 
     theme_config["colors"] = colors
     return theme_config
+
+
+def _style_axes(
+    fig: go.Figure,
+    theme_config: dict[str, Any],
+    row: int | None = None,
+    col: int | None = None,
+) -> None:
+    """
+    Apply theme grid, tick, and title fonts to axes (all, or one subplot cell).
+    """
+    colors = theme_config["colors"]
+    axis_line = _hex_to_rgba(colors["neutral"], 0.45)
+    tickfont = {"family": _FONT_MONO, "size": 10, "color": colors["muted"]}
+    title_font = {"family": _FONT_HEADING, "size": 11, "color": colors["text"]}
+    kwargs: dict[str, Any] = {} if row is None else {"row": row, "col": col}
+    fig.update_xaxes(
+        gridcolor=colors["grid"],
+        zeroline=False,
+        showline=True,
+        linecolor=axis_line,
+        tickfont=tickfont,
+        title_font=title_font,
+        **kwargs,
+    )
+    fig.update_yaxes(
+        gridcolor=colors["grid"],
+        zeroline=False,
+        showline=True,
+        linecolor=axis_line,
+        tickfont=tickfont,
+        title_font=title_font,
+        **kwargs,
+    )
+
+
+def _base_layout(theme_config: dict[str, Any]) -> dict[str, Any]:
+    """
+    Shared theme template, fonts, legend, and hover styling for all figures.
+    """
+    colors = theme_config["colors"]
+    return {
+        "template": theme_config["template"],
+        "paper_bgcolor": colors["background"],
+        "plot_bgcolor": colors["background"],
+        "font": {"family": _FONT_MONO, "size": 11, "color": colors["text"]},
+        "hoverlabel": {
+            "font": {"family": _FONT_MONO, "size": 11, "color": colors["text"]},
+            "bgcolor": colors["background"],
+            "bordercolor": colors["grid"],
+        },
+        "legend": {
+            "font": {"family": _FONT_MONO, "size": 11, "color": colors["text"]},
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1.0,
+        },
+    }
+
+
+def _title_block(title: str | None, color: str, size: int) -> dict[str, Any]:
+    """
+    Left-aligned figure title block shared by all figures.
+    """
+    return {
+        "text": title,
+        "x": 0.02,
+        "xanchor": "left",
+        "font": {"family": _FONT_HEADING, "size": size, "color": color},
+    }
+
+
+def _style_figure(
+    fig: go.Figure,
+    theme_config: dict[str, Any],
+    title: str | None = None,
+    height: int | None = None,
+    title_size: int = 16,
+) -> None:
+    """
+    Apply theme fonts, colors, legend, and margins shared by standalone figures.
+    """
+    layout = _base_layout(theme_config)
+    layout.update(
+        {
+            "title": _title_block(title, theme_config["colors"]["text"], title_size),
+            "margin": {"l": 60, "r": 30, "t": 70, "b": 50},
+        },
+    )
+
+    if height is not None:
+        layout["height"] = height
+    fig.update_layout(**layout)
+    _style_axes(fig, theme_config)
+
+
+def _add_paper_note(fig: go.Figure, theme_config: dict[str, Any], message: str) -> None:
+    """
+    Add a centered paper-space note, used for empty standalone figures.
+    """
+    fig.add_annotation(
+        x=0.5,
+        y=0.5,
+        xref="paper",
+        yref="paper",
+        text=message,
+        showarrow=False,
+        font={"family": _FONT_MONO, "size": 12, "color": theme_config["colors"]["muted"]},
+    )
+
+
+def _empty_figure(
+    theme_config: dict[str, Any],
+    title: str,
+    message: str = _EMPTY_DATA_MESSAGE,
+    height: int = 400,
+) -> go.Figure:
+    """
+    Build a styled standalone figure stating that no data is available.
+    """
+    fig = go.Figure()
+    _style_figure(fig, theme_config, title, height=height)
+    fig.update_xaxes(visible=False)
+    fig.update_yaxes(visible=False)
+    _add_paper_note(fig, theme_config, message)
+    return fig
+
+
+def _render_empty_cell(
+    fig: go.Figure,
+    row: int,
+    col: int,
+    theme_config: dict[str, Any],
+    message: str = _EMPTY_DATA_MESSAGE,
+) -> None:
+    """
+    Render a centered note into an empty cartesian subplot cell.
+    """
+    fig.add_trace(
+        go.Scatter(
+            x=[0.5],
+            y=[0.5],
+            text=[message],
+            mode="text",
+            textfont={
+                "family": _FONT_MONO,
+                "size": 11,
+                "color": theme_config["colors"]["muted"],
+            },
+            hoverinfo="skip",
+            showlegend=False,
+        ),
+        row=row,
+        col=col,
+    )
+    fig.update_xaxes(
+        showticklabels=False,
+        showgrid=False,
+        zeroline=False,
+        showline=False,
+        row=row,
+        col=col,
+    )
+    fig.update_yaxes(
+        showticklabels=False,
+        showgrid=False,
+        zeroline=False,
+        showline=False,
+        row=row,
+        col=col,
+    )
+
+
+def _build_table(
+    metrics: list[str],
+    values: list[str],
+    fill_colors: list[str],
+    theme_config: dict[str, Any],
+) -> go.Table:
+    """
+    Build a styled two-column table with right-aligned values.
+    """
+    colors = theme_config["colors"]
+
+    # Row heights stay automatic so long statistic lists always fit their cell.
+    return go.Table(
+        columnwidth=[0.50, 0.50],
+        header={
+            "values": ["<b>METRIC</b>", "<b>VALUE</b>"],
+            "fill_color": colors["table_header"],
+            "font": {"family": _FONT_MONO, "color": colors["table_text"], "size": 11},
+            "align": ["left", "right"],
+            "line": {"color": colors["grid"], "width": 1},
+        },
+        cells={
+            "values": [metrics, values],
+            "fill_color": [fill_colors, fill_colors],
+            "align": ["left", "right"],
+            "font": {"family": _FONT_MONO, "size": 11, "color": colors["table_text"]},
+            "line": {"color": colors["grid"], "width": 1},
+        },
+    )
 
 
 def _calculate_drawdown(returns: pd.Series) -> pd.Series:
@@ -465,10 +890,10 @@ def create_tearsheet(
         "Backtest start": _format_optional_iso8601(engine.backtest_start),
         "Backtest end": _format_optional_iso8601(engine.backtest_end),
         "Backtest range": _format_optional_duration(engine.backtest_start, engine.backtest_end),
-        "Iterations": f"{result.iterations:_}",
-        "Total events": f"{result.total_events:_}",
-        "Total orders": f"{result.total_orders:_}",
-        "Total positions": f"{result.total_positions:_}",
+        "Iterations": f"{result.iterations:,}",
+        "Total events": f"{result.total_events:,}",
+        "Total orders": f"{result.total_orders:,}",
+        "Total positions": f"{result.total_positions:,}",
     }
 
     return create_tearsheet_from_stats(
@@ -586,10 +1011,10 @@ def _result_run_info(result: BacktestResult) -> dict[str, str]:
         "Backtest start": _format_optional_iso8601(result.backtest_start),
         "Backtest end": _format_optional_iso8601(result.backtest_end),
         "Backtest range": _format_optional_duration(result.backtest_start, result.backtest_end),
-        "Iterations": f"{result.iterations:_}",
-        "Total events": f"{result.total_events:_}",
-        "Total orders": f"{result.total_orders:_}",
-        "Total positions": f"{result.total_positions:_}",
+        "Iterations": f"{result.iterations:,}",
+        "Total events": f"{result.total_events:,}",
+        "Total orders": f"{result.total_orders:,}",
+        "Total positions": f"{result.total_positions:,}",
     }
 
 
@@ -1102,6 +1527,7 @@ def create_equity_curve(
     title: str = "Equity Curve",
     benchmark_returns: pd.Series | None = None,
     benchmark_name: str = "Benchmark",
+    theme: str = "plotly_white",
 ) -> go.Figure:
     """
     Create an interactive equity curve plot with optional benchmark overlay.
@@ -1119,6 +1545,8 @@ def create_equity_curve(
         curve will be overlaid on the chart.
     benchmark_name : str, default "Benchmark"
         Display name for the benchmark in the legend.
+    theme : str, default "plotly_white"
+        Theme name for styling.
 
     Returns
     -------
@@ -1141,43 +1569,60 @@ def create_equity_curve(
     benchmark_returns = (
         _to_returns_series(benchmark_returns) if benchmark_returns is not None else None
     )
+    theme_config = _normalize_theme_config(get_theme(theme))
+    colors = theme_config["colors"]
 
-    equity = (1 + returns).cumprod()
-
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatter(
-            x=equity.index,
-            y=equity.values,
-            mode="lines",
-            name="Strategy",
-            line={"color": "#1f77b4", "width": 2},
-            hovertemplate="<b>%{x}</b><br>Strategy: %{y:.4f}<extra></extra>",
-        ),
+    benchmark = (
+        benchmark_returns if benchmark_returns is not None and not benchmark_returns.empty else None
     )
 
-    if benchmark_returns is not None:
-        benchmark_equity = (1 + benchmark_returns).cumprod()
+    if returns.empty and benchmark is None:
+        fig = _empty_figure(theme_config, title, height=500)
+        if output_path:
+            _write_figure(fig, output_path)
+        return fig
+
+    fig = go.Figure()
+    bounds: list[tuple[float, float]] = []
+
+    if not returns.empty:
+        equity = (1 + returns).cumprod()
+        fig.add_trace(
+            go.Scatter(
+                x=equity.index,
+                y=equity.values,
+                mode="lines",
+                name="Strategy",
+                line={"color": colors["primary"], "width": 2},
+                fill="tozeroy",
+                fillcolor=_hex_to_rgba(colors["primary"], 0.07),
+                hovertemplate="<b>%{x}</b><br>Strategy: %{y:.4f}<extra></extra>",
+            ),
+        )
+        bounds.append((float(equity.min()), float(equity.max())))
+
+    if benchmark is not None:
+        benchmark_equity = (1 + benchmark).cumprod()
         fig.add_trace(
             go.Scatter(
                 x=benchmark_equity.index,
                 y=benchmark_equity.values,
                 mode="lines",
                 name=benchmark_name,
-                line={"color": "#7f7f7f", "width": 2, "dash": "dash"},
+                line={"color": colors["neutral"], "width": 1.5, "dash": "dash"},
                 hovertemplate=f"<b>%{{x}}</b><br>{benchmark_name}: %{{y:.4f}}<extra></extra>",
             ),
         )
+        bounds.append((float(benchmark_equity.min()), float(benchmark_equity.max())))
 
-    fig.update_layout(
-        title=title,
-        xaxis_title="Date",
-        yaxis_title="Equity",
-        hovermode="x unified",
-        template="plotly_white",
-        height=500,
-        showlegend=benchmark_returns is not None,
-    )
+    ymin = min(lo for lo, _ in bounds)
+    ymax = max(hi for _, hi in bounds)
+    fig.update_yaxes(range=_padded_range(ymin, ymax))
+
+    _style_figure(fig, theme_config, title, height=500)
+    fig.update_layout(hovermode="x unified", showlegend=benchmark is not None)
+    fig.update_xaxes(title_text="Date")
+    fig.update_yaxes(title_text="Equity")
 
     if output_path:
         _write_figure(fig, output_path)
@@ -1224,8 +1669,16 @@ def create_drawdown_chart(
 
     returns = _to_returns_series(returns)
     theme_config = _normalize_theme_config(get_theme(theme))
+    colors = theme_config["colors"]
+
+    if returns.empty:
+        fig = _empty_figure(theme_config, title)
+        if output_path:
+            _write_figure(fig, output_path)
+        return fig
+
     drawdown = _calculate_drawdown(returns)
-    neg_color = theme_config["colors"]["negative"]
+    neg_color = colors["negative"]
     fig = go.Figure()
     fig.add_trace(
         go.Scatter(
@@ -1234,20 +1687,16 @@ def create_drawdown_chart(
             mode="lines",
             name="Drawdown",
             fill="tozeroy",
-            line={"color": neg_color, "width": 1},
-            fillcolor=_hex_to_rgba(neg_color, 0.3),
+            line={"color": neg_color, "width": 1.5},
+            fillcolor=_hex_to_rgba(neg_color, 0.18),
             hovertemplate="<b>%{x}</b><br>Drawdown: %{y:.2f}%<extra></extra>",
         ),
     )
 
-    fig.update_layout(
-        title=title,
-        xaxis_title="Date",
-        yaxis_title="Drawdown (%)",
-        hovermode="x unified",
-        template=theme_config["template"],
-        height=400,
-    )
+    _style_figure(fig, theme_config, title, height=400)
+    fig.update_layout(hovermode="x unified", showlegend=False)
+    fig.update_xaxes(title_text="Date")
+    fig.update_yaxes(title_text="Drawdown (%)")
 
     if output_path:
         _write_figure(fig, output_path)
@@ -1261,6 +1710,7 @@ def create_monthly_returns_heatmap(
     title: str | None = None,
     *,
     compounding: bool = True,
+    theme: str = "plotly_white",
 ) -> go.Figure:
     """
     Create an interactive monthly returns heatmap.
@@ -1277,6 +1727,8 @@ def create_monthly_returns_heatmap(
         If True, cells compound against the running start-of-month balance. If False,
         cells are simple returns on fixed initial capital that sum to the total return
         (the nominal rate of return).
+    theme : str, default "plotly_white"
+        Theme name for styling.
 
     Returns
     -------
@@ -1299,58 +1751,20 @@ def create_monthly_returns_heatmap(
         title = "Monthly Returns (%)" if compounding else "Monthly Returns (% of initial capital)"
 
     returns = _to_returns_series(returns)
+    theme_config = _normalize_theme_config(get_theme(theme))
+
     if returns.empty:
-        fig = go.Figure()
-        fig.update_layout(title=title)
+        fig = _empty_figure(theme_config, title)
+        if output_path:
+            _write_figure(fig, output_path)
         return fig
 
-    monthly = _aggregate_period_returns(returns, "ME", compounding=compounding)
+    heatmap_data = _monthly_pivot(returns, compounding=compounding)
+    fig = go.Figure(data=_heatmap_trace(heatmap_data, theme_config, showscale=True))
 
-    monthly_pivot = pd.DataFrame(
-        {
-            "Year": monthly.index.year,
-            "Month": monthly.index.month,
-            "Return": monthly.to_numpy(),
-        },
-    )
-    heatmap_data = monthly_pivot.pivot_table(index="Year", columns="Month", values="Return")
-
-    month_names = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-    ]
-
-    fig = go.Figure(
-        data=go.Heatmap(
-            z=heatmap_data.values,
-            x=[month_names[int(m) - 1] for m in heatmap_data.columns],
-            y=heatmap_data.index.astype(str),
-            colorscale="RdYlGn",
-            zmid=0,
-            text=heatmap_data.values,
-            texttemplate="%{text:.1f}%",
-            textfont={"size": 10},
-            hovertemplate="<b>%{y} %{x}</b><br>Return: %{z:.2f}%<extra></extra>",
-        ),
-    )
-
-    fig.update_layout(
-        title=title,
-        xaxis_title="Month",
-        yaxis_title="Year",
-        template="plotly_white",
-        height=400,
-    )
+    _style_figure(fig, theme_config, title, height=400)
+    fig.update_xaxes(title_text="Month")
+    fig.update_yaxes(title_text="Year")
 
     if output_path:
         _write_figure(fig, output_path)
@@ -1362,6 +1776,7 @@ def create_returns_distribution(
     returns: pd.Series,
     output_path: str | None = None,
     title: str = "Returns Distribution",
+    theme: str = "plotly_white",
 ) -> go.Figure:
     """
     Create an interactive returns distribution histogram.
@@ -1374,6 +1789,8 @@ def create_returns_distribution(
         Path to save HTML plot. If None, plot is not saved.
     title : str, default "Returns Distribution"
         Plot title.
+    theme : str, default "plotly_white"
+        Theme name for styling.
 
     Returns
     -------
@@ -1393,25 +1810,40 @@ def create_returns_distribution(
         )
 
     returns = _to_returns_series(returns)
+    theme_config = _normalize_theme_config(get_theme(theme))
+    colors = theme_config["colors"]
+
+    if returns.empty:
+        fig = _empty_figure(theme_config, title)
+        if output_path:
+            _write_figure(fig, output_path)
+        return fig
+
     fig = go.Figure()
     fig.add_trace(
         go.Histogram(
             x=returns.to_numpy() * 100,
             nbinsx=50,
             name="Returns",
-            marker={"color": "#1f77b4"},
+            marker={
+                "color": colors["neutral"],
+                "line": {"color": colors["background"], "width": 0.5},
+            },
             hovertemplate="Return: %{x:.2f}%<br>Count: %{y}<extra></extra>",
         ),
     )
-
-    fig.update_layout(
-        title=title,
-        xaxis_title="Return (%)",
-        yaxis_title="Frequency",
-        template="plotly_white",
-        height=400,
-        bargap=0.1,
+    fig.add_vline(
+        x=float(returns.mean()) * 100,
+        line={"color": colors["primary"], "dash": "dash", "width": 1.5},
+        annotation_text="mean",
+        annotation_position="top right",
+        annotation_font={"family": _FONT_MONO, "size": 10, "color": colors["muted"]},
     )
+
+    _style_figure(fig, theme_config, title, height=400)
+    fig.update_layout(bargap=0.1, showlegend=False)
+    fig.update_xaxes(title_text="Return (%)")
+    fig.update_yaxes(title_text="Frequency")
 
     if output_path:
         _write_figure(fig, output_path)
@@ -1419,11 +1851,21 @@ def create_returns_distribution(
     return fig
 
 
+def _rolling_sharpe_series(returns: pd.Series, window: int) -> pd.Series:
+    """
+    Compute the annualized rolling Sharpe ratio series.
+    """
+    rolling_mean = returns.rolling(window=window).mean()
+    rolling_std = returns.rolling(window=window).std()
+    return (rolling_mean / rolling_std.replace(0, float("nan"))) * (TRADING_DAYS_PER_YEAR**0.5)
+
+
 def create_rolling_sharpe(
     returns: pd.Series,
     window: int = 60,
     output_path: str | None = None,
     title: str = "Rolling Sharpe Ratio (60-day)",
+    theme: str = "plotly_white",
 ) -> go.Figure:
     """
     Create an interactive rolling Sharpe ratio chart.
@@ -1438,6 +1880,8 @@ def create_rolling_sharpe(
         Path to save HTML plot. If None, plot is not saved.
     title : str, default "Rolling Sharpe Ratio (60-day)"
         Plot title.
+    theme : str, default "plotly_white"
+        Theme name for styling.
 
     Returns
     -------
@@ -1457,18 +1901,21 @@ def create_rolling_sharpe(
         )
 
     returns = _to_returns_series(returns)
+    theme_config = _normalize_theme_config(get_theme(theme))
+    colors = theme_config["colors"]
+
     if returns.empty or len(returns) < window:
-        fig = go.Figure()
-        fig.update_layout(title=title)
+        fig = _empty_figure(
+            theme_config,
+            title,
+            message=f"Not enough data (need {window} observations)",
+        )
+
+        if output_path:
+            _write_figure(fig, output_path)
         return fig
 
-    # Sharpe = (mean / std) * sqrt(TRADING_DAYS_PER_YEAR) annualized
-    rolling_mean = returns.rolling(window=window).mean()
-    rolling_std = returns.rolling(window=window).std()
-
-    rolling_sharpe = (rolling_mean / rolling_std.replace(0, float("nan"))) * (
-        TRADING_DAYS_PER_YEAR**0.5
-    )
+    rolling_sharpe = _rolling_sharpe_series(returns, window)
 
     fig = go.Figure()
     fig.add_trace(
@@ -1477,21 +1924,17 @@ def create_rolling_sharpe(
             y=rolling_sharpe.values,
             mode="lines",
             name=f"Rolling Sharpe ({window}d)",
-            line={"color": "#2ca02c", "width": 2},
+            line={"color": colors["primary"], "width": 2},
             hovertemplate="<b>%{x}</b><br>Sharpe: %{y:.3f}<extra></extra>",
         ),
     )
 
-    fig.add_hline(y=0, line={"color": "gray", "dash": "dash", "width": 1})
+    fig.add_hline(y=0, line={"color": colors["neutral"], "dash": "dash", "width": 1})
 
-    fig.update_layout(
-        title=title,
-        xaxis_title="Date",
-        yaxis_title="Sharpe Ratio",
-        hovermode="x unified",
-        template="plotly_white",
-        height=400,
-    )
+    _style_figure(fig, theme_config, title, height=400)
+    fig.update_layout(hovermode="x unified", showlegend=False)
+    fig.update_xaxes(title_text="Date")
+    fig.update_yaxes(title_text="Sharpe Ratio")
 
     if output_path:
         _write_figure(fig, output_path)
@@ -1505,6 +1948,7 @@ def create_yearly_returns(
     title: str | None = None,
     *,
     compounding: bool = True,
+    theme: str = "plotly_white",
 ) -> go.Figure:
     """
     Create an interactive yearly returns bar chart.
@@ -1521,6 +1965,8 @@ def create_yearly_returns(
         If True, bars compound against the running start-of-year balance. If False,
         bars are simple returns on fixed initial capital that sum to the total return
         (the nominal rate of return).
+    theme : str, default "plotly_white"
+        Theme name for styling.
 
     Returns
     -------
@@ -1543,35 +1989,41 @@ def create_yearly_returns(
         title = "Yearly Returns" if compounding else "Yearly Returns (% of initial capital)"
 
     returns = _to_returns_series(returns)
+    theme_config = _normalize_theme_config(get_theme(theme))
+    colors = theme_config["colors"]
+
     if returns.empty:
-        fig = go.Figure()
-        fig.update_layout(title=title)
+        fig = _empty_figure(theme_config, title)
+        if output_path:
+            _write_figure(fig, output_path)
         return fig
 
     yearly = _aggregate_period_returns(returns, "YE", compounding=compounding)
-
-    colors = ["#2ca02c" if r >= 0 else "#d62728" for r in yearly.to_numpy()]
+    bar_colors = [colors["positive"] if r >= 0 else colors["negative"] for r in yearly.to_numpy()]
 
     fig = go.Figure()
     fig.add_trace(
         go.Bar(
             x=yearly.index.year,
             y=yearly.values,
-            marker={"color": colors},
+            marker={
+                "color": bar_colors,
+                "line": {"color": colors["background"], "width": 1},
+            },
+            texttemplate="%{y:,.1f}%",
+            textposition="outside",
+            textfont={"family": _FONT_MONO, "size": 10, "color": colors["text"]},
+            cliponaxis=False,
             hovertemplate="<b>%{x}</b><br>Return: %{y:.2f}%<extra></extra>",
         ),
     )
 
-    fig.add_hline(y=0, line={"color": "gray", "width": 1})
+    fig.add_hline(y=0, line={"color": colors["neutral"], "width": 1})
 
-    fig.update_layout(
-        title=title,
-        xaxis_title="Year",
-        yaxis_title="Return (%)",
-        template="plotly_white",
-        height=400,
-        showlegend=False,
-    )
+    _style_figure(fig, theme_config, title, height=400)
+    fig.update_layout(bargap=0.35, showlegend=False)
+    fig.update_xaxes(title_text="Year", type="category")
+    fig.update_yaxes(title_text="Return (%)")
 
     if output_path:
         _write_figure(fig, output_path)
@@ -1668,6 +2120,20 @@ def _create_tearsheet_figure(
         row_heights=heights,
     )
 
+    _apply_tearsheet_chrome(
+        fig,
+        theme_config,
+        title,
+        config,
+        show_legend=benchmark_returns is not None,
+    )
+
+    # Style subplot titles before renderers run so annotations added by
+    # custom charts keep their own fonts.
+    fig.update_annotations(
+        font={"family": _FONT_HEADING, "size": 13, "color": theme_config["colors"]["text"]},
+    )
+
     chart_idx = 0
 
     for row in range(1, rows + 1):
@@ -1710,16 +2176,52 @@ def _create_tearsheet_figure(
                 **chart_kwargs,
             )
 
-    fig.update_layout(
-        title_text=config.title if config.title != "NautilusTrader Backtest Results" else title,
-        title_font_size=20,
-        template=theme_config["template"],
-        height=config.height,
-        showlegend=benchmark_returns is not None,
-        margin={"t": 150, "b": 50, "l": 50, "r": 50},
-    )
+    if config.show_logo:
+        fig.add_annotation(
+            x=1.0,
+            y=0.004,
+            xref="paper",
+            yref="paper",
+            text=f"NautilusTrader v{NAUTILUS_VERSION}",
+            showarrow=False,
+            xanchor="right",
+            yanchor="bottom",
+            font={
+                "family": _FONT_MONO,
+                "size": 9,
+                "color": theme_config["colors"]["muted"],
+            },
+        )
 
     return fig
+
+
+def _apply_tearsheet_chrome(
+    fig: go.Figure,
+    theme_config: dict[str, Any],
+    title: str,
+    config: TearsheetConfig,
+    *,
+    show_legend: bool,
+) -> None:
+    """
+    Apply title, legend, axes, and margin styling before renderers draw traces.
+    """
+    colors = theme_config["colors"]
+    title_text = config.title if config.title != "NautilusTrader Backtest Results" else title
+    layout = _base_layout(theme_config)
+    layout.update(
+        {
+            "title": _title_block(title_text, colors["text"], 18),
+            "height": config.height,
+            "showlegend": show_legend,
+            "hovermode": "closest",
+            "bargap": 0.35,
+            "margin": {"t": 180, "b": 60, "l": 60, "r": 40},
+        },
+    )
+    fig.update_layout(**layout)
+    _style_axes(fig, theme_config)
 
 
 def _create_stats_table(  # noqa: C901
@@ -1770,11 +2272,13 @@ def _create_stats_table(  # noqa: C901
 
         for metric, value in section_stats.items():
             metrics.append(metric)
-            formatted_value = (
-                f"{value:.4f}"
-                if isinstance(value, numbers.Real) and not isinstance(value, bool)
-                else str(value)
-            )
+
+            if isinstance(value, numbers.Real) and not isinstance(value, bool):
+                formatted_value = "N/A" if math.isnan(value) else f"{value:,.4f}"
+            elif isinstance(value, str):
+                formatted_value = _group_thousands(value)
+            else:
+                formatted_value = str(value)
             values.append(formatted_value)
             if len(fill_colors) % 2 == 0:
                 fill_colors.append(theme_config["colors"]["table_row_odd"])
@@ -1799,20 +2303,12 @@ def _create_stats_table(  # noqa: C901
 
     add_section("General Statistics", stats_general)
 
-    return go.Table(
-        header={
-            "values": ["<b>Metric</b>", "<b>Value</b>"],
-            "fill_color": theme_config["colors"]["primary"],
-            "font": {"color": "white", "size": 12},
-            "align": "left",
-        },
-        cells={
-            "values": [metrics, values],
-            "fill_color": [fill_colors, fill_colors],
-            "align": "left",
-            "font": {"size": 11, "color": theme_config["colors"]["table_text"]},
-        },
-    )
+    if not metrics:
+        metrics = [_EMPTY_DATA_MESSAGE]
+        values = [""]
+        fill_colors = [theme_config["colors"]["table_section"]]
+
+    return _build_table(metrics, values, fill_colors, theme_config)
 
 
 def _render_run_info(
@@ -1844,7 +2340,7 @@ def _render_run_info(
 
         for key, value in section_data.items():
             metrics.append(key)
-            values.append(str(value))
+            values.append(_format_info_value(value))
 
             if len(fill_colors) % 2 == 0:
                 fill_colors.append(theme_config["colors"]["table_row_odd"])
@@ -1857,22 +2353,11 @@ def _render_run_info(
         add_section("Account Summary", account_info)
 
     if not metrics:
-        return
+        metrics = [_EMPTY_DATA_MESSAGE]
+        values = [""]
+        fill_colors = [theme_config["colors"]["table_section"]]
 
-    run_info_table = go.Table(
-        header={
-            "values": ["<b>Metric</b>", "<b>Value</b>"],
-            "fill_color": theme_config["colors"]["primary"],
-            "font": {"color": "white", "size": 12},
-            "align": "left",
-        },
-        cells={
-            "values": [metrics, values],
-            "fill_color": [fill_colors, fill_colors],
-            "align": "left",
-            "font": {"size": 11, "color": theme_config["colors"]["table_text"]},
-        },
-    )
+    run_info_table = _build_table(metrics, values, fill_colors, theme_config)
     fig.add_trace(run_info_table, row=row, col=col)
 
 
@@ -1913,40 +2398,56 @@ def _render_equity(
     """
     Render equity curve with optional benchmark.
     """
-    if returns.empty:
-        return
-
-    equity = (1 + returns).cumprod()
-    fig.add_trace(
-        go.Scatter(
-            x=equity.index,
-            y=equity.values,
-            mode="lines",
-            name="Strategy",
-            line={"color": theme_config["colors"]["primary"], "width": 2},
-            showlegend=benchmark_returns is not None,
-        ),
-        row=row,
-        col=col,
+    benchmark = (
+        benchmark_returns if benchmark_returns is not None and not benchmark_returns.empty else None
     )
 
-    if benchmark_returns is not None and not benchmark_returns.empty:
-        benchmark_equity = (1 + benchmark_returns).cumprod()
+    if returns.empty and benchmark is None:
+        _render_empty_cell(fig, row, col, theme_config)
+        return
+
+    colors = theme_config["colors"]
+    bounds: list[tuple[float, float]] = []
+
+    if not returns.empty:
+        equity = (1 + returns).cumprod()
+        fig.add_trace(
+            go.Scatter(
+                x=equity.index,
+                y=equity.values,
+                mode="lines",
+                name="Strategy",
+                line={"color": colors["primary"], "width": 2},
+                fill="tozeroy",
+                fillcolor=_hex_to_rgba(colors["primary"], 0.07),
+                showlegend=benchmark is not None,
+            ),
+            row=row,
+            col=col,
+        )
+        bounds.append((float(equity.min()), float(equity.max())))
+
+    if benchmark is not None:
+        benchmark_equity = (1 + benchmark).cumprod()
         fig.add_trace(
             go.Scatter(
                 x=benchmark_equity.index,
                 y=benchmark_equity.values,
                 mode="lines",
                 name=benchmark_name,
-                line={"color": theme_config["colors"]["neutral"], "width": 2, "dash": "dash"},
+                line={"color": colors["neutral"], "width": 1.5, "dash": "dash"},
                 showlegend=True,
             ),
             row=row,
             col=col,
         )
+        bounds.append((float(benchmark_equity.min()), float(benchmark_equity.max())))
+
+    ymin = min(lo for lo, _ in bounds)
+    ymax = max(hi for _, hi in bounds)
 
     fig.update_xaxes(title_text="Date", row=row, col=col)
-    fig.update_yaxes(title_text="Equity", row=row, col=col)
+    fig.update_yaxes(title_text="Equity", range=_padded_range(ymin, ymax), row=row, col=col)
 
 
 def _render_drawdown(
@@ -1960,6 +2461,10 @@ def _render_drawdown(
     """
     Render drawdown chart.
     """
+    if returns.empty:
+        _render_empty_cell(fig, row, col, theme_config)
+        return
+
     drawdown = _calculate_drawdown(returns)
     neg_color = theme_config["colors"]["negative"]
 
@@ -1970,8 +2475,8 @@ def _render_drawdown(
             mode="lines",
             name="Drawdown",
             fill="tozeroy",
-            line={"color": neg_color, "width": 1},
-            fillcolor=_hex_to_rgba(neg_color, 0.3),
+            line={"color": neg_color, "width": 1.5},
+            fillcolor=_hex_to_rgba(neg_color, 0.18),
             showlegend=False,
         ),
         row=row,
@@ -1987,51 +2492,22 @@ def _render_monthly_returns(
     row: int,
     col: int,
     returns: pd.Series,
+    theme_config: dict[str, Any] | None = None,
     **kwargs: Any,
 ) -> None:
     """
     Render monthly returns heatmap.
     """
+    if theme_config is None:
+        theme_config = _normalize_theme_config(get_theme("plotly_white"))
+
     if returns.empty:
+        _render_empty_cell(fig, row, col, theme_config)
         return
 
-    monthly = _aggregate_period_returns(returns, "ME", compounding=kwargs.get("compounding", True))
-    monthly_pivot = pd.DataFrame(
-        {
-            "Year": monthly.index.year,
-            "Month": monthly.index.month,
-            "Return": monthly.to_numpy(),
-        },
-    )
-    heatmap_data = monthly_pivot.pivot_table(index="Year", columns="Month", values="Return")
-
-    month_names = [
-        "Jan",
-        "Feb",
-        "Mar",
-        "Apr",
-        "May",
-        "Jun",
-        "Jul",
-        "Aug",
-        "Sep",
-        "Oct",
-        "Nov",
-        "Dec",
-    ]
-
+    heatmap_data = _monthly_pivot(returns, compounding=kwargs.get("compounding", True))
     fig.add_trace(
-        go.Heatmap(
-            z=heatmap_data.values,
-            x=[month_names[int(m) - 1] for m in heatmap_data.columns],
-            y=heatmap_data.index.astype(str),
-            colorscale="RdYlGn",
-            zmid=0,
-            text=heatmap_data.values,
-            texttemplate="%{text:.1f}%",
-            textfont={"size": 10},
-            showscale=False,
-        ),
+        _heatmap_trace(heatmap_data, theme_config, showscale=False, hovertemplate=None),
         row=row,
         col=col,
     )
@@ -2052,14 +2528,19 @@ def _render_distribution(
     Render returns distribution histogram.
     """
     if returns.empty:
+        _render_empty_cell(fig, row, col, theme_config)
         return
 
+    colors = theme_config["colors"]
     fig.add_trace(
         go.Histogram(
             x=returns.to_numpy() * 100,
             nbinsx=50,
             name="Returns",
-            marker={"color": theme_config["colors"]["primary"]},
+            marker={
+                "color": colors["neutral"],
+                "line": {"color": colors["background"], "width": 0.5},
+            },
             showlegend=False,
         ),
         row=row,
@@ -2083,13 +2564,17 @@ def _render_rolling_sharpe(
     Render rolling Sharpe ratio.
     """
     if returns.empty or len(returns) < window:
+        _render_empty_cell(
+            fig,
+            row,
+            col,
+            theme_config,
+            message=f"Not enough data (need {window} observations)",
+        )
         return
 
-    rolling_mean = returns.rolling(window=window).mean()
-    rolling_std = returns.rolling(window=window).std()
-    rolling_sharpe = (rolling_mean / rolling_std.replace(0, float("nan"))) * (
-        TRADING_DAYS_PER_YEAR**0.5
-    )
+    colors = theme_config["colors"]
+    rolling_sharpe = _rolling_sharpe_series(returns, window)
 
     fig.add_trace(
         go.Scatter(
@@ -2097,15 +2582,23 @@ def _render_rolling_sharpe(
             y=rolling_sharpe.values,
             mode="lines",
             name="Rolling Sharpe",
-            line={"color": theme_config["colors"]["positive"], "width": 2},
+            line={"color": colors["primary"], "width": 2},
             showlegend=False,
         ),
         row=row,
         col=col,
     )
 
+    # A zero line (add_hline with row/col cannot scan grids containing tables).
     fig.update_xaxes(title_text="Date", row=row, col=col)
-    fig.update_yaxes(title_text="Sharpe Ratio", row=row, col=col)
+    fig.update_yaxes(
+        title_text="Sharpe Ratio",
+        zeroline=True,
+        zerolinecolor=colors["neutral"],
+        zerolinewidth=1,
+        row=row,
+        col=col,
+    )
 
 
 def _render_yearly_returns(
@@ -2120,27 +2613,40 @@ def _render_yearly_returns(
     Render yearly returns bar chart.
     """
     if returns.empty:
+        _render_empty_cell(fig, row, col, theme_config)
         return
 
+    colors = theme_config["colors"]
     yearly = _aggregate_period_returns(returns, "YE", compounding=kwargs.get("compounding", True))
-    colors = [
-        theme_config["colors"]["positive"] if r >= 0 else theme_config["colors"]["negative"]
-        for r in yearly.to_numpy()
-    ]
+    bar_colors = [colors["positive"] if r >= 0 else colors["negative"] for r in yearly.to_numpy()]
 
     fig.add_trace(
         go.Bar(
             x=yearly.index.year,
             y=yearly.to_numpy(),
-            marker={"color": colors},
+            marker={
+                "color": bar_colors,
+                "line": {"color": colors["background"], "width": 1},
+            },
+            texttemplate="%{y:,.1f}%",
+            textposition="outside",
+            textfont={"family": _FONT_MONO, "size": 9, "color": colors["text"]},
+            cliponaxis=False,
             showlegend=False,
         ),
         row=row,
         col=col,
     )
 
-    fig.update_xaxes(title_text="Year", row=row, col=col)
-    fig.update_yaxes(title_text="Return (%)", row=row, col=col)
+    fig.update_xaxes(title_text="Year", type="category", row=row, col=col)
+    fig.update_yaxes(
+        title_text="Return (%)",
+        zeroline=True,
+        zerolinecolor=colors["neutral"],
+        zerolinewidth=1,
+        row=row,
+        col=col,
+    )
 
 
 def create_bars_with_fills(
@@ -2193,8 +2699,15 @@ def create_bars_with_fills(
 
     bars = engine.cache.bars(bar_type)
     if not bars:
-        fig = go.Figure()
-        fig.update_layout(title=title or f"{bar_type}")
+        fig = _empty_figure(
+            theme_config,
+            title or f"{bar_type}",
+            message=f"No bars available for {bar_type}",
+            height=800,
+        )
+
+        if output_path:
+            _write_figure(fig, output_path)
         return fig
 
     fig = make_subplots(
@@ -2212,22 +2725,11 @@ def create_bars_with_fills(
         engine=engine,
         bar_type=bar_type,
         theme_config=theme_config,
+        rangeslider=True,
     )
 
-    fig.update_layout(
-        title=title or f"{bar_type} - Bars with Order Fills",
-        yaxis_title="Price",
-        template=theme_config["template"],
-        height=800,
-        showlegend=True,
-        xaxis1={
-            "rangeslider": {
-                "visible": True,
-            },
-        },
-    )
-
-    fig.update_yaxes(fixedrange=False, row=1, col=1)
+    _style_figure(fig, theme_config, title or f"{bar_type} - Bars with Order Fills", height=800)
+    fig.update_layout(showlegend=True)
 
     if output_path:
         _write_figure(fig, output_path)
@@ -2242,6 +2744,8 @@ def _render_bars_with_fills(  # noqa: C901
     engine: BacktestEngine | None = None,
     bar_type: BarType | str | None = None,
     theme_config: dict[str, Any] | None = None,
+    *,
+    rangeslider: bool = False,
     **_kwargs: Any,
 ) -> None:
     """
@@ -2261,15 +2765,18 @@ def _render_bars_with_fills(  # noqa: C901
         The bar type to visualize. Can be a string or BarType object.
     theme_config : dict[str, Any], optional
         Theme configuration dictionary. If None, defaults to plotly_white theme.
+    rangeslider : bool, default False
+        Whether to show the x-axis range slider (standalone use; hidden in grids).
     **kwargs : Any
         Additional keyword arguments (ignored).
 
     """
-    if engine is None:
-        return
-
     if theme_config is None:
         theme_config = _normalize_theme_config(get_theme("plotly_white"))
+
+    if engine is None:
+        _render_empty_cell(fig, row, col, theme_config)
+        return
 
     if bar_type is None:
         bar_types = [
@@ -2278,6 +2785,7 @@ def _render_bars_with_fills(  # noqa: C901
         ]
 
         if not bar_types:
+            _render_empty_cell(fig, row, col, theme_config)
             return
 
         bar_type = bar_types[0]
@@ -2290,8 +2798,16 @@ def _render_bars_with_fills(  # noqa: C901
 
     bars = engine.cache.bars(bar_type)
     if not bars:
+        _render_empty_cell(
+            fig,
+            row,
+            col,
+            theme_config,
+            message=f"No bars available for {bar_type}",
+        )
         return
 
+    colors = theme_config["colors"]
     bars_df = pd.DataFrame(bar.to_dict() for bar in bars)
     bars_df["ts_init"] = pd.to_datetime(bars_df["ts_init"])
 
@@ -2316,6 +2832,10 @@ def _render_bars_with_fills(  # noqa: C901
             high=bars_df["high"],
             low=bars_df["low"],
             close=bars_df["close"],
+            increasing_line_color=colors["positive"],
+            increasing_fillcolor=colors["positive"],
+            decreasing_line_color=colors["negative"],
+            decreasing_fillcolor=colors["negative"],
             name="OHLC",
             showlegend=False,
         ),
@@ -2335,8 +2855,8 @@ def _render_bars_with_fills(  # noqa: C901
             else pd.DataFrame()
         )
 
-        positive_color = theme_config["colors"]["positive"]
-        negative_color = theme_config["colors"]["negative"]
+        is_dark = "dark" in theme_config.get("template", "")
+        marker_line = "rgba(255,255,255,0.85)" if is_dark else "rgba(0,0,0,0.55)"
 
         _add_fill_scatter_trace(
             fig=fig,
@@ -2344,7 +2864,8 @@ def _render_bars_with_fills(  # noqa: C901
             row=row,
             col=col,
             marker_symbol="triangle-up",
-            marker_color=_hex_to_rgba(positive_color, 0.7),
+            marker_color=_hex_to_rgba(colors["positive"], 0.85),
+            marker_line_color=marker_line,
             name="Buy Fills",
         )
 
@@ -2354,7 +2875,8 @@ def _render_bars_with_fills(  # noqa: C901
             row=row,
             col=col,
             marker_symbol="triangle-down",
-            marker_color=_hex_to_rgba(negative_color, 0.7),
+            marker_color=_hex_to_rgba(colors["negative"], 0.85),
+            marker_line_color=marker_line,
             name="Sell Fills",
         )
 
@@ -2362,7 +2884,7 @@ def _render_bars_with_fills(  # noqa: C901
         title_text="Time",
         row=row,
         col=col,
-        rangeslider={"visible": True},
+        rangeslider={"visible": rangeslider},
     )
     fig.update_yaxes(title_text="Price", row=row, col=col)
     fig.update_yaxes(fixedrange=False, row=row, col=col)
@@ -2376,6 +2898,7 @@ def _add_fill_scatter_trace(
     marker_symbol: str,
     marker_color: str,
     name: str,
+    marker_line_color: str = "rgba(0,0,0,0.55)",
 ) -> None:
     if fills_df.empty or "last_px" not in fills_df.columns or "last_qty" not in fills_df.columns:
         return
@@ -2395,9 +2918,9 @@ def _add_fill_scatter_trace(
             mode="markers",
             customdata=fills_df[required_cols].to_numpy() if has_all_cols else fills_df.to_numpy(),
             marker_symbol=marker_symbol,
-            marker_size=13,
-            marker_line_width=2,
-            marker_line_color="rgba(0,0,0,0.7)",
+            marker_size=10,
+            marker_line_width=1.2,
+            marker_line_color=marker_line_color,
             marker_color=marker_color,
             name=name,
             hovertemplate=(
@@ -2491,7 +3014,15 @@ def _calculate_grid_layout(
 
     """
     if not charts:
-        return 1, 1, [[{"type": "scatter"}]], [""], [1.0], 0.10, 0.10
+        return (
+            1,
+            1,
+            [[{"type": "scatter"}]],
+            [""],
+            [1.0],
+            _GRID_DEFAULT_SPACING,
+            _GRID_DEFAULT_SPACING,
+        )
 
     if custom_layout is not None:
         rows = custom_layout.rows
@@ -2514,11 +3045,11 @@ def _calculate_grid_layout(
             cols = 2
             rows = max(_GRID_DEFAULT_ROWS, (num_charts + cols - 1) // cols)
             heights = (
-                [0.50, 0.22, 0.16, 0.12] if rows == _GRID_DEFAULT_ROWS else [1.0 / rows] * rows
+                list(_GRID_DEFAULT_HEIGHTS) if rows == _GRID_DEFAULT_ROWS else [1.0 / rows] * rows
             )
 
-        v_spacing = 0.10
-        h_spacing = 0.10
+        v_spacing = _GRID_DEFAULT_SPACING
+        h_spacing = _GRID_DEFAULT_SPACING
 
     if len(charts) > rows * cols:
         raise ValueError(

@@ -3582,7 +3582,7 @@ async fn test_generate_position_status_reports_filters() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_without_venue_order_id_emits_rejection() {
+async fn test_modify_order_without_venue_order_id_emits_denial() {
     let (addr, _state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -3609,18 +3609,22 @@ async fn test_modify_order_without_venue_order_id_emits_rejection() {
         None, // correlation_id
     );
 
+    let command_id = cmd.command_id;
+
     client
         .modify_order(cmd)
         .expect("modify_order should not error");
 
     let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
         .await
-        .expect("timed out waiting for modify rejection")
+        .expect("timed out waiting for modify denial")
         .expect("execution event channel closed");
-    let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event else {
-        panic!("expected OrderModifyRejected, was {event:?}");
+
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event else {
+        panic!("expected OrderModifyDenied, was {event:?}");
     };
 
+    assert_eq!(rejected.causation_id, Some(command_id));
     assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(rejected.instrument_id, instrument_id);
     assert_eq!(rejected.venue_order_id, None);
@@ -3631,7 +3635,7 @@ async fn test_modify_order_without_venue_order_id_emits_rejection() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_with_trigger_price_is_rejected_before_http() {
+async fn test_modify_order_with_trigger_price_is_denied_before_http() {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -3658,6 +3662,8 @@ async fn test_modify_order_with_trigger_price_is_rejected_before_http() {
         None,
     );
 
+    let command_id = cmd.command_id;
+
     client
         .modify_order(cmd)
         .expect("modify_order should not error");
@@ -3670,12 +3676,14 @@ async fn test_modify_order_with_trigger_price_is_rejected_before_http() {
     );
     let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
         .await
-        .expect("timed out waiting for modify rejection")
+        .expect("timed out waiting for modify denial")
         .expect("execution event channel closed");
-    let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event else {
-        panic!("expected OrderModifyRejected, was {event:?}");
+
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event else {
+        panic!("expected OrderModifyDenied, was {event:?}");
     };
 
+    assert_eq!(rejected.causation_id, Some(command_id));
     assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(rejected.instrument_id, instrument_id);
     assert_eq!(rejected.venue_order_id, Some(venue_order_id));
@@ -3687,7 +3695,7 @@ async fn test_modify_order_with_trigger_price_is_rejected_before_http() {
         tokio::time::timeout(std::time::Duration::from_millis(50), rx.recv())
             .await
             .is_err(),
-        "expected exactly one modify rejection",
+        "expected exactly one modify denial",
     );
 
     client.disconnect().await.expect("Failed to disconnect");
@@ -3695,7 +3703,7 @@ async fn test_modify_order_with_trigger_price_is_rejected_before_http() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_with_fractional_quantity_is_rejected_before_http() {
+async fn test_modify_order_with_fractional_quantity_is_denied_before_http() {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -3722,16 +3730,19 @@ async fn test_modify_order_with_fractional_quantity_is_rejected_before_http() {
         None,
     );
 
+    let command_id = cmd.command_id;
+
     client
         .modify_order(cmd)
         .expect("modify_order should not error");
 
     let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
         .await
-        .expect("timed out waiting for modify rejection")
+        .expect("timed out waiting for modify denial")
         .expect("execution event channel closed");
-    let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event else {
-        panic!("expected OrderModifyRejected, was {event:?}");
+
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event else {
+        panic!("expected OrderModifyDenied, was {event:?}");
     };
 
     assert_eq!(
@@ -3740,6 +3751,7 @@ async fn test_modify_order_with_fractional_quantity_is_rejected_before_http() {
             .load(std::sync::atomic::Ordering::Relaxed),
         0
     );
+    assert_eq!(rejected.causation_id, Some(command_id));
     assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(rejected.venue_order_id, Some(venue_order_id));
     assert!(
@@ -3753,7 +3765,7 @@ async fn test_modify_order_with_fractional_quantity_is_rejected_before_http() {
 
 #[rstest]
 #[tokio::test]
-async fn test_modify_order_while_disconnected_emits_local_rejection() {
+async fn test_modify_order_while_disconnected_emits_local_denial() {
     let (addr, state) = start_test_server().await.unwrap();
     let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
@@ -3779,16 +3791,19 @@ async fn test_modify_order_while_disconnected_emits_local_rejection() {
         None,
     );
 
+    let command_id = cmd.command_id;
+
     client
         .modify_order(cmd)
         .expect("modify_order should not error");
 
     let event = tokio::time::timeout(std::time::Duration::from_millis(500), rx.recv())
         .await
-        .expect("timed out waiting for modify rejection")
+        .expect("timed out waiting for modify denial")
         .expect("execution event channel closed");
-    let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = event else {
-        panic!("expected OrderModifyRejected, was {event:?}");
+
+    let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = event else {
+        panic!("expected OrderModifyDenied, was {event:?}");
     };
 
     assert_eq!(
@@ -3797,6 +3812,7 @@ async fn test_modify_order_while_disconnected_emits_local_rejection() {
             .load(std::sync::atomic::Ordering::Relaxed),
         0
     );
+    assert_eq!(rejected.causation_id, Some(command_id));
     assert_eq!(rejected.client_order_id, client_order_id);
     assert_eq!(rejected.venue_order_id, Some(venue_order_id));
     assert_eq!(rejected.reason, "AX execution client is not connected");

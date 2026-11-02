@@ -225,14 +225,15 @@ Write-back applies these coverage rules:
 
 - Failed and intermediate responses skip write-back. Requests split across multiple source envelopes
   also skip write-back, including parent-symbol book-delta requests that return multiple payloads.
-- Requests with a record limit skip write-back. Decoded row counts cannot prove whether the source
-  exhausted that limit.
+- Requests with a record limit, a source schema, or no registered catalog are rejected. Decoded row
+  counts cannot prove whether the source exhausted a limit.
 - Batches with instruments or bar types outside the request skip write-back because their source
   coverage intervals are unknown.
 - Successful empty responses can extend known-empty coverage when both bounds are available and the
   backend supports it.
 
-Catalog write failures are logged and do not discard the returned data.
+Catalog write failures and batches outside the request fail the request without discarding the
+returned data.
 
 ## `BacktestDataConfig`: backtest data
 

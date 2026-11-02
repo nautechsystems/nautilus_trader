@@ -41,3 +41,32 @@ variants are not venue responses.
 `pending_new` and `trade` update frames from Kraken's
 [executions channel documentation](https://docs.kraken.com/exchange/api-reference/spot-websocket-v2/executions),
 retrieved on 2026-10-13 and unchanged apart from whitespace.
+
+## Futures split amendment
+
+`ws_futures_split_amend.json` is a synthetic sequence authored on 2026-10-31, not a venue capture.
+It combines the wire shapes in Kraken's
+[open orders](https://docs.kraken.com/exchange/api-reference/futures-websocket/open_orders) and
+[fills](https://docs.kraken.com/exchange/api-reference/futures-websocket/fills) documentation with
+the immediate size reduction and delayed reprice described in the
+[22 October 2026 changelog](https://docs.kraken.com/exchange/changelog) and
+[Maker Protection guide](https://docs.kraken.com/exchange/guides/futures/maker-protection).
+These sources were retrieved on 2026-10-31. No source supplies this exact split-amend WebSocket sequence.
+
+The fixture treats open-orders `qty` as the current total size and `filled` as cumulative fills.
+The open-orders reference calls `qty` the order's quantity without explicitly distinguishing total
+from remaining size. The fills reference separately defines `remaining_order_qty` as unfilled size.
+This interpretation matches the adapter; the synthetic sequence does not independently verify it
+against venue messages.
+
+The five frames describe one `PF_APEUSD` buy order: placement of 0.0040 at 70000.0, reduction to
+0.0025 at 70000.0, a maker fill of 0.0007 at the old price, its cumulative open-order update, and
+repricing to 70123.5 with 0.0018 left. Prices, sizes, instrument increments, timestamps, and UUIDs
+are invented. The 20 ms interval between reduction and repricing models a hold; it does not measure
+venue latency.
+The test processes the fill and its cumulative update in both arrival orders. Neither ordering is
+claimed as a venue guarantee. The guide says an order can fill at its old price during a held
+amend and that a reduction in the amend applies when the hold opens.
+
+This fixture and its test check local dispatch and downstream order-state compatibility. They do
+not certify venue activation, feed ordering, margin reservation, REST response envelopes, or batch behavior.

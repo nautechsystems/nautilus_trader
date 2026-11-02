@@ -20,6 +20,7 @@ use std::{any::Any, cell::Cell};
 use anyhow::Context;
 use nautilus_model::{
     data::{CustomData, Data, deserialize_custom_from_json},
+    instruments::Instrument,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
 };
 use serde::de::DeserializeOwned;
@@ -27,18 +28,23 @@ use ustr::Ustr;
 
 pub(crate) mod codec;
 
-use self::codec::PayloadCodecError;
+use self::codec::{PayloadCodecError, deserialize_payload};
 use super::{
-    BusMessage, BusMessageSource, BusPayloadType, HAS_EXTERNAL_EGRESS, MessagingSwitchboard,
-    SUPPRESS_EXTERNAL_DEPTH, SuppressExternalGuard,
+    BusMessage, BusMessageSource, BusPayloadType, HAS_EXTERNAL_DATA_INGRESS, HAS_EXTERNAL_EGRESS,
+    MessagingSwitchboard, SUPPRESS_EXTERNAL_DEPTH, SuppressExternalGuard,
     api::{
         publish_any, publish_bar, publish_deltas, publish_depth, publish_funding_rate,
         publish_index_price, publish_instrument, publish_mark_price, publish_option_greeks,
         publish_order_event, publish_portfolio_snapshot, publish_position_event, publish_quote,
-        publish_trade, send_account_state,
+        publish_trade, send_account_state, send_data,
     },
     get_message_bus,
     mstr::{MStr, Topic},
+    switchboard::{
+        get_bars_topic, get_book_deltas_topic, get_book_depth_topic, get_funding_rate_topic,
+        get_index_price_topic, get_instrument_topic, get_mark_price_topic, get_option_greeks_topic,
+        get_quotes_topic, get_trades_topic,
+    },
 };
 use crate::{
     enums::SerializationEncoding,
@@ -268,6 +274,11 @@ fn republish_pending_response<T: serde::de::DeserializeOwned + 'static>(
 /// forwarded straight back out through external egress, which would create an echo loop on a node
 /// that has both external ingress and egress.
 ///
+/// External data-client registrations in the cache enable built-in market-data processing when
+/// the `DataEngine` registers its message bus handlers. Engine processing applies only when the
+/// inbound topic exactly matches the topic the engine publishes for that payload. Custom data,
+/// DeFi data, other topics, and buses without a registered data endpoint retain direct publication.
+///
 /// Account states are sent to Portfolio's account endpoint for application before Portfolio
 /// publishes them on `events.account.{account_id}`. Portfolio must be registered to process them.
 ///
@@ -297,12 +308,15 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             )?;
         }
         BusPayloadType::Instrument => {
-            handle_payload(
+            handle_market_data(
                 topic,
-                message.payload_type,
                 message.encoding,
                 &message.payload,
+                |encoding, payload| {
+                    deserialize_payload(BusPayloadType::Instrument, encoding, payload)
+                },
                 publish_instrument,
+                |instrument| get_instrument_topic(instrument.id()),
             )?;
         }
         BusPayloadType::OrderBookDeltas => handle_market_data(
@@ -311,6 +325,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             &message.payload,
             codec::deserialize_order_book_deltas,
             publish_deltas,
+            |deltas| get_book_deltas_topic(deltas.instrument_id),
         )?,
         BusPayloadType::OrderBookDepth => handle_market_data(
             topic,
@@ -318,6 +333,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             &message.payload,
             codec::deserialize_order_book_depth,
             publish_depth,
+            |depth| get_book_depth_topic(depth.instrument_id),
         )?,
         BusPayloadType::QuoteTick => handle_market_data(
             topic,
@@ -325,6 +341,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             &message.payload,
             codec::deserialize_quote,
             publish_quote,
+            |quote| get_quotes_topic(quote.instrument_id),
         )?,
         BusPayloadType::TradeTick => handle_market_data(
             topic,
@@ -332,6 +349,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             &message.payload,
             codec::deserialize_trade,
             publish_trade,
+            |trade| get_trades_topic(trade.instrument_id),
         )?,
         BusPayloadType::Bar => handle_market_data(
             topic,
@@ -339,6 +357,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             &message.payload,
             codec::deserialize_bar,
             publish_bar,
+            |bar| get_bars_topic(bar.bar_type),
         )?,
         BusPayloadType::MarkPriceUpdate => handle_market_data(
             topic,
@@ -346,6 +365,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             &message.payload,
             codec::deserialize_mark_price,
             publish_mark_price,
+            |mark_price| get_mark_price_topic(mark_price.instrument_id),
         )?,
         BusPayloadType::IndexPriceUpdate => handle_market_data(
             topic,
@@ -353,6 +373,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             &message.payload,
             codec::deserialize_index_price,
             publish_index_price,
+            |index_price| get_index_price_topic(index_price.instrument_id),
         )?,
         BusPayloadType::FundingRateUpdate => handle_market_data(
             topic,
@@ -360,6 +381,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
             &message.payload,
             codec::deserialize_funding_rate,
             publish_funding_rate,
+            |funding_rate| get_funding_rate_topic(funding_rate.instrument_id),
         )?,
         BusPayloadType::OptionGreeks => {
             handle_market_data(
@@ -368,6 +390,7 @@ pub fn republish_external_message(message: &BusMessage) -> anyhow::Result<()> {
                 &message.payload,
                 codec::deserialize_option_greeks,
                 publish_option_greeks,
+                |greeks| get_option_greeks_topic(greeks.instrument_id),
             )?;
         }
         BusPayloadType::AccountState => {
@@ -614,12 +637,34 @@ fn handle_market_data<T>(
     payload: &[u8],
     deserialize: fn(SerializationEncoding, &[u8]) -> anyhow::Result<Option<T>>,
     publish: impl FnOnce(MStr<Topic>, &T),
-) -> anyhow::Result<()> {
+    canonical_topic: fn(&T) -> MStr<Topic>,
+) -> anyhow::Result<()>
+where
+    T: Into<Data>,
+{
     let Some(value) = deserialize(encoding, payload)? else {
         return Ok(());
     };
 
-    publish(topic, &value);
+    if !HAS_EXTERNAL_DATA_INGRESS.with(Cell::get) {
+        publish(topic, &value);
+        return Ok(());
+    }
+
+    let endpoint = MessagingSwitchboard::data_engine_process_data();
+    let process = topic == canonical_topic(&value)
+        && get_message_bus()
+            .borrow()
+            .endpoints_data
+            .is_registered(endpoint);
+
+    if process {
+        let data = value.into();
+        send_data(endpoint, data);
+    } else {
+        publish(topic, &value);
+    }
+
     Ok(())
 }
 
@@ -713,6 +758,38 @@ mod tests {
     use crate::msgbus::{
         MessageBus, TypedHandler, backing::MessageBusExternalEgress, set_message_bus,
     };
+
+    #[rstest]
+    fn test_external_data_ingress_follows_active_bus_and_disposal() {
+        let first = Rc::new(RefCell::new(MessageBus::default()));
+        let second = Rc::new(RefCell::new(MessageBus::default()));
+        set_message_bus(Rc::clone(&first));
+        assert!(!HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+
+        first.borrow_mut().set_external_data_ingress(true);
+        assert!(HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+
+        set_message_bus(Rc::clone(&second));
+        assert!(!HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+
+        first.borrow_mut().set_external_data_ingress(true);
+        assert!(!HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+
+        set_message_bus(Rc::clone(&first));
+        assert!(HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+
+        second.borrow_mut().dispose();
+        assert!(HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+
+        first.borrow_mut().close().unwrap();
+        assert!(HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+
+        first.borrow_mut().dispose();
+        assert!(!HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+
+        set_message_bus(first);
+        assert!(!HAS_EXTERNAL_DATA_INGRESS.with(Cell::get));
+    }
 
     struct RecordingEgress {
         messages: Rc<RefCell<Vec<BusMessage>>>,

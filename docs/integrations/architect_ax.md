@@ -339,8 +339,9 @@ and output format.
 - Open-order, historical-order, fill, and position report requests resolve an uncached symbol
   through `GET /instrument` and cache the result. An instrument request or parse failure fails that
   entire report request instead of dropping venue state.
-- `GET /transactions` requires `start_timestamp_ns` and `end_timestamp_ns` with a range no wider
-  than 7 days. The low-level client exposes its cursor and account selectors.
+- `GET /transactions` accepts optional `start_timestamp_ns` and `end_timestamp_ns` filters. When both
+  are supplied, `end_timestamp_ns` must be greater than `start_timestamp_ns`. The low-level client
+  requires both bounds and exposes cursor and account selectors.
 - `GET /order-status` can include `reject_reason` and `reject_message` for rejected orders.
 - When an account selector is omitted, AX uses the primary account. The high-level execution client owns one
   primary account. Low-level request models expose documented account selectors.
@@ -679,9 +680,9 @@ credentials are valid and have trading permissions.
   and returns the confirmed replacement's status, including fills or cancellation. It leaves the result
   unresolved when no replacement is confirmed. A cancel before confirmation targets the parent and
   can be rejected; recovery then needs a late stream confirmation, a child fill, or an explicit query.
-  A crossing post-only replacement emits `OrderModifyRejected` with the venue reason
-  and leaves the original order working. The adapter rejects a modification locally if it carries a
-  trigger price, because AX has no field for one, or if the order has no venue order ID yet.
+  The adapter emits `OrderModifyDenied` if a modification carries a trigger price, because AX has no
+  field for one, or if the order has no venue order ID yet. A crossing post-only replacement emits
+  `OrderModifyRejected` with the venue reason and leaves the original order working.
 - **Funding rate polling**: The data client polls `GET /funding-rates` for each subscribed instrument at
   `funding_rate_poll_interval_mins`. It requests a seven-day lookback to find a rate across weekends and
   holidays. It emits the latest rate only when it differs from the last one emitted.

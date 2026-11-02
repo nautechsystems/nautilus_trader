@@ -1548,6 +1548,7 @@ fn test_submit_bracket_order_exit_shape(
     #[case] tp_type: OrderType,
     #[case] tp_price: &str,
     #[case] sl_trigger: &str,
+    #[values(None, Some(3))] expire_mins: Option<u64>,
 ) {
     config.enable_brackets = true;
     config.bracket_contingency_type = ContingencyType::Oco;
@@ -1555,6 +1556,7 @@ fn test_submit_bracket_order_exit_shape(
     config.bracket_offset_ticks = 125;
     config.order_qty = Quantity::from("0.017");
     config.limit_time_in_force = Some(TimeInForce::Day);
+    config.order_expire_time_delta_mins = expire_mins;
     config.stop_time_in_force = Some(TimeInForce::Gtc);
     config.stop_trigger_type = TriggerType::MarkPrice;
     config.use_post_only = true;
@@ -1675,6 +1677,49 @@ fn test_submit_bracket_order_rejects_unsupported_exit_shape(
 
     assert_eq!(error.to_string(), reason);
     assert_eq!(cache.borrow().orders(None, None, None, None, None).len(), 0);
+}
+
+#[rstest]
+#[case::explicit(Some(TimeInForce::Gtd), None)]
+#[case::explicit_with_expiry(Some(TimeInForce::Gtd), Some(3))]
+#[case::expiry_minutes(None, Some(3))]
+fn test_submit_bracket_order_rejects_gtd_take_profit(
+    mut config: ExecTesterConfig,
+    instrument: InstrumentAny,
+    #[case] time_in_force: Option<TimeInForce>,
+    #[case] expire_mins: Option<u64>,
+    #[values(
+        OrderType::Limit,
+        OrderType::MarketIfTouched,
+        OrderType::LimitIfTouched
+    )]
+    tp_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    config.enable_brackets = true;
+    config.bracket_tp_order_type = tp_type;
+    config.limit_time_in_force = time_in_force;
+    config.order_expire_time_delta_mins = expire_mins;
+    let cache = create_cache_with_instrument(&instrument);
+    let mut tester = ExecTester::new(config);
+    register_exec_tester(&mut tester, cache.clone());
+    tester.instrument = Some(instrument);
+    let risk_saver = capture_risk_commands();
+    let exec_saver = capture_exec_commands();
+
+    let error = tester
+        .submit_bracket_order(side, Price::from("3035.00"))
+        .unwrap_err();
+
+    assert_eq!(
+        error.to_string(),
+        "GTD time in force not supported for bracket take-profit legs"
+    );
+    assert_eq!(cache.borrow().orders(None, None, None, None, None).len(), 0);
+    assert!(tester.buy_order.is_none());
+    assert!(tester.sell_order.is_none());
+    assert!(risk_saver.get_messages().is_empty());
+    assert!(exec_saver.get_messages().is_empty());
 }
 
 #[rstest]

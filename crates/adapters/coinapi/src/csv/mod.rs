@@ -724,15 +724,206 @@ mod tests {
     }
 
     #[rstest]
-    fn load_deltas_applies_sub_and_skips_changes_to_unknown_orders() {
+    #[case::l2("limitbook_full_binance_spot_btc_usdt_20250901.csv", binance())]
+    #[case::l3("limitbook_full_coinbase_spot_btc_usd_20250901.csv", coinbase())]
+    fn numeric_book_update_codes_match_named_updates(
+        #[case] filename: &str,
+        #[case] instrument_id: InstrumentId,
+    ) {
+        let source = fixture(filename);
+        let mut numeric = fs::read_to_string(&source).unwrap();
+        for (name, code) in [
+            ("ADD", "0"),
+            ("SUB", "1"),
+            ("SET", "2"),
+            ("DELETE", "3"),
+            ("MATCH", "4"),
+        ] {
+            numeric = numeric.replace(&format!(";{name};"), &format!(";{code};"));
+        }
+
         let dir = TempDir::new().unwrap();
+        let path = write_file(
+            dir.path(),
+            "numeric.csv",
+            &numeric.lines().collect::<Vec<_>>(),
+        );
+        let expected = load_deltas(source, instrument_id, Some(date()), None, None, None).unwrap();
+        let actual = load_deltas(path, instrument_id, Some(date()), None, None, None).unwrap();
+
+        assert_eq!(actual, expected);
+    }
+
+    #[rstest]
+    #[case::unknown("UNKNOWN")]
+    #[case::misspelled("STE")]
+    #[case::numeric("5")]
+    #[case::empty("")]
+    fn deltas_reject_unknown_price_level_updates(
+        #[case] update_type: &str,
+        #[values("0.00", "1.25")] size: &str,
+        #[values(false, true)] streaming: bool,
+    ) {
+        let dir = TempDir::new().unwrap();
+        let update = format!("00:00:01.0000000;00:00:01.2000000;{update_type};1;100.25;{size};");
+        let path = write_file(
+            dir.path(),
+            "book.csv",
+            &[
+                BOOK_HEADER,
+                "00:00:00.0000000;00:00:00.1000000;SNAPSHOT;1;100.25;2.50;",
+                &update,
+            ],
+        );
+
+        let error = if streaming {
+            let mut stream =
+                stream_deltas(&path, binance(), Some(date()), 1, None, None, None).unwrap();
+            let error = stream.next().unwrap().unwrap_err();
+            assert!(stream.next().is_none());
+            error
+        } else {
+            load_deltas(&path, binance(), Some(date()), None, None, None).unwrap_err()
+        };
+
+        assert_eq!(
+            error.to_string(),
+            format!("unsupported L2 update_type '{update_type}'")
+        );
+    }
+
+    #[rstest]
+    #[case::add("ADD")]
+    #[case::add_numeric("0")]
+    #[case::sub("SUB")]
+    #[case::sub_numeric("1")]
+    #[case::set("SET")]
+    #[case::set_numeric("2")]
+    #[case::delete("DELETE")]
+    #[case::delete_numeric("3")]
+    #[case::match_update("MATCH")]
+    #[case::match_numeric("4")]
+    fn deltas_preserve_known_price_level_updates(
+        #[case] update_type: &str,
+        #[values("0.00", "1.25")] size: &str,
+        #[values(false, true)] streaming: bool,
+    ) {
+        let dir = TempDir::new().unwrap();
+        let update = format!("00:00:01.0000000;00:00:01.2000000;{update_type};0;100.25;{size};");
+        let path = write_file(dir.path(), "book.csv", &[BOOK_HEADER, &update]);
+        let deltas = if streaming {
+            stream_deltas(&path, binance(), Some(date()), 1, Some(2), Some(2), None)
+                .unwrap()
+                .collect::<anyhow::Result<Vec<_>>>()
+                .unwrap()
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>()
+        } else {
+            load_deltas(&path, binance(), Some(date()), Some(2), Some(2), None).unwrap()
+        };
+
+        let action = if size == "0.00" || matches!(update_type, "DELETE" | "3") {
+            BookAction::Delete
+        } else {
+            BookAction::Update
+        };
+
+        let order = BookOrder::new(
+            OrderSide::Sell,
+            Price::from("100.25"),
+            Quantity::from(size),
+            0,
+        );
+
+        assert_eq!(
+            deltas,
+            [OrderBookDelta::new(
+                binance(),
+                action,
+                order,
+                LAST,
+                0,
+                at(1_000_000_000),
+                at(1_200_000_000),
+            )]
+        );
+        assert_eq!(
+            (
+                deltas[0].order.price.precision,
+                deltas[0].order.size.precision
+            ),
+            (2, 2)
+        );
+    }
+
+    #[rstest]
+    #[case::named("DELETE")]
+    #[case::numeric("3")]
+    fn load_deltas_deletes_a_price_level_with_positive_size(#[case] delete: &str) {
+        let dir = TempDir::new().unwrap();
+        let deletion = format!("00:00:01.0000000;00:00:01.2000000;{delete};1;100.25;1.25;");
+        let path = write_file(
+            dir.path(),
+            "book.csv",
+            &[
+                BOOK_HEADER,
+                "00:00:00.0000000;00:00:00.1000000;SNAPSHOT;1;100.25;2.50;",
+                &deletion,
+            ],
+        );
+
+        let deltas = load_deltas(&path, binance(), Some(date()), None, None, None).unwrap();
+
+        assert_eq!(
+            deltas,
+            [
+                OrderBookDelta::clear(binance(), 0, at(0), at(100_000_000)),
+                OrderBookDelta::new(
+                    binance(),
+                    BookAction::Add,
+                    BookOrder::new(
+                        OrderSide::Buy,
+                        Price::from("100.25"),
+                        Quantity::from("2.50"),
+                        0,
+                    ),
+                    SNAPSHOT | LAST,
+                    0,
+                    at(0),
+                    at(100_000_000),
+                ),
+                OrderBookDelta::new(
+                    binance(),
+                    BookAction::Delete,
+                    BookOrder::new(
+                        OrderSide::Buy,
+                        Price::from("100.25"),
+                        Quantity::from("1.25"),
+                        0,
+                    ),
+                    LAST,
+                    0,
+                    at(1_000_000_000),
+                    at(1_200_000_000),
+                ),
+            ]
+        );
+    }
+
+    #[rstest]
+    #[case::named("SUB")]
+    #[case::numeric("1")]
+    fn load_deltas_applies_sub_and_skips_changes_to_unknown_orders(#[case] subtract: &str) {
+        let dir = TempDir::new().unwrap();
+        let subtraction = format!("00:00:01.0000000;00:00:01.0000000;{subtract};1;100;0.5;a");
         let path = write_file(
             dir.path(),
             "book.csv",
             &[
                 BOOK_HEADER,
                 "00:00:00.0000000;00:00:00.0000000;SNAPSHOT;1;100;2;a",
-                "00:00:01.0000000;00:00:01.0000000;SUB;1;100;0.5;a",
+                &subtraction,
                 "00:00:02.0000000;00:00:02.0000000;ADD;1;100;3;a",
                 "00:00:03.0000000;00:00:03.0000000;SET;1;99;1;z",
                 "00:00:03.0000000;00:00:03.0000000;DELETE;1;99;1;y",

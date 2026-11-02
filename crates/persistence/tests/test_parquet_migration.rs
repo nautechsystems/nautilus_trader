@@ -130,7 +130,7 @@ fn migration_preserves_released_quotes_and_instruments(#[case] precision: &str) 
 
     assert_eq!(
         serde_json::to_value(actual).unwrap(),
-        serde_json::to_value(quotes).unwrap()
+        serde_json::to_value(&quotes).unwrap()
     );
     assert_eq!(
         serde_json::to_value(instruments).unwrap(),
@@ -143,6 +143,25 @@ fn migration_preserves_released_quotes_and_instruments(#[case] precision: &str) 
     assert_eq!(report.migrated_rows, 4);
     assert_eq!(report.migrated_files, 3);
     assert_eq!(catalog_files(&source), original);
+
+    for chunk_size in [1, 2] {
+        let mut session = catalog
+            .query_batch_session(
+                &CatalogQuery::new(NautilusDataType::QuoteTick),
+                Some(chunk_size),
+            )
+            .unwrap();
+        let mut replay = Vec::new();
+        while let Some(batch) = session.next_batch().unwrap() {
+            replay.extend(batch.to_data_vec_for_compat());
+        }
+
+        let expected = quotes.iter().copied().map(Data::Quote).collect::<Vec<_>>();
+        assert_eq!(
+            serde_json::to_value(replay).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
 }
 
 #[rstest]
@@ -150,10 +169,12 @@ fn migration_partial_failure_preserves_sources_and_requires_empty_retry() {
     let temporary = TempDir::new().unwrap();
     let source = temporary.path().join("source");
     let target = temporary.path().join("destination");
+    let mut quotes = Vec::new();
 
     for (identifier, invalid) in [("AAA.SIM", false), ("ZZZ.SIM", true)] {
         let mut quote = quote_ethusdt_binance();
         quote.instrument_id = InstrumentId::from(identifier);
+        quotes.push(quote);
         let metadata = QuoteTick::chunk_metadata(&[quote]);
         let batch = QuoteTick::encode_batch(&metadata, &[quote]).unwrap();
         let mut columns = batch.columns().to_vec();
@@ -190,6 +211,31 @@ fn migration_partial_failure_preserves_sources_and_requires_empty_retry() {
     assert!(retry.to_string().contains("empty"), "{retry}");
     assert_eq!(catalog_files(&target), partial);
     assert_eq!(catalog_files(&source), original);
+
+    let repaired = quotes[1];
+    let batch = QuoteTick::encode_batch(&repaired.metadata(), &[repaired]).unwrap();
+    let path = source.join("data/quotes/ZZZ.SIM/quotes.parquet");
+    let mut writer =
+        ArrowWriter::try_new(fs::File::create(path).unwrap(), batch.schema(), None).unwrap();
+    writer.write(&batch).unwrap();
+    writer.close().unwrap();
+    let repaired_source = catalog_files(&source);
+    let fresh = temporary.path().join("recovered");
+
+    let report = migrate_parquet_catalog(config(&source, &fresh, false)).unwrap();
+    let mut catalog = ParquetDataCatalog::new(&fresh, None, None, None, None);
+    let actual = catalog
+        .query::<QuoteTick>(None, None, None, None, None, true)
+        .unwrap();
+
+    assert_eq!(report.migrated_files, 2);
+    assert_eq!(report.migrated_rows, 2);
+    assert_eq!(
+        serde_json::to_value(actual).unwrap(),
+        serde_json::to_value(quotes).unwrap()
+    );
+    assert_eq!(catalog_files(&source), repaired_source);
+    assert_eq!(catalog_files(&target), partial);
 }
 
 #[rstest]

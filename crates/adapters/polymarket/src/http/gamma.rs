@@ -25,25 +25,31 @@
 //! - `condition_ids=` accepts at most 100 IDs per request, so `load_ids` for
 //!   larger sets chunks the request and unions the responses.
 
-use std::{collections::HashMap, result::Result as StdResult, sync::Arc};
+use std::{collections::HashMap, future::Future, result::Result as StdResult, sync::Arc};
 
 use ahash::AHashMap;
+use jiff::Timestamp;
+use nautilus_common::live::dst;
 use nautilus_core::{
     UnixNanos,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_model::instruments::InstrumentAny;
 use nautilus_network::{
-    http::{HttpClient, HttpClientError, Method, create_standard_nautilus_headers},
-    retry::{RetryConfig, RetryManager},
+    http::{
+        HttpClient, HttpClientError, HttpResponse, Method, create_standard_nautilus_headers,
+        parse_retry_after,
+    },
+    retry::{RetryConfig, RetryError, RetryManager},
     websocket::proxy::ProxyUrl,
 };
+use parking_lot::Mutex;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::{Value, value::RawValue};
 
 use crate::{
-    common::{parse::validate_market_version, urls::gamma_api_url},
+    common::{consts::MARKET_VERSION_V2, parse::validate_data_market_version, urls::gamma_api_url},
     filters::set_market_closed,
     http::{
         error::{Error, Result, decode_response},
@@ -54,7 +60,7 @@ use crate::{
             parse_gamma_market_with_event_cache,
         },
         query::{GetGammaEventsParams, GetGammaMarketsParams, GetSearchParams},
-        rate_limits::POLYMARKET_GAMMA_REST_QUOTA,
+        rate_limits::{HEADER_RETRY_AFTER, POLYMARKET_GAMMA_REST_QUOTA},
     },
 };
 
@@ -69,11 +75,14 @@ enum GammaStop {
 /// Provides a raw HTTP client for the Polymarket Gamma API.
 ///
 /// Handles HTTP transport for fetching market data from the public Gamma API.
-/// No authentication is required.
+/// Retries transient failures per request. No authentication is required.
+/// Uses three retries with exponential backoff and a 180-second total budget.
+/// The configured HTTP timeout bounds each attempt.
 #[derive(Debug, Clone)]
 pub struct PolymarketGammaRawHttpClient {
     client: HttpClient,
     base_url: String,
+    retry_manager: Arc<RetryManager<Error>>,
 }
 
 impl PolymarketGammaRawHttpClient {
@@ -99,6 +108,7 @@ impl PolymarketGammaRawHttpClient {
         Ok(Self {
             client: HttpClient::builder()
                 .headers(Self::default_headers())
+                .header_keys(vec![HEADER_RETRY_AFTER.to_string()])
                 .default_quota(*POLYMARKET_GAMMA_REST_QUOTA)
                 .timeout_secs(timeout_secs)
                 .maybe_proxy_url(proxy_url.map(|url| url.expose().to_string()))
@@ -107,6 +117,12 @@ impl PolymarketGammaRawHttpClient {
                 .unwrap_or_else(|| gamma_api_url().to_string())
                 .trim_end_matches('/')
                 .to_string(),
+            retry_manager: Arc::new(RetryManager::new(RetryConfig {
+                jitter_ms: 1_000,
+                operation_timeout_ms: None,
+                max_elapsed_ms: Some(180_000),
+                ..RetryConfig::default()
+            })),
         })
     }
 
@@ -126,14 +142,12 @@ impl PolymarketGammaRawHttpClient {
         path: &str,
         params: Option<&P>,
     ) -> Result<T> {
-        let url = self.url(path);
-        let response = self
-            .client
-            .request_with_params(Method::GET, url, params, None, None, None, None)
-            .await
-            .map_err(Error::from_http_client)?;
-
-        decode_response(&response)
+        self.send_request(path, || {
+            let url = self.url(path);
+            self.client
+                .request_with_params(Method::GET, url, params, None, None, None, None)
+        })
+        .await
     }
 
     async fn send_get_query_map<T: DeserializeOwned>(
@@ -141,14 +155,53 @@ impl PolymarketGammaRawHttpClient {
         path: &str,
         params: Option<&HashMap<String, Vec<String>>>,
     ) -> Result<T> {
-        let url = self.url(path);
-        let response = self
-            .client
-            .request(Method::GET, url, params, None, None, None, None)
-            .await
-            .map_err(Error::from_http_client)?;
+        self.send_request(path, || {
+            let url = self.url(path);
+            self.client
+                .request(Method::GET, url, params, None, None, None, None)
+        })
+        .await
+    }
 
-        decode_response(&response)
+    async fn send_request<T, F, Fut>(&self, path: &str, mut request: F) -> Result<T>
+    where
+        T: DeserializeOwned,
+        F: FnMut() -> Fut,
+        Fut: Future<Output = StdResult<HttpResponse, HttpClientError>>,
+    {
+        let retry_after = Mutex::new(None);
+
+        // Bound the layout of retry futures nested in instrument discovery
+        Box::pin(
+            self.retry_manager
+                .invocation(
+                    path,
+                    || {
+                        let response = request();
+                        async {
+                            *retry_after.lock() = None;
+                            let response = response.await.map_err(Error::from_http_client)?;
+                            *retry_after.lock() = response
+                                .headers
+                                .get(HEADER_RETRY_AFTER)
+                                .and_then(|value| parse_retry_after(value, Timestamp::now()))
+                                .filter(|delay| {
+                                    dst::time::Instant::now().checked_add(*delay).is_some()
+                                });
+                            decode_response(&response)
+                        }
+                    },
+                    Error::is_retryable,
+                    |e| match e {
+                        RetryError::OperationTimeout { .. } => Error::Timeout,
+                        RetryError::InvalidConfiguration { message } => Error::bad_request(message),
+                        e => Error::transport(e.to_string()),
+                    },
+                )
+                .retry_delay(&|_| *retry_after.lock())
+                .execute(),
+        )
+        .await
     }
 
     /// Fetches markets from the Gamma API.
@@ -351,7 +404,7 @@ fn parse_markets_to_instruments(markets: &[GammaMarket], ts_init: UnixNanos) -> 
 }
 
 // Returns parsed instruments alongside condition IDs of markets still in the
-// CLOB hydration window (empty or empty-entry `clob_token_ids`), so callers
+// CLOB hydration window (missing or empty selected outcome IDs), so callers
 // can retry rather than treating them as terminal.
 //
 // This is the single funnel through which live instruments reach the client caches, so Gamma's
@@ -369,12 +422,12 @@ pub(crate) fn parse_markets_with_transient(
     let mut event_metadata = AHashMap::new();
 
     for market in markets {
-        if let Err(e) = validate_market_version(market.version.as_deref()) {
+        if let Err(e) = validate_data_market_version(market.version.as_deref()) {
             log::warn!("Skipping Gamma market {}: {e}", market.condition_id);
             continue;
         }
 
-        if is_transient_clob_token_ids(&market.clob_token_ids) {
+        if is_transient_market(market) {
             transient.push(market.condition_id.clone());
             continue;
         }
@@ -398,11 +451,22 @@ pub(crate) fn parse_markets_with_transient(
 
     if !transient.is_empty() {
         log::debug!(
-            "{} market(s) without usable clob_token_ids deferred as transient (CLOB hydration)",
+            "{} market(s) without usable outcome IDs deferred as transient (CLOB hydration)",
             transient.len(),
         );
     }
     (instruments, transient)
+}
+
+fn is_transient_market(market: &GammaMarket) -> bool {
+    if market.version.as_deref() == Some(MARKET_VERSION_V2) {
+        market
+            .position_ids
+            .as_ref()
+            .is_none_or(|ids| ids.is_empty() || ids.iter().any(String::is_empty))
+    } else {
+        is_transient_clob_token_ids(&market.clob_token_ids)
+    }
 }
 
 // Treats bare empty string, encoded empty array, and arrays with empty entries
@@ -453,6 +517,9 @@ pub struct PolymarketGammaHttpClient {
 impl PolymarketGammaHttpClient {
     /// Creates a new [`PolymarketGammaHttpClient`].
     ///
+    /// `retry_config` controls indexing-lag retries, independently of HTTP retries.
+    /// `retry_config.operation_timeout_ms` is ignored; `timeout_secs` bounds each HTTP attempt.
+    ///
     /// # Errors
     ///
     /// Returns an error if the underlying HTTP client cannot be created.
@@ -466,15 +533,21 @@ impl PolymarketGammaHttpClient {
 
     /// Creates a new domain client with an optional validated proxy URL.
     ///
+    /// `retry_config` controls indexing-lag retries, independently of HTTP retries.
+    /// `retry_config.operation_timeout_ms` is ignored; `timeout_secs` bounds each HTTP attempt.
+    ///
     /// # Errors
     ///
     /// Returns an error if the underlying HTTP client cannot be created.
     pub fn new_with_proxy(
         gamma_base_url: Option<String>,
         timeout_secs: u64,
-        retry_config: RetryConfig,
+        mut retry_config: RetryConfig,
         proxy_url: Option<ProxyUrl>,
     ) -> StdResult<Self, HttpClientError> {
+        // HTTP attempts own their timeouts; indexing retries include HTTP backoff
+        retry_config.operation_timeout_ms = None;
+
         Ok(Self {
             inner: Arc::new(PolymarketGammaRawHttpClient::new_with_proxy(
                 gamma_base_url,
@@ -484,6 +557,10 @@ impl PolymarketGammaHttpClient {
             clock: get_atomic_clock_realtime(),
             retry_manager: Arc::new(RetryManager::new(retry_config)),
         })
+    }
+
+    pub(crate) fn retry_manager(&self) -> &RetryManager<Error> {
+        &self.retry_manager
     }
 
     /// Fetches markets from the Gamma API with the given base params, paginating automatically.
@@ -617,10 +694,8 @@ impl PolymarketGammaHttpClient {
 
     /// Fetches instruments for the given slugs with retry on empty results.
     ///
-    /// Uses the client's [`RetryManager`] with exponential backoff. Gamma API
-    /// may not have indexed a newly created market yet, so empty results are
-    /// treated as retryable (indexing lag). HTTP errors are also retried per
-    /// the standard `is_retryable()` classification.
+    /// Uses exponential backoff for indexing lag. Each HTTP request independently
+    /// retries transient failures, without retrying exhausted HTTP errors at the batch level.
     pub async fn request_instruments_by_slugs_with_retry(
         &self,
         slugs: Vec<String>,
@@ -663,10 +738,10 @@ impl PolymarketGammaHttpClient {
                         if parse_markets_to_instruments(&markets, ts_init).is_empty()
                             && (markets.is_empty()
                                 || markets.iter().any(|market| {
-                                    validate_market_version(market.version.as_deref()).is_ok()
+                                    validate_data_market_version(market.version.as_deref()).is_ok()
                                 }))
                         {
-                            return Err(Error::transport(
+                            return Err(Error::exchange(
                                 "Gamma returned no instruments (indexing lag)",
                             ));
                         }
@@ -674,7 +749,7 @@ impl PolymarketGammaHttpClient {
                         Ok(markets)
                     }
                 },
-                |e| e.is_retryable(),
+                |e| matches!(e, Error::Exchange(_)),
                 |e| Error::transport(e.to_string()),
             )
             .execute()
@@ -750,9 +825,9 @@ impl PolymarketGammaHttpClient {
         Ok(instruments)
     }
 
-    /// Fetches supported instruments and condition IDs awaiting CLOB token IDs.
+    /// Fetches supported instruments and condition IDs awaiting outcome IDs.
     ///
-    /// Only market protocol `v1` enters the transient list. Unlike
+    /// Market protocols `v1` and `v2` enter the transient list. Unlike
     /// [`Self::request_instruments_by_params`], this method errors when every returned
     /// market uses an unsupported protocol.
     ///
@@ -767,9 +842,9 @@ impl PolymarketGammaHttpClient {
         if !markets.is_empty()
             && markets
                 .iter()
-                .all(|market| validate_market_version(market.version.as_deref()).is_err())
+                .all(|market| validate_data_market_version(market.version.as_deref()).is_err())
         {
-            validate_market_version(markets[0].version.as_deref())?;
+            validate_data_market_version(markets[0].version.as_deref())?;
         }
 
         enrich_markets(&mut markets);
@@ -1040,13 +1115,249 @@ fn parse_gamma_markets_response(raw: &RawValue) -> Result<Vec<GammaMarket>> {
 
 #[cfg(test)]
 mod tests {
+    use std::{
+        sync::atomic::{AtomicUsize, Ordering},
+        time::Duration,
+    };
+
+    use axum::{Router, http::StatusCode, response::IntoResponse, routing::get};
     use nautilus_common::cache::Cache;
     use nautilus_model::instruments::Instrument;
     use rstest::rstest;
     use rust_decimal_macros::dec;
+    use serde_json::from_str;
 
     use super::*;
-    use crate::http::{parse::parse_gamma_market, query::GetGammaMarketsParamsBuilder};
+    use crate::{
+        http::{
+            clob::PolymarketClobPublicClient, data_api::PolymarketDataApiHttpClient,
+            parse::parse_gamma_market, query::GetGammaMarketsParamsBuilder,
+        },
+        resolve::build_strict_resolved_market,
+    };
+
+    async fn retry_client(
+        router: Router,
+    ) -> (PolymarketGammaHttpClient, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let retry_config = RetryConfig {
+            initial_delay_ms: 10,
+            max_delay_ms: 10,
+            jitter_ms: 0,
+            operation_timeout_ms: None,
+            ..RetryConfig::default()
+        };
+        let mut client = PolymarketGammaHttpClient::new(
+            Some(format!("http://{addr}")),
+            1,
+            RetryConfig {
+                max_retries: 1,
+                operation_timeout_ms: Some(100),
+                ..retry_config
+            },
+        )
+        .unwrap();
+        Arc::get_mut(&mut client.inner).unwrap().retry_manager =
+            Arc::new(RetryManager::new(retry_config));
+        (client, server)
+    }
+
+    #[rstest]
+    #[tokio::test(start_paused = true)]
+    async fn test_http_policy_is_independent_of_indexing_policy() {
+        let client = PolymarketGammaHttpClient::new(
+            None,
+            90,
+            RetryConfig {
+                max_retries: 0,
+                operation_timeout_ms: Some(30_000),
+                immediate_first: true,
+                max_elapsed_ms: Some(300_000),
+                ..RetryConfig::default()
+            },
+        )
+        .unwrap();
+        let attempts = AtomicUsize::new(0);
+        let started = tokio::time::Instant::now();
+        let tags: Vec<GammaTag> = client
+            .inner
+            .send_request("/tags", || {
+                let attempt = attempts.fetch_add(1, Ordering::Relaxed);
+                async move {
+                    if attempt == 0 {
+                        return Err(HttpClientError::TransportError("reset".to_string()));
+                    }
+
+                    tokio::time::sleep(Duration::from_secs(65)).await;
+                    Ok(HttpResponse {
+                        status: 200_u16.try_into().unwrap(),
+                        headers: HashMap::new(),
+                        body: "[]".into(),
+                    })
+                }
+            })
+            .await
+            .unwrap();
+
+        assert!(tags.is_empty());
+        assert_eq!(attempts.load(Ordering::Relaxed), 2);
+        assert!(started.elapsed() >= Duration::from_secs(66));
+    }
+
+    #[rstest]
+    #[case::server_error(&[503, 200], "[]", None, 2)]
+    #[case::rate_limit(&[429, 200], "[]", None, 2)]
+    #[case::rate_limit_hint(&[429, 200], "[]", Some("1"), 2)]
+    #[case::server_error_hint(&[503, 200], "[]", Some("1"), 2)]
+    #[case::invalid_hint(&[503, 200], "[]", Some("invalid"), 2)]
+    #[case::overflow_hint(&[503, 200], "[]", Some("18446744073709551615"), 2)]
+    #[case::timeout(&[0, 200], "[]", None, 2)]
+    #[case::exhausted(&[503], "[]", None, 4)]
+    #[case::forbidden(&[403], "[]", None, 1)]
+    #[case::decode(&[200], "invalid", None, 1)]
+    #[tokio::test]
+    async fn test_http_retries(
+        #[case] statuses: &[u16],
+        #[case] body: &'static str,
+        #[case] retry_after: Option<&'static str>,
+        #[case] expected_requests: usize,
+    ) {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&requests);
+        let statuses = statuses.to_vec();
+        let final_status = *statuses.last().unwrap();
+        let router = Router::new().fallback(get(move || {
+            let attempt = count.fetch_add(1, Ordering::Relaxed);
+            let status = statuses[attempt.min(statuses.len() - 1)];
+            async move {
+                if status == 0 {
+                    tokio::time::sleep(Duration::from_millis(1_400)).await;
+                }
+                let mut response =
+                    (StatusCode::from_u16(status.max(200)).unwrap(), body).into_response();
+
+                if let Some(value) = retry_after {
+                    response
+                        .headers_mut()
+                        .insert(HEADER_RETRY_AFTER, value.parse().unwrap());
+                }
+                response
+            }
+        }));
+        let (client, server) = retry_client(router).await;
+        let started = std::time::Instant::now();
+        let result = client.inner.get_gamma_tags().await;
+
+        assert_eq!(requests.load(Ordering::Relaxed), expected_requests);
+
+        if final_status == 200 && body == "[]" {
+            result.unwrap();
+        } else if final_status == 200 {
+            assert!(matches!(result, Err(Error::Serde(_))));
+        } else {
+            assert!(matches!(result, Err(Error::Http { status, .. }) if status == final_status));
+        }
+
+        if retry_after == Some("1") {
+            assert!(started.elapsed() >= Duration::from_secs(1));
+        }
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_http_retry_retains_completed_pages(#[values(false, true)] events: bool) {
+        let queries = Arc::new(Mutex::new(Vec::new()));
+        let received = Arc::clone(&queries);
+        let router = Router::new().fallback(get(move |uri: axum::http::Uri| {
+            let mut queries = received.lock();
+            queries.push(uri.query().unwrap_or_default().to_string());
+            let response = if queries.len() == 2 {
+                StatusCode::SERVICE_UNAVAILABLE.into_response()
+            } else {
+                let key = if events { "events" } else { "markets" };
+                let row = if events {
+                    serde_json::json!({"id": "event"})
+                } else {
+                    serde_json::to_value(load_fee_market("gamma_market.json")).unwrap()
+                };
+                axum::Json(serde_json::json!({
+                    key: [row],
+                    "next_cursor": if queries.len() == 1 { Some("next") } else { None },
+                }))
+                .into_response()
+            };
+            async { response }
+        }));
+        let (client, server) = retry_client(router).await;
+        let count = if events {
+            client
+                .request_events_by_params(Default::default())
+                .await
+                .unwrap()
+                .len()
+        } else {
+            client
+                .request_markets_by_params(Default::default())
+                .await
+                .unwrap()
+                .len()
+        };
+
+        assert_eq!(count, 2);
+        let queries = queries.lock();
+        assert_eq!(queries.len(), 3);
+        assert!(!queries[0].contains("after_cursor"));
+        assert!(queries[1].contains("after_cursor=next"));
+        assert_eq!(queries[1], queries[2]);
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::indexing_lag(false, false)]
+    #[case::http_recovers(true, false)]
+    #[case::http_exhausted(true, true)]
+    #[tokio::test]
+    async fn test_slug_retries_have_one_http_retry_owner(
+        #[case] http_error: bool,
+        #[case] exhausted: bool,
+    ) {
+        let requests = Arc::new(AtomicUsize::new(0));
+        let count = Arc::clone(&requests);
+        let router = Router::new().fallback(get(move || {
+            let attempt = count.fetch_add(1, Ordering::Relaxed);
+            async move {
+                if http_error && (attempt == 0 || exhausted) {
+                    return (StatusCode::SERVICE_UNAVAILABLE, [(HEADER_RETRY_AFTER, "1")])
+                        .into_response();
+                }
+                axum::Json(if attempt == 0 {
+                    serde_json::json!([])
+                } else {
+                    serde_json::json!([load_fee_market("gamma_market.json")])
+                })
+                .into_response()
+            }
+        }));
+        let (client, server) = retry_client(router).await;
+        let result = client
+            .request_instruments_by_slugs_with_retry(vec!["slug".to_string()])
+            .await;
+
+        assert_eq!(
+            requests.load(Ordering::Relaxed),
+            if exhausted { 4 } else { 2 }
+        );
+
+        if exhausted {
+            assert!(result.unwrap_err().to_string().contains("503"));
+        } else {
+            assert_eq!(result.unwrap().len(), 2);
+        }
+        server.abort();
+    }
 
     fn load_fee_market(filename: &str) -> GammaMarket {
         let path = format!("test_data/{filename}");
@@ -1065,8 +1376,75 @@ mod tests {
     }
 
     #[rstest]
+    #[ignore = "read-only mainnet market-data validation"]
+    #[tokio::test]
+    async fn test_live_market_protocol_data() {
+        let gamma = PolymarketGammaHttpClient::new(None, 20, RetryConfig::default()).unwrap();
+        let clob = PolymarketClobPublicClient::new(None, 20).unwrap();
+        let data = PolymarketDataApiHttpClient::new(None, 20).unwrap();
+
+        for (id, version) in [(5931597, "v2"), (1557558, "v1")] {
+            let markets = gamma
+                .request_markets_by_params(GetGammaMarketsParams {
+                    id: Some(vec![id]),
+                    closed: Some(true),
+                    max_markets: Some(1),
+                    ..Default::default()
+                })
+                .await
+                .unwrap();
+
+            assert_eq!(markets.len(), 1);
+            assert_eq!(markets[0].id, id.to_string());
+            assert_eq!(markets[0].version.as_deref(), Some(version));
+
+            if version == "v2" {
+                assert_eq!(markets[0].resolution_status.as_deref(), Some("resolved"));
+                let resolved = build_strict_resolved_market(&markets[0]).expect("strict V2 payout");
+                assert_eq!(resolved.condition_id, markets[0].condition_id);
+                assert_eq!(resolved.winning_asset_id, resolved.asset_ids[0]);
+                assert_eq!(resolved.winning_outcome, resolved.outcomes[0]);
+                eprintln!("Validated V2 finality and exact binary payout for market {id}");
+            }
+
+            let definitions = parse_gamma_market(&markets[0]).unwrap();
+            let instruments = parse_markets_to_instruments(&markets, 1.into());
+            assert_eq!(instruments.len(), 2);
+            let details = clob.get_market(&markets[0].condition_id).await.unwrap();
+            assert_eq!(details.version.as_deref(), Some(version));
+            assert_eq!(details.condition_id, markets[0].condition_id);
+            assert_eq!(details.tokens.len(), definitions.len());
+
+            for definition in &definitions {
+                assert!(details.tokens.iter().any(|token| {
+                    definition.token_id.as_str() == token.token_id
+                        && definition.outcome.as_str() == token.outcome
+                }));
+            }
+
+            let trades = data
+                .request_trade_ticks(
+                    instruments[0].id(),
+                    &markets[0].condition_id,
+                    definitions[0].token_id.as_str(),
+                    definitions[0].price_precision,
+                    6,
+                    None,
+                    None,
+                    Some(1),
+                )
+                .await
+                .unwrap();
+            eprintln!(
+                "Validated {version} market {id}: 2 instruments, matching Gamma/CLOB identity, {} historical trades",
+                trades.len()
+            );
+        }
+    }
+
+    #[rstest]
     #[case(Some("v1"), true)]
-    #[case(Some("v2"), false)]
+    #[case(Some("v2"), true)]
     #[case(None, false)]
     #[case(Some("v3"), false)]
     #[case(Some("V1"), false)]
@@ -1078,8 +1456,10 @@ mod tests {
     ) {
         let mut market = load_fee_market(fixture);
         market.version = version.map(str::to_string);
+        market.position_ids = Some(from_str(&market.clob_token_ids).unwrap());
         if empty_ids {
             market.clob_token_ids = "[]".into();
+            market.position_ids = Some(Vec::new());
         }
 
         let condition_id = market.condition_id.clone();
@@ -1105,15 +1485,15 @@ mod tests {
 
                 assert_eq!(
                     binary.info.as_ref().unwrap().get_str("market_version"),
-                    Some("v1")
+                    version
                 );
             }
         } else if !supported {
-            let error = crate::http::parse::parse_gamma_market(&market).unwrap_err();
+            let error = parse_gamma_market(&market).unwrap_err();
             assert_eq!(
                 error.to_string(),
                 format!(
-                    "Unsupported Polymarket market protocol {}; only v1 CTF markets are supported",
+                    "Unsupported Polymarket data protocol {}; expected v1 or v2",
                     version.unwrap_or("missing"),
                 )
             );

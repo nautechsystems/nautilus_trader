@@ -1,0 +1,1 @@
+{"exchange_id":"POLYMARKET","market_id":"TEST-OUTCOME_NO","time_exchange":"2026-10-11T00:00:01Z","time_coinapi":"2026-10-11T00:00:02Z","bids":[{"price":"0.2","size":"2.000002"},{"price":"0.3","size":"1.000001"},{"price":"0.1","size":"3.000003"}],"asks":[{"price":"0.5","size":"5.000005"},{"price":"0.4","size":"4.000004"}]}

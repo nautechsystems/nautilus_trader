@@ -395,13 +395,14 @@ impl ExecutionClient for PolymarketExecutionClient {
         self.check_not_faulted()?;
 
         if let Err(e) = self.settlement.ensure_submission_allowed() {
-            self.emitter.emit_order_modify_rejected_event(
+            self.emitter.emit_order_modify_denied_event(
                 cmd.strategy_id,
                 cmd.instrument_id,
                 cmd.client_order_id,
                 cmd.venue_order_id,
                 &e.to_string(),
                 self.clock.get_time_ns(),
+                Some(cmd.command_id),
             );
             return Ok(());
         }
@@ -481,7 +482,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         gate_report(
             || {
                 self.settlement
-                    .ensure_resolved(cmd.instrument_id, "order status report")
+                    .ensure_order_status_available(cmd.instrument_id, "order status report")
             },
             Box::pin(self.generate_order_status_report_impl(cmd)),
         )
@@ -495,7 +496,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         gate_report(
             || {
                 self.settlement
-                    .ensure_resolved(cmd.instrument_id, "order status reports")
+                    .ensure_order_status_available(cmd.instrument_id, "order status reports")
             },
             self.generate_order_status_reports_impl(cmd),
         )

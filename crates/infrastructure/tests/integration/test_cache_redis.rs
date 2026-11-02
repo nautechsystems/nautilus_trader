@@ -17,15 +17,17 @@
 #[cfg(feature = "redis")]
 #[cfg(target_os = "linux")] // Databases only tested and supported on Linux
 mod serial_tests {
-    use std::{sync::OnceLock, time::Duration};
+    use std::{cell::RefCell, rc::Rc, sync::OnceLock, time::Duration};
 
     use ahash::AHashMap;
     use bytes::Bytes;
     use nautilus_common::{
         cache::{Cache, CacheConfig, database::CacheDatabaseAdapter},
+        clock::VirtualClock,
         testing::wait_until_async,
     };
-    use nautilus_core::{UUID4, UnixNanos};
+    use nautilus_core::{UUID4, UnixNanos, datetime::NANOSECONDS_IN_MINUTE};
+    use nautilus_execution::engine::{ExecutionEngine, config::ExecutionEngineConfig};
     use nautilus_infrastructure::redis::{
         cache::{RedisCacheConfig, RedisCacheDatabase, RedisCacheDatabaseAdapter},
         queries::DatabaseQueries,
@@ -79,11 +81,142 @@ mod serial_tests {
     fn redis_cache_config() -> RedisCacheConfig {
         RedisCacheConfig {
             host: Some("localhost".to_string()),
-            port: Some(6379),
+            port: Some(
+                std::env::var("NAUTILUS_TEST_REDIS_PORT")
+                    .map_or(6379, |value| value.parse().unwrap()),
+            ),
             connection_timeout: 1,
             number_of_retries: 0,
             ..Default::default()
         }
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_database_purge_removes_replay_snapshots_and_preserves_retained_positions(
+        #[values(false, true)] timer: bool,
+        #[values(false, true)] purge_from_database: bool,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        let adapter = get_redis_cache_adapter().await.unwrap();
+        let mut cache = Cache::new(None, Some(Box::new(adapter)));
+        let trader_id = TraderId::from("test-trader");
+        let (_, source_id, destination_id) = populate_flip_cache(&mut cache, trader_id, "", false);
+        let source = cache.position(&source_id).unwrap().cloned();
+        let destination = cache.position(&destination_id).unwrap().cloned();
+        let anchor = cache.snapshot_position_encoded(&source).unwrap();
+        let opening_order = cache
+            .order(&ClientOrderId::from("O-PERSISTED-OPEN"))
+            .unwrap()
+            .cloned();
+        cache.dispose();
+
+        let mut adapter = connect_redis_cache_adapter().await.unwrap();
+        adapter
+            .add_position_snapshot(&PositionSnapshot::from_replay_state(&source, None))
+            .unwrap();
+        adapter.snapshot_order_state(&opening_order).unwrap();
+        adapter.close().unwrap();
+        let adapter = connect_redis_cache_adapter().await.unwrap();
+        let loaded = adapter.load_position(&source_id).await.unwrap().unwrap();
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(&source).unwrap()
+        );
+        let mut cache = Cache::new(None, Some(Box::new(adapter)));
+        cache.cache_all().await.unwrap();
+        cache.build_index();
+        if timer {
+            let cache = Rc::new(RefCell::new(cache));
+            let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+            let config = ExecutionEngineConfig {
+                purge_closed_orders_interval_mins: Some(1),
+                purge_closed_orders_buffer_mins: Some(0),
+                purge_closed_positions_interval_mins: Some(1),
+                purge_closed_positions_buffer_mins: Some(0),
+                purge_from_database,
+                ..Default::default()
+            };
+
+            let engine_clock = Rc::clone(&clock);
+            let mut engine = ExecutionEngine::new(engine_clock, Rc::clone(&cache), Some(config));
+            engine.start_purge_timers();
+            let events = clock
+                .borrow_mut()
+                .advance_time(UnixNanos::from(NANOSECONDS_IN_MINUTE + 1), true);
+            let handlers = clock.borrow().match_handlers(events);
+
+            for handler in handlers {
+                handler.callback.call(handler.event);
+            }
+
+            assert!(!cache.borrow().position_exists(&source_id));
+            assert!(
+                !cache
+                    .borrow()
+                    .order_exists(&opening_order.client_order_id())
+            );
+            engine.stop_purge_timers();
+            cache.borrow_mut().dispose();
+        } else {
+            cache
+                .purge_position(source_id, purge_from_database)
+                .unwrap();
+            cache
+                .purge_order(opening_order.client_order_id(), purge_from_database)
+                .unwrap();
+            assert!(!cache.position_exists(&source_id));
+            assert!(!cache.order_exists(&opening_order.client_order_id()));
+            cache.dispose();
+        }
+
+        let mut adapter = connect_redis_cache_adapter().await.unwrap();
+        assert_eq!(
+            adapter.load_position(&source_id).await.unwrap().is_none(),
+            purge_from_database
+        );
+        assert_eq!(
+            adapter
+                .load_order(&ClientOrderId::from("O-PERSISTED-OPEN"))
+                .await
+                .unwrap()
+                .is_none(),
+            purge_from_database
+        );
+        assert_eq!(
+            adapter.load_positions().await.unwrap().len(),
+            if purge_from_database { 1 } else { 2 }
+        );
+        let retained = adapter
+            .load_position(&destination_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(retained).unwrap(),
+            serde_json::to_value(destination).unwrap()
+        );
+        assert_eq!(
+            adapter
+                .load_index_order_position()
+                .unwrap()
+                .values()
+                .any(|id| *id == source_id),
+            !purge_from_database
+        );
+        let mut connection = adapter.database.con.clone();
+        let snapshot_key = format!(
+            "{}:snapshots:orders:O-PERSISTED-OPEN",
+            adapter.database.trader_key
+        );
+        assert_eq!(
+            connection.exists::<_, bool>(snapshot_key).await.unwrap(),
+            !purge_from_database
+        );
+        let general = adapter.load().unwrap();
+        assert_eq!(general.get(&anchor.blob_ref), Some(&anchor.blob));
+        adapter.close().unwrap();
     }
 
     async fn get_redis_cache_adapter()
@@ -342,37 +475,47 @@ mod serial_tests {
         adapter.flush().unwrap();
     }
 
-    #[tokio::test]
-    async fn test_delete_account_event_is_a_no_op() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_account_event_purge_preserves_incremental_replay() {
         let _guard = redis_test_mutex().lock().await;
-        let adapter = get_redis_cache_adapter()
-            .await
-            .expect("Failed to create adapter");
+        let mut adapter = get_redis_cache_adapter().await.unwrap();
+        let mut account = AccountAny::from(cash_account_state_multi());
+        let mut update = cash_account_state_multi_changed_btc();
+        update
+            .balances
+            .retain(|balance| balance.currency == Currency::BTC());
+        update.event_id = UUID4::new();
+        update.ts_event = UnixNanos::from(10);
+        update.ts_init = UnixNanos::from(11);
+        adapter.add_currency(&Currency::BTC()).unwrap();
+        adapter.add_currency(&Currency::ETH()).unwrap();
+        adapter.add_account(&account).unwrap();
+        account.apply(update.clone()).unwrap();
+        adapter.update_account(&account).unwrap();
+        adapter.close().unwrap();
+        let adapter = connect_redis_cache_adapter().await.unwrap();
+        let mut cache = Cache::default();
+        cache.add_account(account.clone()).unwrap();
+        cache.set_database(Box::new(adapter));
 
-        let account_id = AccountId::new("BINANCE-001");
-        let event_id = UUID4::new().to_string();
-        let account_key = format!("{}:accounts:{account_id}", adapter.database.trader_key);
-
-        let mut conn = adapter.database.con.clone();
-        let _: () = conn.set(&account_key, "test_data").await.unwrap();
-        let exists_before: bool = conn.exists(&account_key).await.unwrap();
-        assert!(exists_before);
-
-        adapter
-            .delete_account_event(&account_id, &event_id)
+        cache
+            .purge_account_events(UnixNanos::from(u64::MAX), 0, true)
             .unwrap();
+        assert_eq!(cache.account(&account.id()).unwrap().events(), vec![update]);
+        cache.dispose();
 
-        // Deletion is dispatched asynchronously, so allow a real delete to land before asserting
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let exists_after: bool = conn.exists(&account_key).await.unwrap();
-        assert!(
-            exists_after,
-            "delete_account_event is a documented no-op pending redesign"
+        let mut restarted = connect_redis_cache_adapter().await.unwrap();
+        let loaded = restarted
+            .load_account(&account.id())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(account).unwrap()
         );
-
-        let mut adapter = adapter;
-        adapter.flush().unwrap();
+        restarted.flush().unwrap();
+        restarted.close().unwrap();
     }
 
     #[expect(
@@ -2290,6 +2433,43 @@ mod serial_tests {
             Duration::from_secs(5),
         )
         .await;
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_lazy_instrument_load_registers_persisted_currencies(
+        #[values(false, true)] sync: bool,
+    ) {
+        let _guard = redis_test_mutex().lock().await;
+        let mut adapter = get_redis_cache_adapter().await.unwrap();
+        let mut currency = unregistered_currency(if sync { "ZZQL1" } else { "ZZQL2" });
+        currency.name = "Lazy quote token".into();
+        let instrument = instrument_quoted_in(currency);
+        adapter.add_currency(&currency).unwrap();
+        adapter.add_instrument(&instrument).unwrap();
+        adapter.close().unwrap();
+        let mut restarted = connect_redis_cache_adapter().await.unwrap();
+        let loaded = if sync {
+            restarted.load_instrument_sync(&instrument.id())
+        } else {
+            restarted.load_instrument(&instrument.id()).await
+        }
+        .unwrap()
+        .unwrap();
+
+        let registered = Currency::try_from_str(currency.code.as_str()).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(loaded).unwrap(),
+            serde_json::to_value(instrument).unwrap()
+        );
+        assert_eq!(registered.code, currency.code);
+        assert_eq!(registered.precision, currency.precision);
+        assert_eq!(registered.iso4217, currency.iso4217);
+        assert_eq!(registered.name, currency.name);
+        assert_eq!(registered.currency_type, currency.currency_type);
+        restarted.flush().unwrap();
+        restarted.close().unwrap();
     }
 
     /// `load_all` registers a stored currency before the payloads denominated in it decode.

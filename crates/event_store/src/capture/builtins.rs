@@ -54,11 +54,12 @@ use nautilus_core::{Params, UUID4, UnixNanos};
 use nautilus_model::{
     data::{DataType, InstrumentClose},
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied,
-        OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled, OrderInitialized,
-        OrderModifyRejected, OrderPendingCancel, OrderPendingUpdate, OrderRejected, OrderReleased,
-        OrderSubmitted, OrderTriggered, OrderUpdated, PositionAdjusted, PositionChanged,
-        PositionClosed, PositionEvent, PositionOpened,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDenied, OrderEmulated, OrderEventAny, OrderExpired, OrderFillVoided, OrderFilled,
+        OrderInitialized, OrderModifyDenied, OrderModifyRejected, OrderPendingCancel,
+        OrderPendingUpdate, OrderRejected, OrderReleased, OrderSubmitted, OrderTriggered,
+        OrderUpdated, PositionAdjusted, PositionChanged, PositionClosed, PositionEvent,
+        PositionOpened,
     },
     identifiers::{ClientId, InstrumentId, Venue},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -119,10 +120,16 @@ pub const PAYLOAD_TYPE_ORDER_TRIGGERED: &str = "OrderTriggered";
 pub const PAYLOAD_TYPE_ORDER_PENDING_UPDATE: &str = "OrderPendingUpdate";
 /// The canonical `payload_type` tag for [`OrderPendingCancel`].
 pub const PAYLOAD_TYPE_ORDER_PENDING_CANCEL: &str = "OrderPendingCancel";
+/// The canonical `payload_type` tag for [`OrderModifyDenied`].
+pub const PAYLOAD_TYPE_ORDER_MODIFY_DENIED: &str = "OrderModifyDenied";
 /// The canonical `payload_type` tag for [`OrderModifyRejected`].
 pub const PAYLOAD_TYPE_ORDER_MODIFY_REJECTED: &str = "OrderModifyRejected";
+
+/// The canonical `payload_type` tag for [`OrderCancelDenied`].
+pub const PAYLOAD_TYPE_ORDER_CANCEL_DENIED: &str = "OrderCancelDenied";
 /// The canonical `payload_type` tag for [`OrderCancelRejected`].
 pub const PAYLOAD_TYPE_ORDER_CANCEL_REJECTED: &str = "OrderCancelRejected";
+
 /// The canonical `payload_type` tag for [`OrderUpdated`].
 pub const PAYLOAD_TYPE_ORDER_UPDATED: &str = "OrderUpdated";
 /// The canonical `payload_type` tag for [`OrderFilled`].
@@ -235,7 +242,9 @@ pub(crate) const DEFAULT_CAPTURE_PAYLOAD_TYPES: &[&str] = &[
     PAYLOAD_TYPE_ORDER_TRIGGERED,
     PAYLOAD_TYPE_ORDER_PENDING_UPDATE,
     PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
+    PAYLOAD_TYPE_ORDER_MODIFY_DENIED,
     PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+    PAYLOAD_TYPE_ORDER_CANCEL_DENIED,
     PAYLOAD_TYPE_ORDER_CANCEL_REJECTED,
     PAYLOAD_TYPE_ORDER_UPDATED,
     PAYLOAD_TYPE_ORDER_FILLED,
@@ -438,7 +447,9 @@ fn extract_order_event_any_identity(event: &OrderEventAny) -> UUID4 {
         OrderEventAny::Triggered(e) => e.event_id,
         OrderEventAny::PendingUpdate(e) => e.event_id,
         OrderEventAny::PendingCancel(e) => e.event_id,
+        OrderEventAny::ModifyDenied(e) => e.event_id,
         OrderEventAny::ModifyRejected(e) => e.event_id,
+        OrderEventAny::CancelDenied(e) => e.event_id,
         OrderEventAny::CancelRejected(e) => e.event_id,
         OrderEventAny::Updated(e) => e.event_id,
         OrderEventAny::Filled(e) => e.event_id,
@@ -625,7 +636,9 @@ pub fn encode_order_event_any(event: &OrderEventAny) -> Result<EncodedPayload, E
         OrderEventAny::Triggered(e) => encode_order_triggered(e),
         OrderEventAny::PendingUpdate(e) => encode_order_pending_update(e),
         OrderEventAny::PendingCancel(e) => encode_order_pending_cancel(e),
+        OrderEventAny::ModifyDenied(e) => encode_order_modify_denied(e),
         OrderEventAny::ModifyRejected(e) => encode_order_modify_rejected(e),
+        OrderEventAny::CancelDenied(e) => encode_order_cancel_denied(e),
         OrderEventAny::CancelRejected(e) => encode_order_cancel_rejected(e),
         OrderEventAny::Updated(e) => encode_order_updated(e),
         OrderEventAny::Filled(e) => Ok(retag(encode_order_filled(e)?, PAYLOAD_TYPE_ORDER_FILLED)),
@@ -1130,10 +1143,28 @@ fn encode_order_pending_cancel(e: &OrderPendingCancel) -> Result<EncodedPayload,
     )
 }
 
+fn encode_order_modify_denied(e: &OrderModifyDenied) -> Result<EncodedPayload, EncodeError> {
+    encode_with_order_ids(
+        e,
+        PAYLOAD_TYPE_ORDER_MODIFY_DENIED,
+        e.client_order_id.to_string(),
+        e.venue_order_id.map(|v| v.to_string()),
+    )
+}
+
 fn encode_order_modify_rejected(e: &OrderModifyRejected) -> Result<EncodedPayload, EncodeError> {
     encode_with_order_ids(
         e,
         PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+        e.client_order_id.to_string(),
+        e.venue_order_id.map(|v| v.to_string()),
+    )
+}
+
+fn encode_order_cancel_denied(e: &OrderCancelDenied) -> Result<EncodedPayload, EncodeError> {
+    encode_with_order_ids(
+        e,
+        PAYLOAD_TYPE_ORDER_CANCEL_DENIED,
         e.client_order_id.to_string(),
         e.venue_order_id.map(|v| v.to_string()),
     )
@@ -2107,8 +2138,24 @@ mod tests {
         })
     }
 
+    fn ev_modify_denied(venue: Option<VenueOrderId>) -> OrderEventAny {
+        OrderEventAny::ModifyDenied(OrderModifyDenied {
+            client_order_id: client_order_id(),
+            venue_order_id: venue,
+            ..Default::default()
+        })
+    }
+
     fn ev_modify_rejected(venue: Option<VenueOrderId>) -> OrderEventAny {
         OrderEventAny::ModifyRejected(OrderModifyRejected {
+            client_order_id: client_order_id(),
+            venue_order_id: venue,
+            ..Default::default()
+        })
+    }
+
+    fn ev_cancel_denied(venue: Option<VenueOrderId>) -> OrderEventAny {
+        OrderEventAny::CancelDenied(OrderCancelDenied {
             client_order_id: client_order_id(),
             venue_order_id: venue,
             ..Default::default()
@@ -2344,9 +2391,19 @@ mod tests {
         PAYLOAD_TYPE_ORDER_PENDING_CANCEL,
         true
     )]
+    #[case::modify_denied(
+        ev_modify_denied(Some(venue_order_id())),
+        PAYLOAD_TYPE_ORDER_MODIFY_DENIED,
+        true
+    )]
     #[case::modify_rejected(
         ev_modify_rejected(Some(venue_order_id())),
         PAYLOAD_TYPE_ORDER_MODIFY_REJECTED,
+        true
+    )]
+    #[case::cancel_denied(
+        ev_cancel_denied(Some(venue_order_id())),
+        PAYLOAD_TYPE_ORDER_CANCEL_DENIED,
         true
     )]
     #[case::cancel_rejected(

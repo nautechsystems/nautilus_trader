@@ -88,6 +88,7 @@ pyo3-async-runtimes = { workspace = true, optional = true }
 pyo3-stub-gen = { workspace = true, optional = true }
 
 [dev-dependencies]
+nautilus-persistence = { workspace = true }
 nautilus-testkit = { workspace = true, default-features = false, features = [
   "testers",
 ] }
@@ -95,6 +96,7 @@ nautilus-testkit = { workspace = true, default-features = false, features = [
 criterion = { workspace = true }
 proptest = { workspace = true }
 rstest = { workspace = true }
+tempfile = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 
 # Canonical data-path benches; see crates/adapters/databento/benches/BENCHMARKS.md for context

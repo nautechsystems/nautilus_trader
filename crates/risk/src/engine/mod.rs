@@ -49,7 +49,7 @@ use nautilus_model::{
         TradingState, TrailingOffsetType, TriggerType,
     },
     events::{
-        OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyRejected, OrderPriceField,
+        OrderDenied, OrderDeniedReason, OrderEventAny, OrderModifyDenied, OrderPriceField,
         OrderUpdated, PositionEvent,
     },
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue},
@@ -297,22 +297,16 @@ impl RiskEngine {
         let failure_handler = {
             let cache = cache;
             let clock = Rc::clone(&clock);
-            Box::new(move |order: ModifyOrder| {
+            Box::new(move |command: ModifyOrder| {
                 let reason = "Exceeded MAX_ORDER_MODIFY_RATE";
                 log::warn!(
-                    "SubmitOrder for {} DENIED: {}",
-                    order.client_order_id,
-                    reason
+                    "ModifyOrder for {} DENIED: {reason}",
+                    command.client_order_id
                 );
-
-                let Some(order) = Self::get_existing_order(&cache, &order) else {
-                    return;
-                };
-
-                let rejected = Self::create_modify_rejected(&order, reason, &clock);
-
+                let order = Self::get_existing_order(&cache, &command);
+                let denied = Self::create_modify_denied(order.as_ref(), &command, reason, &clock);
                 let endpoint = MessagingSwitchboard::exec_engine_process();
-                msgbus::send_order_event(endpoint, rejected);
+                msgbus::send_order_event(endpoint, denied);
             }) as Box<dyn Fn(ModifyOrder)>
         };
 
@@ -367,25 +361,28 @@ impl RiskEngine {
         ))
     }
 
-    fn create_modify_rejected(
-        order: &OrderAny,
+    fn create_modify_denied(
+        order: Option<&OrderAny>,
+        command: &ModifyOrder,
         reason: &str,
         clock: &Rc<RefCell<dyn Clock>>,
     ) -> OrderEventAny {
         let timestamp = clock.borrow().timestamp_ns();
-        OrderEventAny::ModifyRejected(OrderModifyRejected::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
+
+        let mut event = OrderModifyDenied::new(
+            order.map_or(command.trader_id, Order::trader_id),
+            order.map_or(command.strategy_id, Order::strategy_id),
+            order.map_or(command.instrument_id, Order::instrument_id),
+            order.map_or(command.client_order_id, Order::client_order_id),
             reason.into(),
             UUID4::new(),
             timestamp,
             timestamp,
-            false,
-            order.venue_order_id(),
-            order.account_id(),
-        ))
+            order.and_then(Order::venue_order_id),
+            order.and_then(Order::account_id),
+        );
+        event.causation_id = Some(command.command_id);
+        OrderEventAny::ModifyDenied(event)
     }
 
     /// Executes a trading command through the risk management pipeline.
@@ -916,7 +913,7 @@ impl RiskEngine {
                     continue;
                 };
 
-                self.reject_modify_order(&order, reason);
+                self.deny_modify_order(Some(&order), modify, reason);
             }
 
             return;
@@ -926,12 +923,12 @@ impl RiskEngine {
     }
 
     fn validate_batch_modify_orders(&self, command: &BatchModifyOrders) -> bool {
-        let mut rejected_client_order_ids = Vec::new();
+        let mut denied_command_ids = Vec::new();
         let mut valid = true;
 
         for modify in &command.modifies {
             if !self.validate_batch_modify_order(command, modify) {
-                rejected_client_order_ids.push(modify.client_order_id);
+                denied_command_ids.push(modify.command_id);
                 valid = false;
             }
         }
@@ -940,7 +937,7 @@ impl RiskEngine {
             let reason = "BatchModifyOrders rejected because one or more child modifications failed validation";
 
             for modify in &command.modifies {
-                if rejected_client_order_ids.contains(&modify.client_order_id) {
+                if denied_command_ids.contains(&modify.command_id) {
                     continue;
                 }
 
@@ -948,7 +945,7 @@ impl RiskEngine {
                     continue;
                 };
 
-                self.reject_modify_order(&order, reason);
+                self.deny_modify_order(Some(&order), modify, reason);
             }
 
             return false;
@@ -970,8 +967,9 @@ impl RiskEngine {
                 .map(|order| order.clone());
 
             if let Some(order) = order {
-                self.reject_modify_order(
-                    &order,
+                self.deny_modify_order(
+                    Some(&order),
+                    modify,
                     &format!(
                         "BatchModifyOrders instrument {} does not match child instrument {}",
                         command.instrument_id, modify.instrument_id
@@ -996,12 +994,14 @@ impl RiskEngine {
                 "ModifyOrder DENIED: Order with command.client_order_id: {} not found",
                 command.client_order_id
             );
+            self.deny_modify_order(None, command, "Order not found in cache");
             return false;
         };
 
         if order.is_closed() {
-            self.reject_modify_order(
-                &order,
+            self.deny_modify_order(
+                Some(&order),
+                command,
                 &format!(
                     "Order with command.client_order_id: {} already closed",
                     command.client_order_id
@@ -1009,8 +1009,9 @@ impl RiskEngine {
             );
             return false;
         } else if order.status() == OrderStatus::PendingCancel {
-            self.reject_modify_order(
-                &order,
+            self.deny_modify_order(
+                Some(&order),
+                command,
                 &format!(
                     "Order with command.client_order_id: {} is already pending cancel",
                     command.client_order_id
@@ -1025,8 +1026,9 @@ impl RiskEngine {
         };
 
         let Some(instrument) = maybe_instrument else {
-            self.reject_modify_order(
-                &order,
+            self.deny_modify_order(
+                Some(&order),
+                command,
                 &format!("no instrument found for {:?}", command.instrument_id),
             );
             return false;
@@ -1035,7 +1037,7 @@ impl RiskEngine {
         // Check Price
         let mut reason = Self::check_price(&instrument, command.price, OrderPriceField::Price);
         if let Some(reason) = reason {
-            self.reject_modify_order(&order, &reason.to_string());
+            self.deny_modify_order(Some(&order), command, &reason.to_string());
             return false;
         }
 
@@ -1047,7 +1049,7 @@ impl RiskEngine {
         );
 
         if let Some(reason) = reason {
-            self.reject_modify_order(&order, &reason.to_string());
+            self.deny_modify_order(Some(&order), command, &reason.to_string());
             return false;
         }
 
@@ -1060,7 +1062,7 @@ impl RiskEngine {
         );
 
         if let Some(reason) = reason {
-            self.reject_modify_order(&order, &reason.to_string());
+            self.deny_modify_order(Some(&order), command, &reason.to_string());
             return false;
         }
 
@@ -1077,7 +1079,7 @@ impl RiskEngine {
         };
 
         if let Some(reason) = state_reason {
-            self.reject_modify_order(&order, &reason);
+            self.deny_modify_order(Some(&order), command, &reason);
             return false;
         }
 
@@ -1133,7 +1135,7 @@ impl RiskEngine {
 
         let instrument = cache.instrument(&commands[0].instrument_id).cloned();
         drop(cache);
-        let check = RiskCheck::Modify(&originals);
+        let check = RiskCheck::Modify(&originals, commands);
 
         let Some(instrument) = instrument else {
             return false;
@@ -1412,7 +1414,7 @@ impl RiskEngine {
         // Amendments are checked against the account alone and stay venue-enforced
         let unreflected = match check {
             RiskCheck::Submit => self.unreflected_reservations(account.id(), orders),
-            RiskCheck::Modify(_) => Vec::new(),
+            RiskCheck::Modify(_, _) => Vec::new(),
         };
 
         let mut risk = AccountRisk {
@@ -1883,22 +1885,8 @@ impl RiskEngine {
         }
     }
 
-    fn reject_modify_order(&self, order: &OrderAny, reason: &str) {
-        let ts_event = self.clock.borrow().timestamp_ns();
-        let denied = OrderEventAny::ModifyRejected(OrderModifyRejected::new(
-            order.trader_id(),
-            order.strategy_id(),
-            order.instrument_id(),
-            order.client_order_id(),
-            reason.into(),
-            UUID4::new(),
-            ts_event,
-            ts_event,
-            false,
-            order.venue_order_id(),
-            order.account_id(),
-        ));
-
+    fn deny_modify_order(&self, order: Option<&OrderAny>, command: &ModifyOrder, reason: &str) {
+        let denied = Self::create_modify_denied(order, command, reason, &self.clock);
         let endpoint = MessagingSwitchboard::exec_engine_process();
         msgbus::send_order_event(endpoint, denied);
     }
@@ -2022,7 +2010,7 @@ impl Reservation {
 #[derive(Clone, Copy)]
 enum RiskCheck<'a> {
     Submit,
-    Modify(&'a [OrderAny]),
+    Modify(&'a [OrderAny], &'a [ModifyOrder]),
 }
 
 impl<'a> RiskCheck<'a> {
@@ -2030,7 +2018,7 @@ impl<'a> RiskCheck<'a> {
         for order in orders {
             self.reject(engine, order, reason);
 
-            if matches!(self, Self::Modify(_)) {
+            if matches!(self, Self::Modify(_, _)) {
                 break;
             }
         }
@@ -2039,16 +2027,19 @@ impl<'a> RiskCheck<'a> {
     fn reject(self, engine: &RiskEngine, order: &OrderAny, reason: &str) {
         match self {
             Self::Submit => engine.deny_order(order, reason),
-            Self::Modify(originals) => {
-                for (index, original) in originals.iter().enumerate() {
-                    if originals[..index]
+            Self::Modify(originals, commands) => {
+                for (index, command) in commands.iter().enumerate() {
+                    if commands[..index]
                         .iter()
-                        .any(|previous| previous.client_order_id() == original.client_order_id())
+                        .any(|previous| previous.command_id == command.command_id)
                     {
                         continue;
                     }
 
-                    engine.reject_modify_order(original, reason);
+                    let original = originals
+                        .iter()
+                        .find(|order| order.client_order_id() == command.client_order_id);
+                    engine.deny_modify_order(original, command, reason);
                 }
             }
         }
@@ -2057,7 +2048,7 @@ impl<'a> RiskCheck<'a> {
     fn original(self, order: &OrderAny) -> Option<&'a OrderAny> {
         match self {
             Self::Submit => None,
-            Self::Modify(originals) => originals
+            Self::Modify(originals, _) => originals
                 .iter()
                 .find(|original| original.client_order_id() == order.client_order_id()),
         }
@@ -2160,7 +2151,7 @@ impl AccountRisk<'_> {
         }
 
         // Caps apply to total size, but only unfilled exposure needs funds on amendment
-        let effective_quantity = if matches!(self.check, RiskCheck::Modify(_)) {
+        let effective_quantity = if matches!(self.check, RiskCheck::Modify(_, _)) {
             let Ok(quantity) = self.engine.order_risk_quantity(
                 self.check,
                 self.instrument,
@@ -2625,7 +2616,7 @@ impl AccountRisk<'_> {
     }
 
     fn check_margin_balance(&mut self, order: &OrderAny, required: Money) -> bool {
-        if matches!(self.check, RiskCheck::Modify(_)) && required.is_zero() {
+        if matches!(self.check, RiskCheck::Modify(_, _)) && required.is_zero() {
             return true;
         }
 
@@ -2723,7 +2714,8 @@ impl AccountRisk<'_> {
         };
 
         let is_debit = order.is_buy() || matches!(self.account, AccountAny::Betting(_));
-        if matches!(self.check, RiskCheck::Modify(_))
+
+        if matches!(self.check, RiskCheck::Modify(_, _))
             && impact.is_zero()
             && (is_debit || self.account.base_currency().is_some())
         {

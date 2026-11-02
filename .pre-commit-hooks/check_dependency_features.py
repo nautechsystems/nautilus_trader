@@ -72,6 +72,7 @@ NETWORK_PACKAGE_FEATURES = {
     "nautilus-deribit": frozenset({"transport-sockudo"}),
     "nautilus-derive": frozenset({"transport-sockudo"}),
     "nautilus-dydx": frozenset({"transport-sockudo"}),
+    "nautilus-finfeed": frozenset(),
     "nautilus-hyperliquid": frozenset({"transport-sockudo"}),
     "nautilus-interactive-brokers": frozenset(),
     "nautilus-kraken": frozenset({"transport-sockudo"}),

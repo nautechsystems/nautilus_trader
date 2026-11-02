@@ -377,6 +377,7 @@ impl PolymarketExecutionClient {
                 Some(venue_order_id),
                 "Polymarket modification was interrupted during shutdown",
                 ts_event,
+                None,
             );
 
             if let Some(cancel_ts) = cancel_ts
@@ -631,9 +632,7 @@ impl PolymarketExecutionClient {
     }
 
     pub(super) fn get_neg_risk(&self, instrument_id: &InstrumentId) -> bool {
-        self.neg_risk_index
-            .get_cloned(instrument_id)
-            .unwrap_or(false)
+        Self::get_neg_risk_from_snapshot(&self.neg_risk_index.load(), instrument_id)
     }
 
     /// Spawns the task that performs targeted terminal REST reads for quarantined and
@@ -1848,8 +1847,8 @@ mod tests {
         messages::{
             ExecutionEvent,
             execution::{
-                CancelAllOrders, GenerateFillReportsBuilder, ModifyOrder, SubmitOrder,
-                SubmitOrderList,
+                CancelAllOrders, GenerateFillReportsBuilder, GenerateOrderStatusReportBuilder,
+                GenerateOrderStatusReportsBuilder, ModifyOrder, SubmitOrder, SubmitOrderList,
             },
         },
         msgbus::{publish_order_event, publish_position_event, switchboard},
@@ -3943,12 +3942,15 @@ mod tests {
             None,
             None,
         );
+        let cause = modify.command_id;
         client.modify_order(modify).unwrap();
         let rejected = rx.try_recv().unwrap();
 
-        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = rejected else {
-            panic!("Expected ModifyRejected, was {rejected:?}");
+        let ExecutionEvent::Order(OrderEventAny::ModifyDenied(rejected)) = rejected else {
+            panic!("Expected ModifyDenied, was {rejected:?}");
         };
+
+        assert_eq!(rejected.causation_id, Some(cause));
 
         let cancel = CancelAllOrders::new(
             order.trader_id(),
@@ -4030,9 +4032,22 @@ mod tests {
             .ts_init(UnixNanos::default())
             .build()
             .unwrap();
+        let order_reports_cmd = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(UnixNanos::default())
+            .open_only(false)
+            .build()
+            .unwrap();
+        let order_report_cmd = GenerateOrderStatusReportBuilder::default()
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         let mass_status = client.generate_mass_status(None).await;
         let fill_reports = client.generate_fill_reports(fill_reports_cmd).await;
+        let order_reports = client
+            .generate_order_status_reports(&order_reports_cmd)
+            .await;
+        let order_report = client.generate_order_status_report(&order_report_cmd).await;
 
         assert_eq!(
             mass_status.unwrap_err().to_string(),
@@ -4043,6 +4058,16 @@ mod tests {
             fill_reports.unwrap_err().to_string(),
             "cannot generate fill reports: Polymarket settlement registry holds 1 record(s) \
              with unresolved evidence"
+        );
+        assert_eq!(
+            order_reports.unwrap_err().to_string(),
+            "cannot generate order status reports: Polymarket settlement registry holds 1 \
+             record(s) with unresolved evidence"
+        );
+        assert_eq!(
+            order_report.unwrap_err().to_string(),
+            "cannot generate order status report: Polymarket settlement registry holds 1 \
+             record(s) with unresolved evidence"
         );
     }
 

@@ -599,10 +599,11 @@ an ambiguous cancellation remains `PENDING_CANCEL` until OCM or reconciliation r
 adapter does not emit a rejection because Betfair may have applied the request. Once a dispatched
 attempt has an unknown outcome, a later failed attempt cannot make the overall result definitive.
 
-Definitive placement, cancellation, and modification failures normally emit `OrderRejected`,
-`OrderCancelRejected`, and `OrderModifyRejected`, respectively. A definitive price replacement
-failure instead emits `OrderCanceled` once the old-bet cancel has arrived because that bet is no
-longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason,
+Local modification and cancellation failures proven not sent emit `OrderModifyDenied` and
+`OrderCancelDenied`, respectively. Definitive placement failures emit `OrderRejected`; definitive venue
+cancellation and modification failures emit `OrderCancelRejected` and `OrderModifyRejected`, respectively.
+A definitive price replacement failure instead emits `OrderCanceled` once the old-bet cancel has
+arrived because that bet is no longer executable. `BET_TAKEN_OR_LAPSED` completes a cancellation for the same terminal reason,
 except on BSP bets, where the venue has not applied the cancel: there it emits
 `OrderCancelRejected` and the bet stays open until BSP reconciliation.
 

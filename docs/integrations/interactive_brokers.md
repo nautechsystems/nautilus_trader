@@ -293,7 +293,7 @@ sequenceDiagram
 ```mermaid
 flowchart TD
     Command[Submit or modify command] --> Ready{Client ready}
-    Ready -->|no| Rejected[Emit rejection event]
+    Ready -->|no| Denied[Emit denial event]
     Ready -->|yes| Transform[Transform Nautilus order]
     Transform --> Submit[Submit through ibapi]
     Submit --> Track[Record order state]
@@ -728,7 +728,7 @@ The execution client needs an instrument's magnifier before it submits or modifi
 When its provider has not loaded the instrument, for example one a data client loaded after the
 execution client was created, the client takes the contract and magnifier from the instrument in
 the cache, or else requests the contract details from IB and waits up to `request_timeout` for
-them. It denies the order, or rejects the modify, when neither supplies the magnifier in time.
+them. It emits `OrderDenied` or `OrderModifyDenied` when neither supplies the magnifier in time.
 An order canceled while it waits, singly or by a cancel-all, is canceled in the client and never
 reaches IB. Canceling one order of a waiting order list stops the whole list, and the client
 denies the list's other orders.

@@ -49,8 +49,9 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{ContingencyType, LiquiditySide, OmsType, OrderStatus, OrderType},
     events::{
-        AccountState, OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDeniedReason,
-        OrderEventAny, OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
+        AccountState, OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled,
+        OrderDeniedReason, OrderEventAny, OrderExpired, OrderFilled, OrderModifyDenied,
+        OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, StrategyId, TradeId, Venue, VenueOrderId,
@@ -402,6 +403,7 @@ impl BinanceSpotExecutionClient {
             dispatch_state.pending_requests.insert(
                 request_id.clone(),
                 PendingRequest {
+                    command_id: None,
                     client_order_id,
                     venue_order_id: None,
                     operation: PendingOperation::Place,
@@ -516,6 +518,7 @@ impl BinanceSpotExecutionClient {
             dispatch_state.pending_requests.insert(
                 request_id.clone(),
                 PendingRequest {
+                    command_id: Some(command.command_id),
                     client_order_id: command.client_order_id,
                     venue_order_id: command.venue_order_id,
                     operation: PendingOperation::Cancel,
@@ -533,7 +536,7 @@ impl BinanceSpotExecutionClient {
                         dispatch_state.pending_requests.remove(&request_id);
                         let ts_now = clock.get_time_ns();
 
-                        let rejected = OrderCancelRejected::new(
+                        let mut rejected = OrderCancelDenied::new(
                             trader_id,
                             command.strategy_id,
                             command.instrument_id,
@@ -546,11 +549,11 @@ impl BinanceSpotExecutionClient {
                             UUID4::new(),
                             ts_now,
                             ts_now,
-                            false,
                             command.venue_order_id,
                             Some(account_id),
                         );
-                        event_emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
+                        rejected.causation_id = Some(command.command_id);
+                        event_emitter.send_order_event(OrderEventAny::CancelDenied(rejected));
                     })?;
 
                 let result = ws_client
@@ -613,10 +616,30 @@ impl BinanceSpotExecutionClient {
                                     command.client_order_id
                                 );
                             }
-                            CommandFailure::NotSent(reason)
-                            | CommandFailure::VenueRejected(reason) => {
+                            CommandFailure::NotSent(reason) => {
                                 let ts_now = clock.get_time_ns();
-                                let rejected_event = OrderCancelRejected::new(
+
+                                let mut rejected_event = OrderCancelDenied::new(
+                                    trader_id,
+                                    command.strategy_id,
+                                    command.instrument_id,
+                                    command.client_order_id,
+                                    format!("cancel-order-error: {}", sanitize_reason(&reason))
+                                        .into(),
+                                    UUID4::new(),
+                                    ts_now,
+                                    ts_now,
+                                    command.venue_order_id,
+                                    Some(account_id),
+                                );
+                            rejected_event.causation_id = Some(command.command_id);
+                                event_emitter
+                                    .send_order_event(OrderEventAny::CancelDenied(rejected_event));
+                            }
+                            CommandFailure::VenueRejected(reason) => {
+                                let ts_now = clock.get_time_ns();
+
+                                let mut rejected_event = OrderCancelRejected::new(
                                     trader_id,
                                     command.strategy_id,
                                     command.instrument_id,
@@ -630,6 +653,7 @@ impl BinanceSpotExecutionClient {
                                     command.venue_order_id,
                                     Some(account_id),
                                 );
+        rejected_event.causation_id = Some(command.command_id);
                                 event_emitter
                                     .send_order_event(OrderEventAny::CancelRejected(rejected_event));
                             }
@@ -1925,7 +1949,8 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 cmd.client_order_id
             );
             let ts_init = self.clock.get_time_ns();
-            let rejected_event = OrderModifyRejected::new(
+
+            let mut rejected_event = OrderModifyDenied::new(
                 self.core.trader_id,
                 cmd.strategy_id,
                 cmd.instrument_id,
@@ -1934,13 +1959,13 @@ impl ExecutionClient for BinanceSpotExecutionClient {
                 UUID4::new(),
                 ts_init, // no venue timestamp, rejected locally
                 ts_init,
-                false,
                 cmd.venue_order_id,
                 Some(self.core.account_id),
             );
+            rejected_event.causation_id = Some(cmd.command_id);
 
             self.emitter
-                .send_order_event(OrderEventAny::ModifyRejected(rejected_event));
+                .send_order_event(OrderEventAny::ModifyDenied(rejected_event));
             return Ok(());
         };
 
@@ -1978,6 +2003,7 @@ impl ExecutionClient for BinanceSpotExecutionClient {
             dispatch_state.pending_requests.insert(
                 request_id.clone(),
                 PendingRequest {
+                    command_id: Some(command.command_id),
                     client_order_id: command.client_order_id,
                     venue_order_id: command.venue_order_id,
                     operation: PendingOperation::Modify,
@@ -2502,7 +2528,8 @@ fn dispatch_ws_trading_message(
                     .get(&pending.client_order_id)
                 {
                     let ts_now = clock.get_time_ns();
-                    let rejected = OrderCancelRejected::new(
+
+                    let mut rejected = OrderCancelRejected::new(
                         emitter.trader_id(),
                         identity.strategy_id,
                         identity.instrument_id,
@@ -2515,6 +2542,7 @@ fn dispatch_ws_trading_message(
                         pending.venue_order_id,
                         Some(account_id),
                     );
+                    rejected.causation_id = pending.command_id;
                     emitter.send_order_event(OrderEventAny::CancelRejected(rejected));
                 }
             }
@@ -2578,7 +2606,8 @@ fn dispatch_ws_trading_message(
                     .get(&pending.client_order_id)
                 {
                     let ts_now = clock.get_time_ns();
-                    let rejected = OrderModifyRejected::new(
+
+                    let mut rejected = OrderModifyRejected::new(
                         emitter.trader_id(),
                         identity.strategy_id,
                         identity.instrument_id,
@@ -2591,6 +2620,7 @@ fn dispatch_ws_trading_message(
                         pending.venue_order_id,
                         Some(account_id),
                     );
+                    rejected.causation_id = pending.command_id;
                     emitter.send_order_event(OrderEventAny::ModifyRejected(rejected));
                 }
             }
@@ -3427,9 +3457,7 @@ fn emit_canceled_after_rejected_replace(
     emitter.send_order_event(OrderEventAny::Canceled(canceled));
 }
 
-/// Handles a failed HTTP cancel-replace: emits `OrderModifyRejected` for a
-/// definitive rejection and replays the withheld cancel report if it already
-/// arrived.
+// Replay a withheld cancel report only after the modify outcome is definitive
 fn handle_http_modify_failure(
     error: &anyhow::Error,
     command: &ModifyOrder,
@@ -3451,14 +3479,38 @@ fn handle_http_modify_failure(
                 command.client_order_id
             );
         }
-        CommandFailure::NotSent(reason) | CommandFailure::VenueRejected(reason) => {
+        CommandFailure::NotSent(reason) => {
+            if let Some(canceled) = state.reject_replace(command.client_order_id) {
+                state.cleanup_terminal(command.client_order_id);
+                emitter.send_order_event(OrderEventAny::Canceled(canceled));
+            }
+
+            let mut rejected_event = OrderModifyDenied::new(
+                emitter.trader_id(),
+                command.strategy_id,
+                command.instrument_id,
+                command.client_order_id,
+                format!("modify-order-error: {}", sanitize_reason(&reason)).into(),
+                UUID4::new(),
+                ts_now,
+                ts_now,
+                command.venue_order_id,
+                Some(account_id),
+            );
+            rejected_event.causation_id = Some(command.command_id);
+            emitter.send_order_event(OrderEventAny::ModifyDenied(rejected_event));
+            if let Some(report) = state.on_cancel_replace_rejected(cancel_id) {
+                emit_canceled_after_rejected_replace(emitter, state, account_id, report, ts_now);
+            }
+        }
+        CommandFailure::VenueRejected(reason) => {
             if let Some(canceled) = state.reject_replace(command.client_order_id) {
                 state.cleanup_terminal(command.client_order_id);
                 emitter.send_order_event(OrderEventAny::Canceled(canceled));
                 return;
             }
 
-            let rejected_event = OrderModifyRejected::new(
+            let mut rejected_event = OrderModifyRejected::new(
                 emitter.trader_id(),
                 command.strategy_id,
                 command.instrument_id,
@@ -3471,6 +3523,7 @@ fn handle_http_modify_failure(
                 command.venue_order_id,
                 Some(account_id),
             );
+            rejected_event.causation_id = Some(command.command_id);
             emitter.send_order_event(OrderEventAny::ModifyRejected(rejected_event));
 
             if let Some(report) = state.on_cancel_replace_rejected(cancel_id) {
@@ -4381,6 +4434,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-cancel".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id: ClientOrderId::from("TEST"),
                 venue_order_id: Some(VenueOrderId::from("12345")),
                 operation: PendingOperation::Cancel,
@@ -4451,6 +4505,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-submit".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id,
                 venue_order_id: None,
                 operation: PendingOperation::Place,
@@ -4505,6 +4560,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-submit".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id,
                 venue_order_id: None,
                 operation: PendingOperation::Place,
@@ -4572,6 +4628,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-modify".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id: ClientOrderId::from("TEST"),
                 venue_order_id: Some(VenueOrderId::from("12345")),
                 operation: PendingOperation::Modify,
@@ -4977,6 +5034,7 @@ mod tests {
             state.pending_requests.insert(
                 child.client_order_id.clone(),
                 PendingRequest {
+                    command_id: None,
                     client_order_id: ClientOrderId::from(child.client_order_id.as_str()),
                     venue_order_id: None,
                     operation: PendingOperation::Place,
@@ -5395,6 +5453,7 @@ mod tests {
             state.pending_requests.insert(
                 request_id.to_string(),
                 PendingRequest {
+                    command_id: None,
                     client_order_id,
                     venue_order_id: None,
                     operation: PendingOperation::Cancel,
@@ -6403,6 +6462,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-modify".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id,
                 venue_order_id: Some(VenueOrderId::from("12345678")),
                 operation: PendingOperation::Modify,
@@ -6592,6 +6652,7 @@ mod tests {
         dispatch_state.pending_requests.insert(
             "req-modify".to_string(),
             PendingRequest {
+                command_id: None,
                 client_order_id,
                 venue_order_id: Some(VenueOrderId::from("12345678")),
                 operation: PendingOperation::Modify,

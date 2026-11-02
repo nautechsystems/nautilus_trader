@@ -35,10 +35,9 @@ surrounding content, and markdownlint leave a concrete parser or renderer ambigu
 ## Enforcement
 
 - Follow the repository's `.markdownlint.jsonc` or equivalent local configuration.
-- Treat this standard as the intended style and markdownlint as automated enforcement of its mechanical
-  subset.
-- Treat an undocumented conflict between this standard and the local configuration as drift to resolve, not an
-  implicit exception.
+- Treat this standard as the intended style. Markdownlint enforces a mechanical subset of the standard.
+- Resolve undocumented conflicts between this standard and the local configuration. Do not treat them as
+  implicit exceptions.
 - Make sure that all authored Markdown in the repository's lint scope passes its configured Markdown check.
 - Do not hand-edit generated Markdown. Change its source and run the generator.
 
@@ -111,8 +110,8 @@ Portable fallback:
 - Use GFM pipe tables for tabular content.
 - Include leading and trailing pipes.
 - Align pipe characters vertically.
-- Pad each column to its widest cell plus one space either side. This matches Prettier's default output. MD060
-  checks pipe alignment but ignores cell content. Thus, it accepts padding far wider than any cell.
+- Pad each column to its widest cell plus one space either side. This matches Prettier's default output.
+  MD060 checks pipe alignment but ignores cell content, so it accepts padding far wider than any cell.
 - Pad delimiter cells with spaces (`| ----- |`, not `|-----|`). MD060 does not check this either.
 - The `normalize markdown table padding` pre-commit hook applies this padding. You do not need to count spaces
   manually.
@@ -193,8 +192,8 @@ Use three hyphens:
 
 When you create or modify Markdown:
 
-- For narrow edits, keep surrounding style and use markdownlint without the full guide unless both leave a
-  concrete question unanswered.
+- For narrow edits, keep surrounding style and use markdownlint. Consult the full guide only if the
+  surrounding style and markdownlint leave a concrete question unanswered.
 - Before creating or substantially restructuring documentation, consult only the relevant sections of the
   repository-local Markdown guide.
 - Keep the existing document structure unless the task requires a change.

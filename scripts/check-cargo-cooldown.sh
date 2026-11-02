@@ -999,7 +999,7 @@ while IFS=' ' read -r name version; do
     fi
   fi
   if ! pub_secs=$(iso_to_epoch "$published"); then
-    printf '%-32s %-14s UNPARSEABLE DATE\n' "$name" "$version"
+    printf '%-32s %-14s UNPARSABLE DATE\n' "$name" "$version"
     parse_lines+=("${name} ${version}: could not parse ${published}")
     continue
   fi

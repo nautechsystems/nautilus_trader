@@ -27,8 +27,9 @@ use nautilus_model::{
     data::{Bar, IndexPriceUpdate, MarkPriceUpdate, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{ContingencyType, OrderSide, OrderStatus, OrderType, TimeInForce},
     events::{
-        OrderAccepted, OrderCancelRejected, OrderCanceled, OrderDenied, OrderEvent, OrderEventAny,
-        OrderExpired, OrderFilled, OrderModifyRejected, OrderRejected, OrderUpdated,
+        OrderAccepted, OrderCancelDenied, OrderCancelRejected, OrderCanceled, OrderDenied,
+        OrderEvent, OrderEventAny, OrderExpired, OrderFilled, OrderModifyDenied,
+        OrderModifyRejected, OrderRejected, OrderUpdated,
     },
     identifiers::{ClientId, ClientOrderId, InstrumentId, StrategyId},
     instruments::{Instrument, InstrumentAny},
@@ -128,8 +129,17 @@ nautilus_strategy!(ExecTester, {
         self.handle_stop_order_canceled(event);
     }
 
+    fn on_order_modify_denied(&mut self, event: OrderModifyDenied) {
+        self.finish_limit_order_maintenance(event.client_order_id);
+    }
+
     fn on_order_modify_rejected(&mut self, event: OrderModifyRejected) {
         self.finish_limit_order_maintenance(event.client_order_id);
+    }
+
+    fn on_order_cancel_denied(&mut self, event: OrderCancelDenied) {
+        self.finish_limit_order_maintenance(event.client_order_id);
+        self.clear_stop_order_replacement(event.client_order_id);
     }
 
     fn on_order_cancel_rejected(&mut self, event: OrderCancelRejected) {
@@ -1875,6 +1885,16 @@ impl ExecTester {
         } else if order_side == OrderSide::Sell && !self.config.enable_limit_sells {
             log_warn!("SELL orders not enabled, skipping bracket");
             return Ok(());
+        }
+
+        if matches!(
+            (
+                self.config.limit_time_in_force,
+                self.config.order_expire_time_delta_mins
+            ),
+            (Some(TimeInForce::Gtd), _) | (None, Some(_))
+        ) {
+            anyhow::bail!("GTD time in force not supported for bracket take-profit legs");
         }
 
         let (time_in_force, expire_time) =

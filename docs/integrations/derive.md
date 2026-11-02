@@ -711,8 +711,8 @@ locally with `OrderDenied` before submission.
 
 ##### Updating a trigger
 
-Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter therefore rejects
-Nautilus modify requests for trigger orders with an `OrderModifyRejected` event. Cancel and resubmit for
+Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter therefore denies
+Nautilus modify requests for trigger orders with an `OrderModifyDenied` event. Cancel and resubmit for
 trigger updates.
 
 ##### Trigger price offsets
@@ -893,12 +893,12 @@ lists remain supported.
 
 State-changing writes (`submit_order`, `modify_order`, `cancel_order`) are sent once over the
 WebSocket and **are not replayed**. The WebSocket request outcome determines whether the
-adapter emits a terminal rejection or waits for reconciliation.
+adapter emits a rejection or waits for reconciliation.
 
 ##### Definitive failures
 
-The adapter emits a terminal rejection event (`OrderRejected`, `OrderModifyRejected`,
-`OrderCancelRejected`) for definitive venue failures:
+The adapter emits `OrderRejected`, `OrderModifyRejected`, or `OrderCancelRejected` for definitive venue
+failures. Only `OrderRejected` terminates the order; modify and cancel rejections preserve it:
 
 - Signed-action rejections such as invalid params, insufficient margin, or unknown orders.
 - Venue business codes such as `11009 Zero liquidity`.

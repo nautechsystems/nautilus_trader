@@ -10,6 +10,9 @@ The following applies to **all** source files (Rust, Python, shell, etc.):
 
 - Use **spaces only**, never hard tab characters.
 - Lines should generally stay below **100 characters**. Wrap thoughtfully when necessary.
+- Within each order-command event family, place `Denied` before `Rejected` in declarations,
+  match arms, callbacks, registration lists, and documentation. Preserve explicit discriminants
+  and serialized tags.
 - Use American English spelling (`color`, `serialize`, `behavior`), enforced by `.typos.toml`. Preserve
   external API spellings through exact identifier exceptions. Exclude verbatim data and generated files. Run
   `prek run typos --all-files` to check the repository.

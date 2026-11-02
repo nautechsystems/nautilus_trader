@@ -522,7 +522,7 @@ pub struct GetFundingRateHistoryParams {
     /// Pagination: records older than this timestamp (ms).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
-    /// Number of results per request (default 100, max 100).
+    /// Number of results per request (default 400, max 400).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub limit: Option<u32>,
 }

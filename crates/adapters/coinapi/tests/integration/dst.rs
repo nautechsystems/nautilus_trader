@@ -738,7 +738,7 @@ async fn invalid_parameters_do_not_consume_credits() {
             .get_ohlcv(
                 SYMBOL,
                 &OhlcvQuery {
-                    period_id: String::new(),
+                    period_id: "".into(),
                     range: range(1)
                 }
             )
@@ -811,7 +811,7 @@ async fn range_keys(
             (keys, pages.is_truncated)
         }
         _ => {
-            let pages = client.get_ohlcv_range(SYMBOL, "1MIN", range).await?;
+            let pages = client.get_ohlcv_range(SYMBOL, "1MIN".into(), range).await?;
             let keys = pages.records.iter().map(|o| o.time_period_start).collect();
             (keys, pages.is_truncated)
         }

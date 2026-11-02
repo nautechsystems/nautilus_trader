@@ -1908,7 +1908,7 @@ async fn reconcile_applies_canceled_while_pending_cancel() {
 
     // Stage the missed cancel: the order is locally PendingCancel, but the live cancel
     // event is withheld (no OCM frame is fed).
-    h.mark_pending_cancel(&order);
+    h.mark_pending_cancel(&order, None);
     harness::invariants::assert_order_status(
         &h.cache().borrow(),
         &order.client_order_id(),
