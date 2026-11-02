@@ -1146,22 +1146,38 @@ impl Cache {
     // Calculate the unrealized profit and loss (PnL) for `position`.
     #[must_use]
     pub fn calculate_unrealized_pnl(&self, position: &Position) -> Option<Money> {
-        let Some(quote) = self.quote(&position.instrument_id) else {
+        if position.side == PositionSide::Flat {
+            return Some(Money::zero(position.settlement_currency));
+        }
+
+        // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask.
+        // When quotes are unavailable, fall back across mark prices, trade ticks, and bars.
+        let last = if let Some(quote) = self.quote(&position.instrument_id) {
+            match position.side {
+                PositionSide::Flat => unreachable!(),
+                PositionSide::Long => quote.bid_price,
+                PositionSide::Short => quote.ask_price,
+            }
+        } else if let Some(mark) = self.mark_price(&position.instrument_id) {
+            mark.value
+        } else if let Some(trade) = self.trade(&position.instrument_id) {
+            trade.price
+        } else if let Some(bar_close) = self
+            .bars
+            .iter()
+            .filter(|(bar_type, _)| bar_type.instrument_id() == position.instrument_id)
+            .filter_map(|(_, bars)| bars.front())
+            .max_by_key(|bar| bar.ts_event)
+            .map(|bar| bar.close)
+        {
+            bar_close
+        } else {
             log::warn!(
-                "Cannot calculate unrealized PnL for {}, no quotes for {}",
+                "Cannot calculate unrealized PnL for {}, no quotes, mark prices, trades, or bars for {}",
                 position.id,
                 position.instrument_id
             );
             return None;
-        };
-
-        // Use exit price for mark-to-market: longs exit at bid, shorts exit at ask
-        let last = match position.side {
-            PositionSide::Flat => {
-                return Some(Money::zero(position.settlement_currency));
-            }
-            PositionSide::Long => quote.bid_price,
-            PositionSide::Short => quote.ask_price,
         };
 
         position
