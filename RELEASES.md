@@ -130,6 +130,7 @@ Released on TBD (UTC).
 - Fixed Deribit rejected order results emitting `OrderAccepted`
 - Fixed Hyperliquid account state staying stale after fills (#5449), thanks for reporting @dxwil
 - Fixed Hyperliquid instrument caching stalling node startup (#5354), thanks for reporting @Karrenbelt
+- Fixed Hyperliquid startup reconciliation failing on truncated entry prices (#5530), thanks for reporting @mark1lah
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed OKX order status reports accepting incomplete active coverage and discarding valid partial history
 - Fixed OKX order commands rejected before being written during WebSocket reconnects

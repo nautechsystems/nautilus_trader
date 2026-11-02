@@ -1,0 +1,34 @@
+{
+  "universe": [
+    {
+      "szDecimals": 5,
+      "name": "BTC",
+      "maxLeverage": 40,
+      "marginTableId": 56
+    },
+    {
+      "szDecimals": 4,
+      "name": "ETH",
+      "maxLeverage": 25,
+      "marginTableId": 55
+    },
+    {
+      "szDecimals": 2,
+      "name": "ATOM",
+      "maxLeverage": 5,
+      "marginTableId": 5
+    },
+    {
+      "szDecimals": 0,
+      "name": "BIGTIME",
+      "maxLeverage": 3,
+      "marginTableId": 3
+    },
+    {
+      "szDecimals": 0,
+      "name": "MEME",
+      "maxLeverage": 3,
+      "marginTableId": 3
+    }
+  ]
+}
