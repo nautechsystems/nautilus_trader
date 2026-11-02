@@ -594,16 +594,12 @@ impl PoolInner {
             return Ok(());
         };
 
-        if let Err(e) = self.ensure_open() {
-            if let ReleaseOutcome::CloseShard(id, shard) = self.release(token)
-                && let Err(close_error) = self.close_shard(id, shard).await
-            {
-                anyhow::bail!("{e}; subscription rollback failed: {close_error}");
-            }
-            return Err(e);
-        }
+        let result = match self.ensure_open() {
+            Ok(()) => handle.subscribe_market(vec![asset_id]).await,
+            Err(e) => Err(e),
+        };
 
-        if let Err(e) = handle.subscribe_market(vec![asset_id]).await {
+        if let Err(e) = result {
             // Roll back so a failed send leaves no stale assignment or empty shard.
             if let ReleaseOutcome::CloseShard(id, shard) = self.release(token)
                 && let Err(close_error) = self.close_shard(id, shard).await
@@ -703,14 +699,7 @@ impl PoolInner {
         let rejected_shard = {
             let mut state = self.state.lock();
 
-            if self.closed.load(Ordering::Acquire) {
-                Some(
-                    state
-                        .shards
-                        .remove(&id)
-                        .expect("new shard retained for shutdown"),
-                )
-            } else {
+            if !self.closed.load(Ordering::Acquire) {
                 let handle = {
                     let shard = state.shards.get_mut(&id).expect("new shard present");
                     shard.owned += 1;
@@ -719,15 +708,18 @@ impl PoolInner {
                 state.assignments.insert(token, id);
                 return Ok(Some(handle));
             }
+
+            state
+                .shards
+                .remove(&id)
+                .expect("new shard retained for shutdown")
         };
 
-        if let Some(shard) = rejected_shard {
-            if let Err(e) = self.close_shard(id, Box::new(shard)).await {
-                anyhow::bail!("Market connection pool is closed; shard rollback failed: {e}");
-            }
-            anyhow::bail!("Market connection pool is closed");
+        if let Err(e) = self.close_shard(id, Box::new(rejected_shard)).await {
+            anyhow::bail!("Market connection pool is closed; shard rollback failed: {e}");
         }
-        unreachable!("open pool returned from assignment")
+
+        anyhow::bail!("Market connection pool is closed")
     }
 
     fn release(&self, token: Ustr) -> ReleaseOutcome {

@@ -180,48 +180,28 @@ pub fn parse_book_snapshot(
 
     let mut count = 0;
 
-    for level in &snap.bids {
-        count += 1;
-        let price = parse_price(&level.price, price_precision)?;
-        let size = parse_quantity(&level.size, size_precision)?;
-        let order = BookOrder::new(OrderSide::Buy, price, size, 0);
+    for (side, levels) in [(OrderSide::Buy, &snap.bids), (OrderSide::Sell, &snap.asks)] {
+        for level in levels {
+            count += 1;
+            let price = parse_price(&level.price, price_precision)?;
+            let size = parse_quantity(&level.size, size_precision)?;
+            let order = BookOrder::new(side, price, size, 0);
 
-        let mut flags = snapshot_flag;
-        if count == total {
-            flags |= RecordFlag::F_LAST as u8;
+            let mut flags = snapshot_flag;
+            if count == total {
+                flags |= RecordFlag::F_LAST as u8;
+            }
+
+            deltas.push(OrderBookDelta::new_checked(
+                instrument_id,
+                BookAction::Add,
+                order,
+                flags,
+                0,
+                ts_event,
+                ts_init,
+            )?);
         }
-
-        deltas.push(OrderBookDelta::new_checked(
-            instrument_id,
-            BookAction::Add,
-            order,
-            flags,
-            0,
-            ts_event,
-            ts_init,
-        )?);
-    }
-
-    for level in &snap.asks {
-        count += 1;
-        let price = parse_price(&level.price, price_precision)?;
-        let size = parse_quantity(&level.size, size_precision)?;
-        let order = BookOrder::new(OrderSide::Sell, price, size, 0);
-
-        let mut flags = snapshot_flag;
-        if count == total {
-            flags |= RecordFlag::F_LAST as u8;
-        }
-
-        deltas.push(OrderBookDelta::new_checked(
-            instrument_id,
-            BookAction::Add,
-            order,
-            flags,
-            0,
-            ts_event,
-            ts_init,
-        )?);
     }
 
     Ok(OrderBookDeltas::new(instrument_id, deltas))
@@ -773,6 +753,52 @@ mod tests {
         assert_ne!(
             deltas.deltas.last().unwrap().flags & RecordFlag::F_LAST as u8,
             0
+        );
+    }
+
+    #[rstest]
+    #[case::bids_only(OrderSide::Buy, "0.48", "500.00")]
+    #[case::asks_only(OrderSide::Sell, "0.53", "400.00")]
+    fn test_parse_book_snapshot_single_side(
+        #[case] side: OrderSide,
+        #[case] price: &str,
+        #[case] size: &str,
+    ) {
+        let mut snap: PolymarketBookSnapshot = load("ws_book_snapshot.json");
+
+        match side {
+            OrderSide::Buy => {
+                snap.bids.truncate(1);
+                snap.asks.clear();
+            }
+            OrderSide::Sell => {
+                snap.bids.clear();
+                snap.asks.truncate(1);
+            }
+        }
+
+        let instrument_id = InstrumentId::from("test.POLYMARKET");
+        let ts_event = UnixNanos::from(1_703_875_200_000_000_000u64);
+        let ts_init = UnixNanos::from(1_000_000_000u64);
+        let deltas = parse_book_snapshot(&snap, instrument_id, 2, 2, ts_init).unwrap();
+        let order = BookOrder::new(side, Price::from(price), Quantity::from(size), 0);
+        let last = OrderBookDelta::new_checked(
+            instrument_id,
+            BookAction::Add,
+            order,
+            RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+            0,
+            ts_event,
+            ts_init,
+        )
+        .unwrap();
+
+        assert_eq!(
+            deltas.deltas,
+            vec![
+                OrderBookDelta::clear(instrument_id, 0, ts_event, ts_init),
+                last
+            ]
         );
     }
 
