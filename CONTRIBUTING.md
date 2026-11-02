@@ -108,7 +108,7 @@ Rust, Python, and uv. With those in place, install the pinned development tools.
 commit message before Git records it:
 
 ```bash
-cargo install cargo-binstall --locked  # one-off prerequisite
+cargo install cargo-binstall --version "$(bash scripts/cargo-tool-version.sh cargo-binstall)" --locked
 make install-tools
 prek install
 ```

@@ -8,6 +8,7 @@ IMAGE_FULL?=$(IMAGE):$(GIT_TAG)
 
 # Shared and NautilusTrader-specific Cargo tool versions
 CARGO_AUDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-audit)
+CARGO_BINSTALL_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-binstall)
 CARGO_CODSPEED_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-codspeed)
 CARGO_DENY_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-deny)
 CARGO_EDIT_VERSION := $(shell bash scripts/cargo-tool-version.sh cargo-edit)
@@ -588,7 +589,7 @@ outdated: check-edit-installed  #-- Check for outdated dependencies
 	sh scripts/check-outdated.sh
 	@printf "\n$(CYAN)Checking tool versions...$(RESET)\n"
 	@outdated_count=0; \
-	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-codspeed:$(CARGO_CODSPEED_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-fuzz:$(CARGO_FUZZ_VERSION) cargo-hawk:$(CARGO_HAWK_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) cbindgen:$(CBINDGEN_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION) tokei:$(TOKEI_VERSION); do \
+	for tool in cargo-audit:$(CARGO_AUDIT_VERSION) cargo-binstall:$(CARGO_BINSTALL_VERSION) cargo-codspeed:$(CARGO_CODSPEED_VERSION) cargo-deny:$(CARGO_DENY_VERSION) cargo-edit:$(CARGO_EDIT_VERSION) cargo-fuzz:$(CARGO_FUZZ_VERSION) cargo-hawk:$(CARGO_HAWK_VERSION) cargo-llvm-cov:$(CARGO_LLVM_COV_VERSION) cargo-machete:$(CARGO_MACHETE_VERSION) cargo-nextest:$(CARGO_NEXTEST_VERSION) cargo-vet:$(CARGO_VET_VERSION) cbindgen:$(CBINDGEN_VERSION) flamegraph:$(FLAMEGRAPH_VERSION) lychee:$(LYCHEE_VERSION) tokei:$(TOKEI_VERSION); do \
 		name=$${tool%%:*}; current=$${tool##*:}; \
 		latest=$$(cargo search $$name --limit 1 2>/dev/null | head -1 | awk -F\" '{print $$2}'); \
 		if [ "$$current" != "$$latest" ]; then \
@@ -614,7 +615,8 @@ install-uv:  #-- Install or upgrade uv to the version pinned in the shared tool 
 
 .PHONY: install-tools
 install-tools: check-binstall-installed install-uv  #-- Install required development tools at shared and local pinned versions
-	bash scripts/install-security-tools.sh \
+	cargo binstall cargo-binstall --version $(CARGO_BINSTALL_VERSION) --no-confirm --locked \
+	&& bash scripts/install-security-tools.sh \
 	&& cargo install cargo-codspeed --version $(CARGO_CODSPEED_VERSION) --locked \
 	&& cargo install cargo-edit --version $(CARGO_EDIT_VERSION) --locked \
 	&& cargo install cargo-fuzz --version $(CARGO_FUZZ_VERSION) --locked \
@@ -782,7 +784,8 @@ check-deny-installed:  #-- Verify the pinned cargo-deny version is installed
 check-binstall-installed:  #-- Verify cargo-binstall is installed (one-off prerequisite for install-tools)
 	@if ! command -v cargo-binstall >/dev/null 2>&1; then \
 		printf "$(YELLOW)cargo-binstall is required but not installed$(RESET)\n"; \
-		printf "Install once per machine with: $(CYAN)cargo install cargo-binstall --locked$(RESET)\n"; \
+		printf "Install once per machine with: $(CYAN)cargo install cargo-binstall --version %s --locked$(RESET)\n" \
+			"$(CARGO_BINSTALL_VERSION)"; \
 		printf "See: https://github.com/cargo-bins/cargo-binstall\n"; \
 		exit 1; \
 	fi

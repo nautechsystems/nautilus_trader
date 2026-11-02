@@ -14,13 +14,12 @@ published Lighter package does not depend on the git-pinned reference implementa
 Start from the repository root:
 
 ```bash
-cargo install cargo-binstall --locked
+cargo install cargo-binstall --version "$(bash scripts/cargo-tool-version.sh cargo-binstall)" --locked
 make install-tools
 rustup toolchain install nightly
 ```
 
-`make install-tools` installs the `cargo-fuzz` version pinned in the root `Cargo.toml` under
-`[workspace.metadata.tools]`.
+`make install-tools` installs the `cargo-fuzz` version pinned in `.nautilus-engineering/tools.toml`.
 
 ## Adapter targets
 

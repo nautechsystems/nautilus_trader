@@ -1548,6 +1548,12 @@ criteria = "safe-to-deploy"
 delta = "1.18.1 -> 1.18.2"
 notes = "Reviewed the published Rust wrapper and integration-script delta. Library changes add Eq and PartialEq to EdDSA and RSA parameter types and document that a failed AEAD open may overwrite the input buffer. The integration script only clones upstream rustls repositories for developer tests and is not part of the build. Depends on aws-lc-sys 0.46.0, audited separately. No new runtime network, process, filesystem, or credential behavior."
 
+[[audits.aws-lc-rs]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.18.2 -> 1.19.0"
+notes = "Reviewed the published Rust wrapper delta. Adds AES OFB/CFB8/CFB1 with checked IVs and bounded byte-to-bit conversion, an explicit self-test API, reference-counted signing-key clones, and configurable RSA-PSS salt lengths with checked arithmetic; existing PSS parameters retain digest-length salts. Keccak-256 is gated behind unstable and non-FIPS builds. Decryption rejects mismatched contexts before entering FFI. The HMAC and RSA PKCS#1 signing paths used here retain their behavior. The sys dependency is audited separately. No new runtime network, filesystem, process, or credential behavior. All 10 nautilus-cryptography unit tests pass."
+
 [[audits.aws-lc-sys]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -1577,6 +1583,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.45.0 -> 0.46.0"
 notes = "Reviewed the build scripts, generated bindings, packaged sources, Windows prebuilt NASM objects, and bundled AWS-LC 5.7.0 to 5.11.0 delta. Build changes drop the cranelift and no-u1 binding variants, strip link prefixes from generated bindings, and export crate compiler selection as target CC and CXX before cc lookup. The builder diff adds no download, curl, or network fetch. Prebuilt NASM objects remain behind the existing Windows x86_64 fallback. No new credential or process behavior beyond local compiler probes."
+
+[[audits.aws-lc-sys]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.46.0 -> 0.47.0"
+importable = false
+notes = "Reviewed the build-script and generated-binding delta and bundled AWS-LC 5.11.0 to 5.12.0 libcrypto changes for this workspace's non-FIPS feature graph. Changes harden ASN.1 allocation, TLS-CBC buffer reset, RSA-PSS restrictions, fork reseeding, OCSP validation, certificate cache invalidation, and blocked SPKI checks. HPKE buffers move to a cleansed heap allocation with matching regenerated FFI layouts. Compiler probes share cc caches; system-library version floors become feature-dependent. The enabled Windows x86_64 prebuilt-NASM fallback is included: all 26 packaged COFF objects match 0.46.0 byte-for-byte after normalizing COFF timestamps and the aws_lc_0_46_0 to aws_lc_0_47_0 symbol prefix. SSL, OpenSSL-provider, and FIPS configurations are outside this audit scope. No new build download, network destination, or credential behavior; existing local compiler execution remains. All 10 nautilus-cryptography unit tests pass."
 
 [[audits.base32]]
 who = "Nautech Systems <info@nautechsystems.io>"
