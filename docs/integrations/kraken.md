@@ -871,19 +871,24 @@ strategy and keys a netting position by instrument and strategy. Unless the cach
 second, opposite position. It does not close the cached one. Net exposure reaches zero, but the stale position
 and its realized PnL remain.
 
-Until this is addressed, reconcile a margin position closed during downtime manually. Cash mode does not avoid
-it:
+Until this is addressed, reconcile a margin position closed during downtime manually. Cash mode avoids it only
+where startup reports the position `FLAT`:
 
 - With `use_spot_position_reports=False`, the default, or for an instrument outside
   `spot_positions_quote_currency`, the client declares no bulk position coverage. The closing fill is
-  projected order-only and the periodic check skips the instrument, as in margin mode.
-- For a covered instrument, a sale that leaves a zero wallet balance gets no wallet report, so startup still
-  projects the closing fill order-only: that projection keys on the report, not on coverage. A periodic
-  position check, when enabled, does not apply the fill either. With `generate_missing_orders` enabled (the
-  default), it falls back to a synthetic order at the cached average entry price, attributed as above, so it
-  opens an offsetting `EXTERNAL` position under the same conditions.
+  projected order-only and the periodic check skips the instrument, as in margin mode, so the closing PnL and
+  fees are not recorded.
+- For a covered instrument, startup reports a cached open `LONG` position as `FLAT` when the wallet shows its
+  base asset as flat (see [Spot position reports (cash mode)](#spot-position-reports-cash-mode)). A closing
+  fill in the startup reports then closes the position with its PnL and fees when the closing order is cached
+  or claimed by the position's strategy. A closing order that is neither cached nor claimed opens an
+  offsetting `EXTERNAL` position instead, as above. A closing fill the reports miss, because it predates the
+  lookback window or its row cannot be parsed, is inferred from the order report without a fee.
+- Where startup withholds that `FLAT`, the instrument carries no position report, so startup projects the
+  closing fill order-only. A periodic position check, when enabled, does not apply the fill either. With
+  `generate_missing_orders` enabled (the default), it falls back to a synthetic order at the cached average
+  entry price, attributed as above, so the closing PnL and fees are not recorded.
 
-Either way the closing PnL and fees are not recorded.
 :::
 
 ### Futures reconciliation
@@ -1054,6 +1059,29 @@ independently of this option (see [Spot margin trading](#spot-margin-trading)).
   so an instrument quoted in anything else is never reconciled to flat from a missing report.
 - This prevents duplicate reports when the same asset is available with multiple
   quote currencies (e.g., BTC/USD, BTC/USDT, BTC/EUR).
+- At startup, the mass status also reports `FLAT` for each cached open `LONG` position on a covered
+  instrument whose base asset the
+  [`POST /0/private/Balance`](https://docs.kraken.com/api-reference/account-data/get-account-balance) read
+  shows as flat: the base has no row, or its rows sum to an amount that rounds to zero at the instrument's
+  size precision. Every row of the base counts: its code in either spelling (`XXBT`, `XBT`), and a dotted
+  code whose part before the last dot names the base, as is or once trailing digits are removed, such as
+  `XBT.F`, `DOT28.S`, or `EUR.HOLD` for BTC, DOT, or EUR.
+- Kraken documents that read as net of pending withdrawals, so a withdrawal reduces it while still pending.
+- The `FLAT` is withheld, with a warning, when the rows of the base sum to a nonzero amount that no `LONG`
+  report carries, such as a suffixed (`XBT.F`), staking (`DOT.S`), or hold (`EUR.HOLD`) balance. It is also
+  withheld when an order report shows a `SELL` on the instrument that is not terminal, when a cached open or
+  in-flight `SELL` on the instrument has no matching order report, when the instrument is missing from the
+  cache, and for tokenized assets (xStocks), whose `Balance` key and units are not documented.
+- A row that counts toward the base of a position that can get this `FLAT` fails the startup mass status
+  when it cannot be parsed or is negative. Other rows that cannot be parsed are skipped.
+- Periodic position checks get no such report, since a missing report there already means flat for a
+  covered instrument.
+- A position reported `FLAT` with no closing fill in the startup reports, as after a withdrawal or a sale of
+  the base through another pair, reconciles as a discrepancy, with or without a lookback. With
+  `generate_missing_orders` enabled (the default), a position whose strategy claims the instrument closes at
+  its cached average entry price, with no closing PnL or fee. Otherwise the synthetic order belongs to
+  `EXTERNAL` and opens an offsetting position next to the strategy's. With `generate_missing_orders`
+  disabled, startup stops on the unresolved position.
 
 **Configuration**:
 

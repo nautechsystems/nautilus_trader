@@ -16,7 +16,7 @@
 //! Kraken Spot execution client implementation.
 
 use std::{
-    collections::HashSet,
+    collections::{BTreeSet, HashSet},
     future::Future,
     sync::Arc,
     time::{Duration, Instant},
@@ -47,7 +47,8 @@ use nautilus_live::{
 use nautilus_model::{
     accounts::AccountAny,
     enums::{
-        AccountType, OmsType, OrderSide, OrderType, TimeInForce, TrailingOffsetType, TriggerType,
+        AccountType, OmsType, OrderSide, OrderType, PositionSide, TimeInForce, TrailingOffsetType,
+        TriggerType,
     },
     events::OrderEventAny,
     identifiers::{
@@ -803,6 +804,90 @@ impl KrakenSpotExecutionClient {
         }
     }
 
+    /// Returns the instruments of this account's cached open LONG positions that the startup
+    /// wallet read may report as flat, sorted.
+    ///
+    /// Only instruments with bulk position coverage qualify. A covered instrument is withheld,
+    /// with a warning, when the engine cache lacks it, since the engine would stop startup on its
+    /// report, or when a SELL on it may have filled without the startup reports showing the fill.
+    fn wallet_flat_candidates(&self, order_reports: &[OrderStatusReport]) -> Vec<InstrumentId> {
+        let cache = self.core.cache();
+        let account_id = self.core.account_id;
+        let instrument_ids: BTreeSet<InstrumentId> = cache
+            .positions_open(
+                Some(&*KRAKEN_VENUE),
+                None,
+                None,
+                Some(&account_id),
+                Some(PositionSide::Long),
+            )
+            .iter()
+            .map(|position| position.instrument_id)
+            .collect();
+
+        let mut candidates = Vec::new();
+
+        for instrument_id in instrument_ids {
+            if !self.provides_bulk_position_coverage(instrument_id) {
+                continue;
+            }
+
+            if cache.instrument(&instrument_id).is_none() {
+                log::warn!(
+                    "Withholding flat position report for {instrument_id}: instrument not in cache"
+                );
+                continue;
+            }
+
+            // A SELL that is not terminal could fill before the Balance read
+            if let Some(report) = order_reports.iter().find(|report| {
+                report.instrument_id == instrument_id
+                    && report.order_side == Some(OrderSide::Sell)
+                    && !report.order_status.is_closed()
+            }) {
+                log::warn!(
+                    "Withholding flat position report for {instrument_id}: SELL order {} is not terminal",
+                    report.venue_order_id,
+                );
+                continue;
+            }
+
+            // A cached SELL the startup reports cannot place may have filled unseen
+            let open_sells = cache.orders_open(
+                Some(&*KRAKEN_VENUE),
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                Some(OrderSide::Sell),
+            );
+            let inflight_sells = cache.orders_inflight(
+                Some(&*KRAKEN_VENUE),
+                Some(&instrument_id),
+                None,
+                Some(&account_id),
+                Some(OrderSide::Sell),
+            );
+
+            if let Some(order) = open_sells.iter().chain(&inflight_sells).find(|order| {
+                order.venue_order_id().is_none_or(|venue_order_id| {
+                    !order_reports
+                        .iter()
+                        .any(|report| report.venue_order_id == venue_order_id)
+                })
+            }) {
+                log::warn!(
+                    "Withholding flat position report for {instrument_id}: cached SELL order {} has no order report",
+                    order.client_order_id(),
+                );
+                continue;
+            }
+
+            candidates.push(instrument_id);
+        }
+
+        candidates
+    }
+
     #[expect(clippy::too_many_arguments)]
     fn handle_ws_message(
         msg: KrakenSpotWsMessage,
@@ -1372,16 +1457,29 @@ impl ExecutionClient for KrakenSpotExecutionClient {
             .http
             .request_fill_reports_checked(account_id, None, start, None)
             .await?;
-        let position_reports = self
-            .http
-            .request_position_status_reports(
-                account_id,
-                None,
-                self.config.spot_account_type,
-                self.config.use_spot_position_reports,
-                Ustr::from(self.config.spot_positions_quote_currency.as_str()),
-            )
-            .await?;
+        let quote_currency = Ustr::from(self.config.spot_positions_quote_currency.as_str());
+        let position_reports = if self.config.spot_account_type != AccountType::Margin
+            && self.config.use_spot_position_reports
+        {
+            let flat_candidates = self.wallet_flat_candidates(&order_reports);
+            self.http
+                .request_wallet_position_reports_with_flats(
+                    account_id,
+                    quote_currency,
+                    &flat_candidates,
+                )
+                .await?
+        } else {
+            self.http
+                .request_position_status_reports(
+                    account_id,
+                    None,
+                    self.config.spot_account_type,
+                    self.config.use_spot_position_reports,
+                    quote_currency,
+                )
+                .await?
+        };
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
