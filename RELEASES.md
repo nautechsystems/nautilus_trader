@@ -85,6 +85,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed Arrow trade tick decoding panicking on malformed trade IDs
 - Fixed catalog display queries failing on clear-book deltas with no order side
 - Fixed closed-order and position purges ignoring `purge_from_database` in execution timers
 - Fixed Redis order and position deletion leaving routine snapshots and restoring purged positions

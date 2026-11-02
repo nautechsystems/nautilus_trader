@@ -24,6 +24,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pandas as pd
+import pyarrow as pa
 import pytest
 
 from nautilus_trader.common import Cache
@@ -62,6 +63,7 @@ from nautilus_trader.persistence import RotationConfig
 from nautilus_trader.persistence import StreamingFeatherWriter
 from nautilus_trader.persistence import StreamingWriter
 from nautilus_trader.persistence import TradeTickDataWrangler
+from nautilus_trader.serialization import trades_to_arrow_record_batch_bytes
 from tests.providers import TEST_DATA_DIR
 from tests.providers import TestInstrumentProvider
 from tests.stubs import TestDataProviderPyo3
@@ -558,6 +560,49 @@ def test_trade_tick_wrangler_construction() -> None:
     assert wrangler.instrument_id == "ETHUSDT.BINANCE"
     assert wrangler.price_precision == 2
     assert wrangler.size_precision == 5
+
+
+@pytest.mark.parametrize("string_type", [pa.string(), pa.string_view()])
+@pytest.mark.parametrize(
+    ("trade_id", "message"),
+    [
+        ("", "row 1: String is empty"),
+        ("A" * 37, "row 1: String exceeds maximum length of 36 characters, was 37"),
+        ("é", "row 1: String contains non-ASCII character"),
+        (" ", "row 1: String contains only whitespace"),
+        ("a\0b", "row 1: String contains interior NUL byte"),
+        (None, "NULL value at row 1"),
+    ],
+)
+def test_trade_tick_wrangler_rejects_malformed_trade_ids_and_recovers(
+    string_type: pa.DataType,
+    trade_id: str | None,
+    message: str,
+) -> None:
+    """
+    Reject invalid IPC trade IDs without leaving the wrangler unusable.
+    """
+    wrangler = TradeTickDataWrangler("ETHUSDT.BINANCE", 2, 5)
+    ticks = [
+        TestDataProviderPyo3.trade_tick(price="1234.56", size="1.23456", ts_event=12, ts_init=34),
+        TestDataProviderPyo3.trade_tick(price="2345.67", size="8.90123", ts_event=56, ts_init=78),
+    ]
+    valid_bytes = trades_to_arrow_record_batch_bytes(ticks)
+    batch = next(pa.ipc.open_stream(valid_bytes))
+    batch = batch.set_column(
+        batch.schema.get_field_index("trade_id"),
+        pa.field("trade_id", string_type, nullable=True),
+        pa.array(["1", trade_id], type=string_type),
+    )
+    sink = pa.BufferOutputStream()
+    with pa.ipc.new_stream(sink, batch.schema) as writer:
+        writer.write_batch(batch)
+
+    with pytest.raises(ValueError, match="trade_id") as exc_info:
+        wrangler.process_record_batch_bytes(sink.getvalue().to_pybytes())
+
+    assert str(exc_info.value) == f"Error parsing `trade_id`: {message}"
+    assert wrangler.process_record_batch_bytes(valid_bytes) == ticks
 
 
 def test_bar_wrangler_construction() -> None:
