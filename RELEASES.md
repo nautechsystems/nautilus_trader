@@ -129,6 +129,7 @@ Released on TBD (UTC).
 - Fixed Polymarket settled BUY spend staying locked when collateral credits offset balance decreases
 - Fixed Polymarket explicit event slugs being ignored when an event-slug builder is configured
 - Fixed Polymarket data-client builder defaults disabling the 60-minute instrument refresh
+- Fixed Polymarket open-order checks failing while an admitted fill awaits application
 
 ### Internal Improvements
 

@@ -1847,8 +1847,8 @@ mod tests {
         messages::{
             ExecutionEvent,
             execution::{
-                CancelAllOrders, GenerateFillReportsBuilder, ModifyOrder, SubmitOrder,
-                SubmitOrderList,
+                CancelAllOrders, GenerateFillReportsBuilder, GenerateOrderStatusReportBuilder,
+                GenerateOrderStatusReportsBuilder, ModifyOrder, SubmitOrder, SubmitOrderList,
             },
         },
         msgbus::{publish_order_event, publish_position_event, switchboard},
@@ -4032,9 +4032,22 @@ mod tests {
             .ts_init(UnixNanos::default())
             .build()
             .unwrap();
+        let order_reports_cmd = GenerateOrderStatusReportsBuilder::default()
+            .ts_init(UnixNanos::default())
+            .open_only(false)
+            .build()
+            .unwrap();
+        let order_report_cmd = GenerateOrderStatusReportBuilder::default()
+            .ts_init(UnixNanos::default())
+            .build()
+            .unwrap();
 
         let mass_status = client.generate_mass_status(None).await;
         let fill_reports = client.generate_fill_reports(fill_reports_cmd).await;
+        let order_reports = client
+            .generate_order_status_reports(&order_reports_cmd)
+            .await;
+        let order_report = client.generate_order_status_report(&order_report_cmd).await;
 
         assert_eq!(
             mass_status.unwrap_err().to_string(),
@@ -4045,6 +4058,16 @@ mod tests {
             fill_reports.unwrap_err().to_string(),
             "cannot generate fill reports: Polymarket settlement registry holds 1 record(s) \
              with unresolved evidence"
+        );
+        assert_eq!(
+            order_reports.unwrap_err().to_string(),
+            "cannot generate order status reports: Polymarket settlement registry holds 1 \
+             record(s) with unresolved evidence"
+        );
+        assert_eq!(
+            order_report.unwrap_err().to_string(),
+            "cannot generate order status report: Polymarket settlement registry holds 1 \
+             record(s) with unresolved evidence"
         );
     }
 

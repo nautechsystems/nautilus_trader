@@ -1806,7 +1806,7 @@ through fills or settlement.
 
 ### Settlement precedence
 
-Order status, fill, position status, and mass-status reports fail instead of returning coverage
+Fill, position status, and mass-status reports fail instead of returning coverage
 that reconciliation could use to infer fills while:
 
 - A trade is quarantined, hard-faulted, awaiting a REST read after a reconnect, or waiting for the
@@ -1815,13 +1815,19 @@ that reconciliation could use to infer fills while:
   live during a WebSocket disconnect.
 - The adapter rebuilds its settlement records on connect.
 
+Order status reports fail for those conditions, except while a fill or void is only waiting for
+the engine to apply it. The report still includes the account's open orders. That order's reported
+filled quantity stays at the cached quantity until the engine applies the fill or void, even when
+another confirmed trade would otherwise raise it.
+
 Mass status checks the whole account. The other reports check the requested instrument or order. If a trade
 quarantined for message validation failure has no earlier admitted legs, it blocks every report. Otherwise the
 order and instrument scope of those legs applies. See [settlement updates](#settlement-updates) for how trades
 resolve.
 
-`QueryOrder` checks settlement before and after its venue reads. If settlement evidence for the
-order remains unresolved, the query emits no status report and leaves the local order unchanged.
+`QueryOrder` checks settlement before and after its venue reads. Waiting for the engine to apply
+a fill or void still leaves this query unresolved. If settlement evidence for the order remains
+unresolved, the query emits no status report and leaves the local order unchanged.
 Queries for an unacknowledged submission still use
 [unknown-outcome reconciliation](#unknown-outcome-reconciliation).
 
@@ -2001,7 +2007,9 @@ ID. This recovers a cached order whose terminal WebSocket update was missed. It 
 resolving a local `ACCEPTED` order as `REJECTED`. That false rejection would discard fills that already
 happened at the venue.
 
-Only `CONFIRMED` trades contribute to recovered fills. Pending and failed settlement states do not.
+Only `CONFIRMED` trades contribute to recovered fills. Pending and failed settlement states do
+not. A fill or void still waiting for the engine does not contribute, even when REST reports that
+trade as `CONFIRMED`.
 
 The cached order is resolved via `client_order_id`, falling back to the cache's `venue_order_id` index when
 only the venue ID is known. When the request supplies or resolves to a `client_order_id`, the cached order
@@ -2016,8 +2024,11 @@ history alone:
   returns `Canceled` with the recovered `filled_qty`. Targeted reconciliation applies the associated
   fill reports before closing the remainder. If terminal quantity is still unaccounted for, the
   engine defers the terminal transition rather than discarding the missing fills.
-- Previously accepted cached order, no trades: returns `Canceled` with
-  `cancel_reason="ORDER_NOT_FOUND_AT_VENUE"`.
+- Previously accepted cached order, no trades, and no fill or void waiting for the engine:
+  returns `Canceled` with `cancel_reason="ORDER_NOT_FOUND_AT_VENUE"`.
+- Cached order with a fill or void still waiting for the engine: returns the cached status and
+  filled quantity, including when REST omits that trade or the fill is on a previous venue order
+  id. It is not `Canceled`.
 - Cached order that was never accepted, no trades: returns `None`, preserving its unresolved state.
 - Cached order with any `MATCHED`, `MINED`, or `RETRYING` trade: a singular order query preserves
   the locally applied matched quantity while terminal REST recovery waits for `CONFIRMED` or

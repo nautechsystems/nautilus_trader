@@ -482,7 +482,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         gate_report(
             || {
                 self.settlement
-                    .ensure_resolved(cmd.instrument_id, "order status report")
+                    .ensure_order_status_available(cmd.instrument_id, "order status report")
             },
             Box::pin(self.generate_order_status_report_impl(cmd)),
         )
@@ -496,7 +496,7 @@ impl ExecutionClient for PolymarketExecutionClient {
         gate_report(
             || {
                 self.settlement
-                    .ensure_resolved(cmd.instrument_id, "order status reports")
+                    .ensure_order_status_available(cmd.instrument_id, "order status reports")
             },
             self.generate_order_status_reports_impl(cmd),
         )

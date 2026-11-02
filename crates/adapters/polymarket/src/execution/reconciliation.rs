@@ -787,6 +787,76 @@ pub(crate) fn admit_selected_trade<'a>(
     Ok(true)
 }
 
+/// Returns whether an order-status recovery must treat these trades as not yet applied.
+pub(crate) fn order_status_trades_await_application(
+    settlement: &SettlementRegistry,
+    trades: &[PolymarketTradeReport],
+    venue_order_id: &VenueOrderId,
+) -> bool {
+    trades.iter().any(|trade| {
+        trade_touches_venue_order(trade, venue_order_id)
+            && settlement.omits_order_status_quantity(&trade.id)
+    })
+}
+
+/// Returns whether a fill or void is waiting on this order, including a previous venue leg.
+pub(crate) fn order_status_scope_awaits_application(
+    settlement: &SettlementRegistry,
+    trades: &[PolymarketTradeReport],
+    cached: Option<&OrderAny>,
+    venue_order_id: &VenueOrderId,
+) -> bool {
+    let mut ids = cached
+        .map(|order| {
+            order
+                .venue_order_ids()
+                .into_iter()
+                .copied()
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+
+    if !ids.contains(venue_order_id) {
+        ids.push(*venue_order_id);
+    }
+
+    ids.iter().any(|id| {
+        settlement.order_awaits_application(id)
+            || order_status_trades_await_application(settlement, trades, id)
+    })
+}
+
+pub(crate) fn order_status_recovery_status(
+    cached_status: OrderStatus,
+    filled_qty_is_zero: bool,
+    keep_cached_status: bool,
+) -> OrderStatus {
+    if keep_cached_status {
+        cached_status
+    } else if filled_qty_is_zero {
+        OrderStatus::Accepted
+    } else {
+        OrderStatus::PartiallyFilled
+    }
+}
+
+fn trade_touches_venue_order(trade: &PolymarketTradeReport, venue_order_id: &VenueOrderId) -> bool {
+    trade.taker_order_id == venue_order_id.as_str()
+        || trade
+            .maker_orders
+            .iter()
+            .any(|maker| maker.order_id == venue_order_id.as_str())
+}
+
+/// Drops trades an order-status quantity cap must not count or fail on.
+pub(crate) fn without_order_status_pending_trades(
+    settlement: &SettlementRegistry,
+    mut trades: Vec<PolymarketTradeReport>,
+) -> Vec<PolymarketTradeReport> {
+    trades.retain(|trade| !settlement.omits_order_status_quantity(&trade.id));
+    trades
+}
+
 /// Converts trade reports into fill reports: single implementation of maker/taker
 /// parsing used by both `generate_fill_reports()` and `generate_mass_status()`.
 ///
@@ -2700,6 +2770,134 @@ mod tests {
         );
         assert_eq!(ctx.settlement.record_count(), 1);
         ctx.settlement.ensure_resolved(None, "fills").unwrap();
+    }
+
+    #[rstest]
+    #[case::collection(false)]
+    #[case::target(true)]
+    fn order_status_quantity_omits_confirmed_fill_awaiting_application(#[case] targeted: bool) {
+        let ctx = test_fill_context();
+        let instruments = test_instruments();
+        let trade = confirmed_taker_trade();
+        let venue_order_id = VenueOrderId::from(trade.taker_order_id.as_str());
+
+        let admission_ctx = AdmissionContext {
+            signer_type: ctx.signer_type,
+            user_address: ctx.user_address,
+            api_key: ctx.api_key,
+            pusd: ctx.pusd,
+            instruments: &instruments,
+            fee_bases: Some(ctx.settlement.as_ref()),
+        };
+
+        let mut admitted = admit_trade_legs(
+            TradeEvidence::Rest(&trade),
+            &admission_ctx,
+            &[venue_order_id.as_str()],
+        )
+        .unwrap();
+
+        ctx.settlement.mark_live();
+        ctx.settlement.begin_session();
+        ctx.settlement.note_order_submitted(venue_order_id);
+        admitted.status = PolymarketTradeStatus::Matched;
+        ctx.settlement.admit_stream_trade(&admitted);
+        ctx.settlement.note_leg_enqueued(&admitted.legs[0].trade_id);
+        admitted.status = PolymarketTradeStatus::Confirmed;
+        ctx.settlement.admit_rest_result(&admitted);
+
+        let scope = FillReportScope::new(None, targeted.then_some(venue_order_id));
+        let unresolved = build_fill_reports_from_trades(
+            std::slice::from_ref(&trade),
+            &ctx,
+            &instruments,
+            scope,
+            UnixNanos::from(1),
+            None,
+            None,
+        );
+        let order_status_trades =
+            without_order_status_pending_trades(&ctx.settlement, vec![trade.clone()]);
+        let order_status = build_fill_reports_from_trades(
+            &order_status_trades,
+            &ctx,
+            &instruments,
+            scope,
+            UnixNanos::from(1),
+            None,
+            None,
+        )
+        .expect("pending application must not fail the order-status quantity lookup");
+
+        assert_eq!(
+            super::super::settlement::registry::tests::leg_application(
+                &ctx.settlement,
+                &admitted.legs[0].trade_id,
+            ),
+            Some(super::super::settlement::state::LegApplication::FillPending),
+        );
+        assert_eq!(
+            super::super::settlement::registry::tests::settlement_state(
+                &ctx.settlement,
+                &admitted.venue_trade_id,
+            ),
+            Some(super::super::settlement::state::SettlementState::RestConfirmed),
+        );
+        assert!(
+            unresolved
+                .unwrap_err()
+                .to_string()
+                .contains("unresolved settlement evidence")
+        );
+        assert!(order_status_trades.is_empty());
+        assert!(order_status.0.is_empty());
+        assert!(order_status_trades_await_application(
+            &ctx.settlement,
+            std::slice::from_ref(&trade),
+            &venue_order_id,
+        ));
+        let mut other_order = trade.clone();
+        other_order.taker_order_id = "0xother".to_string();
+        for maker in &mut other_order.maker_orders {
+            maker.order_id = "0xother-maker".to_string();
+        }
+
+        assert!(!order_status_trades_await_application(
+            &ctx.settlement,
+            std::slice::from_ref(&other_order),
+            &venue_order_id,
+        ));
+        assert_eq!(
+            order_status_recovery_status(OrderStatus::Filled, false, true),
+            OrderStatus::Filled
+        );
+        assert_eq!(
+            order_status_recovery_status(OrderStatus::Filled, false, false),
+            OrderStatus::PartiallyFilled
+        );
+        assert!(
+            ctx.settlement
+                .ensure_order_status_available(None, "order status reports")
+                .is_ok()
+        );
+        assert!(
+            ctx.settlement
+                .ensure_resolved(None, "fill reports")
+                .is_err()
+        );
+
+        super::super::settlement::registry::tests::force_trade_fault(
+            &ctx.settlement,
+            &admitted.venue_trade_id,
+            "core declined the fill",
+        );
+        let faulted = without_order_status_pending_trades(&ctx.settlement, vec![trade]);
+        assert_eq!(faulted.len(), 1);
+        assert!(
+            ctx.settlement
+                .ensure_order_status_available(None, "order status reports")
+                .is_err()
+        );
     }
 
     fn instrument_with_fee_schedule(rate: Decimal) -> InstrumentAny {
