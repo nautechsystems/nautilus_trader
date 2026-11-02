@@ -156,7 +156,7 @@ Released on TBD (UTC).
 
 - Clarified Parquet migration coverage and CLEAR snapshot promotion limits
 - Fixed WebSocket module documentation for backend proxy support and SOCKS fallback
-- Improved Polymarket setup and configuration troubleshooting guidance
+- Improved Polymarket setup, configuration troubleshooting, and cancel-replace recovery guidance
 - Updated Kraken Futures Maker Protection rollout and split-amendment guidance
 - Updated Python Polymarket examples with scoped reconciliation, risk checks, and 30-second shutdown waits
 

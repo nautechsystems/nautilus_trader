@@ -1904,6 +1904,22 @@ Mass status caps REST matched quantity using fills already applied in core and a
 pending settlement from creating an inferred fill, with or without a lookback window. Applied fills
 outside the lookback window still contribute to the cap.
 
+#### Restarting after order modification
+
+Persist order and position history to retain `ClientOrderId`, logical quantity, and venue ID history.
+[Venue responses](https://docs.polymarket.com/trading/manage-orders) have no client order ID or
+predecessor link, so an empty-cache restart loses chain identity. With default reconciliation:
+
+- **Live successor**: Reconciliation adopts an external order with its venue ID as `ClientOrderId`
+  and its signed leg quantity. Queries and cancels target that venue ID.
+- **Predecessor fills**: These recover as separate market orders with real trade IDs and reconstructed
+  commissions when history matches wallet exposure or a bounded window has no position report.
+  `Filled` covers recovered fills only; original size, limit price, time in force, and cancellation
+  status stay unknown.
+- **History limits**: A complete window can omit older predecessor fills because recovery follows each
+  live order's own trade references. Synthetic fills can restore exposure, but holdings cannot recover
+  missing trade IDs, order terms, or historical commissions.
+
 #### Recovering fills outside the lookback
 
 For a bounded lookback, the adapter recovers unapplied trades referenced by each in-scope open
