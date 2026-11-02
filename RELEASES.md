@@ -124,8 +124,10 @@ Released on TBD (UTC).
 - Fixed Databento price scaling at explicitly selected 17- and 18-decimal precision
 - Fixed Deribit instrument loading panicking on invalid spot definitions
 - Fixed Deribit single-order recovery treating failed lookups as missing orders
+- Fixed Deribit unsent order commands staying unresolved and uncertain venue errors becoming rejections
 - Fixed Deribit fill report requests returning partial results when a required trade fails to parse
 - Fixed Deribit reconciliation omitting in-scope orders, fills, and positions when the instrument is not cached
+- Fixed Deribit rejected order results emitting `OrderAccepted`
 - Fixed Hyperliquid account state staying stale after fills (#5449), thanks for reporting @dxwil
 - Fixed Hyperliquid instrument caching stalling node startup (#5354), thanks for reporting @Karrenbelt
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive

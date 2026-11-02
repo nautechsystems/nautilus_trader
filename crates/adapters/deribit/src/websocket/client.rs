@@ -1640,7 +1640,7 @@ impl DeribitWebSocketClient {
 
         self.command_sender()
             .send(cmd)
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+            .map_err(|_| DeribitWsError::AdmissionClosed)?;
 
         Ok(())
     }
@@ -1706,7 +1706,7 @@ impl DeribitWebSocketClient {
                 strategy_id,
                 instrument_id,
             })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+            .map_err(|_| DeribitWsError::AdmissionClosed)?;
 
         Ok(())
     }
@@ -1771,7 +1771,7 @@ impl DeribitWebSocketClient {
                 strategy_id,
                 instrument_id,
             })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+            .map_err(|_| DeribitWsError::AdmissionClosed)?;
 
         Ok(())
     }
@@ -1811,7 +1811,7 @@ impl DeribitWebSocketClient {
                 params,
                 instrument_id,
             })
-            .map_err(|e| DeribitWsError::Send(e.to_string()))?;
+            .map_err(|_| DeribitWsError::AdmissionClosed)?;
 
         Ok(())
     }
@@ -2305,5 +2305,70 @@ mod tests {
             assert_eq!(update.id(), instrument.id());
         }
         assert!(rx.try_recv().is_err());
+    }
+
+    fn order_params(client_order_id: &str) -> DeribitOrderParams {
+        DeribitOrderParams {
+            instrument_name: "BTC-PERPETUAL".to_string(),
+            amount: rust_decimal::Decimal::new(1, 0),
+            order_type: "limit".to_string(),
+            label: Some(client_order_id.to_string()),
+            price: Some(rust_decimal::Decimal::new(50_000, 0)),
+            time_in_force: Some("good_til_cancelled".to_string()),
+            post_only: None,
+            reject_post_only: None,
+            reduce_only: None,
+            trigger_price: None,
+            trigger: None,
+            max_show: None,
+            valid_until: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_submit_sends_no_command() {
+        let client = DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        *client.cmd_tx.write() = tx;
+        let client_order_id = ClientOrderId::new("auth-closed-001");
+
+        let error = client
+            .submit_order(
+                OrderSide::Buy,
+                order_params(client_order_id.as_str()),
+                client_order_id,
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DeribitWsError::Authentication(_)));
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn closed_command_channel_sends_no_order_command() {
+        let client = DeribitWebSocketClient::new_public(DeribitEnvironment::Testnet, None).unwrap();
+        client.auth_tracker.succeed();
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(rx);
+        *client.cmd_tx.write() = tx;
+        let client_order_id = ClientOrderId::new("admission-closed-001");
+
+        let error = client
+            .submit_order(
+                OrderSide::Sell,
+                order_params(client_order_id.as_str()),
+                client_order_id,
+                TraderId::from("TESTER-001"),
+                StrategyId::from("S-001"),
+                InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            )
+            .await
+            .unwrap_err();
+
+        assert!(matches!(error, DeribitWsError::AdmissionClosed));
     }
 }

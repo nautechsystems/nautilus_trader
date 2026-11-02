@@ -662,8 +662,9 @@ Deribit offers two post-only modes:
 2. **Reject mode**: Order is immediately rejected if it would cross the spread.
 
 The Nautilus adapter uses **reject mode** (`reject_post_only=true`) for deterministic behavior.
-When Deribit returns error code `11054`, the adapter emits `OrderRejected` with `due_post_only=true`.
-Other rejection codes set this flag to `false`, including rejections forwarded from Coinbase Exchange.
+The adapter emits `OrderRejected` with `due_post_only=true` for error code `11054` or an order result
+with `order_state="rejected"` and `reject_reason="post_only_reject"`. Other rejections set this flag to
+`false`. These rules also apply to rejections forwarded from Coinbase Exchange.
 
 This allows strategies to differentiate between:
 

@@ -44,7 +44,7 @@ use nautilus_model::{
     accounts::AccountAny,
     enums::{AccountType, OmsType, OrderType, PositionSide, TimeInForce},
     events::OrderEventAny,
-    identifiers::{AccountId, ClientId, InstrumentId, Venue},
+    identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, Venue, VenueOrderId},
     instruments::InstrumentAny,
     orders::{Order, OrderAny},
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
@@ -69,6 +69,8 @@ use crate::{
     websocket::{
         auth::DERIBIT_EXECUTION_SESSION_NAME,
         client::DeribitWebSocketClient,
+        error::DeribitWsError,
+        failure::{REASON_NOT_STARTED, classify_deribit_command_failure, terminal_reason},
         messages::{DeribitEditParams, DeribitOrderParams, NautilusWsMessage},
         parse::parse_user_order_msg,
     },
@@ -354,8 +356,11 @@ impl DeribitExecutionClient {
         log::debug!("OrderSubmitted client_order_id={client_order_id}");
 
         let ws_client = self.ws_client.clone();
-        self.spawn_task(task_name, async move {
-            let result = ws_client
+        let emitter = self.emitter.clone();
+        let clock = self.clock;
+
+        let future = async move {
+            if let Err(e) = ws_client
                 .submit_order(
                     order_side,
                     params,
@@ -364,17 +369,34 @@ impl DeribitExecutionClient {
                     strategy_id,
                     instrument_id,
                 )
-                .await;
-
-            if let Err(e) = result {
-                log::error!(
-                    "Submit order request failed: task={task_name}, client_order_id={client_order_id}, error={e}"
-                );
-                return Err(e.into());
+                .await
+            {
+                emit_if_not_sent(&e, client_order_id, "Submit order", |reason| {
+                    emitter.emit_order_rejected_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        reason,
+                        clock.get_time_ns(),
+                        false,
+                    );
+                });
             }
+        };
 
-            Ok(())
-        });
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!(
+                "Submit order was not started: task={task_name}, client_order_id={client_order_id}, error={e}"
+            );
+            self.emitter.emit_order_rejected_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                REASON_NOT_STARTED,
+                self.clock.get_time_ns(),
+                false,
+            );
+        }
     }
 
     /// Spawns a stream handler to dispatch WebSocket messages to the execution engine.
@@ -1052,8 +1074,10 @@ impl ExecutionClient for DeribitExecutionClient {
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        // Spawn async task to send modify via WebSocket
-        self.spawn_task("modify_order", async move {
+        let venue_order_id = VenueOrderId::new(order_id.as_str());
+        let command_id = cmd.command_id;
+
+        let future = async move {
             if let Err(e) = ws_client
                 .modify_order_with_causation(
                     params,
@@ -1061,23 +1085,38 @@ impl ExecutionClient for DeribitExecutionClient {
                     trader_id,
                     strategy_id,
                     instrument_id,
-                    Some(cmd.command_id),
+                    Some(command_id),
                 )
                 .await
             {
-                log::error!(
-                    "Modify order failed: order_id={order_id}, client_order_id={client_order_id}, error={e}"
-                );
-                return deny_modify_command(
-                    &emitter,
-                    clock,
-                    &cmd,
-                    &e.to_string(),
-                    cached_order.as_ref(),
-                );
+                emit_if_not_sent(&e, client_order_id, "Modify order", |reason| {
+                    emitter.emit_order_modify_denied_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(venue_order_id),
+                        reason,
+                        clock.get_time_ns(),
+                        Some(command_id),
+                    );
+                });
             }
-            Ok(())
-        });
+        };
+
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!(
+                "Modify order was not started: order_id={order_id}, client_order_id={client_order_id}, error={e}"
+            );
+            self.emitter.emit_order_modify_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                Some(venue_order_id),
+                REASON_NOT_STARTED,
+                self.clock.get_time_ns(),
+                Some(command_id),
+            );
+        }
 
         Ok(())
     }
@@ -1120,27 +1159,50 @@ impl ExecutionClient for DeribitExecutionClient {
 
         let emitter = self.emitter.clone();
         let clock = self.clock;
-        // Spawn async task to send cancel via WebSocket
-        self.spawn_task("cancel_order", async move {
+        let venue_order_id = VenueOrderId::new(order_id.as_str());
+        let command_id = cmd.command_id;
+        let order_id_for_task = order_id.clone();
+
+        let future = async move {
             if let Err(e) = ws_client
                 .cancel_order_with_causation(
-                    &order_id,
+                    &order_id_for_task,
                     client_order_id,
                     trader_id,
                     strategy_id,
                     instrument_id,
-                    Some(cmd.command_id),
+                    Some(command_id),
                 )
                 .await
             {
-                log::error!(
-                    "Cancel order failed: order_id={order_id}, client_order_id={client_order_id}, error={e}"
-                );
-                deny_cancel_command(&emitter, clock, &cmd, cached_order.as_ref(), &e.to_string());
-                anyhow::bail!("Cancel order failed: {e}");
+                emit_if_not_sent(&e, client_order_id, "Cancel order", |reason| {
+                    emitter.emit_order_cancel_denied_event(
+                        strategy_id,
+                        instrument_id,
+                        client_order_id,
+                        Some(venue_order_id),
+                        reason,
+                        clock.get_time_ns(),
+                        Some(command_id),
+                    );
+                });
             }
-            Ok(())
-        });
+        };
+
+        if let Err(e) = self.pending_tasks.spawn(future) {
+            log::warn!(
+                "Cancel order was not started: order_id={order_id}, client_order_id={client_order_id}, error={e}"
+            );
+            self.emitter.emit_order_cancel_denied_event(
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                Some(venue_order_id),
+                REASON_NOT_STARTED,
+                self.clock.get_time_ns(),
+                Some(command_id),
+            );
+        }
 
         Ok(())
     }
@@ -1155,13 +1217,19 @@ impl ExecutionClient for DeribitExecutionClient {
             );
 
             let ws_client = self.ws_client.clone();
-            self.spawn_task("cancel_all_orders", async move {
+            let future = async move {
                 if let Err(e) = ws_client.cancel_all_orders(instrument_id, None).await {
-                    log::error!("Cancel all orders failed for instrument {instrument_id}: {e}");
-                    anyhow::bail!("Cancel all orders failed: {e}");
+                    log::warn!(
+                        "Cancel all orders failed for {instrument_id}, awaiting reconciliation: {e}"
+                    );
                 }
-                Ok(())
-            });
+            };
+
+            if let Err(e) = self.pending_tasks.spawn(future) {
+                log::warn!(
+                    "Cancel all orders was not started for {instrument_id}, awaiting reconciliation: {e}"
+                );
+            }
 
             return Ok(());
         };
@@ -1231,11 +1299,12 @@ impl ExecutionClient for DeribitExecutionClient {
             let emitter = self.emitter.clone();
             let clock = self.clock;
             let cause = cmd.command_id;
+            let venue_order_id_for_task = venue_order_id_str.clone();
 
-            self.spawn_task("cancel_order_by_side", async move {
+            let future = async move {
                 if let Err(e) = ws_client
                     .cancel_order_with_causation(
-                        &venue_order_id_str,
+                        &venue_order_id_for_task,
                         client_order_id,
                         trader_id,
                         strategy_id,
@@ -1244,18 +1313,34 @@ impl ExecutionClient for DeribitExecutionClient {
                     )
                     .await
                 {
-                    emitter.emit_order_cancel_denied_event(
-                        strategy_id,
-                        order_instrument_id,
-                        client_order_id,
-                        venue_order_id,
-                        &e.to_string(),
-                        clock.get_time_ns(),
-                        Some(cause),
-                    );
+                    emit_if_not_sent(&e, client_order_id, "Cancel order", |reason| {
+                        emitter.emit_order_cancel_denied_event(
+                            strategy_id,
+                            order_instrument_id,
+                            client_order_id,
+                            venue_order_id,
+                            reason,
+                            clock.get_time_ns(),
+                            Some(cause),
+                        );
+                    });
                 }
-                Ok(())
-            });
+            };
+
+            if let Err(e) = self.pending_tasks.spawn(future) {
+                log::warn!(
+                    "Cancel order was not started: order_id={venue_order_id_str}, client_order_id={client_order_id}, error={e}"
+                );
+                self.emitter.emit_order_cancel_denied_event(
+                    strategy_id,
+                    order_instrument_id,
+                    client_order_id,
+                    venue_order_id,
+                    REASON_NOT_STARTED,
+                    self.clock.get_time_ns(),
+                    Some(cause),
+                );
+            }
         }
 
         Ok(())
@@ -1298,7 +1383,7 @@ impl ExecutionClient for DeribitExecutionClient {
 
             let emitter = self.emitter.clone();
             let clock = self.clock;
-            let command = cancel.clone();
+            let command_id = cancel.command_id;
             let ws_client = self.ws_client.clone();
             let client_order_id = cancel.client_order_id;
             let trader_id = cached_order
@@ -1310,33 +1395,49 @@ impl ExecutionClient for DeribitExecutionClient {
             let instrument_id = cached_order
                 .as_ref()
                 .map_or(cancel.instrument_id, |order| order.instrument_id());
+            let venue_order_id = VenueOrderId::new(order_id.as_str());
+            let order_id_for_task = order_id.clone();
 
-            self.spawn_task("batch_cancel_order", async move {
+            let future = async move {
                 if let Err(e) = ws_client
                     .cancel_order_with_causation(
-                        &order_id,
+                        &order_id_for_task,
                         client_order_id,
                         trader_id,
                         strategy_id,
                         instrument_id,
-                        Some(command.command_id),
+                        Some(command_id),
                     )
                     .await
                 {
-                    log::error!(
-                        "Batch cancel order failed: order_id={order_id}, client_order_id={client_order_id}, error={e}"
-                    );
-                    deny_cancel_command(
-                        &emitter,
-                        clock,
-                        &command,
-                        cached_order.as_ref(),
-                        &e.to_string(),
-                    );
-                    anyhow::bail!("Batch cancel order failed: {e}");
+                    emit_if_not_sent(&e, client_order_id, "Cancel order", |reason| {
+                        emitter.emit_order_cancel_denied_event(
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            Some(venue_order_id),
+                            reason,
+                            clock.get_time_ns(),
+                            Some(command_id),
+                        );
+                    });
                 }
-                Ok(())
-            });
+            };
+
+            if let Err(e) = self.pending_tasks.spawn(future) {
+                log::warn!(
+                    "Batch cancel order was not started: order_id={order_id}, client_order_id={client_order_id}, error={e}"
+                );
+                self.emitter.emit_order_cancel_denied_event(
+                    strategy_id,
+                    instrument_id,
+                    client_order_id,
+                    Some(venue_order_id),
+                    REASON_NOT_STARTED,
+                    self.clock.get_time_ns(),
+                    Some(command_id),
+                );
+            }
         }
 
         Ok(())
@@ -1478,6 +1579,25 @@ fn dispatch_ws_message(message: NautilusWsMessage, emitter: &ExecutionEventEmitt
     }
 }
 
+fn emit_if_not_sent(
+    error: &DeribitWsError,
+    client_order_id: ClientOrderId,
+    command: &str,
+    emit: impl FnOnce(&str),
+) {
+    let failure = classify_deribit_command_failure(error);
+
+    let Some(reason) = terminal_reason(&failure) else {
+        log::warn!(
+            "Ambiguous {command} failure for {client_order_id}, awaiting reconciliation: {error}"
+        );
+        return;
+    };
+
+    log::warn!("{command} was not sent: client_order_id={client_order_id}, error={error}");
+    emit(reason);
+}
+
 fn deny_modify_command(
     emitter: &ExecutionEventEmitter,
     clock: &AtomicTime,
@@ -1535,7 +1655,10 @@ mod tests {
 
     use nautilus_common::{
         cache::Cache,
-        messages::{ExecutionEvent, execution::ExecutionReport},
+        messages::{
+            ExecutionEvent,
+            execution::{CancelOrder, ExecutionReport, ModifyOrder},
+        },
     };
     use nautilus_core::UUID4;
     use nautilus_model::{
@@ -1554,6 +1677,7 @@ mod tests {
     use crate::{
         common::{parse::parse_deribit_instrument_any, testing::routed_spot_instrument},
         http::models::{DeribitInstrument, DeribitJsonRpcResponse},
+        websocket::failure::REASON_NOT_STARTED,
     };
 
     #[rstest]
@@ -1992,6 +2116,323 @@ mod tests {
             tokio::sync::mpsc::error::TryRecvError::Empty
         );
         assert_eq!(client.pending_tasks.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn unauthenticated_submit_emits_one_rejection_and_no_second_event() {
+        let (mut client, orders, _) = submission_test_rig(TimeInForce::Gtc);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+        assert!(!client.ws_client.is_authenticated());
+
+        submit_test_orders(&client, &orders, false).unwrap();
+
+        let submitted = rx.recv().await.expect("submitted event");
+        let rejected = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .expect("rejection timed out")
+            .expect("event channel closed");
+        assert!(rx.try_recv().is_err());
+
+        let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) = submitted else {
+            panic!("expected submitted, was {submitted:?}");
+        };
+
+        let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = rejected else {
+            panic!("expected rejected, was {rejected:?}");
+        };
+
+        assert_eq!(submitted.client_order_id, orders[0].client_order_id());
+        assert_eq!(rejected.client_order_id, orders[0].client_order_id());
+        assert_eq!(rejected.reason.as_str(), "not authenticated");
+        assert!(!rejected.due_post_only);
+    }
+
+    #[tokio::test]
+    async fn shutdown_before_submit_task_emits_one_rejection() {
+        let (mut client, orders, _) = submission_test_rig(TimeInForce::Gtc);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+        client.abort_pending_tasks();
+
+        submit_test_orders(&client, &orders, false).unwrap();
+
+        let submitted = rx.try_recv().expect("submitted event");
+        let rejected = rx.try_recv().expect("rejection event");
+        assert!(rx.try_recv().is_err());
+
+        let ExecutionEvent::Order(OrderEventAny::Submitted(submitted)) = submitted else {
+            panic!("expected submitted, was {submitted:?}");
+        };
+
+        let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = rejected else {
+            panic!("expected rejected, was {rejected:?}");
+        };
+
+        assert_eq!(submitted.client_order_id, orders[0].client_order_id());
+        assert_eq!(rejected.client_order_id, orders[0].client_order_id());
+        assert_eq!(rejected.reason.as_str(), REASON_NOT_STARTED);
+        assert!(!rejected.due_post_only);
+        assert_eq!(client.pending_tasks.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_before_submit_list_rejects_each_unsent_order() {
+        let (mut client, orders, _) = submission_test_rig(TimeInForce::Gtc);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+        client.abort_pending_tasks();
+
+        submit_test_orders(&client, &orders, true).unwrap();
+
+        let mut rejected = Vec::new();
+
+        while let Ok(event) = rx.try_recv() {
+            if let ExecutionEvent::Order(OrderEventAny::Rejected(event)) = event {
+                rejected.push(event.client_order_id);
+            }
+        }
+
+        assert_eq!(
+            rejected,
+            vec![orders[0].client_order_id(), orders[1].client_order_id()]
+        );
+        assert_eq!(client.pending_tasks.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn shutdown_before_modify_emits_one_modify_denied() {
+        let (mut client, orders, _) = submission_test_rig(TimeInForce::Gtc);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+        client.abort_pending_tasks();
+        let client_order_id = orders[0].client_order_id();
+
+        client
+            .modify_order(ModifyOrder::new(
+                orders[0].trader_id(),
+                Some(client.client_id()),
+                orders[0].strategy_id(),
+                orders[0].instrument_id(),
+                client_order_id,
+                Some(VenueOrderId::from("DERIBIT-ORDER-1")),
+                Some(Quantity::from("2")),
+                Some(Price::from("51000")),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        let event = rx.try_recv().expect("modify denied event");
+        assert!(rx.try_recv().is_err());
+
+        let ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) = event else {
+            panic!("expected modify denied, was {event:?}");
+        };
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(
+            event.venue_order_id,
+            Some(VenueOrderId::from("DERIBIT-ORDER-1"))
+        );
+        assert_eq!(event.reason.as_str(), REASON_NOT_STARTED);
+    }
+
+    #[tokio::test]
+    async fn shutdown_before_cancel_emits_one_cancel_denied() {
+        let (mut client, orders, _) = submission_test_rig(TimeInForce::Gtc);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+        client.abort_pending_tasks();
+        let client_order_id = orders[0].client_order_id();
+
+        client
+            .cancel_order(CancelOrder::new(
+                orders[0].trader_id(),
+                Some(client.client_id()),
+                orders[0].strategy_id(),
+                orders[0].instrument_id(),
+                client_order_id,
+                Some(VenueOrderId::from("DERIBIT-ORDER-1")),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        let event = rx.try_recv().expect("cancel denied event");
+        assert!(rx.try_recv().is_err());
+
+        let ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) = event else {
+            panic!("expected cancel denied, was {event:?}");
+        };
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(
+            event.venue_order_id,
+            Some(VenueOrderId::from("DERIBIT-ORDER-1"))
+        );
+        assert_eq!(event.reason.as_str(), REASON_NOT_STARTED);
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    #[tokio::test]
+    async fn unauthenticated_modify_or_cancel_emits_one_denial(#[case] modify: bool) {
+        let (mut client, orders, _) = submission_test_rig(TimeInForce::Gtc);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+        assert!(!client.ws_client.is_authenticated());
+        let client_order_id = orders[0].client_order_id();
+        let venue_order_id = VenueOrderId::from("DERIBIT-ORDER-1");
+
+        if modify {
+            client
+                .modify_order(ModifyOrder::new(
+                    orders[0].trader_id(),
+                    Some(client.client_id()),
+                    orders[0].strategy_id(),
+                    orders[0].instrument_id(),
+                    client_order_id,
+                    Some(venue_order_id),
+                    Some(Quantity::from("2")),
+                    Some(Price::from("51000")),
+                    None,
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+        } else {
+            client
+                .cancel_order(CancelOrder::new(
+                    orders[0].trader_id(),
+                    Some(client.client_id()),
+                    orders[0].strategy_id(),
+                    orders[0].instrument_id(),
+                    client_order_id,
+                    Some(venue_order_id),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+        }
+
+        let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .expect("denial timed out")
+            .expect("event channel closed");
+        assert!(rx.try_recv().is_err());
+
+        let (kind, reason, venue) = match event {
+            ExecutionEvent::Order(OrderEventAny::ModifyDenied(event)) if modify => {
+                (event.client_order_id, event.reason, event.venue_order_id)
+            }
+            ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) if !modify => {
+                (event.client_order_id, event.reason, event.venue_order_id)
+            }
+            other => panic!("expected one denial, was {other:?}"),
+        };
+
+        assert_eq!(kind, client_order_id);
+        assert_eq!(reason.as_str(), "not authenticated");
+        assert_eq!(venue, Some(venue_order_id));
+    }
+
+    #[tokio::test]
+    async fn shutdown_before_batch_cancel_emits_one_denial() {
+        let (mut client, orders, _) = submission_test_rig(TimeInForce::Gtc);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+        client.abort_pending_tasks();
+        let client_order_id = orders[0].client_order_id();
+        let venue_order_id = VenueOrderId::from("DERIBIT-ORDER-1");
+
+        client
+            .batch_cancel_orders(BatchCancelOrders::new(
+                orders[0].trader_id(),
+                Some(client.client_id()),
+                orders[0].strategy_id(),
+                orders[0].instrument_id(),
+                vec![CancelOrder::new(
+                    orders[0].trader_id(),
+                    Some(client.client_id()),
+                    orders[0].strategy_id(),
+                    orders[0].instrument_id(),
+                    client_order_id,
+                    Some(venue_order_id),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                )],
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        let event = rx.try_recv().expect("batch cancel denial");
+        assert!(rx.try_recv().is_err());
+
+        let ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) = event else {
+            panic!("expected cancel denied, was {event:?}");
+        };
+
+        assert_eq!(event.client_order_id, client_order_id);
+        assert_eq!(event.venue_order_id, Some(venue_order_id));
+        assert_eq!(event.reason.as_str(), REASON_NOT_STARTED);
+    }
+
+    #[tokio::test]
+    async fn shutdown_before_side_cancel_all_emits_one_denial() {
+        let (mut client, orders, cache) = submission_test_rig(TimeInForce::Gtc);
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+        client.emitter.set_sender(tx);
+        let mut order = orders[0].clone();
+        let venue_order_id = VenueOrderId::from("DERIBIT-ORDER-1");
+        let accepted =
+            TestOrderEventStubs::accepted(&order, AccountId::from("DERIBIT-001"), venue_order_id);
+        order.apply(accepted).unwrap();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, None, true)
+            .unwrap();
+        client.abort_pending_tasks();
+
+        client
+            .cancel_all_orders(CancelAllOrders::new(
+                order.trader_id(),
+                Some(client.client_id()),
+                order.strategy_id(),
+                order.instrument_id(),
+                Some(order.order_side()),
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        let event = rx.try_recv().expect("side cancel denial");
+        assert!(rx.try_recv().is_err());
+
+        let ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) = event else {
+            panic!("expected cancel denied, was {event:?}");
+        };
+
+        assert_eq!(event.client_order_id, order.client_order_id());
+        assert_eq!(event.venue_order_id, Some(venue_order_id));
+        assert_eq!(event.reason.as_str(), REASON_NOT_STARTED);
     }
 
     #[rstest]
