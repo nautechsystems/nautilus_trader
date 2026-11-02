@@ -1225,6 +1225,7 @@ impl ExecutionClient for InteractiveBrokersExecutionClient {
         if let Err(e) = stream_account_summary(
             &client,
             self.ib_account,
+            Duration::from_secs(self.config.request_timeout),
             &self.session_tasks,
             send_account_state,
         )
