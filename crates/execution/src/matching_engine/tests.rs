@@ -5066,6 +5066,237 @@ fn test_bar_trade_ticks_without_orders_match_per_tick_processing(
 }
 
 #[rstest]
+#[case::tick("TICK")]
+#[case::tick_imbalance("TICK_IMBALANCE")]
+#[case::tick_runs("TICK_RUNS")]
+#[case::volume("VOLUME")]
+#[case::volume_imbalance("VOLUME_IMBALANCE")]
+#[case::volume_runs("VOLUME_RUNS")]
+#[case::value("VALUE")]
+#[case::value_imbalance("VALUE_IMBALANCE")]
+#[case::value_runs("VALUE_RUNS")]
+#[case::renko("RENKO")]
+fn test_non_time_bars_preserve_execution_state(
+    #[case] aggregation: &str,
+    #[values("LAST", "MID", "BID", "ASK")] price_type: &str,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
+    engine.config.bar_execution = true;
+    engine.book.reset();
+    engine.core.reset();
+    let bar_type = BarType::from(format!(
+        "ETHUSDT-PERP.BINANCE-200-{aggregation}-{price_type}-EXTERNAL"
+    ));
+
+    let mut bar = Bar::new(
+        bar_type,
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1490.00"),
+        Price::from("1494.00"),
+        Quantity::from("100.000"),
+        2.into(),
+        2.into(),
+    );
+
+    engine.process_bar(&bar);
+
+    assert!(engine.execution_bar_types.is_empty());
+    assert!(engine.execution_bar_deltas.is_empty());
+    assert_eq!(
+        (engine.core.last, engine.core.bid, engine.core.ask),
+        (None, None, None)
+    );
+    assert_eq!((engine.last_bar_bid, engine.last_bar_ask), (None, None));
+    assert_eq!(
+        (engine.book.best_bid_price(), engine.book.best_ask_price()),
+        (None, None)
+    );
+    assert!(events.borrow().is_empty());
+
+    let time_bar_type = BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-LAST-EXTERNAL");
+
+    let mut time_bar = Bar::new(
+        time_bar_type,
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1499.00"),
+        Price::from("1502.00"),
+        Quantity::from("100.000"),
+        3.into(),
+        3.into(),
+    );
+    engine.process_bar(&time_bar);
+    let sequence = engine.book.sequence;
+    let id = ClientOrderId::from("NON-TIME-BAR");
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(engine.instrument.id())
+        .client_order_id(id)
+        .side(OrderSide::Buy)
+        .price(Price::from("1495.00"))
+        .quantity(Quantity::from("1.000"))
+        .submit(true)
+        .build();
+    process_cached_order(&mut engine, &mut order, AccountId::from("SIM-001"));
+    events.borrow_mut().clear();
+    bar.ts_event = 4.into();
+    bar.ts_init = 4.into();
+
+    engine.process_bar(&bar);
+
+    assert_eq!(engine.execution_bar_types.len(), 1);
+    assert_eq!(
+        engine.execution_bar_types[&engine.instrument.id()],
+        time_bar_type
+    );
+    assert_eq!(engine.execution_bar_deltas.len(), 1);
+    assert_eq!(
+        engine.execution_bar_deltas[&time_bar_type],
+        time_bar_type.spec().timedelta()
+    );
+    assert_eq!(engine.core.last, Some(Price::from("1502.00")));
+    assert_eq!(engine.book.best_bid_price(), Some(Price::from("1502.00")));
+    assert_eq!(engine.book.best_ask_price(), Some(Price::from("1502.00")));
+    assert_eq!(engine.book.sequence, sequence);
+    assert_eq!((engine.last_bar_bid, engine.last_bar_ask), (None, None));
+    assert_eq!(
+        engine.cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::Accepted
+    );
+    assert!(events.borrow().is_empty());
+
+    time_bar.low = Price::from("1490.00");
+    time_bar.ts_event = 5.into();
+    time_bar.ts_init = 5.into();
+    engine.process_bar(&time_bar);
+
+    let fills: Vec<_> = events
+        .borrow()
+        .iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(id, Price::from("1495.00"), Quantity::from("1.000"))]
+    );
+    assert_eq!(
+        engine.cache.borrow().order(&id).unwrap().status(),
+        OrderStatus::Filled
+    );
+    assert_eq!(engine.core.last, Some(time_bar.close));
+}
+
+#[rstest]
+#[case::finer("1-HOUR-LAST", "1-MINUTE-LAST", true)]
+#[case::coarser("1-MINUTE-LAST", "1-HOUR-LAST", false)]
+#[case::equal_duration("1-MINUTE-LAST", "1-MINUTE-MID", true)]
+fn test_bar_execution_selects_shortest_timeframe(
+    #[case] first_spec: &str,
+    #[case] next_spec: &str,
+    #[case] replaces: bool,
+) {
+    let (mut engine, _) = custom_book_engine(BookType::L1_MBP, false, false);
+    engine.config.bar_execution = true;
+    let first_type = BarType::from(format!("ETHUSDT-PERP.BINANCE-{first_spec}-EXTERNAL"));
+    let next_type = BarType::from(format!("ETHUSDT-PERP.BINANCE-{next_spec}-EXTERNAL"));
+
+    let mut bar = Bar::new(
+        first_type,
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1499.00"),
+        Price::from("1502.00"),
+        Quantity::from("100.000"),
+        2.into(),
+        2.into(),
+    );
+    engine.process_bar(&bar);
+    bar.bar_type = next_type;
+    bar.close = Price::from("1504.00");
+    bar.ts_event = 3.into();
+    bar.ts_init = 3.into();
+    engine.process_bar(&bar);
+
+    assert_eq!(
+        engine.execution_bar_types[&engine.instrument.id()],
+        if replaces { next_type } else { first_type }
+    );
+    assert_eq!(
+        engine.core.last,
+        Some(Price::from(if replaces { "1504.00" } else { "1502.00" }))
+    );
+}
+
+#[rstest]
+fn test_non_time_bar_preserves_pending_quote() {
+    let (mut engine, _) = custom_book_engine(BookType::L1_MBP, false, false);
+    engine.config.bar_execution = true;
+    engine.book.reset();
+    engine.core.reset();
+
+    let bid = Bar::new(
+        BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-BID-EXTERNAL"),
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1499.00"),
+        Price::from("1502.00"),
+        Quantity::from("100.000"),
+        2.into(),
+        2.into(),
+    );
+
+    let ask = Bar::new(
+        BarType::from("ETHUSDT-PERP.BINANCE-1-MINUTE-ASK-EXTERNAL"),
+        Price::from("1501.00"),
+        Price::from("1506.00"),
+        Price::from("1500.00"),
+        Price::from("1503.00"),
+        Quantity::from("200.000"),
+        2.into(),
+        2.into(),
+    );
+
+    let non_time_ask = Bar::new(
+        BarType::from("ETHUSDT-PERP.BINANCE-200-TICK-ASK-EXTERNAL"),
+        Price::from("1000.00"),
+        Price::from("1005.00"),
+        Price::from("999.00"),
+        Price::from("1002.00"),
+        Quantity::from("60.000"),
+        2.into(),
+        2.into(),
+    );
+    engine.process_bar(&bid);
+    engine.process_bar(&non_time_ask);
+
+    assert_eq!(engine.last_bar_bid, Some(bid));
+    assert_eq!(engine.last_bar_ask, None);
+    assert_eq!((engine.core.bid, engine.core.ask), (None, None));
+    assert_eq!(
+        engine.execution_bar_types[&engine.instrument.id()],
+        bid.bar_type
+    );
+
+    engine.process_bar(&ask);
+
+    assert_eq!((engine.last_bar_bid, engine.last_bar_ask), (None, None));
+    assert_eq!(
+        (engine.core.bid, engine.core.ask),
+        (Some(bid.close), Some(ask.close))
+    );
+    assert_eq!(engine.book.best_bid_price(), Some(bid.close));
+    assert_eq!(engine.book.best_ask_price(), Some(ask.close));
+    assert_eq!(engine.book.best_bid_size(), Some(Quantity::from("25.000")));
+    assert_eq!(engine.book.best_ask_size(), Some(Quantity::from("50.000")));
+}
+
+#[rstest]
 fn test_quote_bar_close_restores_market_fill_and_clears_pair() {
     let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
     engine.config.bar_execution = true;

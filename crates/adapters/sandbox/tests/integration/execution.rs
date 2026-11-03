@@ -4935,6 +4935,111 @@ fn test_process_bar_disabled(test_context: TestContext, instrument: InstrumentAn
 }
 
 #[rstest]
+#[case::tick("TICK")]
+#[case::volume("VOLUME")]
+#[case::value("VALUE")]
+fn test_non_time_bars_preserve_time_bar_fills(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] aggregation: &str,
+    #[values(false, true)] via_bus: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.bar_execution = true;
+        });
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    context.client.start().unwrap();
+    let received = Rc::new(RefCell::new(Vec::new()));
+
+    let handler = {
+        let received = received.clone();
+        TypedHandler::from(move |bar: &Bar| received.borrow_mut().push(*bar))
+    };
+
+    if via_bus {
+        msgbus::subscribe_bars("data.bars.*".into(), handler.clone(), Some(0));
+    }
+
+    let order = resting_limit(&instrument, "NON-TIME-BAR", "1495.00", 1.into());
+    submit_to_client(&context, trader_id, &order);
+    let _ = drain_order_events(&mut rx);
+
+    let mut bar = Bar::new(
+        BarType::from(format!(
+            "{}-200-{aggregation}-LAST-EXTERNAL",
+            instrument.id()
+        )),
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1490.00"),
+        Price::from("1494.00"),
+        Quantity::from("100.000"),
+        2.into(),
+        2.into(),
+    );
+
+    if via_bus {
+        msgbus::publish_bar(format!("data.bars.{}", bar.bar_type).into(), &bar);
+    } else {
+        context.client.process_bar(&bar).unwrap();
+    }
+
+    assert_eq!(context.client.matching_engine_count(), 1);
+    assert!(drain_order_events(&mut rx).is_empty());
+
+    if via_bus {
+        assert_eq!(*received.borrow(), vec![bar]);
+    }
+
+    let non_time_bar = bar;
+    bar.bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()));
+    bar.ts_event = 3.into();
+    bar.ts_init = 3.into();
+    if via_bus {
+        msgbus::publish_bar(format!("data.bars.{}", bar.bar_type).into(), &bar);
+    } else {
+        context.client.process_bar(&bar).unwrap();
+    }
+
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(
+            order.client_order_id(),
+            Price::from("1495.00"),
+            Quantity::from("1.000")
+        )]
+    );
+
+    if via_bus {
+        assert_eq!(*received.borrow(), vec![non_time_bar, bar]);
+        msgbus::unsubscribe_bars("data.bars.*".into(), &handler);
+    }
+
+    context.client.stop().unwrap();
+}
+
+#[rstest]
 fn test_process_bar_drops_precision_mismatch(
     trader_id: TraderId,
     account_id: AccountId,

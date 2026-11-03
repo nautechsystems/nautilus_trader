@@ -1976,12 +1976,12 @@ impl OrderMatchingEngine {
     /// Processes a bar and simulates market dynamics by creating synthetic ticks.
     ///
     /// For L1 books with bar execution enabled, generates synthetic trade or quote
-    /// ticks from bar OHLC data to drive order matching.
+    /// ticks from externally aggregated time bars to drive order matching. External
+    /// non-time bars are skipped with a warning.
     ///
     /// # Panics
     ///
-    /// Panics if:
-    /// - The bar type configuration is missing a time delta.
+    /// Panics if the time-bar step overflows interval arithmetic.
     pub fn process_bar(&mut self, bar: &Bar) {
         log::debug!("Processing {bar}");
 
@@ -2042,16 +2042,23 @@ impl OrderMatchingEngine {
             return;
         }
 
-        let execution_bar_type =
-            if let Some(execution_bar_type) = self.execution_bar_types.get(&bar.instrument_id()) {
-                execution_bar_type.to_owned()
-            } else {
+        if !bar_type.spec().is_time_aggregated() {
+            log::warn!(
+                "Cannot process bar {bar_type}, bar execution requires time-aggregated bars",
+            );
+            return;
+        }
+
+        let execution_bar_type = match self.execution_bar_types.get(&bar.instrument_id()) {
+            Some(execution_bar_type) => *execution_bar_type,
+            None => {
                 self.execution_bar_types
                     .insert(bar.instrument_id(), bar_type);
                 self.execution_bar_deltas
                     .insert(bar_type, bar_type.spec().timedelta());
                 bar_type
-            };
+            }
+        };
 
         if execution_bar_type != bar_type {
             let bar_type_timedelta = *self
@@ -2059,12 +2066,12 @@ impl OrderMatchingEngine {
                 .entry(bar_type)
                 .or_insert_with(|| bar_type.spec().timedelta());
 
-            if self.execution_bar_deltas.get(&execution_bar_type).unwrap() >= &bar_type_timedelta {
-                self.execution_bar_types
-                    .insert(bar_type.instrument_id(), bar_type);
-            } else {
+            if self.execution_bar_deltas.get(&execution_bar_type).unwrap() < &bar_type_timedelta {
                 return;
             }
+
+            self.execution_bar_types
+                .insert(bar_type.instrument_id(), bar_type);
         }
 
         match price_type {
