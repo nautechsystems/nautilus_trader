@@ -26,13 +26,17 @@ use nautilus_common::{
     live::{
         dst::time::{self, Duration, Instant},
         runner::get_exec_event_sender,
+        sender::EventSender,
     },
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
+            SubmitOrder, SubmitOrderList,
+        },
     },
 };
 use nautilus_core::{
@@ -237,6 +241,10 @@ impl OKXExecutionClient {
             session_tasks: TaskGroup::new(),
             pending_tasks: TaskGroup::new(),
         })
+    }
+
+    pub(crate) fn set_event_sender(&mut self, sender: EventSender<ExecutionEvent>) {
+        self.emitter.set_sender(sender);
     }
 
     fn derive_default_trade_mode(
@@ -4123,13 +4131,14 @@ mod tests {
     };
     use nautilus_common::{
         cache::Cache,
+        live::runner::replace_exec_event_sender,
         messages::{ExecutionEvent, ExecutionReport as CommonExecutionReport},
         testing::wait_until_async,
     };
     use nautilus_core::{AtomicMap, UUID4};
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderStatus, TriggerType},
-        events::{OrderEventAny, OrderInitialized},
+        events::{OrderEventAny, OrderInitialized, order::spec::OrderSubmittedSpec},
         identifiers::{OrderListId, Symbol, TradeId, TraderId},
         instruments::{
             CryptoFuture, Instrument,
@@ -4813,6 +4822,49 @@ mod tests {
 
     fn build_test_exec_client() -> OKXExecutionClient {
         build_test_exec_client_with_cache().0
+    }
+
+    #[rstest]
+    fn test_start_replaces_sender_for_existing_emitter_clone() {
+        std::thread::spawn(|| {
+            let mut client = build_test_exec_client();
+            let emitter = client.emitter.clone();
+            let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+            client.set_event_sender(sender.into());
+            let event = OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder()
+                    .client_order_id(ClientOrderId::from("O-CLONED"))
+                    .build(),
+            );
+            emitter.send_order_event(event.clone());
+
+            let ExecutionEvent::Order(received) = receiver.try_recv().unwrap() else {
+                panic!("Expected order event");
+            };
+
+            assert_eq!(received, event);
+
+            let (sender_current, mut receiver_current) = tokio::sync::mpsc::unbounded_channel();
+            replace_exec_event_sender(sender_current);
+            client.start().unwrap();
+            emitter.send_order_event(event.clone());
+
+            let ExecutionEvent::Order(received) = receiver_current.try_recv().unwrap() else {
+                panic!("Expected order event");
+            };
+
+            assert_eq!(received, event);
+            assert_eq!(
+                receiver.try_recv().unwrap_err(),
+                tokio::sync::mpsc::error::TryRecvError::Disconnected
+            );
+            assert_eq!(
+                receiver_current.try_recv().unwrap_err(),
+                tokio::sync::mpsc::error::TryRecvError::Empty
+            );
+        })
+        .join()
+        .unwrap();
     }
 
     #[rstest]
