@@ -1220,3 +1220,39 @@ async fn test_instrument_pagination_ends_on_a_cursor_cycle() {
         "the pages read before the cycle should still be returned"
     );
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_instrument_status_pagination_rejects_a_cursor_cycle() {
+    let (addr, log) = start_cycling_instruments_server().await.unwrap();
+    let client = BybitHttpClient::new(
+        Some(format!("http://{addr}")),
+        60,
+        0,
+        1000,
+        10_000,
+        5_000,
+        None,
+    )
+    .unwrap();
+
+    let result = tokio::time::timeout(
+        tokio::time::Duration::from_secs(5),
+        client.request_instrument_statuses(BybitProductType::Linear),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "/v5/market/instruments-info pagination repeated cursor \"cursor-a\"",
+    );
+    assert_eq!(
+        *log.cursors.lock().await,
+        vec![
+            None,
+            Some("cursor-a".to_string()),
+            Some("cursor-b".to_string())
+        ],
+    );
+}

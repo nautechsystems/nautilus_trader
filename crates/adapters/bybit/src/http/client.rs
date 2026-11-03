@@ -3405,7 +3405,7 @@ impl BybitHttpClient {
                 category: product_type,
                 symbol: symbol.clone(),
                 status: None,
-                base_coin: base_coin.map(|u| u.to_string()),
+                base_coin: instrument_base_coin(product_type, symbol.as_deref(), base_coin),
                 limit: Some(1000),
                 cursor: cursor.clone(),
             };
@@ -3455,6 +3455,51 @@ impl BybitHttpClient {
         &self,
         product_type: BybitProductType,
     ) -> anyhow::Result<AHashMap<InstrumentId, MarketStatusAction>> {
+        match product_type {
+            BybitProductType::Spot => {
+                self.paginate_instrument_statuses::<BybitInstrumentSpot, _>(product_type, |def| {
+                    (def.symbol, def.status.into())
+                })
+                .await
+            }
+            BybitProductType::Linear => {
+                self.paginate_instrument_statuses::<BybitInstrumentLinear, _>(product_type, |def| {
+                    let scheduled = def.contract_type == BybitContractType::LinearPerpetual
+                        && def.delivery_time != "0";
+                    (def.symbol, perp_status(def.status.into(), scheduled))
+                })
+                .await
+            }
+            BybitProductType::Inverse => {
+                self.paginate_instrument_statuses::<BybitInstrumentInverse, _>(
+                    product_type,
+                    |def| {
+                        let scheduled = def.contract_type == BybitContractType::InversePerpetual
+                            && def.delivery_time != "0";
+                        (def.symbol, perp_status(def.status.into(), scheduled))
+                    },
+                )
+                .await
+            }
+            BybitProductType::Option => {
+                self.paginate_instrument_statuses::<BybitInstrumentOption, _>(product_type, |def| {
+                    (def.symbol, def.status.into())
+                })
+                .await
+            }
+        }
+    }
+
+    async fn paginate_instrument_statuses<D, F>(
+        &self,
+        product_type: BybitProductType,
+        mut parse: F,
+    ) -> anyhow::Result<AHashMap<InstrumentId, MarketStatusAction>>
+    where
+        D: DeserializeOwned,
+        BybitCursorListResponse<D>: BybitResponseCheck,
+        F: FnMut(&D) -> (Ustr, MarketStatusAction),
+    {
         let mut statuses = AHashMap::new();
         let mut cursor: Option<String> = None;
         let mut cursor_walk = CursorWalk::default();
@@ -3464,75 +3509,22 @@ impl BybitHttpClient {
                 category: product_type,
                 symbol: None,
                 status: None,
-                base_coin: None,
+                base_coin: instrument_base_coin(product_type, None, None),
                 limit: Some(1000),
                 cursor: cursor.clone(),
             };
 
-            match product_type {
-                BybitProductType::Spot => {
-                    let response: BybitCursorListResponse<BybitInstrumentSpot> =
-                        self.inner.get_instruments(&params).await?;
-
-                    for def in &response.result.list {
-                        let symbol = make_bybit_symbol(def.symbol, product_type);
-                        let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
-                        statuses.insert(id, MarketStatusAction::from(def.status));
-                    }
-                    cursor = response.result.next_page_cursor;
-                }
-                BybitProductType::Linear => {
-                    let response: BybitCursorListResponse<BybitInstrumentLinear> =
-                        self.inner.get_instruments(&params).await?;
-
-                    for def in &response.result.list {
-                        let symbol = make_bybit_symbol(def.symbol, product_type);
-                        let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
-                        let status = MarketStatusAction::from(def.status);
-                        if status == MarketStatusAction::Trading
-                            && def.contract_type == BybitContractType::LinearPerpetual
-                            && def.delivery_time != "0"
-                        {
-                            statuses.insert(id, MarketStatusAction::PreClose);
-                        } else {
-                            statuses.insert(id, status);
-                        }
-                    }
-                    cursor = response.result.next_page_cursor;
-                }
-                BybitProductType::Inverse => {
-                    let response: BybitCursorListResponse<BybitInstrumentInverse> =
-                        self.inner.get_instruments(&params).await?;
-
-                    for def in &response.result.list {
-                        let symbol = make_bybit_symbol(def.symbol, product_type);
-                        let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
-                        let status = MarketStatusAction::from(def.status);
-                        if status == MarketStatusAction::Trading
-                            && def.contract_type == BybitContractType::InversePerpetual
-                            && def.delivery_time != "0"
-                        {
-                            statuses.insert(id, MarketStatusAction::PreClose);
-                        } else {
-                            statuses.insert(id, status);
-                        }
-                    }
-                    cursor = response.result.next_page_cursor;
-                }
-                BybitProductType::Option => {
-                    let response: BybitCursorListResponse<BybitInstrumentOption> =
-                        self.inner.get_instruments(&params).await?;
-
-                    for def in &response.result.list {
-                        let symbol = make_bybit_symbol(def.symbol, product_type);
-                        let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
-                        statuses.insert(id, MarketStatusAction::from(def.status));
-                    }
-                    cursor = response.result.next_page_cursor;
-                }
+            let response: BybitCursorListResponse<D> = self.inner.get_instruments(&params).await?;
+            for definition in &response.result.list {
+                let (raw_symbol, status) = parse(definition);
+                let symbol = make_bybit_symbol(raw_symbol, product_type);
+                let id = InstrumentId::new(Symbol::from(symbol), *BYBIT_VENUE);
+                statuses.insert(id, status);
             }
 
-            cursor = cursor_walk.advance(BYBIT_INSTRUMENTS_INFO, cursor)?;
+            cursor =
+                cursor_walk.advance(BYBIT_INSTRUMENTS_INFO, response.result.next_page_cursor)?;
+
             if cursor.is_none() {
                 break;
             }
@@ -3544,8 +3536,8 @@ impl BybitHttpClient {
     /// Request instruments for a given product type.
     ///
     /// When `base_coin` is provided, the request is narrowed to that base coin.
-    /// This is required for `Option`: Bybit's API returns only `BTC` options when
-    /// `baseCoin` is omitted.
+    /// `Option` requests with neither `symbol` nor `base_coin` load all listed
+    /// base coins.
     ///
     /// # Errors
     ///
@@ -3620,15 +3612,6 @@ impl BybitHttpClient {
     )> {
         let ts_init = self.generate_ts_init();
         let mut statuses = AHashMap::new();
-
-        // A perp with a non-zero delivery time is scheduled for delisting.
-        let perp_status = |status: MarketStatusAction, is_scheduled_perp: bool| {
-            if status == MarketStatusAction::Trading && is_scheduled_perp {
-                MarketStatusAction::PreClose
-            } else {
-                status
-            }
-        };
 
         let instruments = match product_type {
             BybitProductType::Spot => {
@@ -4873,6 +4856,25 @@ impl BybitHttpClient {
             .into_iter()
             .next()
             .ok_or_else(|| anyhow::anyhow!("No order returned {context}"))
+    }
+}
+
+fn instrument_base_coin(
+    product_type: BybitProductType,
+    symbol: Option<&str>,
+    base_coin: Option<Ustr>,
+) -> Option<String> {
+    base_coin.map(|coin| coin.to_string()).or_else(|| {
+        (product_type == BybitProductType::Option && symbol.is_none()).then(|| "All".to_string())
+    })
+}
+
+fn perp_status(status: MarketStatusAction, is_scheduled_perp: bool) -> MarketStatusAction {
+    // A perp with a non-zero delivery time is scheduled for delisting
+    if status == MarketStatusAction::Trading && is_scheduled_perp {
+        MarketStatusAction::PreClose
+    } else {
+        status
     }
 }
 

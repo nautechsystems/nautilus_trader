@@ -54,11 +54,11 @@ use nautilus_core::{UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
     enums::{
-        AvgPxReconciliation, LiquiditySide, OrderSide, OrderStatus, OrderType, PositionSide,
-        TimeInForce, TriggerType,
+        AvgPxReconciliation, LiquiditySide, MarketStatusAction, OrderSide, OrderStatus, OrderType,
+        PositionSide, TimeInForce, TriggerType,
     },
     identifiers::{AccountId, ClientOrderId, InstrumentId, Symbol, TradeId, VenueOrderId},
-    instruments::{CurrencyPair, InstrumentAny},
+    instruments::{CurrencyPair, Instrument, InstrumentAny},
     reports::FillReport,
     types::{Currency, Money, Price, Quantity},
 };
@@ -66,6 +66,7 @@ use nautilus_network::http::HttpClient;
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, json};
+use ustr::Ustr;
 
 type SettleCoinQueries = Arc<tokio::sync::Mutex<Vec<(String, Option<String>)>>>;
 
@@ -1524,6 +1525,290 @@ async fn test_get_instruments_option() {
 
     let response = client.get_instruments_option(&params).await.unwrap();
     assert!(!response.result.list.is_empty());
+}
+
+#[rstest]
+#[case::instruments("instruments")]
+#[case::statuses("statuses")]
+#[case::combined("combined")]
+#[tokio::test]
+async fn test_option_bulk_instruments_paginate_all_base_coins(#[case] path: &str) {
+    let queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get({
+            let queries = queries.clone();
+            move |Query(params): Query<HashMap<String, String>>| {
+                let queries = queries.clone();
+                async move {
+                    queries.lock().await.push(params.clone());
+                    let mut response = load_test_data("http_get_instruments_option.json");
+                    if params.contains_key("cursor") {
+                        response["result"]["list"][0]["symbol"] = json!("SOL-26JUN26-200-P");
+                        response["result"]["list"][0]["baseCoin"] = json!("SOL");
+                    } else {
+                        response["result"]["nextPageCursor"] = json!("second-page");
+                    }
+
+                    Json(response)
+                }
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let (instruments, statuses) = match path {
+        "instruments" => (
+            client
+                .request_instruments(BybitProductType::Option, None, None)
+                .await
+                .unwrap(),
+            None,
+        ),
+        "statuses" => (
+            Vec::new(),
+            Some(
+                client
+                    .request_instrument_statuses(BybitProductType::Option)
+                    .await
+                    .unwrap(),
+            ),
+        ),
+        "combined" => {
+            let (instruments, statuses) = client
+                .request_instruments_with_statuses(BybitProductType::Option)
+                .await
+                .unwrap();
+            (instruments, Some(statuses))
+        }
+        _ => unreachable!(),
+    };
+
+    server.abort();
+
+    let expected_ids = vec![
+        InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT"),
+        InstrumentId::from("SOL-26JUN26-200-P-OPTION.BYBIT"),
+    ];
+
+    if path != "statuses" {
+        assert_eq!(
+            instruments.iter().map(|i| i.id()).collect::<Vec<_>>(),
+            expected_ids
+        );
+    }
+
+    if let Some(statuses) = statuses {
+        assert_eq!(statuses.len(), expected_ids.len());
+
+        for id in expected_ids {
+            assert_eq!(statuses[&id], MarketStatusAction::Trading);
+        }
+    }
+
+    let first = HashMap::from([
+        ("category".to_string(), "option".to_string()),
+        ("baseCoin".to_string(), "All".to_string()),
+        ("limit".to_string(), "1000".to_string()),
+    ]);
+    let mut second = first.clone();
+    second.insert("cursor".to_string(), "second-page".to_string());
+    assert_eq!(*queries.lock().await, vec![first, second]);
+}
+
+#[rstest]
+#[case::spot(
+    BybitProductType::Spot,
+    "Trading",
+    "0",
+    "",
+    MarketStatusAction::Trading
+)]
+#[case::option(
+    BybitProductType::Option,
+    "Delivering",
+    "123",
+    "",
+    MarketStatusAction::PreClose
+)]
+#[case::linear_perpetual(
+    BybitProductType::Linear,
+    "Trading",
+    "0",
+    "LinearPerpetual",
+    MarketStatusAction::Trading
+)]
+#[case::linear_scheduled(
+    BybitProductType::Linear,
+    "Trading",
+    "123",
+    "LinearPerpetual",
+    MarketStatusAction::PreClose
+)]
+#[case::linear_prelaunch(
+    BybitProductType::Linear,
+    "PreLaunch",
+    "123",
+    "LinearPerpetual",
+    MarketStatusAction::PreOpen
+)]
+#[case::linear_future(
+    BybitProductType::Linear,
+    "Trading",
+    "123",
+    "LinearFutures",
+    MarketStatusAction::Trading
+)]
+#[case::inverse_perpetual(
+    BybitProductType::Inverse,
+    "Trading",
+    "0",
+    "InversePerpetual",
+    MarketStatusAction::Trading
+)]
+#[case::inverse_scheduled(
+    BybitProductType::Inverse,
+    "Trading",
+    "123",
+    "InversePerpetual",
+    MarketStatusAction::PreClose
+)]
+#[case::inverse_prelaunch(
+    BybitProductType::Inverse,
+    "PreLaunch",
+    "123",
+    "InversePerpetual",
+    MarketStatusAction::PreOpen
+)]
+#[case::inverse_future(
+    BybitProductType::Inverse,
+    "Trading",
+    "123",
+    "InverseFutures",
+    MarketStatusAction::Trading
+)]
+#[tokio::test]
+async fn test_instrument_statuses_preserve_market_actions(
+    #[case] product_type: BybitProductType,
+    #[case] status: &str,
+    #[case] delivery_time: &str,
+    #[case] contract_type: &str,
+    #[case] expected: MarketStatusAction,
+) {
+    let mut response = load_test_data(&format!(
+        "http_get_instruments_{}.json",
+        product_type.as_str(),
+    ));
+    response["result"]["list"]
+        .as_array_mut()
+        .unwrap()
+        .truncate(1);
+    let definition = &mut response["result"]["list"][0];
+    let id = InstrumentId::from(format!(
+        "{}{}.BYBIT",
+        definition["symbol"].as_str().unwrap(),
+        product_type.suffix(),
+    ));
+    definition["status"] = json!(status);
+    definition["deliveryTime"] = json!(delivery_time);
+    definition["contractType"] = json!(contract_type);
+    definition["priceFilter"]["tickSize"] = json!("not-a-price");
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get(move || {
+            let response = response.clone();
+            async move { Json(response) }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let statuses = client
+        .request_instrument_statuses(product_type)
+        .await
+        .unwrap();
+    server.abort();
+
+    assert_eq!(statuses, [(id, expected)].into_iter().collect());
+}
+
+#[rstest]
+#[case::spot(BybitProductType::Spot, None, None)]
+#[case::linear(BybitProductType::Linear, None, None)]
+#[case::inverse(BybitProductType::Inverse, None, None)]
+#[case::base_coin(BybitProductType::Option, None, Some("ETH"))]
+#[case::symbol(BybitProductType::Option, Some("ETH-26JUN26-16000-P"), None)]
+#[case::symbol_and_base_coin(BybitProductType::Option, Some("ETH-26JUN26-16000-P"), Some("ETH"))]
+#[tokio::test]
+async fn test_instrument_filters_preserved(
+    #[case] product_type: BybitProductType,
+    #[case] symbol: Option<&str>,
+    #[case] base_coin: Option<&str>,
+) {
+    let queries = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+
+    let app = Router::new().route(
+        "/v5/market/instruments-info",
+        get({
+            let queries = queries.clone();
+            move |Query(params): Query<HashMap<String, String>>| {
+                let queries = queries.clone();
+                async move {
+                    queries.lock().await.push(params);
+                    let mut response = load_test_data("http_get_instruments_option.json");
+                    response["result"]["list"] = json!([]);
+                    Json(response)
+                }
+            }
+        }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base_url = format!("http://{}", listener.local_addr().unwrap());
+
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let client = BybitHttpClient::new(Some(base_url), 60, 0, 1000, 10_000, 5_000, None).unwrap();
+
+    let instruments = client
+        .request_instruments(
+            product_type,
+            symbol.map(str::to_string),
+            base_coin.map(Ustr::from),
+        )
+        .await
+        .unwrap();
+    server.abort();
+
+    let category = serde_json::to_value(product_type).unwrap();
+    let mut expected = HashMap::from([
+        (
+            "category".to_string(),
+            category.as_str().unwrap().to_string(),
+        ),
+        ("limit".to_string(), "1000".to_string()),
+    ]);
+
+    if let Some(symbol) = symbol {
+        expected.insert("symbol".to_string(), symbol.to_string());
+    }
+
+    if let Some(base_coin) = base_coin {
+        expected.insert("baseCoin".to_string(), base_coin.to_string());
+    }
+
+    assert_eq!(instruments, Vec::new());
+    assert_eq!(*queries.lock().await, vec![expected]);
 }
 
 #[rstest]

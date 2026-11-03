@@ -693,6 +693,10 @@ and NVDA, settled in USDT or USDC.
 The adapter uses the `CryptoOption` instrument type and the `-OPTION` symbol
 suffix. See the [symbology section](#symbology) for the full symbol format.
 
+With `OPTION` in `product_types`, the adapter loads options for every listed base coin,
+including BTC, ETH, and SOL, on mainnet, testnet, and demo. Instrument refreshes and
+status updates cover the same base coins.
+
 #### Options data
 
 The adapter supports real-time options market data through the WebSocket ticker
