@@ -32,6 +32,7 @@ use std::{
     },
 };
 
+use dashmap::{DashMap, mapref::entry::Entry};
 use nautilus_common::live::dst::time;
 use nautilus_core::{AtomicTime, string::secret::REDACTED};
 pub use nautilus_live::book::snapshot::SnapshotGate;
@@ -54,7 +55,7 @@ use super::{
         OKXOrderMsg, OKXSubscription, OKXSubscriptionArg, OKXWebSocketArg, OKXWebSocketError,
         OKXWsFrame, OKXWsMessage,
     },
-    subscription::{topic_from_subscription_arg, topic_from_websocket_arg},
+    subscription::{is_topic_subscribed, topic_from_subscription_arg, topic_from_websocket_arg},
 };
 use crate::{
     common::{
@@ -64,6 +65,9 @@ use crate::{
     },
     websocket::client::OKX_RATE_LIMIT_KEY_SUBSCRIPTION,
 };
+
+const SUBSCRIBE_ERROR_PREFIX: &str = "Subscribe failed, wrong URL or channel:";
+const UNSUBSCRIBE_ERROR_PREFIX: &str = "Unsubscribe failed, wrong URL or channel:";
 
 /// Commands sent from the outer client to the inner message handler.
 pub enum HandlerCommand {
@@ -146,6 +150,7 @@ pub(super) struct OKXWsFeedHandler {
     auth_tracker: AuthTracker,
     requires_auth: bool,
     subscriptions_state: SubscriptionState,
+    subscriptions: Arc<DashMap<String, OKXSubscriptionArg>>,
     retry_manager: RetryManager<OKXWsError>,
     pending_messages: VecDeque<OKXWsMessage>,
     pending_sends: VecDeque<PendingSend>,
@@ -165,6 +170,7 @@ impl OKXWsFeedHandler {
         auth_tracker: AuthTracker,
         requires_auth: bool,
         subscriptions_state: SubscriptionState,
+        subscriptions: Arc<DashMap<String, OKXSubscriptionArg>>,
         clock: &'static AtomicTime,
     ) -> Self {
         Self {
@@ -177,6 +183,7 @@ impl OKXWsFeedHandler {
             auth_tracker,
             requires_auth,
             subscriptions_state,
+            subscriptions,
             retry_manager: create_websocket_retry_manager(),
             pending_messages: VecDeque::new(),
             pending_sends: VecDeque::new(),
@@ -601,7 +608,13 @@ impl OKXWsFeedHandler {
             }
             OKXSubscriptionEvent::Unsubscribe => {
                 if success {
+                    let entry = self.subscriptions.entry(topic.clone());
                     self.subscriptions_state.confirm_unsubscribe(&topic);
+                    if !is_topic_subscribed(&self.subscriptions_state, &topic)
+                        && let Entry::Occupied(entry) = entry
+                    {
+                        entry.remove();
+                    }
                 } else {
                     log::warn!(
                         "Unsubscription failed - restoring subscription: \
@@ -618,6 +631,19 @@ impl OKXWsFeedHandler {
 
     fn handle_subscription_error(&self, arg: &OKXWebSocketArg, code: &str, msg: &str) -> bool {
         let topic = topic_from_websocket_arg(arg);
+
+        let event = if msg.starts_with(SUBSCRIBE_ERROR_PREFIX) {
+            Some(OKXSubscriptionEvent::Subscribe)
+        } else if msg.starts_with(UNSUBSCRIBE_ERROR_PREFIX) {
+            Some(OKXSubscriptionEvent::Unsubscribe)
+        } else {
+            None
+        };
+
+        if let Some(event) = event {
+            return self.handle_subscription_ack(&event, arg, Some(code), Some(msg));
+        }
+
         let event = if self
             .subscriptions_state
             .pending_unsubscribe_topics()
@@ -712,6 +738,7 @@ impl OKXWsFeedHandler {
         self.send_with_retry(json_txt, Some(OKX_RATE_LIMIT_KEY_SUBSCRIPTION.as_slice()))
             .await
             .map_err(|e| anyhow::anyhow!("Failed to send unsubscription after retries: {e}"))?;
+
         Ok(())
     }
 
@@ -864,10 +891,15 @@ fn error_frame_level(arg: Option<&OKXWebSocketArg>, code: &str, msg: &str) -> lo
 }
 
 fn subscription_arg_from_error_message(msg: &str) -> Option<OKXWebSocketArg> {
-    let descriptor = msg
-        .strip_prefix("Wrong URL or channel:")?
-        .split_whitespace()
-        .next()?;
+    let descriptor = [
+        "Wrong URL or channel:",
+        SUBSCRIBE_ERROR_PREFIX,
+        UNSUBSCRIBE_ERROR_PREFIX,
+    ]
+    .into_iter()
+    .find_map(|prefix| msg.strip_prefix(prefix))?
+    .split_whitespace()
+    .next()?;
     let mut fields = descriptor.split(',');
     let channel = fields.next()?;
     let mut arg = Map::new();
@@ -1091,6 +1123,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         )
     }
@@ -1131,6 +1164,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
         let client_order_id = ClientOrderId::from("O-disconnected");
@@ -1183,6 +1217,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
 
@@ -1250,6 +1285,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
 
@@ -1304,6 +1340,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
         handler.inner = Some(Arc::new(client));
@@ -1409,6 +1446,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
         handler.inner = Some(Arc::new(client));
@@ -1472,6 +1510,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
         handler.inner = Some(Arc::new(client));
@@ -1593,6 +1632,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
         handler.inner = Some(Arc::new(client));
@@ -1813,11 +1853,149 @@ mod tests {
     }
 
     #[rstest]
-    fn test_subscription_arg_from_error_message_matches_mainnet_shape() {
-        let msg = "Wrong URL or channel:books,instId:BTC-USDT-SWAP doesn't exist. Please use the \
-                   correct URL, channel and parameters referring to API document.";
+    fn stale_unsubscribe_ack_keeps_resubscribed_arguments() {
+        let handler = create_handler();
 
-        let arg = subscription_arg_from_error_message(msg).unwrap();
+        let arg = OKXSubscriptionArg {
+            channel: OKXWsChannel::Trades,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(Ustr::from("BTC-USDT")),
+        };
+
+        let topic = topic_from_subscription_arg(&arg);
+        handler.subscriptions.insert(topic.clone(), arg);
+        handler.subscriptions_state.mark_subscribe(&topic);
+        handler.subscriptions_state.confirm_subscribe(&topic);
+        handler.subscriptions_state.mark_unsubscribe(&topic);
+        handler.subscriptions_state.mark_subscribe(&topic);
+
+        let acknowledgment = OKXWebSocketArg {
+            channel: OKXWsChannel::Trades,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(Ustr::from("BTC-USDT")),
+            bar: None,
+        };
+
+        let rejected = handler.handle_subscription_ack(
+            &OKXSubscriptionEvent::Unsubscribe,
+            &acknowledgment,
+            Some("0"),
+            None,
+        );
+        let retained = handler
+            .subscriptions
+            .get(&topic)
+            .expect("resubscribed arguments");
+
+        assert!(!rejected);
+        assert_eq!(handler.subscriptions_state.all_topics(), vec![topic]);
+        assert_eq!(retained.channel, OKXWsChannel::Trades);
+        assert_eq!(retained.inst_id, Some(Ustr::from("BTC-USDT")));
+        assert_eq!(retained.inst_type, None);
+        assert_eq!(retained.inst_family, None);
+    }
+
+    #[rstest]
+    fn delayed_subscribe_error_does_not_restore_canceled_subscription() {
+        let handler = create_handler();
+
+        let arg = OKXWebSocketArg {
+            channel: OKXWsChannel::Trades,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(Ustr::from("BTC-USDT")),
+            bar: None,
+        };
+
+        let topic = topic_from_websocket_arg(&arg);
+        handler.subscriptions.insert(
+            topic.clone(),
+            OKXSubscriptionArg {
+                channel: arg.channel.clone(),
+                inst_type: None,
+                inst_family: None,
+                inst_id: arg.inst_id,
+            },
+        );
+
+        handler.subscriptions_state.mark_subscribe(&topic);
+        handler.subscriptions_state.mark_unsubscribe(&topic);
+
+        let subscribe_failed = handler.handle_subscription_error(
+            &arg,
+            "60018",
+            "Subscribe failed, wrong URL or channel:trades,instId:BTC-USDT doesn't exist.",
+        );
+        let pending = handler.subscriptions_state.pending_unsubscribe_topics();
+        let active = handler.subscriptions_state.all_topics();
+        handler.handle_subscription_ack(&OKXSubscriptionEvent::Unsubscribe, &arg, Some("0"), None);
+
+        assert!(subscribe_failed);
+        assert_eq!(pending, vec![topic.clone()]);
+        assert_eq!(active, Vec::<String>::new());
+        assert!(handler.subscriptions_state.all_topics().is_empty());
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
+        assert!(!handler.subscriptions.contains_key(&topic));
+    }
+
+    #[rstest]
+    fn delayed_unsubscribe_error_does_not_fail_new_subscribe() {
+        let handler = create_handler();
+
+        let arg = OKXWebSocketArg {
+            channel: OKXWsChannel::Books,
+            inst_type: None,
+            inst_family: None,
+            inst_id: Some(Ustr::from("BTC-USDT")),
+            bar: None,
+        };
+
+        let topic = topic_from_websocket_arg(&arg);
+        handler.subscriptions_state.mark_subscribe(&topic);
+        handler.subscriptions_state.mark_unsubscribe(&topic);
+        handler.subscriptions_state.mark_subscribe(&topic);
+
+        let subscribe_failed = handler.handle_subscription_error(
+            &arg,
+            "60035",
+            "Unsubscribe failed, wrong URL or channel:books,instId:BTC-USDT doesn't exist.",
+        );
+
+        assert!(!subscribe_failed);
+        assert_eq!(handler.subscriptions_state.all_topics(), vec![topic]);
+        assert_eq!(handler.subscriptions_state.len(), 1);
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    #[case("Wrong URL or channel:")]
+    #[case("Subscribe failed, wrong URL or channel:")]
+    #[case("Unsubscribe failed, wrong URL or channel:")]
+    fn test_subscription_arg_from_error_message_matches_mainnet_shape(#[case] prefix: &str) {
+        let msg = format!(
+            "{prefix}books,instId:BTC-USDT-SWAP doesn't exist. Please use the \
+                   correct URL, channel and parameters referring to API document."
+        );
+
+        let arg = subscription_arg_from_error_message(&msg).unwrap();
 
         assert_eq!(arg.channel, OKXWsChannel::Books);
         assert_eq!(arg.inst_id, Some(Ustr::from("BTC-USDT-SWAP")));
@@ -2048,6 +2226,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
         handler.inner = Some(Arc::new(client));
@@ -2511,6 +2690,7 @@ mod tests {
             AuthTracker::new(),
             false,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
         handler.inner = Some(Arc::new(client));
@@ -2638,6 +2818,7 @@ mod tests {
             AuthTracker::new(),
             true,
             SubscriptionState::new(OKX_WS_TOPIC_DELIMITER),
+            Arc::new(DashMap::new()),
             get_atomic_clock_realtime(),
         );
         client.set_auth_tracker(handler.auth_tracker.clone(), false);

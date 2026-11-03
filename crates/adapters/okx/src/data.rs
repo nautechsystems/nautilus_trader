@@ -1603,8 +1603,8 @@ fn history_event(
     }
 }
 
-/// The event that completes a historical request whose HTTP fetch failed.
-fn history_failure(request_id: UUID4, error: &anyhow::Error) -> DataEvent {
+/// The event that completes a request whose HTTP fetch failed.
+fn request_failure(request_id: UUID4, error: &anyhow::Error) -> DataEvent {
     DataEvent::RequestFailed(DataRequestFailed {
         request_id,
         reason: format!("{error:#}"),
@@ -2869,79 +2869,86 @@ impl DataClient for OKXDataClient {
         self.spawn_task(async move {
             let seq_before = update_lock.write_seq.load(Ordering::SeqCst);
 
-            match http
+            let instrument = match http
                 .request_instrument(instrument_id)
                 .await
                 .context("fetch instrument from API")
             {
-                Ok(instrument) => {
-                    let inst_id = instrument.id();
-                    let symbol = inst_id.symbol.as_str();
-
-                    if instrument.is_spread() {
-                        if !load_spreads {
-                            log::error!(
-                                "Instrument {instrument_id} is a spread but load_spreads is false"
-                            );
-                            return;
-                        }
+                Ok(instrument) => instrument,
+                Err(e) => {
+                    if e.downcast_ref::<OKXInstrumentDefinitionError>().is_some() {
+                        log::warn!("Instrument request skipped: {e:?}");
                     } else {
-                        let inst_type = okx_instrument_type_from_symbol(symbol);
-                        if !instrument_types.contains(&inst_type) {
-                            log::error!(
-                                "Instrument {instrument_id} type {inst_type:?} not in configured types {instrument_types:?}"
-                            );
-                            return;
-                        }
+                        log::error!("Instrument request failed: {e:?}");
                     }
 
-                    if !contract_filter_with_config_types(contract_types.as_ref(), &instrument) {
-                        log::error!(
-                            "Instrument {instrument_id} filtered out by contract_types config"
-                        );
-                        return;
+                    if let Err(e) = sender.send(request_failure(request_id, &e)) {
+                        log::error!("Failed to send instrument request failure: {e}");
                     }
 
-                    {
-                        let _update_guard = update_lock
-                            .mutex
-                            .lock();
-
-                        if update_lock.write_seq.load(Ordering::SeqCst) == seq_before {
-                            cache_instrument_updates(
-                                std::slice::from_ref(&instrument),
-                                &instruments,
-                                &http,
-                                ws_public.as_ref(),
-                                ws_business.as_ref(),
-                                &update_lock,
-                            );
-                        } else {
-                            log::debug!(
-                                "OKX instrument cache changed during request fetch, skipping cache update"
-                            );
-                        }
-                    }
-
-                    let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
-                        request_id,
-                        client_id,
-                        instrument.id(),
-                        instrument,
-                        start_nanos,
-                        end_nanos,
-                        clock.get_time_ns(),
-                        params,
-                    )));
-
-                    if let Err(e) = sender.send(DataEvent::Response(response)) {
-                        log::error!("Failed to send instrument response: {e}");
-                    }
+                    return;
                 }
-                Err(e) if e.downcast_ref::<OKXInstrumentDefinitionError>().is_some() => {
-                    log::warn!("Instrument request skipped: {e:?}");
+            };
+
+            let inst_id = instrument.id();
+            let symbol = inst_id.symbol.as_str();
+
+            if instrument.is_spread() && !load_spreads {
+                log::error!("Instrument {instrument_id} is a spread but load_spreads is false");
+                return;
+            }
+
+            if !instrument.is_spread() {
+                let inst_type = okx_instrument_type_from_symbol(symbol);
+                if !instrument_types.contains(&inst_type) {
+                    log::error!(
+                        "Instrument {instrument_id} type {inst_type:?} not in configured types {instrument_types:?}"
+                    );
+                    return;
                 }
-                Err(e) => log::error!("Instrument request failed: {e:?}"),
+            }
+
+            if !contract_filter_with_config_types(contract_types.as_ref(), &instrument) {
+                log::error!(
+                    "Instrument {instrument_id} filtered out by contract_types config"
+                );
+                return;
+            }
+
+            {
+                let _update_guard = update_lock
+                    .mutex
+                    .lock();
+
+                if update_lock.write_seq.load(Ordering::SeqCst) == seq_before {
+                    cache_instrument_updates(
+                        std::slice::from_ref(&instrument),
+                        &instruments,
+                        &http,
+                        ws_public.as_ref(),
+                        ws_business.as_ref(),
+                        &update_lock,
+                    );
+                } else {
+                    log::debug!(
+                        "OKX instrument cache changed during request fetch, skipping cache update"
+                    );
+                }
+            }
+
+            let response = DataResponse::Instrument(Box::new(InstrumentResponse::new(
+                request_id,
+                client_id,
+                instrument.id(),
+                instrument,
+                start_nanos,
+                end_nanos,
+                clock.get_time_ns(),
+                params,
+            )));
+
+            if let Err(e) = sender.send(DataEvent::Response(response)) {
+                log::error!("Failed to send instrument response: {e}");
             }
         });
 
@@ -2987,7 +2994,13 @@ impl DataClient for OKXDataClient {
                         log::error!("Failed to send book snapshot response: {e}");
                     }
                 }
-                Err(e) => log::error!("Book snapshot request failed: {e:?}"),
+                Err(e) => {
+                    log::error!("Book snapshot request failed: {e:?}");
+
+                    if let Err(e) = sender.send(request_failure(request_id, &e)) {
+                        log::error!("Failed to send book snapshot request failure: {e}");
+                    }
+                }
             }
         });
 
@@ -3033,7 +3046,8 @@ impl DataClient for OKXDataClient {
                 }
                 Err(e) => {
                     log::error!("Trade request failed: {e:?}");
-                    if let Err(e) = sender.send(history_failure(request_id, &e)) {
+
+                    if let Err(e) = sender.send(request_failure(request_id, &e)) {
                         log::error!("Failed to send trades request failure: {e}");
                     }
                 }
@@ -3082,7 +3096,8 @@ impl DataClient for OKXDataClient {
                 }
                 Err(e) => {
                     log::error!("Bar request failed: {e:?}");
-                    if let Err(e) = sender.send(history_failure(request_id, &e)) {
+
+                    if let Err(e) = sender.send(request_failure(request_id, &e)) {
                         log::error!("Failed to send bars request failure: {e}");
                     }
                 }
@@ -3131,7 +3146,8 @@ impl DataClient for OKXDataClient {
                 }
                 Err(e) => {
                     log::error!("Funding rates request failed: {e:?}");
-                    if let Err(e) = sender.send(history_failure(request_id, &e)) {
+
+                    if let Err(e) = sender.send(request_failure(request_id, &e)) {
                         log::error!("Failed to send funding rates request failure: {e}");
                     }
                 }
