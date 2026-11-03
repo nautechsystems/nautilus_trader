@@ -1044,6 +1044,97 @@ async fn test_data_client_subscribe_book_deltas() {
 }
 
 #[rstest]
+#[case::default_25(None, 25)]
+#[case::explicit_100(Some(100), 100)]
+#[tokio::test]
+async fn test_data_client_subscribe_option_book_deltas(
+    #[case] depth: Option<usize>,
+    #[case] expected_depth: usize,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    set_data_event_sender(tx);
+    let mut config = create_test_config(addr);
+    config.product_types = vec![BybitProductType::Option];
+    config.base_url_ws_public = Some(format!("ws://{addr}/v5/public/option"));
+    let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+
+    wait_until_async(
+        || async { *state.connection_count.lock().await > 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while rx.try_recv().is_ok() {}
+
+    let instrument_id = InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT");
+
+    let cmd = SubscribeBookDeltas::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BYBIT_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        depth.and_then(NonZeroUsize::new),
+        false,
+        None,
+        None,
+    );
+    client.subscribe_book_deltas(cmd).unwrap();
+
+    let expected_topic = format!("orderbook.{expected_depth}.ETH-26JUN26-16000-P");
+    wait_until_async(
+        || async {
+            state
+                .subscription_events
+                .lock()
+                .await
+                .contains(&(expected_topic.clone(), true))
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let snapshot = next_book_deltas(&mut rx).await;
+
+    let mut delta = load_test_data("ws_orderbook_delta.json");
+    delta["topic"] = expected_topic.clone().into();
+    delta["data"]["s"] = "ETH-26JUN26-16000-P".into();
+    delta["data"]["b"][0][1] = "2".into();
+    state.book_updates.lock().await.push(delta);
+    let update = next_book_deltas(&mut rx).await;
+    let subscription_events = state.subscription_events.lock().await.clone();
+    client.disconnect().await.unwrap();
+
+    let book_events: Vec<_> = subscription_events
+        .into_iter()
+        .filter(|(topic, _)| topic.starts_with("orderbook."))
+        .collect();
+    assert_eq!(book_events, [(expected_topic, true)]);
+    assert_eq!(snapshot.instrument_id, instrument_id);
+    assert_eq!(snapshot.deltas.len(), 5);
+    assert_eq!(snapshot.deltas[0].action, BookAction::Clear);
+    assert!(
+        snapshot
+            .deltas
+            .iter()
+            .all(|delta| RecordFlag::F_SNAPSHOT.matches(delta.flags))
+    );
+    assert_eq!(update.instrument_id, instrument_id);
+    assert_eq!(update.ts_event, UnixNanos::new(1_709_891_679_500_000_000));
+    assert_eq!(
+        update
+            .deltas
+            .iter()
+            .map(|delta| delta.action)
+            .collect::<Vec<_>>(),
+        [BookAction::Update, BookAction::Delete],
+    );
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_data_client_book_gap_resubscribes_for_fresh_snapshot() {
     let (addr, state) = start_test_server().await.unwrap();

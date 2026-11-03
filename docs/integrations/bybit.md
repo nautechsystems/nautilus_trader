@@ -213,6 +213,9 @@ For SPOT, LINEAR, and INVERSE products, quote subscriptions use Bybit's depth-1 
 snapshots. This feed provides best bid/ask prices and sizes at a documented 10 ms push frequency.
 OPTION quotes use the ticker feed. See the [Bybit order book specification](https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook).
 
+Book delta subscriptions for SPOT, LINEAR, and INVERSE support depths 1, 50, 200, and 1000 and default
+to 50. OPTION subscriptions support depths 25 and 100 and default to 25.
+
 Quotes and depth-1 book subscriptions share one WebSocket topic. Unsubscribing from one leaves the topic
 active while the other is still subscribed. A deeper book subscription uses its own topic alongside the
 depth-1 quote feed, so adding book deltas does not change the quote source. Book deltas only come from the

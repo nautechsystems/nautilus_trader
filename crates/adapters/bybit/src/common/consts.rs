@@ -35,7 +35,9 @@ pub(crate) const BYBIT_NAUTILUS_BROKER_ID: &str = "Qy000878";
 pub(crate) const BYBIT_WS_TOPIC_DELIMITER: char = '.';
 
 pub(crate) const BYBIT_DEFAULT_ORDERBOOK_DEPTH: u32 = 50;
+pub(crate) const BYBIT_OPTION_DEFAULT_ORDERBOOK_DEPTH: u32 = 25;
 pub(crate) const BYBIT_QUOTE_DEPTH: u32 = 1;
 
 // See <https://bybit-exchange.github.io/docs/v5/websocket/public/orderbook>.
 pub(crate) const BYBIT_BOOK_DEPTHS: [u32; 4] = [1, 50, 200, 1000];
+pub(crate) const BYBIT_OPTION_BOOK_DEPTHS: [u32; 2] = [25, 100];
