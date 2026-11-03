@@ -1660,142 +1660,23 @@ impl DeribitWsFeedHandler {
                             order_side,
                             order_type,
                         } => {
-                            if let Some(result) = &response.result {
-                                match serde_json::from_str::<DeribitOrderResponse>(result.get()) {
-                                    Ok(order_response) => {
-                                        let venue_order_id_str = &order_response.order.order_id;
-                                        let venue_order_id =
-                                            VenueOrderId::new(venue_order_id_str.as_str());
-                                        let order_state = &order_response.order.order_state;
-                                        log::debug!(
-                                            "Order response: venue_order_id={venue_order_id}, client_order_id={client_order_id}, state={order_state}"
-                                        );
+                            let submit_context = OrderContext {
+                                client_order_id,
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                order_side,
+                                order_type,
+                                accepted: false,
+                                last_order_signature: None,
+                            };
 
-                                        let mut context = self
-                                            .find_order_context(
-                                                venue_order_id,
-                                                Some(client_order_id),
-                                            )
-                                            .unwrap_or(OrderContext {
-                                                client_order_id,
-                                                trader_id,
-                                                strategy_id,
-                                                instrument_id,
-                                                order_side,
-                                                order_type,
-                                                accepted: false,
-                                                last_order_signature: Some(Self::order_signature(
-                                                    &order_response.order,
-                                                )),
-                                            });
-                                        context.last_order_signature =
-                                            Some(Self::order_signature(&order_response.order));
-                                        self.bind_order_context(venue_order_id, context.clone());
-
-                                        if order_state == "rejected" {
-                                            self.submitted_order_contexts.remove(&client_order_id);
-                                            self.finish_order_context(venue_order_id, &context);
-                                            let due_post_only =
-                                                order_response.order.reject_reason.as_deref()
-                                                    == Some("post_only_reject");
-                                            let reason = sanitize_strategy_reason(
-                                                order_response
-                                                    .order
-                                                    .reject_reason
-                                                    .as_deref()
-                                                    .unwrap_or(""),
-                                            );
-                                            log::warn!(
-                                                "Venue rejected order in result: client_order_id={client_order_id}, reason={reason}"
-                                            );
-                                            return Some(NautilusWsMessage::OrderRejected(
-                                                self.order_rejected(
-                                                    trader_id,
-                                                    strategy_id,
-                                                    instrument_id,
-                                                    client_order_id,
-                                                    &reason,
-                                                    due_post_only,
-                                                ),
-                                            ));
-                                        }
-
-                                        if !order_response.trades.is_empty() {
-                                            let outgoing = self
-                                                .route_user_trades(&order_response.trades, ts_init);
-                                            self.pending_outgoing.extend(outgoing);
-                                        } else if order_state == "filled" {
-                                            log::debug!(
-                                                "Deferring acceptance for fast-filled order until its trade arrives: venue_order_id={venue_order_id}, client_order_id={client_order_id}"
-                                            );
-                                            self.finish_order_context(venue_order_id, &context);
-                                        } else if context.accepted {
-                                            log::trace!(
-                                                "Skipping duplicate OrderAccepted response: venue_order_id={venue_order_id}"
-                                            );
-                                        } else {
-                                            let instrument_name_ustr = Ustr::from(
-                                                order_response.order.instrument_name.as_str(),
-                                            );
-
-                                            if let Some(instrument) =
-                                                self.instruments_cache.get(&instrument_name_ustr)
-                                            {
-                                                if let Some(account_id) = self.account_id {
-                                                    let event =
-                                                        parse_order_accepted_with_client_order_id(
-                                                            &order_response.order,
-                                                            instrument,
-                                                            account_id,
-                                                            trader_id,
-                                                            strategy_id,
-                                                            client_order_id,
-                                                            ts_init,
-                                                        );
-                                                    context.accepted = true;
-                                                    self.bind_order_context(
-                                                        venue_order_id,
-                                                        context,
-                                                    );
-                                                    return Some(NautilusWsMessage::OrderAccepted(
-                                                        event,
-                                                    ));
-                                                } else {
-                                                    log::warn!(
-                                                        "Cannot create OrderAccepted: account_id not set"
-                                                    );
-                                                }
-                                            } else {
-                                                log::warn!(
-                                                    "Instrument {instrument_name_ustr} not found in cache for order response"
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::error!(
-                                            "Failed to parse order response: request_id={request_id}, error={e}"
-                                        );
-                                    }
-                                }
-                            } else if let Some(error) = &response.error {
-                                let (reason, due_post_only) = Self::venue_command_reason(
-                                    error.code,
-                                    &error.message,
-                                    error.data.as_ref(),
-                                )?;
-                                self.submitted_order_contexts.remove(&client_order_id);
-                                return Some(NautilusWsMessage::OrderRejected(
-                                    self.order_rejected(
-                                        trader_id,
-                                        strategy_id,
-                                        instrument_id,
-                                        client_order_id,
-                                        &reason,
-                                        due_post_only,
-                                    ),
-                                ));
-                            }
+                            return self.handle_order_submit_response(
+                                &submit_context,
+                                request_id,
+                                &response,
+                                ts_init,
+                            );
                         }
                         PendingRequestType::Edit {
                             venue_order_id,
@@ -3081,6 +2962,139 @@ impl DeribitWsFeedHandler {
         let _ = self.handle_unsubscribe(book_channels);
     }
 
+    fn handle_order_submit_response(
+        &mut self,
+        submit_context: &OrderContext,
+        request_id: u64,
+        response: &DeribitJsonRpcResponse<Box<RawValue>>,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let client_order_id = submit_context.client_order_id;
+        let trader_id = submit_context.trader_id;
+        let strategy_id = submit_context.strategy_id;
+        let instrument_id = submit_context.instrument_id;
+
+        let Some(result) = &response.result else {
+            let error = response.error.as_ref()?;
+            let (reason, due_post_only) =
+                Self::venue_command_reason(error.code, &error.message, error.data.as_ref())?;
+            self.submitted_order_contexts.remove(&client_order_id);
+            return Some(NautilusWsMessage::OrderRejected(self.order_rejected(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                &reason,
+                due_post_only,
+            )));
+        };
+
+        let order_response = match serde_json::from_str::<DeribitOrderResponse>(result.get()) {
+            Ok(order_response) => order_response,
+            Err(e) => {
+                log::error!("Failed to parse order response: request_id={request_id}, error={e}");
+                return None;
+            }
+        };
+
+        let venue_order_id_str = &order_response.order.order_id;
+        let venue_order_id = VenueOrderId::new(venue_order_id_str.as_str());
+        let order_state = &order_response.order.order_state;
+        log::debug!(
+            "Order response: venue_order_id={venue_order_id}, client_order_id={client_order_id}, state={order_state}"
+        );
+
+        let was_terminal = self.terminal_order_contexts.contains_key(&venue_order_id);
+
+        let mut context = self
+            .find_order_context(venue_order_id, Some(client_order_id))
+            .unwrap_or_else(|| OrderContext {
+                last_order_signature: Some(Self::order_signature(&order_response.order)),
+                ..submit_context.clone()
+            });
+
+        context.last_order_signature = Some(Self::order_signature(&order_response.order));
+        if was_terminal {
+            self.finish_order_context(venue_order_id, &context);
+        } else {
+            self.bind_order_context(venue_order_id, context.clone());
+        }
+
+        if order_state == "rejected" {
+            self.submitted_order_contexts.remove(&client_order_id);
+            self.finish_order_context(venue_order_id, &context);
+            let due_post_only =
+                order_response.order.reject_reason.as_deref() == Some("post_only_reject");
+            let reason = sanitize_strategy_reason(
+                order_response.order.reject_reason.as_deref().unwrap_or(""),
+            );
+            log::warn!(
+                "Venue rejected order in result: client_order_id={client_order_id}, reason={reason}"
+            );
+            return Some(NautilusWsMessage::OrderRejected(self.order_rejected(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                &reason,
+                due_post_only,
+            )));
+        }
+
+        if !order_response.trades.is_empty() {
+            let outgoing = self.route_user_trades(&order_response.trades, ts_init);
+            self.pending_outgoing.extend(outgoing);
+            return None;
+        }
+
+        if order_state == "filled" {
+            log::debug!(
+                "Deferring acceptance for fast-filled order until its trade arrives: venue_order_id={venue_order_id}, client_order_id={client_order_id}"
+            );
+            self.finish_order_context(venue_order_id, &context);
+            return None;
+        }
+
+        if was_terminal {
+            log::debug!(
+                "Skipping OrderAccepted for terminal order: client_order_id={client_order_id}"
+            );
+            return None;
+        }
+
+        if context.accepted {
+            log::trace!(
+                "Skipping duplicate OrderAccepted response: venue_order_id={venue_order_id}"
+            );
+            return None;
+        }
+
+        let instrument_name_ustr = order_response.order.instrument_name;
+
+        let Some(instrument) = self.instruments_cache.get(&instrument_name_ustr) else {
+            log::warn!("Instrument {instrument_name_ustr} not found in cache for order response");
+            return None;
+        };
+
+        let Some(account_id) = self.account_id else {
+            log::warn!("Cannot create OrderAccepted: account_id not set");
+            return None;
+        };
+
+        let event = parse_order_accepted_with_client_order_id(
+            &order_response.order,
+            instrument,
+            account_id,
+            trader_id,
+            strategy_id,
+            client_order_id,
+            ts_init,
+        );
+        context.accepted = true;
+        self.bind_order_context(venue_order_id, context);
+        Some(NautilusWsMessage::OrderAccepted(event))
+    }
+
     fn order_signature(order: &DeribitOrderMsg) -> OrderSignature {
         (order.amount, order.price, order.trigger_price)
     }
@@ -4124,6 +4138,256 @@ mod tests {
             handler
                 .terminal_order_contexts
                 .contains_key(&venue_order_id)
+        );
+    }
+
+    #[rstest]
+    #[case::filled_terminal_first("filled", true)]
+    #[case::cancelled_terminal_first("cancelled", true)]
+    #[case::filled_response_first("filled", false)]
+    #[case::cancelled_response_first("cancelled", false)]
+    #[tokio::test]
+    async fn delayed_open_submit_response_preserves_terminal_context(
+        #[case] terminal_state: &str,
+        #[case] terminal_first: bool,
+    ) {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler.pending_requests.insert(
+            42,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+            },
+        );
+
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "result": { "order": order_data("open", false), "trades": [] }
+        })
+        .to_string();
+
+        let terminal_update = if terminal_state == "filled" {
+            subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade_data()]),
+            )
+        } else {
+            subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("cancelled", false)]),
+            )
+        };
+
+        let mut new_trade = trade_data();
+        new_trade["trade_id"] = serde_json::json!("ETH-2696069");
+        let new_trade_update =
+            subscription("user.trades.any.any.raw", &serde_json::json!([new_trade]));
+        let mut events = Vec::new();
+
+        if terminal_first {
+            handler.process_raw_message(&terminal_update).await;
+            events.extend(handler.pending_outgoing.drain(..));
+            assert!(
+                handler
+                    .terminal_order_contexts
+                    .contains_key(&venue_order_id)
+            );
+
+            let result = handler.process_raw_message(&response).await;
+
+            assert!(result.is_none());
+            events.extend(handler.pending_outgoing.drain(..));
+            assert!(!handler.order_contexts.contains_key(&venue_order_id));
+            assert!(
+                handler
+                    .terminal_order_contexts
+                    .contains_key(&venue_order_id)
+            );
+
+            // Replayed terminal evidence stays suppressed
+            handler.process_raw_message(&terminal_update).await;
+            events.extend(handler.pending_outgoing.drain(..));
+
+            // New trade evidence stays on the tracked terminal path
+            handler.process_raw_message(&new_trade_update).await;
+            events.extend(handler.pending_outgoing.drain(..));
+        } else {
+            let result = handler.process_raw_message(&response).await;
+            events.extend(result);
+            events.extend(handler.pending_outgoing.drain(..));
+            handler.process_raw_message(&terminal_update).await;
+            events.extend(handler.pending_outgoing.drain(..));
+        }
+
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .accepted
+        );
+
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|event| match event {
+                NautilusWsMessage::OrderAccepted(_) => "accepted",
+                NautilusWsMessage::OrderFilled(_) => "filled",
+                NautilusWsMessage::OrderCanceled(_) => "canceled",
+                other => panic!("unexpected message: {other:?}"),
+            })
+            .collect();
+
+        let expected: &[&str] = match (terminal_state, terminal_first) {
+            ("filled", true) => &["accepted", "filled", "filled"],
+            ("cancelled", true) => &["accepted", "canceled", "filled"],
+            ("filled", false) => &["accepted", "filled"],
+            ("cancelled", false) => &["accepted", "canceled"],
+            _ => unreachable!(),
+        };
+
+        assert_eq!(kinds, expected);
+
+        if terminal_first {
+            assert!(matches!(
+                events.last(),
+                Some(NautilusWsMessage::OrderFilled(event))
+                    if event.trade_id == TradeId::from("ETH-2696069")
+            ));
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn delayed_open_submit_response_after_fast_fill_keeps_terminal() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+
+        let context = OrderContext {
+            client_order_id,
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Market,
+            accepted: false,
+            last_order_signature: None,
+        };
+
+        handler
+            .submitted_order_contexts
+            .insert(client_order_id, context.clone());
+        handler.pending_requests.insert(
+            42,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: context.trader_id,
+                strategy_id: context.strategy_id,
+                instrument_id: context.instrument_id,
+                order_side: context.order_side,
+                order_type: context.order_type,
+            },
+        );
+
+        let filled_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "result": { "order": order_data("filled", false), "trades": [] }
+        });
+        handler
+            .process_raw_message(&filled_response.to_string())
+            .await;
+        assert!(
+            !handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .accepted
+        );
+
+        // The delayed open acknowledgement arrives after the fast fill terminalized the order
+        handler.pending_requests.insert(
+            43,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: context.trader_id,
+                strategy_id: context.strategy_id,
+                instrument_id: context.instrument_id,
+                order_side: context.order_side,
+                order_type: context.order_type,
+            },
+        );
+
+        let open_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 43,
+            "result": { "order": order_data("open", false), "trades": [] }
+        });
+
+        let result = handler
+            .process_raw_message(&open_response.to_string())
+            .await;
+
+        assert!(result.is_none());
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            !handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .accepted
+        );
+
+        // Fast-fill acceptance ordering is preserved when the trade arrives
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade_data()]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderFilled(event)
+                if event.client_order_id == client_order_id
+                    && event.trade_id == TradeId::from("ETH-2696068")
+        ));
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .accepted
         );
     }
 
@@ -5476,6 +5740,59 @@ mod tests {
                 .contains_key(&client_order_id)
         );
         assert!(handler.pending_requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn submit_error_response_emits_order_rejected() {
+        let mut handler = routing_test_handler();
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.submitted_order_contexts.insert(
+            client_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler.pending_requests.insert(
+            42,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+            },
+        );
+
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "error": { "code": 11050, "message": "bad_request" }
+        });
+
+        let event = handler.process_raw_message(&response.to_string()).await;
+
+        let Some(NautilusWsMessage::OrderRejected(rejected)) = event else {
+            panic!("expected OrderRejected, was {event:?}");
+        };
+
+        assert_eq!(rejected.client_order_id, client_order_id);
+        assert_eq!(rejected.reason.as_str(), "bad_request");
+        assert!(!rejected.due_post_only);
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
     }
 
     #[tokio::test]
