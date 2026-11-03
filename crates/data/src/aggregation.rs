@@ -113,9 +113,11 @@ pub trait BarAggregator: Any + Debug {
     /// Default implementation does nothing, `TimeBarAggregator` overrides.
     /// Takes an optional Rc to create weak reference internally.
     fn start_timer(&mut self, _aggregator_rc: Option<Rc<RefCell<Box<dyn BarAggregator>>>>) {}
+
     /// Sets the weak reference to the aggregator wrapper (for historical mode).
     /// Default implementation does nothing, `TimeBarAggregator` overrides.
-    fn set_aggregator_weak(&mut self, _weak: Weak<RefCell<Box<dyn BarAggregator>>>) {}
+    fn set_aggregator_weak(&mut self, _weak: BarAggregatorWeak) {}
+
     /// Configures the continuous-future price adjustment for the underlying builder.
     fn set_adjustment(&mut self, _adjustment: Decimal, _mode: ContinuousFutureAdjustmentType) {}
     /// Sets whether empty intervals emit bars at the last close.
@@ -138,6 +140,8 @@ impl dyn BarAggregator {
         self
     }
 }
+
+type BarAggregatorWeak = Weak<RefCell<Box<dyn BarAggregator>>>;
 
 /// Provides a generic bar builder for aggregation.
 #[derive(Debug)]
@@ -1502,6 +1506,7 @@ pub struct TimeBarAggregator {
     stored_open_ns: UnixNanos,
     timer_name: String,
     timer_active: Rc<Cell<bool>>,
+    timer_source: Option<BarAggregatorWeak>,
     interval_ns: DurationNanos,
     next_close_ns: UnixNanos,
     first_close_ns: UnixNanos,
@@ -1513,7 +1518,7 @@ pub struct TimeBarAggregator {
     pub historical_mode: bool,
     historical_events: Vec<TimeEvent>,
     historical_event_at_ts_init: Option<TimeEvent>,
-    aggregator_weak: Option<Weak<RefCell<Box<dyn BarAggregator>>>>,
+    aggregator_weak: Option<BarAggregatorWeak>,
 }
 
 impl Debug for TimeBarAggregator {
@@ -1572,6 +1577,7 @@ impl TimeBarAggregator {
             stored_open_ns: UnixNanos::default(),
             timer_name: format!("TIME_BAR_{}", core.builder.bar_type),
             timer_active: Rc::new(Cell::new(false)),
+            timer_source: None,
             interval_ns: get_bar_interval_ns(&bar_type),
             core,
             next_close_ns: UnixNanos::default(),
@@ -1633,7 +1639,7 @@ impl TimeBarAggregator {
             }
 
             if let Some(agg) = aggregator_weak.upgrade() {
-                agg.borrow_mut().build_bar(&event);
+                Self::dispatch_timer(&agg, &event);
             }
         }));
 
@@ -1650,24 +1656,17 @@ impl TimeBarAggregator {
         let start_time = open + delay;
         let fire_immediately = start_time == now;
         let start_time_ns = UnixNanos::from(start_time);
+        let first_close_ns = if fire_immediately {
+            start_time_ns
+        } else {
+            UnixNanos::from(close + delay)
+        };
 
         if self.uses_calendar_timer() {
-            let alert = if fire_immediately {
-                start_time
-            } else {
-                close + delay
-            };
-
             self.clock
                 .borrow_mut()
-                .set_time_alert_ns(
-                    &self.timer_name,
-                    UnixNanos::from(alert),
-                    Some(callback),
-                    Some(true),
-                )
+                .set_time_alert_ns(&self.timer_name, first_close_ns, Some(callback), Some(true))
                 .expect(FAILED);
-            self.next_close_ns = UnixNanos::from(alert);
 
             self.stored_open_ns = if fire_immediately {
                 UnixNanos::from(previous + delay)
@@ -1688,18 +1687,18 @@ impl TimeBarAggregator {
                 )
                 .expect(FAILED);
 
-            self.next_close_ns = if fire_immediately {
-                start_time_ns
-            } else {
-                UnixNanos::from(close + delay)
-            };
-
-            self.stored_open_ns = self.next_close_ns.saturating_sub(self.interval_ns);
+            self.stored_open_ns = first_close_ns.saturating_sub(self.interval_ns);
         }
 
         if self.skip_first_non_full_bar {
-            self.first_close_ns = self.next_close_ns;
+            self.first_close_ns = first_close_ns;
         }
+
+        self.next_close_ns = self
+            .clock
+            .borrow()
+            .next_time_ns(&self.timer_name)
+            .unwrap_or(first_close_ns);
 
         log::debug!(
             "Started timer {}, start_time={:?}, historical_mode={}, fire_immediately={}, now={:?}, bar_build_delay={}",
@@ -1710,6 +1709,69 @@ impl TimeBarAggregator {
             now,
             self.bar_build_delay
         );
+    }
+
+    pub(crate) fn set_timer_source(&mut self, source: BarAggregatorWeak) {
+        let mut current = Some(Weak::clone(&source));
+
+        while let Some(candidate) = current {
+            if self
+                .aggregator_weak
+                .as_ref()
+                .is_some_and(|target| Weak::ptr_eq(target, &candidate))
+            {
+                log::warn!(
+                    "Cannot link time bar source for {}, circular dependency",
+                    self.bar_type()
+                );
+                return;
+            }
+
+            current = candidate.upgrade().and_then(|source| {
+                source
+                    .borrow()
+                    .as_any()
+                    .downcast_ref::<Self>()?
+                    .timer_source
+                    .clone()
+            });
+        }
+
+        self.timer_source = Some(source);
+    }
+
+    fn dispatch_timer(aggregator: &Rc<RefCell<Box<dyn BarAggregator>>>, event: &TimeEvent) {
+        let source = {
+            let aggregator = aggregator.borrow();
+
+            let Some(aggregator) = aggregator.as_any().downcast_ref::<Self>() else {
+                return;
+            };
+
+            if !aggregator.timer_active.get() || event.ts_event <= aggregator.stored_open_ns {
+                return;
+            }
+
+            aggregator.timer_source.as_ref().and_then(Weak::upgrade)
+        };
+
+        if let Some(source) = source {
+            let source_due =
+                source
+                    .borrow()
+                    .as_any()
+                    .downcast_ref::<Self>()
+                    .is_some_and(|source| {
+                        !source.historical_mode && source.next_close_ns == event.ts_event
+                    });
+
+            // Release the target borrow before the source publishes back into it
+            if source_due {
+                Self::dispatch_timer(&source, event);
+            }
+        }
+
+        aggregator.borrow_mut().build_bar(event);
     }
 
     /// Stops the time bar aggregator.
@@ -1777,11 +1839,7 @@ impl TimeBarAggregator {
                 .expect(FAILED);
             self.next_close_ns = next;
         } else {
-            self.next_close_ns = self
-                .clock
-                .borrow()
-                .next_time_ns(&self.timer_name)
-                .unwrap_or_default();
+            self.next_close_ns = event.ts_event.saturating_add(self.interval_ns);
         }
     }
 
@@ -1937,7 +1995,7 @@ impl BarAggregator for TimeBarAggregator {
         }
     }
 
-    fn set_aggregator_weak(&mut self, weak: Weak<RefCell<Box<dyn BarAggregator>>>) {
+    fn set_aggregator_weak(&mut self, weak: BarAggregatorWeak) {
         self.aggregator_weak = Some(weak);
     }
 
@@ -5255,6 +5313,67 @@ mod tests {
         let bar = handler_guard.first().unwrap();
         assert_eq!(bar.ts_event, UnixNanos::default());
         assert_eq!(bar.ts_init, next_sec);
+    }
+
+    #[rstest]
+    #[case::self_link(1)]
+    #[case::two_levels(2)]
+    #[case::three_levels(3)]
+    fn test_time_bar_source_rejects_cyclic_chain(equity_aapl: Equity, #[case] depth: usize) {
+        let instrument = InstrumentAny::Equity(equity_aapl);
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+
+        let aggregators: Vec<_> = (1..=depth)
+            .map(|step| {
+                let spec = BarSpecification::new(step, BarAggregation::Minute, PriceType::Last);
+                let (aggregator, _) = start_time_bar_aggregator(
+                    &instrument,
+                    spec,
+                    &clock,
+                    true,
+                    BarIntervalType::LeftOpen,
+                );
+                aggregator
+            })
+            .collect();
+
+        for pair in aggregators.windows(2) {
+            pair[1]
+                .borrow_mut()
+                .as_any_mut()
+                .downcast_mut::<TimeBarAggregator>()
+                .unwrap()
+                .set_timer_source(Rc::downgrade(&pair[0]));
+        }
+
+        aggregators[0]
+            .borrow_mut()
+            .as_any_mut()
+            .downcast_mut::<TimeBarAggregator>()
+            .unwrap()
+            .set_timer_source(Rc::downgrade(aggregators.last().unwrap()));
+
+        assert!(
+            aggregators[0]
+                .borrow()
+                .as_any()
+                .downcast_ref::<TimeBarAggregator>()
+                .unwrap()
+                .timer_source
+                .is_none()
+        );
+
+        for pair in aggregators.windows(2) {
+            let target = pair[1].borrow();
+            let source = target
+                .as_any()
+                .downcast_ref::<TimeBarAggregator>()
+                .unwrap()
+                .timer_source
+                .as_ref()
+                .unwrap();
+            assert!(Weak::ptr_eq(source, &Rc::downgrade(&pair[0])));
+        }
     }
 
     #[rstest]

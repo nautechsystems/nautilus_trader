@@ -101,6 +101,7 @@ Released on TBD (UTC).
 - Fixed command refusals clearing unrelated pending operations or rolling back later order state
 - Fixed mixed-key market data batches being cached under the first row's instrument or bar type
 - Fixed historical time bar boundary assignment for ticks sharing a timestamp
+- Fixed composite time bars closing before their final source bar at a shared deadline
 - Fixed queued timer callbacks logging missing-actor errors or targeting reused actor IDs after retirement
 - Fixed backtest timer cancellation across data gaps and tail flushes
 - Fixed `BacktestEngine` reset hiding component reset failures
