@@ -189,9 +189,14 @@ impl Cache {
     ///
     /// A correction that reaches an earlier cycle moves the boundaries the existing frames
     /// describe, so they cannot be reconciled and are settled into one frame instead. Pass
-    /// `None` when the corrected history never goes flat, which leaves no archived cycle at all.
+    /// `None` when no closed cycle precedes the current one, which leaves no archived cycle.
     /// As with [`Self::purge_position`], the durable `cache://position-snapshots/...` entries
     /// stay in general cache state.
+    ///
+    /// The settled frame drops the fills it copies from `position`, which belong to the current
+    /// cycle rather than the settled ones, since consumers match frames to cycles by their fills.
+    /// It keeps the current cycle's `position.trade_ids`. Earlier cycles' trade history remains
+    /// in `position.replay_events`.
     ///
     /// Requires `closed_cycles_pnl` to account for every frame held, since this removes all of
     /// them. The position's replay log must therefore span every archived cycle for the ID. Any
@@ -215,6 +220,7 @@ impl Cache {
         if let Some(closed_cycles_pnl) = closed_cycles_pnl {
             let (_, mut settled) = self.build_position_snapshot(position);
             settled.realized_pnl = Some(closed_cycles_pnl);
+            settled.events.clear();
             self.store_position_snapshot(position.id, settled, None);
         }
     }

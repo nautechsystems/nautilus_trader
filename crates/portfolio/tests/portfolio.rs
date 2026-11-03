@@ -7130,6 +7130,391 @@ fn test_realized_pnl_for_closed_cached_netting_position_adds_unsnapshotted_final
 }
 
 #[rstest]
+fn test_netting_cycles_with_equal_pnl_each_count_in_realized_pnls(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+    #[values(false, true)] same_timestamps: bool,
+    #[values(false, true)] rebuild: bool,
+    #[values(false, true)] losing: bool,
+) {
+    let (entry_px, exit_px, fee, cycle_pnl, open_pnl, total_pnl) = if losing {
+        (
+            "105.00",
+            "100.00",
+            "2.00 USD",
+            "-504.00 USD",
+            "-506.00 USD",
+            "-1008.00 USD",
+        )
+    } else {
+        (
+            "1.00",
+            "1.10",
+            "0.00 USD",
+            "10.00 USD",
+            "10.00 USD",
+            "20.00 USD",
+        )
+    };
+
+    let account_id = AccountId::new("SIM-001");
+    let position_id = PositionId::new("P-EQUAL-PNL-CYCLES");
+    let venue = instrument_audusd.id().venue;
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+    let mut position: Option<Position> = None;
+
+    for cycle in 0..2u64 {
+        let ts_offset = if same_timestamps { 0 } else { cycle * 10 };
+        let mut opening_fill = make_fill_for_account(
+            &instrument_audusd,
+            account_id,
+            OrderSide::Buy,
+            Quantity::from("100"),
+            Price::from(entry_px),
+            position_id,
+        );
+        opening_fill.event_id = UUID4::new();
+        opening_fill.trade_id = TradeId::new(format!("OPEN-{cycle}"));
+        opening_fill.commission = Some(Money::from(fee));
+        opening_fill.ts_event = UnixNanos::from(11 + ts_offset);
+
+        if let Some(current) = position.as_mut() {
+            // A NETTING reopen archives the closed cycle before the ID is reused
+            portfolio
+                .cache()
+                .borrow_mut()
+                .snapshot_position(current)
+                .unwrap();
+            current.apply(&opening_fill);
+            portfolio
+                .cache()
+                .borrow_mut()
+                .update_position(current)
+                .unwrap();
+        } else {
+            let current = Position::new(&instrument_audusd, opening_fill);
+            portfolio
+                .cache()
+                .borrow_mut()
+                .add_position(&current, OmsType::Netting)
+                .unwrap();
+            position = Some(current);
+        }
+
+        let current = position.as_mut().unwrap();
+        portfolio.update_position(&PositionEvent::PositionOpened(get_open_position(current)));
+
+        if cycle == 1 {
+            // Aggregate the archived cycle while the second one is open
+            assert_eq!(
+                portfolio.realized_pnls(&venue, None, None).unwrap()[&Currency::USD()],
+                Money::from(open_pnl),
+            );
+
+            if rebuild {
+                // Settling any frame on the instrument makes the next calculation, here the
+                // close, rebuild every per-position aggregate from scratch, and this frame sits
+                // on another account so adds nothing to the total.
+                portfolio.update_account(&get_margin_account(Some("SIM-002")));
+                let other_fill = make_fill_for_account(
+                    &instrument_audusd,
+                    AccountId::new("SIM-002"),
+                    OrderSide::Buy,
+                    Quantity::from("1"),
+                    Price::from("1.00"),
+                    PositionId::new("P-OTHER-ACCOUNT"),
+                );
+                let mut other = Position::new(&instrument_audusd, other_fill);
+                other.realized_pnl = Some(Money::from("0.00 USD"));
+                let mut cache = portfolio.cache().borrow_mut();
+                cache.snapshot_position(&other).unwrap();
+                other.realized_pnl = None;
+                cache.add_position(&other, OmsType::Netting).unwrap();
+                cache.settle_position_snapshots(&other, Some(Money::from("0.00 USD")));
+            }
+        }
+
+        let mut closing_fill = make_fill_for_account(
+            &instrument_audusd,
+            account_id,
+            OrderSide::Sell,
+            Quantity::from("100"),
+            Price::from(exit_px),
+            position_id,
+        );
+        closing_fill.event_id = UUID4::new();
+        closing_fill.trade_id = TradeId::new(format!("CLOSE-{cycle}"));
+        closing_fill.commission = Some(Money::from(fee));
+        closing_fill.ts_event = UnixNanos::from(13 + ts_offset);
+        current.apply(&closing_fill);
+        assert_eq!(current.realized_pnl, Some(Money::from(cycle_pnl)));
+        portfolio
+            .cache()
+            .borrow_mut()
+            .update_position(current)
+            .unwrap();
+        portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(current)));
+    }
+
+    assert_eq!(
+        portfolio.realized_pnls(&venue, None, None).unwrap()[&Currency::USD()],
+        Money::from(total_pnl),
+    );
+    assert_eq!(
+        portfolio
+            .realized_pnls(&venue, Some(&account_id), None)
+            .unwrap()[&Currency::USD()],
+        Money::from(total_pnl),
+    );
+}
+
+#[rstest]
+fn test_realized_pnl_for_closed_cached_netting_position_adds_settled_frame_with_equal_pnl(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_state = get_margin_account(None);
+    portfolio.update_account(&account_state);
+    let position_id = PositionId::new("P-CLOSED-SETTLED");
+
+    add_closed_netting_position_with_snapshots(
+        &portfolio,
+        &instrument_audusd,
+        AccountId::new("SIM-001"),
+        position_id,
+        &[Money::from("3.00 USD"), Money::from("4.00 USD")],
+        Money::from("7.00 USD"),
+    );
+
+    // A correction settles the earlier cycles into one frame worth what the final cycle realized
+    let cache = Rc::clone(portfolio.cache());
+    let position = cache.borrow().position_owned(&position_id).unwrap();
+    cache
+        .borrow_mut()
+        .settle_position_snapshots(&position, Some(Money::from("7.00 USD")));
+
+    let pnl = portfolio
+        .realized_pnl(&instrument_audusd.id())
+        .expect("realized_pnl should be Some");
+
+    // The settled frame stands for the earlier cycles, never the final one: 7.00 + 7.00
+    assert_eq!(pnl, Money::from("14.00 USD"));
+}
+
+#[rstest]
+#[case::opening(["1.00", "2.00", "1.00", "3.00"], [2, 0], "100.00 USD")]
+#[case::closing(["1.00", "2.00", "3.00", "2.00"], [3, 1], "200.00 USD")]
+#[case::opening_and_closing(["1.00", "2.00", "3.00", "1.00"], [3, 0], "100.00 USD")]
+fn test_realized_pnl_for_snapshotted_netting_cycle_preserves_identity_after_fill_voids(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+    #[case] prices: [&str; 4],
+    #[case] void_indices: [usize; 2],
+    #[case] expected_pnl: &str,
+    #[values(false, true)] same_timestamps: bool,
+) {
+    let account_id = AccountId::new("SIM-001");
+    let position_id = PositionId::new("P-SNAPSHOT-FILL-VOIDS");
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+
+    let fills: Vec<_> = [
+        OrderSide::Buy,
+        OrderSide::Buy,
+        OrderSide::Sell,
+        OrderSide::Sell,
+    ]
+    .into_iter()
+    .zip(prices)
+    .enumerate()
+    .map(|(index, (side, price))| {
+        let mut fill = make_fill_for_account(
+            &instrument_audusd,
+            account_id,
+            side,
+            Quantity::from("100"),
+            Price::from(price),
+            position_id,
+        );
+        fill.client_order_id = ClientOrderId::new(format!("O-VOID-{index}"));
+        fill.trade_id = TradeId::new(format!("T-VOID-{index}"));
+        fill.event_id = UUID4::new();
+        fill.ts_event = UnixNanos::from(11 + if same_timestamps { 0 } else { index as u64 });
+        fill
+    })
+    .collect();
+
+    let expected_pnl = Money::from(expected_pnl);
+    let expected_events: Vec<_> = fills
+        .iter()
+        .enumerate()
+        .filter(|(index, _)| !void_indices.contains(index))
+        .map(|(_, fill)| fill.clone())
+        .collect();
+    let mut position = Position::new(&instrument_audusd, fills[0].clone());
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    for fill in &fills[1..] {
+        position.apply(fill);
+    }
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(
+        &position,
+    )));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .snapshot_position(&position)
+        .unwrap();
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(expected_pnl)
+    );
+
+    for index in void_indices {
+        void_position_fill(&mut portfolio, &mut position, &fills[index]);
+    }
+
+    assert!(position.is_closed());
+    assert_eq!(position.events, expected_events);
+    assert_eq!(position.realized_pnl, Some(expected_pnl));
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(expected_pnl)
+    );
+}
+
+#[rstest]
+#[case::opening_first([0, 1])]
+#[case::closing_first([1, 0])]
+fn test_snapshotted_netting_cycle_voiding_all_fills_counts_retained_fees_once(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+    #[case] void_indices: [usize; 2],
+) {
+    let account_id = AccountId::new("SIM-001");
+    let position_id = PositionId::new("P-VOID-ALL-FILLS");
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+
+    let fills: Vec<_> = [OrderSide::Buy, OrderSide::Sell]
+        .into_iter()
+        .enumerate()
+        .map(|(index, side)| {
+            let mut fill = make_fill_for_account(
+                &instrument_audusd,
+                account_id,
+                side,
+                Quantity::from("100"),
+                Price::from("1.00"),
+                position_id,
+            );
+            fill.client_order_id = ClientOrderId::new(format!("O-VOID-ALL-{index}"));
+            fill.trade_id = TradeId::new(format!("T-VOID-ALL-{index}"));
+            fill.event_id = UUID4::new();
+            fill.commission = Some(Money::from("2.00 USD"));
+            fill
+        })
+        .collect();
+
+    let mut position = Position::new(&instrument_audusd, fills[0].clone());
+    position.apply(&fills[1]);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(
+        &position,
+    )));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .snapshot_position(&position)
+        .unwrap();
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(Money::from("-4.00 USD"))
+    );
+
+    for index in void_indices {
+        void_position_fill(&mut portfolio, &mut position, &fills[index]);
+    }
+
+    assert!(position.is_closed());
+    assert!(position.events.is_empty());
+    assert_eq!(position.realized_pnl, Some(Money::from("-4.00 USD")));
+    assert_eq!(position.commissions(), vec![Money::from("4.00 USD")]);
+    let snapshots = portfolio
+        .cache()
+        .borrow()
+        .position_snapshots(Some(&position_id), None);
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshots[0].events, fills);
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(Money::from("-4.00 USD"))
+    );
+}
+
+#[rstest]
+fn test_realized_pnl_for_closed_cached_netting_position_without_fills_counts_final_cycle_once(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+) {
+    let account_state = get_margin_account(None);
+    portfolio.update_account(&account_state);
+    let fill = make_fill_for_account(
+        &instrument_audusd,
+        AccountId::new("SIM-001"),
+        OrderSide::Buy,
+        Quantity::from("1"),
+        Price::from("1.00"),
+        PositionId::new("P-CLOSED-WITHOUT-FILLS"),
+    );
+    let mut position = Position::new(&instrument_audusd, fill);
+    position.side = PositionSide::Flat;
+    position.ts_closed = Some(UnixNanos::from(1));
+
+    // A correction that voids every fill can leave a closed position with no fills and only
+    // retained commission, which an archive then copies as its final frame.
+    position.events.clear();
+    for realized_pnl in ["16.00 USD", "6.00 USD"] {
+        position.realized_pnl = Some(Money::from(realized_pnl));
+        portfolio
+            .cache()
+            .borrow_mut()
+            .snapshot_position(&position)
+            .unwrap();
+    }
+
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+
+    let pnl = portfolio
+        .realized_pnl(&instrument_audusd.id())
+        .expect("realized_pnl should be Some");
+
+    // Without fills on either side the PnL decides, so the final cycle lands once: 16.00 + 6.00
+    assert_eq!(pnl, Money::from("22.00 USD"));
+}
+
+#[rstest]
 fn test_realized_pnl_for_closed_cached_netting_position_uses_mark_xrate(
     mut simple_cache: Cache,
     clock: VirtualClock,

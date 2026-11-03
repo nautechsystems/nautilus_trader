@@ -4437,11 +4437,13 @@ impl ExecutionEngine {
                     event.trade_id
                 );
             }
-            let mut position = self
-                .cache
-                .borrow()
-                .position_owned(&position_id)
+
+            let prior = positions
+                .iter()
+                .find(|position| position.id == position_id)
                 .ok_or_else(|| anyhow::anyhow!("position {position_id} is not cached"))?;
+            let mut position = prior.clone();
+
             let previous = position
                 .fill_voids
                 .iter()
@@ -4482,9 +4484,15 @@ impl ExecutionEngine {
                         .ok_or_else(|| anyhow::anyhow!("position current cycle quantity overflow"))
                 })?;
 
-            let absorbed_prior_cycles = voided_qty > current_cycle_qty;
             let closed_cycles_pnl =
                 position.apply_fill_void(event.clone(), voided_qty, commission_voided)?;
+            let absorbed_prior_cycles = position::requires_snapshot_settlement(
+                prior,
+                &position,
+                voided_qty,
+                current_cycle_qty,
+                self.config.carry_replay_events_on_reopen,
+            );
             corrected_positions.push(CorrectedPosition {
                 position,
                 corrected_qty,

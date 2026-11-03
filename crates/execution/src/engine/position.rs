@@ -41,14 +41,15 @@ pub type SnapshotAnchorer = Rc<dyn Fn(CacheSnapshotRef) -> anyhow::Result<()>>;
 
 /// A position rebuilt by a fill void, with the quantity that correction removed.
 ///
-/// `absorbed_prior_cycles` is set when the voided fill sits outside the position's current
-/// NETTING cycle, so the rebuild spans earlier cycles and the archive frames describing them no
-/// longer match the corrected history. `closed_cycles_pnl` then holds the realized PnL of
+/// `absorbed_prior_cycles` is set when the voided fill sits outside the current NETTING cycle
+/// or, with replay retention enabled, the rebuild rolls back to fills from an earlier cycle.
+/// The archive frames then no longer match the corrected history. `closed_cycles_pnl` holds the PnL of
 /// whatever cycles the corrected history does close before the current one, which settles those
-/// frames. It is `None` when the corrected history never goes flat, leaving no archived cycle.
+/// frames. It is `None` when no closed cycle precedes the current one, including when the
+/// corrected history never goes flat or its only closed cycle is the current one.
 ///
-/// Known limitation: the flag is decided from quantities, so a second correction to the same
-/// trade that revises only the voided commission leaves it unset, and the settled frame keeps
+/// Known limitation: a second correction to the same trade that revises only the voided
+/// commission without changing cycle membership leaves the flag unset, and the settled frame keeps
 /// the realized PnL banked by the first. No in-tree emitter produces that shape, since
 /// reconciliation always advances the quantity and the adapters void a fill once.
 pub(super) struct CorrectedPosition {
@@ -56,4 +57,21 @@ pub(super) struct CorrectedPosition {
     pub(super) corrected_qty: Quantity,
     pub(super) absorbed_prior_cycles: bool,
     pub(super) closed_cycles_pnl: Option<Money>,
+}
+
+pub(super) fn requires_snapshot_settlement(
+    prior: &Position,
+    rebuilt: &Position,
+    voided_qty: Quantity,
+    current_cycle_qty: Quantity,
+    carry_replay_events_on_reopen: bool,
+) -> bool {
+    voided_qty > current_cycle_qty
+        || (carry_replay_events_on_reopen
+            && rebuilt.events.first().is_some_and(|opening| {
+                !prior
+                    .events
+                    .iter()
+                    .any(|fill| fill.event_id == opening.event_id)
+            }))
 }
