@@ -1,8 +1,8 @@
 # %% [markdown]
 # # Order Book Imbalance
 #
-# Define the reusable order book imbalance strategy used by the Binance and Bybit
-# order book backtest tutorials.
+# Define the reusable order book imbalance strategy used by the Binance, Bybit,
+# and CoinAPI order book backtest tutorials.
 
 # %%
 from __future__ import annotations
@@ -10,14 +10,12 @@ from __future__ import annotations
 from decimal import Decimal
 
 from nautilus_trader.config import StrategyConfig
-from nautilus_trader.model import (
-    BookType,
-    InstrumentId,
-    OrderBookDeltas,
-    OrderSide,
-    Quantity,
-    TimeInForce,
-)
+from nautilus_trader.model import BookType
+from nautilus_trader.model import InstrumentId
+from nautilus_trader.model import OrderBookDeltas
+from nautilus_trader.model import OrderSide
+from nautilus_trader.model import Quantity
+from nautilus_trader.model import TimeInForce
 from nautilus_trader.trading import Strategy
 
 
@@ -71,7 +69,7 @@ class OrderBookImbalance(Strategy):
 
     def on_book_deltas(self, _deltas: OrderBookDeltas) -> None:
         book = self.cache.order_book(self._instrument_id)
-        if book is None or not book.spread():
+        if book is None or (book.spread() or 0) <= 0:
             return
 
         bid_size = book.best_bid_size()

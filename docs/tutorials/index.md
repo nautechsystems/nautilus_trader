@@ -23,58 +23,55 @@ Rust tutorials use the commands shown on their pages.
 If you are new to NautilusTrader, complete these tutorials in order:
 
 1. [Quickstart](../getting_started/quickstart): Run your first backtest in five minutes with synthetic data.
-1. [Backtest (low-level API)](../getting_started/backtest_low_level): Use `BacktestEngine` directly
+1. [Backtest (Low-Level API)](../getting_started/backtest_low_level): Use `BacktestEngine` directly
    with real market data and execution algorithms.
-1. [Backtest (high-level API)](../getting_started/backtest_high_level): Run config-driven backtests
+1. [Backtest (High-Level API)](../getting_started/backtest_high_level): Run config-driven backtests
    with `BacktestNode` and the Parquet data catalog.
-1. [Loading external data][loading_external_data]: Load CSV or other external data into the
+1. [Loading External Data][loading_external_data]: Load CSV or other external data into the
    `ParquetDataCatalog` (how-to guide).
-1. [Backtest with FX bar data][backtest_fx_bars]: Backtest FX bars with rollover interest simulation.
+1. [Backtest with FX Bar Data][backtest_fx_bars]: Backtest FX bars with rollover interest simulation.
 1. Select a topic-specific tutorial below.
 
 ## Backtesting
 
-| Tutorial                                                                    | Description                                    | Data                    |
-| :-------------------------------------------------------------------------- | :--------------------------------------------- | :---------------------- |
-| [Backtest with FX Bar Data][backtest_fx_bars]                               | EMA cross on FX bars with rollover simulation. | Sample                  |
-| [Backtest with Order Book Depth Data (Binance)][backtest_orderbook_binance] | Order book imbalance strategy on depth data.   | Sample or user-provided |
-| [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]     | Order book imbalance strategy on depth data.   | Sample or user-provided |
+| Tutorial                                                                      | Description                                    | Language | Data requirement        |
+| :---------------------------------------------------------------------------- | :--------------------------------------------- | :------- | :---------------------- |
+| [Backtest with FX Bar Data][backtest_fx_bars]                                 | EMA cross on FX bars with rollover simulation. | Python   | Sample                  |
+| [Backtest with Order Book Depth Data (Binance)][backtest_orderbook_binance]   | Order book imbalance strategy on depth data.   | Python   | Sample or user-provided |
+| [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]       | Order book imbalance strategy on depth data.   | Python   | Sample or user-provided |
+| [Backtest with Pre-IPO Order Book Data (CoinAPI)][backtest_orderbook_coinapi] | Order book imbalance on ANTHROPIC-PERP.        | Python   | CoinAPI Flat Files key  |
+| [Book Imbalance Backtest (Betfair)](backtest_book_imbalance_betfair)          | Book imbalance actor on Betfair L2 data.       | Rust     | User-provided           |
 
 ## Data workflows
 
 For task-oriented data recipes, see the [how-to guides](../how_to/):
 
-| Guide                                                 | Description                                       | Data              |
-| :---------------------------------------------------- | :------------------------------------------------ | :---------------- |
-| [Loading external data][loading_external_data]        | Load external data into the `ParquetDataCatalog`. | User-provided     |
-| [Data catalog with Databento][data_catalog_databento] | Set up a catalog with Databento schemas.          | Databento API key |
+| Guide                                                 | Description                                       | Language | Data requirement  |
+| :---------------------------------------------------- | :------------------------------------------------ | :------- | :---------------- |
+| [Loading External Data][loading_external_data]        | Load external data into the `ParquetDataCatalog`. | Python   | User-provided     |
+| [Data Catalog with Databento][data_catalog_databento] | Set up a catalog with Databento schemas.          | Python   | Databento API key |
 
 ## Strategy patterns
 
-| Tutorial                                                                            | Description                                   | Data              |
-| :---------------------------------------------------------------------------------- | :-------------------------------------------- | :---------------- |
-| [Mean Reversion with Proxy FX Data (AX Exchange)](fx_mean_reversion_ax)             | Bollinger Band mean reversion on EURUSD-PERP. | TrueFX proxy      |
-| [Gold Perpetual Book Imbalance (AX Exchange)](gold_book_imbalance_ax)               | Order book imbalance on XAU-PERP.             | Databento API key |
-| [On-Chain Grid Market Making with Short-Term Orders (dYdX)](grid_market_maker_dydx) | Grid MM on dYdX v4 perpetuals.                | Live API          |
+| Tutorial                                                                                           | Description                                          | Language     | Data requirement    |
+| :------------------------------------------------------------------------------------------------- | :--------------------------------------------------- | :----------- | :------------------ |
+| [Mean Reversion with Proxy FX Data (AX Exchange)](fx_mean_reversion_ax)                            | Bollinger Band mean reversion on EURUSD-PERP.        | Python       | TrueFX proxy        |
+| [Gold Perpetual Book Imbalance with Proxy Futures Data (AX Exchange)](gold_book_imbalance_ax)      | Order book imbalance on XAU-PERP.                    | Python       | Databento API key   |
+| [On-Chain Grid Market Making with Short-Term Orders (dYdX)](grid_market_maker_dydx)                | Grid MM on dYdX v4 perpetuals.                       | Rust         | Live API            |
+| [Composite Market Making on Lighter RWA with Databento US Equities NVDA](lighter_rwa_composite_mm) | Signal-skewed MM on NVDA-PERP.                       | Rust, Python | Databento + Lighter |
+| [Hurst/VPIN Directional Strategy (Kraken Futures)](hurst_vpin_kraken)                              | Regime-filtered informed-flow strategy on PF_XBTUSD. | Rust         | Tardis.dev          |
 
 ## Options
 
-| Tutorial                                                                | Description                                    | Data     |
-| :---------------------------------------------------------------------- | :--------------------------------------------- | :------- |
-| [Options Data and Greeks (Bybit)](options_data_bybit)                   | Stream Greeks and option chain snapshots.      | Live API |
-| [Delta-Neutral Options Strategy (Bybit)](delta_neutral_options_bybit)   | Short strangle with perpetual delta hedging.   | Live API |
-| [Delta-Neutral Options Strategy (Derive)](delta_neutral_options_derive) | Derive ETH strangle hedger with premium entry. | Live API |
-
-## Rust
-
-| Tutorial                                                                                    | Description                                          | Data                |
-| :------------------------------------------------------------------------------------------ | :--------------------------------------------------- | :------------------ |
-| [Book Imbalance Backtest (Betfair)](backtest_book_imbalance_betfair)                        | Book imbalance actor on Betfair L2 data.             | User-provided       |
-| [Composite Market Making on Lighter RWA with Databento EQUS NVDA](lighter_rwa_composite_mm) | Signal-skewed MM on NVDA-PERP.                       | Databento + Lighter |
-| [Hurst/VPIN Directional Strategy (Kraken Futures)](hurst_vpin_kraken)                       | Regime-filtered informed-flow strategy on PF_XBTUSD. | Tardis.dev          |
+| Tutorial                                                                | Description                                    | Language | Data requirement |
+| :---------------------------------------------------------------------- | :--------------------------------------------- | :------- | :--------------- |
+| [Options Data and Greeks (Bybit)](options_data_bybit)                   | Stream Greeks and option chain snapshots.      | Rust     | Live API         |
+| [Delta-Neutral Options Strategy (Bybit)](delta_neutral_options_bybit)   | Short strangle with perpetual delta hedging.   | Rust     | Live API         |
+| [Delta-Neutral Options Strategy (Derive)](delta_neutral_options_derive) | Derive ETH strangle hedger with premium entry. | Rust     | Live API         |
 
 [backtest_fx_bars]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_fx_bars.py
 [backtest_orderbook_binance]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_binance.py
 [backtest_orderbook_bybit]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_bybit.py
+[backtest_orderbook_coinapi]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_coinapi.py
 [loading_external_data]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/how_to/loading_external_data.py
 [data_catalog_databento]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/how_to/data_catalog_databento.py

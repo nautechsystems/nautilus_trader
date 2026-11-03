@@ -314,17 +314,17 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "S101",
   "T20",
 ] # TODO: Remove Jupytext exemptions as these guides are updated
-"docs/tutorials/**/*.py" = [
+# Jupytext prose replaces module headers; standalone lessons are not packages
+"docs/tutorials/**/*.py" = ["CPY001", "D100", "INP001"]
+"docs/tutorials/{assets/**/*.py,backtest_fx_bars.py,backtest_orderbook_binance.py,backtest_orderbook_bybit.py,ema_cross.py,orderbook_data.py}" = [
   "ANN001",
   "B018",
-  "CPY001",
   "D",
   "E402",
   "E501",
   "ERA001",
   "FBT002",
   "I001",
-  "INP001",
   "N806",
   "PLR0913",
   "PLR0917",
@@ -333,7 +333,17 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "S101",
   "T20",
   "TC003",
-] # TODO: Remove Jupytext exemptions as these tutorials are updated
+] # TODO: Remove legacy exemptions as these tutorials are updated
+"docs/tutorials/backtest_orderbook_coinapi.py" = [
+  "S101",
+  "T201",
+] # Snapshot assertions and visible reports are part of the lesson
+"docs/tutorials/orderbook_imbalance.py" = [
+  "D101",
+  "D102",
+  "D107",
+  "PLR0913",
+] # Tutorial prose documents the strategy; its config exposes the signal controls
 "docs/how_to/**/*.py" = [
   "B018",
   "CPY001",

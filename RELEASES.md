@@ -177,6 +177,7 @@ Released on TBD (UTC).
 
 ### Documentation Updates
 
+- Added Python tutorial for backtesting Lighter ANTHROPIC pre-IPO order books from CoinAPI Flat Files
 - Clarified Parquet migration coverage and CLEAR snapshot promotion limits
 - Fixed WebSocket module documentation for backend proxy support and SOCKS fallback
 - Improved Polymarket setup, configuration troubleshooting, and cancel-replace recovery guidance
