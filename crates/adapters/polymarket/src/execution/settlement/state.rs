@@ -233,14 +233,16 @@ impl SettlementRecord {
     pub(crate) fn is_unresolved(&self) -> bool {
         self.hard_fault.is_some()
             || self.awaits_resolution()
-            || self.legs.iter().any(|leg| {
-                matches!(
-                    leg.application,
-                    LegApplication::FillPending | LegApplication::VoidPending
-                ) || (!self.settlement.is_rest_terminal()
-                    && leg.application == LegApplication::Absent
-                    && !leg.report_routed)
-            })
+            || self.legs.iter().any(|leg| self.leg_awaits_application(leg))
+    }
+
+    pub(super) fn leg_awaits_application(&self, leg: &SettlementLeg) -> bool {
+        matches!(
+            leg.application,
+            LegApplication::FillPending | LegApplication::VoidPending
+        ) || (!self.settlement.is_rest_terminal()
+            && leg.application == LegApplication::Absent
+            && !leg.report_routed)
     }
 
     /// Returns `true` when an order-status report must not treat this record's fills as covered.

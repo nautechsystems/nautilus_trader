@@ -18,7 +18,7 @@ use std::time::Duration;
 use anyhow::Context;
 use futures_util::{FutureExt, StreamExt, future::BoxFuture, stream::FuturesUnordered};
 use nautilus_common::messages::execution::{ModifyOrder, SubmitOrder, SubmitOrderList};
-use nautilus_core::{UUID4, string::secret::SecretString, time::AtomicTime};
+use nautilus_core::{UUID4, UnixNanos, string::secret::SecretString, time::AtomicTime};
 use nautilus_live::execution::{context::OrderContext, failure::CommandFailure};
 use nautilus_model::{
     enums::{LiquiditySide, OrderSide, OrderStatus, OrderType, TimeInForce},
@@ -77,46 +77,10 @@ impl PolymarketExecutionClient {
             return;
         }
 
-        if let Err(reason) =
-            PolymarketOrderBuilder::validate_limit_expiration(&order, self.clock.get_time_ns())
-        {
-            self.emitter.emit_order_denied(&order, &reason.to_string());
+        let Some((request, price_precision)) =
+            self.prepare_limit_order_request(&order, self.clock.get_time_ns())
+        else {
             return;
-        }
-
-        let (instrument, signing_context) = match self.resolve_instrument(&order) {
-            Some(i) => i,
-            None => return,
-        };
-
-        if let Err(reason) =
-            PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
-        {
-            self.emitter.emit_order_denied(&order, &reason.to_string());
-            return;
-        }
-
-        let token_id = instrument.raw_symbol().to_string();
-        let tick_decimals = u32::from(instrument.min_price_increment_precision());
-        let price = order.price().unwrap();
-        let quantity = order.quantity();
-        let quote_quantity = order.is_quote_quantity();
-        let tif = order.time_in_force();
-        let post_only = order.is_post_only();
-        let side = order.order_side();
-        let expire_time = order.expire_time();
-        let request = LimitOrderSubmitRequest {
-            token_id,
-            side,
-            price,
-            quantity,
-            quote_quantity,
-            time_in_force: tif,
-            post_only,
-            signing_context,
-            expire_time,
-            tick_decimals,
-            size_precision: instrument.size_precision(),
         };
 
         let submitter = self.submitter.clone();
@@ -129,7 +93,6 @@ impl PolymarketExecutionClient {
         let pending_submits = self.pending_submits.clone();
         let pending_cancels = self.pending_cancels.clone();
         let account_id = self.core.account_id;
-        let price_precision = instrument.price_precision();
 
         self.spawn_task("submit_limit_order", async move {
             let mut order = order;
@@ -165,7 +128,7 @@ impl PolymarketExecutionClient {
                 result,
                 BatchLimitOrderContext {
                     order,
-                    request,
+                    size_precision: request.size_precision,
                     price_precision,
                 },
                 expected_venue_order_id,
@@ -326,8 +289,8 @@ impl PolymarketExecutionClient {
 
                     let fok_order_id = fok_check_order_id(&result.response, time_in_force);
 
-                    if let Some((order_id_str, venue_order_id)) = handle_order_response(
-                        Ok(result.response),
+                    if let Some(venue_order_id) = handle_order_response(
+                        result.response,
                         &order,
                         result.expected_venue_order_id,
                         &emitter,
@@ -336,14 +299,10 @@ impl PolymarketExecutionClient {
                         &settlement,
                         &order_contexts,
                         &pending_cancels,
-                        account_id,
-                        size_precision,
-                        price_precision,
                     ) {
                         execute_deferred_cancel(
                             &submitter,
                             &order,
-                            &order_id_str,
                             venue_order_id,
                             &emitter,
                             &pending_cancels,
@@ -388,7 +347,7 @@ impl PolymarketExecutionClient {
                             None
                         };
 
-                        if let Some((order_id_str, venue_order_id)) = handle_unknown_submit_result(
+                        if let Some(venue_order_id) = handle_unknown_submit_result(
                             &order,
                             unknown.expected_venue_order_id,
                             &unknown.reason,
@@ -400,14 +359,10 @@ impl PolymarketExecutionClient {
                             &order_contexts,
                             &pending_submits,
                             &pending_cancels,
-                            account_id,
-                            size_precision,
-                            price_precision,
                         ) {
                             execute_deferred_cancel(
                                 &submitter,
                                 &order,
-                                &order_id_str,
                                 venue_order_id,
                                 &emitter,
                                 &pending_cancels,
@@ -552,43 +507,18 @@ impl PolymarketExecutionClient {
                 continue;
             }
 
-            if let Err(reason) = PolymarketOrderBuilder::validate_limit_expiration(&order, ts_now) {
-                self.emitter.emit_order_denied(&order, &reason.to_string());
+            let Some((request, price_precision)) = self.prepare_limit_order_request(&order, ts_now)
+            else {
                 continue;
-            }
-
-            let (instrument, signing_context) = match self.resolve_instrument(&order) {
-                Some(i) => i,
-                None => continue,
             };
 
-            if let Err(reason) =
-                PolymarketOrderBuilder::validate_limit_price(&order, instrument.price_increment())
-            {
-                self.emitter.emit_order_denied(&order, &reason.to_string());
-                continue;
-            }
-
-            let price = order
-                .price()
-                .expect("validated limit order must have a price");
-            batch_orders.push(BatchLimitOrderContext {
-                request: LimitOrderSubmitRequest {
-                    token_id: instrument.raw_symbol().to_string(),
-                    side: order.order_side(),
-                    price,
-                    quantity: order.quantity(),
-                    quote_quantity: order.is_quote_quantity(),
-                    time_in_force: order.time_in_force(),
-                    post_only: order.is_post_only(),
-                    signing_context,
-                    expire_time: order.expire_time(),
-                    tick_decimals: u32::from(instrument.min_price_increment_precision()),
-                    size_precision: instrument.size_precision(),
-                },
-                price_precision: instrument.price_precision(),
+            let context = BatchLimitOrderContext {
                 order,
-            });
+                size_precision: request.size_precision,
+                price_precision,
+            };
+
+            batch_orders.push((context, request));
         }
 
         if batch_orders.is_empty() {
@@ -596,7 +526,7 @@ impl PolymarketExecutionClient {
         }
 
         if batch_orders.len() == 1 {
-            let batch_order = batch_orders.pop().expect("len checked");
+            let (batch_order, _) = batch_orders.pop().expect("len checked");
             self.submit_limit_order(batch_order.order);
             return;
         }
@@ -614,7 +544,7 @@ impl PolymarketExecutionClient {
 
         self.spawn_task("submit_order_list", async move {
             let ts_now = clock.get_time_ns();
-            batch_orders.retain(|batch_order| {
+            batch_orders.retain(|(batch_order, _)| {
                 match PolymarketOrderBuilder::validate_limit_expiration(&batch_order.order, ts_now)
                 {
                     Ok(()) => true,
@@ -629,19 +559,17 @@ impl PolymarketExecutionClient {
                 return Ok(());
             }
 
-            for batch_order in &batch_orders {
+            for (batch_order, _) in &batch_orders {
                 emitter.emit_order_submitted(&batch_order.order);
             }
 
             let prepare_results: Vec<_> = batch_orders
                 .iter()
-                .map(|batch_order| submitter.prepare_limit_order_submission(&batch_order.request))
+                .map(|(_, request)| submitter.prepare_limit_order_submission(request))
                 .collect();
 
             let mut prepared_orders = Vec::with_capacity(batch_orders.len());
-            let mut submissions = Vec::with_capacity(batch_orders.len());
-
-            for (mut batch_order, result) in batch_orders.into_iter().zip(prepare_results) {
+            for ((mut batch_order, _), result) in batch_orders.into_iter().zip(prepare_results) {
                 match result {
                     Ok(submission) => {
                         emit_signed_base_quantity_update(
@@ -654,8 +582,7 @@ impl PolymarketExecutionClient {
                             submission.expected_venue_order_id,
                             batch_order.order.client_order_id(),
                         );
-                        prepared_orders.push(batch_order);
-                        submissions.push(submission);
+                        prepared_orders.push((batch_order, submission));
                     }
                     Err(e) => {
                         reject_submit_order(
@@ -669,23 +596,28 @@ impl PolymarketExecutionClient {
                 }
             }
 
-            if submissions.is_empty() {
+            if prepared_orders.is_empty() {
                 return Ok(());
             }
 
-            let total = submissions.len();
-            let mut offset = 0;
+            let mut prepared_orders = prepared_orders.into_iter();
             let mut follow_ups: FuturesUnordered<BoxFuture<'_, ()>> = FuturesUnordered::new();
 
-            while offset < total {
-                let end = (offset + BATCH_ORDER_LIMIT).min(total);
-                let mut submissions_chunk = submissions[offset..end].to_vec();
-                let mut orders_chunk = prepared_orders[offset..end].to_vec();
+            while prepared_orders.len() > 0 {
+                let (mut orders_chunk, mut submissions_chunk): (Vec<_>, Vec<_>) = prepared_orders
+                    .by_ref()
+                    .take(BATCH_ORDER_LIMIT)
+                    .map(|(batch_order, submission)| {
+                        (
+                            (batch_order, submission.expected_venue_order_id),
+                            submission,
+                        )
+                    })
+                    .unzip();
 
                 if submissions_chunk.len() == 1 {
                     let submission = submissions_chunk.pop().expect("len 1");
-                    let expected_venue_order_id = submission.expected_venue_order_id;
-                    let batch_order = orders_chunk.pop().expect("len 1");
+                    let (batch_order, expected_venue_order_id) = orders_chunk.pop().expect("len 1");
                     let result = Box::pin(complete_with_follow_ups(
                         submitter.post_limit_order_submission(submission),
                         &mut follow_ups,
@@ -709,11 +641,6 @@ impl PolymarketExecutionClient {
                     );
                     Box::pin(complete_with_follow_ups(response, &mut follow_ups)).await;
                 } else {
-                    let expected_venue_order_ids: Vec<VenueOrderId> = submissions_chunk
-                        .iter()
-                        .map(|submission| submission.expected_venue_order_id)
-                        .collect();
-
                     let result = complete_with_follow_ups(
                         submitter.post_limit_order_submissions(submissions_chunk),
                         &mut follow_ups,
@@ -725,7 +652,6 @@ impl PolymarketExecutionClient {
                             let follow_up = handle_batch_order_responses(
                                 responses,
                                 orders_chunk,
-                                expected_venue_order_ids,
                                 &submitter,
                                 &emitter,
                                 clock,
@@ -742,27 +668,20 @@ impl PolymarketExecutionClient {
                         }
                         Err(e) => match classify_http_command_failure(&e) {
                             CommandFailure::Ambiguous(reason) => {
-                                for (batch_order, expected_venue_order_id) in
-                                    orders_chunk.into_iter().zip(expected_venue_order_ids)
-                                {
-                                    if let Some((order_id_str, venue_order_id)) =
-                                        handle_unknown_submit_result(
-                                            &batch_order.order,
-                                            expected_venue_order_id,
-                                            &reason,
-                                            None,
-                                            &emitter,
-                                            clock,
-                                            &fill_tracker,
-                                            &settlement,
-                                            &order_contexts,
-                                            &pending_submits,
-                                            &pending_cancels,
-                                            account_id,
-                                            batch_order.request.size_precision,
-                                            batch_order.price_precision,
-                                        )
-                                    {
+                                for (batch_order, expected_venue_order_id) in orders_chunk {
+                                    if let Some(venue_order_id) = handle_unknown_submit_result(
+                                        &batch_order.order,
+                                        expected_venue_order_id,
+                                        &reason,
+                                        None,
+                                        &emitter,
+                                        clock,
+                                        &fill_tracker,
+                                        &settlement,
+                                        &order_contexts,
+                                        &pending_submits,
+                                        &pending_cancels,
+                                    ) {
                                         let submitter = submitter.clone();
                                         let emitter = emitter.clone();
                                         let pending_cancels = pending_cancels.clone();
@@ -772,7 +691,6 @@ impl PolymarketExecutionClient {
                                                 execute_deferred_cancel(
                                                     &submitter,
                                                     &batch_order.order,
-                                                    &order_id_str,
                                                     venue_order_id,
                                                     &emitter,
                                                     &pending_cancels,
@@ -787,7 +705,7 @@ impl PolymarketExecutionClient {
                             }
                             CommandFailure::NotSent(reason)
                             | CommandFailure::VenueRejected(reason) => {
-                                for batch_order in orders_chunk {
+                                for (batch_order, _) in orders_chunk {
                                     reject_submit_order(
                                         &batch_order.order,
                                         &reason,
@@ -800,14 +718,51 @@ impl PolymarketExecutionClient {
                         },
                     }
                 }
-
-                offset = end;
             }
 
             follow_ups.for_each(|()| async {}).await;
 
             Ok(())
         });
+    }
+
+    fn prepare_limit_order_request(
+        &self,
+        order: &OrderAny,
+        ts_now: UnixNanos,
+    ) -> Option<(LimitOrderSubmitRequest, u8)> {
+        if let Err(reason) = PolymarketOrderBuilder::validate_limit_expiration(order, ts_now) {
+            self.emitter.emit_order_denied(order, &reason.to_string());
+            return None;
+        }
+
+        let (instrument, signing_context) = self.resolve_instrument(order)?;
+        if let Err(reason) =
+            PolymarketOrderBuilder::validate_limit_price(order, instrument.price_increment())
+        {
+            self.emitter.emit_order_denied(order, &reason.to_string());
+            return None;
+        }
+
+        let price = order
+            .price()
+            .expect("validated limit order must have a price");
+
+        let request = LimitOrderSubmitRequest {
+            token_id: instrument.raw_symbol().to_string(),
+            side: order.order_side(),
+            price,
+            quantity: order.quantity(),
+            quote_quantity: order.is_quote_quantity(),
+            time_in_force: order.time_in_force(),
+            post_only: order.is_post_only(),
+            signing_context,
+            expire_time: order.expire_time(),
+            tick_decimals: u32::from(instrument.min_price_increment_precision()),
+            size_precision: instrument.size_precision(),
+        };
+
+        Some((request, instrument.price_precision()))
     }
 
     pub(super) fn modify_order_command(&self, cmd: &ModifyOrder) {

@@ -40,7 +40,7 @@ use rust_decimal::Decimal;
 use thiserror::Error;
 
 use super::{
-    order_builder::PolymarketOrderBuilder,
+    order_builder::{PolymarketOrderBuilder, signed_base_quantity},
     parse::{InvalidMarketPriceError, adjust_market_buy_amount, calculate_market_price},
     settlement::SettlementRegistry,
     types::{LimitOrderSubmitRequest, SignedLimitOrderSubmission},
@@ -780,18 +780,6 @@ const FAK_UNFILLED_REASON: &str = concat!(
 
 fn is_fak_unfilled(reason: &str) -> bool {
     reason == FAK_UNFILLED_REASON
-}
-
-fn signed_base_quantity(
-    maker_amount: Decimal,
-    taker_amount: Decimal,
-    side: PolymarketOrderSide,
-) -> Decimal {
-    let usdc_scale = Decimal::from(1_000_000u32);
-    match side {
-        PolymarketOrderSide::Buy => taker_amount / usdc_scale,
-        PolymarketOrderSide::Sell => maker_amount / usdc_scale,
-    }
 }
 
 #[cfg(test)]

@@ -123,7 +123,6 @@ impl PolymarketExecutionClient {
                         execute_deferred_cancel(
                             &submitter,
                             &order,
-                            venue_order_id.as_str(),
                             venue_order_id,
                             &emitter,
                             &pending_cancels,
@@ -191,7 +190,6 @@ impl PolymarketExecutionClient {
                 Ok(response) => {
                     process_cancel_result(
                         &response,
-                        &order_id_str,
                         &order_clone,
                         venue_order_id,
                         Some(&order_contexts),
@@ -360,7 +358,6 @@ impl PolymarketExecutionClient {
                         {
                             process_cancel_result(
                                 &response,
-                                &venue_order_id_str,
                                 order,
                                 *venue_order_id,
                                 Some(&order_contexts),
@@ -481,7 +478,6 @@ impl PolymarketExecutionClient {
                         let vid = VenueOrderId::from(venue_id_str.as_str());
                         process_cancel_result(
                             &response,
-                            venue_id_str,
                             order,
                             vid,
                             Some(&order_contexts),
@@ -599,12 +595,9 @@ fn process_cancel_chunk_failure(
     causation_ids: &[UUID4],
 ) {
     for (index, (venue_order_id, order)) in orders.iter().enumerate() {
-        let order_id = venue_order_id.as_str();
-
         if index < failure.failed_range.start {
             process_cancel_result(
                 &failure.response,
-                order_id,
                 order,
                 *venue_order_id,
                 Some(order_contexts),
@@ -688,13 +681,8 @@ fn apply_cancel_http_failure(
     }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Failure emission retains order identity and command correlation"
-)]
 pub(super) fn process_cancel_result(
     response: &CancelResponse,
-    venue_order_id_str: &str,
     order: &OrderAny,
     venue_order_id: VenueOrderId,
     order_contexts: Option<&OrderContextRegistry>,
@@ -702,6 +690,8 @@ pub(super) fn process_cancel_result(
     clock: &'static AtomicTime,
     causation_id: Option<UUID4>,
 ) {
+    let venue_order_id_str = venue_order_id.as_str();
+
     if response
         .canceled
         .iter()
@@ -747,33 +737,23 @@ pub(super) fn process_cancel_result(
 pub(super) async fn execute_deferred_cancel(
     submitter: &super::submitter::OrderSubmitter,
     order: &OrderAny,
-    order_id_str: &str,
     venue_order_id: VenueOrderId,
     emitter: &ExecutionEventEmitter,
     pending_cancels: &PendingCancelTracker,
     clock: &'static AtomicTime,
 ) {
+    let order_id_str = venue_order_id.as_str();
     let result = submitter.cancel_order(order_id_str).await;
     let causation_ids = pending_cancels.take(&order.client_order_id());
 
     match result {
         Ok(response) => {
             if response.canceled.iter().any(|id| id == order_id_str) {
-                process_cancel_result(
-                    &response,
-                    order_id_str,
-                    order,
-                    venue_order_id,
-                    None,
-                    emitter,
-                    clock,
-                    None,
-                );
+                process_cancel_result(&response, order, venue_order_id, None, emitter, clock, None);
             } else {
                 for causation_id in causation_ids {
                     process_cancel_result(
                         &response,
-                        order_id_str,
                         order,
                         venue_order_id,
                         None,
@@ -1013,7 +993,6 @@ mod tests {
 
         process_cancel_result(
             &response,
-            venue_order_id.as_str(),
             &order,
             venue_order_id,
             Some(&registry),
@@ -1048,7 +1027,6 @@ mod tests {
 
         process_cancel_result(
             &CancelResponse::default(),
-            venue_order_id.as_str(),
             &order,
             venue_order_id,
             Some(&OrderContextRegistry::default()),
