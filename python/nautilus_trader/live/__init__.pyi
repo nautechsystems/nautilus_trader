@@ -766,7 +766,7 @@ class LiveExecutionEngineConfig:
         inflight_check_threshold_ms: int | None = None,
         inflight_check_retries: int | None = None,
         open_check_interval_secs: float | None = None,
-        open_check_lookback_mins: int | None = None,
+        open_check_lookback_mins: int | None = ...,
         open_check_threshold_ms: int | None = None,
         open_check_missing_retries: int | None = None,
         open_check_open_only: bool | None = None,
