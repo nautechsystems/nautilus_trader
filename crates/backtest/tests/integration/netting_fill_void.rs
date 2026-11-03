@@ -121,8 +121,8 @@ const CYCLE_2_SHORT_CLOSE: FillSpec = FillSpec {
     last_px: "0.80010",
 };
 
-/// The rest of cycle 1's close after [`CYCLE_1_CLOSE_PARTIAL`], then a cycle 2 that buys 100,000
-/// and sells 60,000 back, so the history ends long 40,000.
+// The rest of cycle 1's close after `CYCLE_1_CLOSE_PARTIAL`, then a cycle 2 that buys 100,000
+// and sells 60,000 back, so the history ends long 40,000.
 const CYCLE_1_CLOSE_REST: FillSpec = FillSpec {
     client_order_id: "O-7",
     venue_order_id: "V-7",
@@ -557,10 +557,17 @@ fn run_netting_split_close() -> NettingReopen {
 }
 
 fn run_netting_scenario(fills: &[FillSpec]) -> NettingReopen {
+    run_netting_scenario_with_replay(fills, true)
+}
+
+fn run_netting_scenario_with_replay(
+    fills: &[FillSpec],
+    carry_replay_events_on_reopen: bool,
+) -> NettingReopen {
     let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
     let cache = Rc::new(RefCell::new(Cache::default()));
     let config = ExecutionEngineConfig {
-        carry_replay_events_on_reopen: true,
+        carry_replay_events_on_reopen,
         ..Default::default()
     };
     let mut execution_engine =
@@ -741,7 +748,9 @@ fn test_prior_cycle_fill_void_drops_absorbed_snapshot_frames() {
 }
 
 #[rstest]
-fn test_current_cycle_fill_void_keeps_snapshot_frames() {
+fn test_current_cycle_fill_void_keeps_snapshot_frames(
+    #[values(false, true)] carry_replay_events_on_reopen: bool,
+) {
     let NettingReopen {
         mut execution_engine,
         mut portfolio,
@@ -749,7 +758,10 @@ fn test_current_cycle_fill_void_keeps_snapshot_frames() {
         instrument_id,
         position_id,
         account_id,
-    } = run_netting_reopen();
+    } = run_netting_scenario_with_replay(
+        &[CYCLE_1_OPEN, CYCLE_1_CLOSE, CYCLE_2_OPEN],
+        carry_replay_events_on_reopen,
+    );
 
     let realized_before =
         portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None);
@@ -773,6 +785,72 @@ fn test_current_cycle_fill_void_keeps_snapshot_frames() {
     assert_eq!(
         portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
         Some(Money::from("14.80 USD")),
+    );
+}
+
+#[rstest]
+fn test_current_cycle_fill_void_rollback_keeps_earlier_snapshots(
+    #[values(false, true)] carry_replay_events_on_reopen: bool,
+) {
+    let reducing = FillSpec {
+        last_px: CYCLE_2_OPEN.last_px,
+        ..CYCLE_2_LONG_REDUCE
+    };
+
+    let reopening = FillSpec {
+        last_px: CYCLE_2_OPEN.last_px,
+        ..CYCLE_2_LONG_OPEN
+    };
+
+    let NettingReopen {
+        mut execution_engine,
+        mut portfolio,
+        cache,
+        instrument_id,
+        position_id,
+        account_id,
+    } = run_netting_scenario_with_replay(
+        &[
+            CYCLE_1_OPEN,
+            CYCLE_1_CLOSE,
+            CYCLE_2_OPEN,
+            reducing,
+            reopening,
+        ],
+        carry_replay_events_on_reopen,
+    );
+
+    let first = build_fill_void_from_cached_fill(&execution_engine, CYCLE_2_OPEN);
+    execution_engine.process(&first);
+
+    let intermediate = cache.borrow().position_owned(&position_id).unwrap();
+    assert_eq!(intermediate.side, PositionSide::Long);
+    assert_eq!(intermediate.quantity, Quantity::from(100_000));
+    assert_eq!(intermediate.events.len(), 1);
+    assert_eq!(
+        intermediate.events[0].trade_id,
+        TradeId::from(reopening.trade_id)
+    );
+    assert_eq!(cache.borrow().position_snapshot_count(&position_id), 1);
+
+    let mut second = build_fill_void_from_cached_fill(&execution_engine, reopening);
+
+    let OrderEventAny::FillVoided(ref mut voided) = second else {
+        unreachable!()
+    };
+
+    voided.voided_qty = Quantity::from(reopening.quantity);
+    voided.commission_voided = Some(Money::from("2.00 USD"));
+    execution_engine.process(&second);
+
+    let position = cache.borrow().position_owned(&position_id).unwrap();
+    assert_eq!(position.side, PositionSide::Flat);
+    assert_eq!(position.quantity, Quantity::zero(0));
+    assert_eq!(position.realized_pnl, Some(Money::from("-3.20 USD")));
+    assert_eq!(cache.borrow().position_snapshot_count(&position_id), 1);
+    assert_eq!(
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
+        Some(Money::from("12.80 USD")),
     );
 }
 
@@ -853,6 +931,75 @@ fn test_prior_cycle_fill_void_settles_cycles_the_rebuild_reshaped() {
     assert_eq!(
         portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
         Some(Money::from("14.80 USD")),
+    );
+}
+
+#[rstest]
+#[case::opening_first([CYCLE_2_OPEN, CYCLE_2_SHORT_OPEN], PositionSide::Short, 40_000)]
+#[case::closing_first([CYCLE_2_SHORT_OPEN, CYCLE_2_OPEN], PositionSide::Long, 100_000)]
+fn test_current_cycle_fill_void_rolling_back_to_settled_cycle_counts_once(
+    #[case] fills_to_void: [FillSpec; 2],
+    #[case] intermediate_side: PositionSide,
+    #[case] intermediate_qty: u64,
+) {
+    let NettingReopen {
+        mut execution_engine,
+        mut portfolio,
+        cache,
+        instrument_id,
+        position_id,
+        account_id,
+    } = run_netting_split_close();
+    let first = build_fill_void_from_cached_fill(&execution_engine, CYCLE_1_OPEN);
+    execution_engine.process(&first);
+    assert_eq!(cache.borrow().position_snapshot_count(&position_id), 1);
+    assert_eq!(
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
+        Some(Money::from("-3.20 USD")),
+    );
+
+    for (index, spec) in fills_to_void.into_iter().enumerate() {
+        let mut event = build_fill_void_from_cached_fill(&execution_engine, spec);
+
+        let OrderEventAny::FillVoided(ref mut voided) = event else {
+            unreachable!()
+        };
+
+        voided.voided_qty = Quantity::from(spec.quantity);
+        voided.commission_voided = Some(Money::from("2.00 USD"));
+        execution_engine.process(&event);
+
+        if index == 0 {
+            let position = cache.borrow().position_owned(&position_id).unwrap();
+            assert_eq!(position.side, intermediate_side);
+            assert_eq!(position.quantity, Quantity::from(intermediate_qty));
+            assert_eq!(position.realized_pnl, Some(Money::from("-2.00 USD")));
+            assert_eq!(cache.borrow().position_snapshot_count(&position_id), 1);
+            assert_eq!(
+                portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
+                Some(Money::from("6.80 USD")),
+            );
+        }
+    }
+
+    let position = cache.borrow().position_owned(&position_id).unwrap();
+    assert!(position.is_closed());
+    assert_eq!(
+        position
+            .events
+            .iter()
+            .map(|fill| fill.trade_id)
+            .collect::<Vec<_>>(),
+        vec![
+            TradeId::from(CYCLE_1_OPEN.trade_id),
+            TradeId::from(CYCLE_1_CLOSE_PARTIAL.trade_id)
+        ],
+    );
+    assert_eq!(position.realized_pnl, Some(Money::from("8.80 USD")));
+    assert_eq!(cache.borrow().position_snapshot_count(&position_id), 0);
+    assert_eq!(
+        portfolio.realized_pnl_for_account(&instrument_id, Some(&account_id), None),
+        Some(Money::from("8.80 USD")),
     );
 }
 

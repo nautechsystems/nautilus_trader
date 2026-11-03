@@ -1484,8 +1484,8 @@ impl Position {
     /// Returns the realized PnL of the cycles the rebuild closed before the current one, which
     /// [`Self::realized_pnl`] no longer holds because reopening from flat resets it. A caller
     /// archiving closed cycles needs this to keep their PnL once the correction has moved the
-    /// cycle boundaries its existing archive describes. `None` when the corrected history never
-    /// goes flat, so the current cycle covers all of it.
+    /// cycle boundaries its existing archive describes. `None` when no closed cycle precedes the
+    /// current one, so it covers the entire corrected history.
     ///
     /// # Errors
     ///

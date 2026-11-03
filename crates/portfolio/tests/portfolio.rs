@@ -7393,6 +7393,83 @@ fn test_realized_pnl_for_snapshotted_netting_cycle_preserves_identity_after_fill
 }
 
 #[rstest]
+#[case::opening_first([0, 1])]
+#[case::closing_first([1, 0])]
+fn test_snapshotted_netting_cycle_voiding_all_fills_counts_retained_fees_once(
+    mut portfolio: Portfolio,
+    instrument_audusd: InstrumentAny,
+    #[case] void_indices: [usize; 2],
+) {
+    let account_id = AccountId::new("SIM-001");
+    let position_id = PositionId::new("P-VOID-ALL-FILLS");
+    portfolio.update_account(&get_margin_account(Some(account_id.as_str())));
+
+    let fills: Vec<_> = [OrderSide::Buy, OrderSide::Sell]
+        .into_iter()
+        .enumerate()
+        .map(|(index, side)| {
+            let mut fill = make_fill_for_account(
+                &instrument_audusd,
+                account_id,
+                side,
+                Quantity::from("100"),
+                Price::from("1.00"),
+                position_id,
+            );
+            fill.client_order_id = ClientOrderId::new(format!("O-VOID-ALL-{index}"));
+            fill.trade_id = TradeId::new(format!("T-VOID-ALL-{index}"));
+            fill.event_id = UUID4::new();
+            fill.commission = Some(Money::from("2.00 USD"));
+            fill
+        })
+        .collect();
+
+    let mut position = Position::new(&instrument_audusd, fills[0].clone());
+    position.apply(&fills[1]);
+    portfolio
+        .cache()
+        .borrow_mut()
+        .add_position(&position, OmsType::Netting)
+        .unwrap();
+    portfolio
+        .cache()
+        .borrow_mut()
+        .update_position(&position)
+        .unwrap();
+    portfolio.update_position(&PositionEvent::PositionClosed(get_closed_position(
+        &position,
+    )));
+    portfolio
+        .cache()
+        .borrow_mut()
+        .snapshot_position(&position)
+        .unwrap();
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(Money::from("-4.00 USD"))
+    );
+
+    for index in void_indices {
+        void_position_fill(&mut portfolio, &mut position, &fills[index]);
+    }
+
+    assert!(position.is_closed());
+    assert!(position.events.is_empty());
+    assert_eq!(position.realized_pnl, Some(Money::from("-4.00 USD")));
+    assert_eq!(position.commissions(), vec![Money::from("4.00 USD")]);
+    let snapshots = portfolio
+        .cache()
+        .borrow()
+        .position_snapshots(Some(&position_id), None);
+    assert_eq!(snapshots.len(), 1);
+    assert_eq!(snapshots[0].events, fills);
+    assert_eq!(
+        portfolio.realized_pnl(&instrument_audusd.id()),
+        Some(Money::from("-4.00 USD"))
+    );
+}
+
+#[rstest]
 fn test_realized_pnl_for_closed_cached_netting_position_without_fills_counts_final_cycle_once(
     mut portfolio: Portfolio,
     instrument_audusd: InstrumentAny,
@@ -7414,7 +7491,6 @@ fn test_realized_pnl_for_closed_cached_netting_position_without_fills_counts_fin
     // A correction that voids every fill can leave a closed position with no fills and only
     // retained commission, which an archive then copies as its final frame.
     position.events.clear();
-
     for realized_pnl in ["16.00 USD", "6.00 USD"] {
         position.realized_pnl = Some(Money::from(realized_pnl));
         portfolio

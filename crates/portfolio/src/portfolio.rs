@@ -44,7 +44,7 @@ use nautilus_model::{
     identifiers::{AccountId, InstrumentId, PositionId, Venue},
     instruments::{Instrument, InstrumentAny},
     orders::{Order, OrderAny},
-    position::Position,
+    position::{Position, PositionReplayEvent},
     types::{AccountBalance, Currency, MarginBalance, Money, Price},
 };
 use rust_decimal::Decimal;
@@ -91,7 +91,6 @@ struct PortfolioState {
     balance_error: Option<String>,
 }
 
-/// The realized PnL of a position's last NETTING snapshot frame, with the fills it archived.
 struct LastSnapshotFrame {
     realized_pnl: Money,
     fill_ids: AHashSet<UUID4>,
@@ -105,13 +104,23 @@ impl LastSnapshotFrame {
         }
     }
 
-    fn archives_cycle_of(&self, position: &Position) -> bool {
-        // Corrections can remove any fill, so a surviving fill identifies the archived cycle
-        (self.fill_ids.is_empty() && position.events.is_empty())
-            || position
+    fn duplicates_closed_cycle(&self, position: &Position) -> bool {
+        if position.is_open() || position.realized_pnl != Some(self.realized_pnl) {
+            return false;
+        }
+
+        if position.events.is_empty() {
+            // Replay retains the cycle's fill IDs after every effective fill has been voided
+            self.fill_ids.is_empty()
+                || position.replay_events.iter().any(|event| {
+                    matches!(event, PositionReplayEvent::Filled(fill) if self.fill_ids.contains(&fill.event_id))
+                })
+        } else {
+            position
                 .events
                 .iter()
                 .any(|fill| self.fill_ids.contains(&fill.event_id))
+        }
     }
 }
 
@@ -2658,6 +2667,7 @@ impl Portfolio {
                         } else {
                             sum_pnl = Some(realized_pnl);
                         }
+
                         last_frame = Some((snapshot, realized_pnl));
                     }
                 }
@@ -2666,7 +2676,6 @@ impl Portfolio {
 
                 if !aggregation_overflow && let Some(sum) = sum_pnl {
                     inner.snapshot_sum_per_position.insert(*position_id, sum);
-
                     if let Some((snapshot, last_pnl)) = last_frame {
                         inner
                             .snapshot_last_per_position
@@ -2767,6 +2776,7 @@ impl Portfolio {
                         } else {
                             sum_pnl = Some(realized_pnl);
                         }
+
                         last_frame = Some((snapshot, realized_pnl));
                     }
                 }
@@ -2775,7 +2785,6 @@ impl Portfolio {
 
                 if !aggregation_overflow && let Some(sum) = sum_pnl {
                     inner.snapshot_sum_per_position.insert(*position_id, sum);
-
                     if let Some((snapshot, last_pnl)) = last_frame {
                         inner
                             .snapshot_last_per_position
@@ -2903,12 +2912,6 @@ impl Portfolio {
                     inner
                         .snapshot_sum_per_position
                         .get(position_id)
-                        .or_else(|| {
-                            inner
-                                .snapshot_last_per_position
-                                .get(position_id)
-                                .map(|last| &last.realized_pnl)
-                        })
                         .map(|pnl| pnl.currency)
                 })
             })
@@ -2943,31 +2946,26 @@ impl Portfolio {
                 // the frame here so the cycle lands once, matching fills as well as PnL since an
                 // earlier cycle can realize the same amount.
                 let sum_pnl = if let Some(sum_pnl) = sum_pnl {
-                    let closed_position = position.filter(|position| !position.is_open());
-                    let closed_position_pnl =
-                        closed_position.and_then(|position| position.realized_pnl);
-                    let last_pnl = closed_position.and_then(|position| {
+                    let last_pnl = position.and_then(|position| {
                         self.inner
                             .borrow()
                             .snapshot_last_per_position
                             .get(position_id)
-                            .filter(|last| last.archives_cycle_of(position))
+                            .filter(|last| last.duplicates_closed_cycle(position))
                             .map(|last| last.realized_pnl)
                     });
 
-                    Some(match (closed_position_pnl, last_pnl) {
-                        (Some(realized_pnl), Some(last_pnl)) if last_pnl == realized_pnl => {
-                            match sum_pnl.checked_sub(last_pnl) {
-                                Some(remaining) => remaining,
-                                None => {
-                                    log::error!(
-                                        "Cannot calculate realized PnL: snapshot adjustment exceeds Money bounds"
-                                    );
-                                    return None;
-                                }
+                    Some(match last_pnl {
+                        Some(last_pnl) => match sum_pnl.checked_sub(last_pnl) {
+                            Some(remaining) => remaining,
+                            None => {
+                                log::error!(
+                                    "Cannot calculate realized PnL: snapshot adjustment exceeds Money bounds"
+                                );
+                                return None;
                             }
-                        }
-                        _ => sum_pnl,
+                        },
+                        None => sum_pnl,
                     })
                 } else {
                     None
