@@ -103,6 +103,7 @@ Released on TBD (UTC).
 - Fixed Sockudo WebSocket timeouts overriding the client heartbeat and idle policy
 - Fixed false WebSocket heartbeat timeouts while receiving fragmented messages
 - Fixed Architect AX clients failing to connect when `/whoami` omits onboarding and frozen states
+- Fixed Binance Futures initial margin underestimation (#5531), thanks for reporting @wangzengzhi
 - Fixed Binance startup reconciliation omitting closed orders from selected instruments
 - Fixed Binance Futures instrument `ts_event` and `ts_init` defaulting to zero
 - Fixed Binance REST requests ignoring 429 and 418 cooldowns from other requests

@@ -354,6 +354,19 @@ position fails, `generate_position_status_reports` returns an error with the fai
 of an incomplete report set. See
 [instrument availability](../concepts/execution/reconciliation.md#instrument-availability).
 
+#### Futures margin calculations
+
+USD-M and COIN-M Futures instruments use an initial margin factor of `1`. With the default
+`LeveragedMarginModel`, local initial margin equals notional divided by the cached account leverage.
+
+Margin accounts start at 1x leverage and require the full notional until their cached leverage changes.
+Setting `futures_leverages` requests venue leverage but does not update the cached account leverage.
+
+Local maintenance margin equals notional divided by cached account leverage, multiplied by the
+`margin_maint` factor of `0.1`. This calculation does not model Binance's bracket-specific maintenance ratios
+for [USD-M](https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/Notional-and-Leverage-Brackets)
+or [COIN-M](https://developers.binance.com/docs/derivatives/coin-margined-futures/account/rest-api/Notional-Bracket-for-Pair).
+
 ### Risk events
 
 | Feature              | Spot | USDT Futures | Coin Futures | Notes                              |

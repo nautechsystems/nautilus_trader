@@ -23,6 +23,7 @@ use nautilus_model::identifiers::TraderId;
 mod futures;
 mod http_contracts;
 mod http_retry;
+mod margin;
 mod python;
 mod spot;
 
