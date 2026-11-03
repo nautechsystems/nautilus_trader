@@ -2231,6 +2231,22 @@ def test_forex_session_variants() -> None:
     assert ForexSession.from_str("NEW_YORK") == ForexSession.NEW_YORK
 
 
+@pytest.mark.parametrize(
+    ("session", "expected"),
+    [
+        (ForexSession.SYDNEY, "<ForexSession.SYDNEY: '0'>"),
+        (ForexSession.TOKYO, "<ForexSession.TOKYO: '1'>"),
+        (ForexSession.LONDON, "<ForexSession.LONDON: '2'>"),
+        (ForexSession.NEW_YORK, "<ForexSession.NEW_YORK: '3'>"),
+    ],
+)
+def test_forex_session_repr(session: ForexSession, expected: str) -> None:
+    """
+    Test forex session repr.
+    """
+    assert repr(session) == expected
+
+
 NOW_UTC = dt.datetime(2024, 6, 15, 12, 0, 0, tzinfo=dt.UTC)
 
 
