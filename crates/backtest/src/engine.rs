@@ -1197,15 +1197,17 @@ impl BacktestEngine {
             .collect()
     }
 
-    /// Reset the backtest engine.
+    /// Resets the backtest engine.
     ///
     /// All stateful fields are reset to their initial value. Data and instruments
     /// persist across resets to enable repeated runs with different strategies.
+    /// The trader must be initialized before reset, normally by running the engine.
     ///
     /// # Errors
     ///
-    /// Returns an error if ending the run, resetting a simulation module, or clearing callback
-    /// ownership fails.
+    /// Returns an error if ending the run, resetting a venue or trader, reopening the streaming
+    /// writer, or clearing callback ownership fails. The engine attempts the remaining cleanup
+    /// steps before returning the first error.
     pub fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting");
 
@@ -1242,6 +1244,10 @@ impl BacktestEngine {
         // Reset trader
         if let Err(e) = self.kernel.trader.borrow_mut().reset() {
             log::error!("Error resetting trader: {e:?}");
+
+            if reset_error.is_none() {
+                reset_error = Some(e);
+            }
         }
 
         self.kernel.portfolio.borrow_mut().reset();
@@ -2549,7 +2555,7 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        actor::DataActor,
+        actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
         enums::Environment,
         messages::{
             data::{DataCommand, UnsubscribeCommand},
@@ -2561,6 +2567,7 @@ mod tests {
             self, MessagingSwitchboard, TypedHandler,
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
         },
+        nautilus_actor,
     };
     use nautilus_execution::{
         engine::{SnapshotAnchorer, stubs::StubExecutionClient},
@@ -5198,6 +5205,7 @@ mod tests {
         let instrument_id = instrument.id();
         engine.add_instrument(&instrument).unwrap();
 
+        engine.kernel.trader.borrow_mut().initialize().unwrap();
         engine.reset().unwrap();
 
         assert!(
@@ -5235,6 +5243,7 @@ mod tests {
         drop(order_emulator);
         data_commands.clear();
 
+        engine.kernel.trader.borrow_mut().initialize().unwrap();
         engine.reset().unwrap();
 
         let commands = data_commands.get_messages();
@@ -5247,6 +5256,99 @@ mod tests {
             DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
                 if command.instrument_ids == [instrument_id]
         )));
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_reset_returns_component_failure_after_cleanup(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+        #[case] streaming: bool,
+    ) {
+        let mut engine = create_engine();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument_id = instrument.id();
+        engine.add_instrument(&instrument).unwrap();
+        let actor_id = ActorId::from("ResetFailureActor");
+
+        let actor = ResetFailureActor {
+            core: DataActorCore::new(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            }),
+        };
+
+        engine.add_actor(actor).unwrap();
+
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1003.00"),
+            Price::from("1004.00"),
+            Quantity::from("3.000"),
+            Quantity::from("4.000"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_000_000_001),
+        );
+        engine
+            .add_data(vec![Data::Quote(quote)], None, true, true)
+            .unwrap();
+        engine
+            .run(None, None, Some("reset-test".to_string()), streaming)
+            .unwrap();
+        assert_eq!(engine.iteration, 1);
+        assert!(engine.data_iterator.is_done());
+        assert_eq!(engine.run_config_id.as_deref(), Some("reset-test"));
+
+        let result = engine.reset();
+
+        assert_eq!(engine.run_config_id, None);
+        assert_eq!(engine.run_id, None);
+        assert_eq!(engine.run_started, None);
+        assert_eq!(engine.run_finished, None);
+        assert_eq!(engine.backtest_start, None);
+        assert_eq!(engine.backtest_end, None);
+        assert_eq!(engine.iteration, 0);
+        assert_eq!(engine.last_ns, UnixNanos::default());
+        assert_eq!(engine.end_ns, UnixNanos::default());
+        assert_eq!(engine.data_iterator.next(), Some(Data::Quote(quote)));
+        assert_eq!(
+            component_state(&actor_id.inner()).unwrap(),
+            ComponentState::Resetting
+        );
+        assert_eq!(
+            engine.kernel.trader.borrow().state(),
+            ComponentState::Resetting
+        );
+        assert_eq!(result.unwrap_err().to_string(), "synthetic reset failure");
+    }
+
+    #[rstest]
+    fn test_reset_preserves_error_from_end() {
+        let mut engine = create_engine();
+        engine.run(None, None, None, true).unwrap();
+        engine
+            .fail_funding::<()>("prior funding failure".to_string())
+            .unwrap_err();
+
+        let e = engine.reset().unwrap_err();
+
+        assert_eq!(e.to_string(), "prior funding failure");
+        assert_eq!(engine.funding_error, None);
+        assert_eq!(engine.run_id, None);
+        assert_eq!(engine.iteration, 0);
+    }
+
+    #[derive(Debug)]
+    struct ResetFailureActor {
+        core: DataActorCore,
+    }
+
+    nautilus_actor!(ResetFailureActor);
+
+    impl DataActor for ResetFailureActor {
+        fn on_reset(&mut self) -> anyhow::Result<()> {
+            anyhow::bail!("synthetic reset failure");
+        }
     }
 
     #[rstest]
