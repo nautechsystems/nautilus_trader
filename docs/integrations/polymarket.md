@@ -1422,14 +1422,40 @@ owners. Before logging or exporting fills, select only needed fields or redact t
 including those inside nested JSON.
 :::
 
+#### Remaining settlement limits
+
+[RFC #4876](https://github.com/nautechsystems/nautilus_trader/issues/4876) remains open for:
+
+- **Account scope**: The [trades API](https://docs.polymarket.com/api-reference/trade/get-trades)
+  documents authenticated-user scope, supported by participating-account reads. A same-trade check under
+  non-participating credentials remains blocked by the lack of a second account.
+- **Maker completeness**: Sampled REST legs agree with on-chain events, but no paired original REST and
+  user-stream capture covers several maker orders owned by the configured account. Admission assumes
+  complete payloads; the proposed multi-owned maker gate is unimplemented. Counting returned legs cannot
+  detect an omitted leg, and targeted REST also needs completeness evidence.
+- **Historical fees**: Retaining the first-admission local fee basis does not prove the venue's actual
+  charge. Cache-rebuilt and report-applied fills lack that basis and can conflict after a fee refresh.
+- **Unbound declined events**: Declined fills or voids without a settlement record only log an error.
+  Their fault policy remains undecided, separately from [retaining applied unbound fills](#unbound-fills).
+
+The provider checks also remain unverified for Protocol V2. Dedicated settlement signals and metrics
+are deferred pending a concrete consumer.
+
+If you can verify either provider check, could you share sanitized results in the RFC? Useful evidence
+is a same-trade read under both accounts with HTTP statuses and response shapes, paired original REST
+and user-stream payloads containing several owned maker legs, or explicit provider confirmation of the
+required guarantees. Identify the market protocol and trade status. Remove credentials and preserve
+ownership relationships with consistent aliases. Existing captures and read-only queries suffice;
+no new trades are requested.
+
 #### Failed trades and REST resolution
 
 A WebSocket `FAILED` update never voids a fill by itself. The adapter quarantines a trade and reads
 it by ID from the authenticated REST trades endpoint (`GET /data/trades`) when:
 
 - The WebSocket reports `FAILED`.
-- WebSocket evidence contradicts a fill the engine has not applied, such as changed fill values or a
-  missing owned order.
+- WebSocket evidence contradicts retained original venue evidence, including after the engine applies
+  a fill, such as changed fill values or a missing owned order.
 - A trade message fails validation.
 
 The first read starts immediately. Until REST returns a terminal status, the adapter retries after
@@ -1441,8 +1467,9 @@ with the same trade ID cannot release quarantine, even with status `CONFIRMED`.
 An invalid commission emits no fallback fill and applies no owned leg. Apply the Polymarket exception in
 [TC-E89](../developer_guide/spec_exec_testing.md#tc-e89-websocket-commission-failure) when testing recovery.
 
-The first terminal REST result is final. Another REST read starts for a contradictory WebSocket status or new
-or changed evidence for fills the engine has not applied. It never reverses the first result.
+The first terminal REST result is final. Another REST read starts for a contradictory WebSocket status or
+conflicting retained original venue evidence, including after application. Reconstructed and report-routed
+legs do not receive that stream comparison. A later read never reverses the first terminal result.
 
 ##### REST `FAILED` result
 
