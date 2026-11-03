@@ -33,7 +33,6 @@ use super::{
     instruments::{
         apply_live_instrument, publish_cached_condition_closed, query_positive_closed_markets,
     },
-    runtime::is_condition_closed,
     spawn_task,
     subscriptions::resolve_token_id_from,
 };
@@ -133,7 +132,7 @@ impl PolymarketDataClient {
                     true
                 } else {
                     let closed = extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
-                        is_condition_closed(&self.subscriptions.closed_condition_ids, &condition_id)
+                        self.subscriptions.is_condition_closed(&condition_id)
                     });
                     let loaded = self.instruments.load();
                     if let Some(instrument) = loaded.get(&instrument_id) {
@@ -161,9 +160,9 @@ impl PolymarketDataClient {
     }
 
     pub(super) fn queue_pending_load(&self, instrument_id: InstrumentId) {
-        if extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
-            is_condition_closed(&self.subscriptions.closed_condition_ids, &condition_id)
-        }) && !self.deferred_resolutions.contains_key(&instrument_id)
+        if extract_condition_id(&instrument_id)
+            .is_ok_and(|condition_id| self.subscriptions.is_condition_closed(&condition_id))
+            && !self.deferred_resolutions.contains_key(&instrument_id)
         {
             return;
         }
@@ -228,12 +227,7 @@ impl PolymarketDataClient {
 
             // Drain pending and release `scheduled` so new misses spawn a fresh
             // task in parallel rather than piggybacking on this batch's budget.
-            let mut batch: AHashSet<InstrumentId> = {
-                let mut guard = pending.lock();
-                let snapshot = guard.iter().copied().collect();
-                guard.clear();
-                snapshot
-            };
+            let mut batch = std::mem::take(&mut *pending.lock());
             scheduled_guard.release();
 
             if batch.is_empty() {
@@ -412,137 +406,97 @@ impl PolymarketDataClient {
                         );
                     }
 
-                    match outcome {
-                        AutoLoadOutcome::Unsupported => {}
+                    let loaded = match outcome {
                         AutoLoadOutcome::Open(loaded) => {
                             if cancellation.is_cancelled() {
                                 continue;
                             }
 
-                            for instrument in loaded {
-                                let instrument_id = instrument.id();
-                                let accepted = filters.iter().all(|f| f.accept(instrument));
-
-                                if cancellation.is_cancelled() {
-                                    return;
-                                }
-
-                                if !accepted {
-                                    log::debug!(
-                                        "Auto-loaded instrument {} filtered out",
-                                        instrument.id()
-                                    );
-                                    subscriptions
-                                        .discard_filtered_instrument(instrument_id, &batch);
-                                    continue;
-                                }
-
-                                apply_live_instrument(
-                                    &closed_condition_ids,
-                                    &instrument_update_state,
-                                    &instruments,
-                                    &token_meta,
-                                    instrument,
-                                    |instrument| {
-                                        if let Err(e) = data_sender
-                                            .send(DataEvent::Data(instrument.clone().into()))
-                                        {
-                                            log::error!(
-                                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
-                                            );
-                                        }
-                                    },
-                                );
-
-                                admit_data_resolution_instrument(&resolve_ctx, instrument).await;
-                            }
+                            loaded
                         }
-                        AutoLoadOutcome::Closed {
-                            instruments: loaded,
-                            resolution,
-                        } => {
-                            for instrument in loaded {
-                                let instrument_id = instrument.id();
-                                if !active_instrument_status_subs.contains(&instrument_id)
-                                    && !active_instrument_close_subs.contains(&instrument_id)
+                        AutoLoadOutcome::Closed { instruments, .. } => instruments,
+                        AutoLoadOutcome::Unsupported | AutoLoadOutcome::Unknown => continue,
+                    };
+
+                    for instrument in loaded {
+                        let instrument_id = instrument.id();
+
+                        if matches!(outcome, AutoLoadOutcome::Closed { .. })
+                            && !active_instrument_status_subs.contains(&instrument_id)
+                            && !active_instrument_close_subs.contains(&instrument_id)
+                        {
+                            continue;
+                        }
+
+                        let accepted = filters.iter().all(|f| f.accept(instrument));
+
+                        if cancellation.is_cancelled() {
+                            return;
+                        }
+
+                        if !accepted {
+                            log::debug!("Auto-loaded instrument {} filtered out", instrument.id());
+                            subscriptions.discard_filtered_instrument(instrument_id, &batch);
+                            continue;
+                        }
+
+                        apply_live_instrument(
+                            &closed_condition_ids,
+                            &instrument_update_state,
+                            &instruments,
+                            &token_meta,
+                            instrument,
+                            |instrument| {
+                                if let Err(e) =
+                                    data_sender.send(DataEvent::Data(instrument.clone().into()))
                                 {
-                                    continue;
-                                }
-
-                                let accepted = filters.iter().all(|f| f.accept(instrument));
-
-                                if cancellation.is_cancelled() {
-                                    return;
-                                }
-
-                                if !accepted {
-                                    log::debug!(
-                                        "Auto-loaded instrument {} filtered out",
-                                        instrument.id()
+                                    log::error!(
+                                        "Failed to emit auto-loaded instrument {instrument_id}: {e}"
                                     );
-                                    subscriptions
-                                        .discard_filtered_instrument(instrument_id, &batch);
-                                    continue;
                                 }
+                            },
+                        );
 
-                                apply_live_instrument(
-                                    &closed_condition_ids,
-                                    &instrument_update_state,
-                                    &instruments,
-                                    &token_meta,
-                                    instrument,
-                                    |instrument| {
-                                        if let Err(e) = data_sender
-                                            .send(DataEvent::Data(instrument.clone().into()))
-                                        {
-                                            log::error!(
-                                                "Failed to emit auto-loaded instrument {instrument_id}: {e}"
-                                            );
-                                        }
-                                    },
-                                );
+                        admit_data_resolution_instrument(&resolve_ctx, instrument).await;
+                    }
 
-                                admit_data_resolution_instrument(&resolve_ctx, instrument).await;
+                    if let AutoLoadOutcome::Closed { resolution, .. } = outcome {
+                        if let Some(resolution) = resolution {
+                            tokio::select! {
+                                _ = apply_watched_condition_resolution(
+                                    &resolve_ctx,
+                                    resolution,
+                                ) => {}
+                                () = cancellation.cancelled() => return,
                             }
-
-                            if let Some(resolution) = resolution {
-                                tokio::select! {
-                                    _ = apply_watched_condition_resolution(
-                                        &resolve_ctx,
-                                        resolution,
-                                    ) => {}
-                                    () = cancellation.cancelled() => return,
-                                }
-                            }
-
-                            if !subscriptions
-                                .mark_closed(condition_id, Some(&cancellation))
-                                .await
-                            {
-                                return;
-                            }
-
-                            if cancellation.is_cancelled() {
-                                return;
-                            }
-
-                            publish_cached_condition_closed(
-                                condition_id,
-                                &instrument_update_state,
-                                &instruments,
-                                &data_sender,
-                                resolve_ctx.clock,
-                            );
-
-                            subscriptions
-                                .retire_condition(
-                                    condition_id,
-                                    batch.iter().copied(),
-                                    Some(&cancellation),
-                                )
-                                .await;
                         }
-                        AutoLoadOutcome::Unknown => {}
+
+                        if !subscriptions
+                            .mark_closed(condition_id, Some(&cancellation))
+                            .await
+                        {
+                            return;
+                        }
+
+                        if cancellation.is_cancelled() {
+                            return;
+                        }
+
+                        publish_cached_condition_closed(
+                            condition_id,
+                            &instrument_update_state,
+                            &instruments,
+                            &data_sender,
+                            resolve_ctx.clock,
+                        );
+
+                        subscriptions
+                            .retire_condition(
+                                condition_id,
+                                batch.iter().copied(),
+                                Some(&cancellation),
+                            )
+                            .await;
                     }
                 }
 

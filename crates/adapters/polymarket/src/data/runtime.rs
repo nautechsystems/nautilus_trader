@@ -23,7 +23,6 @@ use nautilus_model::{
     identifiers::InstrumentId,
     instruments::{Instrument, InstrumentAny},
 };
-use parking_lot::Mutex;
 use tokio_util::sync::CancellationToken;
 use ustr::Ustr;
 
@@ -326,13 +325,6 @@ impl DataSubscriptions {
             self.retire_instrument(instrument_id).await;
         }
     }
-}
-
-pub(crate) fn is_condition_closed(
-    closed_condition_ids: &Arc<Mutex<AHashSet<String>>>,
-    condition_id: &str,
-) -> bool {
-    closed_condition_ids.lock().contains(condition_id)
 }
 
 pub(crate) fn is_instrument_expired_and_not_reported_open(

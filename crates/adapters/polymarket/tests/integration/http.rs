@@ -75,6 +75,7 @@ use nautilus_polymarket::{
 use rstest::rstest;
 use rust_decimal_macros::dec;
 use serde_json::{Value, from_str, json};
+use ustr::Ustr;
 
 // base64url of b"test_secret_key_32bytes_pad12345"
 const TEST_API_SECRET_B64: &str = "dGVzdF9zZWNyZXRfa2V5XzMyYnl0ZXNfcGFkMTIzNDU=";
@@ -2058,11 +2059,26 @@ async fn test_load_by_slugs_does_not_set_initialized() {
         .await
         .unwrap();
 
+    let expected_tokens = ["11111111111111111111", "22222222222222222222"]
+        .into_iter()
+        .map(|token_id| {
+            let instrument_id = InstrumentId::from(format!("0xcondition_a-{token_id}.POLYMARKET"));
+            let instrument = provider.store().find(&instrument_id).unwrap().clone();
+            (Ustr::from(token_id), instrument)
+        })
+        .collect::<AHashMap<_, _>>();
+
     assert_eq!(provider.store().count(), 2);
     assert!(
         !provider.store().is_initialized(),
         "load_by_slugs must not mark the store as initialized"
     );
+
+    for (token_id, instrument) in &expected_tokens {
+        assert_eq!(provider.get_by_token_id(token_id), Some(instrument));
+    }
+
+    assert_eq!(provider.build_token_map(), expected_tokens);
 }
 
 #[rstest]

@@ -148,41 +148,11 @@ impl PolymarketDataClient {
         let interval_secs = self.config.resolve_poll_interval_secs.max(1);
         let grace_secs = self.config.resolve_poll_grace_secs;
         let max_wait_secs = self.config.resolve_poll_max_wait_secs.max(grace_secs);
-        let instruments = self.instruments.clone();
-        let closure_client = gamma_client.clone();
-        let closure_sender = self.data_sender.clone();
-        let closed_condition_ids = self.subscriptions.closed_condition_ids.clone();
 
-        let task_spawner = self
-            .tasks
+        self.tasks
             .spawner()
             .map_err(|e| anyhow::anyhow!("Polymarket task admission is closed: {e}"))?;
-        let ctx = WsMessageContext {
-            subscriptions: self.subscriptions.clone(),
-            clock: self.clock,
-            data_sender: self.data_sender.clone(),
-            instruments: self.instruments.clone(),
-            instrument_update_state: self.instrument_update_state.clone(),
-            gamma_client: gamma_client.clone(),
-            filters: self.provider.filters(),
-            resolve_poll_watchlist: self.resolve_poll_watchlist.clone(),
-            resolve_watch_apply_mutex: self.resolve_watch_apply_mutex.clone(),
-            pending_resolutions: self.pending_resolutions.clone(),
-            deferred_resolutions: self.deferred_resolutions.clone(),
-            book_snapshot_timeout: Duration::from_secs(self.config.book_snapshot_timeout_secs),
-            new_market_inflight_keys: self.new_market_inflight_keys.clone(),
-            new_market_fetch_semaphore: self.new_market_fetch_semaphore.clone(),
-            tasks: task_spawner,
-            polybolt_feed: self.polybolt_feed.clone(),
-            new_market_filter: self.config.new_market_filter.clone(),
-            drop_quotes_missing_side: self.config.drop_quotes_missing_side,
-            compute_effective_deltas: self.config.compute_effective_deltas,
-            cancellation_token: cancellation.clone(),
-        };
-
-        let watchlist = self.resolve_poll_watchlist.clone();
-
-        let resolve_ctx = ctx.resolve_context();
+        let resolve_ctx = self.resolution_context();
 
         if resolve_poll_enabled {
             log::debug!("Polymarket resolve poll task started");
@@ -207,9 +177,9 @@ impl PolymarketDataClient {
                         // cycle. Without an expired instrument reported open, no request is sent.
                         let refresh_result = tokio::select! {
                             result = refresh_expired_market_closure(
-                                &closure_client,
-                                &instruments,
-                                &closure_sender,
+                                &gamma_client,
+                                &resolve_ctx.instruments,
+                                &resolve_ctx.data_sender,
                                 now_ns,
                                 &subscriptions,
                                 Some(&cancellation),
@@ -228,8 +198,7 @@ impl PolymarketDataClient {
 
                         // A set-wide sweep never converges and grows for the process lifetime
                         let pending_retirement = {
-                            let terminal_conditions = closed_condition_ids
-                                .lock();
+                            let terminal_conditions = subscriptions.closed_condition_ids.lock();
 
                             terminal_conditions
                                 .difference(&retired_condition_ids)
@@ -260,7 +229,7 @@ impl PolymarketDataClient {
                         .await;
 
                         let (watched_conditions, watched_instruments, selection) = {
-                            let snapshot = watchlist.read();
+                            let snapshot = resolve_ctx.watchlist.read();
                             let watched_conditions = snapshot.len();
                             let watched_instruments = snapshot
                                 .values()
@@ -1854,6 +1823,20 @@ mod tests {
             client.polybolt_feed.proxy_url().unwrap().expose(),
             PROXY_URL
         );
+    }
+
+    #[rstest]
+    fn resolve_poll_task_rejects_closed_task_admission() {
+        let client = make_client_for_reset_test();
+        client.tasks.begin_shutdown();
+
+        let error = client.register_resolve_poll_task().unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Polymarket task admission is closed: task group admission is closed",
+        );
+        assert!(client.tasks.is_empty());
     }
 
     #[rstest]

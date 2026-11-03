@@ -472,19 +472,18 @@ impl PolymarketDataClient {
             .subscriptions
             .ws_open_tokens
             .contains(&Ustr::from(token_id.as_str()));
-        let resolve_ctx = self.resolution_context();
-        let book_sync = self.subscriptions.book_sync.clone();
+        let subscriptions = self.subscriptions.clone();
         let snapshot_timeout = Duration::from_secs(self.config.book_snapshot_timeout_secs);
 
         // The sync waits out any subscribe write in flight, so recovery cycles an owned token
         let future = async move {
-            resolve_ctx
-                .sync_ws_subscription(instrument_id, token_id.clone())
+            subscriptions
+                .reconcile(instrument_id, token_id.clone())
                 .await;
 
             if was_open
-                && book_sync.request_snapshot_if_subscribed(
-                    &resolve_ctx.subscriptions.active_delta_subs,
+                && subscriptions.book_sync.request_snapshot_if_subscribed(
+                    &subscriptions.active_delta_subs,
                     instrument_id,
                     Instant::now(),
                 ) == BookSequenceOutcome::Recover
@@ -493,18 +492,14 @@ impl PolymarketDataClient {
                 start_recovery(
                     instrument_id,
                     Some(token_id),
-                    &resolve_ctx.subscriptions.active_delta_subs,
-                    &book_sync,
-                    &resolve_ctx.subscriptions.ws_client,
+                    &subscriptions.active_delta_subs,
+                    &subscriptions.book_sync,
+                    &subscriptions.ws_client,
                     snapshot_timeout,
                     &spawner,
                 );
             } else if !was_open {
-                resolve_ctx.subscriptions.monitor_book_snapshot(
-                    instrument_id,
-                    snapshot_timeout,
-                    &spawner,
-                );
+                subscriptions.monitor_book_snapshot(instrument_id, snapshot_timeout, &spawner);
             }
         };
 

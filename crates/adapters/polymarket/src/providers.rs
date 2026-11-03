@@ -161,15 +161,7 @@ impl PolymarketInstrumentProvider {
     /// Returns an error if the HTTP request or parsing fails.
     pub async fn load_by_slugs(&mut self, slugs: Vec<String>) -> anyhow::Result<()> {
         let instruments = self.http_client.request_instruments_by_slugs(slugs).await?;
-
-        for instrument in &instruments {
-            self.token_index.insert(
-                Ustr::from(instrument.raw_symbol().as_str()),
-                instrument.id(),
-            );
-        }
-
-        self.store.add_bulk(instruments);
+        self.add_instruments(instruments);
 
         Ok(())
     }
@@ -337,12 +329,6 @@ impl PolymarketInstrumentProvider {
         Ok(())
     }
 
-    /// Loads instruments using all configured filters, combining results from
-    /// each filter's methods that return `Some`.
-    async fn load_filtered(&self) -> anyhow::Result<Vec<InstrumentAny>> {
-        fetch_instruments(&self.http_client, &self.filters).await
-    }
-
     /// Fetches the bulk instrument universe without mutating provider state.
     ///
     /// Registered [`InstrumentFilter`]s take precedence; otherwise a non-empty
@@ -353,7 +339,7 @@ impl PolymarketInstrumentProvider {
         filters: Option<&HashMap<String, String>>,
     ) -> anyhow::Result<Vec<InstrumentAny>> {
         if !self.filters.is_empty() {
-            return self.load_filtered().await;
+            return fetch_instruments(&self.http_client, &self.filters).await;
         }
 
         match filters {
