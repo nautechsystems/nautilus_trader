@@ -397,6 +397,7 @@ impl DeriveHttpClient {
     /// # Errors
     ///
     /// Returns an error if transport, HTTP, or JSON-RPC processing fails.
+    /// Returns a decode error if any trade names a different instrument.
     pub async fn get_trade_history(
         &self,
         instrument_name: &str,
@@ -417,8 +418,20 @@ impl DeriveHttpClient {
             params.insert("to_timestamp".to_string(), to.into());
         }
 
-        self.send_public("public/get_trade_history", &Value::Object(params))
-            .await
+        let result: DerivePublicTradesResult = self
+            .send_public("public/get_trade_history", &Value::Object(params))
+            .await?;
+
+        for trade in &result.trades {
+            if trade.instrument_name.as_str() != instrument_name {
+                return Err(DeriveHttpError::decode(format!(
+                    "trade history response identity mismatch: requested {instrument_name}, received {}",
+                    trade.instrument_name,
+                )));
+            }
+        }
+
+        Ok(result)
     }
 
     /// Fetches the public funding rate history for the instrument.

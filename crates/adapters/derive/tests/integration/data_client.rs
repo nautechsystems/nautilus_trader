@@ -79,6 +79,7 @@ use crate::{
     },
     config::DeriveDataClientConfig,
     data::DeriveDataClient,
+    http::DeriveHttpError,
     websocket::{
         WsSubscriptionPayload, parse_orderbook_deltas, parse_orderbook_depth, parse_orderbook_msg,
     },
@@ -1859,6 +1860,248 @@ async fn test_request_trades_preserves_unknown_aggressor(#[case] direction: &str
     assert_eq!(tick.trade_id, TradeId::from("trade-1"));
     assert_eq!(tick.ts_event, UnixNanos::from(1_700_000_000_000_000_000));
     assert!((before..=after).contains(&tick.ts_init));
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "requires Derive public testnet network access"]
+async fn test_request_trades_testnet() {
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+
+    let cfg = DeriveDataClientConfig {
+        environment: DeriveEnvironment::Testnet,
+        currencies: vec!["ETH".to_string()],
+        ..Default::default()
+    };
+
+    let mut client = DeriveDataClient::new(*DERIVE_CLIENT_ID, cfg).unwrap();
+    let validation = async {
+        client.connect().await.unwrap();
+        let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+        let instrument = client.instruments.get_cloned(&instrument_id).unwrap();
+        let request = request_trades(instrument_id, Some(10));
+        let request_id = request.request_id;
+        let before = get_atomic_clock_realtime().get_time_ns();
+        client.request_trades(request).unwrap();
+
+        let DataResponse::Trades(response) =
+            recv_response_within(&mut rx, Duration::from_secs(30)).await
+        else {
+            panic!("expected testnet trades response");
+        };
+
+        let after = get_atomic_clock_realtime().get_time_ns();
+
+        assert_eq!(response.correlation_id, request_id);
+        assert_eq!(response.client_id, *DERIVE_CLIENT_ID);
+        assert_eq!(response.instrument_ids, vec![instrument_id]);
+        assert!(!response.data.is_empty());
+        assert!(response.data.len() <= 10);
+        assert!((before..=after).contains(&response.ts_init));
+        let mut ids = HashSet::new();
+
+        for tick in response.data.iter() {
+            assert_eq!(tick.instrument_id, instrument_id);
+            assert_eq!(tick.price.precision, instrument.price_precision());
+            assert_eq!(tick.size.precision, instrument.size_precision());
+            assert!((before..=response.ts_init).contains(&tick.ts_init));
+            assert!(ids.insert(tick.trade_id));
+        }
+
+        assert!(
+            response
+                .data
+                .windows(2)
+                .all(|pair| pair[0].ts_event <= pair[1].ts_event)
+        );
+        println!(
+            "Derive testnet: validated {} historical ETH-PERP trades through the data client",
+            response.data.len()
+        );
+    };
+
+    let result = tokio::time::timeout(Duration::from_secs(90), validation).await;
+    client.disconnect().await.unwrap();
+    result.expect("testnet trade validation exceeds 90 seconds");
+}
+
+#[rstest]
+#[case::foreign_only(false)]
+#[case::mixed_paginated(true)]
+#[tokio::test]
+async fn test_request_trades_rejects_foreign_instrument_and_recovers(#[case] mixed: bool) {
+    let rest_state = RestState::default();
+    let mut definitions = load_json("perps/http_get_instruments_eth.json");
+    let mut foreign_definition = definitions["result"][0].clone();
+    foreign_definition["instrument_name"] = json!("BTC-PERP");
+    foreign_definition["base_currency"] = json!("BTC");
+    foreign_definition["tick_size"] = json!("0.1");
+    foreign_definition["amount_step"] = json!("0.0001");
+    definitions["result"]
+        .as_array_mut()
+        .unwrap()
+        .push(foreign_definition);
+    *rest_state.instruments_response.lock().await = Some(definitions);
+
+    let mut foreign = page_trade("foreign");
+    foreign["instrument_name"] = json!("BTC-PERP");
+    foreign["trade_price"] = json!("65000.1");
+    foreign["trade_amount"] = json!("0.1234");
+
+    *rest_state.trade_history_pages.lock().await = if mixed {
+        vec![
+            json!({
+                "trades": [page_trade("first")],
+                "pagination": {"count": 3, "num_pages": 2},
+            }),
+            json!({
+                "trades": [page_trade("second"), foreign],
+                "pagination": {"count": 3, "num_pages": 2},
+            }),
+        ]
+    } else {
+        vec![json!({
+            "trades": [foreign],
+            "pagination": {"count": 1, "num_pages": 1},
+        })]
+    };
+
+    let rest_addr = start_rest_server(rest_state.clone()).await;
+    let ws_addr = start_ws_server(WsState::default()).await;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
+    replace_data_event_sender(tx);
+    let mut client = connect_with_eth_currency(rest_addr, ws_addr).await;
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let requested = client.instruments.get_cloned(&instrument_id).unwrap();
+    let foreign = client
+        .instruments
+        .get_cloned(&InstrumentId::from("BTC-PERP.DERIVE"))
+        .unwrap();
+    assert_eq!(
+        (requested.price_precision(), requested.size_precision()),
+        (2, 3)
+    );
+    assert_eq!(
+        (foreign.price_precision(), foreign.size_precision()),
+        (1, 4)
+    );
+
+    client
+        .request_trades(request_trades(instrument_id, None))
+        .unwrap();
+    wait_until_async(
+        || async { client.pending_tasks.all_finished() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    while let Ok(event) = rx.try_recv() {
+        assert!(!matches!(
+            event,
+            DataEvent::Response(DataResponse::Trades(_))
+        ));
+    }
+
+    let calls = rest_state.trade_history_calls().await;
+    assert_eq!(calls.len(), if mixed { 2 } else { 1 });
+
+    let error = client
+        .http_client
+        .get_trade_history("ETH-PERP", None, None, if mixed { 2 } else { 1 }, 10)
+        .await
+        .unwrap_err();
+
+    let DeriveHttpError::Decode(message) = error else {
+        panic!("expected trade history identity decode error");
+    };
+
+    assert_eq!(
+        message,
+        "trade history response identity mismatch: requested ETH-PERP, received BTC-PERP"
+    );
+
+    let mut newest = page_trade_at("newest", 1_700_000_000_300);
+    newest["direction"] = json!("sell");
+    newest["trade_price"] = json!("3501.23");
+    newest["trade_amount"] = json!("0.456");
+    *rest_state.trade_history_pages.lock().await = vec![
+        json!({
+            "trades": [newest, page_trade_at("duplicate", 1_700_000_000_200)],
+            "pagination": {"count": 5, "num_pages": 2},
+        }),
+        json!({
+            "trades": [
+                page_trade_at("duplicate", 1_700_000_000_200),
+                page_trade_at("older", 1_700_000_000_100),
+                page_trade("oldest"),
+            ],
+            "pagination": {"count": 5, "num_pages": 2},
+        }),
+    ];
+    let mut request = request_trades(instrument_id, Some(3));
+    request.client_id = Some(ClientId::from("RECOVERY"));
+    request.params = Some(params(&[
+        ("source", json!("recovered")),
+        ("sequence", json!(17)),
+    ]));
+    let request_id = request.request_id;
+    let request_params = request.params.clone();
+    let before = get_atomic_clock_realtime().get_time_ns();
+    client.request_trades(request).unwrap();
+
+    let DataResponse::Trades(response) = recv_response(&mut rx).await else {
+        panic!("expected recovered trades response");
+    };
+
+    let after = get_atomic_clock_realtime().get_time_ns();
+    client.disconnect().await.unwrap();
+
+    assert_eq!(response.correlation_id, request_id);
+    assert_eq!(response.client_id, ClientId::from("RECOVERY"));
+    assert_eq!(response.instrument_ids, vec![instrument_id]);
+    assert_eq!(response.start, None);
+    assert_eq!(response.end, None);
+    assert_eq!(response.params, request_params);
+    assert!((before..=after).contains(&response.ts_init));
+    assert_eq!(response.data.len(), 3);
+
+    for (tick, id, timestamp, price, size, side) in [
+        (
+            &response.data[0],
+            "older",
+            1_700_000_000_100_000_000,
+            "3500.00",
+            "0.250",
+            AggressorSide::Buy,
+        ),
+        (
+            &response.data[1],
+            "duplicate",
+            1_700_000_000_200_000_000,
+            "3500.00",
+            "0.250",
+            AggressorSide::Buy,
+        ),
+        (
+            &response.data[2],
+            "newest",
+            1_700_000_000_300_000_000,
+            "3501.23",
+            "0.456",
+            AggressorSide::Sell,
+        ),
+    ] {
+        assert_eq!(tick.instrument_id, instrument_id);
+        assert_eq!(tick.trade_id, TradeId::from(id));
+        assert_eq!(tick.price, Price::from(price));
+        assert_eq!(tick.price.precision, 2);
+        assert_eq!(tick.size, Quantity::from(size));
+        assert_eq!(tick.size.precision, 3);
+        assert_eq!(tick.aggressor_side, side);
+        assert_eq!(tick.ts_event, UnixNanos::from(timestamp));
+        assert!((before..=response.ts_init).contains(&tick.ts_init));
+    }
 }
 
 #[rstest]
