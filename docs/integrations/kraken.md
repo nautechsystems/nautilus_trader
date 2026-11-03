@@ -857,9 +857,11 @@ inferred executions do not veto them. Offline additions to a position, re-entry,
 explicit/inferred histories may require manual reconciliation.
 
 When recovery is withheld, the order can reach `FILLED` while the cached position and its economics remain
-unchanged. A periodic position check does not recover that close: margin mode declares no bulk position
-coverage, so the check skips the instrument and logs at debug level. The mismatch can persist across
-restarts because the closing order is already in sync. Reconcile such a position manually.
+unchanged. Startup then logs a warning naming the account, the pair, and the position, where one resolves. A
+periodic position check does not recover that close: margin mode declares no bulk position coverage, so the
+check skips the instrument and logs at debug level. The mismatch can persist across restarts because the
+closing order is already in sync, and a restart with the order cached does not repeat the warning. Reconcile
+such a position manually.
 
 Leaving `reconciliation_lookback_mins` unset avoids bounded order-only projection. A closing order already in
 the cache, such as a strategy exit submitted before the outage, then recovers into its position. The fill

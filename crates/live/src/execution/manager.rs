@@ -1271,36 +1271,63 @@ impl ExecutionManager {
         let recover_closing_fills = mass_status.lookback_start().is_some()
             && mass_status.reports_complete()
             && !self.config.filter_position_reports;
+        let mut uncovered_instruments: IndexMap<InstrumentId, bool> = IndexMap::new();
+        let mut withheld_fills: IndexMap<_, Vec<_>> = IndexMap::new();
         let mut unapplied_fill_position_ids = IndexSet::new();
 
         for event in &events {
-            if let OrderEventAny::Filled(fill) = event
-                && (should_project_fill(
-                    fill,
-                    &retained_fill_state,
-                    &reported_fill_keys,
-                    &order_only_ids,
-                    &order_only_fill_keys,
-                ) || bounded_order_only_ids.contains(&fill.venue_order_id)
-                    && !(recover_closing_fills
-                        && fill_queue.event_fill_keys.get(&fill.event_id)
-                            == Some(&(fill.account_id, fill.instrument_id, fill.trade_id))
-                        && exec_engine
+            let OrderEventAny::Filled(fill) = event else {
+                exec_engine.borrow_mut().process(event);
+                continue;
+            };
+
+            let historical = should_project_fill(
+                fill,
+                &retained_fill_state,
+                &reported_fill_keys,
+                &order_only_ids,
+                &order_only_fill_keys,
+            );
+            let bounded = !historical && bounded_order_only_ids.contains(&fill.venue_order_id);
+            let uncovered = bounded
+                && *uncovered_instruments
+                    .entry(fill.instrument_id)
+                    .or_insert_with(|| {
+                        exec_engine
                             .borrow()
                             .get_client(&mass_status.client_id)
                             .is_some_and(|client| {
                                 !client.provides_bulk_position_coverage(fill.instrument_id)
                             })
-                        && self.fill_reduces_position(fill, &exec_engine.borrow())))
-            {
+                    });
+            let recovered = uncovered
+                && recover_closing_fills
+                && fill_queue.event_fill_keys.get(&fill.event_id)
+                    == Some(&(fill.account_id, fill.instrument_id, fill.trade_id))
+                && self.fill_reduces_position(fill, &exec_engine.borrow());
+
+            if historical || bounded && !recovered {
+                // Warn only for fills this projection adds to their order, so a restart that
+                // replays a fill the cached order already holds stays silent
+                let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+                let withheld_position_id = (uncovered && !self.is_fill_applied(fill, fill_key))
+                    .then(|| exec_engine.borrow().reconciliation_position_id(fill));
+
                 exec_engine.borrow_mut().project_reconciliation_fill(fill);
+
+                if let Some(position_id) = withheld_position_id
+                    && self.is_fill_applied(fill, fill_key)
+                {
+                    withheld_fills
+                        .entry((fill.account_id, fill.instrument_id, position_id))
+                        .or_default()
+                        .push((fill.trade_id, fill.client_order_id));
+                }
             } else {
                 exec_engine.borrow_mut().process(event);
             }
 
-            if let OrderEventAny::Filled(fill) = event
-                && let Some(fill_key) = fill_queue.event_fill_keys.get(&fill.event_id).copied()
-            {
+            if let Some(fill_key) = fill_queue.event_fill_keys.get(&fill.event_id).copied() {
                 if self.is_fill_applied(fill, fill_key) {
                     self.fills_processed.mark(fill_key);
                 } else if let Some(venue_position_id) = fill.position_id {
@@ -1386,6 +1413,25 @@ impl ExecutionManager {
                 "Dropped {dropped_fill_count} fill(s) in {} fill group(s) without an order report \
                  or cached order ({samples})",
                 dropped_fill_groups.len(),
+            );
+        }
+
+        for ((account_id, instrument_id, position_id), fills) in &withheld_fills {
+            let target = position_id.map_or_else(
+                || "with no resolvable position".to_string(),
+                |position_id| format!("not to position {position_id}"),
+            );
+            let samples = fills
+                .iter()
+                .take(LOG_SAMPLES_MAX)
+                .map(|(trade_id, client_order_id)| format!("{trade_id} ({client_order_id})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            log::warn!(
+                "Applied {} bounded fill(s) for {instrument_id} on {account_id} to order state \
+                 only, {target} ({samples}): exposure and PnL may need manual reconciliation",
+                fills.len(),
             );
         }
 
