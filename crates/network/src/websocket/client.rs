@@ -3013,7 +3013,8 @@ impl WebSocketClient {
     ///
     /// The initial connection has epoch `0`. Each replacement connection increments the epoch,
     /// and both its incoming messages and `RECONNECTED` notification carry that new value. Use
-    /// [`Self::send_text_on_connection`] to bind an outgoing message to one of those epochs.
+    /// [`Self::send_text_on_connection`] or [`Self::send_bytes_on_connection`] to bind an
+    /// outgoing message to one of those epochs.
     /// Rate-limit, state, initial-connect retry, and cancellation options match [`Self::builder`].
     /// Set either `ping_handler` or `epoch_ping_handler` when custom ping handling is required.
     /// `close_handler` has the same behavior as [`Self::builder`].
@@ -3634,6 +3635,50 @@ impl WebSocketClient {
 
         let msg = Message::Binary(data.into());
         self.writer_tx.send(WriterCommand::Send(msg))
+    }
+
+    /// Sends bytes once if the active connection matches `connection_epoch`.
+    ///
+    /// The writer rejects the send if reconnection changes ownership before the write. The
+    /// message is never replayed on another connection.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if:
+    /// - The shared control allowance is full.
+    /// - The client closes.
+    /// - The active wait times out before the write starts.
+    /// - The expected connection no longer owns the writer.
+    /// - The command or transport write fails.
+    /// - The write starts but does not complete within the write
+    ///   deadline. Delivery is undetermined in that case: the message is not replayed, and it
+    ///   must not be resent blindly.
+    pub async fn send_bytes_on_connection(
+        &self,
+        data: Vec<u8>,
+        keys: Option<&[Ustr]>,
+        connection_epoch: u64,
+    ) -> Result<(), SendError> {
+        self.check_not_terminal()?;
+        self.await_rate_limit_or_closed(keys).await?;
+        self.wait_for_active().await?;
+
+        log::trace!(
+            "Sending binary frame once: epoch={connection_epoch} ({} bytes)",
+            data.len()
+        );
+
+        let (response_tx, response_rx) = tokio::sync::oneshot::channel();
+        self.writer_tx
+            .send_control(WriterCommand::SendOnConnection {
+                message: Message::Binary(data.into()),
+                connection_epoch,
+                response_tx,
+            })?;
+
+        response_rx
+            .await
+            .map_err(|e| SendError::BrokenPipe(e.to_string()))?
     }
 
     /// Sends a close message to the server.
@@ -4305,7 +4350,11 @@ mod tests {
             )
             .await
             .unwrap();
-        client.send_bytes(binary, None).await.unwrap();
+        client.send_bytes(binary.clone(), None).await.unwrap();
+        client
+            .send_bytes_on_connection(binary, None, client.connection_epoch())
+            .await
+            .unwrap();
         client
             .send_text(PING_TRIGGER.to_string(), None)
             .await
@@ -4474,6 +4523,12 @@ mod tests {
                 .iter()
                 .any(|message| message == "Sending binary frame (29 bytes)"),
             "binary send metadata missing or inaccurate: {messages:?}"
+        );
+        assert!(
+            messages
+                .iter()
+                .any(|message| message == "Sending binary frame once: epoch=0 (29 bytes)"),
+            "ownership-bound binary metadata missing or inaccurate: {messages:?}"
         );
         assert!(
             messages
@@ -6298,6 +6353,7 @@ mod rust_tests {
         task: JoinHandle<()>,
         port: u16,
         messages: Arc<tokio::sync::Mutex<Vec<String>>>,
+        binary_frames: Arc<tokio::sync::Mutex<Vec<Vec<u8>>>>,
         control_frames: Arc<tokio::sync::Mutex<Vec<String>>>,
         connections: Arc<AtomicUsize>,
     }
@@ -6360,6 +6416,8 @@ mod rust_tests {
             let port = listener.local_addr().unwrap().port();
             let messages = Arc::new(tokio::sync::Mutex::new(Vec::new()));
             let messages_clone = Arc::clone(&messages);
+            let binary_frames = Arc::new(tokio::sync::Mutex::new(Vec::new()));
+            let binary_frames_clone = Arc::clone(&binary_frames);
             let control_frames = Arc::new(tokio::sync::Mutex::new(Vec::new()));
             let control_frames_clone = Arc::clone(&control_frames);
             let connections = Arc::new(AtomicUsize::new(0));
@@ -6371,6 +6429,7 @@ mod rust_tests {
                     let mut websocket = accept_async(stream).await.unwrap();
                     connections_clone.fetch_add(1, Ordering::SeqCst);
                     let messages = Arc::clone(&messages_clone);
+                    let binary_frames = Arc::clone(&binary_frames_clone);
                     let control_frames = Arc::clone(&control_frames_clone);
 
                     task::spawn(async move {
@@ -6378,6 +6437,9 @@ mod rust_tests {
                             match msg {
                                 WsMessage::Text(text) => {
                                     messages.lock().await.push(text.to_string());
+                                }
+                                WsMessage::Binary(data) => {
+                                    binary_frames.lock().await.push(data.to_vec());
                                 }
                                 WsMessage::Pong(data) => {
                                     control_frames
@@ -6400,6 +6462,7 @@ mod rust_tests {
                 task,
                 port,
                 messages,
+                binary_frames,
                 control_frames,
                 connections,
             }
@@ -6407,6 +6470,10 @@ mod rust_tests {
 
         async fn messages(&self) -> Vec<String> {
             self.messages.lock().await.clone()
+        }
+
+        async fn binary_frames(&self) -> Vec<Vec<u8>> {
+            self.binary_frames.lock().await.clone()
         }
 
         async fn control_frames(&self) -> Vec<String> {
@@ -6520,7 +6587,24 @@ mod rust_tests {
         tokio::time::sleep(Duration::from_millis(200)).await;
         assert!(server.messages().await.is_empty());
 
+        // The auth frame is bound to the replacement connection, so it is written while the
+        // replay waits for that authentication.
         let _replacement_auth = tracker.begin();
+        client
+            .send_bytes_on_connection(b"auth".to_vec(), None, client.connection_epoch())
+            .await
+            .unwrap();
+        wait_until_async(
+            || {
+                let binary_frames = Arc::clone(&server.binary_frames);
+                async move { binary_frames.lock().await.len() == 1 }
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+        assert_eq!(server.binary_frames().await, vec![b"auth".to_vec()]);
+        assert!(server.messages().await.is_empty());
+
         tracker.succeed();
         wait_until_async(
             || {
@@ -9870,6 +9954,61 @@ mod rust_tests {
         state_notify.notify_waiters();
         drop(writer_tx);
         write_task.await.unwrap();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_send_bytes_on_connection_rejects_stale_epoch_without_replay() {
+        let server = RecordingServer::setup().await;
+        let (handler, _handler_rx) = channel_message_handler();
+        let client = WebSocketClient::builder()
+            .config(reconnect_test_config(server.port))
+            .message_handler(handler)
+            .connect()
+            .await
+            .unwrap();
+        let stale_epoch = client.connection_epoch();
+
+        client
+            .send_bytes_on_connection(vec![0x00, 0x7f, 0x80, 0xff], None, stale_epoch)
+            .await
+            .unwrap();
+        assert!(client.request_reconnect());
+        wait_until_async(
+            || async { client.is_active() && client.connection_epoch() == stale_epoch + 1 },
+            TEST_TIMEOUT,
+        )
+        .await;
+
+        let stale_result = client
+            .send_bytes_on_connection(vec![0xde, 0xad], None, stale_epoch)
+            .await;
+        assert!(matches!(stale_result, Err(SendError::ConnectionChanged)));
+
+        client
+            .send_bytes_on_connection(
+                vec![0xfe, 0xed, 0xfa, 0xce],
+                None,
+                client.connection_epoch(),
+            )
+            .await
+            .unwrap();
+        wait_until_async(
+            || {
+                let binary_frames = Arc::clone(&server.binary_frames);
+                async move { binary_frames.lock().await.len() == 2 }
+            },
+            TEST_TIMEOUT,
+        )
+        .await;
+
+        assert_eq!(
+            server.binary_frames().await,
+            vec![vec![0x00, 0x7f, 0x80, 0xff], vec![0xfe, 0xed, 0xfa, 0xce]],
+        );
+        assert!(server.messages().await.is_empty());
+
+        client.disconnect().await;
     }
 
     #[tokio::test]
