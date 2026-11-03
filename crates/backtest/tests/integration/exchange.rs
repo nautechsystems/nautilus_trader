@@ -464,6 +464,149 @@ fn test_liquidation_closes_all_breached_currencies_in_one_pass(
 }
 
 #[rstest]
+#[case::quote(None, Some("0.99000"), None, None, true)]
+#[case::trade(None, None, Some("0.99000"), None, true)]
+#[case::bar(None, None, None, Some("0.99000"), true)]
+#[case::mark_over_quote(Some("0.99000"), Some("1.00000"), None, None, true)]
+#[case::mark_over_quote_no_breach(Some("1.00000"), Some("0.99000"), None, None, false)]
+#[case::mark_over_trade_no_breach(Some("1.00000"), None, Some("0.99000"), None, false)]
+#[case::quote_over_trade_no_breach(None, Some("1.00000"), Some("0.99000"), None, false)]
+#[case::trade_over_bar_no_breach(None, None, Some("1.00000"), Some("0.99000"), false)]
+fn test_liquidation_values_positions_with_price_fallback(
+    audusd_sim: CurrencyPair,
+    #[case] mark: Option<&str>,
+    #[case] quote: Option<&str>,
+    #[case] trade: Option<&str>,
+    #[case] bar_close: Option<&str>,
+    #[case] expected_liquidation: bool,
+) {
+    // Long 100,000 AUD/USD at 1.00000 against 1,000 USD and 10 USD maintenance margin:
+    // valued at 1.00000 the account is safe, at 0.99000 equity falls to zero
+    let usd = Currency::USD();
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim);
+    let balance = AccountBalance::new(
+        Money::new(1_000.0, usd),
+        Money::zero(usd),
+        Money::new(1_000.0, usd),
+    );
+    let account = MarginAccount::new(
+        AccountState::new(
+            AccountId::from("SIM-001"),
+            AccountType::Margin,
+            vec![balance],
+            vec![MarginBalance::new(
+                Money::new(10.0, usd),
+                Money::new(10.0, usd),
+                Some(audusd.id()),
+            )],
+            false,
+            UUID4::default(),
+            UnixNanos::default(),
+            UnixNanos::default(),
+            None,
+        ),
+        false,
+    );
+    let mut raw_cache = Cache::default();
+    raw_cache.add_account(AccountAny::Margin(account)).unwrap();
+    add_fx_position(
+        &mut raw_cache,
+        &audusd,
+        "T-LIQUIDATION-FALLBACK",
+        "100000",
+        "1.00000",
+    );
+    let cache = Rc::new(RefCell::new(raw_cache));
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let config = SimulatedVenueConfig::builder()
+        .venue(Venue::new("SIM"))
+        .oms_type(OmsType::Netting)
+        .account_type(AccountType::Margin)
+        .book_type(BookType::L1_MBP)
+        .starting_balances(vec![balance.total])
+        .default_leverage(Decimal::ONE)
+        .liquidation_enabled(true)
+        .fee_model(FeeModelAny::MakerTaker(MakerTakerFeeModel::zero()).into())
+        .build()
+        .unwrap();
+    let exchange = Rc::new(RefCell::new(
+        SimulatedExchange::new(config, cache.clone(), clock.clone()).unwrap(),
+    ));
+    let client = BacktestExecutionClient::new(
+        TraderId::test_default(),
+        AccountId::from("SIM-001"),
+        &exchange,
+        cache.clone(),
+        clock.clone(),
+        None,
+        None,
+    );
+    exchange.borrow_mut().register_client(Rc::new(client));
+    exchange
+        .borrow_mut()
+        .add_instrument(audusd.clone())
+        .unwrap();
+
+    let ts = UnixNanos::from(2);
+
+    if let Some(price) = bar_close {
+        let price = Price::from(price);
+        let bar = Bar::new(
+            BarType::from("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL"),
+            price,
+            price,
+            price,
+            price,
+            Quantity::from("1000000"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_bar(bar).unwrap();
+        exchange.borrow_mut().process_bar(bar).unwrap();
+    }
+
+    if let Some(price) = trade {
+        let trade = TradeTick::new(
+            audusd.id(),
+            Price::from(price),
+            Quantity::from("1000000"),
+            AggressorSide::Sell,
+            TradeId::from("T-FALLBACK-1"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_trade(trade).unwrap();
+        exchange.borrow_mut().process_trade_tick(&trade).unwrap();
+    }
+
+    if let Some(price) = quote {
+        add_fx_quote(&exchange, &cache, audusd.id(), price, price);
+    }
+
+    if let Some(price) = mark {
+        let mark = MarkPriceUpdate::new(audusd.id(), Price::from(price), ts, ts);
+        cache.borrow_mut().add_mark_price(mark).unwrap();
+        exchange.borrow_mut().process_mark_price(&mark).unwrap();
+    }
+
+    let (handler, saving_handler) = get_typed_into_message_saving_handler::<OrderEventAny>(None);
+    msgbus::register_order_event_endpoint(MessagingSwitchboard::exec_engine_process(), handler);
+
+    let _ = clock.borrow_mut().advance_time(UnixNanos::from(3), true);
+    exchange
+        .borrow_mut()
+        .process_liquidations(UnixNanos::from(3));
+
+    let liquidated = saving_handler.get_messages().iter().any(|event| {
+        matches!(
+            event,
+            OrderEventAny::Filled(fill) if fill.client_order_id.as_str().starts_with("LIQUIDATION-")
+        )
+    });
+    assert_eq!(liquidated, expected_liquidation);
+}
+
+#[rstest]
 fn test_append_only_matching_engine_raw_ids_start_at_one_and_increment(
     crypto_perpetual_ethusdt: CryptoPerpetual,
 ) {

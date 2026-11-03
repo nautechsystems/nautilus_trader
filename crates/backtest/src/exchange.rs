@@ -56,8 +56,8 @@ use nautilus_model::{
         OrderBookDelta, OrderBookDeltas, OrderBookDepth, QuoteTick, TradeTick,
     },
     enums::{
-        AccountType, AggressorSide, BookType, OmsType, OrderStatus, PositionAdjustmentType,
-        PriceType,
+        AccountType, AggregationSource, AggressorSide, BookType, OmsType, OrderStatus,
+        PositionAdjustmentType, PositionSide, PriceType,
     },
     events::{FundingSettlement, OrderEventAny, OrderUpdated, PositionAdjusted, PositionEvent},
     identifiers::{AccountId, InstrumentId, Venue},
@@ -1997,7 +1997,7 @@ impl SimulatedExchange {
 
                 for &i in indices {
                     let p = &open_positions[i];
-                    if let Some(pnl) = cache.calculate_unrealized_pnl(p) {
+                    if let Some(pnl) = liquidation_unrealized_pnl(&cache, p) {
                         upnl += pnl.as_f64();
                     } else {
                         all_priced = false;
@@ -2322,6 +2322,65 @@ fn revert_funding_adjustments(
             );
         }
     }
+}
+
+// Values a position for the liquidation check with the portfolio's price fallback: mark price,
+// then the side-appropriate quote, then the last trade, then the most recent bar close
+fn liquidation_unrealized_pnl(cache: &Cache, position: &Position) -> Option<Money> {
+    let instrument_id = &position.instrument_id;
+    let is_long = match position.side {
+        PositionSide::Long => true,
+        PositionSide::Short => false,
+        PositionSide::Flat => return Some(Money::zero(position.settlement_currency)),
+    };
+
+    let allows_non_positive = || {
+        cache
+            .instrument(instrument_id)
+            .is_some_and(Instrument::allows_negative_price)
+    };
+    let is_valid = |price: &Price| price.as_decimal() > Decimal::ZERO || allows_non_positive();
+    let quote_price = || {
+        cache.quote(instrument_id).and_then(|quote| {
+            let (price, size) = if is_long {
+                (quote.bid_price, quote.bid_size)
+            } else {
+                (quote.ask_price, quote.ask_size)
+            };
+            (is_valid(&price) && (price.as_decimal() > Decimal::ZERO || size.is_positive()))
+                .then_some(price)
+        })
+    };
+    let bar_close = || {
+        [AggregationSource::External, AggregationSource::Internal]
+            .into_iter()
+            .flat_map(|source| cache.bar_types(Some(instrument_id), None, source))
+            .filter_map(|bar_type| cache.bar(bar_type))
+            .max_by_key(|bar| bar.ts_event)
+            .map(|bar| bar.close)
+            .filter(is_valid)
+    };
+
+    let Some(price) = cache
+        .price(instrument_id, PriceType::Mark)
+        .filter(is_valid)
+        .or_else(quote_price)
+        .or_else(|| cache.price(instrument_id, PriceType::Last).filter(is_valid))
+        .or_else(bar_close)
+    else {
+        log::warn!(
+            "Cannot value {} for liquidation, no mark, quote, trade or bar for {instrument_id}",
+            position.id,
+        );
+        return None;
+    };
+
+    position
+        .try_unrealized_pnl(price)
+        .inspect_err(|e| {
+            log::error!("Cannot calculate unrealized PnL for {}: {e}", position.id);
+        })
+        .ok()
 }
 
 // Compares two instruments' tradable definitions on their serialized form without event
