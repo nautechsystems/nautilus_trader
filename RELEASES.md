@@ -99,6 +99,7 @@ Released on TBD (UTC).
 - Fixed historical time bar boundary assignment for ticks sharing a timestamp
 - Fixed queued timer callbacks logging missing-actor errors or targeting reused actor IDs after retirement
 - Fixed backtest timer cancellation across data gaps and tail flushes
+- Fixed streaming backtests failing to resume when the first batch has only data before the start time
 - Fixed `ExecTester` panicking on unsupported `GTD` brackets
 - Fixed Postgres cache not persisting or restoring Greeks and yield curves with `save_market_data`
 - Fixed exchange-rate conversions failing on overflow despite a representable route or returning zero on underflow

@@ -4187,6 +4187,52 @@ fn test_streaming_mode_processes_data_in_batches(crypto_perpetual_ethusdt: Crypt
 }
 
 #[rstest]
+fn test_streaming_resumes_after_batch_before_start(crypto_perpetual_ethusdt: CryptoPerpetual) {
+    let mut engine = create_engine();
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+    let instrument_id = instrument.id();
+    engine.add_instrument(&instrument).unwrap();
+    engine.add_strategy(EmptyStrategy::new()).unwrap();
+    engine
+        .add_data(
+            vec![quote(instrument_id, "1000.00", "1000.10", 1)],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+
+    let start = Some(UnixNanos::from(10));
+    let end = Some(UnixNanos::from(40));
+    engine.run(start, end, None, true).unwrap();
+    let run_id = engine.run_id().unwrap();
+    assert_eq!(engine.get_result().iterations, 0);
+    assert!(engine.kernel().trader.borrow().is_running());
+
+    engine.clear_data();
+    engine
+        .add_data(
+            vec![
+                quote(instrument_id, "1001.00", "1001.10", 20),
+                quote(instrument_id, "1002.00", "1002.10", 30),
+            ],
+            None,
+            true,
+            true,
+        )
+        .unwrap();
+    engine.run(start, end, None, true).unwrap();
+
+    assert_eq!(engine.get_result().iterations, 2);
+    assert_eq!(engine.run_id(), Some(run_id));
+    assert!(engine.kernel().trader.borrow().is_running());
+
+    engine.end().unwrap();
+    assert_eq!(engine.run_id(), Some(run_id));
+    assert!(!engine.kernel().trader.borrow().is_running());
+}
+
+#[rstest]
 fn test_streaming_windows_retain_first_item_past_end() {
     let mut engine = BacktestEngine::new(BacktestEngineConfig::default()).unwrap();
     let first = stub_custom_data(1, 1, None, None);
@@ -4377,9 +4423,12 @@ fn test_reset_run_produces_same_results(crypto_perpetual_ethusdt: CryptoPerpetua
     engine.run(None, None, None, false).unwrap();
     let result1_iterations = engine.get_result().iterations;
     let result1_orders = engine.get_result().total_orders;
+    let run_id = engine.run_id().unwrap();
 
     // Reset and run again with same data
     engine.reset().unwrap();
+    assert_eq!(engine.run_id(), None);
+
     engine.run(None, None, None, false).unwrap();
     let result2_iterations = engine.get_result().iterations;
     let result2_orders = engine.get_result().total_orders;
@@ -4387,6 +4436,7 @@ fn test_reset_run_produces_same_results(crypto_perpetual_ethusdt: CryptoPerpetua
     assert_eq!(result1_iterations, result2_iterations);
     assert_eq!(result1_orders, result2_orders);
     assert_eq!(result1_iterations, 3);
+    assert_ne!(engine.run_id().unwrap(), run_id);
 }
 
 #[rstest]

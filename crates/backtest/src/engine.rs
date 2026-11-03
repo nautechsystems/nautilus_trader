@@ -799,8 +799,7 @@ impl BacktestEngine {
         let clocks = self.collect_all_clocks();
         Self::set_all_clocks_time(&clocks, start_ns);
 
-        // First-iteration initialization
-        if self.iteration == 0 {
+        if self.run_id.is_none() {
             self.set_instrument_expiration_timers()?;
 
             self.run_config_id = run_config_id;
