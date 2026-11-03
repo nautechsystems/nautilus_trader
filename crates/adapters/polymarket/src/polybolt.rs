@@ -2263,8 +2263,7 @@ fn unix_nanos_from_millis(field: &str, value: u64) -> anyhow::Result<UnixNanos> 
 /// Shared PolyBolt mock-venue responses and test construction.
 #[cfg(test)]
 pub(crate) mod testing {
-    use serde_json::{Value, json};
-
+    pub(crate) use super::test_venue::{mock_replies, recorded_payload};
     use super::*;
 
     pub(super) const FIXTURE_API_SECRET_B64: &str = "Zml4dHVyZS1zZWNyZXQ=";
@@ -2326,86 +2325,35 @@ pub(crate) mod testing {
             )
         }
     }
-
-    /// Records an inbound client frame with the auth payload redacted.
-    pub(crate) fn recorded_payload(payload: &Value) -> Value {
-        if payload["op"] == "auth" {
-            json!({"op": "auth"})
-        } else {
-            payload.clone()
-        }
-    }
-
-    /// Venue acknowledgements for a client frame: `authed`, or one ack per subscription.
-    pub(crate) fn mock_replies(payload: &Value) -> Vec<Value> {
-        match payload["op"].as_str() {
-            Some("auth") => vec![json!({"op": "authed", "rid": payload["rid"]})],
-            Some(op @ ("subscribe" | "unsubscribe")) => payload["subscriptions"]
-                .as_array()
-                .into_iter()
-                .flatten()
-                .map(|subscription| {
-                    json!({
-                        "op": format!("{op}d"),
-                        "channel": subscription["channel"],
-                        "rid": payload["rid"],
-                    })
-                })
-                .collect(),
-            _ => Vec::new(),
-        }
-    }
 }
+
+#[cfg(test)]
+#[path = "../tests/integration/harness/polybolt.rs"]
+mod test_venue;
 
 #[cfg(test)]
 mod tests {
     use std::{
         net::SocketAddr,
-        sync::{
-            Arc,
-            atomic::{AtomicBool, AtomicUsize, Ordering},
-        },
+        sync::{Arc, atomic::Ordering},
         time::Duration,
     };
 
-    use axum::{
-        Router,
-        extract::{
-            State,
-            ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade},
-        },
-        response::Response,
-        routing::get,
-    };
-    use futures_util::StreamExt;
-    use nautilus_common::{
-        live::{get_runtime, runner::replace_system_event_sender},
-        messages::{DataEvent, SystemEvent, system::SocketState},
-        testing::wait_until_async,
-    };
+    use nautilus_common::{live::get_runtime, messages::DataEvent, testing::wait_until_async};
     use nautilus_core::{Params, time::get_atomic_clock_realtime};
-    use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
+    use nautilus_live::SocketReconnectRequestOutcome;
     use nautilus_network::ratelimiter::RateLimiter;
     use rstest::rstest;
     use rust_decimal_macros::dec;
     use serde_json::{Value, json};
 
-    use super::{testing::*, *};
-    use crate::common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE};
+    use super::{test_venue::*, testing::*, *};
 
     // Live captures from the production venue; see `test_data/polybolt_fixtures.source.md`.
-    const CRYPTO_UPDATE_FIXTURE: &str =
-        include_str!("../test_data/polybolt_crypto_price_update.json");
-    const CRYPTO_SNAPSHOT_FIXTURE: &str =
-        include_str!("../test_data/polybolt_crypto_price_snapshot.json");
-    const TWAP_UPDATE_FIXTURE: &str = include_str!("../test_data/polybolt_crypto_twap_update.json");
+
     const TWAP_SNAPSHOT_FIXTURE: &str =
         include_str!("../test_data/polybolt_crypto_twap_snapshot.json");
-    const EQUITY_UPDATE_FIXTURE: &str =
-        include_str!("../test_data/polybolt_equity_price_update.json");
-    const EQUITY_SNAPSHOT_FIXTURE: &str =
-        include_str!("../test_data/polybolt_equity_price_snapshot.json");
-    const AUTHED_FIXTURE: &str = include_str!("../test_data/polybolt_authed.json");
+
     const SUBSCRIBED_FIXTURE: &str = include_str!("../test_data/polybolt_subscribed.json");
     const ERROR_AUTH_REQUIRED_FIXTURE: &str =
         include_str!("../test_data/polybolt_error_auth_required.json");
@@ -2413,27 +2361,6 @@ mod tests {
         include_str!("../test_data/polybolt_error_auth_invalid.json");
 
     const TWAP_OBSERVATION_TS: u64 = 1791355667000;
-
-    fn crypto_data_type(symbol: &str) -> DataType {
-        let metadata = Params::new([("symbol".to_string(), json!(symbol))].into());
-        DataType::new(POLYMARKET_CRYPTO_PRICE_TYPE_NAME, Some(metadata), None)
-    }
-
-    fn equity_data_type(symbol: &str) -> DataType {
-        let metadata = Params::new([("symbol".to_string(), json!(symbol))].into());
-        DataType::new(POLYMARKET_EQUITY_PRICE_TYPE_NAME, Some(metadata), None)
-    }
-
-    fn crypto_twap_data_type(symbol: &str, window_seconds: u64) -> DataType {
-        let metadata = Params::new(
-            [
-                ("symbol".to_string(), json!(symbol)),
-                ("window_seconds".to_string(), json!(window_seconds)),
-            ]
-            .into(),
-        );
-        DataType::new(POLYMARKET_CRYPTO_TWAP_TYPE_NAME, Some(metadata), None)
-    }
 
     fn crypto_twap_data_type_without_window(symbol: &str) -> DataType {
         let metadata = Params::new([("symbol".to_string(), json!(symbol))].into());
@@ -2453,10 +2380,6 @@ mod tests {
             tx.into(),
         );
         (feed, rx)
-    }
-
-    fn fixture_json(fixture: &str) -> Value {
-        serde_json::from_str(fixture).expect("parse fixture")
     }
 
     fn twap_update() -> Value {
@@ -2495,33 +2418,6 @@ mod tests {
             .as_any()
             .downcast_ref::<PolymarketEquityPrice>()
             .expect("PolymarketEquityPrice")
-    }
-
-    fn subscription_pairs(payload: &Value) -> Vec<(String, String)> {
-        let mut pairs = payload["subscriptions"]
-            .as_array()
-            .expect("subscriptions array")
-            .iter()
-            .map(|subscription| {
-                (
-                    subscription["channel"].as_str().unwrap().to_string(),
-                    subscription["filter"]["symbol"]
-                        .as_str()
-                        .unwrap()
-                        .to_string(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        pairs.sort();
-        pairs
-    }
-
-    fn ops(payloads: &[Value]) -> Vec<&str> {
-        payloads
-            .iter()
-            .map(|payload| payload["op"].as_str().unwrap_or("?"))
-            .collect()
     }
 
     #[rstest]
@@ -3760,249 +3656,6 @@ mod tests {
         assert!(rx.try_recv().is_err());
     }
 
-    #[derive(Clone, Default)]
-    struct TestServerState {
-        received_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
-        connection_count: Arc<tokio::sync::Mutex<usize>>,
-        control_txs:
-            Arc<tokio::sync::Mutex<Vec<tokio::sync::mpsc::UnboundedSender<TestServerCommand>>>>,
-        reject_auth: Arc<AtomicBool>,
-        hold_auth: Arc<AtomicBool>,
-        unavailable_auth_once: Arc<AtomicBool>,
-        auth_attempts_once: Arc<AtomicBool>,
-        auth_count: Arc<AtomicUsize>,
-        snapshots: Arc<AtomicBool>,
-        snapshot_frames: Arc<AtomicUsize>,
-        snapshot_points: Arc<AtomicUsize>,
-        subscription_times: Arc<tokio::sync::Mutex<Vec<std::time::Instant>>>,
-        snapshot_times: Arc<Mutex<Vec<std::time::Instant>>>,
-    }
-
-    #[derive(Debug)]
-    enum TestServerCommand {
-        SendText(String),
-        Close,
-        CloseWithCode(u16),
-        DropFrames(&'static str),
-    }
-
-    impl TestServerState {
-        async fn clear_received_payloads(&self) {
-            self.received_payloads.lock().await.clear();
-        }
-
-        async fn connection_count(&self) -> usize {
-            *self.connection_count.lock().await
-        }
-
-        async fn payloads(&self) -> Vec<Value> {
-            self.received_payloads.lock().await.clone()
-        }
-
-        async fn send_text_to_all(&self, text: String) {
-            let senders = self.control_txs.lock().await.clone();
-            for tx in senders {
-                let _ = tx.send(TestServerCommand::SendText(text.clone()));
-            }
-        }
-
-        async fn close_all_connections(&self) {
-            let senders = self.control_txs.lock().await.clone();
-            for tx in senders {
-                let _ = tx.send(TestServerCommand::Close);
-            }
-        }
-
-        async fn close_all_connections_with_code(&self, code: u16) {
-            let senders = self.control_txs.lock().await.clone();
-            for tx in senders {
-                let _ = tx.send(TestServerCommand::CloseWithCode(code));
-            }
-        }
-    }
-
-    async fn handle_polybolt_upgrade(
-        ws: WebSocketUpgrade,
-        State(state): State<TestServerState>,
-    ) -> Response {
-        ws.on_upgrade(move |socket| handle_polybolt_socket(socket, state))
-    }
-
-    async fn handle_polybolt_socket(mut socket: WebSocket, state: TestServerState) {
-        *state.connection_count.lock().await += 1;
-
-        let (control_tx, mut control_rx) = tokio::sync::mpsc::unbounded_channel();
-        state.control_txs.lock().await.push(control_tx);
-        let mut sequences = AHashMap::<&str, u64>::new();
-
-        loop {
-            let result = tokio::select! {
-                command = control_rx.recv() => {
-                    match command {
-                        Some(TestServerCommand::SendText(text)) => {
-                            if socket.send(AxumWsMessage::Text(text.into())).await.is_err() {
-                                break;
-                            }
-                            continue;
-                        }
-                        Some(TestServerCommand::DropFrames(channel)) => {
-                            let frame = dropped_frame(channel, &mut sequences);
-                            if socket.send(AxumWsMessage::Text(frame.to_string().into())).await.is_err() {
-                                break;
-                            }
-                            continue;
-                        }
-                        Some(TestServerCommand::Close) => {
-                            let _ = socket.send(AxumWsMessage::Close(None)).await;
-                            break;
-                        }
-                        Some(TestServerCommand::CloseWithCode(code)) => {
-                            let frame = axum::extract::ws::CloseFrame {
-                                code,
-                                reason: "test".into(),
-                            };
-                            let _ = socket.send(AxumWsMessage::Close(Some(frame))).await;
-                            break;
-                        }
-                        None => break,
-                    }
-                }
-                result = socket.next() => result
-            };
-
-            let Some(result) = result else { break };
-            let Ok(message) = result else { break };
-
-            match message {
-                AxumWsMessage::Text(text) => {
-                    let Ok(payload) = serde_json::from_str::<Value>(&text) else {
-                        continue;
-                    };
-
-                    state
-                        .received_payloads
-                        .lock()
-                        .await
-                        .push(recorded_payload(&payload));
-                    let replies = if payload["op"] == "auth" {
-                        auth_replies(&state, &payload)
-                    } else {
-                        state
-                            .subscription_times
-                            .lock()
-                            .await
-                            .push(std::time::Instant::now());
-                        subscription_replies(&state, &payload, &mut sequences)
-                    };
-
-                    for reply in replies {
-                        if socket
-                            .send(AxumWsMessage::Text(reply.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            return;
-                        }
-                    }
-                }
-                AxumWsMessage::Ping(data) => {
-                    if socket.send(AxumWsMessage::Pong(data)).await.is_err() {
-                        break;
-                    }
-                }
-                AxumWsMessage::Close(_) => break,
-                _ => {}
-            }
-        }
-    }
-
-    fn dropped_frame(channel: &'static str, sequences: &mut AHashMap<&str, u64>) -> Value {
-        let mut frame = fixture_json(if channel == "price.crypto" {
-            CRYPTO_UPDATE_FIXTURE
-        } else {
-            EQUITY_UPDATE_FIXTURE
-        });
-
-        let seq = sequences.entry(channel).or_default();
-        *seq += 2;
-        frame["seq"] = json!(*seq);
-        frame["dropped"] = json!(1);
-        frame
-    }
-
-    fn subscription_replies(
-        state: &TestServerState,
-        payload: &Value,
-        sequences: &mut AHashMap<&str, u64>,
-    ) -> Vec<Value> {
-        let mut replies = mock_replies(payload);
-        if payload["op"] != "subscribe" || !state.snapshots.load(Ordering::Relaxed) {
-            return replies;
-        }
-
-        for subscription in payload["subscriptions"].as_array().unwrap() {
-            let channel = subscription["channel"].as_str().unwrap();
-
-            let (channel, fixture) = if channel == "price.crypto" {
-                ("price.crypto", CRYPTO_SNAPSHOT_FIXTURE)
-            } else {
-                ("price.equity", EQUITY_SNAPSHOT_FIXTURE)
-            };
-
-            let mut snapshot = fixture_json(fixture);
-            snapshot["payload"]["symbol"] = subscription["filter"]["symbol"].clone();
-            let seq = sequences.entry(channel).or_default();
-            *seq += 1;
-            snapshot["seq"] = json!(*seq);
-            snapshot["dropped"] = json!(0);
-            state.snapshot_frames.fetch_add(1, Ordering::Relaxed);
-            state.snapshot_points.fetch_add(
-                snapshot["payload"]["data"].as_array().unwrap().len(),
-                Ordering::Relaxed,
-            );
-            state.snapshot_times.lock().push(std::time::Instant::now());
-            replies.push(snapshot);
-        }
-
-        replies
-    }
-
-    fn auth_replies(state: &TestServerState, payload: &Value) -> Vec<Value> {
-        state.auth_count.fetch_add(1, Ordering::Relaxed);
-        if state.reject_auth.load(Ordering::Relaxed) {
-            vec![json!({"op": "error", "code": "auth_invalid", "rid": payload["rid"]})]
-        } else if state.hold_auth.load(Ordering::Relaxed) {
-            Vec::new()
-        } else if state.unavailable_auth_once.swap(false, Ordering::Relaxed) {
-            vec![json!({"op": "error", "code": "auth_unavailable", "rid": payload["rid"]})]
-        } else if state.auth_attempts_once.swap(false, Ordering::Relaxed) {
-            vec![json!({"op": "error", "code": "auth_attempts", "rid": payload["rid"]})]
-        } else {
-            mock_replies(payload)
-        }
-    }
-
-    async fn start_polybolt_server(state: TestServerState) -> SocketAddr {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
-            .await
-            .expect("failed to bind PolyBolt test server");
-        let addr = listener
-            .local_addr()
-            .expect("missing PolyBolt test server address");
-        let router = Router::new()
-            .route("/polybolt", get(handle_polybolt_upgrade))
-            .with_state(state);
-
-        tokio::spawn(async move {
-            axum::serve(listener, router)
-                .await
-                .expect("PolyBolt test server failed");
-        });
-
-        tokio::time::sleep(Duration::from_millis(50)).await;
-        addr
-    }
-
     fn make_server_feed(
         addr: SocketAddr,
     ) -> (
@@ -4018,52 +3671,6 @@ mod tests {
             tx.into(),
         );
         (feed, rx)
-    }
-
-    async fn wait_for_op(state: &TestServerState, op: &'static str) {
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move {
-                    state
-                        .received_payloads
-                        .lock()
-                        .await
-                        .iter()
-                        .any(|payload| payload["op"] == op)
-                }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
-    }
-
-    fn build_crypto_update(
-        symbol: &str,
-        exact_value: &str,
-        price_timestamp_ms: u64,
-        message_timestamp_ms: u64,
-    ) -> String {
-        let mut update = fixture_json(CRYPTO_UPDATE_FIXTURE);
-        update["payload"]["symbol"] = json!(symbol);
-        update["payload"]["full_accuracy_value"] = json!(exact_value);
-        update["payload"]["timestamp"] = json!(price_timestamp_ms);
-        update["ts"] = json!(message_timestamp_ms);
-        update.to_string()
-    }
-
-    fn collect_crypto_symbols(
-        rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
-        expected_count: usize,
-    ) -> Vec<String> {
-        let mut symbols = Vec::with_capacity(expected_count);
-        for _ in 0..expected_count {
-            let custom = next_custom(rx);
-            symbols.push(crypto_payload(&custom).symbol.clone());
-        }
-
-        symbols.sort_unstable();
-        symbols
     }
 
     async fn connect_test_ws(url: String) -> Arc<WebSocketClient> {
@@ -4095,97 +3702,6 @@ mod tests {
                 .await
                 .expect("connect test ws"),
         )
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_connect_authenticates_before_subscribing() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.track_subscribe(crypto_twap_data_type("btcusd", 60))
-            .expect("track TWAP");
-
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-
-        let payloads = state.payloads().await;
-        assert_eq!(ops(&payloads), vec!["auth", "subscribe"]);
-        assert_eq!(
-            subscription_pairs(&payloads[1]),
-            vec![
-                ("price.crypto".to_string(), "btcusd".to_string()),
-                ("price.crypto.twap".to_string(), "btcusd".to_string()),
-            ]
-        );
-        assert!(feed.is_authenticated());
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_subscribe_waits_for_authed_acknowledgement() {
-        let state = TestServerState::default();
-        state.hold_auth.store(true, Ordering::Relaxed);
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-
-        let connect_task = tokio::spawn({
-            let feed = feed.clone();
-            async move { feed.connect().await }
-        });
-
-        wait_for_op(&state, "auth").await;
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        assert_eq!(ops(&state.payloads().await), vec!["auth"]);
-        assert!(!feed.is_authenticated());
-
-        state.send_text_to_all(AUTHED_FIXTURE.to_string()).await;
-        connect_task
-            .await
-            .expect("join connect task")
-            .expect("connect after late authed");
-        wait_for_op(&state, "subscribe").await;
-
-        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_unavailable_auth_keeps_connect_alive_and_retries_later() {
-        let state = TestServerState::default();
-        state.unavailable_auth_once.store(true, Ordering::Relaxed);
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-
-        feed.connect()
-            .await
-            .expect("a venue-side auth outage must not fail connect");
-
-        assert!(!feed.is_authenticated());
-        assert_eq!(ops(&state.payloads().await), vec!["auth"]);
-
-        // The reconcile worker waits out the retry delay, re-authenticates, then subscribes.
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { ops(&state.payloads().await) == vec!["auth", "auth", "subscribe"] }
-            },
-            Duration::from_secs(POLYBOLT_AUTH_RETRY_DELAY_SECS + 5),
-        )
-        .await;
-
-        assert!(feed.is_authenticated());
-        assert_eq!(state.auth_count.load(Ordering::Relaxed), 2);
-        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -4375,31 +3891,6 @@ mod tests {
     }
 
     #[rstest]
-    #[tokio::test]
-    async fn test_reconcile_during_peer_pause_retains_new_subscription() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.inner.halted.store(true, Ordering::Release);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC during pause");
-        feed.reconcile_once(false)
-            .await
-            .expect("paused recovery is pending");
-
-        assert!(feed.current_ws().is_none());
-        assert_eq!(feed.snapshot_wire_subscriptions().len(), 1);
-        assert_eq!(state.connection_count().await, 0);
-
-        feed.inner.halted.store(false, Ordering::Release);
-        feed.reconcile_once(false).await.expect("resume recovery");
-        wait_for_op(&state, "subscribe").await;
-        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
-        assert_eq!(state.connection_count().await, 1);
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
     fn test_retired_auth_response_does_not_authenticate_current_epoch() {
         let (feed, _rx) = make_feed();
         feed.inner.auth_budget.lock().reset_for_epoch(1);
@@ -4410,467 +3901,6 @@ mod tests {
         feed.handle_text_message(AUTHED_FIXTURE, 1)
             .expect("current auth response");
         assert!(feed.is_authenticated());
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_spent_auth_budget_moves_to_a_fresh_connection() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-        assert_eq!(state.connection_count().await, 1);
-        state.clear_received_payloads().await;
-
-        // The venue's per-connection budget is spent; a forced re-auth must not send a
-        // ninth frame on this connection.
-        feed.inner.auth_budget.lock().frames_sent = POLYBOLT_AUTH_FRAME_BUDGET;
-        let error = feed
-            .reconcile_once(true)
-            .await
-            .expect_err("spent budget must defer to a fresh connection");
-        assert!(
-            error.downcast_ref::<ReconcileRetryable>().is_some(),
-            "{error}"
-        );
-        assert!(feed.current_ws().is_none());
-        assert!(state.payloads().await.is_empty());
-
-        feed.reconcile_once(false)
-            .await
-            .expect("fresh connection authenticates");
-        wait_for_op(&state, "subscribe").await;
-
-        assert_eq!(state.connection_count().await, 2);
-        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
-        assert_eq!(feed.inner.auth_budget.lock().frames_sent, 1);
-        assert!(feed.is_authenticated());
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_auth_attempts_error_recovers_on_a_fresh_connection() {
-        let state = TestServerState::default();
-        state.auth_attempts_once.store(true, Ordering::Relaxed);
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-
-        feed.connect()
-            .await
-            .expect("a spent auth budget must not fail connect");
-
-        assert!(!feed.is_authenticated());
-        assert!(!feed.inner.auth_rejected.load(Ordering::Acquire));
-
-        // The reconcile worker waits out the retry delay, then authenticates on a new connection.
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { ops(&state.payloads().await) == vec!["auth", "auth", "subscribe"] }
-            },
-            Duration::from_secs(POLYBOLT_AUTH_RETRY_DELAY_SECS + 5),
-        )
-        .await;
-
-        assert_eq!(state.connection_count().await, 2);
-        assert!(feed.is_authenticated());
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[case(POLYBOLT_CLOSE_CODE_AUTH_FAILED)]
-    #[case(POLYBOLT_CLOSE_CODE_POLICY_VIOLATION)]
-    #[tokio::test]
-    async fn test_terminal_peer_close_stops_reconnects_until_explicit_connect(
-        #[case] close_code: u16,
-    ) {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-
-        state.close_all_connections_with_code(close_code).await;
-        wait_until_async(
-            || {
-                let feed = feed.clone();
-                async move { feed.current_ws().is_none() }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
-
-        // Longer than the shared client's reconnect backoff: nothing may reconnect.
-        tokio::time::sleep(Duration::from_millis(
-            POLYBOLT_RECONNECT_DELAY_INITIAL_MS * 4,
-        ))
-        .await;
-        feed.request_reconcile(ReconcileReason::DesiredChanged);
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        assert_eq!(state.connection_count().await, 1);
-        assert!(!feed.needs_connection_recovery());
-
-        state.clear_received_payloads().await;
-        feed.connect()
-            .await
-            .expect("explicit connect clears the halt");
-        wait_for_op(&state, "subscribe").await;
-
-        assert_eq!(state.connection_count().await, 2);
-        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_draining_close_reconnects_after_the_drain_delay() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-        state.clear_received_payloads().await;
-        let ws_client = feed.current_ws().expect("active socket");
-
-        state
-            .close_all_connections_with_code(POLYBOLT_CLOSE_CODE_DRAINING)
-            .await;
-
-        // The original socket stays disconnected even if recovery finishes between polls
-        wait_until_async(
-            || async { ws_client.is_disconnected() },
-            Duration::from_secs(5),
-        )
-        .await;
-
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { ops(&state.payloads().await) == vec!["auth", "subscribe"] }
-            },
-            Duration::from_millis(POLYBOLT_DRAIN_RECONNECT_MAX_DELAY_MS + 5_000),
-        )
-        .await;
-
-        assert_eq!(state.connection_count().await, 2);
-        assert!(feed.is_authenticated());
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_sequence_gap_resubscribes_only_the_affected_channel() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.track_subscribe(equity_data_type("aapl"))
-            .expect("track AAPL");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-        state.clear_received_payloads().await;
-
-        feed.handle_text_message(&crypto_update_with_seq(1), 0)
-            .expect("seq 1");
-        feed.handle_text_message(&crypto_update_with_seq(2), 0)
-            .expect("seq 2");
-        tokio::time::sleep(Duration::from_millis(200)).await;
-        assert!(
-            state.payloads().await.is_empty(),
-            "contiguous seq must not resubscribe"
-        );
-
-        feed.handle_text_message(&crypto_update_with_seq(4), 0)
-            .expect("seq 4");
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { ops(&state.payloads().await) == vec!["unsubscribe", "subscribe"] }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
-
-        for payload in &state.payloads().await {
-            let subscriptions = payload["subscriptions"].as_array().expect("subscriptions");
-            assert_eq!(subscriptions.len(), 1, "{payload}");
-            assert_eq!(subscriptions[0]["channel"], "price.crypto");
-            assert_eq!(subscriptions[0]["filter"]["symbol"], "btcusd");
-        }
-
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_dropped_frames_on_first_envelope_resubscribe_channel() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-        state.clear_received_payloads().await;
-        let mut frame: Value = serde_json::from_str(&crypto_update_with_seq(3)).unwrap();
-        frame["dropped"] = json!(2);
-
-        feed.handle_text_message(&frame.to_string(), 0)
-            .expect("first frame with dropped updates");
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { ops(&state.payloads().await) == vec!["unsubscribe", "subscribe"] }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
-
-        let payloads = state.payloads().await;
-        assert_eq!(ops(&payloads), vec!["unsubscribe", "subscribe"]);
-
-        for payload in payloads {
-            assert_eq!(
-                subscription_pairs(&payload),
-                vec![("price.crypto".to_string(), "btcusd".to_string())]
-            );
-        }
-
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_rejected_credentials_fail_connect_and_stop_auth_retries() {
-        let state = TestServerState::default();
-        state.reject_auth.store(true, Ordering::Relaxed);
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-
-        let error = feed
-            .connect()
-            .await
-            .expect_err("rejected credentials must fail connect");
-        assert!(error.to_string().contains("rejected"), "{error}");
-
-        feed.request_reconcile(ReconcileReason::DesiredChanged);
-        feed.request_reconcile(ReconcileReason::TransportReset);
-        tokio::time::sleep(Duration::from_millis(300)).await;
-
-        assert_eq!(state.auth_count.load(Ordering::Relaxed), 1);
-        assert_eq!(ops(&state.payloads().await), vec!["auth"]);
-        assert!(!feed.is_authenticated());
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[case(None)]
-    #[case(Some(4002))]
-    #[tokio::test]
-    async fn test_server_disconnect_reauthenticates_and_resubscribes(
-        #[case] close_code: Option<u16>,
-    ) {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(equity_data_type("aapl"))
-            .expect("track AAPL");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-
-        state.clear_received_payloads().await;
-        match close_code {
-            Some(code) => state.close_all_connections_with_code(code).await,
-            None => state.close_all_connections().await,
-        }
-
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { state.connection_count().await >= 2 }
-            },
-            Duration::from_secs(10),
-        )
-        .await;
-
-        wait_for_op(&state, "subscribe").await;
-
-        let payloads = state.payloads().await;
-        assert_eq!(ops(&payloads), vec!["auth", "subscribe"]);
-        assert_eq!(
-            subscription_pairs(&payloads[1]),
-            vec![("price.equity".to_string(), "aapl".to_string())]
-        );
-        assert_eq!(state.auth_count.load(Ordering::Relaxed), 2);
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_socket_state_events_use_polybolt_endpoint() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state).await;
-        let (data_tx, _data_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
-        replace_system_event_sender(system_tx);
-        let registry = SocketReconnectRegistry::default();
-        let socket_factory = nautilus_live::SocketControlFactory::with_registry(
-            *POLYMARKET_CLIENT_ID,
-            Some(*POLYMARKET_VENUE),
-            &registry,
-        );
-        let feed = PolymarketPolyBoltFeed::new_with_proxy_and_socket_control(
-            format!("ws://{addr}/polybolt"),
-            TransportBackend::default(),
-            get_atomic_clock_realtime(),
-            data_tx.into(),
-            None,
-            Some(socket_factory.control(crate::websocket::POLYBOLT_STREAMS_ENDPOINT)),
-            Some(fixture_credential()),
-            15,
-        );
-        assert!(
-            feed.track_subscribe(crypto_data_type("btcusd"))
-                .expect("track PolyBolt subscription")
-        );
-
-        feed.connect().await.expect("connect PolyBolt feed");
-
-        let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
-            .await
-            .expect("wait for socket state change")
-            .expect("system event channel closed");
-        let SystemEvent::SocketState(change) = event;
-        let endpoint = ustr::Ustr::from("polymarket-polybolt-streams");
-        let handle = registry.handle(*POLYMARKET_CLIENT_ID, endpoint).unwrap();
-
-        assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
-        assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
-        assert_eq!(change.endpoint, endpoint);
-        assert_eq!(change.state, SocketState::Connected);
-        assert_eq!(
-            handle.request_reconnect(),
-            SocketReconnectRequestOutcome::Accepted
-        );
-
-        let event = tokio::time::timeout(Duration::from_secs(5), system_rx.recv())
-            .await
-            .expect("wait for socket state change")
-            .expect("system event channel closed");
-        let SystemEvent::SocketState(change) = event;
-        assert_eq!(change.client_id, *POLYMARKET_CLIENT_ID);
-        assert_eq!(change.venue, Some(*POLYMARKET_VENUE));
-        assert_eq!(change.endpoint, endpoint);
-        assert_eq!(change.state, SocketState::Disconnected);
-
-        feed.disconnect().await.expect("disconnect feed");
-        assert!(registry.handle(*POLYMARKET_CLIENT_ID, endpoint).is_none());
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_server_disconnect_preserves_twap_replay_fingerprint() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (data_tx, mut data_rx) = tokio::sync::mpsc::unbounded_channel();
-        let states = Arc::new(parking_lot::Mutex::new(Vec::new()));
-        let states_callback = Arc::clone(&states);
-        let state_sink = SocketStateSink::new(move |state| {
-            states_callback.lock().push(state);
-        });
-
-        let feed = PolymarketPolyBoltFeed::new_with_proxy_and_state_sink(
-            format!("ws://{addr}/polybolt"),
-            TransportBackend::default(),
-            get_atomic_clock_realtime(),
-            data_tx.into(),
-            None,
-            Some(state_sink),
-        );
-        assert!(
-            feed.track_subscribe(crypto_twap_data_type("btcusd", 60))
-                .expect("track TWAP subscription")
-        );
-
-        feed.connect().await.expect("connect PolyBolt feed");
-        wait_for_op(&state, "subscribe").await;
-        state
-            .send_text_to_all(TWAP_UPDATE_FIXTURE.to_string())
-            .await;
-        tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
-            .await
-            .expect("initial TWAP observation timeout")
-            .expect("initial TWAP data channel closed");
-
-        state.clear_received_payloads().await;
-        state.close_all_connections().await;
-
-        wait_until_async(
-            || {
-                let states = Arc::clone(&states);
-                async move {
-                    states.lock().as_slice()
-                        == [
-                            nautilus_network::SocketState::Connected,
-                            nautilus_network::SocketState::Disconnected,
-                            nautilus_network::SocketState::Connected,
-                        ]
-                }
-            },
-            Duration::from_secs(10),
-        )
-        .await;
-
-        wait_for_op(&state, "subscribe").await;
-
-        let mut conflict = twap_update();
-        conflict["payload"]["full_accuracy_value"] = json!("84291.577380840025358337");
-        let error = feed
-            .handle_text_message(&conflict.to_string(), 0)
-            .expect_err("equal-timestamp value conflict must be visible after reconnect");
-        assert!(error.to_string().contains("conflict"));
-
-        feed.handle_text_message(TWAP_UPDATE_FIXTURE, 0)
-            .expect("the retained exact observation must remain a replay after conflict");
-        assert!(
-            tokio::time::timeout(Duration::from_millis(250), data_rx.recv())
-                .await
-                .is_err(),
-            "reconnect must not re-emit the last equal-timestamp TWAP observation"
-        );
-
-        let mut next = twap_update();
-        next["payload"]["timestamp"] = json!(TWAP_OBSERVATION_TS + 1);
-        state.send_text_to_all(next.to_string()).await;
-        tokio::time::timeout(Duration::from_secs(5), data_rx.recv())
-            .await
-            .expect("post-reconnect TWAP observation timeout")
-            .expect("post-reconnect TWAP data channel closed");
-
-        assert_eq!(
-            states.lock().as_slice(),
-            [
-                nautilus_network::SocketState::Connected,
-                nautilus_network::SocketState::Disconnected,
-                nautilus_network::SocketState::Connected,
-            ]
-        );
-
-        feed.disconnect().await.expect("disconnect feed");
     }
 
     #[rstest]
@@ -5001,65 +4031,6 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_incremental_sync_subscribes_only_new_symbol_while_connected() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-        state.clear_received_payloads().await;
-
-        assert!(
-            feed.track_subscribe(crypto_data_type("ethusd"))
-                .expect("track ETH")
-        );
-        feed.reconcile_once(false).await.expect("reconcile live");
-        wait_for_op(&state, "subscribe").await;
-
-        let payloads = state.payloads().await;
-        assert_eq!(
-            ops(&payloads),
-            vec!["subscribe"],
-            "no re-auth, no unsubscribe"
-        );
-        assert_eq!(
-            subscription_pairs(&payloads[0]),
-            vec![("price.crypto".to_string(), "ethusd".to_string())]
-        );
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_incremental_sync_unsubscribes_only_removed_symbol() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        let aapl = equity_data_type("aapl");
-        let msft = equity_data_type("msft");
-        assert!(feed.track_subscribe(aapl).expect("track AAPL"));
-        assert!(feed.track_subscribe(msft.clone()).expect("track MSFT"));
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-        state.clear_received_payloads().await;
-
-        assert!(feed.track_unsubscribe(&msft).expect("track unsubscribe"));
-        feed.reconcile_once(false).await.expect("reconcile live");
-        wait_for_op(&state, "unsubscribe").await;
-
-        let payloads = state.payloads().await;
-        assert_eq!(ops(&payloads), vec!["unsubscribe"]);
-        assert_eq!(
-            subscription_pairs(&payloads[0]),
-            vec![("price.equity".to_string(), "msft".to_string())]
-        );
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
     async fn test_reconcile_worker_coalesces_multiple_desired_changes() {
         let state = TestServerState::default();
         let addr = start_polybolt_server(state.clone()).await;
@@ -5098,62 +4069,6 @@ mod tests {
                 ("price.crypto".to_string(), "ethusd".to_string()),
                 ("price.crypto".to_string(), "solusd".to_string()),
             ]
-        );
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_reconnected_control_replays_retained_subscriptions() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.track_subscribe(crypto_data_type("ethusd"))
-            .expect("track ETH");
-        feed.track_subscribe(equity_data_type("aapl"))
-            .expect("track AAPL");
-        feed.track_subscribe(crypto_twap_data_type("btcusd", 60))
-            .expect("track 60-second TWAP");
-
-        let ws = connect_test_ws(format!("ws://{addr}/polybolt")).await;
-        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
-        let (_close_handler, close_rx) = channel_message_handler();
-
-        let loop_handle = tokio::spawn({
-            let feed = feed.clone();
-            let ws = ws.clone();
-            async move {
-                feed.run_message_loop(ws, raw_rx, close_rx).await;
-            }
-        });
-
-        raw_tx
-            .send((0, Message::Text(RECONNECTED.into())))
-            .expect("send reconnect sentinel");
-        drop(raw_tx);
-
-        wait_for_op(&state, "subscribe").await;
-        loop_handle.await.expect("join PolyBolt loop");
-
-        let payloads = state.payloads().await;
-        let replay = payloads
-            .iter()
-            .find(|payload| payload["op"] == "subscribe")
-            .expect("replay payload");
-        assert_eq!(
-            subscription_pairs(replay),
-            vec![
-                ("price.crypto".to_string(), "btcusd".to_string()),
-                ("price.crypto".to_string(), "ethusd".to_string()),
-                ("price.crypto.twap".to_string(), "btcusd".to_string()),
-                ("price.equity".to_string(), "aapl".to_string()),
-            ]
-        );
-        assert!(
-            ops(&payloads).contains(&"auth"),
-            "replay after reconnect must re-authenticate first"
         );
         feed.disconnect().await.expect("disconnect feed");
     }
@@ -5199,156 +4114,6 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
-    async fn test_server_disconnect_reconnects_and_resumes_multi_symbol_updates() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, mut rx) = make_server_feed(addr);
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.track_subscribe(crypto_data_type("ethusd"))
-            .expect("track ETH");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-
-        state
-            .send_text_to_all(build_crypto_update(
-                "btcusd",
-                "61035.860000000000000000",
-                1791355670000,
-                1791355670142,
-            ))
-            .await;
-        state
-            .send_text_to_all(build_crypto_update(
-                "ethusd",
-                "2450.110000000000000000",
-                1791355671000,
-                1791355671142,
-            ))
-            .await;
-
-        wait_until_async(|| async { rx.len() >= 2 }, Duration::from_secs(2)).await;
-        assert_eq!(
-            collect_crypto_symbols(&mut rx, 2),
-            vec!["btcusd".to_string(), "ethusd".to_string()],
-            "both retained symbols should emit before disconnect",
-        );
-
-        state.clear_received_payloads().await;
-        state.close_all_connections().await;
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { state.connection_count().await >= 2 }
-            },
-            Duration::from_secs(10),
-        )
-        .await;
-
-        wait_for_op(&state, "subscribe").await;
-
-        state
-            .send_text_to_all(build_crypto_update(
-                "btcusd",
-                "61040.120000000000000000",
-                1791355672000,
-                1791355672142,
-            ))
-            .await;
-        state
-            .send_text_to_all(build_crypto_update(
-                "ethusd",
-                "2455.550000000000000000",
-                1791355673000,
-                1791355673142,
-            ))
-            .await;
-
-        wait_until_async(|| async { rx.len() >= 2 }, Duration::from_secs(2)).await;
-        assert_eq!(
-            collect_crypto_symbols(&mut rx, 2),
-            vec!["btcusd".to_string(), "ethusd".to_string()],
-            "both retained symbols should resume after server-side reconnect",
-        );
-
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_server_disconnect_does_not_restore_unsubscribed_symbol() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, mut rx) = make_server_feed(addr);
-        let btc = crypto_data_type("btcusd");
-        let eth = crypto_data_type("ethusd");
-        feed.track_subscribe(btc.clone()).expect("track BTC");
-        feed.track_subscribe(eth.clone()).expect("track ETH");
-        feed.connect().await.expect("connect feed");
-        wait_for_op(&state, "subscribe").await;
-
-        assert!(feed.track_unsubscribe(&eth).expect("unsubscribe ETH"));
-        feed.reconcile_once(false)
-            .await
-            .expect("reconcile after unsubscribe");
-        wait_for_op(&state, "unsubscribe").await;
-
-        state.clear_received_payloads().await;
-        state.close_all_connections().await;
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { state.connection_count().await >= 2 }
-            },
-            Duration::from_secs(10),
-        )
-        .await;
-
-        wait_for_op(&state, "subscribe").await;
-
-        let payloads = state.payloads().await;
-        let replay = payloads
-            .iter()
-            .find(|payload| payload["op"] == "subscribe")
-            .expect("replay payload");
-        assert_eq!(
-            subscription_pairs(replay),
-            vec![("price.crypto".to_string(), "btcusd".to_string())]
-        );
-
-        state
-            .send_text_to_all(build_crypto_update(
-                "btcusd",
-                "61050.010000000000000000",
-                1791355674000,
-                1791355674142,
-            ))
-            .await;
-        state
-            .send_text_to_all(build_crypto_update(
-                "ethusd",
-                "2460.010000000000000000",
-                1791355675000,
-                1791355675142,
-            ))
-            .await;
-
-        wait_until_async(|| async { !rx.is_empty() }, Duration::from_secs(2)).await;
-        assert_eq!(
-            collect_crypto_symbols(&mut rx, 1),
-            vec!["btcusd".to_string()],
-            "reconnect should restore only still-retained symbols",
-        );
-        assert!(
-            rx.try_recv().is_err(),
-            "ETH should not be replayed after unsubscribe"
-        );
-
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
     async fn test_reconcile_request_does_not_reconnect_while_closing() {
         let state = TestServerState::default();
         let addr = start_polybolt_server(state.clone()).await;
@@ -5367,50 +4132,6 @@ mod tests {
         assert!(
             state.payloads().await.is_empty(),
             "closing feed should not replay subscriptions",
-        );
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_connect_without_subscriptions_clears_closing_for_later_subscribe() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-
-        feed.disconnect().await.expect("disconnect feed");
-        feed.connect().await.expect("connect feed");
-
-        assert!(
-            feed.current_ws().is_none(),
-            "connect without retained subscriptions should not open a socket",
-        );
-
-        feed.track_subscribe(crypto_data_type("btcusd"))
-            .expect("track BTC");
-        feed.request_reconcile(ReconcileReason::DesiredChanged);
-        wait_for_op(&state, "subscribe").await;
-
-        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
-        feed.disconnect().await.expect("disconnect feed");
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_ensure_connected_without_retained_subscriptions_does_not_connect() {
-        let state = TestServerState::default();
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, _rx) = make_server_feed(addr);
-
-        feed.request_reconcile(ReconcileReason::EnsureConnected);
-        tokio::time::sleep(Duration::from_millis(200)).await;
-
-        assert!(
-            feed.current_ws().is_none(),
-            "ensure-connected without retained subscriptions should not connect",
-        );
-        assert!(
-            state.payloads().await.is_empty(),
-            "ensure-connected without retained subscriptions should not send wire frames",
         );
     }
 
@@ -5641,173 +4362,6 @@ mod tests {
             futures_util::poll!(&mut task).is_ready(),
             "shutdown must complete the retry task without advancing its timer"
         );
-    }
-
-    #[rstest]
-    #[case(100)]
-    #[case(300)]
-    #[tokio::test]
-    async fn test_measure_gap_recovery(#[case] rounds: usize) {
-        let state = TestServerState::default();
-        state.snapshots.store(true, Ordering::Relaxed);
-        let addr = start_polybolt_server(state.clone()).await;
-        let (feed, mut rx) = make_server_feed(addr);
-        for symbol in ["btcusd", "ethusd"] {
-            feed.track_subscribe(crypto_data_type(symbol)).unwrap();
-        }
-
-        for symbol in ["aapl", "msft"] {
-            feed.track_subscribe(equity_data_type(symbol)).unwrap();
-        }
-
-        feed.connect().await.unwrap();
-        wait_until_async(
-            || {
-                let feed = feed.clone();
-                async move { feed.inner.last_seq_by_channel.lock().len() == 2 }
-            },
-            Duration::from_secs(5),
-        )
-        .await;
-
-        let initial_frames = state.snapshot_frames.load(Ordering::Relaxed);
-        let initial_points = state.snapshot_points.load(Ordering::Relaxed);
-        state.clear_received_payloads().await;
-        state.subscription_times.lock().await.clear();
-        state.snapshot_times.lock().clear();
-        let started = std::time::Instant::now();
-
-        for _ in 0..rounds {
-            let senders = state.control_txs.lock().await.clone();
-
-            for tx in senders {
-                tx.send(TestServerCommand::DropFrames("price.crypto"))
-                    .unwrap();
-                tx.send(TestServerCommand::DropFrames("price.equity"))
-                    .unwrap();
-            }
-
-            tokio::time::sleep(Duration::from_millis(5)).await;
-        }
-
-        let last_drop = std::time::Instant::now();
-
-        let (payloads, subscribe_count, unsubscribe_count, received) =
-            tokio::time::timeout(Duration::from_secs(5), async {
-                loop {
-                    let payloads = state.payloads().await;
-                    let subscribe_count =
-                        payloads.iter().filter(|p| p["op"] == "subscribe").count();
-                    let unsubscribe_count =
-                        payloads.iter().filter(|p| p["op"] == "unsubscribe").count();
-                    let pairs = payloads
-                        .iter()
-                        .filter(|payload| payload["op"] == "subscribe")
-                        .flat_map(subscription_pairs)
-                        .collect::<Vec<_>>();
-
-                    let expected = ["price.crypto", "price.equity"]
-                        .into_iter()
-                        .map(|channel| {
-                            let snapshots =
-                                pairs.iter().filter(|(name, _)| name == channel).count();
-                            (channel, (rounds * 2 + snapshots + 2) as u64)
-                        })
-                        .collect::<AHashMap<_, _>>();
-
-                    if subscribe_count == unsubscribe_count
-                        && *feed.inner.last_seq_by_channel.lock() == expected
-                        && feed.inner.resync_channels.lock().is_empty()
-                        && !feed.inner.reconcile_pending.load(Ordering::Acquire)
-                        && feed.inner.wire_mutex.try_lock().is_ok()
-                    {
-                        break (
-                            payloads,
-                            subscribe_count,
-                            unsubscribe_count,
-                            std::time::Instant::now(),
-                        );
-                    }
-
-                    tokio::time::sleep(Duration::from_millis(1)).await;
-                }
-            })
-            .await
-            .expect("the client must receive the final recovery snapshot on both channels");
-
-        let frames = state.snapshot_frames.load(Ordering::Relaxed) - initial_frames;
-        let points = state.snapshot_points.load(Ordering::Relaxed) - initial_points;
-        let delivered = std::iter::from_fn(|| rx.try_recv().ok()).count();
-        println!(
-            "rounds={rounds} symbols=4 channels=2 subscribe={subscribe_count} unsubscribe={unsubscribe_count} snapshot_frames={frames} snapshot_points={points} elapsed_ms={} tail_ms={} published={delivered}",
-            started.elapsed().as_millis(),
-            received.duration_since(last_drop).as_millis()
-        );
-        assert_eq!(subscribe_count, unsubscribe_count);
-        let subscription_times = state.subscription_times.lock().await.clone();
-        let snapshot_times = state.snapshot_times.lock().clone();
-        let first_recovery = snapshot_times[0].duration_since(started);
-        let last_recovery = snapshot_times
-            .last()
-            .unwrap()
-            .checked_duration_since(last_drop)
-            .unwrap_or_default();
-        println!(
-            "rounds={rounds} first_snapshot_generated_ms={} final_snapshot_generated_after_last_drop_ms={}",
-            first_recovery.as_millis(),
-            last_recovery.as_millis()
-        );
-
-        for window in subscription_times.windows(21) {
-            assert!(
-                window[20].duration_since(window[0]) >= Duration::from_secs(1),
-                "more than 20 subscription frames in a rolling second"
-            );
-        }
-
-        assert!(first_recovery < Duration::from_millis(500));
-        assert!(last_recovery < Duration::from_millis(500));
-        assert!(
-            subscribe_count * 2
-                <= (started.elapsed().as_millis() / u128::from(POLYBOLT_SUBSCRIPTION_INTERVAL_MS)
-                    + 2) as usize,
-            "coalescing must bound snapshot work during sustained drops"
-        );
-
-        if rounds == 300 {
-            assert!(
-                subscription_times.len() >= 21,
-                "the sustained workload must exercise a full frame-limit window"
-            );
-        }
-
-        let subscribed_pairs = payloads
-            .iter()
-            .filter(|payload| payload["op"] == "subscribe")
-            .flat_map(subscription_pairs)
-            .collect::<Vec<_>>();
-        assert_eq!(frames, subscribed_pairs.len());
-
-        for channel in ["price.crypto", "price.equity"] {
-            let snapshots = subscribed_pairs
-                .iter()
-                .filter(|(name, _)| name == channel)
-                .count();
-            let expected_seq = (rounds * 2 + snapshots + 2) as u64;
-            assert_eq!(
-                feed.inner.last_seq_by_channel.lock()[channel],
-                expected_seq,
-                "the client must receive the final recovery snapshot on {channel}"
-            );
-        }
-
-        assert!(
-            received.duration_since(last_drop) < Duration::from_millis(500),
-            "final recovery must reach the client within the latency bound"
-        );
-        assert_eq!(points, frames * 3);
-        assert_eq!(delivered, 12 + rounds * 2);
-        feed.disconnect().await.unwrap();
     }
 
     #[rstest]
@@ -6243,5 +4797,137 @@ mod tests {
         assert!(feed.current_ws().is_none());
         assert!(!feed.is_authenticated());
         assert!(feed.inner.live_subscriptions.lock().is_empty());
+    }
+
+    #[rstest]
+    fn test_twap_conflict_after_connection_reset_preserves_replay_fingerprint() {
+        let (feed, mut rx) = make_feed();
+        feed.track_subscribe(crypto_twap_data_type("btcusd", 60))
+            .unwrap();
+        feed.handle_text_message(TWAP_UPDATE_FIXTURE, 0).unwrap();
+        let initial = next_custom(&mut rx);
+        assert_eq!(twap_payload(&initial).value, dec!(84291.577380840025358336));
+        feed.reset_connection_state(1);
+        let mut conflict = twap_update();
+        conflict["payload"]["full_accuracy_value"] = json!("84291.577380840025358337");
+        let error = feed
+            .handle_text_message(&conflict.to_string(), 1)
+            .expect_err("the reconnect must retain the TWAP fingerprint");
+        assert!(error.to_string().contains("conflict"));
+        feed.handle_text_message(TWAP_UPDATE_FIXTURE, 1).unwrap();
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_ensure_connected_without_retained_subscriptions_does_not_connect() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+
+        feed.request_reconcile(ReconcileReason::EnsureConnected);
+        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.current_ws().is_none(),
+            "ensure-connected without retained subscriptions should not connect",
+        );
+        assert!(
+            state.payloads().await.is_empty(),
+            "ensure-connected without retained subscriptions should not send wire frames",
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_spent_auth_budget_prevents_ninth_frame_before_reauth() {
+        let state = TestServerState::default();
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd"))
+            .expect("track BTC");
+        feed.connect().await.expect("connect feed");
+        wait_for_op(&state, "subscribe").await;
+        assert_eq!(state.connection_count().await, 1);
+        state.clear_received_payloads().await;
+
+        // The venue's per-connection budget is spent; a forced re-auth must not send a
+        // ninth frame on this connection.
+        feed.inner.auth_budget.lock().frames_sent = POLYBOLT_AUTH_FRAME_BUDGET;
+        let error = feed
+            .reconcile_once(true)
+            .await
+            .expect_err("spent budget must defer to a fresh connection");
+        assert!(
+            error.downcast_ref::<ReconcileRetryable>().is_some(),
+            "{error}"
+        );
+        assert!(feed.current_ws().is_none());
+        assert!(state.payloads().await.is_empty());
+
+        feed.reconcile_once(false)
+            .await
+            .expect("fresh connection authenticates");
+        wait_for_op(&state, "subscribe").await;
+
+        assert_eq!(state.connection_count().await, 2);
+        assert_eq!(ops(&state.payloads().await), vec!["auth", "subscribe"]);
+        assert_eq!(feed.inner.auth_budget.lock().frames_sent, 1);
+        assert!(feed.is_authenticated());
+        feed.disconnect().await.expect("disconnect feed");
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_gap_recovery_quiesces_after_final_snapshots() {
+        let state = TestServerState::default();
+        state.snapshots.store(true, Ordering::Relaxed);
+        let addr = start_polybolt_server(state.clone()).await;
+        let (feed, _rx) = make_server_feed(addr);
+        feed.track_subscribe(crypto_data_type("btcusd")).unwrap();
+        feed.track_subscribe(equity_data_type("aapl")).unwrap();
+        feed.connect().await.unwrap();
+        wait_until_async(
+            || async { feed.inner.last_seq_by_channel.lock().len() == 2 },
+            Duration::from_secs(5),
+        )
+        .await;
+        state.clear_received_payloads().await;
+        let guard = feed.inner.wire_mutex.lock().await;
+
+        for fixture in [CRYPTO_UPDATE_FIXTURE, EQUITY_UPDATE_FIXTURE] {
+            let mut frame = fixture_json(fixture);
+            frame["seq"] = json!(4);
+            frame["dropped"] = json!(1);
+            state.send_text_to_all(frame.to_string()).await;
+        }
+
+        wait_until_async(
+            || async { feed.inner.resync_channels.lock().len() == 2 },
+            Duration::from_secs(5),
+        )
+        .await;
+        drop(guard);
+        let expected = AHashMap::from_iter([("price.crypto", 5), ("price.equity", 5)]);
+        wait_until_async(
+            || async {
+                *feed.inner.last_seq_by_channel.lock() == expected
+                    && feed.inner.resync_channels.lock().is_empty()
+                    && !feed.inner.reconcile_pending.load(Ordering::Acquire)
+                    && feed.inner.wire_mutex.try_lock().is_ok()
+            },
+            Duration::from_secs(5),
+        )
+        .await;
+
+        let payloads = state.payloads().await;
+        assert_eq!(ops(&payloads), vec!["unsubscribe", "subscribe"]);
+        let pairs = vec![
+            ("price.crypto".to_string(), "btcusd".to_string()),
+            ("price.equity".to_string(), "aapl".to_string()),
+        ];
+        assert_eq!(subscription_pairs(&payloads[0]), pairs);
+        assert_eq!(subscription_pairs(&payloads[1]), pairs);
+        feed.disconnect().await.unwrap();
     }
 }
