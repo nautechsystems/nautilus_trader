@@ -572,7 +572,7 @@ impl TryFrom<OrderInitialized> for MarketOrder {
             event.exec_spawn_id,
             event.tags,
         )?;
-        order.set_init_reconciliation(event.reconciliation);
+        order.set_init_metadata(event.reconciliation, event.causation_id, event.ts_init);
         Ok(order)
     }
 }
