@@ -1989,6 +1989,28 @@ impl ExecutionEngine {
         self.handle_event_with_position_application(&OrderEventAny::Filled(fill.clone()), false);
     }
 
+    /// Returns a cached position ID for a reconciliation fill without changing routing state.
+    ///
+    /// Requires a cached order and resolves indexed orders, explicit HEDGING IDs, and NETTING
+    /// routing. Returns `None` for HEDGING routing conflicts, missing positions, or unindexed
+    /// HEDGING orders whose fill has no `position_id`.
+    /// The destination can change before application.
+    #[must_use]
+    pub fn reconciliation_position_id(&self, fill: &OrderFilled) -> Option<PositionId> {
+        let oms_type = self.determine_oms_type(fill);
+        let indexed = self.cached_fill_position_id(fill, oms_type).ok()?;
+        let cache = self.cache.borrow();
+        let order = cache.order(&fill.client_order_id)?;
+
+        let position_id = match (indexed, oms_type) {
+            (Some(id), _) => id,
+            (None, OmsType::Hedging) => fill.position_id?,
+            (None, _) => self.determine_netting_position_id(fill, Some(&order)),
+        };
+
+        cache.position_ref(&position_id).map(|position| position.id)
+    }
+
     /// Starts the execution engine and all registered execution clients.
     pub fn start(&mut self) {
         for client in self.get_clients_mut() {
@@ -3553,6 +3575,41 @@ impl ExecutionEngine {
         oms_type: OmsType,
         order: Option<&OrderAny>,
     ) -> Option<PositionId> {
+        let cached_position_id = self.cached_fill_position_id(fill, oms_type).ok()?;
+
+        if let Some(position_id) = cached_position_id {
+            if self.config.debug {
+                log::debug!("Assigned {position_id} to {}", fill.client_order_id());
+            }
+
+            if !self.validate_fill_for_position(position_id, fill) {
+                return None;
+            }
+
+            return Some(position_id);
+        }
+
+        let position_id = match (oms_type, fill.position_id) {
+            (OmsType::Hedging, Some(position_id)) => position_id,
+            (OmsType::Hedging, None) => self.determine_hedging_position_id(fill, order),
+            (OmsType::Netting, _) => self.determine_netting_position_id(fill, order),
+            _ => self.determine_netting_position_id(fill, order),
+        };
+
+        if !self.validate_fill_for_position(position_id, fill) {
+            return None;
+        }
+
+        self.index_exec_spawn_position(fill.client_order_id, order, position_id);
+
+        Some(position_id)
+    }
+
+    fn cached_fill_position_id(
+        &self,
+        fill: &OrderFilled,
+        oms_type: OmsType,
+    ) -> Result<Option<PositionId>, ()> {
         let cache = self.cache.borrow();
 
         let flip = match (oms_type == OmsType::Hedging)
@@ -3562,7 +3619,7 @@ impl ExecutionEngine {
             Ok(flip) => flip.flatten(),
             Err(e) => {
                 log::error!("Cannot route hedging fill {}: {e}", fill.trade_id);
-                return None;
+                return Err(());
             }
         };
 
@@ -3592,7 +3649,7 @@ impl ExecutionEngine {
                     fill.client_order_id(),
                 );
 
-                return None;
+                return Err(());
             }
 
             if oms_type != OmsType::Hedging {
@@ -3604,32 +3661,7 @@ impl ExecutionEngine {
             }
         }
 
-        if let Some(position_id) = cached_position_id {
-            if self.config.debug {
-                log::debug!("Assigned {position_id} to {}", fill.client_order_id());
-            }
-
-            if !self.validate_fill_for_position(position_id, fill) {
-                return None;
-            }
-
-            return Some(position_id);
-        }
-
-        let position_id = match (oms_type, fill.position_id) {
-            (OmsType::Hedging, Some(position_id)) => position_id,
-            (OmsType::Hedging, None) => self.determine_hedging_position_id(fill, order),
-            (OmsType::Netting, _) => self.determine_netting_position_id(fill, order),
-            _ => self.determine_netting_position_id(fill, order),
-        };
-
-        if !self.validate_fill_for_position(position_id, fill) {
-            return None;
-        }
-
-        self.index_exec_spawn_position(fill.client_order_id, order, position_id);
-
-        Some(position_id)
+        Ok(cached_position_id)
     }
 
     fn index_exec_spawn_position(

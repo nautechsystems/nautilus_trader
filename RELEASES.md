@@ -88,6 +88,7 @@ Released on TBD (UTC).
 
 ### Fixes
 
+- Fixed bounded reconciliation leaving retained positions open after explicit closing fills
 - Fixed Arrow trade tick decoding panicking on malformed trade IDs
 - Fixed shutdown drains opening new data subscriptions (#5435), thanks @imbolc
 - Fixed catalog display queries failing on clear-book deltas with no order side

@@ -828,6 +828,7 @@ impl ExecutionManager {
         }
 
         let retained_fill_state = self.retained_fill_state();
+
         let reported_fill_keys: IndexSet<FillKey> = mass_status
             .fill_reports()
             .values()
@@ -849,15 +850,12 @@ impl ExecutionManager {
         let AdjustedReports {
             orders: adjusted_order_reports,
             fills: adjusted_fill_reports,
-            mut order_only_ids,
+            order_only_ids,
             order_only_fill_keys,
         } = adjusted_reports;
 
-        order_only_ids.extend(self.order_only_ids(
-            mass_status,
-            &adjusted_order_reports,
-            &adjusted_fill_reports,
-        ));
+        let bounded_order_only_ids =
+            self.order_only_ids(mass_status, &adjusted_order_reports, &adjusted_fill_reports);
 
         let mut events = Vec::new();
         let mut external_orders = Vec::new();
@@ -1270,17 +1268,30 @@ impl ExecutionManager {
 
         sort_reconciliation_events(&mut events);
 
+        let recover_closing_fills = mass_status.lookback_start().is_some()
+            && mass_status.reports_complete()
+            && !self.config.filter_position_reports;
         let mut unapplied_fill_position_ids = IndexSet::new();
 
         for event in &events {
             if let OrderEventAny::Filled(fill) = event
-                && should_project_fill(
+                && (should_project_fill(
                     fill,
                     &retained_fill_state,
                     &reported_fill_keys,
                     &order_only_ids,
                     &order_only_fill_keys,
-                )
+                ) || bounded_order_only_ids.contains(&fill.venue_order_id)
+                    && !(recover_closing_fills
+                        && fill_queue.event_fill_keys.get(&fill.event_id)
+                            == Some(&(fill.account_id, fill.instrument_id, fill.trade_id))
+                        && exec_engine
+                            .borrow()
+                            .get_client(&mass_status.client_id)
+                            .is_some_and(|client| {
+                                !client.provides_bulk_position_coverage(fill.instrument_id)
+                            })
+                        && self.fill_reduces_position(fill, &exec_engine.borrow())))
             {
                 exec_engine.borrow_mut().project_reconciliation_fill(fill);
             } else {
@@ -1781,6 +1792,35 @@ impl ExecutionManager {
         }
 
         venue_order_ids
+    }
+
+    fn fill_reduces_position(&self, fill: &OrderFilled, engine: &ExecutionEngine) -> bool {
+        let Some(position_id) = engine.reconciliation_position_id(fill) else {
+            return false;
+        };
+
+        let cache = self.cache.borrow();
+
+        let Some(order) = cache.order(&fill.client_order_id) else {
+            return false;
+        };
+
+        if order.order_side() != fill.order_side
+            || !matches!(has_active_inferred_fill(&order), Ok(false))
+        {
+            return false;
+        }
+
+        cache.position_ref(&position_id).is_some_and(|position| {
+            position.is_open()
+                && !position.is_settled()
+                && position.instrument_id == fill.instrument_id
+                && position.account_id == fill.account_id
+                && position.closing_order_side() == Some(fill.order_side)
+                && fill.last_qty <= position.quantity
+                && fill.ts_event >= position.ts_opened
+                && !position.trade_ids.contains(&fill.trade_id)
+        })
     }
 
     /// Validates cached order origins against the mass status client, logging a warning for each

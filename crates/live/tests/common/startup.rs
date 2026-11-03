@@ -65,6 +65,7 @@ nautilus_actor!(StartupActor);
 #[derive(Clone, Debug, Default)]
 pub(crate) struct StartupMassStatusClientState {
     pub(crate) connected: Arc<AtomicBool>,
+    pub(crate) bulk_position_coverage_unavailable: Arc<AtomicBool>,
     pub(crate) disconnect_attempted: Arc<AtomicBool>,
     pub(crate) factory_trader_id: Arc<Mutex<Option<TraderId>>>,
     pub(crate) factory_clock_id: Arc<Mutex<Option<usize>>>,
@@ -233,6 +234,13 @@ impl ExecutionClient for StartupMassStatusExecutionClient {
 
     fn oms_type(&self) -> OmsType {
         self.oms_type
+    }
+
+    fn provides_bulk_position_coverage(&self, _instrument_id: InstrumentId) -> bool {
+        !self
+            .state
+            .bulk_position_coverage_unavailable
+            .load(Ordering::Relaxed)
     }
 
     fn get_account(&self) -> Option<AccountAny> {

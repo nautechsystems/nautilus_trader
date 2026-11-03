@@ -1392,7 +1392,8 @@ instrument would withhold every other record it returned, so record incompletene
 **Position effects**:
 
 - Incompleteness does not veto an explicit position report.
-- A bounded fill for an instrument with no explicit position report does not change a position.
+- A bounded fill from incomplete history for an instrument with no explicit position report does not change
+  a position.
 - Emit an explicit flat report only when coverage proves the venue has no position. Do not omit the
   row and expect the engine to infer flat.
 
@@ -2347,8 +2348,7 @@ Execution tests cover each advertised command and report, plus:
 - One fixed cutoff across bounded order and fill queries, including records on the boundary.
 - Complete and incomplete mass statuses for each independently failing report source.
 - Position snapshot coverage after reconnect, skipped rows, explicit flats, and absent instruments.
-- Exact order recovery without position or portfolio effects when bounded history is incomplete or
-  ambiguous.
+- Exact order recovery without position or portfolio effects when bounded history is incomplete.
 - Idempotent stop, reset, and disposal.
 
 Keep adapter tests focused on adapter behavior. The
