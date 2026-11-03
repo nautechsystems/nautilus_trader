@@ -107,9 +107,9 @@ use crate::{
             DEFAULT_OUTCOME_QUOTE_CURRENCY, HyperliquidInstrumentDef, create_instrument_from_def,
             filter_recent_public_trades, get_outcome_currency, instruments_from_defs_owned,
             parse_fill_report, parse_order_status_report_from_basic, parse_outcome_instruments,
-            parse_perp_instruments_with_settlement, parse_position_status_report,
+            parse_perp_instruments_with_collateral, parse_position_status_report,
             parse_recent_public_trade, parse_spot_instruments, parse_spot_position_status_report,
-            parse_unlisted_outcome_instrument, resolve_perp_settlement_currency,
+            parse_unlisted_outcome_instrument, resolve_perp_collateral_currency,
         },
         query::{ExchangeAction, InfoRequest},
         rate_limits::{
@@ -1624,22 +1624,22 @@ impl HyperliquidHttpClient {
             Ok(all_metas) => {
                 for (dex_index, meta) in all_metas.iter().enumerate() {
                     let base = perp_dex_asset_index_base(dex_index);
-                    let settlement_currency = match resolve_perp_settlement_currency(
+                    let collateral_currency = match resolve_perp_collateral_currency(
                         meta,
                         spot_meta.as_ref(),
                     ) {
-                        Ok(settlement_currency) => settlement_currency,
+                        Ok(collateral_currency) => collateral_currency,
                         Err(e) => {
                             return Err(Error::decode(format!(
-                                "failed to resolve perp settlement currency for dex {dex_index}: {e}",
+                                "failed to resolve perp collateral currency for dex {dex_index}: {e}",
                             )));
                         }
                     };
 
-                    let perp_defs = parse_perp_instruments_with_settlement(
+                    let perp_defs = parse_perp_instruments_with_collateral(
                         meta,
                         base,
-                        settlement_currency.as_str(),
+                        collateral_currency.as_str(),
                     );
                     log::debug!(
                         "Loaded Hyperliquid perp defs: dex_index={dex_index}, count={}",
@@ -1654,12 +1654,12 @@ impl HyperliquidHttpClient {
 
                 match self.inner.load_perp_meta().await {
                     Ok(perp_meta) => {
-                        match resolve_perp_settlement_currency(&perp_meta, spot_meta.as_ref()) {
-                            Ok(settlement_currency) => {
-                                let perp_defs = parse_perp_instruments_with_settlement(
+                        match resolve_perp_collateral_currency(&perp_meta, spot_meta.as_ref()) {
+                            Ok(collateral_currency) => {
+                                let perp_defs = parse_perp_instruments_with_collateral(
                                     &perp_meta,
                                     0,
-                                    settlement_currency.as_str(),
+                                    collateral_currency.as_str(),
                                 );
                                 log::debug!(
                                     "Loaded Hyperliquid perp defs via fallback: count={}",
@@ -1669,7 +1669,7 @@ impl HyperliquidHttpClient {
                             }
                             Err(e) => {
                                 return Err(Error::decode(format!(
-                                    "failed to resolve fallback perp settlement currency: {e}",
+                                    "failed to resolve fallback perp collateral currency: {e}",
                                 )));
                             }
                         }
@@ -5228,7 +5228,7 @@ mod tests {
 
         assert_eq!(
             err.to_string(),
-            "decode error: failed to resolve perp settlement currency for dex 0: \
+            "decode error: failed to resolve perp collateral currency for dex 0: \
              Spot metadata required to resolve perp collateral token 360",
         );
     }
