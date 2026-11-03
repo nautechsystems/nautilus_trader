@@ -14,6 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashMap;
+use nautilus_common::{live::sender::EventSender, messages::DataEvent};
+use nautilus_core::AtomicMap;
+use nautilus_model::{
+    data::{Data, OrderBookDeltas, OrderBookDepth},
+    enums::{BookAction, OrderSide, RecordFlag},
+    identifiers::InstrumentId,
+};
 use nautilus_network::websocket::SubscriptionState;
 use parking_lot::Mutex;
 
@@ -151,6 +158,61 @@ where
         let output = command.await;
         let _ = done_tx.send(());
         output
+    }
+}
+
+pub(crate) fn send_book_snapshot(
+    sender: &EventSender<DataEvent>,
+    subscriptions: &AtomicMap<InstrumentId, usize>,
+    snapshot: OrderBookDeltas,
+) {
+    if let Some(depth) = subscriptions.get_cloned(&snapshot.instrument_id) {
+        let bids: Vec<_> = snapshot
+            .deltas
+            .iter()
+            .filter(|delta| {
+                delta.action == BookAction::Add && delta.order.side == Some(OrderSide::Buy)
+            })
+            .take(depth)
+            .map(|delta| delta.order)
+            .collect();
+
+        let asks: Vec<_> = snapshot
+            .deltas
+            .iter()
+            .filter(|delta| {
+                delta.action == BookAction::Add && delta.order.side == Some(OrderSide::Sell)
+            })
+            .take(depth)
+            .map(|delta| delta.order)
+            .collect();
+
+        let bid_counts = std::iter::repeat_n(0, bids.len());
+        let ask_counts = std::iter::repeat_n(0, asks.len());
+        let depth = OrderBookDepth::new_checked(
+            snapshot.instrument_id,
+            bids,
+            asks,
+            bid_counts,
+            ask_counts,
+            snapshot.flags | RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8,
+            snapshot.sequence,
+            snapshot.ts_event,
+            snapshot.ts_init,
+        );
+
+        match depth {
+            Ok(depth) => {
+                if let Err(e) = sender.send(DataEvent::Data(Data::BookDepth(Box::new(depth)))) {
+                    log::error!("Failed to emit native depth snapshot: {e}");
+                }
+            }
+            Err(e) => log::warn!("Failed to parse native depth snapshot: {e}"),
+        }
+    }
+
+    if let Err(e) = sender.send(DataEvent::Data(Data::BookDeltas(Box::new(snapshot)))) {
+        log::error!("Failed to emit book snapshot: {e}");
     }
 }
 

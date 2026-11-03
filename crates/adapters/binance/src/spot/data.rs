@@ -16,6 +16,7 @@
 //! Live market data client implementation for the Binance Spot adapter.
 
 use std::{
+    num::NonZeroUsize,
     str::FromStr,
     sync::{
         Arc,
@@ -24,7 +25,7 @@ use std::{
     time::Duration,
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
@@ -36,10 +37,11 @@ use nautilus_common::{
             BarsResponse, BookResponse, CustomDataResponse, DataResponse, InstrumentResponse,
             InstrumentsResponse, RequestBars, RequestBookSnapshot, RequestCustomData,
             RequestInstrument, RequestInstruments, RequestTrades, SubscribeBars,
-            SubscribeBookDeltas, SubscribeCustomData, SubscribeInstrument, SubscribeInstruments,
-            SubscribeQuotes, SubscribeTrades, TradesResponse, UnsubscribeBars,
-            UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes, UnsubscribeTrades,
-            subscribe::SubscribeInstrumentStatus, unsubscribe::UnsubscribeInstrumentStatus,
+            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData, SubscribeInstrument,
+            SubscribeInstruments, SubscribeQuotes, SubscribeTrades, TradesResponse,
+            UnsubscribeBars, UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
+            UnsubscribeQuotes, UnsubscribeTrades, subscribe::SubscribeInstrumentStatus,
+            unsubscribe::UnsubscribeInstrumentStatus,
         },
     },
 };
@@ -54,7 +56,10 @@ use nautilus_live::{
     task::{TaskGroup, TaskGroupGuard, TaskSpawner},
 };
 use nautilus_model::{
-    data::{BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick},
+    data::{
+        BookOrder, CustomData, Data, DataType, OrderBookDelta, OrderBookDeltas, QuoteTick,
+        depth::DEPTH10_LEN,
+    },
     enums::{
         AggregationSource, BookAction, BookType, MarketStatusAction, OrderSide, PriceType,
         RecordFlag,
@@ -77,6 +82,7 @@ use crate::{
     common::{
         bar::{binance_bar_data_type, binance_bars_to_custom_data, parse_binance_bar_type},
         consts::{
+            BINANCE_PARTIAL_BOOK_DEPTH,
             BINANCE_SPOT_REQUEST_WEIGHT_PER_MINUTE as SNAPSHOT_WEIGHT_PER_MINUTE, BINANCE_VENUE,
             BINANCE_WS_HEARTBEAT_SECS,
         },
@@ -86,7 +92,7 @@ use crate::{
         parse::{bar_spec_to_binance_interval, quote_to_l1_deltas},
         status::diff_and_emit_statuses,
         urls::{get_http_base_url_with_us, get_ws_base_url_with_us},
-        websocket::chain_command,
+        websocket::{chain_command, send_book_snapshot},
     },
     config::{BinanceDataClientConfig, BinanceSpotMarketDataMode},
     data_types::register_binance_custom_data,
@@ -140,6 +146,8 @@ pub struct BinanceSpotDataClient {
     instrument_update_lock: Arc<tokio::sync::Mutex<()>>,
     book_sync: BookSyncTracker,
     book_subscriptions: Arc<AtomicMap<InstrumentId, String>>,
+    book_deltas: AHashSet<InstrumentId>,
+    book_depths: Arc<AtomicMap<InstrumentId, usize>>,
     l1_book_subscriptions: Arc<AtomicMap<InstrumentId, u32>>,
     quote_refs: Arc<AtomicMap<InstrumentId, u32>>,
     ticker_refs: Arc<AtomicMap<InstrumentId, u32>>,
@@ -258,6 +266,8 @@ impl BinanceSpotDataClient {
             instrument_update_lock: Arc::new(tokio::sync::Mutex::new(())),
             book_sync,
             book_subscriptions: Arc::new(AtomicMap::new()),
+            book_deltas: AHashSet::new(),
+            book_depths: Arc::new(AtomicMap::new()),
             l1_book_subscriptions: Arc::new(AtomicMap::new()),
             quote_refs: Arc::new(AtomicMap::new()),
             ticker_refs: Arc::new(AtomicMap::new()),
@@ -421,6 +431,7 @@ impl BinanceSpotDataClient {
         ws_instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
         book_sync: &BookSyncTracker,
         l1_book_subscriptions: &Arc<AtomicMap<InstrumentId, u32>>,
+        book_depths: &AtomicMap<InstrumentId, usize>,
         http_client: &BinanceSpotHttpClient,
         snapshot_timeout: Duration,
         clock: &'static AtomicTime,
@@ -464,7 +475,7 @@ impl BinanceSpotDataClient {
                 if let Some(instrument) = cache.get(&symbol) {
                     match parse_depth_snapshot(event, instrument, ts_init) {
                         Ok(deltas) => {
-                            Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
+                            send_book_snapshot(data_sender, book_depths, deltas);
                         }
                         Err(e) => log::warn!("Failed to parse Spot SBE depth snapshot: {e}"),
                     }
@@ -528,6 +539,7 @@ impl BinanceSpotDataClient {
         ws_instruments: &Arc<AtomicMap<Ustr, InstrumentAny>>,
         book_sync: &BookSyncTracker,
         l1_book_subscriptions: &Arc<AtomicMap<InstrumentId, u32>>,
+        book_depths: &AtomicMap<InstrumentId, usize>,
         http_client: &BinanceSpotHttpClient,
         snapshot_timeout: Duration,
         clock: &'static AtomicTime,
@@ -566,7 +578,7 @@ impl BinanceSpotDataClient {
                 let cache = ws_instruments.load();
                 if let Some(instrument) = cache.get(&symbol) {
                     let deltas = parse_json_depth_snapshot(event, instrument, ts_init);
-                    Self::send_data(data_sender, Data::BookDeltas(Box::new(deltas)));
+                    send_book_snapshot(data_sender, book_depths, deltas);
                 }
             }
             BinanceSpotPublicWsMessage::DepthDiff(ref event) => {
@@ -908,6 +920,8 @@ impl DataClient for BinanceSpotDataClient {
         self.is_connected.store(false, Ordering::Relaxed);
 
         self.book_subscriptions.store(AHashMap::new());
+        self.book_deltas.clear();
+        self.book_depths.store(AHashMap::new());
         self.l1_book_subscriptions.store(AHashMap::new());
         self.quote_refs.store(AHashMap::new());
         self.ticker_refs.store(AHashMap::new());
@@ -966,14 +980,15 @@ impl DataClient for BinanceSpotDataClient {
                     ws_client.connect().await.map_err(|e| {
                         anyhow::anyhow!("failed to connect Binance Spot SBE WebSocket: {e}")
                     })?;
-                    log::info!("Binance Spot SBE WebSocket connected");
 
+                    log::info!("Binance Spot SBE WebSocket connected");
                     let stream = ws_client.stream();
                     let sender = self.data_sender.clone();
                     let insts = self.instruments.clone();
                     let ws_insts = ws_client.instruments_cache();
                     let book_sync = self.book_sync.clone();
                     let l1_book_subs = self.l1_book_subscriptions.clone();
+                    let book_depths = self.book_depths.clone();
                     let http = self.http_client.clone();
                     let snapshot_timeout =
                         Duration::from_secs(self.config.book_snapshot_timeout_secs);
@@ -997,6 +1012,7 @@ impl DataClient for BinanceSpotDataClient {
                                         &ws_insts,
                                         &book_sync,
                                         &l1_book_subs,
+                                        &book_depths,
                                         &http,
                                         snapshot_timeout,
                                         clock,
@@ -1019,14 +1035,15 @@ impl DataClient for BinanceSpotDataClient {
                     ws_client.connect().await.map_err(|e| {
                         anyhow::anyhow!("failed to connect Binance Spot public JSON WebSocket: {e}")
                     })?;
-                    log::info!("Binance Spot public JSON WebSocket connected");
 
+                    log::info!("Binance Spot public JSON WebSocket connected");
                     let stream = ws_client.stream();
                     let sender = self.data_sender.clone();
                     let insts = self.instruments.clone();
                     let ws_insts = ws_client.instruments_cache();
                     let book_sync = self.book_sync.clone();
                     let l1_book_subs = self.l1_book_subscriptions.clone();
+                    let book_depths = self.book_depths.clone();
                     let http = self.http_client.clone();
                     let snapshot_timeout =
                         Duration::from_secs(self.config.book_snapshot_timeout_secs);
@@ -1050,6 +1067,7 @@ impl DataClient for BinanceSpotDataClient {
                                         &ws_insts,
                                         &book_sync,
                                         &l1_book_subs,
+                                        &book_depths,
                                         &http,
                                         snapshot_timeout,
                                         clock,
@@ -1198,6 +1216,8 @@ impl DataClient for BinanceSpotDataClient {
         self.teardown_partial_connect().await?;
 
         self.book_subscriptions.store(AHashMap::new());
+        self.book_deltas.clear();
+        self.book_depths.store(AHashMap::new());
         self.l1_book_subscriptions.store(AHashMap::new());
         self.quote_refs.store(AHashMap::new());
         self.ticker_refs.store(AHashMap::new());
@@ -1272,112 +1292,49 @@ impl DataClient for BinanceSpotDataClient {
 
     fn subscribe_book_deltas(&mut self, cmd: SubscribeBookDeltas) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            let cmd = cmd.with_instrument_ids(instrument_id);
-            if cmd.book_type == BookType::L1_MBP {
-                anyhow::ensure!(
-                    cmd.depth.is_none_or(|depth| depth.get() == 1),
-                    "Binance Spot L1_MBP supports depth 1 only"
-                );
-                anyhow::ensure!(
-                    !self.book_subscriptions.contains_key(&instrument_id),
-                    "cannot subscribe L1_MBP and L2_MBP for the same Binance Spot instrument"
-                );
-                self.l1_book_subscriptions.rcu(|subscriptions| {
-                    *subscriptions.entry(instrument_id).or_insert(0) += 1;
-                });
+            self.subscribe_book(&cmd.with_instrument_ids(instrument_id))?;
+            self.book_deltas.insert(instrument_id);
+            Ok(())
+        })
+    }
 
-                self.subscribe_top_of_book(instrument_id);
-                return Ok(());
-            }
-
-            if cmd.book_type != BookType::L2_MBP {
-                anyhow::bail!("Binance Spot supports L1_MBP and L2_MBP order book subscriptions");
-            }
-
+    fn subscribe_book_depth(&mut self, cmd: SubscribeBookDepth) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
             anyhow::ensure!(
-                !self.l1_book_subscriptions.contains_key(&instrument_id),
-                "cannot subscribe L1_MBP and L2_MBP for the same Binance Spot instrument"
+                cmd.book_type == BookType::L2_MBP,
+                "Binance native depth snapshots require L2_MBP"
+            );
+            let depth = cmd.depth.map_or(DEPTH10_LEN, NonZeroUsize::get);
+            anyhow::ensure!(
+                depth <= BINANCE_PARTIAL_BOOK_DEPTH,
+                "Binance native depth snapshots support at most {BINANCE_PARTIAL_BOOK_DEPTH} levels"
             );
 
-            let ws = self.ws_client.clone();
-            let symbol_lower = instrument_id.symbol.as_str().to_lowercase();
-            let stream = self.depth_stream(
-                &symbol_lower,
-                cmd.depth.map(|d| d.get()),
-                cmd.params.as_ref(),
-            )?;
+            let request = SubscribeBookDeltas::new(
+                instrument_id,
+                cmd.book_type,
+                cmd.client_id,
+                cmd.venue,
+                cmd.command_id,
+                cmd.ts_init,
+                NonZeroUsize::new(BINANCE_PARTIAL_BOOK_DEPTH),
+                cmd.managed,
+                cmd.correlation_id,
+                cmd.params.clone(),
+            );
 
-            if let Some(existing) = self.book_subscriptions.load().get(&instrument_id) {
+            if let Some(active) = self.book_depths.get_cloned(&instrument_id) {
                 anyhow::ensure!(
-                    existing == &stream,
-                    "unsubscribe before changing Binance Spot book depth or update_speed"
+                    active == depth,
+                    "Binance snapshot depth cannot change while subscribed"
                 );
-                return Ok(());
+                return self.subscribe_book(&request);
             }
 
-            if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json
-                && let Some(depth) = cmd.depth
-            {
-                // Explicit depth requests use partial-book streams. Full-depth JSON
-                // subscriptions fall through to the REST snapshot + @depth diff path.
-                let depth = depth.get();
-
-                if !BOOK_DEPTHS_JSON.contains(&depth) {
-                    anyhow::bail!(
-                        "Invalid depth {depth} for Binance Spot JSON order book. \
-                        Valid values: {BOOK_DEPTHS_JSON:?}"
-                    );
-                }
-
-                self.book_subscriptions
-                    .insert(instrument_id, stream.clone());
-                self.spawn_ws(
-                    chain_command(&self.book_command_tail, async move {
-                        ws.subscribe(vec![stream])
-                            .await
-                            .context("book deltas subscription")
-                    }),
-                    "order book subscription",
-                );
-
-                return Ok(());
-            }
-
-            match cmd.depth.map(|d| d.get()) {
-                // Partial book streams are self-contained snapshots.
-                Some(depth) => {
-                    anyhow::ensure!(
-                        depth == 20,
-                        "Binance Spot SBE partial books support depth 20 only; use JSON market data for other depths"
-                    );
-                    self.book_subscriptions
-                        .insert(instrument_id, stream.clone());
-                    self.spawn_ws(
-                        chain_command(&self.book_command_tail, async move {
-                            ws.subscribe(vec![stream])
-                                .await
-                                .context("book deltas subscription")
-                        }),
-                        "order book subscription",
-                    );
-                }
-                // Full book diffs are seeded by a REST snapshot and replayed.
-                None => {
-                    self.book_subscriptions
-                        .insert(instrument_id, stream.clone());
-
-                    // Resync from the next diff, cancelling any recovery from a prior subscription
-                    self.book_sync.subscribe(instrument_id);
-
-                    self.spawn_ws(
-                        chain_command(&self.book_command_tail, async move {
-                            ws.subscribe(vec![stream])
-                                .await
-                                .context("book deltas subscription")
-                        }),
-                        "order book subscription",
-                    );
-                }
+            self.book_depths.insert(instrument_id, depth);
+            if let Err(e) = self.subscribe_book(&request) {
+                self.book_depths.remove(&instrument_id);
+                return Err(e);
             }
 
             Ok(())
@@ -1452,45 +1409,30 @@ impl DataClient for BinanceSpotDataClient {
 
     fn unsubscribe_book_deltas(&mut self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
         execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
-            if let Some(count) = self
-                .l1_book_subscriptions
-                .load()
-                .get(&instrument_id)
-                .copied()
-            {
-                if count == 1 {
-                    self.l1_book_subscriptions.remove(&instrument_id);
-                } else {
-                    self.l1_book_subscriptions.rcu(|subscriptions| {
-                        if let Some(existing) = subscriptions.get_mut(&instrument_id) {
-                            *existing -= 1;
-                        }
-                    });
-                }
-
-                self.unsubscribe_top_of_book(instrument_id);
-                return Ok(());
+            self.book_deltas.remove(&instrument_id);
+            if !self.book_depths.contains_key(&instrument_id) {
+                self.unsubscribe_book(&cmd.with_instrument_ids(instrument_id))?;
             }
 
-            let ws = self.ws_client.clone();
+            Ok(())
+        })
+    }
 
-            // Stop book sync so an in-flight snapshot cannot emit after unsubscribe
-            let stream = self.book_subscriptions.load().get(&instrument_id).cloned();
-            self.book_subscriptions.remove(&instrument_id);
-            self.book_sync.remove(instrument_id);
-
-            let Some(stream) = stream else {
-                return Ok(());
-            };
-
-            self.spawn_ws(
-                chain_command(&self.book_command_tail, async move {
-                    ws.unsubscribe(vec![stream])
-                        .await
-                        .context("book deltas unsubscribe")
-                }),
-                "order book unsubscribe",
-            );
+    fn unsubscribe_book_depth(&mut self, cmd: &UnsubscribeBookDepth) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            self.book_depths.remove(&instrument_id);
+            if !self.book_deltas.contains(&instrument_id) {
+                let request = UnsubscribeBookDeltas::new(
+                    instrument_id,
+                    cmd.client_id,
+                    cmd.venue,
+                    cmd.command_id,
+                    cmd.ts_init,
+                    cmd.correlation_id,
+                    cmd.params.clone(),
+                );
+                self.unsubscribe_book(&request)?;
+            }
 
             Ok(())
         })
@@ -1905,6 +1847,164 @@ impl DataClient for BinanceSpotDataClient {
 }
 
 impl BinanceSpotDataClient {
+    fn subscribe_book(&self, cmd: &SubscribeBookDeltas) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            let cmd = cmd.with_instrument_ids(instrument_id);
+            if cmd.book_type == BookType::L1_MBP {
+                anyhow::ensure!(
+                    cmd.depth.is_none_or(|depth| depth.get() == 1),
+                    "Binance Spot L1_MBP supports depth 1 only"
+                );
+                anyhow::ensure!(
+                    !self.book_subscriptions.contains_key(&instrument_id),
+                    "cannot subscribe L1_MBP and L2_MBP for the same Binance Spot instrument"
+                );
+                self.l1_book_subscriptions.rcu(|subscriptions| {
+                    *subscriptions.entry(instrument_id).or_insert(0) += 1;
+                });
+
+                self.subscribe_top_of_book(instrument_id);
+                return Ok(());
+            }
+
+            if cmd.book_type != BookType::L2_MBP {
+                anyhow::bail!("Binance Spot supports L1_MBP and L2_MBP order book subscriptions");
+            }
+
+            anyhow::ensure!(
+                !self.l1_book_subscriptions.contains_key(&instrument_id),
+                "cannot subscribe L1_MBP and L2_MBP for the same Binance Spot instrument"
+            );
+            let ws = self.ws_client.clone();
+            let symbol_lower = instrument_id.symbol.as_str().to_lowercase();
+            let stream = self.depth_stream(
+                &symbol_lower,
+                cmd.depth.map(|d| d.get()),
+                cmd.params.as_ref(),
+            )?;
+
+            if let Some(existing) = self.book_subscriptions.load().get(&instrument_id) {
+                anyhow::ensure!(
+                    existing == &stream,
+                    "unsubscribe before changing Binance Spot book depth or update_speed"
+                );
+                return Ok(());
+            }
+
+            if self.spot_market_data_mode == BinanceSpotMarketDataMode::Json
+                && let Some(depth) = cmd.depth
+            {
+                // Explicit depth requests use partial-book streams. Full-depth JSON
+                // subscriptions fall through to the REST snapshot + @depth diff path.
+                let depth = depth.get();
+
+                if !BOOK_DEPTHS_JSON.contains(&depth) {
+                    anyhow::bail!(
+                        "Invalid depth {depth} for Binance Spot JSON order book. \
+                        Valid values: {BOOK_DEPTHS_JSON:?}"
+                    );
+                }
+
+                self.book_subscriptions
+                    .insert(instrument_id, stream.clone());
+                self.spawn_ws(
+                    chain_command(&self.book_command_tail, async move {
+                        ws.subscribe(vec![stream])
+                            .await
+                            .context("book deltas subscription")
+                    }),
+                    "order book subscription",
+                );
+
+                return Ok(());
+            }
+
+            match cmd.depth.map(|d| d.get()) {
+                // Partial book streams are self-contained snapshots.
+                Some(depth) => {
+                    anyhow::ensure!(
+                        depth == 20,
+                        "Binance Spot SBE partial books support depth 20 only; use JSON market data for other depths"
+                    );
+                    self.book_subscriptions
+                        .insert(instrument_id, stream.clone());
+                    self.spawn_ws(
+                        chain_command(&self.book_command_tail, async move {
+                            ws.subscribe(vec![stream])
+                                .await
+                                .context("book deltas subscription")
+                        }),
+                        "order book subscription",
+                    );
+                }
+                // Full book diffs are seeded by a REST snapshot and replayed.
+                None => {
+                    self.book_subscriptions
+                        .insert(instrument_id, stream.clone());
+
+                    // Resync from the next diff, cancelling any recovery from a prior subscription
+                    self.book_sync.subscribe(instrument_id);
+                    self.spawn_ws(
+                        chain_command(&self.book_command_tail, async move {
+                            ws.subscribe(vec![stream])
+                                .await
+                                .context("book deltas subscription")
+                        }),
+                        "order book subscription",
+                    );
+                }
+            }
+
+            Ok(())
+        })
+    }
+
+    fn unsubscribe_book(&self, cmd: &UnsubscribeBookDeltas) -> anyhow::Result<()> {
+        execute_instrument_subscriptions(&cmd.instrument_ids, |instrument_id| {
+            if let Some(count) = self
+                .l1_book_subscriptions
+                .load()
+                .get(&instrument_id)
+                .copied()
+            {
+                if count == 1 {
+                    self.l1_book_subscriptions.remove(&instrument_id);
+                } else {
+                    self.l1_book_subscriptions.rcu(|subscriptions| {
+                        if let Some(existing) = subscriptions.get_mut(&instrument_id) {
+                            *existing -= 1;
+                        }
+                    });
+                }
+
+                self.unsubscribe_top_of_book(instrument_id);
+                return Ok(());
+            }
+
+            let ws = self.ws_client.clone();
+
+            // Stop book sync so an in-flight snapshot cannot emit after unsubscribe
+            let stream = self.book_subscriptions.load().get(&instrument_id).cloned();
+            self.book_subscriptions.remove(&instrument_id);
+            self.book_sync.remove(instrument_id);
+
+            let Some(stream) = stream else {
+                return Ok(());
+            };
+
+            self.spawn_ws(
+                chain_command(&self.book_command_tail, async move {
+                    ws.unsubscribe(vec![stream])
+                        .await
+                        .context("book deltas unsubscribe")
+                }),
+                "order book unsubscribe",
+            );
+
+            Ok(())
+        })
+    }
+
     fn depth_stream(
         &self,
         symbol: &str,
@@ -2287,6 +2387,7 @@ mod tests {
             &ws_instruments,
             &book_sync,
             &l1_book_subscriptions,
+            &AtomicMap::new(),
             &http_client,
             Duration::from_secs(10),
             clock,
@@ -2304,6 +2405,7 @@ mod tests {
             &ws_instruments,
             &book_sync,
             &l1_book_subscriptions,
+            &AtomicMap::new(),
             &http_client,
             Duration::from_secs(10),
             clock,

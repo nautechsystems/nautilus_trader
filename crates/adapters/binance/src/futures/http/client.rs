@@ -3836,15 +3836,9 @@ impl BinanceFuturesHttpClient {
         };
 
         let rates = self.inner.funding_rate(&params).await?;
-        let ts_init = UnixNanos::default();
-
         let mut result = Vec::with_capacity(rates.len());
         for rate in rates {
-            result.push(parse_futures_funding_rate_update(
-                &rate,
-                instrument_id,
-                ts_init,
-            )?);
+            result.push(parse_futures_funding_rate_update(&rate, instrument_id)?);
         }
 
         Ok(result)
@@ -4018,20 +4012,19 @@ fn parse_futures_kline_binance_bar(
 fn parse_futures_funding_rate_update(
     rate: &BinanceFundingRate,
     instrument_id: InstrumentId,
-    ts_init: UnixNanos,
 ) -> anyhow::Result<FundingRateUpdate> {
     let funding_rate = rate.funding_rate.parse::<Decimal>().map_err(|e| {
         anyhow::anyhow!("invalid Futures funding rate at {}: {e}", rate.funding_time)
     })?;
-    let ts_event = parse_millis(rate.funding_time, "Futures funding time")?;
 
+    let ts_event = parse_millis(rate.funding_time, "Futures funding time")?;
     Ok(FundingRateUpdate::new(
         instrument_id,
         funding_rate,
         None, // Funding interval is not provided by the history endpoint
         None, // Next funding time is not provided by the history endpoint
         ts_event,
-        ts_init,
+        ts_event,
     ))
 }
 

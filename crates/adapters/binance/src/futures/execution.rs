@@ -30,7 +30,6 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use indexmap::IndexMap;
 use nautilus_common::{
-    cache::fifo::FifoCache,
     clients::ExecutionClient,
     enums::LogLevel,
     live::runner::get_exec_event_sender,
@@ -1849,6 +1848,7 @@ fn binance_futures_order_type_wire(order_type: BinanceFuturesOrderType) -> &'sta
 fn binance_time_in_force_wire(time_in_force: BinanceTimeInForce) -> &'static str {
     match time_in_force {
         BinanceTimeInForce::Gtc => "GTC",
+        BinanceTimeInForce::GteGtc => "GTE_GTC",
         BinanceTimeInForce::Ioc => "IOC",
         BinanceTimeInForce::Fok => "FOK",
         BinanceTimeInForce::Gtx => "GTX",
@@ -2052,8 +2052,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let (recovery_tx, recovery_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
         self.recovery_tx = Some(recovery_tx.clone());
 
-        let seen_trade_ids: Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>> =
-            Arc::new(Mutex::new(FifoCache::new()));
+        let seen_trade_ids = self.dispatch_state.seen_trade_ids();
 
         let dispatch_ctx = Arc::new(DispatchCtx {
             emitter: self.emitter.clone(),
@@ -3177,6 +3176,8 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             None,
         );
 
+        self.dispatch_state
+            .restore_terminal_fills(&order_reports, &fill_reports);
         mass_status.add_order_reports(order_reports.into_values().collect());
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);

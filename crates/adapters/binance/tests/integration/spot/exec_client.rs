@@ -4711,6 +4711,78 @@ async fn test_submit_order_list_denies_all_orders_when_reduce_only_is_present() 
 
 #[rstest]
 #[tokio::test]
+async fn test_cancel_all_orders_suppresses_terminal_response_replay() {
+    let addr = start_exec_test_server().await;
+    let (mut client, mut rx, cache) = create_test_execution_client(format!("http://{addr}"));
+    let account_id = AccountId::from("BINANCE-001");
+    add_test_account_to_cache(&cache, account_id);
+    let cid = ClientOrderId::from("order-1");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(cid)
+        .strategy_id(test_strategy_id())
+        .instrument_id(test_instrument_id())
+        .quantity(Quantity::from("0.001"))
+        .price(Price::from("50000.00"))
+        .build();
+    let accepted = TestOrderEventStubs::accepted(&order, account_id, VenueOrderId::from("12345"));
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*BINANCE_CLIENT_ID), false)
+        .unwrap();
+    cache.borrow_mut().update_order(&accepted).unwrap();
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let command = || {
+        CancelAllOrders::new(
+            test_trader_id(),
+            Some(*BINANCE_CLIENT_ID),
+            test_strategy_id(),
+            test_instrument_id(),
+            None,
+            nautilus_core::UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        )
+    };
+
+    client.cancel_all_orders(command()).unwrap();
+    let event = recv_until(&mut rx, |event| matches!(event,
+        ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) if canceled.client_order_id == cid
+    )).await;
+
+    let ExecutionEvent::Order(OrderEventAny::Canceled(canceled)) = event else {
+        unreachable!()
+    };
+
+    let expected = OrderCanceled::new(
+        test_trader_id(),
+        test_strategy_id(),
+        test_instrument_id(),
+        cid,
+        canceled.event_id,
+        UnixNanos::default(),
+        canceled.ts_init,
+        false,
+        Some(VenueOrderId::from("12345")),
+        Some(account_id),
+        None,
+    );
+    assert_eq!(canceled, expected);
+    client.cancel_all_orders(command()).unwrap();
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(event,
+            OrderEventAny::Canceled(canceled) if canceled.client_order_id == cid
+        )
+    })
+    .await;
+
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_cancel_all_orders_generates_canceled_events() {
     let addr = start_exec_test_server().await;
     let base_url = format!("http://{addr}");

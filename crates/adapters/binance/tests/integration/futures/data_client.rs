@@ -60,11 +60,12 @@ use nautilus_common::{
             DataResponse, RequestBars, RequestBookSnapshot, RequestCustomData, RequestFundingRates,
             RequestTrades,
             subscribe::{
-                SubscribeBars, SubscribeBookDeltas, SubscribeCustomData, SubscribeMarkPrices,
-                SubscribeQuotes, SubscribeTrades,
+                SubscribeBars, SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData,
+                SubscribeMarkPrices, SubscribeQuotes, SubscribeTrades,
             },
             unsubscribe::{
-                UnsubscribeBookDeltas, UnsubscribeCustomData, UnsubscribeQuotes, UnsubscribeTrades,
+                UnsubscribeBookDeltas, UnsubscribeBookDepth, UnsubscribeCustomData,
+                UnsubscribeQuotes, UnsubscribeTrades,
             },
         },
         system::SocketState,
@@ -893,8 +894,8 @@ async fn start_data_test_server() -> SocketAddr {
 async fn start_data_test_server_with_state(state: DataTestServerState) -> SocketAddr {
     let router = create_data_test_router(state);
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
 
+    let addr = listener.local_addr().unwrap();
     tokio::spawn(async move {
         axum::serve(listener, router.into_make_service())
             .await
@@ -921,7 +922,6 @@ async fn recv_data(
     timeout: Duration,
 ) -> Option<Data> {
     let deadline = tokio::time::Instant::now() + timeout;
-
     loop {
         let remaining = deadline.checked_duration_since(tokio::time::Instant::now())?;
         match tokio::time::timeout(remaining, rx.recv()).await {
@@ -1553,8 +1553,8 @@ async fn test_request_funding_rates_emits_response() {
     client
         .request_funding_rates(RequestFundingRates::new(
             instrument_id,
-            None,
-            None,
+            Some(Timestamp::from_millisecond(1700000000000).unwrap()),
+            Some(Timestamp::from_millisecond(1700028800000).unwrap()),
             Some(NonZeroUsize::new(2).unwrap()),
             None,
             UUID4::new(),
@@ -1566,7 +1566,13 @@ async fn test_request_funding_rates_emits_response() {
     wait_until_async(
         || {
             let found = rx.try_recv().is_ok_and(|event| {
-                let DataEvent::Response(DataResponse::FundingRates(resp)) = event else {
+                let DataEvent::Response(mut response) = event else {
+                    return false;
+                };
+
+                response.trim_to_bounds();
+
+                let DataResponse::FundingRates(resp) = response else {
                     return false;
                 };
 
@@ -1574,8 +1580,10 @@ async fn test_request_funding_rates_emits_response() {
                     && resp.data.len() == 2
                     && resp.data[0].rate == dec!(0.0001)
                     && resp.data[0].ts_event == UnixNanos::from_millis(1700000000000)
+                    && resp.data[0].ts_init == resp.data[0].ts_event
                     && resp.data[1].rate == dec!(-0.000075)
                     && resp.data[1].ts_event == UnixNanos::from_millis(1700028800000)
+                    && resp.data[1].ts_init == resp.data[1].ts_event
             });
             async move { found }
         },
@@ -5445,4 +5453,127 @@ async fn test_instrument_status_updates_do_not_overlap(#[case] poll_first: bool)
     assert!(instruments.len() >= 2);
     assert_eq!(instruments[0], btc);
     assert!(instruments[1..].iter().all(|id| *id == eth));
+}
+
+#[rstest]
+#[case::depth_first(true)]
+#[case::deltas_first(false)]
+#[tokio::test]
+async fn test_subscribe_book_depth_shares_stream_with_deltas(#[case] depth_first: bool) {
+    let state = DataTestServerState::default();
+    let subscriptions = state.subscriptions.clone();
+    let unsubscriptions = state.unsubscriptions.clone();
+    let addr = start_data_test_server_with_state(state).await;
+    let (mut client, mut rx) =
+        create_test_data_client(format!("http://{addr}"), format!("ws://{addr}/ws"));
+    client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+    let instrument_id = InstrumentId::from("BTCUSDT-PERP.BINANCE");
+
+    let depth_cmd = SubscribeBookDepth::new(
+        instrument_id,
+        BookType::L2_MBP,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        NonZeroUsize::new(1),
+        false,
+        None,
+        None,
+    );
+    client.subscribe_book_depth(depth_cmd).unwrap();
+    client
+        .subscribe_book_deltas(SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*BINANCE_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(20),
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+
+    let Data::BookDepth(depth) = recv_data(&mut rx, Duration::from_secs(5)).await.unwrap() else {
+        panic!("Expected native depth snapshot");
+    };
+
+    let Data::BookDeltas(deltas) = recv_data(&mut rx, Duration::from_secs(5)).await.unwrap() else {
+        panic!("Expected companion snapshot deltas");
+    };
+
+    let unsub_depth = UnsubscribeBookDepth::new(
+        instrument_id,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    let unsub_deltas = UnsubscribeBookDeltas::new(
+        instrument_id,
+        Some(*BINANCE_CLIENT_ID),
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+
+    if depth_first {
+        client.unsubscribe_book_depth(&unsub_depth).unwrap();
+    } else {
+        client.unsubscribe_book_deltas(&unsub_deltas).unwrap();
+    }
+
+    assert!(unsubscriptions.lock().is_empty());
+
+    if depth_first {
+        client.unsubscribe_book_deltas(&unsub_deltas).unwrap();
+    } else {
+        client.unsubscribe_book_depth(&unsub_depth).unwrap();
+    }
+
+    wait_until_async(
+        || async { !unsubscriptions.lock().is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    assert_eq!(depth.instrument_id, instrument_id);
+    assert_eq!(depth.bids.len(), 1);
+    assert_eq!(depth.asks.len(), 1);
+    assert_eq!(depth.bids[0].side, Some(OrderSide::Buy));
+    assert_eq!(depth.bids[0].price.as_decimal(), dec!(50000));
+    assert_eq!(depth.bids[0].size.as_decimal(), dec!(2));
+    assert_eq!(depth.bids[0].order_id, 0);
+    assert_eq!(depth.asks[0].side, Some(OrderSide::Sell));
+    assert_eq!(depth.asks[0].price.as_decimal(), dec!(50001));
+    assert_eq!(depth.asks[0].size.as_decimal(), dec!(3));
+    assert_eq!(depth.asks[0].order_id, 0);
+    assert_eq!(&depth.bid_counts[..], &[0]);
+    assert_eq!(&depth.ask_counts[..], &[0]);
+    assert_eq!(
+        depth.flags,
+        RecordFlag::F_SNAPSHOT as u8 | RecordFlag::F_LAST as u8
+    );
+    assert_eq!(depth.sequence, 1027025);
+    assert_eq!(depth.ts_event, UnixNanos::from_millis(1700000000000));
+    assert_eq!(depth.ts_init, deltas.ts_init);
+    assert_eq!(
+        *subscriptions.lock(),
+        vec![vec!["btcusdt@depth20@100ms".to_string()]]
+    );
+    assert_eq!(
+        *unsubscriptions.lock(),
+        vec![vec!["btcusdt@depth20@100ms".to_string()]]
+    );
+    client.disconnect().await.unwrap();
 }

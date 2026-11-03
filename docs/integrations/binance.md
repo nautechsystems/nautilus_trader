@@ -762,6 +762,14 @@ with these flags:
 - Every snapshot delta carries `F_SNAPSHOT`, and the final delta carries `F_SNAPSHOT | F_LAST`.
 - A snapshot without levels is a lone `Clear` that empties the book.
 
+Native `OrderBookDepth` subscriptions require `L2_MBP` and support up to 20 levels per side, with
+10 levels by default. They use the 20-level partial-book stream and limit each published snapshot
+to the requested depth. Native depth and delta subscriptions share that stream when both request
+20-level source data; unsubscribing either consumer leaves the other active. A conflicting delta
+depth or update speed requires unsubscribing before changing the stream.
+Native depth also publishes companion snapshot deltas. It cannot share an instrument with an
+`L1_MBP` delta subscription.
+
 ### Futures L2 subscriptions
 
 The `L2_MBP` subscription depth selects the stream:

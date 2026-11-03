@@ -31,7 +31,10 @@ use nautilus_live::{
     SocketControlFactory,
     task::{TaskJoinOutcome, TaskSlot, finish_task},
 };
-use nautilus_model::identifiers::InstrumentId;
+use nautilus_model::{
+    identifiers::{InstrumentId, PositionId},
+    reports::OrderStatusReport,
+};
 use nautilus_network::websocket::TransportBackend;
 use parking_lot::{Mutex, RwLock};
 use tokio_util::sync::CancellationToken;
@@ -346,12 +349,7 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        ctx.dispatch_ctx
-                            .emitter
-                            .send_order_status_report(with_venue_position_id(
-                                report,
-                                venue_position_id,
-                            ));
+                        emit_order_report(ctx, report, venue_position_id);
                         emitted += 1;
                     }
                     Err(e) => {
@@ -397,12 +395,7 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
                     ts_init,
                 ) {
                     Ok(report) => {
-                        ctx.dispatch_ctx
-                            .emitter
-                            .send_order_status_report(with_venue_position_id(
-                                report,
-                                venue_position_id,
-                            ));
+                        emit_order_report(ctx, report, venue_position_id);
                         emitted += 1;
                     }
                     Err(e) => {
@@ -427,6 +420,28 @@ async fn emit_open_order_reports(ctx: &RecoveryCtx) -> anyhow::Result<()> {
 
     log::info!("Recovery reconcile emitted {emitted} OrderStatusReport(s)");
     Ok(())
+}
+
+fn emit_order_report(
+    ctx: &RecoveryCtx,
+    report: OrderStatusReport,
+    venue_position_id: Option<PositionId>,
+) {
+    if let Some(client_order_id) = report.client_order_id
+        && ctx
+            .dispatch_ctx
+            .dispatch_state
+            .order_identities
+            .contains_key(&client_order_id)
+    {
+        ctx.dispatch_ctx
+            .dispatch_state
+            .insert_accepted(client_order_id);
+    }
+
+    ctx.dispatch_ctx
+        .emitter
+        .send_order_status_report(with_venue_position_id(report, venue_position_id));
 }
 
 fn resolve_precision(
@@ -473,9 +488,9 @@ mod tests {
     use nautilus_core::{AtomicSet, time::get_atomic_clock_realtime};
     use nautilus_live::ExecutionEventEmitter;
     use nautilus_model::{
-        enums::AccountType,
-        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, TraderId},
-        types::Currency,
+        enums::{AccountType, OrderSide, OrderType},
+        identifiers::{AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TraderId},
+        types::{Currency, Quantity},
     };
     use rstest::rstest;
     use rust_decimal::Decimal;
@@ -487,7 +502,7 @@ mod tests {
     use crate::{
         common::{
             consts::{BINANCE_CLIENT_ID, BINANCE_VENUE},
-            dispatch::WsDispatchState,
+            dispatch::{OrderIdentity, WsDispatchState},
             enums::{BinanceContractStatus, BinanceTradingStatus},
         },
         futures::http::{
@@ -994,6 +1009,26 @@ mod tests {
             .instruments_cache()
             .insert(Ustr::from(symbol), usdm_instrument(symbol, 3));
 
+        let client_order_id = ClientOrderId::from(match mode {
+            RecoveryServerMode::MissingRegular => "external-regular",
+            RecoveryServerMode::MissingAlgo => "external-algo",
+            RecoveryServerMode::FailedQueries => unreachable!(),
+        });
+
+        context.dispatch_ctx.dispatch_state.order_identities.insert(
+            client_order_id,
+            OrderIdentity {
+                instrument_id: format_instrument_id(&Ustr::from(symbol), BinanceProductType::UsdM),
+                strategy_id: StrategyId::from("RECOVERY-001"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+                price: None,
+                quantity: Quantity::from(1),
+                is_quote_quantity: false,
+                venue_position_id: None,
+            },
+        );
+
         emit_open_order_reports(&context).await.unwrap();
         let event = event_rx.try_recv().unwrap();
         server_task.abort();
@@ -1001,6 +1036,13 @@ mod tests {
         let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
             panic!("Expected recovery order status report, was {event:?}");
         };
+
+        assert!(
+            context
+                .dispatch_ctx
+                .dispatch_state
+                .has_emitted_accepted(&client_order_id)
+        );
         assert_eq!(
             report.venue_position_id,
             Some(PositionId::from(expected_position_id)),

@@ -2683,7 +2683,8 @@ const fn spot_sbe_time_in_force(time_in_force: BinanceTimeInForce) -> SbeTimeInF
         BinanceTimeInForce::Gtc => SbeTimeInForce::Gtc,
         BinanceTimeInForce::Ioc => SbeTimeInForce::Ioc,
         BinanceTimeInForce::Fok => SbeTimeInForce::Fok,
-        BinanceTimeInForce::Gtx
+        BinanceTimeInForce::GteGtc
+        | BinanceTimeInForce::Gtx
         | BinanceTimeInForce::Gtd
         | BinanceTimeInForce::Rpi
         | BinanceTimeInForce::Unknown => SbeTimeInForce::NonRepresentable,
