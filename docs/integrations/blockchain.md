@@ -131,6 +131,64 @@ Uniswap V3 and compatible concentrated-liquidity pools also use:
 - `Swap` events for live pool price movement.
 - HTTP RPC final-state reads for `slot0`, liquidity, active ticks, and position data.
 
+### Token currency identity and recovery
+
+- **Code**: ERC-20 currencies use `SYMBOL@CHAIN`, such as `WETH@ARBITRUM`, in balances,
+  instruments, money, and persistence.
+- **Contract binding**: Each code binds to one numeric chain ID and full lowercase contract address.
+  A different contract claiming the code fails registration or recovery. Same-symbol contracts on
+  the same chain cannot coexist. Symbols containing whitespace, `@`, or `:` are rejected.
+- **Precision**: Currencies keep actual token decimals up to 18; higher precisions are rejected.
+  Instrument price and size precision remain capped at `FIXED_PRECISION`.
+- **Native currency**: Native balances and gas fees keep their existing currency definitions.
+
+#### Persistence and recovery
+
+With the `defi` feature, run `nautilus database init` before using the Postgres cache. The additive,
+repeatable schema preserves existing currency records, instrument records, and foreign keys. All
+processes sharing a store must use matching `defi` feature settings.
+
+- **Restore order**: Redis and Postgres persist full token definitions and each instrument's required
+  currencies. Recovery restores definitions before decoding dependent instruments.
+- **Writes**: Redis and Postgres confirm instrument writes before the cache accepts or publishes them.
+  Persistent identity checks also cover legacy updates when the instrument is not loaded in memory.
+- **Hard failures**: Missing definitions, inconsistent recorded currency dependencies, or conflicts
+  in identity, precision, type, or ISO code fail the load. During startup, they fail cache recovery.
+- **Metadata changes**: Name or symbol changes for a registered contract warn and retain the first
+  definition and currency code. Restore persisted definitions before converting tokens. If a cold writer
+  registers a renamed symbol first, the write fails; restart and restore the definitions before retrying.
+- **Legacy data**: Currencies without token metadata remain legacy, regardless of code format.
+  A legacy currency occupying a token code blocks registration. Recovery never infers contract
+  provenance from symbols or code format.
+
+Create token currencies through `Token::currency`. `Currency::register` and `Cache::add_currency`
+protect registered definitions; direct `CURRENCY_MAP` writes bypass validation.
+
+#### Legacy instrument replacement
+
+A legacy instrument has no recorded token currency dependencies. Processing a pool definition under
+its instrument ID attempts to replace it with a `CurrencyPair` using qualified currencies.
+
+Before replacement, **stop order submission** on every node sharing the cache or execution store.
+Replacement requires:
+
+- No position history in memory or persistence, including closed positions and snapshots.
+- No nonterminal orders in memory or persistence.
+- No active swap intents in the authoritative blockchain execution store, which can differ from
+  the general cache store.
+
+A registered blockchain execution client for the chain must supply the intent check and have access
+to a Postgres execution store. An unavailable check or store, or an in-flight submission, blocks
+replacement. Data-only nodes cannot replace legacy instruments.
+
+A token conflict or failed replacement check logs an error and preserves existing pool and instrument
+state. The rejected update is neither cached nor published. An instrument response fails if any
+definition is rejected. Do not clear persisted data or relabel historical fills to force replacement.
+
+Migrating instruments with trading history is unsupported. Adding a purged token instrument again with
+retained position history is also rejected. These checks do not synchronize nodes or prevent other
+nodes from submitting orders during replacement.
+
 ## Data client configuration
 
 | Option                            | Default                       | Description                                            |
@@ -752,8 +810,8 @@ Connect completes these checks before it loads the signer:
 Without Postgres, the client can connect and publish balances, but all transaction operations are
 refused. A verification, migration, reconciliation, balance, or exact amount conversion failure
 keeps the client disconnected. Any loaded signer is removed, the previous complete snapshot stays
-installed, and no partial wallet state is published. Duplicate token symbols also reject the
-snapshot because symbols define currency identity.
+installed, and no partial wallet state is published. Wallet snapshots reject duplicate raw
+token symbols, including a token symbol that matches the native currency code.
 
 The verification providers never receive signed transaction bytes and have no broadcast method.
 The authoritative endpoint alone receives `eth_sendRawTransaction`. Security-critical unsigned

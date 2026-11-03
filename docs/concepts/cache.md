@@ -146,6 +146,10 @@ Python class names. Python does not expose a factory registration API for separa
 - Startup does not restore bounded market-data histories or the running process.
 - A backing does not provide a complete event archive or synchronize nodes. Each node owns its
   in-memory cache, even when nodes share a database namespace.
+- With the `defi` feature, Redis and Postgres restore full token currency definitions before dependent
+  instruments. Instrument writes wait for persistent conflict checks, including legacy updates. Integrity
+  conflicts fail recovery. See [token currency recovery](../integrations/blockchain.md#token-currency-identity-and-recovery)
+  for legacy-data and instrument-replacement rules.
 
 #### Explicit database operations
 

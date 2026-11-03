@@ -23,9 +23,9 @@ use nautilus_model::{
     events::PortfolioSnapshot,
     identifiers::{AccountId, PositionId},
     position::Position,
-    types::{Currency, Money},
+    types::{Currency, Money, fixed::MAX_FLOAT_PRECISION},
 };
-use rust_decimal::Decimal;
+use rust_decimal::{Decimal, prelude::ToPrimitive};
 
 use crate::{
     Returns,
@@ -330,14 +330,14 @@ impl PortfolioAnalyzer {
     pub fn add_trade(&mut self, position_id: &PositionId, ts_event: UnixNanos, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.realized_pnls.entry(currency).or_default();
-        entry.push((*position_id, ts_event, pnl.as_f64()));
+        entry.push((*position_id, ts_event, trade_pnl_value(pnl)));
     }
 
     /// Records a trade's PnL realized at `ts_event`, observed during portfolio processing.
     pub fn record_trade(&mut self, position_id: &PositionId, ts_event: UnixNanos, pnl: &Money) {
         let currency = pnl.currency;
         let entry = self.recorded_realized_pnls.entry(currency).or_default();
-        entry.push((*position_id, ts_event, pnl.as_f64()));
+        entry.push((*position_id, ts_event, trade_pnl_value(pnl)));
     }
 
     /// Records a position return at a specific timestamp.
@@ -968,6 +968,16 @@ impl PortfolioAnalyzer {
         }
 
         output
+    }
+}
+
+fn trade_pnl_value(pnl: &Money) -> f64 {
+    if pnl.currency.precision > MAX_FLOAT_PRECISION {
+        pnl.as_decimal()
+            .to_f64()
+            .expect("Decimal money values fit in f64")
+    } else {
+        pnl.as_f64()
     }
 }
 

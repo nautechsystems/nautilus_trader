@@ -54,6 +54,7 @@ defi = [
   "dep:nautilus-blockchain",
   "nautilus-backtest/defi",
   "nautilus-blockchain/python",
+  "nautilus-infrastructure/defi",
   "nautilus-persistence/defi",
 ]
 extension-module = [

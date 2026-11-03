@@ -511,6 +511,9 @@ impl Cache {
         // An adapter registers the loaded currencies before decoding their dependents; repeating
         // it here keeps the cached map consistent with the registry whatever the adapter did.
         register_loaded_currencies(&mut cache_map.currencies)?;
+        #[cfg(feature = "defi")]
+        self.defi.restore_currencies(&cache_map.currencies);
+
         self.currencies = cache_map.currencies;
         self.instruments = cache_map.instruments;
         self.instrument_closes = cache_map.instrument_closes;
@@ -550,12 +553,16 @@ impl Cache {
     ///
     /// Returns an error if loading currencies cache fails.
     pub async fn cache_currencies(&mut self) -> anyhow::Result<()> {
-        self.currencies = match &mut self.database {
+        let mut currencies = match &mut self.database {
             Some(db) => db.load_currencies().await?,
             None => AHashMap::new(),
         };
 
-        register_loaded_currencies(&mut self.currencies)?;
+        register_loaded_currencies(&mut currencies)?;
+        #[cfg(feature = "defi")]
+        self.defi.restore_currencies(&currencies);
+
+        self.currencies = currencies;
 
         log::info!("Cached {} currencies from database", self.currencies.len());
         Ok(())
@@ -2156,8 +2163,8 @@ impl Cache {
     /// responsible for ensuring the instrument is no longer in use before purging.
     fn purge_instrument_inner(&mut self, instrument_id: InstrumentId, skip_order_guard: bool) {
         #[cfg(feature = "defi")]
-        let defi_found = self.defi.pools.contains_key(&instrument_id)
-            || self.defi.pool_profilers.contains_key(&instrument_id);
+        let defi_found =
+            self.pool(&instrument_id).is_some() || self.pool_profiler(&instrument_id).is_some();
         #[cfg(not(feature = "defi"))]
         let defi_found = false;
 
@@ -2215,10 +2222,7 @@ impl Cache {
             .retain(|bar_type, _| bar_type.instrument_id() != instrument_id);
 
         #[cfg(feature = "defi")]
-        {
-            self.defi.pools.remove(&instrument_id);
-            self.defi.pool_profilers.remove(&instrument_id);
-        }
+        self.defi.remove_instrument(&instrument_id);
 
         log::info!("Purged instrument {instrument_id}");
     }
@@ -2360,16 +2364,15 @@ impl Cache {
         self.yield_curves.clear();
 
         if self.config.drop_instruments_on_reset {
+            #[cfg(feature = "defi")]
+            self.defi.clear_currencies();
             self.currencies.clear();
             self.instruments.clear();
             self.synthetics.clear();
         }
 
         #[cfg(feature = "defi")]
-        {
-            self.defi.pools.clear();
-            self.defi.pool_profilers.clear();
-        }
+        self.defi.clear_pools();
 
         self.clear_index();
 
@@ -2845,6 +2848,21 @@ impl Cache {
     ///
     /// Returns an error if persisting the currency to the backing database fails.
     pub fn add_currency(&mut self, currency: Currency) -> anyhow::Result<()> {
+        #[cfg(feature = "defi")]
+        let token = nautilus_model::defi::currency::check(currency)?.is_some();
+        #[cfg(feature = "defi")]
+        if token {
+            if let Some(existing) = self.currencies.get(&currency.code) {
+                if !self.defi.contains_currency(&currency.code) {
+                    anyhow::bail!("Legacy currency occupies token code {}", currency.code);
+                }
+
+                nautilus_model::defi::currency::check(*existing)?;
+            }
+
+            Currency::register(currency, false)?;
+        }
+
         if self.currencies.contains_key(&currency.code) {
             return Ok(());
         }
@@ -2855,6 +2873,12 @@ impl Cache {
         }
 
         self.currencies.insert(currency.code, currency);
+
+        #[cfg(feature = "defi")]
+        if token {
+            self.defi.add_currency(currency.code);
+        }
+
         Ok(())
     }
 
@@ -2866,6 +2890,9 @@ impl Cache {
     pub fn add_instrument(&mut self, instrument: InstrumentAny) -> anyhow::Result<()> {
         log::debug!("Adding `Instrument` {}", instrument.id());
 
+        #[cfg(feature = "defi")]
+        let migration = self.check_instrument_migration(&instrument)?;
+
         // Ensure currencies exist in cache - safe to call repeatedly as add_currency is idempotent
         if let Some(base_currency) = instrument.base_currency() {
             self.add_currency(base_currency)?;
@@ -2874,6 +2901,14 @@ impl Cache {
         self.add_currency(instrument.settlement_currency())?;
 
         if let Some(database) = &mut self.database {
+            #[cfg(feature = "defi")]
+            if let Some(migration) = migration {
+                database.add_defi_instrument(&instrument, migration)?;
+            } else {
+                database.add_instrument(&instrument)?;
+            }
+
+            #[cfg(not(feature = "defi"))]
             database.add_instrument(&instrument)?;
         }
 

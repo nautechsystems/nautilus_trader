@@ -34,13 +34,19 @@ impl<'r> FromRow<'r, PgRow> for CurrencyRow {
         let iso4217 = read_u16(row, "iso4217")?;
         let name = row.try_get::<String, _>("name")?;
         let currency_type = row.try_get::<CurrencyTypePg, _>("currency_type")?;
-        let currency = Currency::new(
+
+        let currency = Currency::new_checked(
             id.as_str(),
             precision,
             iso4217,
             name.as_str(),
             currency_type.0,
-        );
+        )
+        .map_err(|e| sqlx::Error::ColumnDecode {
+            index: "currency".into(),
+            source: Box::new(e),
+        })?;
+
         Ok(Self(currency))
     }
 }

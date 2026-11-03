@@ -16,9 +16,17 @@
 use std::{fmt::Display, sync::Arc};
 
 use alloy_primitives::Address;
+use nautilus_core::correctness::{CorrectnessResult, check_valid_string_utf8};
 use serde::{Deserialize, Serialize};
 
-use crate::defi::chain::SharedChain;
+use crate::{
+    defi::{
+        chain::SharedChain,
+        currency::{self, TokenCurrency},
+    },
+    enums::CurrencyType,
+    types::Currency,
+};
 
 /// Represents a cryptocurrency token on a blockchain network.
 #[cfg_attr(
@@ -63,6 +71,25 @@ impl Token {
             symbol,
             decimals,
         }
+    }
+
+    /// Returns and registers the contract currency with the token's actual decimal precision.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if metadata is invalid, precision is unsupported, or a definition conflicts.
+    pub fn currency(&self) -> CorrectnessResult<Currency> {
+        check_valid_string_utf8(&self.symbol, "symbol")?;
+        let metadata = TokenCurrency::from(self);
+        let code = metadata.code();
+        let currency = Currency::new_checked(
+            code.as_str(),
+            self.decimals,
+            0,
+            self.name.as_str(),
+            CurrencyType::Crypto,
+        )?;
+        currency::register(currency, metadata)
     }
 
     /// Returns true if this token is a stablecoin.
@@ -141,7 +168,8 @@ impl Token {
 
 impl Display for Token {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Token(symbol={}, name={})", self.symbol, self.name)
+        let label = TokenCurrency::from(self).code();
+        write!(f, "Token(symbol={label}, name={})", self.name)
     }
 }
 
@@ -180,7 +208,7 @@ mod tests {
         let display = token.to_string();
         assert_eq!(
             display,
-            "Token(symbol=TEST-1, name=Test Token (with parentheses))"
+            "Token(symbol=TEST-1@ETHEREUM, name=Test Token (with parentheses))"
         );
         assert!(!token.is_native_currency());
         assert!(!token.is_stablecoin());

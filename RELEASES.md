@@ -40,10 +40,12 @@ Released on TBD (UTC).
 - Changed `Price.from_decimal` and `Quantity.from_decimal` to round excess decimal places half even
 - Changed Postgres cache startup to require `greeks` and `yield_curve` tables; run `nautilus database init`
 - Changed Redis Greek and yield-curve writes to fail; disable `save_market_data` or use Postgres
+- Changed Postgres cache schema in `defi` builds; run `nautilus database init`
 - Changed Architect AX `AxWhoAmI.is_onboarded` and `is_frozen` to `Option<bool>`; handle missing flags as `None`
 - Changed Binance non-GET REST requests to fail at quota gates; retry `RateLimitBlocked` when quota is available
 - Changed Binance HTTP error enums to add `RateLimitBlocked`; update exhaustive matches
 - Changed Binance REST to block on 418 without `Retry-After`; confirm the ban has ended before restarting
+- Changed blockchain ERC-20 currency codes to `SYMBOL@CHAIN`
 - Changed Bybit HTTP `modify_order` to take `trigger_price`; pass `None` when unchanged
 - Changed CoinAPI OHLCV fields and APIs to `OhlcvPeriod`; convert string literals with `.into()`
 - Changed CoinAPI symbol type and taker side APIs to `SymbolType` and `TakerSide`; use enum variants
@@ -110,6 +112,7 @@ Released on TBD (UTC).
 - Fixed Binance cancellations and COIN-M modifications consuming order-count quota
 - Fixed Binance snapshot HTTP retries bypassing request-weight pacing
 - Fixed Binance REST pacing ignoring endpoint weights and USD-M funding and open-interest limits
+- Fixed blockchain currency collisions and missing token definitions during Redis/Postgres recovery
 - Fixed Bybit batch modify orders not using the trade WebSocket batch amend
 - Fixed Bybit data client ignoring environment credentials when config credentials are omitted
 - Fixed Bybit execution client omitting trigger prices from HTTP and WebSocket amendments

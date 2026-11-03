@@ -1962,7 +1962,27 @@ impl DataEngine {
         self.process_response_envelope(envelope);
     }
 
-    fn process_response_envelope(&mut self, envelope: DataResponseEnvelope) {
+    fn process_response_envelope(&mut self, mut envelope: DataResponseEnvelope) {
+        let accepted = match envelope.response() {
+            Some(DataResponse::Instrument(response)) => self.cache_instrument(&response.data),
+            Some(DataResponse::Instruments(response)) => {
+                let mut accepted = true;
+                for instrument in &response.data {
+                    accepted &= self.cache_instrument(instrument);
+                }
+
+                accepted
+            }
+            _ => true,
+        };
+
+        if !accepted {
+            envelope = DataResponseEnvelope::terminal(
+                *envelope.correlation_id(),
+                Some("Instrument currency integrity check failed".into()),
+            );
+        }
+
         let request = self.inflight_requests.remove(envelope.correlation_id());
         #[cfg(feature = "streaming")]
         let envelope = match (&request, envelope.response()) {
@@ -2071,12 +2091,7 @@ impl DataEngine {
         let correlation_id = *resp.correlation_id();
 
         match resp {
-            DataResponse::Instrument(r) => {
-                self.handle_instrument_response(r.data.clone());
-            }
-            DataResponse::Instruments(r) => {
-                self.handle_instruments(&r.data);
-            }
+            DataResponse::Instrument(_) | DataResponse::Instruments(_) => {}
             DataResponse::Quotes(r) => {
                 if !log_if_empty_response(
                     &r.data,

@@ -21,6 +21,7 @@ crate-type = ["rlib"]
 
 [features]
 default = ["redis"] # redis needed by `nautilus_trader` by default for now
+defi = ["nautilus-common/defi", "nautilus-model/defi"]
 extension-module = [
   "nautilus-common/extension-module",
   "nautilus-core/extension-module",

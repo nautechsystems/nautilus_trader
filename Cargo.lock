@@ -5825,6 +5825,7 @@ dependencies = [
  "nautilus-live",
  "nautilus-model",
  "nautilus-network",
+ "nautilus-portfolio",
  "nautilus-system",
  "parking_lot 0.13.0",
  "pyo3",

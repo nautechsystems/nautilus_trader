@@ -25,7 +25,8 @@ use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::defi::WEI_PRECISION;
 #[cfg(feature = "defi")]
 use nautilus_model::defi::{
-    AmmType, Dex, DexType, Pool, PoolIdentifier, PoolProfiler, Token, chain::chains,
+    AmmType, Blockchain, Chain, Dex, DexType, Pool, PoolIdentifier, PoolProfiler, Token,
+    chain::chains, currency::TokenCurrency,
 };
 use nautilus_model::{
     accounts::AccountAny,
@@ -16030,4 +16031,36 @@ fn test_cache_api_infallible_borrow_conflict_panics_with_context() {
     let api = CacheApi::new(&cell);
     let _guard = cell.borrow_mut();
     let _ = api.order(&ClientOrderId::from("BORROW-ORDER"));
+}
+
+#[cfg(feature = "defi")]
+#[rstest]
+fn test_token_currency_does_not_replace_cached_legacy_code() {
+    let token = Token::new(
+        Arc::new(Chain::new(Blockchain::Ethereum, 812_401)),
+        "0x3141592653589793238462643383279502884197"
+            .parse()
+            .unwrap(),
+        "Registered token".into(),
+        "CACHELEGACY".into(),
+        6,
+    );
+    let code = TokenCurrency::from(&token).code();
+    let legacy = Currency::new(code.as_str(), 6, 0, "Legacy currency", CurrencyType::Crypto);
+    let mut cache = Cache::default();
+    cache.add_currency(legacy).unwrap();
+    let currency = token.currency().unwrap();
+
+    let error = cache.add_currency(currency).unwrap_err();
+    let retained = cache.currency(&legacy.code).unwrap();
+
+    assert_eq!(
+        error.to_string(),
+        format!("Legacy currency occupies token code {code}")
+    );
+    assert_eq!(retained.code, legacy.code);
+    assert_eq!(retained.precision, 6);
+    assert_eq!(retained.iso4217, 0);
+    assert_eq!(retained.name, "Legacy currency");
+    assert_eq!(retained.currency_type, CurrencyType::Crypto);
 }

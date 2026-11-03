@@ -51,6 +51,9 @@ pub struct CacheSnapshotRef {
 }
 
 impl CacheSnapshotRef {
+    /// Prefix for durable position snapshot locations.
+    pub const POSITION_PREFIX: &str = "cache://position-snapshots/";
+
     /// Creates a new [`CacheSnapshotRef`].
     #[must_use]
     pub fn new(blob_ref: impl Into<String>, blob: impl Into<Bytes>) -> Self {
@@ -58,6 +61,21 @@ impl CacheSnapshotRef {
             blob_ref: blob_ref.into(),
             blob: blob.into(),
         }
+    }
+
+    /// Reads the instrument ID without resolving the snapshot's currency definitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the JSON is malformed or the instrument ID is missing or invalid.
+    #[cfg(feature = "defi")]
+    pub fn position_instrument_id(blob: &[u8]) -> anyhow::Result<InstrumentId> {
+        #[derive(serde::Deserialize)]
+        struct Identity {
+            instrument_id: InstrumentId,
+        }
+
+        Ok(serde_json::from_slice::<Identity>(blob)?.instrument_id)
     }
 }
 
@@ -93,6 +111,35 @@ impl PositionSnapshotFrame {
 }
 
 impl Cache {
+    #[cfg(feature = "defi")]
+    pub(crate) fn has_position_history(
+        &self,
+        instrument_id: &InstrumentId,
+    ) -> anyhow::Result<bool> {
+        if self
+            .positions
+            .values()
+            .any(|position| position.borrow().instrument_id == *instrument_id)
+            || self
+                .position_snapshots
+                .values()
+                .flatten()
+                .any(|frame| frame.position.instrument_id == *instrument_id)
+        {
+            return Ok(true);
+        }
+
+        for (key, blob) in &self.general {
+            if key.starts_with(CacheSnapshotRef::POSITION_PREFIX)
+                && CacheSnapshotRef::position_instrument_id(blob)? == *instrument_id
+            {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     /// Creates a snapshot of the `position` by cloning it, assigning a new ID, and storing it
     /// in the position snapshots.
     ///
@@ -191,7 +238,8 @@ impl Cache {
         copied_position.id = PositionId::new(new_id);
 
         let blob_ref = format!(
-            "cache://position-snapshots/{}/{}",
+            "{}{}/{}",
+            CacheSnapshotRef::POSITION_PREFIX,
             position_id.as_str(),
             self.position_snapshot_count(&position_id),
         );
@@ -440,7 +488,7 @@ impl Cache {
 }
 
 fn parse_position_snapshot_blob_ref(blob_ref: &str) -> anyhow::Result<(PositionId, usize)> {
-    let Some(rest) = blob_ref.strip_prefix("cache://position-snapshots/") else {
+    let Some(rest) = blob_ref.strip_prefix(CacheSnapshotRef::POSITION_PREFIX) else {
         anyhow::bail!("unsupported cache snapshot blob_ref {blob_ref}");
     };
 

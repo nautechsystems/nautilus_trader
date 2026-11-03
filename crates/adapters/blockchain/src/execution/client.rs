@@ -58,7 +58,7 @@ use nautilus_model::{
         validation::validate_address,
         wallet::{TokenBalance, WalletBalance},
     },
-    enums::{CurrencyType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType},
+    enums::{LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType},
     events::{OrderCanceled, OrderDeniedReason, OrderEventAny, OrderFilled, OrderRejected},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, TradeId, Venue, VenueOrderId},
     orders::{Order, OrderAny},
@@ -234,7 +234,7 @@ impl BlockchainExecutionClient {
 
         let pending_tasks = TaskGroup::new();
 
-        Ok(Self {
+        let client = Self {
             core: core_client,
             emitter,
             wallet_balance: Arc::new(Mutex::new(wallet_balance)),
@@ -252,7 +252,62 @@ impl BlockchainExecutionClient {
             verification,
             wallet_address,
             pending_tasks,
-        })
+        };
+
+        client.register_migration_check();
+        Ok(client)
+    }
+
+    fn register_migration_check(&self) {
+        let database = self.cache.database.clone();
+        let options = self.config.postgres_cache_database_config.clone();
+        let in_flight = Arc::clone(&self.in_flight);
+        self.core.cache().register_defi_execution_check(
+            self.core.client_id,
+            self.chain.chain_id,
+            move |instrument_id| {
+                anyhow::ensure!(
+                    in_flight.lock().is_none(),
+                    "Blockchain submissions must stop before legacy instrument replacement"
+                );
+                anyhow::ensure!(
+                    database.is_some() || options.is_some(),
+                    "No authoritative execution store is configured for {instrument_id}"
+                );
+                let database = database.clone();
+                let options = options.clone();
+                let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+
+                nautilus_common::live::get_runtime().spawn(async move {
+                    let result = async {
+                        let database = match database {
+                            Some(database) => database,
+                            None => {
+                                BlockchainCacheDatabase::connect(
+                                    options.expect("execution store checked").into(),
+                                )
+                                .await?
+                            }
+                        };
+
+                        database.check_instrument_migration(instrument_id).await
+                    }
+                    .await;
+
+                    let _ = sender.send(result);
+                });
+
+                let on_runtime = tokio::runtime::Handle::try_current().is_ok_and(|handle| {
+                    handle.id() == nautilus_common::live::get_runtime().handle().id()
+                });
+
+                if on_runtime {
+                    tokio::task::block_in_place(|| receiver.recv())?
+                } else {
+                    receiver.recv()?
+                }
+            },
+        );
     }
 
     fn transaction_limits(
@@ -1093,13 +1148,7 @@ impl BlockchainExecutionClient {
                 .ok_or_else(|| anyhow::anyhow!("Restored pool {instrument_id} has no fee"))?,
         )?;
         let quote_token = pool.get_quote_token();
-        let quote_currency = Currency::new_checked(
-            &quote_token.symbol,
-            quote_token.decimals,
-            0,
-            &quote_token.name,
-            CurrencyType::Crypto,
-        )?;
+        let quote_currency = quote_token.currency()?;
         let (token_in, token_out) = swap_token_pair(
             order.order_side(),
             pool.get_base_token().address,
@@ -1589,13 +1638,7 @@ impl BlockchainExecutionClient {
 
         let base_token = pool.get_base_token();
         let quote_token = pool.get_quote_token();
-        let quote_currency = Currency::new_checked(
-            &quote_token.symbol,
-            quote_token.decimals,
-            0,
-            &quote_token.name,
-            CurrencyType::Crypto,
-        )?;
+        let quote_currency = quote_token.currency()?;
         let (token_in, token_out) =
             swap_token_pair(order.order_side(), base_token.address, quote_token.address);
 
@@ -6286,6 +6329,8 @@ impl ExecutionClient for BlockchainExecutionClient {
             self.signer = None;
             return Err(e);
         }
+
+        self.register_migration_check();
         self.core.set_connected();
         setup_guard.disarm();
         log::info!(
@@ -6401,7 +6446,7 @@ mod tests {
             },
             tick_map::{tick::PoolTick, tick_math::get_tick_at_sqrt_ratio},
         },
-        enums::AccountType,
+        enums::{AccountType, CurrencyType},
         events::{OrderEventAny, OrderPendingCancel, OrderPendingUpdate},
         identifiers::{OrderListId, StrategyId, TraderId},
         orders::{OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
@@ -7543,6 +7588,52 @@ mod tests {
         (intent, tx_hash, raw_tx)
     }
 
+    #[tokio::test]
+    async fn migration_check_reads_authoritative_swap_intents() {
+        let (admin, config) = connect_test_postgres("migration_check")
+            .await
+            .expect("Postgres required");
+        let schema = format!("migration_check_{}", UUID4::new()).replace('-', "_");
+        setup_execution_schema(&admin, &schema).await;
+        let options: sqlx::postgres::PgConnectOptions = config.into();
+        let database = connect_test_database(options.options([("search_path", schema.clone())]))
+            .await
+            .unwrap();
+        database
+            .ensure_execution_transaction_schema()
+            .await
+            .unwrap();
+        let id = test_pool().instrument_id;
+        database.check_instrument_migration(id).await.unwrap();
+        let intent = reserve_test_swap_intent(&database).await;
+
+        let active = database.check_instrument_migration(id).await.unwrap_err();
+        let unrelated = database
+            .check_instrument_migration(InstrumentId::from("UNRELATED.DEFI"))
+            .await;
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "UPDATE {schema}.execution_intent SET active = FALSE WHERE id = $1"
+        )))
+        .bind(intent.id)
+        .execute(&admin)
+        .await
+        .unwrap();
+        let inactive = database.check_instrument_migration(id).await;
+        drop_execution_schema(&admin, &schema).await;
+        let unavailable = database.check_instrument_migration(id).await.unwrap_err();
+
+        assert_eq!(
+            active.to_string(),
+            format!("Instrument {id} has active swap intents")
+        );
+        unrelated.unwrap();
+        inactive.unwrap();
+        assert_eq!(
+            unavailable.to_string(),
+            "failed to check active swap intents before instrument replacement"
+        );
+    }
+
     async fn reserve_test_swap_intent(database: &BlockchainCacheDatabase) -> ExecutionIntentRow {
         let pool = test_pool();
         let order = test_market_sell_order(pool.instrument_id);
@@ -8180,14 +8271,7 @@ mod tests {
         let quote_token = pool.get_quote_token();
         SwapPlan {
             order,
-            quote_currency: Currency::new_checked(
-                &quote_token.symbol,
-                quote_token.decimals,
-                0,
-                &quote_token.name,
-                CurrencyType::Crypto,
-            )
-            .unwrap(),
+            quote_currency: quote_token.currency().unwrap(),
             instrument_id: pool.instrument_id,
             pool_address: pool.address,
             router: ROUTER_ADDRESS,
@@ -10146,7 +10230,7 @@ mod tests {
         assert_eq!(fill.order_side, OrderSide::Sell);
         assert_eq!(fill.last_qty, Quantity::from("0.001"));
         assert_eq!(fill.last_px, Price::from("1000"));
-        assert_eq!(fill.currency.code, "USDC");
+        assert_eq!(fill.currency.code, "USDC@ARBITRUM");
         assert_eq!(fill.commission, Some(expected_commission));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(account_states.len(), 1);
@@ -10439,7 +10523,7 @@ mod tests {
         assert_eq!(fill.venue_order_id.as_str(), expected_hash.to_string());
         assert_eq!(fill.order_side, OrderSide::Buy);
         assert_eq!(fill.last_qty, Quantity::from("0.001"));
-        assert_eq!(fill.currency.code, "USDC");
+        assert_eq!(fill.currency.code, "USDC@ARBITRUM");
         assert_eq!(fill.commission, Some(expected_commission));
         assert_eq!(fill.liquidity_side, LiquiditySide::Taker);
         assert_eq!(
@@ -14350,13 +14434,13 @@ mod tests {
         assert_eq!(balances[0].total.raw(), 1_000_000_000_000_000_000);
         assert_eq!(balances[0].free, balances[0].total);
         assert_eq!(balances[0].locked, Money::zero(balances[0].currency));
-        assert_eq!(balances[1].currency.code, "WETH");
+        assert_eq!(balances[1].currency.code, "WETH@ARBITRUM");
         assert_eq!(balances[1].currency.name, "Wrapped Ether");
         assert_eq!(balances[1].currency.precision, 18);
         assert_eq!(balances[1].total.raw(), 1_234_567_890_123_456_789);
         assert_eq!(balances[1].free, balances[1].total);
         assert_eq!(balances[1].locked, Money::zero(balances[1].currency));
-        assert_eq!(balances[2].currency.code, "USDC");
+        assert_eq!(balances[2].currency.code, "USDC@ARBITRUM");
         assert_eq!(balances[2].currency.name, "USD Coin");
         assert_eq!(balances[2].currency.precision, 6);
         assert_eq!(balances[2].total.raw(), 9_876_543_210_000_000_000);
@@ -18824,5 +18908,112 @@ mod tests {
             .expect("execution_transaction CREATE TABLE is unterminated")
             + 1;
         &statement[..end]
+    }
+
+    #[rstest]
+    #[case(17)]
+    #[case(18)]
+    fn closed_pool_position_records_high_precision_quote_pnl(#[case] precision: u8) {
+        use nautilus_model::{
+            events::{PositionClosed, PositionEvent, order::spec::OrderFilledSpec},
+            identifiers::PositionId,
+            instruments::{CurrencyPair, Instrument},
+            position::Position,
+        };
+        use nautilus_portfolio::Portfolio;
+
+        let template = test_pool();
+
+        let base = Token::new(
+            Arc::clone(&template.chain),
+            Address::from([precision; 20]),
+            "Portfolio base".into(),
+            format!("PNLBASE{precision}"),
+            18,
+        );
+
+        let quote_token = Token::new(
+            Arc::clone(&template.chain),
+            Address::from([precision + 50; 20]),
+            "Portfolio quote".into(),
+            format!("PNLQUOTE{precision}"),
+            precision,
+        );
+        let address = Address::from([precision + 100; 20]);
+
+        let pool = Pool::new(
+            template.chain,
+            template.dex,
+            address,
+            PoolIdentifier::from_address(address),
+            1,
+            base,
+            quote_token,
+            Some(500),
+            Some(10),
+            UnixNanos::default(),
+        );
+        let instrument = CurrencyPair::try_from(&pool).unwrap().into_any();
+        let quote = instrument.quote_currency();
+        let position_id = PositionId::new(format!("P-QUOTE{precision}"));
+        let mut fill = OrderFilledSpec::builder()
+            .instrument_id(instrument.id())
+            .position_id(position_id)
+            .order_side(OrderSide::Buy)
+            .last_qty(Quantity::from("0.1"))
+            .last_px(Price::from("1.0000000000000000"))
+            .currency(quote)
+            .commission(Money::zero(quote))
+            .ts_event(UnixNanos::from(1))
+            .build();
+        let mut position = Position::new(&instrument, fill.clone());
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        cache.borrow_mut().add_instrument(instrument).unwrap();
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        fill.event_id = UUID4::new();
+        fill.trade_id = TradeId::new("CLOSE");
+        fill.client_order_id = ClientOrderId::new("CLOSE");
+        fill.order_side = OrderSide::Sell;
+        fill.last_px = Price::from("1.0000000000000001");
+        fill.ts_event = UnixNanos::from(2);
+        position.try_apply(&fill).unwrap();
+        cache.borrow_mut().update_position(&position).unwrap();
+
+        let mut portfolio = Portfolio::new(
+            Rc::new(RefCell::new(VirtualClock::new())),
+            Rc::clone(&cache),
+            None,
+        );
+        portfolio.update_position(&PositionEvent::PositionClosed(PositionClosed::create(
+            &position,
+            &fill,
+            UUID4::new(),
+            UnixNanos::from(3),
+        )));
+        let records = portfolio.recorded_realized_pnls();
+        let analyzer = portfolio.analyzer();
+        let pnl = position.realized_pnl.unwrap();
+        assert!(position.is_closed());
+        assert_eq!(quote.precision, precision);
+        assert_eq!(quote.code.as_str(), format!("PNLQUOTE{precision}@ARBITRUM"));
+        assert_eq!(pnl.currency.precision, precision);
+        assert_eq!(pnl.currency, quote);
+        assert_eq!(
+            pnl.as_decimal(),
+            "0.00000000000000001"
+                .parse::<rust_decimal::Decimal>()
+                .unwrap()
+        );
+        assert_eq!(
+            records.get(&quote).unwrap(),
+            &vec![(position_id, UnixNanos::from(2), 1e-17)]
+        );
+        assert_eq!(
+            analyzer.realized_pnls(Some(&quote)).unwrap(),
+            &[(position_id, UnixNanos::from(2), 1e-17)]
+        );
     }
 }
