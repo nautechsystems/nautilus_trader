@@ -1,0 +1,11 @@
+{
+  "type": "update/account_tx",
+  "channel": "account_tx:1234",
+  "txs": [
+    {
+      "hash": "abc123",
+      "status": 2,
+      "event_info": "{\"ae\":\"\"}"
+    }
+  ]
+}

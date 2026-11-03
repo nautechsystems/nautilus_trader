@@ -783,6 +783,8 @@ struct PendingModify {
     command_id: UUID4,
     shape: Option<OrderShapeSnapshot>,
     submission: Option<(u64, i64)>,
+    transaction: Option<PendingSendTx>,
+    executed: bool,
 }
 
 #[derive(Debug, Default)]
@@ -1181,6 +1183,20 @@ impl WsDispatchState {
         for (order, _) in pending.kind.creates() {
             self.mark_order_submission(&order.client_order_id(), pending.nonce);
         }
+
+        if let PendingSendTxKind::Modify {
+            client_order_id,
+            command_id,
+            ..
+        } = pending.kind
+            && let Some(mut state) = self.pending_order_actions.get_mut(&client_order_id)
+            && let Some(modify) = state.modify.as_mut()
+            && modify.command_id == command_id
+            && modify.submission == Some((pending.connection_epoch, pending.nonce))
+        {
+            modify.transaction = Some(pending.clone());
+        }
+
         self.pending_sendtx.lock().push_back(pending);
     }
 
@@ -1258,13 +1274,10 @@ impl WsDispatchState {
         connection_epoch: u64,
         tx_hash: &str,
     ) -> Option<PendingSendTx> {
-        let tx_hash = tx_hash
-            .strip_prefix("0x")
-            .or_else(|| tx_hash.strip_prefix("0X"))
-            .unwrap_or(tx_hash);
         let mut q = self.pending_sendtx.lock();
+
         let pos = q.iter().position(|p| {
-            p.connection_epoch == connection_epoch && p.tx_hash.eq_ignore_ascii_case(tx_hash)
+            p.connection_epoch == connection_epoch && tx_hash_matches(&p.tx_hash, tx_hash)
         })?;
         q.remove(pos)
     }
@@ -1341,6 +1354,8 @@ impl WsDispatchState {
             command_id: cmd.command_id,
             shape: None,
             submission: None,
+            transaction: None,
+            executed: false,
         });
 
         true
@@ -1389,6 +1404,45 @@ impl WsDispatchState {
         self.pending_order_actions
             .get(cloid)
             .and_then(|state| state.modify.as_ref().and_then(|modify| modify.submission))
+    }
+
+    pub(crate) fn pending_modify_by_hash(&self, hash: &str) -> Option<PendingSendTx> {
+        self.pending_order_actions.iter().find_map(|state| {
+            state
+                .modify
+                .as_ref()?
+                .transaction
+                .as_ref()
+                .filter(|tx| tx_hash_matches(&tx.tx_hash, hash))
+                .cloned()
+        })
+    }
+
+    pub(crate) fn set_pending_modify_executed(
+        &self,
+        cloid: &ClientOrderId,
+        pending: &PendingSendTx,
+    ) {
+        if let Some(mut state) = self.pending_order_actions.get_mut(cloid)
+            && let Some(modify) = state.modify.as_mut()
+            && modify.submission == Some((pending.connection_epoch, pending.nonce))
+            && modify
+                .transaction
+                .as_ref()
+                .is_some_and(|tx| tx.tx_hash == pending.tx_hash)
+        {
+            modify.executed = true;
+        }
+    }
+
+    pub(crate) fn pending_modify_executed(&self, cloid: &ClientOrderId) -> Option<PendingSendTx> {
+        self.pending_order_actions.get(cloid).and_then(|state| {
+            let modify = state.modify.as_ref()?;
+            modify
+                .executed
+                .then(|| modify.transaction.clone())
+                .flatten()
+        })
     }
 
     pub(crate) fn clear_pending_modify_if_nonce(
@@ -2508,6 +2562,18 @@ fn update_position_reports(
         current.insert(report.instrument_id, report.clone());
     }
     removed
+}
+
+pub(crate) fn tx_hash_matches(left: &str, right: &str) -> bool {
+    let left = left
+        .strip_prefix("0x")
+        .or_else(|| left.strip_prefix("0X"))
+        .unwrap_or(left);
+    let right = right
+        .strip_prefix("0x")
+        .or_else(|| right.strip_prefix("0X"))
+        .unwrap_or(right);
+    left.eq_ignore_ascii_case(right)
 }
 
 /// Standalone derivation so the fixed-seed contract is testable without

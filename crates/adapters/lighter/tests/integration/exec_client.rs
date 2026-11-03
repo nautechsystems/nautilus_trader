@@ -648,7 +648,9 @@ async fn handle_ws_upgrade(
 /// Build the typed `subscribed/account_all_*` payload the venue emits after
 /// each account subscribe ack. Returns `None` for non-account channels.
 fn account_subscribed_frame(channel: &str) -> Option<Value> {
-    if channel.starts_with("account_all_orders:") {
+    if channel.starts_with("account_tx:") {
+        Some(json!({"type": "subscribed/account_tx", "channel": channel}))
+    } else if channel.starts_with("account_all_orders:") {
         Some(json!({
             "type": "subscribed/account_all_orders",
             "channel": channel,
@@ -1777,6 +1779,7 @@ async fn test_connect_disconnect_lifecycle() {
     assert!(channels.iter().any(|c| c == &"account_all_positions/12345"));
     assert!(channels.iter().any(|c| c == &"account_all_assets/12345"));
     assert!(channels.iter().any(|c| c == &"user_stats/12345"));
+    assert!(channels.iter().any(|c| c == &"account_tx/12345"));
 
     // Subscribe frames must carry the L2 auth token; the data-client tests
     // pin the token shape via the REST `auth=` parameter, here the same
@@ -10508,6 +10511,166 @@ fn assert_order_batches(
     }
 
     infos
+}
+
+#[rstest]
+#[case::order_then_transaction(true)]
+#[case::transaction_then_order(false)]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_tx_confirms_modify_without_rest(
+    #[case] order_first: bool,
+    #[values(false, true)] missing_ack: bool,
+) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-STREAM-MODIFY");
+    let (index, venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510118",
+    )
+    .await;
+
+    if missing_ack {
+        *state.next_send_tx_ack.lock().await = Some(Value::Null);
+    }
+
+    let calls_before = state.tx_calls.load(Ordering::Relaxed);
+    client
+        .modify_order(modify_command(id, venue, "2400.00"))
+        .unwrap();
+    await_send_tx_count(&state, 2).await;
+    let info = send_tx_info(&state.send_txs().await[1]);
+    let hash = order_tx_hash(17, &info, state.chain_id.load(Ordering::Relaxed));
+    let mut transaction = load_json("ws_account_tx_update.json");
+    transaction["channel"] = json!(format!("account_tx:{TEST_ACCOUNT_INDEX}"));
+    transaction["txs"][0]["hash"] = json!(format!("0X{}", hash.to_uppercase()));
+    let mut entry =
+        account_all_orders_open_entry(index, venue.as_str(), &index.to_string(), TEST_ORDER_NONCE);
+    state.push_frame(&json!({
+        "type":"update/account_all_orders",
+        "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"),
+        "orders":{"0":[entry.clone()]},
+    }));
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    entry["price"] = json!("2400.00");
+    entry["base_price"] = json!(240_000);
+    entry["initial_base_amount"] = json!("0.0100");
+    entry["remaining_base_amount"] = json!("0.0100");
+    entry["base_size"] = json!(100);
+    let order = json!({"type":"update/account_all_orders", "channel":format!("account_all_orders:{TEST_ACCOUNT_INDEX}"), "orders":{"0":[entry]}});
+    let frames = if order_first {
+        [&order, &transaction]
+    } else {
+        [&transaction, &order]
+    };
+
+    state.push_frame(frames[0]);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(50))
+            .await
+            .is_none()
+    );
+    state.push_frame(frames[1]);
+    let event = next_order_event(&mut rx, Duration::from_secs(1))
+        .await
+        .expect("stream execution and matching order must confirm without REST");
+
+    let OrderEventAny::Updated(updated) = &event else {
+        panic!("expected Updated, was {event:?}");
+    };
+
+    assert_eq!(updated.trader_id, trader_id());
+    assert_eq!(updated.strategy_id, strategy_id());
+    assert_eq!(updated.instrument_id, eth_perp_id());
+    assert_eq!(updated.client_order_id, id);
+    assert_eq!(updated.venue_order_id, Some(venue));
+    assert_eq!(updated.account_id, Some(account_id()));
+    assert_eq!(updated.quantity, Quantity::from("0.0100"));
+    assert_eq!(updated.price, Some(Price::from("2400.00")));
+    assert_eq!(updated.trigger_price, None);
+    assert!(!updated.reconciliation);
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), calls_before);
+    cache.borrow_mut().update_order(&event).unwrap();
+    state.push_frame(&transaction);
+    state.push_frame(&order);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    assert_eq!(state.send_txs().await.len(), 2);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::failed_status(0, "")]
+#[case::application_error(2, "{\"ae\":\"invalid order price\"}")]
+#[case::malformed_failure(0, "invalid json")]
+#[tokio::test(flavor = "multi_thread")]
+async fn test_account_tx_rejects_modify_without_rest(#[case] status: u8, #[case] event_info: &str) {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.unwrap();
+    let id = ClientOrderId::from("O-STREAM-REJECT");
+    let (_, venue) = seed_open_order(
+        &client,
+        &cache,
+        &state,
+        &mut rx,
+        id.as_str(),
+        "281476929510119",
+    )
+    .await;
+    let calls_before = state.tx_calls.load(Ordering::Relaxed);
+    let command = modify_command(id, venue, "2400.00");
+    client.modify_order(command.clone()).unwrap();
+    await_send_tx_count(&state, 2).await;
+    let info = send_tx_info(&state.send_txs().await[1]);
+    let hash = order_tx_hash(17, &info, state.chain_id.load(Ordering::Relaxed));
+    let mut transaction = load_json("ws_account_tx_update.json");
+    transaction["channel"] = json!(format!("account_tx:{TEST_ACCOUNT_INDEX}"));
+    transaction["txs"][0] = json!({"hash":hash, "status":status, "event_info":event_info});
+    state.push_frame(&transaction);
+    let event = next_order_event(&mut rx, Duration::from_secs(1))
+        .await
+        .unwrap();
+
+    let OrderEventAny::ModifyRejected(rejected) = &event else {
+        panic!("expected ModifyRejected, was {event:?}");
+    };
+
+    assert_eq!(rejected.trader_id, trader_id());
+    assert_eq!(rejected.strategy_id, strategy_id());
+    assert_eq!(rejected.instrument_id, eth_perp_id());
+    assert_eq!(rejected.client_order_id, id);
+    assert_eq!(rejected.venue_order_id, Some(venue));
+    assert_eq!(rejected.account_id, Some(account_id()));
+    assert_eq!(rejected.causation_id, Some(command.command_id));
+    assert_eq!(
+        rejected.reason.as_str(),
+        if status == 2 {
+            "Lighter modify transaction failed: invalid order price"
+        } else {
+            "Lighter modify transaction failed: transaction failed without an application error"
+        }
+    );
+    assert_eq!(state.tx_calls.load(Ordering::Relaxed), calls_before);
+    state.push_frame(&transaction);
+    assert!(
+        next_order_event(&mut rx, Duration::from_millis(100))
+            .await
+            .is_none()
+    );
+    client.disconnect().await.unwrap();
 }
 
 #[rstest]

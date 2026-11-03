@@ -836,7 +836,12 @@ resolving the first.
 Pending cancellation denies modification. During pending modification, cancellation remains available
 but its outcome waits for modification resolution.
 
-Confirmation requires a transaction lookup and matching current venue order shape:
+Matching `account_tx` failures emit `OrderModifyRejected`. Executed results emit `OrderUpdated` once the
+current WebSocket order shape matches. A `sendTx` or `sendTxBatch` acknowledgement alone does not confirm
+execution. Unresolved modifications use bounded REST transaction and order lookups starting two seconds
+after submission; see [outcome recovery](#outcome-recovery).
+
+While modification is pending:
 
 - Affected WebSocket order frames and fills wait for publication of `OrderUpdated`, `OrderModifyDenied`,
   or `OrderModifyRejected`.
@@ -875,9 +880,9 @@ During this delay:
 
 #### Outcome recovery
 
-Order updates and transaction lookups resolve create and cancel outcomes. Recovery performs up to three
-lookups at two-second intervals while the pending action remains current. It validates transaction hash,
-type, account, API key, and original submission nonce.
+Order updates and transaction lookups resolve create and cancel outcomes. REST recovery, including pending
+modifications, performs up to three lookups at two-second intervals while the pending action remains current.
+It validates transaction hash, type, account, API key, and original submission nonce.
 
 Resolved or superseded cancels stop their probes, including requests waiting for REST quota.
 When a cancel transaction executes, recovery retries missing or nonterminal order status within the same three lookups.
@@ -1014,12 +1019,13 @@ generating reconciliation orders.
 
 ## Account and position management
 
-Execution clients authenticate and subscribe to five private streams:
+Execution clients authenticate and subscribe to six private streams:
 
 - `account_all_orders`: order status reports.
 - `account_all_trades`: fill reports.
 - `account_all_positions`: initial position snapshot and live updates.
 - `account_all_assets`: per-asset balance snapshots (spot balance plus perp collateral).
+- `account_tx`: transaction execution status and application results.
 - `user_stats`: perp-account margin rollup (collateral and available balance).
 
 The adapter emits merged `account_all_assets` and `user_stats` state only after both first frames arrive.
@@ -1360,8 +1366,9 @@ or reconciliation recovery.
 
 ### Account stream readiness
 
-`LighterExecutionClient::connect()` clears position and account caches, then waits up to 30 seconds for all
-five [private streams](#account-and-position-management) to become ready.
+`LighterExecutionClient::connect()` clears position and account caches, then waits up to 30 seconds for the
+five [account snapshot streams](#account-and-position-management) to become ready. The `account_tx`
+subscription does not require an initial transaction update.
 
 Only `subscribed/account_all_positions` satisfies position readiness; live updates do not.
 REST account payloads are never a fallback.
