@@ -20,7 +20,7 @@
 //! processes commands from the client via an unbounded channel.
 
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -55,6 +55,7 @@ use nautilus_network::{
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
+use serde_json::value::RawValue;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
@@ -68,10 +69,10 @@ use super::{
     messages::{
         DeribitAuthResult, DeribitBookMsg, DeribitCancelAllByInstrumentParams, DeribitCancelParams,
         DeribitChartMsg, DeribitEditParams, DeribitHeartbeatParams, DeribitInstrumentStateMsg,
-        DeribitJsonRpcRequest, DeribitOrderMsg, DeribitOrderParams, DeribitOrderResponse,
-        DeribitPerpetualMsg, DeribitPortfolioMsg, DeribitQuoteMsg, DeribitSubscribeParams,
-        DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg, DeribitVolatilityIndexMsg,
-        DeribitWsMessage, NautilusWsMessage, parse_raw_message,
+        DeribitJsonRpcRequest, DeribitJsonRpcResponse, DeribitOrderMsg, DeribitOrderParams,
+        DeribitOrderResponse, DeribitPerpetualMsg, DeribitPortfolioMsg, DeribitQuoteMsg,
+        DeribitSubscribeParams, DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg,
+        DeribitVolatilityIndexMsg, DeribitWsMessage, NautilusWsMessage, parse_raw_message,
     },
     parse::{
         OrderEventType, determine_order_event_type, parse_book_depth, parse_book_msg,
@@ -1468,42 +1469,23 @@ impl DeribitWsFeedHandler {
                                     error.code, error.message,
                                 ));
                             } else {
-                                // Confirm each channel in the subscription
-                                for ch in &channels {
-                                    self.subscriptions_state.confirm_subscribe(ch);
+                                let acknowledged = self.subscription_acknowledgements(
+                                    request_id,
+                                    &channels,
+                                    response.result.as_deref(),
+                                    true,
+                                );
+
+                                for ch in acknowledged {
+                                    self.subscriptions_state.confirm_subscribe(&ch);
                                     log::debug!("Subscription confirmed: {ch}");
                                 }
                             }
                         }
                         PendingRequestType::Unsubscribe { channels } => {
-                            if let Some(error) = &response.error {
-                                log::error!(
-                                    "Unsubscribe failed: code={}, message={}, channels={:?}, request_id={}",
-                                    error.code,
-                                    error.message,
-                                    channels,
-                                    request_id
-                                );
-                            } else {
-                                for ch in &channels {
-                                    self.subscriptions_state.confirm_unsubscribe(ch);
-                                    log::debug!("Unsubscription confirmed: {ch}");
-                                }
-                            }
-
-                            // Resubscribe channels pending book resync (kept in
-                            // pending_book_resync until a fresh snapshot arrives)
-                            if !self.pending_book_resync.is_empty() {
-                                let resync: Vec<String> = channels
-                                    .iter()
-                                    .filter(|ch| self.pending_book_resync.contains(ch))
-                                    .cloned()
-                                    .collect();
-
-                                if !resync.is_empty() {
-                                    let _ = self.handle_subscribe(resync);
-                                }
-                            }
+                            self.handle_unsubscribe_acknowledgement(
+                                request_id, &channels, &response,
+                            );
                         }
                         PendingRequestType::SetHeartbeat => {
                             if let Some(error) = &response.error {
@@ -2835,6 +2817,107 @@ impl DeribitWsFeedHandler {
             }
             DeribitWsMessage::Reconnected => Some(NautilusWsMessage::Reconnected),
         }
+    }
+
+    fn handle_unsubscribe_acknowledgement(
+        &mut self,
+        request_id: u64,
+        channels: &[String],
+        response: &DeribitJsonRpcResponse<Box<RawValue>>,
+    ) {
+        if let Some(error) = &response.error {
+            log::error!(
+                "Unsubscribe failed: code={}, message={}, channels={:?}, request_id={}",
+                error.code,
+                error.message,
+                channels,
+                request_id
+            );
+            return;
+        }
+
+        let acknowledged = self.subscription_acknowledgements(
+            request_id,
+            channels,
+            response.result.as_deref(),
+            false,
+        );
+
+        for ch in &acknowledged {
+            self.subscriptions_state.confirm_unsubscribe(ch);
+            log::debug!("Unsubscription confirmed: {ch}");
+        }
+
+        if !self.pending_book_resync.is_empty() {
+            let desired = self.subscriptions_state.all_topics();
+            let resync: Vec<String> = acknowledged
+                .into_iter()
+                .filter(|ch| self.pending_book_resync.contains(ch) && desired.contains(ch))
+                .collect();
+
+            if !resync.is_empty() {
+                let _ = self.handle_subscribe(resync);
+            }
+        }
+    }
+
+    fn subscription_acknowledgements(
+        &self,
+        request_id: u64,
+        requested: &[String],
+        result: Option<&RawValue>,
+        subscribe: bool,
+    ) -> Vec<String> {
+        let operation = if subscribe {
+            "Subscribe"
+        } else {
+            "Unsubscribe"
+        };
+
+        let parsed = result
+            .ok_or_else(|| "missing result".to_string())
+            .and_then(|result| {
+                serde_json::from_str::<Vec<String>>(result.get()).map_err(|e| e.to_string())
+            });
+
+        let returned = match parsed {
+            Ok(channels) => channels,
+            Err(e) => {
+                let reason =
+                    format!("{operation} acknowledgement invalid: {e}, request_id={request_id}");
+                log::error!("{reason}");
+
+                if subscribe {
+                    self.subscribe_errors.lock().push(reason);
+                }
+
+                return Vec::new();
+            }
+        };
+
+        let mut returned: HashSet<String> = returned.into_iter().collect();
+        let mut requested_unique = HashSet::new();
+        let acknowledged: Vec<String> = requested
+            .iter()
+            .filter(|ch| requested_unique.insert(ch.as_str()) && returned.remove(ch.as_str()))
+            .cloned()
+            .collect();
+
+        if acknowledged.len() != requested_unique.len() || !returned.is_empty() {
+            let reason = format!(
+                "{operation} acknowledgement incomplete or unrelated: confirmed={} requested={} unrelated={}, request_id={request_id}",
+                acknowledged.len(),
+                requested_unique.len(),
+                returned.len(),
+            );
+            log::error!("{reason}");
+
+            if subscribe {
+                self.subscribe_errors.lock().push(reason);
+            }
+        }
+
+        acknowledged
     }
 
     async fn handle_book_message(
@@ -5540,6 +5623,353 @@ mod tests {
                 .get_reference_count(&channels[0]),
             1
         );
+    }
+
+    #[rstest]
+    #[case::full("full")]
+    #[case::partial("partial")]
+    #[case::empty("empty")]
+    #[case::missing("missing")]
+    #[case::null("null")]
+    #[case::object("object")]
+    #[case::scalar("scalar")]
+    #[case::mixed_types("mixed_types")]
+    #[case::unrelated("unrelated")]
+    #[case::mixed_unrelated("mixed_unrelated")]
+    #[case::duplicates("duplicates")]
+    #[case::full_duplicates("full_duplicates")]
+    #[tokio::test]
+    async fn subscription_acknowledgements_correlate_batches(
+        #[case] response_kind: &str,
+        #[values(true, false)] subscribe: bool,
+    ) {
+        let mut handler = routing_test_handler();
+        let channels: Vec<String> = (0..1500)
+            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100000 + i))
+            .collect();
+
+        for channel in &channels {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+            if !subscribe {
+                handler.subscriptions_state.confirm_subscribe(channel);
+                handler.subscriptions_state.remove_reference(channel);
+                handler.subscriptions_state.remove_reference(channel);
+                handler.subscriptions_state.mark_unsubscribe(channel);
+            }
+        }
+
+        handler
+            .queue_subscription_requests(channels.clone(), subscribe)
+            .unwrap();
+        let requests: Vec<_> = handler.subscription_requests.drain(..).collect();
+        assert_eq!(requests.len(), 2);
+        let mut acknowledged = Vec::new();
+
+        for (index, (request_id, payload)) in requests.iter().enumerate().rev() {
+            let request: serde_json::Value = serde_json::from_str(payload).unwrap();
+            let batch: Vec<String> =
+                serde_json::from_value(request["params"]["channels"].clone()).unwrap();
+            let other: serde_json::Value = serde_json::from_str(&requests[1 - index].1).unwrap();
+            let unrelated = other["params"]["channels"][0].as_str().unwrap();
+            let mut full = batch.clone();
+            full.reverse();
+
+            let result = match response_kind {
+                "full" => serde_json::json!(full),
+                "partial" => serde_json::json!([batch[0]]),
+                "empty" | "missing" => serde_json::json!([]),
+                "null" => serde_json::Value::Null,
+                "object" => serde_json::json!({"channels": batch}),
+                "scalar" => serde_json::json!("ok"),
+                "mixed_types" => serde_json::json!([batch[0], 17]),
+                "unrelated" => serde_json::json!([unrelated]),
+                "mixed_unrelated" => serde_json::json!([batch[0], unrelated]),
+                "duplicates" => serde_json::json!([batch[0], batch[0]]),
+                "full_duplicates" => {
+                    full.push(batch[0].clone());
+                    serde_json::json!(full)
+                }
+                _ => unreachable!(),
+            };
+
+            let mut response = serde_json::json!({
+                "jsonrpc": "2.0", "id": request_id, "result": result,
+            });
+
+            if response_kind == "missing" {
+                response.as_object_mut().unwrap().remove("result");
+            }
+
+            match response_kind {
+                "full" | "full_duplicates" => acknowledged.extend(batch),
+                "partial" | "mixed_unrelated" | "duplicates" => {
+                    acknowledged.push(batch[0].clone());
+                }
+                _ => {}
+            }
+
+            handler.process_raw_message(&response.to_string()).await;
+        }
+
+        let mut expected_pending: Vec<_> = channels
+            .iter()
+            .filter(|ch| !acknowledged.contains(ch))
+            .cloned()
+            .collect();
+        expected_pending.sort();
+
+        let mut pending = if subscribe {
+            handler.subscriptions_state.pending_subscribe_topics()
+        } else {
+            handler.subscriptions_state.pending_unsubscribe_topics()
+        };
+
+        pending.sort();
+
+        assert_eq!(pending, expected_pending);
+        assert_eq!(
+            handler.subscriptions_state.len(),
+            if subscribe { acknowledged.len() } else { 0 }
+        );
+        assert!(handler.pending_requests.is_empty());
+        let expected_errors =
+            usize::from(subscribe && !matches!(response_kind, "full" | "full_duplicates"))
+                * requests.len();
+        assert_eq!(handler.subscribe_errors.lock().len(), expected_errors);
+
+        for (error, (request_id, _)) in handler
+            .subscribe_errors
+            .lock()
+            .iter()
+            .zip(requests.iter().rev())
+        {
+            assert!(error.starts_with("Subscribe acknowledgement "));
+            assert!(error.ends_with(&format!("request_id={request_id}")));
+        }
+
+        for channel in &channels {
+            assert_eq!(
+                handler.subscriptions_state.get_reference_count(channel),
+                if subscribe { 2 } else { 0 }
+            );
+        }
+
+        let mut replay = handler.subscriptions_state.reset_after_reconnect();
+        replay.sort();
+        assert_eq!(replay, if subscribe { channels } else { Vec::new() });
+    }
+
+    #[tokio::test]
+    async fn subscription_acknowledgements_accept_duplicate_requests() {
+        let mut handler = routing_test_handler();
+        let first = "ticker.BTC-PERPETUAL.100ms".to_string();
+        let last = "ticker.ETH-PERPETUAL.100ms".to_string();
+        for channel in [&first, &last] {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+        }
+
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.cmd_rx = cmd_rx;
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channels: vec![first.clone(), last.clone()],
+            })
+            .unwrap();
+
+        let coalesced = handler.coalesce_subscriptions(vec![first.clone()]);
+        assert_eq!(coalesced, [first.clone(), first.clone(), last.clone()]);
+        handler.handle_subscribe(coalesced.clone()).unwrap();
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        let ack =
+            serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [last, first, first]});
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert_eq!(handler.subscriptions_state.len(), 2);
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+        assert!(handler.subscribe_errors.lock().is_empty());
+        assert_eq!(handler.subscriptions_state.get_reference_count(&first), 2);
+        assert_eq!(handler.subscriptions_state.get_reference_count(&last), 2);
+
+        for channel in [&first, &last] {
+            handler.subscriptions_state.mark_failure(channel);
+        }
+
+        handler.pending_book_resync = vec![first.clone(), last.clone()];
+        handler.handle_unsubscribe(coalesced).unwrap();
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [last, first]});
+        handler.process_raw_message(&ack.to_string()).await;
+        let (_, payload) = handler.subscription_requests.pop_front().unwrap();
+        let replay: serde_json::Value = serde_json::from_str(&payload).unwrap();
+
+        assert_eq!(
+            replay["params"]["channels"],
+            serde_json::json!([first, last])
+        );
+        assert_eq!(handler.subscription_requests.len(), 0);
+        assert_eq!(handler.subscriptions_state.get_reference_count(&first), 2);
+        assert_eq!(handler.subscriptions_state.get_reference_count(&last), 2);
+    }
+
+    #[tokio::test]
+    async fn subscription_acknowledgements_preserve_cancellation_and_replay() {
+        let mut handler = routing_test_handler();
+        let retained = "ticker.BTC-PERPETUAL.100ms".to_string();
+        let canceled = "ticker.ETH-PERPETUAL.100ms".to_string();
+        for channel in [&retained, &canceled] {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+        }
+
+        handler
+            .handle_subscribe(vec![retained.clone(), canceled.clone()])
+            .unwrap();
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": []});
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert!(!handler.subscriptions_state.remove_reference(&retained));
+        assert!(!handler.subscriptions_state.remove_reference(&canceled));
+        assert!(handler.subscriptions_state.remove_reference(&canceled));
+        handler.subscriptions_state.mark_unsubscribe(&canceled);
+        handler.process_raw_message(RECONNECTED).await;
+        let replay = handler.subscriptions_state.reset_after_reconnect();
+        handler.handle_subscribe(replay.clone()).unwrap();
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [retained]});
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert_eq!(replay, [retained.as_str()]);
+        assert_eq!(
+            handler.subscriptions_state.all_topics(),
+            [retained.as_str()]
+        );
+        assert_eq!(handler.subscriptions_state.len(), 1);
+        assert_eq!(
+            handler.subscriptions_state.get_reference_count(&retained),
+            1
+        );
+        assert_eq!(
+            handler.subscriptions_state.get_reference_count(&canceled),
+            0
+        );
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    #[case::full("full")]
+    #[case::partial("partial")]
+    #[case::empty("empty")]
+    #[case::malformed("malformed")]
+    #[case::error("error")]
+    #[tokio::test]
+    async fn subscription_acknowledgements_gate_book_resync(
+        #[case] response_kind: &str,
+        #[values(false, true)] cancel: bool,
+    ) {
+        let mut handler = routing_test_handler();
+        let channels = [
+            BOOK_CHANNEL.to_string(),
+            "book.BTC-PERPETUAL.raw".to_string(),
+        ];
+
+        for channel in &channels {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+            handler.subscriptions_state.confirm_subscribe(channel);
+        }
+
+        handler.resync_book(Ustr::from("BTC-PERPETUAL")).await;
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        if cancel {
+            handler.subscriptions_state.remove_reference(&channels[0]);
+            handler.subscriptions_state.remove_reference(&channels[0]);
+            handler.subscriptions_state.mark_unsubscribe(&channels[0]);
+        }
+
+        let response = match response_kind {
+            "full" => serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": channels}),
+            "partial" => {
+                serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [channels[0]]})
+            }
+            "empty" => serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": []}),
+            "malformed" => serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": "ok"}),
+            "error" => {
+                serde_json::json!({"jsonrpc": "2.0", "id": request_id, "error": {"code": 10028, "message": "too_many_requests"}})
+            }
+            _ => unreachable!(),
+        };
+
+        handler.process_raw_message(&response.to_string()).await;
+
+        let mut resubscribed: Vec<String> = handler
+            .pending_requests
+            .values()
+            .flat_map(|request| match request {
+                PendingRequestType::Subscribe { channels } => channels.clone(),
+                _ => panic!("unexpected request: {request:?}"),
+            })
+            .collect();
+
+        resubscribed.sort();
+
+        let mut expected = match (response_kind, cancel) {
+            ("full", false) => channels.to_vec(),
+            ("full", true) => vec![channels[1].clone()],
+            ("partial", false) => vec![channels[0].clone()],
+            _ => Vec::new(),
+        };
+
+        expected.sort();
+        let mut pending = handler.subscriptions_state.pending_subscribe_topics();
+        pending.sort();
+
+        let mut desired = if cancel {
+            vec![channels[1].clone()]
+        } else {
+            channels.to_vec()
+        };
+
+        desired.sort();
+
+        assert_eq!(resubscribed, expected);
+        assert_eq!(pending, desired);
+        assert_eq!(handler.subscriptions_state.len(), 0);
+        assert_eq!(
+            handler
+                .subscriptions_state
+                .get_reference_count(&channels[0]),
+            if cancel { 0 } else { 2 }
+        );
+        assert_eq!(
+            handler
+                .subscriptions_state
+                .get_reference_count(&channels[1]),
+            2
+        );
+        assert_eq!(handler.pending_book_resync.len(), 2);
     }
 
     #[rstest]

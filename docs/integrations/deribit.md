@@ -472,6 +472,10 @@ or `Quantity` (for example, a value beyond their range), the adapter automatical
 During resync, the strategy will not receive stale or incomplete book updates. A user-initiated
 unsubscribe while a resync is pending cancels the resubscribe instead of reopening the channel.
 
+If a recovery unsubscribe fails, returns an invalid result, or omits a channel, the adapter logs an
+error and keeps that channel pending resync. It suppresses deltas for the instrument until a valid
+snapshot clears the pending resync or the client reconnects.
+
 A grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) sends a full snapshot every interval,
 so the adapter never resyncs it. It drops a snapshot that fails conversion. The next snapshot replaces the
 book.
