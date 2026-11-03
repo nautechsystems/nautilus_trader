@@ -1,0 +1,9 @@
+{
+  "jsonrpc": "2.0",
+  "id": "expiry-rejection",
+  "error": {
+    "code": -32602,
+    "message": "Invalid params",
+    "data": "Error 14038: Action expiry exceeds session key expiry. Data: signature expires at 1796263075s but the signing session key expires at 1793728835s\nStack backtrace:\n   0: opaque sensitive detail"
+  }
+}

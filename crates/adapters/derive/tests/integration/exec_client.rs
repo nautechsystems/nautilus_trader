@@ -3859,6 +3859,82 @@ async fn test_submit_order_jsonrpc_rejection_emits_order_rejected() {
 }
 
 #[rstest]
+#[case(OrderType::StopMarket)]
+#[case(OrderType::StopLimit)]
+#[case(OrderType::MarketIfTouched)]
+#[case(OrderType::LimitIfTouched)]
+#[tokio::test]
+async fn test_submit_trigger_session_key_expiry_emits_actionable_rejection(
+    #[case] order_type: OrderType,
+    #[values(OrderSide::Buy, OrderSide::Sell)] side: OrderSide,
+) {
+    let ws_state = WsState::default();
+    let response: Value = serde_json::from_str(include_str!(
+        "../../test_data/ws_error_session_key_expiry.json"
+    ))
+    .unwrap();
+    *ws_state.trigger_order_reply.lock().await = Some(response);
+    let mut tc = build_client(RestState::default(), ws_state.clone()).await;
+    tc.client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("ETH-PERP.DERIVE");
+    let client_order_id = ClientOrderId::from("STRAT-KEY-EXPIRY");
+    let mut builder = OrderTestBuilder::new(order_type);
+    builder
+        .trader_id(TraderId::from("TRADER-001"))
+        .strategy_id(StrategyId::from("S-1"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(side)
+        .quantity(Quantity::from("1.000"))
+        .trigger_price(Price::from("3600.00"))
+        .trigger_type(TriggerType::MarkPrice);
+
+    if matches!(order_type, OrderType::StopLimit | OrderType::LimitIfTouched) {
+        builder.price(Price::from("3600.00"));
+    }
+
+    let order = builder.build();
+    tc.cache
+        .borrow_mut()
+        .add_order(order.clone(), None, None, false)
+        .unwrap();
+    tc.client.submit_order(submit_cmd(&order)).unwrap();
+    let _ = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(OrderEventAny::Submitted(_))),
+        "OrderSubmitted",
+    )
+    .await;
+    let event = drain_until(
+        &mut tc.rx,
+        |e| matches!(e, ExecutionEvent::Order(_)),
+        "expiry rejection",
+    )
+    .await;
+
+    let ExecutionEvent::Order(OrderEventAny::Rejected(rejected)) = event else {
+        panic!("expected rejection: {event:?}")
+    };
+
+    assert_eq!(rejected.client_order_id, client_order_id);
+    assert_eq!(rejected.instrument_id, instrument_id);
+    assert_eq!(rejected.strategy_id, StrategyId::from("S-1"));
+    assert_eq!(rejected.trader_id, TraderId::from("TRADER-001"));
+    assert_eq!(rejected.account_id, AccountId::from("DERIVE-001"));
+    assert_eq!(
+        rejected.reason.as_str(),
+        "14038: Signature expires at 1796263075s, session key expires at 1793728835s; use a key valid through the signature expiry",
+    );
+    assert!(!rejected.due_post_only);
+    assert!(!rejected.reconciliation);
+    assert_eq!(rejected.causation_id, None);
+    assert_eq!(ws_state.submitted_trigger_orders.lock().await.len(), 1);
+    assert!(ws_state.submitted_orders.lock().await.is_empty());
+    tc.client.disconnect().await.unwrap();
+}
+
+#[rstest]
 #[case::ioc(TimeInForce::Ioc, "ioc")]
 #[case::fok(TimeInForce::Fok, "fok")]
 #[tokio::test]

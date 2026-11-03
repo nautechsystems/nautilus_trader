@@ -692,6 +692,13 @@ The adapter signs trigger orders with a fixed 31-day expiry and leaves their MMP
 latency, with a maximum of 120 days, or 900 seconds when `cancel_on_disconnect=True`.
 See [action signing](https://docs.derive.xyz/authentication/action-signing).
 
+The signing session key must remain valid through the signature expiry. Before submitting a trigger,
+check the key's expiry through [`private/session_keys`](https://docs.derive.xyz/api-reference/session-keys/privatesession_keys)
+and register or renew a key with more than 31 days remaining. Changing `signature_expiry_secs` does not
+shorten trigger signatures. When Derive rejects a submission with error `14038` and reports both expiries,
+the adapter's `OrderRejected` reason and log identify them in UNIX seconds and ask for a key valid through
+the signature expiry.
+
 ##### Supported types
 
 | Nautilus order type | Supported | Derive `order_type` | Derive `trigger_type` | Notes                          |
@@ -923,7 +930,8 @@ applies the same classification. Local denials for unsupported post-only IOC/FOK
 
 Strategy-facing rejection reasons strip markup and control characters, normalize whitespace,
 and contain at most 256 characters. JSON-RPC reasons retain the native error code and message
-without the exception prefix or structured diagnostic payload. Logs retain the original errors.
+without the exception prefix or structured diagnostic payload, except for recognized
+[session-key expiry errors](#signature-expiry). Order command logs redact other diagnostic details.
 
 ##### Ambiguous outcomes
 
