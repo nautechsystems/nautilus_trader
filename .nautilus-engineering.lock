@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "00d5e325dc85464229ee8a6d80336027faeb0a8f"
+revision = "79041ddd4516bf0226a6504e36d4f35c7c766a61"
 manifest_sha256 = "c118a09137ee947a24ab3d5d22650719f90b2954878e6c6a656c5ad8b7f19def"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -62,7 +62,7 @@ executable = false
 [[file]]
 artifact = "markdown-standard"
 path = "docs/developer_guide/markdown_style.md"
-sha256 = "8b3ef01847dbb0799c22d7f7a11810fac9e5e92bbce0de990a774b6997e1ac19"
+sha256 = "a01a90dbc5e70cc44d9a5cf688a27c8024316ac9778b66dd1cdb6285d451abb6"
 executable = false
 
 [[file]]

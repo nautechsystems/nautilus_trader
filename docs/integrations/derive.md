@@ -292,9 +292,7 @@ code. Derive funds the referral program from its own revenue, so attribution add
 needs no approval, and is not configurable. This helps us gauge real usage of the integration
 and prioritize ongoing maintenance.
 
-## Capabilities
-
-### Market data
+## Market data
 
 | Capability                     | Supported | Notes                                                                   |
 | ------------------------------ | --------- | ----------------------------------------------------------------------- |
@@ -322,7 +320,7 @@ and prioritize ongoing maintenance.
 | Option greeks                  | ✓         | Derived from `option_pricing` on option tickers.                        |
 | Option chain                   | ✓         | Aggregated from quotes and greeks; `public/get_tickers` bootstraps ATM. |
 
-#### Quotes
+### Quotes
 
 WebSocket tickers report complete snapshots for perpetuals, options, and spot. If either side has
 zero price or size, the adapter clears that instrument's internal quote state and emits no
@@ -333,7 +331,7 @@ The last published quote remains in the Nautilus cache with its original timesta
 quote output does not withdraw that cached quote. For decoded tickers, other subscribed fields, including mark
 and index prices, funding rates, and option greeks, continue to emit independently.
 
-#### Instrument loading
+### Instrument loading
 
 `request_instrument` calls `public/get_instrument` for the requested `InstrumentId` and
 caches the returned definition before emitting the response. The cached instrument carries
@@ -357,7 +355,7 @@ missing perp, option, or spot listing for a currency does not block its other pr
 parse into domain instruments are logged and skipped while valid rows continue to load. Malformed response
 fields fail that currency's fetch. A fetch error during initial loading also fails the connection.
 
-#### Historical data
+### Historical data
 
 | Data          | REST endpoint                       |
 | ------------- | ----------------------------------- |
@@ -369,7 +367,7 @@ Null or empty required candle values or historical funding rates fail the reques
 error and no data response. A malformed candle page also discards previously fetched pages in that
 request. Subsequent valid requests continue normally.
 
-##### Trade direction and deduplication
+#### Trade direction and deduplication
 
 Public REST history and WebSocket trades can return maker and taker rows under the same
 `trade_id`. Each row's `direction` is that participant's side. The adapter uses the taker's
@@ -384,7 +382,7 @@ Historical trade requests emit one `TradeTick` per trade ID within the request. 
 paired rows and reconnect replays while their IDs remain in a cache of the latest 4,096 trades. Automatic
 reconnect retains this cache. Explicit disconnect or reset clears it.
 
-##### Bar requirements and time bounds
+#### Bar requirements and time bounds
 
 - **Aggregation and price**: bars require `EXTERNAL` aggregation and `PriceType::Last`, since
   Derive candles are trade-based.
@@ -394,7 +392,7 @@ reconnect retains this cache. Explicit disconnect or reset clears it.
   omit any bucket whose close is after the request time, including the still-forming bucket
   returned by the venue.
 
-#### Order book feeds
+### Order book feeds
 
 Derive exposes book deltas and depth snapshots through the same
 `orderbook.{instrument}.{group}.{depth}` channel family. `subscribe_book_deltas` publishes
@@ -412,7 +410,7 @@ The feed has no change ID, so the adapter uses its millisecond timestamp as the 
 
 Derive documents no timestamp ordering guarantee. `publish_id` can restart after resubscription.
 
-### Execution
+## Execution
 
 Derive uses the configured session key for authenticated execution:
 
@@ -421,7 +419,7 @@ Derive uses the configured session key for authenticated execution:
   account, order, trade, and balance updates through private channels.
 - Report generation, account refreshes, and instrument lookups use REST.
 
-#### Fills and settlement
+### Fills and settlement
 
 The adapter ingests live and historical fills using `trade_id` and `order_id` as execution identities.
 Quantity, price, and fee decode as `Decimal`. Commission rounds to USDC's Nautilus precision.
@@ -484,7 +482,7 @@ types are denied locally with `OrderDenied` before submission, so they cannot fi
 After the async submit task resolves the instrument, it refreshes the current ticker snapshot
 and derives the signed slippage-bound `limit_price` from that refreshed quote.
 
-#### Replacing regular orders
+### Replacing regular orders
 
 Derive implements regular order modification as cancel-replace. The adapter keeps one client order
 identity across the native venue order IDs and emits `OrderUpdated` before routing child fills.
@@ -498,7 +496,7 @@ the replace when the target's filled amount moves past that value. Logical
 order reports include cumulative fills, a quantity-weighted average when all required native
 averages are available, and the earliest native creation timestamp as the acceptance time.
 
-#### Startup reconciliation
+### Startup reconciliation
 
 Before private streaming starts, the execution client publishes account state. It loads instrument definitions
 required by the native portfolio and cached active orders. It waits for the engine cache to observe those
@@ -573,7 +571,7 @@ mark metadata gaps or lost records as incomplete coverage. If the
 venue changes a private history's record or page count during pagination, the adapter discards the scan and restarts it
 at most twice. Further count changes fail the request.
 
-#### Margin model selection
+### Margin model selection
 
 Set `DeriveExecutionClientConfig.subaccount_id` to an existing Standard Margin (`SM`) or Portfolio Margin
 (`PM2`) subaccount. Each subaccount is bound to the manager chosen at creation and its risk universe. The
@@ -592,12 +590,12 @@ sizing. Positive venue PM2 health therefore does not establish native admission 
 another currency. Live behavior with cross-currency collateral and nonzero maintenance-margin
 credits (`mm_credits`) remains unverified.
 
-#### Account state
+### Account state
 
 Derive holds margin at the subaccount level. `AccountState` separates collateral balances,
 margin requirements, and net account health.
 
-##### Collateral balances
+#### Collateral balances
 
 - `total` is the collateral `amount` (for example USDC or ETH), rounded to the registered currency precision.
 - `locked` is zero. The adapter keeps pending vault-deposit holds in metadata.
@@ -605,7 +603,7 @@ margin requirements, and net account health.
 - `AccountState.info.collaterals` preserves a subset of each collateral row, with exact decimal strings.
 - `collaterals[].initial_margin` is USD credit contributed by that collateral, not locked funds.
 
-##### Margin requirements
+#### Margin requirements
 
 The adapter emits one account-wide `MarginBalance`:
 
@@ -631,7 +629,7 @@ position mark-to-market value. They exclude pending open-order reservations. Use
 pre/post initial-margin health. Actual order acceptance determines whether an additional order can execute.
 :::
 
-##### Account metadata
+#### Account metadata
 
 `AccountState.info` carries account identities, signed net health, and exact risk values:
 
@@ -674,7 +672,7 @@ rounded to the instrument's price precision. With partial history, synthetic rec
 produce an approximate cost basis. Set the reconciliation lookback to cover the current
 position's opening fills when exact fill-based accounting is required.
 
-#### Conditional orders
+### Conditional orders
 
 Derive trigger orders use `private/order` with trigger fields. The venue assigns the order id
 and stores them with `order_status=untriggered` until its
@@ -684,7 +682,7 @@ trigger worker submits the signed child order. Reconciliation therefore reads bo
 Live v3 trigger firing and missed-update recovery with delayed history or position views remain
 unverified. A successful reconnect or restart does not establish those cases.
 
-##### Signature expiry
+#### Signature expiry
 
 API v3 accepts order signatures with lifetimes in [10 seconds, 120 days]. MMP orders have a 15-minute maximum.
 The adapter signs trigger orders with a fixed 31-day expiry and leaves their MMP flag disabled.
@@ -699,7 +697,7 @@ shorten trigger signatures. When Derive rejects a submission with error `14038` 
 the adapter's `OrderRejected` reason and log identify them in UNIX seconds and ask for a key valid through
 the signature expiry.
 
-##### Supported types
+#### Supported types
 
 | Nautilus order type | Supported | Derive `order_type` | Derive `trigger_type` | Notes                          |
 | ------------------- | --------- | ------------------- | --------------------- | ------------------------------ |
@@ -716,13 +714,13 @@ The adapter maps Nautilus `TriggerType::Default` and `TriggerType::MarkPrice` to
 are unsupported. Thus, the adapter denies `IndexPrice`, `LastPrice`, `BidAsk`, and other trigger price types
 locally with `OrderDenied` before submission.
 
-##### Updating a trigger
+#### Updating a trigger
 
 Derive error `11054` states that trigger orders cannot replace or be replaced. The adapter therefore denies
 Nautilus modify requests for trigger orders with an `OrderModifyDenied` event. Cancel and resubmit for
 trigger updates.
 
-##### Trigger price offsets
+#### Trigger price offsets
 
 Derive validates the trigger price side and rejects a trigger that does not sit beyond the current price in
 the expected direction with error `11051`. The trigger price is fixed when the order is signed. Thus, a tight
@@ -734,7 +732,7 @@ Size the trigger offset to comfortably exceed expected price movement during sub
 spurious `11051` rejections.
 :::
 
-#### Cancel on disconnect
+### Cancel on disconnect
 
 Set `cancel_on_disconnect=True` to enable
 [cancel-on-disconnect (COD)](https://docs.derive.xyz/trading/cancel-on-disconnect) for resting GTC and
@@ -786,9 +784,9 @@ malformed reply leaves the stored setting uncertain. Coordinate other clients an
 Low-level order conversion leaves MMP disabled. Set `mmp: Some(true)` on eligible payloads sent through
 `execution_handle().submit_order` and sign with a [lifetime of at most 15 minutes](#signature-expiry).
 
-#### Bulk cancellation
+### Bulk cancellation
 
-##### Selection and routing
+#### Selection and routing
 
 Derive supports both multi-order cancellation methods exposed by `Strategy`.
 
@@ -817,7 +815,7 @@ Both-sides mode leaves already activated triggers to `private/cancel_by_instrume
 activation again after pacing and routes a trigger that activated during the wait through `private/cancel`
 before enqueueing the request.
 
-##### Failure handling
+#### Failure handling
 
 With `strategy_only=False`, `cancel_all_orders` fails closed if a selected order has neither a current binding
 nor a cached venue order ID. The whole command logs a warning, sends no cancellation request, and emits no
@@ -830,7 +828,7 @@ A failed trigger cancellation logs a warning but does not suppress the regular i
 failed bulk request has no per-order outcome to emit. Private channel updates and later reconciliation remain
 responsible for observed order state.
 
-#### Execution instructions
+### Execution instructions
 
 | Instruction   | Supported | Derive value  | Notes                                                       |
 | ------------- | --------- | ------------- | ----------------------------------------------------------- |
@@ -843,7 +841,7 @@ The adapter does not support iceberg instructions. Orders with `display_qty` set
 the adapter denies every leg before submitting any leg. Existing orders with `display_qty`
 can still be canceled; modifying them is rejected.
 
-#### Time in force
+### Time in force
 
 Derive documents `gtc`, `post_only`, `fok`, and `ioc` as its `time_in_force` values. Nautilus
 values with no Derive equivalent are denied locally with `OrderDenied` before submission. Derive
@@ -867,7 +865,7 @@ and [TC-E16](../developer_guide/spec_exec_testing.md#tc-e16-limit-fok-no-fill), 
 quantity, and that exact rejection reason. An unrelated rejection does not pass. The adapter preserves
 the venue rejection without emitting `OrderAccepted` or `OrderCanceled`.
 
-#### Spot reduce-only orders
+### Spot reduce-only orders
 
 Derive spot has no position concept, so a reduce-only spot order can never reduce anything. The venue always
 rejects it with error `11025`. The adapter avoids that round-trip when it knows the instrument is spot. Cached
@@ -879,7 +877,7 @@ depends on the subaccount's position state. The `derive-flatten` bin closes deri
 positions only and never spot, since flattening a spot balance would dump the base asset
 into a different quote.
 
-##### Reduce-only time-in-force limits
+#### Reduce-only time-in-force limits
 
 Derive only honors `reduce_only` on market orders or non-resting limits (`IOC`/`FOK`). A
 resting `GTC` or post-only limit with `reduce_only` is denied locally before submission.
@@ -896,13 +894,13 @@ their activation, sibling cancellation, and quantity updates in the strategy. In
 lists remain supported.
 :::
 
-#### Order rejection semantics
+### Order rejection semantics
 
 State-changing writes (`submit_order`, `modify_order`, `cancel_order`) are sent once over the
 WebSocket and **are not replayed**. The WebSocket request outcome determines whether the
 adapter emits a rejection or waits for reconciliation.
 
-##### Definitive failures
+#### Definitive failures
 
 The adapter emits `OrderRejected`, `OrderModifyRejected`, or `OrderCancelRejected` for definitive venue
 failures. Only `OrderRejected` terminates the order; modify and cancel rejections preserve it:
@@ -920,7 +918,7 @@ An unscoped `private/cancel_by_label` response with `cancelled_orders == -1` ack
 Positive counts also wait for private order updates. Neither response produces an `OrderCanceled` event
 without confirmed order state. `query_order` uses the shared order-status lookup for reconciliation.
 
-##### Post-only classification
+#### Post-only classification
 
 For post-only orders that reach the venue, Derive rejects a crossing order with JSON-RPC `11008` and message
 `Post only order cannot cross the market`. The adapter marks that terminal rejection with
@@ -933,7 +931,7 @@ and contain at most 256 characters. JSON-RPC reasons retain the native error cod
 without the exception prefix or structured diagnostic payload, except for recognized
 [session-key expiry errors](#signature-expiry). Order command logs redact other diagnostic details.
 
-##### Ambiguous outcomes
+#### Ambiguous outcomes
 
 For ambiguous write outcomes, the adapter emits no terminal event and lets WebSocket
 reconciliation or later status reports settle the state. The ambiguous set is deliberately

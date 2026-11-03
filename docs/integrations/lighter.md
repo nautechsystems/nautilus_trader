@@ -675,7 +675,7 @@ Venue
 [chase limit orders and atomic baskets](https://docs.lighter.xyz/trading/order-types-and-matching#advanced-orders)
 are not exposed. Ordinary transaction batches execute each child independently.
 
-#### Account-wide cancellation
+### Account-wide cancellation
 
 Lighter's [`CancelAllOrders`](https://apidocs.lighter.xyz/docs/wasm-signer#signcancelallorders) transaction
 type 16 supports immediate and scheduled account-wide cancellation. The Rust execution client exposes
@@ -699,7 +699,7 @@ including orders absent from the local cache. It does not close positions. Use a
 when other applications also trade on Lighter.
 :::
 
-##### Manual scheduling
+#### Manual scheduling
 
 Use `schedule_cancel(time)` with:
 
@@ -710,7 +710,7 @@ Use `schedule_cancel(time)` with:
 
 Manual calls do not start renewal. Disconnect and process exit preserve the last deadline.
 
-##### Automatic renewal
+#### Automatic renewal
 
 Set `scheduled_cancel_timeout_secs` on either deployment:
 
@@ -742,7 +742,7 @@ within Lighter's deadline window. Keep the host clock synchronized.
 
 Automatic arming and renewal confirm execution without reading back the account schedule.
 
-##### Confirmation and unknown outcomes
+#### Confirmation and unknown outcomes
 
 Cancellation events come from venue order updates. After **any scheduled deadline**, manual or
 automatic, venue reads can still list resting orders. Treat them as closed only when an order update
@@ -907,7 +907,7 @@ own and receives no independent denial or rejection.
 Cancellation and expiry events wait until **real fills cover the venue's cumulative filled quantity**.
 Events with no missing fills publish immediately.
 
-##### Recovery limits
+**Recovery limits**:
 
 Recovery fetches the order's trades and skips fills already published:
 
@@ -931,7 +931,7 @@ trades; direct order queries also start recovery for missed terminal frames.
 Unresolved modifications and deferred fills retain their existing holds. Native child fills also
 retain their holds unless the order has inferred fills.
 
-##### Inferred or unverifiable fills
+**Inferred or unverifiable fills**:
 
 Inferred fills do not count as real coverage. The adapter does not replace them with real trades.
 

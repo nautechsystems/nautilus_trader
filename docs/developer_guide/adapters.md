@@ -1039,7 +1039,7 @@ without relearning behavior:
   target. The [order book sync conformance](spec_data_testing.md#order-book-sync-conformance)
   specification defines the contract it checks and the faults it forces.
 
-### Execution client
+## Execution client
 
 Execution clients translate commands, preserve order identity, publish account state, and generate
 reports for reconciliation. They must support these boundaries consistently:
@@ -1059,7 +1059,7 @@ submission paths.
 Do not infer support from a venue API alone. Implement and test the Nautilus command and event
 semantics, then advertise the capability.
 
-#### Reconciliation reports
+### Reconciliation reports
 
 Reconciliation reads venue state through five
 [`ExecutionClient`](../../crates/common/src/clients/execution.rs) report methods. They return
@@ -1081,7 +1081,7 @@ requests, and their retry and throttling rules. Cases TC-E84 to TC-E87 and TC-E1
 venue. Cases TC-E88 and TC-E89 use deterministic fixtures to exercise REST and private-stream
 commission failure.
 
-##### Startup mass status
+#### Startup mass status
 
 `generate_mass_status` runs once per execution client before trading starts. Its default
 implementation:
@@ -1096,7 +1096,7 @@ client declares a history bound, as described in
 
 Returning `Ok(None)` logs a warning and leaves that client unreconciled. An error fails startup.
 
-##### Mass-status order evidence
+#### Mass-status order evidence
 
 Give each fill report order evidence from one of these sources:
 
@@ -1114,7 +1114,7 @@ If the venue has no queryable order record, build a `FILLED` order report from i
 venues without closed-order history, block-trade fills, and settlement fills. Withhold the fills instead when
 applying them would misstate a position, for example when they miss balance changes made without a trade.
 
-##### Position report entry averages
+#### Position report entry averages
 
 Pass the venue's average entry price through unrounded as `avg_px_open`, and state how
 reconciliation may use it:
@@ -1131,7 +1131,7 @@ reconciliation may use it:
 [Reported entry averages](../concepts/execution/reconciliation.md#reported-entry-averages) describes
 each effect.
 
-##### Mass-status timestamp contract
+#### Mass-status timestamp contract
 
 `ExecutionMassStatus.ts_init` marks the start of snapshot collection. For every producer,
 including reconnect snapshots and custom `generate_mass_status` implementations:
@@ -1158,7 +1158,7 @@ collection starts. Assert that the timestamp stays unchanged when collection fin
 See [Snapshot freshness and fill corrections](../concepts/execution/reconciliation.md#snapshot-freshness-and-fill-corrections)
 for the startup distinction and limits when venue state is already stale.
 
-##### Bulk report filters
+#### Bulk report filters
 
 The bulk methods take a filter command carrying `instrument_id`, `start`, and `end`, plus
 `open_only` for order reports and `venue_order_id` for fill reports. Apply every filter the venue
@@ -1186,7 +1186,7 @@ If a periodic check request fails, the engine marks that client failed for the c
 absence for the orders and positions that the client covers. Returning an error is therefore safer than
 returning an empty set.
 
-##### Single-order probes
+#### Single-order probes
 
 `generate_order_status_report` resolves a single order. The engine issues it after the open-order
 check retries without confirming a cached order, which requires that check to run in full-history
@@ -1206,7 +1206,7 @@ A failed lookup returned as `Ok(None)` can therefore reject or cancel an order t
 venue. The trait default returns `Ok(None)` after logging that the handler is not implemented, so
 implement this method before an open-order check runs in full-history mode.
 
-##### Shared reconciliation changes
+#### Shared reconciliation changes
 
 The execution engine and the live `ExecutionManager` apply all adapters' reports through the same code. Thus,
 changes to shared execution or reconciliation logic change behavior for all venues at once. Assess such a
@@ -1226,7 +1226,7 @@ check the report fields the change relies on, for example:
 Classify each adapter as helped, unaffected, or at risk. Cite the code that decides the classification.
 Include the result in the pull request description.
 
-#### Commission failure handling
+### Commission failure handling
 
 Commission is part of a fill's economic record. Calculate it with exact decimal arithmetic, then
 construct the venue currency's [`Money`](../../crates/model/src/types/money.rs) value. The shared
@@ -1241,7 +1241,7 @@ construct the venue currency's [`Money`](../../crates/model/src/types/money.rs) 
 Never replace `Err(error)` with zero commission or the generic formula. That substitution records a
 confirmed trade with economics the venue did not report.
 
-##### REST report construction
+#### REST report construction
 
 Commission construction belongs to the REST report request. If commission construction fails for a required
 fill, return an error from the affected request:
@@ -1257,7 +1257,7 @@ without its venue commission.
 During startup, the error prevents the node from starting and leaves that client's mass status
 unapplied. Periodic and targeted reconciliation defer the affected work until a later cycle.
 
-##### Inferred fills
+#### Inferred fills
 
 Call the hook for every adapter-backed inferred fill: external and cached orders, continuous
 reconciliation, and targeted order recovery. If commission calculation fails, the engine may apply
@@ -1276,7 +1276,7 @@ A position-only synthetic correction has no underlying trade evidence and may le
 not present an aggregate or generic value as the exact commission for that unknown fill. This case is distinct
 from a failed venue calculation.
 
-##### WebSocket trade processing
+#### WebSocket trade processing
 
 Process each WebSocket trade atomically. Construct all owned maker and taker fill reports before any of these
 actions:
@@ -1296,7 +1296,7 @@ Polymarket instead quarantines invalid trades and immediately starts targeted RE
 repaired WebSocket replays remain quarantined. Apply its
 [TC-E89 exception](spec_exec_testing.md#tc-e89-websocket-commission-failure) for recovery and deduplication.
 
-#### Bounded mass-status reports
+### Bounded mass-status reports
 
 When an execution client applies a lower time bound to historical reconciliation reports, record
 the contract with `ExecutionMassStatus::set_report_window(Some(lookback_start),
@@ -1355,7 +1355,7 @@ the execution engine distinguish a coherent lifecycle from ambiguous history. Se
 [Bounded history safety](../concepts/execution/reconciliation.md#bounded-history-safety) for the engine's
 economic application rules.
 
-#### Instrument resolution during reconciliation
+### Instrument resolution during reconciliation
 
 Report generation resolves each record's instrument to parse venue payloads at the correct price and size
 precision. Resolve it from the instruments that the adapter loaded during connect. Classify a miss by whether
@@ -1400,7 +1400,7 @@ instrument would withhold every other record it returned, so record incompletene
 cannot prevent a resolution failure inside an adapter. Keep the adapter's scope in its instrument
 provider configuration.
 
-#### Tracked and external execution updates
+### Tracked and external execution updates
 
 Route execution updates according to order ownership, independent of the dispatch module layout:
 
@@ -1445,7 +1445,7 @@ Missing tracked metadata, a parse failure, or an unresolved venue binding does n
 update is external. A tracked status with no corresponding Nautilus lifecycle event is a tracked
 no-op or deferred update unless the adapter documents and tests a report exception.
 
-##### Triggered parent and child orders
+#### Triggered parent and child orders
 
 Some venues replace a tracked parent venue order with a child after a trigger. Treat both venue IDs
 as one order context:
@@ -1458,7 +1458,7 @@ as one order context:
 - Once the child is authoritative, suppress stale parent acceptance and any superseded parent update
   that would regress child authority.
 
-##### Incomplete and late updates
+#### Incomplete and late updates
 
 Keep these cases distinct from normal tracked events:
 
@@ -1471,7 +1471,7 @@ Keep these cases distinct from normal tracked events:
 
 Suppress terminal status replays and fills whose trade identity was already processed.
 
-#### Event ordering and deduplication
+### Event ordering and deduplication
 
 A venue can report the same transition through an order response, private stream, query, and
 reconciliation result. Deduplicate by stable venue identity, not by the transport that delivered
@@ -1520,7 +1520,7 @@ Focused tests distinguish tracked and external updates, fills that precede ackno
 duplicates from overlapping sources, submission or venue-binding races, and stale post-terminal
 updates. Test active-context retention separately from bounded replay eviction.
 
-#### Order command outcome policy
+### Order command outcome policy
 
 Use [Execution policies](../concepts/execution/policies.md) as the cross-adapter contract for
 command delivery, event application, persistence, and recovery.
@@ -1571,7 +1571,7 @@ They can describe a race with a fill or cancellation, rather than an unambiguous
 
 Keep this policy independent of the HTTP or WebSocket path used to send a command.
 
-#### Naming the evidence classes
+### Naming the evidence classes
 
 Use consistent names so command failure classifications can be compared across adapters and the
 same wire condition is classified consistently. Classify every state-changing order command failure as one
@@ -1607,7 +1607,7 @@ Two conditions are easy to misfile:
   surface as one serialization error variant, so classify by which side of the write boundary
   the failure occurred on.
 
-#### Separate diagnostics from strategy-facing reasons
+### Separate diagnostics from strategy-facing reasons
 
 Preserve a structured diagnostic error through classification and logging. Derive a
 strategy-facing reason only at the execution event boundary, after the outcome and retry decisions.
