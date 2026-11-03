@@ -94,6 +94,7 @@ Released on TBD (UTC).
 - Fixed Redis order and position deletion leaving routine snapshots and restoring purged positions
 - Fixed `Cache` indexing closed positions as open and excluding them from purging after insertion
 - Fixed managed order book subscriptions reusing a cached book of a different type
+- Fixed managed order book quotes using event time for `ts_init`
 - Fixed command refusals clearing unrelated pending operations or rolling back later order state
 - Fixed mixed-key market data batches being cached under the first row's instrument or bar type
 - Fixed historical time bar boundary assignment for ticks sharing a timestamp
