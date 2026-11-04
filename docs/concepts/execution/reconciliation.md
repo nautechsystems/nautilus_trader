@@ -762,6 +762,13 @@ re-entry, fill corrections, missing executions, or mixed inferred and explicit f
 reconciliation of exposure and PnL. An order reaching `FILLED` does not establish that every execution updated
 the position. Reconcile the retained state before resuming trading in those cases.
 
+For instruments without bulk position coverage, startup logs a warning for bounded fills that stay order-only.
+It names the account, the instrument, and the position the fills route to, where one resolves, with sample trade
+IDs and their orders. It skips fills that retained-fill deduplication or older-lifecycle projection already
+accounts for, and fills their cached order already holds, so a restart with the orders cached does not repeat it.
+Without a persisted cache, it repeats on every start. It does not flag fill corrections or executions missing
+from the reports.
+
 ### Failure handling
 
 During startup, an execution client's mass-status request has three outcomes:
