@@ -13,7 +13,11 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use std::{cell::RefCell, fmt::Debug, rc::Rc};
+use std::{
+    cell::RefCell,
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use ahash::AHashMap;
 use nautilus_common::{cache::Cache, clock::Clock, messages::execution::SubmitOrder};
@@ -21,7 +25,8 @@ use nautilus_core::UUID4;
 use nautilus_model::{
     enums::{ContingencyType, OrderStatus},
     events::{
-        OrderCanceled, OrderEventAny, OrderExpired, OrderFilled, OrderRejected, OrderUpdated,
+        OrderCanceled, OrderEvent, OrderEventAny, OrderExpired, OrderFilled, OrderRejected,
+        OrderUpdated,
     },
     identifiers::{ClientId, ClientOrderId, PositionId},
     instruments::Instrument,
@@ -127,6 +132,8 @@ impl OrderManager {
         }]
     }
 
+    /// Caches a submit command and returns initialization and routing actions.
+    ///
     /// # Errors
     ///
     /// Returns an error if creating a new submit order fails.
@@ -143,9 +150,9 @@ impl OrderManager {
         self.cache
             .borrow_mut()
             .add_order(order.clone(), position_id, client_id, true)?;
-
         if !order_exists {
-            actions.push(initialized_action(order));
+            let event = OrderEventAny::Initialized(order.init_event().clone());
+            actions.push(OrderManagerAction::PublishInitialized(event));
         }
 
         let submit = SubmitOrder::new(
@@ -233,57 +240,17 @@ impl OrderManager {
 
     /// Handles an order rejected event and manages any contingent orders.
     pub fn handle_order_rejected(&mut self, rejected: OrderRejected) -> Vec<OrderManagerAction> {
-        self.oto_target_quantities.remove(&rejected.client_order_id);
-        let Some(order) = self.cache.borrow().order_owned(&rejected.client_order_id) else {
-            log::error!(
-                "Cannot handle `OrderRejected`: order for client_order_id: {} not found, {}",
-                rejected.client_order_id,
-                rejected
-            );
-            return Vec::new();
-        };
-
-        if order.contingency_type().is_some() {
-            self.handle_contingencies(&order)
-        } else {
-            Vec::new()
-        }
+        self.handle_terminal_event(&rejected)
     }
 
+    /// Handles an order canceled event and manages any contingent orders.
     pub fn handle_order_canceled(&mut self, canceled: OrderCanceled) -> Vec<OrderManagerAction> {
-        self.oto_target_quantities.remove(&canceled.client_order_id);
-        let Some(order) = self.cache.borrow().order_owned(&canceled.client_order_id) else {
-            log::error!(
-                "Cannot handle `OrderCanceled`: order for client_order_id: {} not found, {}",
-                canceled.client_order_id,
-                canceled
-            );
-            return Vec::new();
-        };
-
-        if order.contingency_type().is_some() {
-            self.handle_contingencies(&order)
-        } else {
-            Vec::new()
-        }
+        self.handle_terminal_event(&canceled)
     }
 
+    /// Handles an order expired event and manages any contingent orders.
     pub fn handle_order_expired(&mut self, expired: OrderExpired) -> Vec<OrderManagerAction> {
-        self.oto_target_quantities.remove(&expired.client_order_id);
-        let Some(order) = self.cache.borrow().order_owned(&expired.client_order_id) else {
-            log::error!(
-                "Cannot handle `OrderExpired`: order for client_order_id: {} not found, {}",
-                expired.client_order_id,
-                expired
-            );
-            return Vec::new();
-        };
-
-        if order.contingency_type().is_some() {
-            self.handle_contingencies(&order)
-        } else {
-            Vec::new()
-        }
+        self.handle_terminal_event(&expired)
     }
 
     pub fn handle_order_updated(&mut self, updated: OrderUpdated) -> Vec<OrderManagerAction> {
@@ -319,6 +286,7 @@ impl OrderManager {
         actions
     }
 
+    /// Returns contingency actions for a fill using the cached order state.
     pub fn handle_order_filled(&mut self, filled: &OrderFilled) -> Vec<OrderManagerAction> {
         let Some(order) = self.cache.borrow().order_owned(&filled.client_order_id) else {
             log::error!(
@@ -407,7 +375,6 @@ impl OrderManager {
                         &order,
                         &child_order,
                         parent_filled_qty,
-                        child_order.filled_qty(),
                         position_id,
                     ) else {
                         continue;
@@ -475,6 +442,7 @@ impl OrderManager {
         actions
     }
 
+    /// Returns cancellation and quantity-update actions for linked orders.
     pub fn handle_contingencies(&mut self, order: &OrderAny) -> Vec<OrderManagerAction> {
         let mut actions = Vec::new();
 
@@ -543,7 +511,6 @@ impl OrderManager {
                         order,
                         &contingent_order,
                         filled_qty,
-                        contingent_order.filled_qty(),
                         position_id,
                     ) else {
                         continue;
@@ -585,6 +552,7 @@ impl OrderManager {
         actions
     }
 
+    /// Returns quantity-sync actions for linked OTO and OUO orders.
     pub fn handle_contingencies_update(&mut self, order: &OrderAny) -> Vec<OrderManagerAction> {
         let mut actions = Vec::new();
         let contingency_type = order.contingency_type();
@@ -670,7 +638,6 @@ impl OrderManager {
                                 order,
                                 &contingent_order,
                                 filled_qty,
-                                contingent_order.filled_qty(),
                                 position_id,
                             ) else {
                                 continue;
@@ -698,6 +665,28 @@ impl OrderManager {
         }
 
         actions
+    }
+
+    fn handle_terminal_event(
+        &mut self,
+        event: &(impl OrderEvent + Display),
+    ) -> Vec<OrderManagerAction> {
+        let client_order_id = event.client_order_id();
+        self.oto_target_quantities.remove(&client_order_id);
+
+        let Some(order) = self.cache.borrow().order_owned(&client_order_id) else {
+            log::error!(
+                "Cannot handle `{}`: order for client_order_id: {client_order_id} not found, {event}",
+                event.type_name(),
+            );
+            return Vec::new();
+        };
+
+        if order.contingency_type().is_some() {
+            self.handle_contingencies(&order)
+        } else {
+            Vec::new()
+        }
     }
 
     // OUO siblings track the remaining quantity, as when a leg fills
@@ -737,7 +726,6 @@ impl OrderManager {
         parent_order: &OrderAny,
         child_order: &OrderAny,
         filled_qty: Quantity,
-        child_filled_qty: Quantity,
         position_id: Option<PositionId>,
     ) -> Option<Quantity> {
         let Some(position_id) = position_id else {
@@ -779,6 +767,7 @@ impl OrderManager {
                 return None;
             };
 
+            let child_filled_qty = child_order.filled_qty();
             let precision = child_filled_qty.precision.max(position.quantity.precision);
 
             let (Some(child_filled_qty), Some(position_qty)) = (
@@ -839,9 +828,4 @@ impl OrderManager {
         self.oto_target_quantities.insert(client_order_id, quantity);
         self.modify_order_quantity(order, quantity)
     }
-}
-
-fn initialized_action(order: &OrderAny) -> OrderManagerAction {
-    let event = OrderEventAny::Initialized(order.init_event().clone());
-    OrderManagerAction::PublishInitialized(event)
 }
