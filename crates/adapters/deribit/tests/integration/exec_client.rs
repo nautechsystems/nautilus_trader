@@ -1204,15 +1204,7 @@ async fn test_generate_position_status_reports_with_fractional_leverage() {
 
     client.connect().await.unwrap();
 
-    let cmd = GeneratePositionStatusReports::new(
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
-        None,
-        None,
-        None,
-    );
+    let cmd = position_reports_command(None);
 
     let reports = client.generate_position_status_reports(&cmd).await.unwrap();
 
@@ -1229,44 +1221,21 @@ async fn test_generate_position_status_reports_with_fractional_leverage() {
 }
 
 #[rstest]
+#[case::ambiguous(CommandResponse::AmbiguousFailure, "ambiguous-submit-test-001")]
+#[case::malformed(CommandResponse::MalformedSuccess, "parse-fail-submit-test-001")]
 #[tokio::test]
-async fn test_ambiguous_submit_failure_does_not_emit_order_rejected() {
+async fn test_non_definitive_submit_failure_does_not_emit_order_rejected(
+    #[case] response: CommandResponse,
+    #[case] client_order_id: &str,
+) {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses {
-            submit: CommandResponse::AmbiguousFailure,
+            submit: response,
             ..Default::default()
         })
         .await;
 
-    let client_order_id = ClientOrderId::new("ambiguous-submit-test-001");
-    let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
-
-    client
-        .submit_order(submit_order_command(&order_any))
-        .unwrap();
-
-    wait_for_command_requests(&request_count, 1).await;
-
-    assert_no_order_event_matching(&mut rx, |event| {
-        matches!(
-            event,
-            OrderEventAny::Rejected(event) if event.client_order_id == client_order_id
-        )
-    })
-    .await;
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_submit_response_parse_failure_does_not_emit_order_rejected() {
-    let (client, mut rx, cache, request_count) =
-        connected_client_with_command_responses(CommandResponses {
-            submit: CommandResponse::MalformedSuccess,
-            ..Default::default()
-        })
-        .await;
-
-    let client_order_id = ClientOrderId::new("parse-fail-submit-test-001");
+    let client_order_id = ClientOrderId::new(client_order_id);
     let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
 
     client
@@ -1899,45 +1868,21 @@ async fn test_local_batch_cancel_validation_failure_emits_cancel_denied() {
 }
 
 #[rstest]
+#[case::ambiguous(CommandResponse::AmbiguousFailure, "ambiguous-modify-test-001")]
+#[case::malformed(CommandResponse::MalformedSuccess, "parse-fail-modify-test-001")]
 #[tokio::test]
-async fn test_ambiguous_modify_failure_does_not_emit_modify_rejected() {
+async fn test_non_definitive_modify_failure_does_not_emit_modify_rejected(
+    #[case] response: CommandResponse,
+    #[case] client_order_id: &str,
+) {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses {
-            modify: CommandResponse::AmbiguousFailure,
+            modify: response,
             ..Default::default()
         })
         .await;
 
-    let client_order_id = ClientOrderId::new("ambiguous-modify-test-001");
-    add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
-
-    client
-        .modify_order(modify_order_command(client_order_id))
-        .unwrap();
-
-    wait_for_command_requests(&request_count, 1).await;
-
-    assert_no_order_event_matching(&mut rx, |event| {
-        matches!(
-            event,
-            OrderEventAny::ModifyRejected(_) | OrderEventAny::ModifyDenied(_)
-                if event.client_order_id() == client_order_id
-        )
-    })
-    .await;
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_modify_response_parse_failure_does_not_emit_modify_rejected() {
-    let (client, mut rx, cache, request_count) =
-        connected_client_with_command_responses(CommandResponses {
-            modify: CommandResponse::MalformedSuccess,
-            ..Default::default()
-        })
-        .await;
-
-    let client_order_id = ClientOrderId::new("parse-fail-modify-test-001");
+    let client_order_id = ClientOrderId::new(client_order_id);
     add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
 
     client
@@ -2306,18 +2251,10 @@ fn cancel_order_command(client_order_id: ClientOrderId) -> CancelOrder {
 }
 
 fn cancel_order_command_without_venue_order_id(client_order_id: ClientOrderId) -> CancelOrder {
-    CancelOrder::new(
-        test_trader_id(),
-        Some(*DERIBIT_CLIENT_ID),
-        test_strategy_id(),
-        test_instrument_id(),
-        client_order_id,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
-    )
+    CancelOrder {
+        venue_order_id: None,
+        ..cancel_order_command(client_order_id)
+    }
 }
 
 fn modify_order_command(client_order_id: ClientOrderId) -> ModifyOrder {
@@ -2343,57 +2280,24 @@ fn sized_modify_order_command(client_order_id: ClientOrderId, quantity: Quantity
 }
 
 fn modify_order_command_without_venue_order_id(client_order_id: ClientOrderId) -> ModifyOrder {
-    ModifyOrder::new(
-        test_trader_id(),
-        Some(*DERIBIT_CLIENT_ID),
-        test_strategy_id(),
-        test_instrument_id(),
-        client_order_id,
-        None,
-        Some(Quantity::from("2")),
-        Some(Price::from("51000.0")),
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
-    )
+    ModifyOrder {
+        venue_order_id: None,
+        ..modify_order_command(client_order_id)
+    }
 }
 
 fn modify_order_command_without_price(client_order_id: ClientOrderId) -> ModifyOrder {
-    ModifyOrder::new(
-        test_trader_id(),
-        Some(*DERIBIT_CLIENT_ID),
-        test_strategy_id(),
-        test_instrument_id(),
-        client_order_id,
-        Some(VenueOrderId::from("DERIBIT-ORDER-1")),
-        Some(Quantity::from("2")),
-        None,
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
-    )
+    ModifyOrder {
+        price: None,
+        ..modify_order_command(client_order_id)
+    }
 }
 
 fn modify_order_command_without_quantity(client_order_id: ClientOrderId) -> ModifyOrder {
-    ModifyOrder::new(
-        test_trader_id(),
-        Some(*DERIBIT_CLIENT_ID),
-        test_strategy_id(),
-        test_instrument_id(),
-        client_order_id,
-        Some(VenueOrderId::from("DERIBIT-ORDER-1")),
-        None,
-        Some(Price::from("51000.0")),
-        None,
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
-    )
+    ModifyOrder {
+        quantity: None,
+        ..modify_order_command(client_order_id)
+    }
 }
 
 fn cancel_all_orders_command() -> CancelAllOrders {
@@ -2764,6 +2668,18 @@ fn order_reports_command(open_only: bool) -> GenerateOrderStatusReports {
     )
 }
 
+fn position_reports_command(instrument_id: Option<InstrumentId>) -> GeneratePositionStatusReports {
+    GeneratePositionStatusReports::new(
+        UUID4::new(),
+        UnixNanos::default(),
+        instrument_id,
+        None,
+        None,
+        None,
+        None,
+    )
+}
+
 #[rstest]
 #[tokio::test]
 async fn test_bulk_reconciliation_classifies_mixed_instrument_misses() {
@@ -2797,15 +2713,7 @@ async fn test_bulk_reconciliation_classifies_mixed_instrument_misses() {
         .await
         .expect("out-of-scope fill is omitted");
     let positions = scoped
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-        ))
+        .generate_position_status_reports(&position_reports_command(None))
         .await
         .expect("out-of-scope position is omitted");
     let mass_status = scoped
@@ -2831,27 +2739,11 @@ async fn test_bulk_reconciliation_classifies_mixed_instrument_misses() {
         .await
         .expect_err("in-scope open miss fails the request");
     let position_error = open_miss
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-        ))
+        .generate_position_status_reports(&position_reports_command(None))
         .await
         .expect_err("in-scope position miss fails the request");
     let targeted = open_miss
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
-            UUID4::new(),
-            UnixNanos::default(),
-            Some(btc),
-            None,
-            None,
-            None,
-            None,
-        ))
+        .generate_position_status_reports(&position_reports_command(Some(btc)))
         .await
         .expect("unrelated position miss does not poison a targeted query");
     let fill_error = open_miss
@@ -2942,15 +2834,7 @@ async fn test_flat_uncached_position_does_not_fail_reconciliation() {
     let mut client = connect_scoped_client(addr, None).await;
 
     let reports = client
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-        ))
+        .generate_position_status_reports(&position_reports_command(None))
         .await
         .expect("flat position is omitted before instrument resolution");
     client.disconnect().await.unwrap();
@@ -3114,15 +2998,7 @@ async fn test_connect_loads_required_instruments_before_reports() {
     let loaded = state.instrument_requests.load(Ordering::Relaxed);
 
     let _ = client
-        .generate_position_status_reports(&GeneratePositionStatusReports::new(
-            UUID4::new(),
-            UnixNanos::default(),
-            None,
-            None,
-            None,
-            None,
-            None,
-        ))
+        .generate_position_status_reports(&position_reports_command(None))
         .await;
     client.disconnect().await.unwrap();
 

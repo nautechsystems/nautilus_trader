@@ -26,10 +26,8 @@ use nautilus_common::{
     live::runner::get_exec_event_sender,
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+        GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
+        ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
     },
 };
 use nautilus_core::{
@@ -60,11 +58,8 @@ use crate::{
     },
     config::DeribitExecutionClientConfig,
     http::{
-        client::DeribitHttpClient,
-        error::DeribitHttpError,
-        models::DeribitCurrency,
-        query::GetOrderStateParams,
-        reconciliation::{ReconciliationScope, ReportRead, historical_miss_message},
+        client::DeribitHttpClient, error::DeribitHttpError, models::DeribitCurrency,
+        query::GetOrderStateParams, reconciliation::ReconciliationScope,
     },
     websocket::{
         auth::DERIBIT_EXECUTION_SESSION_NAME,
@@ -457,14 +452,6 @@ impl DeribitExecutionClient {
     fn reconciliation_scope(&self) -> ReconciliationScope {
         ReconciliationScope::from_load_ids(self.config.load_ids.as_deref())
     }
-
-    fn reports_or_historical_error<T>(read: ReportRead<T>) -> anyhow::Result<Vec<T>> {
-        if read.historical_incomplete() {
-            anyhow::bail!(historical_miss_message(&read.historical_misses));
-        }
-
-        Ok(read.reports)
-    }
 }
 
 #[async_trait(?Send)]
@@ -746,7 +733,7 @@ impl ExecutionClient for DeribitExecutionClient {
                 self.reconciliation_scope(),
             )
             .await?;
-        Self::reports_or_historical_error(read)
+        read.into_reports()
     }
 
     async fn generate_fill_reports(
@@ -764,7 +751,7 @@ impl ExecutionClient for DeribitExecutionClient {
                 self.reconciliation_scope(),
             )
             .await?;
-        Self::reports_or_historical_error(read)
+        read.into_reports()
     }
 
     async fn generate_position_status_reports(
@@ -793,46 +780,27 @@ impl ExecutionClient for DeribitExecutionClient {
             .transpose()?
             .map(|lookback| ts_now.saturating_sub(lookback));
 
-        let order_cmd = GenerateOrderStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .open_only(false) // get all orders for mass status
-            .start(start)
-            .build()
-            .context("Failed to build GenerateOrderStatusReports")?;
-
-        let fill_cmd = GenerateFillReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .context("Failed to build GenerateFillReports")?;
-
-        let position_cmd = GeneratePositionStatusReportsBuilder::default()
-            .ts_init(ts_now)
-            .start(start)
-            .build()
-            .context("Failed to build GeneratePositionStatusReports")?;
-
         let scope = self.reconciliation_scope();
         let (order_read, fill_read, position_read) = tokio::try_join!(
             self.http_client.request_order_status_reports_in_scope(
                 self.core.account_id,
-                order_cmd.instrument_id,
-                order_cmd.start,
-                order_cmd.end,
-                order_cmd.open_only,
+                None,
+                start,
+                None,
+                false,
                 scope.clone(),
             ),
             self.http_client.request_fill_reports_scoped(
                 self.core.account_id,
-                fill_cmd.instrument_id,
-                fill_cmd.start,
-                fill_cmd.end,
-                fill_cmd.venue_order_id.as_ref(),
+                None,
+                start,
+                None,
+                None,
                 scope.clone(),
             ),
             self.http_client.request_position_status_reports_in_scope(
                 self.core.account_id,
-                position_cmd.instrument_id,
+                None,
                 scope,
             ),
         )?;

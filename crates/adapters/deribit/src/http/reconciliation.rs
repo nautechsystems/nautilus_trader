@@ -72,6 +72,14 @@ impl<T> ReportRead<T> {
     pub(crate) fn historical_incomplete(&self) -> bool {
         !self.historical_misses.is_empty()
     }
+
+    pub(crate) fn into_reports(self) -> anyhow::Result<Vec<T>> {
+        if self.historical_incomplete() {
+            anyhow::bail!(historical_miss_message(&self.historical_misses));
+        }
+
+        Ok(self.reports)
+    }
 }
 
 /// Builds the Nautilus instrument id for a Deribit instrument name.

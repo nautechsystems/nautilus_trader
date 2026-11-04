@@ -948,9 +948,10 @@ impl DeribitWsFeedHandler {
         self.send_tracked_request(request_id, payload, None).await
     }
 
-    /// Handles a buy order command.
-    async fn handle_buy(
+    /// Handles an order submission command.
+    async fn handle_submit(
         &mut self,
+        order_side: OrderSide,
         params: DeribitOrderParams,
         client_order_id: ClientOrderId,
         trader_id: TraderId,
@@ -961,12 +962,16 @@ impl DeribitWsFeedHandler {
         let order_type = parse_deribit_order_type(&params.order_type);
         let order_signature = (params.amount, params.price, params.trigger_price);
 
-        let request =
-            DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Buy.as_method_str(), params);
+        let (method, side) = match order_side {
+            OrderSide::Buy => (DeribitWsMethod::Buy, "buy"),
+            OrderSide::Sell => (DeribitWsMethod::Sell, "sell"),
+        };
+
+        let request = DeribitJsonRpcRequest::new(request_id, method.as_method_str(), params);
         let payload =
             serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
 
-        log::debug!("Sending buy order: request_id={request_id}");
+        log::debug!("Sending {side} order: request_id={request_id}");
         let sent = self.send_order_once(payload).await;
         if self.should_track_command(&sent) {
             self.track_submit(
@@ -976,46 +981,7 @@ impl DeribitWsFeedHandler {
                     trader_id,
                     strategy_id,
                     instrument_id,
-                    order_side: OrderSide::Buy,
-                    order_type,
-                    accepted: false,
-                    last_order_signature: Some(order_signature),
-                },
-            );
-        }
-
-        sent
-    }
-
-    /// Handles a sell order command.
-    async fn handle_sell(
-        &mut self,
-        params: DeribitOrderParams,
-        client_order_id: ClientOrderId,
-        trader_id: TraderId,
-        strategy_id: StrategyId,
-        instrument_id: InstrumentId,
-    ) -> Result<(), DeribitWsError> {
-        let request_id = self.next_request_id();
-        let order_type = parse_deribit_order_type(&params.order_type);
-        let order_signature = (params.amount, params.price, params.trigger_price);
-
-        let request =
-            DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Sell.as_method_str(), params);
-        let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
-
-        log::debug!("Sending sell order: request_id={request_id}");
-        let sent = self.send_order_once(payload).await;
-        if self.should_track_command(&sent) {
-            self.track_submit(
-                request_id,
-                OrderContext {
-                    client_order_id,
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    order_side: OrderSide::Sell,
+                    order_side,
                     order_type,
                     accepted: false,
                     last_order_signature: Some(order_signature),
@@ -1232,7 +1198,8 @@ impl DeribitWsFeedHandler {
                 instrument_id,
             } => {
                 if let Err(e) = self
-                    .handle_buy(
+                    .handle_submit(
+                        OrderSide::Buy,
                         params,
                         client_order_id,
                         trader_id,
@@ -1262,7 +1229,8 @@ impl DeribitWsFeedHandler {
                 instrument_id,
             } => {
                 if let Err(e) = self
-                    .handle_sell(
+                    .handle_submit(
+                        OrderSide::Sell,
                         params,
                         client_order_id,
                         trader_id,
@@ -2369,6 +2337,28 @@ impl DeribitWsFeedHandler {
                                         let strategy_id = context.strategy_id;
                                         let client_order_id = context.client_order_id;
 
+                                        let push_accepted = |
+                                            context: &mut OrderContext,
+                                            outgoing: &mut Vec<NautilusWsMessage>,
+                                        | {
+                                            if context.accepted {
+                                                return;
+                                            }
+
+                                            outgoing.push(NautilusWsMessage::OrderAccepted(
+                                                parse_order_accepted_with_client_order_id(
+                                                    order,
+                                                    instrument,
+                                                    account_id,
+                                                    trader_id,
+                                                    strategy_id,
+                                                    client_order_id,
+                                                    ts_init,
+                                                ),
+                                            ));
+                                            context.accepted = true;
+                                        };
+
                                         match event_type {
                                             OrderEventType::Accepted => {
                                                 // Skip if order already reached terminal state (race condition)
@@ -2414,21 +2404,7 @@ impl DeribitWsFeedHandler {
                                                     continue;
                                                 }
 
-                                                if !context.accepted {
-                                                    outgoing
-                                                        .push(NautilusWsMessage::OrderAccepted(
-                                                        parse_order_accepted_with_client_order_id(
-                                                            order,
-                                                            instrument,
-                                                            account_id,
-                                                            trader_id,
-                                                            strategy_id,
-                                                            client_order_id,
-                                                            ts_init,
-                                                        ),
-                                                    ));
-                                                    context.accepted = true;
-                                                }
+                                                push_accepted(&mut context, &mut outgoing);
 
                                                 let event =
                                                     parse_order_canceled_with_client_order_id(
@@ -2462,21 +2438,7 @@ impl DeribitWsFeedHandler {
                                                     continue;
                                                 }
 
-                                                if !context.accepted {
-                                                    outgoing
-                                                        .push(NautilusWsMessage::OrderAccepted(
-                                                        parse_order_accepted_with_client_order_id(
-                                                            order,
-                                                            instrument,
-                                                            account_id,
-                                                            trader_id,
-                                                            strategy_id,
-                                                            client_order_id,
-                                                            ts_init,
-                                                        ),
-                                                    ));
-                                                    context.accepted = true;
-                                                }
+                                                push_accepted(&mut context, &mut outgoing);
 
                                                 let event =
                                                     parse_order_expired_with_client_order_id(
@@ -2507,21 +2469,7 @@ impl DeribitWsFeedHandler {
                                                     continue;
                                                 }
 
-                                                if !context.accepted {
-                                                    outgoing
-                                                        .push(NautilusWsMessage::OrderAccepted(
-                                                        parse_order_accepted_with_client_order_id(
-                                                            order,
-                                                            instrument,
-                                                            account_id,
-                                                            trader_id,
-                                                            strategy_id,
-                                                            client_order_id,
-                                                            ts_init,
-                                                        ),
-                                                    ));
-                                                    context.accepted = true;
-                                                }
+                                                push_accepted(&mut context, &mut outgoing);
 
                                                 let event =
                                                     parse_order_updated_with_client_order_id(
@@ -5531,6 +5479,47 @@ mod tests {
         assert!(handler.pending_outgoing.is_empty());
     }
 
+    #[rstest]
+    #[tokio::test]
+    async fn unaccepted_amendment_synthesizes_accepted_first() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("open", true)]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderUpdated(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(handler.order_contexts[&venue_order_id].accepted);
+        assert!(handler.pending_outgoing.is_empty());
+    }
+
     const BOOK_CHANNEL: &str = "book.BTC-PERPETUAL.100ms";
     const GROUPED_CHANNEL: &str = "book.BTC-PERPETUAL.none.10.100ms";
 
@@ -5990,7 +5979,8 @@ mod tests {
         let result = match side {
             OrderSide::Buy => {
                 handler
-                    .handle_buy(
+                    .handle_submit(
+                        OrderSide::Buy,
                         params,
                         client_order_id,
                         trader_id,
@@ -6001,7 +5991,8 @@ mod tests {
             }
             OrderSide::Sell => {
                 handler
-                    .handle_sell(
+                    .handle_submit(
+                        OrderSide::Sell,
                         params,
                         client_order_id,
                         trader_id,

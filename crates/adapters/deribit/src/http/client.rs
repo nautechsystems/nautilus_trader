@@ -70,8 +70,8 @@ use super::{
         GetUserTradesByInstrumentAndTimeParams,
     },
     reconciliation::{
-        ReconciliationScope, ReportRead, historical_miss_message, instrument_id_from_name,
-        is_historical_order_state, millis_in_window, record_historical_miss, timestamp_in_window,
+        ReconciliationScope, ReportRead, instrument_id_from_name, is_historical_order_state,
+        millis_in_window, record_historical_miss, timestamp_in_window,
     },
 };
 use crate::{
@@ -110,77 +110,6 @@ use crate::{
 pub const DERIBIT_HISTORICAL_TRADES_MAX_COUNT: u32 = 1000;
 
 const ORDER_HISTORY_PAGE_SIZE: u32 = 100;
-
-// Dedup and cursor state for timestamp-based trade pagination.
-// Deribit provides no offset cursor, so when multiple trades share
-// one millisecond we use trade-ID dedup to avoid reprocessing.
-// If an entire page contains only seen IDs we advance past that
-// millisecond, which can skip trades when >1000 share one timestamp.
-struct TradePaginator {
-    seen_ids: AHashSet<String>,
-    cursor: i64,
-    end: i64,
-}
-
-impl TradePaginator {
-    fn new(start: i64, end: i64) -> Self {
-        Self {
-            seen_ids: AHashSet::new(),
-            cursor: start,
-            end,
-        }
-    }
-
-    // Returns indices of new (unseen) items and advances the cursor.
-    // Returns None when the page is empty (pagination should stop).
-    fn advance(
-        &mut self,
-        ids: &[String],
-        timestamps: &[i64],
-        has_more: bool,
-    ) -> Option<Vec<usize>> {
-        if ids.is_empty() {
-            return None;
-        }
-
-        let prev_seen = self.seen_ids.len();
-        let mut new_indices = Vec::new();
-        let mut last_ts = self.cursor;
-
-        for (i, id) in ids.iter().enumerate() {
-            last_ts = timestamps[i];
-
-            if self.seen_ids.insert(id.clone()) {
-                new_indices.push(i);
-            }
-        }
-
-        if !has_more {
-            return Some(new_indices);
-        }
-
-        let new_count = self.seen_ids.len() - prev_seen;
-
-        if new_count == 0 {
-            self.cursor = last_ts + 1;
-        } else {
-            self.cursor = last_ts;
-        }
-
-        Some(new_indices)
-    }
-
-    // Strict greater-than so pages at exactly end_ms are still
-    // fetched (Deribit treats start_timestamp as inclusive).
-    fn is_exhausted(&self) -> bool {
-        self.cursor > self.end
-    }
-
-    fn reset(&mut self, start: i64) {
-        self.seen_ids.clear();
-        self.cursor = start;
-    }
-}
 
 /// Low-level Deribit HTTP client for raw API operations.
 ///
@@ -1143,35 +1072,35 @@ impl DeribitHttpClient {
             return AHashMap::new();
         }
 
-        let mut currencies = AHashSet::new();
-
-        if requested_currency == DeribitCurrency::ANY {
-            for instrument in raw_instruments
+        let currencies = if requested_currency == DeribitCurrency::ANY {
+            raw_instruments
                 .iter()
                 .filter(|instrument| Self::is_combo_kind(instrument.kind))
-            {
-                if let Ok(currency) = DeribitCurrency::from_str(instrument.base_currency.as_str()) {
-                    currencies.insert(currency);
-                }
-            }
+                .filter_map(|instrument| {
+                    DeribitCurrency::from_str(instrument.base_currency.as_str()).ok()
+                })
+                .collect()
         } else {
-            currencies.insert(requested_currency);
-        }
+            AHashSet::from([requested_currency])
+        };
 
         let mut combo_by_id = AHashMap::new();
 
         for currency in currencies {
-            match self.inner.get_combos(GetCombosParams::new(currency)).await {
-                Ok(response) => {
-                    if let Some(combos) = response.result {
-                        for combo in combos {
-                            combo_by_id.insert(combo.id, combo);
-                        }
-                    }
-                }
+            let response = match self.inner.get_combos(GetCombosParams::new(currency)).await {
+                Ok(response) => response,
                 Err(e) => {
                     log::warn!("Failed to load Deribit combo definitions for {currency}: {e}");
+                    continue;
                 }
+            };
+
+            let Some(combos) = response.result else {
+                continue;
+            };
+
+            for combo in combos {
+                combo_by_id.insert(combo.id, combo);
             }
         }
 
@@ -1186,23 +1115,14 @@ impl DeribitHttpClient {
     }
 
     fn attach_combo_leg_info(instrument: &mut InstrumentAny, combo: &DeribitCombo) {
-        if let Some(info) = Self::combo_leg_info(instrument, combo) {
-            match instrument {
-                InstrumentAny::CryptoOptionSpread(spread) => spread.info = Some(info),
-                InstrumentAny::CryptoFuturesSpread(spread) => spread.info = Some(info),
-                _ => {}
-            }
-        }
-    }
-
-    fn combo_leg_info(instrument: &InstrumentAny, combo: &DeribitCombo) -> Option<Params> {
-        let existing_info = match instrument {
-            InstrumentAny::CryptoOptionSpread(spread) => spread.info.as_ref(),
-            InstrumentAny::CryptoFuturesSpread(spread) => spread.info.as_ref(),
-            _ => return None,
+        let info = match instrument {
+            InstrumentAny::CryptoOptionSpread(spread) => &mut spread.info,
+            InstrumentAny::CryptoFuturesSpread(spread) => &mut spread.info,
+            _ => return,
         };
 
-        let mut info = existing_info
+        let mut merged = info
+            .as_ref()
             .map(|info| IndexMap::clone(info))
             .unwrap_or_default();
 
@@ -1221,14 +1141,13 @@ impl DeribitHttpClient {
             })
             .collect::<Vec<_>>();
 
-        info.insert("deribit_combo_id".to_string(), json!(combo.id));
-        info.insert(
+        merged.insert("deribit_combo_id".to_string(), json!(combo.id));
+        merged.insert(
             "deribit_combo_state".to_string(),
             json!(combo.state.as_str()),
         );
-        info.insert("deribit_combo_legs".to_string(), json!(legs));
-
-        Some(Params::new(info))
+        merged.insert("deribit_combo_legs".to_string(), json!(legs));
+        *info = Some(Params::new(merged));
     }
 
     /// Requests historical trades for an instrument within a time range.
@@ -1634,11 +1553,7 @@ impl DeribitHttpClient {
             )
             .await?;
 
-        if read.historical_incomplete() {
-            anyhow::bail!(historical_miss_message(&read.historical_misses));
-        }
-
-        Ok(read.reports)
+        read.into_reports()
     }
 
     /// Requests order status reports and reports in-window historical instrument misses.
@@ -1910,11 +1825,7 @@ impl DeribitHttpClient {
             )
             .await?;
 
-        if read.historical_incomplete() {
-            anyhow::bail!(historical_miss_message(&read.historical_misses));
-        }
-
-        Ok(read.reports)
+        read.into_reports()
     }
 
     /// Requests fill reports, optionally limited to one venue order.
@@ -2350,6 +2261,72 @@ impl DeribitHttpClient {
         }
 
         Ok(loaded)
+    }
+}
+
+// Dedup and cursor state for timestamp-based trade pagination.
+// Deribit provides no offset cursor, so when multiple trades share
+// one millisecond we use trade-ID dedup to avoid reprocessing.
+// If an entire page contains only seen IDs we advance past that
+// millisecond, which can skip trades when >1000 share one timestamp.
+struct TradePaginator {
+    seen_ids: AHashSet<String>,
+    cursor: i64,
+    end: i64,
+}
+
+impl TradePaginator {
+    fn new(start: i64, end: i64) -> Self {
+        Self {
+            seen_ids: AHashSet::new(),
+            cursor: start,
+            end,
+        }
+    }
+
+    // Returns indices of new (unseen) items and advances the cursor.
+    // Returns None when the page is empty (pagination should stop).
+    fn advance(
+        &mut self,
+        ids: &[String],
+        timestamps: &[i64],
+        has_more: bool,
+    ) -> Option<Vec<usize>> {
+        if ids.is_empty() {
+            return None;
+        }
+
+        let mut new_indices = Vec::new();
+        let mut last_ts = self.cursor;
+        for (i, id) in ids.iter().enumerate() {
+            last_ts = timestamps[i];
+            if self.seen_ids.insert(id.clone()) {
+                new_indices.push(i);
+            }
+        }
+
+        if !has_more {
+            return Some(new_indices);
+        }
+
+        if new_indices.is_empty() {
+            self.cursor = last_ts + 1;
+        } else {
+            self.cursor = last_ts;
+        }
+
+        Some(new_indices)
+    }
+
+    // Strict greater-than so pages at exactly end_ms are still
+    // fetched (Deribit treats start_timestamp as inclusive).
+    fn is_exhausted(&self) -> bool {
+        self.cursor > self.end
+    }
+
+    fn reset(&mut self, start: i64) {
+        self.seen_ids.clear();
+        self.cursor = start;
     }
 }
 

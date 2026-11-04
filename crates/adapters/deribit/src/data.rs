@@ -594,9 +594,7 @@ impl DeribitDataClient {
             .map(str::to_ascii_lowercase)
     }
 
-    fn book_summary_data_type(currency: &str, kind: Option<&str>) -> DataType {
-        let kind = kind.unwrap_or("option");
-
+    fn book_summary_data_type(currency: &str, kind: &str) -> DataType {
         let metadata = Params::new(
             [
                 (
@@ -2228,7 +2226,7 @@ impl DataClient for DeribitDataClient {
         let currency = Self::book_summary_metadata_currency(&request.data_type)?;
         let kind = Self::book_summary_metadata_kind(&request.data_type);
         let kind_str = kind.as_deref().unwrap_or("option").to_string();
-        let data_type = Self::book_summary_data_type(&currency, Some(&kind_str));
+        let data_type = Self::book_summary_data_type(&currency, &kind_str);
         let http_client = self.http_client.clone();
         let sender = self.data_sender.clone();
         let request_id = request.request_id;

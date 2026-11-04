@@ -384,7 +384,6 @@ fn parse_option_instrument(
     let price_increment = Price::from_decimal(instrument.tick_size)?;
 
     let multiplier = deribit_amount_quantity_multiplier();
-    let lot_size = parse_min_trade_amount(instrument)?;
     let min_trade_amount = parse_min_trade_amount(instrument)?;
 
     let option = CryptoOption::builder()
@@ -399,11 +398,11 @@ fn parse_option_instrument(
         .activation_ns(UnixNanos::from(activation_ns))
         .expiration_ns(UnixNanos::from(expiration_ns))
         .price_precision(price_increment.precision)
-        .size_precision(lot_size.precision)
+        .size_precision(min_trade_amount.precision)
         .price_increment(price_increment)
-        .size_increment(lot_size)
+        .size_increment(min_trade_amount)
         .multiplier(multiplier)
-        .lot_size(lot_size)
+        .lot_size(min_trade_amount)
         .min_quantity(min_trade_amount)
         .ts_event(ts_event)
         .ts_init(ts_init)
@@ -419,7 +418,7 @@ fn parse_option_combo_instrument(
     ts_init: UnixNanos,
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let spread = build_spread_common(instrument, ts_init, ts_event)?;
+    let spread = build_spread_common(instrument)?;
     let option_spread = CryptoOptionSpread::builder()
         .instrument_id(spread.id)
         .raw_symbol(spread.raw_symbol)
@@ -450,7 +449,7 @@ fn parse_future_combo_instrument(
     ts_init: UnixNanos,
     ts_event: UnixNanos,
 ) -> anyhow::Result<InstrumentAny> {
-    let spread = build_spread_common(instrument, ts_init, ts_event)?;
+    let spread = build_spread_common(instrument)?;
     let futures_spread = CryptoFuturesSpread::builder()
         .instrument_id(spread.id)
         .raw_symbol(spread.raw_symbol)
@@ -495,11 +494,7 @@ struct DeribitSpreadCommon {
     lot_size: Quantity,
 }
 
-fn build_spread_common(
-    instrument: &DeribitInstrument,
-    _ts_init: UnixNanos,
-    _ts_event: UnixNanos,
-) -> anyhow::Result<DeribitSpreadCommon> {
+fn build_spread_common(instrument: &DeribitInstrument) -> anyhow::Result<DeribitSpreadCommon> {
     let id = InstrumentId::new(Symbol::new(instrument.instrument_name), *DERIBIT_VENUE);
     let raw_symbol = Symbol::new(instrument.instrument_name);
     let underlying = Currency::get_or_create_crypto(instrument.base_currency);

@@ -316,7 +316,7 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                             }
                         }
                     }
-                    Some("public/unsubscribe") => {
+                    Some("public/unsubscribe" | "private/unsubscribe") => {
                         if let Some(params) = payload.get("params")
                             && let Some(channels) =
                                 params.get("channels").and_then(|c| c.as_array())
@@ -552,40 +552,6 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                             }
                         }
                     }
-                    Some("private/unsubscribe") => {
-                        if let Some(params) = payload.get("params")
-                            && let Some(channels) =
-                                params.get("channels").and_then(|c| c.as_array())
-                        {
-                            let mut unsubscribed = Vec::new();
-
-                            for channel in channels {
-                                if let Some(channel_str) = channel.as_str() {
-                                    state
-                                        .unsubscriptions
-                                        .lock()
-                                        .await
-                                        .push(channel_str.to_string());
-                                    unsubscribed.push(channel_str.to_string());
-                                }
-                            }
-
-                            let response = json!({
-                                "jsonrpc": "2.0",
-                                "id": id,
-                                "result": unsubscribed,
-                                "testnet": true
-                            });
-
-                            if socket
-                                .send(Message::Text(response.to_string().into()))
-                                .await
-                                .is_err()
-                            {
-                                break;
-                            }
-                        }
-                    }
                     _ => {}
                 }
             }
@@ -652,6 +618,35 @@ fn create_test_client_without_credentials(ws_url: &str) -> DeribitWebSocketClien
         DeribitEnvironment::Testnet,
     )
     .expect("failed to construct deribit websocket client")
+}
+
+async fn connect_and_wait(client: &mut DeribitWebSocketClient) {
+    client.connect().await.expect("connect failed");
+    client
+        .wait_until_active(5.0)
+        .await
+        .expect("client inactive");
+}
+
+async fn wait_for_subscription_event(
+    state: &Arc<TestServerState>,
+    prefix: &'static str,
+    expected_success: bool,
+) {
+    wait_until_async(
+        || {
+            let state = state.clone();
+            async move {
+                state
+                    .subscription_events()
+                    .await
+                    .iter()
+                    .any(|(ch, ok)| ch.starts_with(prefix) && *ok == expected_success)
+            }
+        },
+        Duration::from_secs(5),
+    )
+    .await;
 }
 
 #[tokio::test]
@@ -824,11 +819,7 @@ async fn test_trades_subscription_flow() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
@@ -837,20 +828,7 @@ async fn test_trades_subscription_flow() {
         .expect("subscribe failed");
 
     // Verify subscription event recorded
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("trades.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "trades.", true).await;
 
     // Receive trade data from stream
     let stream = client.stream().unwrap();
@@ -880,11 +858,7 @@ async fn test_book_subscription_snapshot() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
@@ -893,20 +867,7 @@ async fn test_book_subscription_snapshot() {
         .expect("subscribe failed");
 
     // Verify subscription event recorded
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("book.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "book.", true).await;
 
     // Receive book data from stream (should receive snapshot first)
     let stream = client.stream().unwrap();
@@ -943,11 +904,7 @@ async fn test_ticker_subscription_flow() {
     mark_price_subs.insert(instrument_id);
     client.set_mark_price_subs(mark_price_subs);
 
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     client
         .subscribe_ticker(instrument_id, None)
@@ -955,20 +912,7 @@ async fn test_ticker_subscription_flow() {
         .expect("subscribe failed");
 
     // Verify subscription event recorded
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("ticker.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "ticker.", true).await;
 
     // Receive ticker data from stream
     let stream = client.stream().unwrap();
@@ -1005,11 +949,7 @@ async fn test_ticker_subscription_emits_index_price_update() {
     index_price_subs.insert(instrument_id);
     client.set_index_price_subs(index_price_subs);
 
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     client
         .subscribe_ticker(instrument_id, None)
@@ -1017,20 +957,7 @@ async fn test_ticker_subscription_emits_index_price_update() {
         .expect("subscribe failed");
 
     // Verify subscription event recorded
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("ticker.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "ticker.", true).await;
 
     // Receive ticker data from stream
     let stream = client.stream().unwrap();
@@ -1060,11 +987,7 @@ async fn test_quote_subscription_flow() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
@@ -1073,20 +996,7 @@ async fn test_quote_subscription_flow() {
         .expect("subscribe failed");
 
     // Verify subscription event recorded
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("quote.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "quote.", true).await;
 
     // Receive quote data from stream
     let stream = client.stream().unwrap();
@@ -1116,31 +1026,14 @@ async fn test_volatility_index_subscription_flow() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     client
         .subscribe_volatility_index("btc_usd")
         .await
         .expect("subscribe failed");
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("deribit_volatility_index.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "deribit_volatility_index.", true).await;
 
     let stream = client.stream().unwrap();
     pin_mut!(stream);
@@ -1194,11 +1087,7 @@ async fn test_chart_subscription_flow() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
@@ -1207,20 +1096,7 @@ async fn test_chart_subscription_flow() {
         .expect("subscribe failed");
 
     // Verify subscription event recorded
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("chart.trades.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "chart.trades.", true).await;
 
     // Receive bar data from stream
     let stream = client.stream().unwrap();
@@ -1250,11 +1126,7 @@ async fn test_multiple_subscriptions() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
 
@@ -1299,11 +1171,7 @@ async fn test_unsubscribe() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
 
@@ -1313,20 +1181,7 @@ async fn test_unsubscribe() {
         .await
         .expect("subscribe failed");
 
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("trades.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "trades.", true).await;
 
     // Unsubscribe
     client
@@ -1360,11 +1215,7 @@ async fn test_heartbeat_enable() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     // Heartbeat should be automatically enabled on connect (configured with 30s interval)
     wait_until_async(
@@ -1394,11 +1245,7 @@ async fn test_heartbeat_test_request_response() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     // Heartbeat is automatically enabled on connect (configured with 10s interval)
     // Wait for heartbeat to be enabled
@@ -1460,11 +1307,7 @@ async fn test_subscription_failure_handling() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
@@ -1473,20 +1316,7 @@ async fn test_subscription_failure_handling() {
         .expect("subscribe call should not fail");
 
     // Verify failure event recorded
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("trades.") && !ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "trades.", false).await;
 
     client.close().await.expect("close failed");
 }
@@ -1503,11 +1333,7 @@ async fn test_reconnection_after_disconnect() {
 
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
@@ -1516,20 +1342,7 @@ async fn test_reconnection_after_disconnect() {
         .expect("subscribe failed");
 
     // Wait for initial subscription
-    wait_until_async(
-        || {
-            let state = state.clone();
-            async move {
-                state
-                    .subscription_events()
-                    .await
-                    .iter()
-                    .any(|(ch, ok)| ch.starts_with("trades.") && *ok)
-            }
-        },
-        Duration::from_secs(5),
-    )
-    .await;
+    wait_for_subscription_event(&state, "trades.", true).await;
 
     state.clear_subscription_events().await;
 
@@ -1562,11 +1375,7 @@ async fn test_instrument_cache_usage() {
     // Cache instruments before connect
     client.cache_instruments(&instruments);
 
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
@@ -1605,11 +1414,7 @@ async fn test_cache_instrument_single() {
     let instrument = create_btc_perpetual();
     client.cache_instrument(instrument);
 
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
     client
@@ -1659,11 +1464,7 @@ async fn test_authentication_success() {
 
     let mut client = create_authenticated_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     // Before auth
     assert!(!client.is_authenticated());
@@ -1691,11 +1492,7 @@ async fn test_authentication_session_scope() {
 
     let mut client = create_authenticated_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     // Authenticate with session scope
     client
@@ -1728,11 +1525,7 @@ async fn test_authentication_without_credentials_fails() {
     // Create client explicitly without credentials (bypasses env var resolution)
     let mut client = create_test_client_without_credentials(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     // Attempt to authenticate should fail
     let result = client.authenticate(None).await;
@@ -1754,11 +1547,7 @@ async fn test_raw_subscription_requires_authentication() {
 
     let mut client = create_authenticated_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
 
@@ -1785,11 +1574,7 @@ async fn test_raw_subscription_after_authentication() {
 
     let mut client = create_authenticated_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     // Authenticate first
     client
@@ -1836,11 +1621,7 @@ async fn test_100ms_subscription_without_authentication() {
     // Create client without credentials (public only)
     let mut client = create_test_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
 
@@ -1881,11 +1662,7 @@ async fn test_reconnection_with_reauthentication() {
 
     let mut client = create_authenticated_client(&ws_url);
     client.cache_instruments(&instruments);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     // Authenticate with session scope
     client
@@ -1943,11 +1720,7 @@ async fn test_user_subscription_confirmed_after_auth() {
     let ws_url = format!("ws://{addr}/ws/api/v2");
 
     let mut client = create_authenticated_client(&ws_url);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     client
         .authenticate_session("nautilus-test")
@@ -1994,11 +1767,7 @@ async fn test_user_subscription_failure_leaves_state_clean_for_retry() {
     let ws_url = format!("ws://{addr}/ws/api/v2");
 
     let mut client = create_authenticated_client(&ws_url);
-    client.connect().await.expect("connect failed");
-    client
-        .wait_until_active(5.0)
-        .await
-        .expect("client inactive");
+    connect_and_wait(&mut client).await;
 
     client
         .authenticate_session("nautilus-test")

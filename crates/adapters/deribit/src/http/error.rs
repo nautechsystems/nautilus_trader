@@ -15,52 +15,38 @@
 
 //! Deribit HTTP client error types.
 
-use std::fmt;
+use thiserror::Error;
 
 use crate::common::consts::should_retry_error_code;
 
 /// Represents HTTP client errors for the Deribit adapter.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Error)]
 pub enum DeribitHttpError {
     /// Missing API credentials
+    #[error("Missing API credentials")]
     MissingCredentials,
     /// Deribit-specific error with code and message
+    #[error("Deribit error {error_code}: {message}")]
     DeribitError { error_code: i64, message: String },
     /// JSON serialization/deserialization error
+    #[error("JSON error: {0}")]
     JsonError(String),
     /// Input validation error
+    #[error("Validation error: {0}")]
     ValidationError(String),
     /// Network-related error
+    #[error("Network error: {0}")]
     NetworkError(String),
     /// Request timeout
+    #[error("Timeout: {0}")]
     Timeout(String),
     /// Request canceled
+    #[error("Canceled: {0}")]
     Canceled(String),
     /// Unexpected HTTP status
+    #[error("Unexpected status {status}: {body}")]
     UnexpectedStatus { status: u16, body: String },
 }
-
-impl fmt::Display for DeribitHttpError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::MissingCredentials => write!(f, "Missing API credentials"),
-            Self::DeribitError {
-                error_code,
-                message,
-            } => write!(f, "Deribit error {error_code}: {message}"),
-            Self::JsonError(msg) => write!(f, "JSON error: {msg}"),
-            Self::ValidationError(msg) => write!(f, "Validation error: {msg}"),
-            Self::NetworkError(msg) => write!(f, "Network error: {msg}"),
-            Self::Timeout(msg) => write!(f, "Timeout: {msg}"),
-            Self::Canceled(msg) => write!(f, "Canceled: {msg}"),
-            Self::UnexpectedStatus { status, body } => {
-                write!(f, "Unexpected status {status}: {body}")
-            }
-        }
-    }
-}
-
-impl std::error::Error for DeribitHttpError {}
 
 impl From<serde_json::Error> for DeribitHttpError {
     fn from(error: serde_json::Error) -> Self {
@@ -133,6 +119,20 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
+
+    #[rstest]
+    #[case(DeribitHttpError::MissingCredentials, "Missing API credentials")]
+    #[case(DeribitHttpError::DeribitError { error_code: 10004, message: "bad".to_string() }, "Deribit error 10004: bad")]
+    #[case(DeribitHttpError::JsonError("bad".to_string()), "JSON error: bad")]
+    #[case(DeribitHttpError::ValidationError("bad".to_string()), "Validation error: bad")]
+    #[case(DeribitHttpError::NetworkError("offline".to_string()), "Network error: offline")]
+    #[case(DeribitHttpError::Timeout("slow".to_string()), "Timeout: slow")]
+    #[case(DeribitHttpError::Canceled("stop".to_string()), "Canceled: stop")]
+    #[case(DeribitHttpError::UnexpectedStatus { status: 418, body: "teapot".to_string() }, "Unexpected status 418: teapot")]
+    fn test_display(#[case] error: DeribitHttpError, #[case] expected: &str) {
+        assert_eq!(error.to_string(), expected);
+        assert!(std::error::Error::source(&error).is_none());
+    }
 
     #[rstest]
     #[case(DeribitHttpError::NetworkError("timeout".to_string()), true)]
