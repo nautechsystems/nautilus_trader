@@ -83,6 +83,7 @@ use nautilus_okx::{
         },
     },
 };
+use nautilus_testkit::http::assert_http_redirect_rejected;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
@@ -10273,4 +10274,31 @@ async fn test_request_funding_rates_is_unverified_when_the_record_at_the_start_i
 
     assert_eq!(rates.len(), 30);
     assert_eq!(coverage, OKXHistoryCoverage::Unverified);
+}
+
+#[tokio::test]
+async fn test_authenticated_client_rejects_redirects() {
+    assert_http_redirect_rejected(|url| async move {
+        let client = OKXRawHttpClient::with_credentials(
+            "key".into(),
+            "secret".into(),
+            "pass".into(),
+            url,
+            3,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        let error = client.get_account_configuration().await.unwrap_err();
+
+        let OKXHttpError::UnexpectedStatus { status, .. } = error else {
+            panic!("expected rejected redirect, received {error:?}");
+        };
+
+        status.as_u16()
+    })
+    .await;
 }

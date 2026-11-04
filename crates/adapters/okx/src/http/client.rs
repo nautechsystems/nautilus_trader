@@ -317,7 +317,6 @@ mod tests {
             stubs::{crypto_future_btcusdt, crypto_futures_spread_btc_deribit},
         },
     };
-    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
     use rust_decimal::Decimal;
     use serde::{Serialize, Serializer, ser::Error as _};
@@ -385,33 +384,6 @@ mod tests {
         {
             Err(S::Error::custom("intentional serialization failure"))
         }
-    }
-
-    #[tokio::test]
-    async fn test_authenticated_client_rejects_redirects() {
-        let client = OKXRawHttpClient::with_credentials(
-            "key".into(),
-            "secret".into(),
-            "pass".into(),
-            "http://localhost".into(),
-            3,
-            0,
-            1,
-            1,
-            OKXEnvironment::Demo,
-            None,
-        )
-        .unwrap()
-        .client;
-        assert_http_redirect_rejected(|url| async move {
-            client
-                .get(url, None, None, Some(3), None)
-                .await
-                .unwrap()
-                .status
-                .as_u16()
-        })
-        .await;
     }
 
     #[rstest]

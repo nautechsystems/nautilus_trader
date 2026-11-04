@@ -9265,3 +9265,68 @@ async fn test_history_page_limit_leaves_standalone_reports_unchanged(
         }
     }
 }
+
+#[rstest]
+#[tokio::test]
+async fn test_local_cancel_validation_emits_correlated_denial() {
+    let (mut client, mut event_rx, cache) = create_test_execution_client("http://127.0.0.1:1");
+    client.start().expect("start execution client");
+    let client_order_id = ClientOrderId::from("OLOCALCANCELINVALID001");
+    let strategy_id = StrategyId::from("S-LOCAL-CANCEL-INVALID-001");
+    let instrument_id = InstrumentId::from("BTC-USDT.OKX");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .client_order_id(client_order_id)
+        .strategy_id(strategy_id)
+        .instrument_id(instrument_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("1"))
+        .price(Price::from("100000"))
+        .build();
+    cache
+        .borrow_mut()
+        .add_order(order, None, Some(*OKX_CLIENT_ID), false)
+        .expect("cache order");
+
+    let command = CancelOrder {
+        trader_id: TraderId::from("TESTER-001"),
+        client_id: Some(*OKX_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        venue_order_id: Some(VenueOrderId::from("v-1")),
+        command_id: UUID4::new(),
+        ts_init: UnixNanos::default(),
+        params: None,
+        correlation_id: None,
+        causation_id: None,
+    };
+
+    let cause = command.command_id;
+    let before =
+        serde_json::to_value(cache.borrow().order_owned(&client_order_id).unwrap()).unwrap();
+    client.cancel_order(command).expect("cancel order");
+    let event = tokio::time::timeout(Duration::from_secs(5), event_rx.recv())
+        .await
+        .expect("cancel denial timeout")
+        .expect("cancel denial event");
+    client.disconnect().await.expect("disconnect");
+    let events = [event];
+
+    let [ExecutionEvent::Order(OrderEventAny::CancelDenied(event))] = events.as_slice() else {
+        panic!("expected one cancel denial: {events:?}")
+    };
+
+    assert_eq!(event.client_order_id, client_order_id);
+    assert_eq!(event.strategy_id, strategy_id);
+    assert_eq!(event.instrument_id, instrument_id);
+    assert_eq!(event.venue_order_id, Some(VenueOrderId::from("v-1")));
+    assert_eq!(event.causation_id, Some(cause));
+    assert_eq!(
+        event_rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+    assert_eq!(
+        serde_json::to_value(cache.borrow().order_owned(&client_order_id).unwrap()).unwrap(),
+        before
+    );
+}

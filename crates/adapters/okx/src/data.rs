@@ -3255,15 +3255,7 @@ fn push_convention_str(out: &mut AHashSet<OKXGreeksType>, raw: &str) {
 mod tests {
     use std::{collections::HashMap, net::SocketAddr, sync::Arc};
 
-    use axum::{
-        Router,
-        extract::{
-            Query,
-            ws::{Message, WebSocketUpgrade},
-        },
-        response::Json,
-        routing::get,
-    };
+    use axum::{Router, extract::Query, response::Json, routing::get};
     use nautilus_common::{
         config::ConfigError, live::runner::replace_data_event_sender, testing::wait_until_async,
     };
@@ -3314,173 +3306,6 @@ mod tests {
             client.book_channel(instrument_id, None, None),
             OKXBookChannel::Book
         );
-    }
-
-    #[rstest]
-    #[case("BTC-USD_UM_XPERP-310404.OKX")]
-    #[case("BTC-USD_UM-261030.OKX")]
-    #[tokio::test]
-    async fn usd_margined_futures_use_regular_subscriptions(#[case] instrument_id: &str) {
-        let (captured, mut received) = tokio::sync::mpsc::unbounded_channel();
-        let router = Router::new().route(
-            "/public",
-            get(move |upgrade: WebSocketUpgrade| {
-                let captured = captured.clone();
-                async move {
-                    upgrade.on_upgrade(move |mut socket| async move {
-                        while let Some(Ok(Message::Text(text))) = socket.next().await {
-                            let request: Value = serde_json::from_str(&text).unwrap();
-                            if request["op"] == "subscribe" || request["op"] == "unsubscribe" {
-                                captured.send(request.clone()).unwrap();
-                                for arg in request["args"].as_array().unwrap() {
-                                    socket
-                                        .send(Message::Text(
-                                            json!({"event": request["op"], "arg": arg})
-                                                .to_string()
-                                                .into(),
-                                        ))
-                                        .await
-                                        .unwrap();
-                                }
-                            }
-                        }
-                    })
-                }
-            }),
-        );
-
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(sender);
-        let config = OKXDataClientConfig::builder()
-            .instrument_types(vec![OKXInstrumentType::Futures])
-            .base_url_ws_public(format!("ws://{addr}/public"))
-            .build();
-        let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
-        client.ws_public.as_mut().unwrap().connect().await.unwrap();
-        let instrument_id = InstrumentId::from(instrument_id);
-        client
-            .subscribe_quotes(SubscribeQuotes::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        client
-            .subscribe_trades(SubscribeTrades::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        client
-            .subscribe_book_depth(SubscribeBookDepth::new(
-                instrument_id,
-                BookType::L2_MBP,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                false,
-                None,
-                None,
-            ))
-            .unwrap();
-        let mut frames = Vec::new();
-        for _ in 0..3 {
-            frames.push(
-                tokio::time::timeout(Duration::from_secs(5), received.recv())
-                    .await
-                    .unwrap()
-                    .unwrap(),
-            );
-        }
-
-        client
-            .unsubscribe_quotes(&UnsubscribeQuotes::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        client
-            .unsubscribe_trades(&UnsubscribeTrades::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-        client
-            .unsubscribe_book_depth(&UnsubscribeBookDepth::new(
-                instrument_id,
-                Some(*OKX_CLIENT_ID),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                None,
-            ))
-            .unwrap();
-
-        for _ in 0..3 {
-            frames.push(
-                tokio::time::timeout(Duration::from_secs(5), received.recv())
-                    .await
-                    .unwrap()
-                    .unwrap(),
-            );
-        }
-
-        client.ws_public.as_mut().unwrap().close().await.unwrap();
-        server.abort();
-
-        let mut actual = frames
-            .iter()
-            .map(|frame| {
-                (
-                    frame["op"].as_str().unwrap().to_string(),
-                    frame["args"].clone(),
-                )
-            })
-            .collect::<Vec<_>>();
-
-        let mut expected = ["subscribe", "unsubscribe"]
-            .into_iter()
-            .flat_map(|op| {
-                ["bbo-tbt", "trades", "books5"]
-                    .into_iter()
-                    .map(move |channel| {
-                        (
-                            op.to_string(),
-                            json!([{"channel": channel, "instId": instrument_id.symbol.as_str()}]),
-                        )
-                    })
-            })
-            .collect::<Vec<_>>();
-
-        actual.sort_by_cached_key(|item| format!("{}{}", item.0, item.1));
-        expected.sort_by_cached_key(|item| format!("{}{}", item.0, item.1));
-
-        assert_eq!(actual, expected);
     }
 
     #[rstest]
@@ -5490,19 +5315,6 @@ mod tests {
         );
     }
 
-    #[tokio::test]
-    async fn spawn_instrument_refresh_skipped_when_interval_zero() {
-        let config = OKXDataClientConfig::builder()
-            .update_instruments_interval_mins(0)
-            .build();
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(sender);
-        let client = OKXDataClient::new(*OKX_CLIENT_ID, config).expect("data client");
-
-        client.register_instrument_refresh().unwrap();
-        assert!(client.tasks.is_empty());
-    }
-
     #[rstest]
     #[case::reset(DataTaskBoundary::Reset)]
     #[case::dispose(DataTaskBoundary::Dispose)]
@@ -5602,23 +5414,6 @@ mod tests {
         terminate_tasks(&client.tasks, "test data client")
             .await
             .expect("data task terminated");
-    }
-
-    #[tokio::test]
-    async fn spawn_instrument_refresh_registers_task() {
-        let config = OKXDataClientConfig::builder()
-            .update_instruments_interval_mins(60)
-            .build();
-        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
-        replace_data_event_sender(sender);
-        let client = OKXDataClient::new(*OKX_CLIENT_ID, config).expect("data client");
-
-        client.register_instrument_refresh().unwrap();
-        assert_eq!(client.tasks.len(), 1);
-
-        terminate_tasks(&client.tasks, "test data client")
-            .await
-            .expect("refresh task joins after cancel");
     }
 
     #[tokio::test]

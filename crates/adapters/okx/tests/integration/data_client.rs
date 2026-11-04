@@ -31,7 +31,7 @@ use axum::{
     Router,
     extract::{
         Query, State,
-        ws::{WebSocket, WebSocketUpgrade},
+        ws::{Message, WebSocket, WebSocketUpgrade},
     },
     http::StatusCode,
     response::{IntoResponse, Json, Response},
@@ -47,6 +47,8 @@ use nautilus_common::{
             BookResponse, InstrumentResponse, InstrumentsResponse,
             OptionChainReferencePriceResponse, RequestBars, RequestBookSnapshot, RequestInstrument,
             RequestInstruments, RequestOptionChainReferencePrice, RequestTrades,
+            SubscribeBookDepth, SubscribeQuotes, SubscribeTrades, UnsubscribeBookDepth,
+            UnsubscribeQuotes, UnsubscribeTrades,
         },
     },
     testing::wait_until_async,
@@ -54,6 +56,7 @@ use nautilus_common::{
 use nautilus_core::{Params, UUID4, UnixNanos, time::get_atomic_clock_realtime};
 use nautilus_model::{
     data::BarType,
+    enums::BookType,
     identifiers::{InstrumentId, OptionSeriesId},
     instruments::{Instrument, InstrumentAny},
     types::{Price, Quantity},
@@ -896,4 +899,190 @@ async fn test_request_bars_sends_a_completed_envelope_only_for_a_covered_window(
         }
         other => panic!("unexpected event {other:?}"),
     }
+}
+
+#[rstest]
+#[case("BTC-USD_UM_XPERP-310404.OKX")]
+#[case("BTC-USD_UM-261030.OKX")]
+#[tokio::test]
+async fn usd_margined_futures_use_regular_subscriptions(#[case] instrument_id: &str) {
+    let (captured, mut received) = tokio::sync::mpsc::unbounded_channel();
+    let mut router = Router::new();
+
+    for endpoint in ["/public", "/business"] {
+        let captured = captured.clone();
+        router = router.route(
+            endpoint,
+            get(move |upgrade: WebSocketUpgrade| {
+                let captured = captured.clone();
+                async move {
+                    upgrade.on_upgrade(move |mut socket| async move {
+                        while let Some(Ok(Message::Text(text))) = socket.next().await {
+                            let request: Value = serde_json::from_str(&text).unwrap();
+                            if request["op"] == "subscribe" || request["op"] == "unsubscribe" {
+                                if request["args"][0]["channel"] != "instruments" {
+                                    captured.send((endpoint, request.clone())).unwrap();
+                                }
+
+                                for arg in request["args"].as_array().unwrap() {
+                                    socket
+                                        .send(Message::Text(
+                                            json!({"event": request["op"], "arg": arg})
+                                                .to_string()
+                                                .into(),
+                                        ))
+                                        .await
+                                        .unwrap();
+                                }
+                            }
+                        }
+                    })
+                }
+            }),
+        );
+    }
+
+    let router = router.route(
+        "/api/v5/public/instruments",
+        get(|| async { Json(load_test_data("http_get_instruments_futures.json")) }),
+    );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+    let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+    replace_data_event_sender(sender);
+    let config = OKXDataClientConfig::builder()
+        .instrument_types(vec![OKXInstrumentType::Futures])
+        .base_url_http(format!("http://{addr}"))
+        .base_url_ws_public(format!("ws://{addr}/public"))
+        .base_url_ws_business(format!("ws://{addr}/business"))
+        .book_stale_check_interval_secs(0)
+        .update_instruments_interval_mins(0)
+        .build();
+    let mut client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from(instrument_id);
+    client
+        .subscribe_quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_trades(SubscribeTrades::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .subscribe_book_depth(SubscribeBookDepth::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            false,
+            None,
+            None,
+        ))
+        .unwrap();
+    let mut frames = Vec::new();
+    for _ in 0..3 {
+        frames.push(
+            tokio::time::timeout(Duration::from_secs(5), received.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        );
+    }
+
+    client
+        .unsubscribe_quotes(&UnsubscribeQuotes::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .unsubscribe_trades(&UnsubscribeTrades::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+    client
+        .unsubscribe_book_depth(&UnsubscribeBookDepth::new(
+            instrument_id,
+            Some(*OKX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+        ))
+        .unwrap();
+
+    for _ in 0..3 {
+        frames.push(
+            tokio::time::timeout(Duration::from_secs(5), received.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+        );
+    }
+
+    client.disconnect().await.unwrap();
+    server.abort();
+
+    let mut actual = frames
+        .iter()
+        .map(|(endpoint, frame)| {
+            (
+                *endpoint,
+                frame["op"].as_str().unwrap().to_string(),
+                frame["args"].clone(),
+            )
+        })
+        .collect::<Vec<_>>();
+
+    let mut expected = ["subscribe", "unsubscribe"]
+        .into_iter()
+        .flat_map(|op| {
+            ["bbo-tbt", "trades", "books5"]
+                .into_iter()
+                .map(move |channel| {
+                    (
+                        "/public",
+                        op.to_string(),
+                        json!([{"channel": channel, "instId": instrument_id.symbol.as_str()}]),
+                    )
+                })
+        })
+        .collect::<Vec<_>>();
+
+    actual.sort_by_cached_key(|item| format!("{}{}{}", item.0, item.1, item.2));
+    expected.sort_by_cached_key(|item| format!("{}{}{}", item.0, item.1, item.2));
+
+    assert_eq!(actual, expected);
 }
