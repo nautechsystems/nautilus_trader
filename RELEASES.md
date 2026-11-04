@@ -160,6 +160,7 @@ Released on TBD (UTC).
 - Fixed Databento option strikes rejecting values finer than the strike currency precision
 - Fixed Databento price scaling at explicitly selected 17- and 18-decimal precision
 - Fixed Deribit instrument loading panicking on invalid spot definitions
+- Fixed Deribit instrument loading panicking on invalid derivative and combo definitions
 - Fixed Deribit single-order recovery treating failed lookups as missing orders
 - Fixed Deribit unsent order commands staying unresolved and uncertain venue errors becoming rejections
 - Fixed Deribit fill report requests returning partial results when a required trade fails to parse
