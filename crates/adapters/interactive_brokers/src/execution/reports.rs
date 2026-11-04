@@ -146,6 +146,40 @@ pub(super) struct IbReportClient {
     request_timeout: Duration,
 }
 
+fn is_within_report_window(
+    ts_last: UnixNanos,
+    start: Option<UnixNanos>,
+    end: Option<UnixNanos>,
+) -> bool {
+    start.is_none_or(|start| ts_last >= start) && end.is_none_or(|end| ts_last <= end)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_within_report_window;
+    use nautilus_core::UnixNanos;
+
+    #[test]
+    fn test_completed_order_report_window_is_inclusive() {
+        let start = UnixNanos::new(10);
+        let end = UnixNanos::new(20);
+
+        assert!(is_within_report_window(UnixNanos::new(5), None, None));
+        assert!(!is_within_report_window(UnixNanos::new(9), Some(start), None));
+        assert!(is_within_report_window(
+            UnixNanos::new(10),
+            Some(start),
+            Some(end)
+        ));
+        assert!(is_within_report_window(
+            UnixNanos::new(20),
+            Some(start),
+            Some(end)
+        ));
+        assert!(!is_within_report_window(UnixNanos::new(21), None, Some(end)));
+    }
+}
+
 impl IbReportClient {
     pub(super) fn new(
         client: Arc<Client>,
@@ -313,6 +347,10 @@ impl IbReportClient {
                     ts_init,
                 )
                 .context("Failed to parse completed IB order")?;
+
+                if !is_within_report_window(report.ts_last, cmd.start, cmd.end) {
+                    continue;
+                }
 
                 if !reports
                     .iter()
