@@ -315,6 +315,38 @@ def test_migration_planner_resolves_funding_and_close_files(tmp_path: Path) -> N
     ]
 
 
+def test_funding_rate_updates_round_trip(tmp_path: Path) -> None:
+    """
+    Verify funding rate updates round trip through the typed writer and query.
+    """
+    catalog = ParquetDataCatalog(str(tmp_path))
+    instrument_id = InstrumentId.from_str("ETHUSDT-PERP.BINANCE")
+    first = FundingRateUpdate(
+        instrument_id,
+        Decimal("0.000123456789012345"),
+        1_000,
+        1_001,
+        interval=480,
+        next_funding_ns=28_800_000_000_000,
+    )
+    second = FundingRateUpdate(instrument_id, Decimal("-0.0001"), 2_000, 2_001)
+
+    catalog.write_funding_rate_updates([first, second])
+
+    expected = [first.to_dict(), second.to_dict()]
+    assert [item.to_dict() for item in catalog.query_funding_rate_updates()] == expected
+    assert [item.to_dict() for item in catalog.query(NautilusDataType.FundingRateUpdate)] == (
+        expected
+    )
+    assert [
+        item.to_dict()
+        for item in catalog.query_funding_rate_updates(
+            identifiers=[str(instrument_id)],
+            start=1_500,
+        )
+    ] == [second.to_dict()]
+
+
 @pytest.mark.parametrize("backend", ["parquet"])
 @pytest.mark.parametrize("transport", ["bytes", "stream"])
 def test_raw_multi_identity_query_uses_truthful_ipc_schema(

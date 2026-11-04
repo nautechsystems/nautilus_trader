@@ -426,6 +426,37 @@ impl PyParquetDataCatalog {
         )
     }
 
+    /// Write funding rate update data to Parquet files.
+    ///
+    /// # Parameters
+    ///
+    /// - `data`: Vector of funding rate updates to write
+    /// - `start`: Optional start timestamp override (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp override (nanoseconds since Unix epoch)
+    ///
+    /// # Returns
+    ///
+    /// Returns the path of the created file as a string.
+    #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
+    pub fn write_funding_rate_updates(
+        &self,
+        py: Python<'_>,
+        data: Vec<FundingRateUpdate>,
+        start: Option<u64>,
+        end: Option<u64>,
+        skip_disjoint_check: bool,
+    ) -> PyResult<String> {
+        write_parquet_data(
+            py,
+            self,
+            data,
+            start,
+            end,
+            skip_disjoint_check,
+            "funding rate updates",
+        )
+    }
+
     /// Write option greeks data to Parquet files.
     ///
     /// # Parameters
@@ -1790,6 +1821,40 @@ impl PyParquetDataCatalog {
         where_clause: Option<&str>,
     ) -> PyResult<Vec<IndexPriceUpdate>> {
         query_parquet_data::<IndexPriceUpdate>(
+            py,
+            &mut self.inner,
+            identifiers,
+            start,
+            end,
+            where_clause,
+            None,
+            true,
+            "Failed to query data",
+        )
+    }
+
+    /// Query funding rate update data from Parquet files.
+    ///
+    /// # Parameters
+    ///
+    /// - `identifiers`: Optional list of identifiers to filter by.
+    /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
+    /// - `where_clause`: Optional SQL WHERE clause for additional filtering
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `FundingRateUpdate` objects matching the query criteria.
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
+    pub fn query_funding_rate_updates(
+        &mut self,
+        py: Python<'_>,
+        identifiers: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        where_clause: Option<&str>,
+    ) -> PyResult<Vec<FundingRateUpdate>> {
+        query_parquet_data::<FundingRateUpdate>(
             py,
             &mut self.inner,
             identifiers,

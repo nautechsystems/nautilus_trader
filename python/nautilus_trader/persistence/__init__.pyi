@@ -207,6 +207,13 @@ class ParquetDataCatalog:
         end: int | None = None,
         skip_disjoint_check: bool = False,
     ) -> str: ...
+    def write_funding_rate_updates(
+        self,
+        data: typing.Sequence[model.FundingRateUpdate],
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
+    ) -> str: ...
     def write_option_greeks(
         self,
         data: typing.Sequence[model.OptionGreeks],
@@ -465,6 +472,13 @@ class ParquetDataCatalog:
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[model.IndexPriceUpdate]: ...
+    def query_funding_rate_updates(
+        self,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[model.FundingRateUpdate]: ...
     def query_option_greeks(
         self,
         identifiers: typing.Sequence[str] | None = None,
