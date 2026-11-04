@@ -16,12 +16,15 @@
 use std::{collections::HashMap, fmt::Debug, sync::Arc};
 
 use alloy::primitives::Address;
-use nautilus_core::string::secret::{REDACTED, SecretString};
+use nautilus_core::{
+    hex,
+    string::secret::{REDACTED, SecretString},
+};
 use nautilus_live::SocketControl;
 #[cfg(feature = "hypersync")]
 use nautilus_model::defi::DexType;
 use nautilus_model::defi::{
-    Block, Chain,
+    Block, Chain, PoolIdentifier,
     rpc::{RpcLog, RpcNodeWssResponse},
 };
 use nautilus_network::{
@@ -35,6 +38,7 @@ use tokio_tungstenite::tungstenite::Message;
 use crate::exchanges::get_dex_extended;
 use crate::rpc::{
     error::BlockchainRpcClientError,
+    log::{extract_address, extract_log_index, extract_transaction_hash},
     types::{BlockchainMessage, RpcEventType},
     utils::{
         extract_rpc_subscription_id, is_subscription_confirmation_response, is_subscription_event,
@@ -490,14 +494,9 @@ impl CoreBlockchainRpcClient {
                                         | RpcEventType::PoolFeeProtocolCollect(_) => {
                                             let log = Self::parse_rpc_log_response(json)?;
 
-                                            if let Some(message) = self
-                                                .blockchain_message_from_pool_log(
-                                                    event_type, &log,
-                                                )?
-                                            {
-                                                return Ok(message);
-                                            }
-                                            continue;
+                                            return self.blockchain_message_from_pool_log(
+                                                event_type, &log,
+                                            );
                                         }
                                     }
                                 }
@@ -545,14 +544,10 @@ impl CoreBlockchainRpcClient {
         &self,
         event_type: RpcEventType,
         log: &RpcLog,
-    ) -> Result<Option<BlockchainMessage>, BlockchainRpcClientError> {
+    ) -> Result<BlockchainMessage, BlockchainRpcClientError> {
         if log.removed {
-            log::debug!(
-                "Skipping removed pool log on chain '{}' for event {:?}",
-                self.chain.name,
-                event_type
-            );
-            return Ok(None);
+            return Self::blockchain_message_from_removed_pool_log(log)
+                .map_err(|e| BlockchainRpcClientError::MessageParsingError(e.to_string()));
         }
 
         let dex = Self::pool_event_dex(event_type)?;
@@ -589,7 +584,6 @@ impl CoreBlockchainRpcClient {
                 "NewBlock event type cannot parse pool logs"
             )),
         }
-        .map(Some)
         .map_err(|e| BlockchainRpcClientError::MessageParsingError(e.to_string()))
     }
 
@@ -598,19 +592,29 @@ impl CoreBlockchainRpcClient {
         &self,
         event_type: RpcEventType,
         log: &RpcLog,
-    ) -> Result<Option<BlockchainMessage>, BlockchainRpcClientError> {
+    ) -> Result<BlockchainMessage, BlockchainRpcClientError> {
         if log.removed {
-            log::debug!(
-                "Skipping removed pool log on chain '{}' for event {:?}",
-                self.chain.name,
-                event_type
-            );
-            return Ok(None);
+            return Self::blockchain_message_from_removed_pool_log(log)
+                .map_err(|e| BlockchainRpcClientError::MessageParsingError(e.to_string()));
         }
 
         Err(BlockchainRpcClientError::UnsupportedRpcResponseType(
             format!("RPC pool log parsing for {event_type:?} requires the hypersync feature"),
         ))
+    }
+
+    fn blockchain_message_from_removed_pool_log(log: &RpcLog) -> anyhow::Result<BlockchainMessage> {
+        let pool_identifier = PoolIdentifier::from_address(extract_address(log)?);
+        let transaction_hash = extract_transaction_hash(log)?;
+        let _transaction_hash_bytes =
+            hex::decode_array::<32>(transaction_hash.trim_start_matches("0x").as_bytes())?;
+        let log_index = extract_log_index(log)?;
+
+        Ok(BlockchainMessage::PoolLogRemoved {
+            pool_identifier,
+            transaction_hash,
+            log_index,
+        })
     }
 
     #[cfg(feature = "hypersync")]
@@ -748,7 +752,7 @@ mod tests {
     }
 
     #[rstest]
-    fn removed_pool_log_returns_no_message() {
+    fn removed_pool_log_returns_removal_message() {
         let client = CoreBlockchainRpcClient::new(
             Chain::from_chain_id(1)
                 .expect("Ethereum chain should exist")
@@ -756,23 +760,158 @@ mod tests {
             "ws://127.0.0.1:9".to_string(),
             None,
         );
-        let log = RpcLog {
-            removed: true,
-            log_index: Some("0x0".to_string()),
-            transaction_index: Some("0x0".to_string()),
-            transaction_hash: Some("0x1".to_string()),
-            block_hash: Some("0x1".to_string()),
-            block_number: Some("0x1".to_string()),
-            address: "0x1111111111111111111111111111111111111111".to_string(),
-            data: "0x".to_string(),
-            topics: vec![],
-        };
+        let log = removed_pool_log();
 
         let message = client
             .blockchain_message_from_pool_log(RpcEventType::PoolSwap(DexType::UniswapV3), &log)
             .expect("removed logs should not fail conversion");
 
-        assert!(message.is_none());
+        let BlockchainMessage::PoolLogRemoved {
+            pool_identifier,
+            transaction_hash,
+            log_index,
+        } = message
+        else {
+            panic!("expected pool log removal message");
+        };
+
+        assert_eq!(
+            pool_identifier,
+            PoolIdentifier::from_address(address!("1111111111111111111111111111111111111111"))
+        );
+        assert_eq!(
+            transaction_hash,
+            "0x24058dde7caf5b8b70041de8b27731f20f927365f210247c3e720e947b9098e7"
+        );
+        assert_eq!(log_index, 42);
+    }
+
+    #[rstest]
+    #[case("address", "Invalid contract address length: expected 20 bytes, was 0")]
+    #[case("missing_transaction_hash", "Missing transaction hash")]
+    #[case("malformed_transaction_hash", "invalid hex character: 0x7a")]
+    #[case("empty_transaction_hash", "expected 64 hex characters, was 0")]
+    #[case("short_transaction_hash", "expected 64 hex characters, was 62")]
+    #[case("log_index", "Missing log index")]
+    #[case(
+        "malformed_log_index",
+        "Invalid hex u32: invalid digit found in string"
+    )]
+    fn removed_pool_log_rejects_invalid_identity(
+        #[case] invalid_field: &str,
+        #[case] expected_message: &str,
+    ) {
+        let client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            "ws://127.0.0.1:9".to_string(),
+            None,
+        );
+        let mut log = removed_pool_log();
+        match invalid_field {
+            "address" => log.address = "0x".to_string(),
+            "missing_transaction_hash" => log.transaction_hash = None,
+            "malformed_transaction_hash" => log.transaction_hash = Some("z".repeat(64)),
+            "empty_transaction_hash" => log.transaction_hash = Some(String::new()),
+            "short_transaction_hash" => {
+                log.transaction_hash = Some(format!("0x{}", "a".repeat(62)));
+            }
+            "log_index" => log.log_index = None,
+            "malformed_log_index" => log.log_index = Some("0xzz".to_string()),
+            _ => unreachable!(),
+        }
+
+        let error = client
+            .blockchain_message_from_pool_log(RpcEventType::PoolSwap(DexType::UniswapV3), &log)
+            .expect_err("invalid removal identity should fail conversion");
+
+        let BlockchainRpcClientError::MessageParsingError(message) = error else {
+            panic!("expected message parsing error");
+        };
+
+        assert_eq!(message, expected_message);
+    }
+
+    fn removed_pool_log() -> RpcLog {
+        RpcLog {
+            removed: true,
+            log_index: Some("0x2a".to_string()),
+            transaction_index: Some("0x0".to_string()),
+            transaction_hash: Some(
+                "0x24058dde7caf5b8b70041de8b27731f20f927365f210247c3e720e947b9098e7".to_string(),
+            ),
+            block_hash: Some("0x1".to_string()),
+            block_number: Some("0x1".to_string()),
+            address: "0x1111111111111111111111111111111111111111".to_string(),
+            data: "0x".to_string(),
+            topics: vec![],
+        }
+    }
+
+    #[tokio::test]
+    async fn next_rpc_message_returns_removed_pool_log() {
+        let mut client = CoreBlockchainRpcClient::new(
+            Chain::from_chain_id(1)
+                .expect("Ethereum chain should exist")
+                .clone(),
+            "ws://127.0.0.1:9".to_string(),
+            None,
+        );
+        client.subscription_event_types.insert(
+            "0xpool".to_string(),
+            RpcEventType::PoolSwap(DexType::UniswapV3),
+        );
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        client.wss_consumer_rx = Some(rx);
+        tx.send(Message::Text(
+            serde_json::json!({
+                "jsonrpc": "2.0",
+                "method": "eth_subscription",
+                "params": {
+                    "subscription": "0xpool",
+                    "result": {
+                        "removed": true,
+                        "logIndex": "0x2a",
+                        "transactionIndex": "0x0",
+                        "transactionHash": "0x24058dde7caf5b8b70041de8b27731f20f927365f210247c3e720e947b9098e7",
+                        "blockHash": "0x1",
+                        "blockNumber": "0x1",
+                        "address": "0x1111111111111111111111111111111111111111",
+                        "data": "0x",
+                        "topics": []
+                    }
+                }
+            })
+            .to_string()
+            .into(),
+        ))
+        .expect("removed pool log should enqueue");
+        drop(tx);
+
+        let message = client
+            .next_rpc_message()
+            .await
+            .expect("removed pool log should parse");
+
+        let BlockchainMessage::PoolLogRemoved {
+            pool_identifier,
+            transaction_hash,
+            log_index,
+        } = message
+        else {
+            panic!("expected pool log removal message");
+        };
+
+        assert_eq!(
+            pool_identifier,
+            PoolIdentifier::from_address(address!("1111111111111111111111111111111111111111"))
+        );
+        assert_eq!(
+            transaction_hash,
+            "0x24058dde7caf5b8b70041de8b27731f20f927365f210247c3e720e947b9098e7"
+        );
+        assert_eq!(log_index, 42);
     }
 
     #[tokio::test]
