@@ -322,7 +322,6 @@ pub(crate) async fn start_polybolt_server(state: TestServerState) -> SocketAddr 
             .expect("PolyBolt test server failed");
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
     addr
 }
 

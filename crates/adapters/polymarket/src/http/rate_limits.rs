@@ -728,21 +728,16 @@ mod tests {
             .observe_response("/cancel-all", TradingBucket::Cancel, 1, 0, &headers, false)
             .await;
 
-        let limiter_clone = limiter.clone();
-        let acquire = tokio::spawn(async move {
-            limiter_clone
-                .acquire("/order", TradingBucket::Cancel, 1)
-                .await
-        });
-        tokio::task::yield_now().await;
-        assert!(!acquire.is_finished());
+        let started = tokio::time::Instant::now();
+        let acquire = limiter.acquire("/order", TradingBucket::Cancel, 1);
+        tokio::pin!(acquire);
+        assert!(futures_util::poll!(&mut acquire).is_pending());
 
         tokio::time::advance(Duration::from_millis(74)).await;
-        tokio::task::yield_now().await;
-        assert!(!acquire.is_finished());
+        assert!(futures_util::poll!(&mut acquire).is_pending());
 
-        tokio::time::advance(Duration::from_millis(1)).await;
-        acquire.await.unwrap().unwrap();
+        acquire.await.unwrap();
+        assert_eq!(started.elapsed(), Duration::from_millis(75));
     }
 
     #[rstest]
@@ -806,21 +801,16 @@ mod tests {
             .await
             .unwrap();
 
-        let limiter_clone = limiter.clone();
-        let acquire = tokio::spawn(async move {
-            limiter_clone
-                .acquire("/order", TradingBucket::Order, 1)
-                .await
-        });
-        tokio::task::yield_now().await;
-        assert!(!acquire.is_finished());
+        let started = tokio::time::Instant::now();
+        let acquire = limiter.acquire("/order", TradingBucket::Order, 1);
+        tokio::pin!(acquire);
+        assert!(futures_util::poll!(&mut acquire).is_pending());
 
         tokio::time::advance(Duration::from_millis(24)).await;
-        tokio::task::yield_now().await;
-        assert!(!acquire.is_finished());
+        assert!(futures_util::poll!(&mut acquire).is_pending());
 
-        tokio::time::advance(Duration::from_millis(1)).await;
-        acquire.await.unwrap().unwrap();
+        acquire.await.unwrap();
+        assert_eq!(started.elapsed(), Duration::from_millis(25));
 
         let error = limiter
             .acquire("/orders", TradingBucket::Order, 61)
@@ -844,20 +834,15 @@ mod tests {
             .observe_response("/order", TradingBucket::Order, 1, 0, &headers, true)
             .await;
 
-        let limiter_clone = limiter.clone();
-        let acquire = tokio::spawn(async move {
-            limiter_clone
-                .acquire("/order", TradingBucket::Order, 1)
-                .await
-        });
-        tokio::task::yield_now().await;
-        assert!(!acquire.is_finished());
+        let started = tokio::time::Instant::now();
+        let acquire = limiter.acquire("/order", TradingBucket::Order, 1);
+        tokio::pin!(acquire);
+        assert!(futures_util::poll!(&mut acquire).is_pending());
 
         tokio::time::advance(Duration::from_millis(1_999)).await;
-        tokio::task::yield_now().await;
-        assert!(!acquire.is_finished());
+        assert!(futures_util::poll!(&mut acquire).is_pending());
 
-        tokio::time::advance(Duration::from_millis(1)).await;
-        acquire.await.unwrap().unwrap();
+        acquire.await.unwrap();
+        assert_eq!(started.elapsed(), Duration::from_millis(2_000));
     }
 }

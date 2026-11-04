@@ -1833,7 +1833,6 @@ mod tests {
                 .expect("PolyBolt test server failed");
         });
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
         addr
     }
 

@@ -2039,6 +2039,20 @@ mod subscriptions {
             ],
         );
         let client_id = *POLYMARKET_CLIENT_ID;
+        // Connected is published before the reconnect handle is registered
+        wait_until_async(
+            || async {
+                registry
+                    .handle(client_id, ustr::Ustr::from("polymarket-market-streams"))
+                    .is_some()
+                    && registry
+                        .handle(client_id, ustr::Ustr::from("polymarket-market-streams-1"))
+                        .is_some()
+            },
+            Duration::from_secs(2),
+        )
+        .await;
+
         let primary = registry
             .handle(client_id, ustr::Ustr::from("polymarket-market-streams"))
             .expect("primary reconnect handle should be registered");

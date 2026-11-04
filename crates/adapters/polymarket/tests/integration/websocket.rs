@@ -240,7 +240,6 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
             .expect("ws server failed");
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
     addr
 }
 
@@ -1608,7 +1607,6 @@ mod reconnect_marker {
                 .expect("test websocket server failed");
         });
 
-        tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
         addr
     }
 

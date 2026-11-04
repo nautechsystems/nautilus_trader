@@ -4125,7 +4125,16 @@ mod tests {
         feed.inner.closing.store(true, Ordering::Release);
 
         feed.request_reconcile(ReconcileReason::DesiredChanged);
-        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.task_slots()
+                .expect("PolyBolt task owner")
+                .reconcile
+                .lock()
+                .await
+                .is_none(),
+            "closing feed should not start a reconcile worker",
+        );
 
         assert!(
             feed.current_ws().is_none(),
@@ -4163,7 +4172,16 @@ mod tests {
 
         drop(raw_tx);
         loop_handle.await.expect("join PolyBolt loop");
-        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.task_slots()
+                .expect("PolyBolt task owner")
+                .reconcile
+                .lock()
+                .await
+                .is_none(),
+            "closing feed should not start a reconcile worker",
+        );
 
         assert!(
             feed.current_ws().is_none(),
@@ -4228,15 +4246,20 @@ mod tests {
         let (feed, _rx) = make_feed();
         let (message_tx, mut message_rx) = tokio::sync::oneshot::channel();
         let (reconcile_tx, mut reconcile_rx) = tokio::sync::oneshot::channel();
+        let started = Arc::new(tokio::sync::Barrier::new(3));
 
         feed.task_slots()
             .expect("PolyBolt task owner")
             .message
             .lock()
             .await
-            .insert(tokio::spawn(async move {
-                let _notify = NotifyOnDrop(Some(message_tx));
-                std::future::pending::<()>().await;
+            .insert(tokio::spawn({
+                let started = started.clone();
+                async move {
+                    let _notify = NotifyOnDrop(Some(message_tx));
+                    started.wait().await;
+                    std::future::pending::<()>().await;
+                }
             }));
 
         feed.task_slots()
@@ -4244,12 +4267,18 @@ mod tests {
             .reconcile
             .lock()
             .await
-            .insert(tokio::spawn(async move {
-                let _notify = NotifyOnDrop(Some(reconcile_tx));
-                std::future::pending::<()>().await;
+            .insert(tokio::spawn({
+                let started = started.clone();
+                async move {
+                    let _notify = NotifyOnDrop(Some(reconcile_tx));
+                    started.wait().await;
+                    std::future::pending::<()>().await;
+                }
             }));
 
-        tokio::task::yield_now().await;
+        tokio::time::timeout(Duration::from_secs(1), started.wait())
+            .await
+            .expect("worker tasks started");
         let clone = feed.clone();
 
         drop(feed);
@@ -4334,13 +4363,25 @@ mod tests {
             }
         });
 
-        tokio::time::sleep(Duration::from_millis(50)).await;
+        wait_until_async(
+            || async { feed.inner.closing.load(Ordering::Acquire) },
+            Duration::from_secs(2),
+        )
+        .await;
         feed.request_reconcile(ReconcileReason::DesiredChanged);
-        tokio::time::sleep(Duration::from_millis(50)).await;
 
         drop(guard);
         disconnect_task.await.expect("join disconnect task");
-        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.task_slots()
+                .expect("PolyBolt task owner")
+                .reconcile
+                .lock()
+                .await
+                .is_none(),
+            "disconnect should clear the reconcile worker handle",
+        );
 
         assert!(
             feed.current_ws().is_none(),
@@ -4828,7 +4869,16 @@ mod tests {
         let (feed, _rx) = make_server_feed(addr);
 
         feed.request_reconcile(ReconcileReason::EnsureConnected);
-        tokio::time::sleep(Duration::from_millis(200)).await;
+
+        assert!(
+            feed.task_slots()
+                .expect("PolyBolt task owner")
+                .reconcile
+                .lock()
+                .await
+                .is_none(),
+            "ensure-connected without subscriptions should not start a reconcile worker",
+        );
 
         assert!(
             feed.current_ws().is_none(),
