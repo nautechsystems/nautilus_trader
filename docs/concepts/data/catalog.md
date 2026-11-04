@@ -145,6 +145,7 @@ The built-in market-data writers are:
 - `write_bars`
 - `write_mark_price_updates`
 - `write_index_price_updates`
+- `write_funding_rate_updates`
 - `write_option_greeks`
 
 Each writer accepts optional `start` and `end` overrides as UNIX nanoseconds. The data in one call
