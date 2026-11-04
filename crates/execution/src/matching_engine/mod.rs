@@ -938,19 +938,7 @@ impl OrderMatchingEngine {
         let price_precision = self.instrument.price_precision();
 
         for (client_order_id, price_raw, ahead_raw) in tracked {
-            let order_side = self
-                .cache
-                .borrow()
-                .order(&client_order_id)
-                .and_then(|order| {
-                    if order.is_closed() {
-                        None
-                    } else {
-                        Some(order.order_side())
-                    }
-                });
-
-            let Some(order_side) = order_side else {
+            let Some(order_side) = self.queue_order_side(client_order_id) else {
                 stale.push(client_order_id);
                 continue;
             };
@@ -1119,19 +1107,7 @@ impl OrderMatchingEngine {
                 continue;
             }
 
-            let cache = self.cache.borrow();
-
-            let order_info = cache.order(&client_order_id).and_then(|order| {
-                if order.is_closed() {
-                    None
-                } else {
-                    Some(order.order_side())
-                }
-            });
-
-            drop(cache);
-
-            let Some(side) = order_info else {
+            let Some(side) = self.queue_order_side(client_order_id) else {
                 stale.push(client_order_id);
                 continue;
             };
@@ -1205,19 +1181,7 @@ impl OrderMatchingEngine {
                 continue;
             };
 
-            let cache = self.cache.borrow();
-
-            let order_info = cache.order(&client_order_id).and_then(|order| {
-                if order.is_closed() {
-                    None
-                } else {
-                    Some(order.order_side())
-                }
-            });
-
-            drop(cache);
-
-            let Some(side) = order_info else {
+            let Some(side) = self.queue_order_side(client_order_id) else {
                 stale.push(client_order_id);
                 continue;
             };
@@ -1254,19 +1218,7 @@ impl OrderMatchingEngine {
         );
 
         for (client_order_id, order_price_raw) in pending.iter().copied() {
-            let cache = self.cache.borrow();
-
-            let order_info = cache.order(&client_order_id).and_then(|order| {
-                if order.is_closed() {
-                    None
-                } else {
-                    Some(order.order_side())
-                }
-            });
-
-            drop(cache);
-
-            let Some(side) = order_info else {
+            let Some(side) = self.queue_order_side(client_order_id) else {
                 stale.push(client_order_id);
                 continue;
             };
@@ -1321,19 +1273,7 @@ impl OrderMatchingEngine {
                 continue;
             };
 
-            let cache = self.cache.borrow();
-
-            let order_info = cache.order(&client_order_id).and_then(|order| {
-                if order.is_closed() {
-                    None
-                } else {
-                    Some(order.order_side())
-                }
-            });
-
-            drop(cache);
-
-            let Some(side) = order_info else {
+            let Some(side) = self.queue_order_side(client_order_id) else {
                 stale.push(client_order_id);
                 continue;
             };
@@ -1370,19 +1310,7 @@ impl OrderMatchingEngine {
         let mut stale = Self::take_cleared(&mut self.queue_stale_scratch);
 
         for (client_order_id, order_price_raw) in pending.iter().copied() {
-            let cache = self.cache.borrow();
-
-            let order_side = cache.order(&client_order_id).and_then(|order| {
-                if order.is_closed() {
-                    None
-                } else {
-                    Some(order.order_side())
-                }
-            });
-
-            drop(cache);
-
-            let Some(side) = order_side else {
+            let Some(side) = self.queue_order_side(client_order_id) else {
                 stale.push(client_order_id);
                 continue;
             };
@@ -1406,6 +1334,14 @@ impl OrderMatchingEngine {
 
         self.queue_pending_scratch = pending;
         self.queue_stale_scratch = stale;
+    }
+
+    fn queue_order_side(&self, client_order_id: ClientOrderId) -> Option<OrderSide> {
+        self.cache
+            .borrow()
+            .order_ref(&client_order_id)
+            .filter(|order| !order.is_closed())
+            .map(|order| order.order_side())
     }
 
     fn take_cleared<T>(buf: &mut Vec<T>) -> Vec<T> {
@@ -2233,15 +2169,13 @@ impl OrderMatchingEngine {
 
     fn process_quote_ticks_from_bar(&mut self) {
         // Wait for next bar
-        if self.last_bar_bid.is_none()
-            || self.last_bar_ask.is_none()
-            || self.last_bar_bid.unwrap().ts_init != self.last_bar_ask.unwrap().ts_init
-        {
+        let (Some(bid_bar), Some(ask_bar)) = (self.last_bar_bid, self.last_bar_ask) else {
+            return;
+        };
+
+        if bid_bar.ts_init != ask_bar.ts_init {
             return;
         }
-
-        let bid_bar = self.last_bar_bid.unwrap();
-        let ask_bar = self.last_bar_ask.unwrap();
 
         let size_increment = self.instrument.size_increment();
         let bid_sizes = BarTickSizes::from_volume(bid_bar.volume, size_increment);
@@ -6150,24 +6084,21 @@ impl OrderMatchingEngine {
             return Ok(());
         }
 
-        let fee_order;
+        // `order` is a stale pre-fill clone: give fee models the current
+        // pre-fill `filled_qty` (e.g. `FixedFeeModel` charges once per order).
+        let mut commission_order = order.clone();
+        write_filled_qty(
+            &mut commission_order,
+            new_filled_qty.saturating_sub(last_qty),
+        );
 
-        let commission_order = {
-            // `order` is a stale pre-fill clone: give fee models the current
-            // pre-fill `filled_qty` (e.g. `FixedFeeModel` charges once per order).
-            let mut cloned = order.clone();
-            write_filled_qty(&mut cloned, new_filled_qty.saturating_sub(last_qty));
-            if order.liquidity_side() != Some(liquidity_side) {
-                cloned.set_liquidity_side(liquidity_side);
-            }
-
-            fee_order = cloned;
-            &fee_order
-        };
+        if order.liquidity_side() != Some(liquidity_side) {
+            commission_order.set_liquidity_side(liquidity_side);
+        }
 
         let underlying_px = self.fee_underlying_price()?;
         let commission = self.fee_model.get_commission_with_context(
-            commission_order,
+            &commission_order,
             last_qty,
             last_px,
             &self.instrument,
@@ -8545,12 +8476,14 @@ struct PendingFill {
     quantity_change: Decimal,
 }
 
-/// Liquidity consumption changed by a FOK fill attempt, recorded so it can be reverted.
+/// Records liquidity consumption changes during a fill-or-kill (FOK) attempt for rollback.
+///
+/// Each level entry pairs its price with the prior `(original_size, consumed)` values,
+/// or `None` if the level had no consumption entry.
 #[derive(Debug)]
 struct ConsumptionJournal {
     order_side: OrderSide,
     trade_consumption: QuantityRaw,
-    /// Level price and its prior `(original_size, consumed)`, or `None` if absent.
     levels: Vec<(PriceRaw, Option<(QuantityRaw, QuantityRaw)>)>,
 }
 

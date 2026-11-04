@@ -3107,6 +3107,57 @@ fn test_modify_reindexes_queue_position() {
 }
 
 #[rstest]
+#[case::snapshot("snapshot", false)]
+#[case::size_cap("size_cap", false)]
+#[case::price_move_tracked("price_move", false)]
+#[case::price_move_pending("price_move", true)]
+#[case::quote("quote", true)]
+#[case::trade("trade", true)]
+fn test_queue_refresh_removes_missing_or_closed_orders(
+    #[case] refresh: &str,
+    #[case] pending: bool,
+    #[values(false, true)] missing: bool,
+) {
+    let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
+    let (mut engine, cache) = get_queue_engine(instrument, BookType::L1_MBP);
+    let order = post_match_closed_limit_order();
+    let id = order.client_order_id();
+    let price_raw = order.price().unwrap().raw();
+    let ahead_raw = Quantity::from("3.000").raw();
+
+    if !missing {
+        cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+    }
+
+    engine
+        .queue_ids_by_price
+        .entry(price_raw)
+        .or_default()
+        .insert(id);
+    if pending {
+        engine.queue_pending.insert(id, price_raw);
+    } else {
+        engine.queue_ahead_total.insert(id, (price_raw, ahead_raw));
+    }
+
+    match refresh {
+        "snapshot" => engine.rebase_queue_positions(),
+        "size_cap" => engine.cap_queue_ahead(price_raw, 0, Some(OrderSide::Buy)),
+        "price_move" => engine.adjust_l1_queue_on_price_move(price_raw, 0, OrderSide::Buy),
+        "quote" => engine.resolve_pending_l1_snapshots(price_raw, 0, price_raw, 0),
+        "trade" => engine.resolve_pending_on_trade(price_raw),
+        _ => unreachable!("Unknown queue refresh"),
+    }
+
+    assert!(engine.queue_pending.is_empty());
+    assert!(engine.queue_ahead_total.is_empty());
+    assert!(engine.queue_ids_by_price.is_empty());
+}
+
+#[rstest]
 fn test_snapshot_rebases_l2_queue_position_after_size_decrease() {
     let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt());
     let instrument_id = instrument.id();
@@ -5294,6 +5345,46 @@ fn test_non_time_bar_preserves_pending_quote() {
     assert_eq!(engine.book.best_ask_price(), Some(ask.close));
     assert_eq!(engine.book.best_bid_size(), Some(Quantity::from("25.000")));
     assert_eq!(engine.book.best_ask_size(), Some(Quantity::from("50.000")));
+}
+
+#[rstest]
+#[case::neither(None, None)]
+#[case::bid_only(Some(1), None)]
+#[case::ask_only(None, Some(1))]
+#[case::different_timestamps(Some(1), Some(2))]
+fn test_quote_bar_waits_for_matching_pair(
+    #[case] bid_ts: Option<u64>,
+    #[case] ask_ts: Option<u64>,
+) {
+    let (mut engine, events) = custom_book_engine(BookType::L1_MBP, false, false);
+
+    let bar = |price_type, ts: u64| {
+        Bar::new(
+            BarType::from(format!("ETHUSDT-PERP.BINANCE-1-MINUTE-{price_type}-EXTERNAL").as_str()),
+            Price::from("100.00"),
+            Price::from("102.00"),
+            Price::from("98.00"),
+            Price::from("101.00"),
+            Quantity::from("4.000"),
+            ts.into(),
+            ts.into(),
+        )
+    };
+
+    let bid_bar = bid_ts.map(|ts| bar("BID", ts));
+    let ask_bar = ask_ts.map(|ts| bar("ASK", ts));
+    engine.last_bar_bid = bid_bar;
+    engine.last_bar_ask = ask_bar;
+    engine.fill_at_market = false;
+
+    engine.process_quote_ticks_from_bar();
+
+    assert_eq!(engine.last_bar_bid, bid_bar);
+    assert_eq!(engine.last_bar_ask, ask_bar);
+    assert_eq!(engine.best_bid_price(), None);
+    assert_eq!(engine.best_ask_price(), None);
+    assert!(!engine.fill_at_market);
+    assert!(events.borrow().is_empty());
 }
 
 #[rstest]
