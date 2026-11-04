@@ -326,6 +326,10 @@ response. Retrying could create a duplicate order or apply a second amendment.
 - Strategy code must not resubmit a command while its result is ambiguous. Wait for reconciliation
   or query the order by its client order ID.
 
+The Futures execution client checks its cancellation attempts and owned orders still pending cancellation
+at disconnect. It returns an error if any affected order lacks terminal confirmation.
+These orders may remain open at Binance. Query each by its client order ID before retrying cancellation.
+
 `BinanceDataClientConfig` and `BinanceExecutionClientConfig` expose `max_retries`,
 `retry_delay_initial_ms`, and `retry_delay_max_ms` for HTTP GET requests. Transient read failures
 retry with bounded exponential backoff and fresh authentication fields. A venue `Retry-After`
