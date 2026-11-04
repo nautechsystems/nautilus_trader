@@ -147,6 +147,7 @@ Released on TBD (UTC).
 - Fixed Deribit reconciliation omitting in-scope orders, fills, and positions when the instrument is not cached
 - Fixed Deribit rejected order results emitting `OrderAccepted`
 - Fixed Deribit delayed submit acknowledgements reactivating tracking for terminal orders
+- Fixed Deribit post-terminal fills emitting `OrderFilled` instead of fill reports
 - Fixed Derive option recovery rejecting startup or replacing real fills due to fee-inclusive averages
 - Fixed Derive trade and funding history returning events outside requested nanosecond time bounds
 - Fixed Derive historical trade responses accepting trades for a different instrument

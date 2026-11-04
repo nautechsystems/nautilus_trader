@@ -1406,7 +1406,8 @@ provider configuration.
 Route execution updates according to order ownership, independent of the dispatch module layout:
 
 - For an order submitted and tracked by this client, emit typed order events through the normal
-  order state machine.
+  order state machine until its terminal lifecycle outcome. Route later new fill evidence through
+  report recovery.
 - For an untracked or external order, emit `OrderStatusReport` and `FillReport` values. These reports let the
   execution engine reconcile or create the external order.
 
@@ -1436,11 +1437,12 @@ the order can still produce owned updates. Do not evict active context merely to
 
 Make every execution update take one explicit route:
 
-| Route      | Evidence                                               | Result                                                         |
-| ---------- | ------------------------------------------------------ | -------------------------------------------------------------- |
-| Tracked    | Active or pending context owns the order.              | Emit, deduplicate, or safely defer typed order events.         |
-| External   | No tracked, pending, or terminal ownership exists.     | Forward reports for reconciliation or external order creation. |
-| Suppressed | The update is proven duplicated, stale, or superseded. | Emit neither an event nor a report.                            |
+| Route      | Evidence                                                           | Result                                                         |
+| ---------- | ------------------------------------------------------------------ | -------------------------------------------------------------- |
+| Tracked    | Active, submission-pending, or venue-filled pending order context. | Emit, deduplicate, or safely defer typed order events.         |
+| External   | No tracked, pending, or terminal ownership exists.                 | Forward reports for reconciliation or external order creation. |
+| Recovered  | Terminal ownership after a lifecycle outcome.                      | Emit a `FillReport` with retained client identity.             |
+| Suppressed | The update is proven duplicated, stale, or superseded.             | Emit neither an event nor a report.                            |
 
 Missing tracked metadata, a parse failure, or an unresolved venue binding does not prove that an
 update is external. A tracked status with no corresponding Nautilus lifecycle event is a tracked
@@ -1468,7 +1470,12 @@ Keep these cases distinct from normal tracked events:
   report-based recovery remains in the reconciliation path.
 - A fill with a new trade identity that arrives after the tracked lifecycle reached a terminal state
   remains a `FillReport`. The active order context is no longer available for a typed event, so
-  reconciliation applies the late venue evidence.
+  reconciliation applies the late venue evidence. In this recovered state, use retained terminal
+  identity only to correlate the report, never to construct a typed event or reactivate the order context.
+- A venue `filled` status that arrives before its first definitive trade has not completed the tracked
+  lifecycle. Keep normal tracked routing until a trade marked with the venue's terminal `filled` state
+  has been routed. After every trade in that delivery is routed, route later new trade identities
+  through report recovery.
 
 Suppress terminal status replays and fills whose trade identity was already processed.
 
