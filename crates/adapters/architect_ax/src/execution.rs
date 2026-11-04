@@ -128,6 +128,10 @@ impl AxExecutionClient {
     ///
     /// Returns an error if the client fails to initialize.
     pub fn new(core: ExecutionClientCore, config: AxExecutionClientConfig) -> anyhow::Result<Self> {
+        config
+            .validate_proxy_url()
+            .context("Invalid AX proxy URL")?;
+
         let http_client = AxHttpClient::with_credentials(
             config
                 .api_key
@@ -156,13 +160,8 @@ impl AxExecutionClient {
         let account_id = core.account_id;
         let emitter =
             ExecutionEventEmitter::new(clock, trader_id, account_id, AccountType::Margin, None);
-        let mut ws_url = config.ws_private_url();
-        if config.cancel_on_disconnect {
-            let separator = if ws_url.contains('?') { "&" } else { "?" };
-            ws_url.push_str(&format!("{separator}cancel_on_disconnect=true"));
-        }
         let ws_orders = AxOrdersWebSocketClient::new(
-            ws_url,
+            config.ws_private_url(),
             account_id,
             trader_id,
             config.heartbeat_interval_secs,
@@ -172,6 +171,7 @@ impl AxExecutionClient {
                 .as_ref()
                 .map(|url| url.expose_secret().to_owned()),
         )
+        .with_cancel_on_disconnect(config.cancel_on_disconnect)?
         .with_socket_control(SocketControl::new(
             core.client_id,
             Some(*AX_VENUE),
@@ -315,6 +315,7 @@ impl AxExecutionClient {
 
         let order_init = cmd.order_init.clone();
         let ws_orders = self.ws_orders.clone();
+        let caches = ws_orders.caches().clone();
         let emitter = self.emitter.clone();
         let clock = self.clock;
 
@@ -421,6 +422,22 @@ impl AxExecutionClient {
                             clock.get_time_ns(),
                             false,
                         );
+
+                        let cid = client_order_id_to_cid(&client_order_id);
+                        let owns_tracking = caches.orders_metadata.contains_key(&client_order_id)
+                            && caches
+                                .cid_to_client_order_id
+                                .get(&cid)
+                                .is_some_and(|owner| *owner == client_order_id);
+
+                        if owns_tracking {
+                            cleanup_terminal_order_tracking_ids(
+                                &caches,
+                                None,
+                                Some(cid),
+                                Some(client_order_id),
+                            );
+                        }
                     }
                     CommandFailure::Ambiguous(reason) => {
                         log::warn!(
@@ -448,7 +465,10 @@ impl AxExecutionClient {
         let command_id = cmd.command_id;
 
         self.spawn_task("cancel_order", async move {
-            if let Err(e) = ws_orders.cancel_order(client_order_id, venue_order_id).await {
+            if let Err(e) = ws_orders
+                .cancel_order_with_command_id(client_order_id, venue_order_id, Some(command_id))
+                .await
+            {
                 match classify_ax_ws_failure(&e) {
                     CommandFailure::NotSent(reason) => {
                         emitter.emit_order_cancel_denied_event(
@@ -581,7 +601,7 @@ impl AxExecutionClient {
 #[async_trait(?Send)]
 impl ExecutionClient for AxExecutionClient {
     fn is_connected(&self) -> bool {
-        self.core.is_connected()
+        self.core.is_connected() && self.ws_orders.is_active() && self.ws_orders.is_authenticated()
     }
 
     fn client_id(&self) -> ClientId {
@@ -605,12 +625,14 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
-        {
+        if self.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open() {
             return Ok(());
         }
 
-        if !self.pending_tasks.is_open() || !self.session_tasks.is_open() {
+        if self.core.is_connected()
+            || !self.pending_tasks.is_open()
+            || !self.session_tasks.is_open()
+        {
             self.teardown_partial_connect().await?;
             self.pending_tasks.start_generation().map_err(|e| {
                 anyhow::anyhow!("Failed to start AX execution task generation: {e}")
@@ -1900,6 +1922,59 @@ fn dispatch_ws_message(
         }
         AxOrdersWsMessage::OpenOrdersResponse(resp) => {
             log::debug!("Open orders response: {} orders", resp.res.orders.len());
+        }
+        AxOrdersWsMessage::PlaceOrderError {
+            client_order_id,
+            reason,
+        } => {
+            let Some(metadata) = caches.orders_metadata.get(&client_order_id) else {
+                log::error!("Cannot emit rejection for uncached order {client_order_id}");
+                return;
+            };
+
+            let ts_event = clock.get_time_ns();
+
+            let event = OrderRejected::new(
+                metadata.trader_id,
+                metadata.strategy_id,
+                metadata.instrument_id,
+                client_order_id,
+                account_id,
+                reason.into(),
+                UUID4::new(),
+                ts_event,
+                ts_event,
+                false,
+                false,
+            );
+            emitter.send_order_event(OrderEventAny::Rejected(event));
+            drop(metadata);
+            cleanup_terminal_order_tracking_ids(
+                caches,
+                None,
+                Some(client_order_id_to_cid(&client_order_id)),
+                Some(client_order_id),
+            );
+        }
+        AxOrdersWsMessage::CancelOrderError {
+            client_order_id,
+            reason,
+            command_id,
+        } => {
+            let Some(metadata) = caches.orders_metadata.get(&client_order_id) else {
+                log::error!("Cannot emit cancel denial for uncached order {client_order_id}");
+                return;
+            };
+
+            emitter.emit_order_cancel_denied_event(
+                metadata.strategy_id,
+                metadata.instrument_id,
+                client_order_id,
+                metadata.venue_order_id,
+                &reason,
+                clock.get_time_ns(),
+                command_id,
+            );
         }
         AxOrdersWsMessage::Error(err) => {
             log::debug!("WebSocket error: {}", err.message);
@@ -3235,9 +3310,8 @@ fn classify_ax_http_failure(error: &AxHttpError) -> CommandFailure {
 fn classify_ax_ws_failure(error: &AxOrdersWsClientError) -> CommandFailure {
     match error {
         AxOrdersWsClientError::ClientError(message) => CommandFailure::NotSent(message.clone()),
-        AxOrdersWsClientError::Transport(_)
-        | AxOrdersWsClientError::ChannelError(_)
-        | AxOrdersWsClientError::AuthenticationError(_) => {
+        AxOrdersWsClientError::ChannelError(message) => CommandFailure::NotSent(message.clone()),
+        AxOrdersWsClientError::Transport(_) | AxOrdersWsClientError::AuthenticationError(_) => {
             CommandFailure::Ambiguous(error.to_string())
         }
     }
@@ -3245,10 +3319,13 @@ fn classify_ax_ws_failure(error: &AxOrdersWsClientError) -> CommandFailure {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{cell::RefCell, rc::Rc, sync::Arc};
 
     use dashmap::DashMap;
-    use nautilus_common::messages::{ExecutionEvent, ExecutionReport};
+    use nautilus_common::{
+        cache::Cache,
+        messages::{ExecutionEvent, ExecutionReport},
+    };
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         enums::AssetClass,
@@ -3267,7 +3344,7 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            consts::AX_VENUE,
+            consts::{AX_CLIENT_ID, AX_VENUE},
             enums::{AxOrderSide, AxOrderStatus, AxTimeInForce},
         },
         http::error::AxBuildError,
@@ -3276,6 +3353,173 @@ mod tests {
             orders::OrdersCaches,
         },
     };
+
+    #[rstest]
+    fn test_gate_errors_emit_domain_rejections() {
+        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let client_order_id = ClientOrderId::from("CID-GATE");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TESTER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .price(Price::from("1.1000"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order, None, Some(*AX_CLIENT_ID), false)
+            .unwrap();
+
+        let mut emitter = ExecutionEventEmitter::new(
+            get_atomic_clock_realtime(),
+            TraderId::from("TESTER-001"),
+            AccountId::from("AX-001"),
+            AccountType::Margin,
+            None,
+        );
+        emitter.set_sender(sender);
+        let caches = test_caches();
+        caches.orders_metadata.insert(
+            client_order_id,
+            test_metadata(client_order_id, InstrumentId::from("EURUSD-PERP.AX")),
+        );
+        let cid = client_order_id_to_cid(&client_order_id);
+        caches.cid_to_client_order_id.insert(cid, client_order_id);
+        let instruments = AtomicMap::new();
+        let fee_rates = AtomicMap::new();
+        let clock = get_atomic_clock_realtime();
+        let reason = "Orders WebSocket session login pending";
+        let command_id = UUID4::new();
+
+        dispatch_ws_message(
+            AxOrdersWsMessage::PlaceOrderError {
+                client_order_id,
+                reason: reason.to_string(),
+            },
+            &emitter,
+            &caches,
+            AccountId::from("AX-001"),
+            &instruments,
+            &fee_rates,
+            clock,
+        );
+
+        assert!(!caches.orders_metadata.contains_key(&client_order_id));
+        assert!(!caches.cid_to_client_order_id.contains_key(&cid));
+        caches.orders_metadata.insert(
+            client_order_id,
+            test_metadata(client_order_id, InstrumentId::from("EURUSD-PERP.AX")),
+        );
+
+        dispatch_ws_message(
+            AxOrdersWsMessage::CancelOrderError {
+                client_order_id,
+                reason: reason.to_string(),
+                command_id: Some(command_id),
+            },
+            &emitter,
+            &caches,
+            AccountId::from("AX-001"),
+            &instruments,
+            &fee_rates,
+            clock,
+        );
+
+        let rejected = rx.try_recv().unwrap();
+        assert!(matches!(
+            rejected,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+                    && event.reason == reason
+                    && event.ts_init == event.ts_event
+        ));
+        let denied = rx.try_recv().unwrap();
+        assert!(matches!(
+            denied,
+            ExecutionEvent::Order(OrderEventAny::CancelDenied(event))
+                if event.client_order_id == client_order_id
+                    && event.reason == reason
+                    && event.causation_id == Some(command_id)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_channel_submit_failure_rejects_and_cleans_tracking() {
+        let (sender, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let cache = Rc::new(RefCell::new(Cache::default()));
+
+        let core = ExecutionClientCore::new(
+            TraderId::from("TESTER-001"),
+            *AX_CLIENT_ID,
+            *AX_VENUE,
+            OmsType::Netting,
+            AccountId::from("AX-001"),
+            AccountType::Margin,
+            None,
+            cache.clone(),
+        );
+        let mut client = AxExecutionClient::new(core, AxExecutionClientConfig::default()).unwrap();
+        client.emitter.set_sender(sender);
+        client
+            .ws_orders
+            .cache_instrument(test_perp_instrument("EURUSD-PERP"));
+        let client_order_id = ClientOrderId::from("CID-CHANNEL-CLOSED");
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TESTER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .price(Price::from("1.1000"))
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+            .unwrap();
+        let cmd = SubmitOrder::from_order(
+            &order,
+            TraderId::from("TESTER-001"),
+            Some(*AX_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+        );
+
+        client.submit_order(cmd).unwrap();
+
+        let submitted = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            submitted,
+            ExecutionEvent::Order(OrderEventAny::Submitted(event))
+                if event.client_order_id == client_order_id
+        ));
+        let rejected = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+        assert!(matches!(
+            rejected,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+                    && event.reason.as_str().contains("channel closed")
+        ));
+        let cid = client_order_id_to_cid(&client_order_id);
+        assert!(
+            !client
+                .ws_orders
+                .caches()
+                .orders_metadata
+                .contains_key(&client_order_id)
+        );
+        assert_eq!(client.ws_orders.resolve_cid(cid), None);
+    }
 
     fn test_caches() -> OrdersCaches {
         OrdersCaches {
@@ -5130,7 +5374,7 @@ mod tests {
         AxOrdersWsClientError::ClientError("missing venue_order_id".to_string()),
         Some("missing venue_order_id")
     )]
-    #[case(AxOrdersWsClientError::ChannelError("handler closed".to_string()), None)]
+    #[case(AxOrdersWsClientError::ChannelError("handler closed".to_string()), Some("handler closed"))]
     #[case(AxOrdersWsClientError::Transport("connection reset".to_string()), None)]
     #[case(AxOrdersWsClientError::AuthenticationError("token expired".to_string()), None)]
     fn test_classify_ax_ws_failure(

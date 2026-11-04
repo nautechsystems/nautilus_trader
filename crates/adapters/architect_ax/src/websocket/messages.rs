@@ -18,7 +18,7 @@
 //! This module contains request and response message structures for both
 //! market data and order management WebSocket streams.
 
-use nautilus_core::{UnixNanos, serialization::serialize_decimal_as_str};
+use nautilus_core::{UUID4, UnixNanos, serialization::serialize_decimal_as_str};
 use nautilus_model::{
     events::OrderInitialized,
     identifiers::{ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
@@ -937,6 +937,22 @@ pub enum AxOrdersWsMessage {
     CancelOrderResponse(AxWsCancelOrderResponse),
     /// Open orders response.
     OpenOrdersResponse(AxWsOpenOrdersResponse),
+    /// Known-unsent place-order failure.
+    PlaceOrderError {
+        /// Client order ID that was not submitted.
+        client_order_id: ClientOrderId,
+        /// Reason the order was not submitted.
+        reason: String,
+    },
+    /// Known-unsent cancel-order failure.
+    CancelOrderError {
+        /// Client order ID whose cancellation was not sent.
+        client_order_id: ClientOrderId,
+        /// Reason the cancellation was not sent.
+        reason: String,
+        /// Command ID that correlates the denial with its pending cancel.
+        command_id: Option<UUID4>,
+    },
     /// Error from venue or client.
     Error(AxWsError),
     /// WebSocket reconnected notification.

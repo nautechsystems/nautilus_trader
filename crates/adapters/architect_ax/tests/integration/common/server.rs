@@ -91,6 +91,8 @@ pub(crate) struct TestServerState {
     pub order_fill_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub order_injected_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub order_initial_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    pub order_login_response: Arc<AtomicBool>,
+    pub order_login_cod: Arc<tokio::sync::Mutex<Option<bool>>>,
     pub order_upgrade_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
     pub instrument_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
@@ -152,6 +154,8 @@ impl Default for TestServerState {
             order_fill_payload: Arc::new(tokio::sync::Mutex::new(None)),
             order_injected_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_initial_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            order_login_response: Arc::new(AtomicBool::new(true)),
+            order_login_cod: Arc::new(tokio::sync::Mutex::new(None)),
             order_upgrade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_payload: Arc::new(tokio::sync::Mutex::new(None)),
@@ -560,6 +564,9 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
     }
 
     state.authenticated.store(true, Ordering::Relaxed);
+    if !send_order_login(&mut socket, &state).await {
+        return;
+    }
 
     let initial_events = state.order_initial_events.lock().await.clone();
     for event in initial_events {
@@ -602,80 +609,100 @@ async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {
             Err(_) => break,
         };
 
-        match msg {
-            Message::Text(text) => {
-                let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
-                    continue;
-                };
-
-                state.messages_received.lock().await.push(value.clone());
-
-                let msg_type = value.get("t").and_then(|v| v.as_str());
-
-                match msg_type {
-                    Some("p") => {
-                        if send_place_order_response(&mut socket, &state, &value)
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Some("x") => {
-                        // CancelOrder request: ack with a cancel-response shape
-                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let ack = json!({
-                            "rid": rid,
-                            "res": {
-                                "cxl_rx": true,
-                            },
-                        });
-
-                        if socket
-                            .send(Message::Text(ack.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    Some("o") => {
-                        let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
-                        let mut response = load_test_data("ws_orders_open_orders.json");
-                        if let Some(obj) = response.as_object_mut() {
-                            obj.insert("rid".to_string(), json!(rid));
-                        }
-
-                        if socket
-                            .send(Message::Text(response.to_string().into()))
-                            .await
-                            .is_err()
-                        {
-                            break;
-                        }
-                    }
-                    _ => {}
-                }
-            }
-            Message::Ping(_) => {
-                state.ping_count.fetch_add(1, Ordering::Relaxed);
-
-                if socket.send(Message::Pong(vec![].into())).await.is_err() {
-                    break;
-                }
-            }
-            Message::Pong(_) => {
-                state.pong_count.fetch_add(1, Ordering::Relaxed);
-            }
-            Message::Close(_) => {
-                break;
-            }
-            _ => {}
+        if !handle_order_frame(&mut socket, &state, msg).await {
+            break;
         }
     }
 
     let mut count = state.connection_count.lock().await;
     *count = count.saturating_sub(1);
+}
+
+async fn send_order_login(socket: &mut WebSocket, state: &TestServerState) -> bool {
+    if !state.order_login_response.load(Ordering::Relaxed) {
+        return true;
+    }
+
+    let cod = *state.order_login_cod.lock().await;
+    let mut result = json!({
+        "li": "test-user",
+        "o": [],
+    });
+
+    if let Some(cod) = cod {
+        result["cod"] = json!(cod);
+    }
+
+    let login = json!({
+        "rid": 0,
+        "res": result,
+    });
+
+    socket
+        .send(Message::Text(login.to_string().into()))
+        .await
+        .is_ok()
+}
+
+async fn handle_order_frame(
+    socket: &mut WebSocket,
+    state: &TestServerState,
+    message: Message,
+) -> bool {
+    match message {
+        Message::Text(text) => {
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&text) else {
+                return true;
+            };
+
+            state.messages_received.lock().await.push(value.clone());
+
+            let msg_type = value.get("t").and_then(|v| v.as_str());
+            match msg_type {
+                Some("p") => send_place_order_response(socket, state, &value)
+                    .await
+                    .is_ok(),
+                Some("x") => {
+                    // CancelOrder request: ack with a cancel-response shape
+                    let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let ack = json!({
+                        "rid": rid,
+                        "res": {
+                            "cxl_rx": true,
+                        },
+                    });
+
+                    socket
+                        .send(Message::Text(ack.to_string().into()))
+                        .await
+                        .is_ok()
+                }
+                Some("o") => {
+                    let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
+                    let mut response = load_test_data("ws_orders_open_orders.json");
+                    if let Some(obj) = response.as_object_mut() {
+                        obj.insert("rid".to_string(), json!(rid));
+                    }
+
+                    socket
+                        .send(Message::Text(response.to_string().into()))
+                        .await
+                        .is_ok()
+                }
+                _ => true,
+            }
+        }
+        Message::Ping(_) => {
+            state.ping_count.fetch_add(1, Ordering::Relaxed);
+            socket.send(Message::Pong(vec![].into())).await.is_ok()
+        }
+        Message::Pong(_) => {
+            state.pong_count.fetch_add(1, Ordering::Relaxed);
+            true
+        }
+        Message::Close(_) => false,
+        _ => true,
+    }
 }
 
 async fn send_place_order_response(

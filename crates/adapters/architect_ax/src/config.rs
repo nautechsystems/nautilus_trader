@@ -20,10 +20,21 @@ use nautilus_core::string::secret::REDACTED;
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::identifiers::AccountId;
-use nautilus_network::websocket::TransportBackend;
+use nautilus_network::{
+    transport::TransportError,
+    websocket::{TransportBackend, proxy::ProxyUrl},
+};
 use serde::{Deserialize, Serialize};
 
 use crate::common::{credential::credential_env_vars, enums::AxEnvironment};
+
+fn validate_proxy_url(value: Option<&SecretString>) -> Result<(), TransportError> {
+    if let Some(value) = value {
+        ProxyUrl::parse(value.expose_secret().to_owned())?;
+    }
+
+    Ok(())
+}
 
 /// Configuration for the AX Exchange live data client.
 #[cfg_attr(
@@ -48,7 +59,7 @@ pub struct AxDataClientConfig {
     pub base_url_http: Option<String>,
     /// Optional override for the public WebSocket URL.
     pub base_url_ws_public: Option<String>,
-    /// Optional override for the private WebSocket URL.
+    /// Reserved and unused. Configure the private WebSocket on `AxExecutionClientConfig`.
     pub base_url_ws_private: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
@@ -67,7 +78,7 @@ pub struct AxDataClientConfig {
     /// Heartbeat interval (seconds) for WebSocket clients.
     #[builder(default = 20)]
     pub heartbeat_interval_secs: u64,
-    /// Receive window in milliseconds for signed requests.
+    /// Reserved and unused; AX bearer authentication sends no receive window.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
     /// Interval (minutes) for instrument refresh from REST.
@@ -118,6 +129,10 @@ impl AxDataClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn validate_proxy_url(&self) -> Result<(), TransportError> {
+        validate_proxy_url(self.proxy_url.as_ref())
     }
 
     /// Returns `true` if both API key and secret are available.
@@ -199,7 +214,7 @@ pub struct AxExecutionClientConfig {
     /// Heartbeat interval (seconds) for WebSocket clients.
     #[builder(default = 30)]
     pub heartbeat_interval_secs: u64,
-    /// Receive window in milliseconds for signed requests.
+    /// Reserved and unused; AX bearer authentication sends no receive window.
     #[builder(default = 5_000)]
     pub recv_window_ms: u64,
     /// Cancel all open orders when the orders WebSocket disconnects.
@@ -240,6 +255,10 @@ impl AxExecutionClientConfig {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub(crate) fn validate_proxy_url(&self) -> Result<(), TransportError> {
+        validate_proxy_url(self.proxy_url.as_ref())
     }
 
     /// Returns `true` if both API key and secret are available.
@@ -402,6 +421,42 @@ book_snapshot_timeout_secs = 4
         assert_eq!(config.recv_window_ms, expected.recv_window_ms);
         assert_eq!(config.cancel_on_disconnect, expected.cancel_on_disconnect);
         assert_eq!(config.transport_backend, expected.transport_backend);
+    }
+
+    #[rstest]
+    #[case("socks5://127.0.0.1:1080")]
+    #[case("socks5h://127.0.0.1:1080")]
+    #[case("socks4://127.0.0.1:1080")]
+    #[case("socks4a://127.0.0.1:1080")]
+    fn test_managed_configs_reject_socks_proxies(#[case] proxy_url: &str) {
+        let data = AxDataClientConfig {
+            proxy_url: Some(proxy_url.into()),
+            ..Default::default()
+        };
+
+        let execution = AxExecutionClientConfig {
+            proxy_url: Some(proxy_url.into()),
+            ..Default::default()
+        };
+
+        assert!(data.validate_proxy_url().is_err());
+        assert!(execution.validate_proxy_url().is_err());
+    }
+
+    #[rstest]
+    fn test_managed_configs_accept_http_proxy() {
+        let data = AxDataClientConfig {
+            proxy_url: Some("http://127.0.0.1:8080".into()),
+            ..Default::default()
+        };
+
+        let execution = AxExecutionClientConfig {
+            proxy_url: Some("http://127.0.0.1:8080".into()),
+            ..Default::default()
+        };
+
+        assert!(data.validate_proxy_url().is_ok());
+        assert!(execution.validate_proxy_url().is_ok());
     }
 
     #[rstest]

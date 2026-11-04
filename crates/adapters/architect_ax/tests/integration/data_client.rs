@@ -23,7 +23,10 @@ use std::{net::SocketAddr, sync::atomic::Ordering, time::Duration};
 
 use futures_util::StreamExt;
 use nautilus_architect_ax::{
-    common::enums::{AxCandleWidth, AxMarketDataLevel},
+    common::{
+        credential::Credential,
+        enums::{AxCandleWidth, AxEnvironment, AxMarketDataLevel},
+    },
     config::AxDataClientConfig,
     data::AxDataClient,
     http::client::AxHttpClient,
@@ -65,6 +68,111 @@ fn setup_data_channel() -> tokio::sync::mpsc::UnboundedReceiver<DataEvent> {
     let (sender, receiver) = tokio::sync::mpsc::unbounded_channel::<DataEvent>();
     set_data_event_sender(sender);
     receiver
+}
+
+fn test_data_config() -> AxDataClientConfig {
+    AxDataClientConfig {
+        api_key: Some("test_api_key".into()),
+        api_secret: Some("test_api_secret".into()),
+        ..Default::default()
+    }
+}
+
+#[rstest]
+fn test_data_client_new_rejects_socks_proxy() {
+    let config = AxDataClientConfig {
+        proxy_url: Some("socks5://127.0.0.1:1080".into()),
+        ..test_data_config()
+    };
+
+    let http_client = AxHttpClient::new(
+        Some("http://127.0.0.1:9".to_string()),
+        None,
+        60,
+        0,
+        1_000,
+        10_000,
+        None,
+    )
+    .unwrap();
+    let ws_client = AxMdWebSocketClient::without_auth(
+        "ws://127.0.0.1:9".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+
+    let Err(e) = AxDataClient::new(ClientId::from("AX-TEST"), config, http_client, ws_client)
+    else {
+        panic!("Expected direct data client construction to reject SOCKS proxy");
+    };
+
+    assert!(e.to_string().contains("Invalid AX proxy URL"));
+}
+
+#[rstest]
+#[case::missing(None, None)]
+#[case::key_only(Some("test_api_key"), None)]
+#[case::secret_only(None, Some("test_api_secret"))]
+#[tokio::test]
+async fn test_data_client_connect_requires_complete_credentials(
+    #[case] api_key: Option<&str>,
+    #[case] api_secret: Option<&str>,
+) {
+    if std::env::var("AX_API_KEY").is_ok() || std::env::var("AX_API_SECRET").is_ok() {
+        let case = match (api_key, api_secret) {
+            (None, None) => "case_1_missing",
+            (Some(_), None) => "case_2_key_only",
+            (None, Some(_)) => "case_3_secret_only",
+            (Some(_), Some(_)) => unreachable!(),
+        };
+
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .arg(format!(
+                "data_client::test_data_client_connect_requires_complete_credentials::{case}"
+            ))
+            .arg("--exact")
+            .env_remove("AX_API_KEY")
+            .env_remove("AX_API_SECRET")
+            .status()
+            .unwrap();
+        assert!(status.success());
+        return;
+    }
+
+    let _rx = setup_data_channel();
+
+    let config = AxDataClientConfig {
+        api_key: api_key.map(Into::into),
+        api_secret: api_secret.map(Into::into),
+        ..Default::default()
+    };
+
+    let http_client = AxHttpClient::new(
+        Some("http://127.0.0.1:9".to_string()),
+        None,
+        60,
+        0,
+        1_000,
+        10_000,
+        None,
+    )
+    .unwrap();
+    let ws_client = AxMdWebSocketClient::without_auth(
+        "ws://127.0.0.1:9".to_string(),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+    let mut client =
+        AxDataClient::new(ClientId::from("AX-TEST"), config, http_client, ws_client).unwrap();
+
+    let error = client.connect().await.unwrap_err();
+
+    assert!(
+        error.to_string().contains("API credentials not configured"),
+        "unexpected error: {error:#}"
+    );
 }
 
 #[rstest]
@@ -286,7 +394,7 @@ async fn test_data_client_emits_quote_tick_via_channel() {
         None,
     );
 
-    let config = AxDataClientConfig::default();
+    let config = test_data_config();
     let client_id = ClientId::from("AX-TEST");
     let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
         .expect("Failed to create data client");
@@ -338,7 +446,7 @@ async fn test_l2_book_emits_quote_when_quotes_subscribed() {
     let mut rx = setup_data_channel();
     let (addr, state) = start_test_server().await.unwrap();
     let client_id = ClientId::from("AX-TEST");
-    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    let mut client = create_data_client(addr, client_id, test_data_config());
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
@@ -379,7 +487,7 @@ async fn test_ticker_instrument_status_emitted_once_when_state_unchanged() {
     let (addr, state) = start_test_server().await.unwrap();
     *state.md_ticker_states.lock().await = vec!["OPEN".to_string(), "OPEN".to_string()];
     let client_id = ClientId::from("AX-TEST");
-    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    let mut client = create_data_client(addr, client_id, test_data_config());
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
@@ -403,7 +511,7 @@ async fn test_ticker_instrument_status_emitted_on_transition() {
     let (addr, state) = start_test_server().await.unwrap();
     *state.md_ticker_states.lock().await = vec!["OPEN".to_string(), "CLOSED".to_string()];
     let client_id = ClientId::from("AX-TEST");
-    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    let mut client = create_data_client(addr, client_id, test_data_config());
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
@@ -429,7 +537,7 @@ async fn test_ticker_instrument_status_skipped_when_not_subscribed() {
     let (addr, state) = start_test_server().await.unwrap();
     *state.md_ticker_states.lock().await = vec!["OPEN".to_string()];
     let client_id = ClientId::from("AX-TEST");
-    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    let mut client = create_data_client(addr, client_id, test_data_config());
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
 
@@ -471,7 +579,7 @@ async fn test_data_client_emits_trade_tick_via_channel() {
         None,
     );
 
-    let config = AxDataClientConfig::default();
+    let config = test_data_config();
     let client_id = ClientId::from("AX-TEST");
     let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
         .expect("Failed to create data client");
@@ -536,7 +644,7 @@ async fn test_data_client_connect_disconnect() {
         None,
     );
 
-    let config = AxDataClientConfig::default();
+    let config = test_data_config();
     let client_id = ClientId::from("AX-TEST");
     let registry = SocketReconnectRegistry::default();
     let mut client = registry
@@ -578,6 +686,72 @@ async fn test_data_client_connect_disconnect() {
 
 #[rstest]
 #[tokio::test]
+#[ignore = "requires AX sandbox credentials and network access; streams live market data"]
+async fn test_live_data_client_connect_sandbox() {
+    let credential = Credential::resolve(None, None).expect("AX sandbox credentials");
+    let environment = AxEnvironment::Sandbox;
+    let http_client = AxHttpClient::with_credentials(
+        credential.api_key().to_owned(),
+        credential.api_secret().to_owned(),
+        Some(environment.http_url().to_string()),
+        None,
+        30,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    let ws_client = AxMdWebSocketClient::without_auth(
+        environment.ws_md_url().to_string(),
+        20,
+        TransportBackend::default(),
+        None,
+    );
+
+    let config = AxDataClientConfig {
+        api_key: Some(credential.api_key().to_owned().into()),
+        api_secret: Some(credential.api_secret().to_owned().into()),
+        environment,
+        ..Default::default()
+    };
+
+    let mut rx = setup_data_channel();
+    let mut client =
+        AxDataClient::new(ClientId::from("AX-LIVE"), config, http_client, ws_client).unwrap();
+
+    client.connect().await.unwrap();
+    let instrument_id = InstrumentId::from("XAG-PERP.AX");
+    client
+        .subscribe_quotes(SubscribeQuotes {
+            instrument_ids: vec![instrument_id],
+            client_id: Some(ClientId::from("AX-LIVE")),
+            venue: None,
+            command_id: UUID4::new(),
+            ts_init: 0.into(),
+            correlation_id: None,
+            params: None,
+        })
+        .unwrap();
+
+    let quote = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            match rx.recv().await {
+                Some(DataEvent::Data(Data::Quote(quote))) => break quote,
+                Some(_) => {}
+                None => panic!("Data event channel closed"),
+            }
+        }
+    })
+    .await
+    .expect("Timed out waiting for sandbox quote");
+
+    assert_eq!(quote.instrument_id, instrument_id);
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_data_client_emits_instruments_on_connect() {
     let mut rx = setup_data_channel();
 
@@ -594,7 +768,7 @@ async fn test_data_client_emits_instruments_on_connect() {
         None,
     );
 
-    let config = AxDataClientConfig::default();
+    let config = test_data_config();
     let client_id = ClientId::from("AX-TEST");
     let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
         .expect("Failed to create data client");
@@ -636,7 +810,7 @@ async fn test_data_client_subscribe_book_deltas_via_channel() {
         None,
     );
 
-    let config = AxDataClientConfig::default();
+    let config = test_data_config();
     let client_id = ClientId::from("AX-TEST");
     let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
         .expect("Failed to create data client");
@@ -700,7 +874,7 @@ async fn test_data_client_subscribe_bars_via_channel() {
         None,
     );
 
-    let config = AxDataClientConfig::default();
+    let config = test_data_config();
     let client_id = ClientId::from("AX-TEST");
     let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
         .expect("Failed to create data client");
@@ -762,7 +936,7 @@ async fn test_data_client_reset_clears_state() {
         None,
     );
 
-    let config = AxDataClientConfig::default();
+    let config = test_data_config();
     let client_id = ClientId::from("AX-TEST");
     let mut client = AxDataClient::new(client_id, config, http_client, ws_client)
         .expect("Failed to create data client");
@@ -786,7 +960,7 @@ async fn test_data_client_request_instrument_emits_response() {
 
     let (addr, state) = start_test_server().await.unwrap();
     let client_id = ClientId::from("AX-TEST");
-    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    let mut client = create_data_client(addr, client_id, test_data_config());
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -830,7 +1004,7 @@ async fn test_data_client_disconnect_aborts_instrument_request() {
 
     let (addr, state) = start_test_server().await.unwrap();
     let client_id = ClientId::from("AX-TEST");
-    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    let mut client = create_data_client(addr, client_id, test_data_config());
 
     client.connect().await.expect("Failed to connect");
     wait_for_connection(&state).await;
@@ -1258,7 +1432,7 @@ fn instrument_status_subscription(
 fn book_config(book_snapshot_timeout_secs: u64) -> AxDataClientConfig {
     AxDataClientConfig {
         book_snapshot_timeout_secs,
-        ..AxDataClientConfig::default()
+        ..test_data_config()
     }
 }
 

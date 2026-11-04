@@ -46,6 +46,7 @@ use nautilus_model::{
     types::{Price, Quantity},
 };
 use nautilus_network::{
+    backoff::ExponentialBackoff,
     http::{HttpClient, HttpRedirectPolicy, create_standard_nautilus_headers},
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryError, RetryManager},
@@ -82,7 +83,10 @@ use super::{
     },
 };
 use crate::common::{
-    consts::{AX_FILLS_MAX_LOOKBACK_DAYS, AX_HTTP_URL, AX_ORDERS_URL},
+    consts::{
+        AX_FILLS_MAX_LOOKBACK_DAYS, AX_HTTP_SANDBOX_URL, AX_HTTP_URL, AX_ORDERS_SANDBOX_URL,
+        AX_ORDERS_URL,
+    },
     credential::Credential,
     enums::{AxCandleWidth, AxInstrumentState},
     parse::{ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, client_order_id_to_cid},
@@ -101,9 +105,10 @@ const AX_GLOBAL_RATE_KEY: &str = "architect:global";
 ///
 /// This client handles request/response operations with the AX Exchange API,
 /// returning venue-specific response types. It does not parse to Nautilus domain types.
+/// Order-management operations require `orders_base_url` when `base_url` is a custom endpoint.
 pub struct AxRawHttpClient {
     base_url: String,
-    orders_base_url: String,
+    orders_base_url: Option<String>,
     client: HttpClient,
     credential: Option<Credential>,
     session_token: RwLock<Option<SecretString>>,
@@ -135,6 +140,15 @@ impl AxRawHttpClient {
     #[must_use]
     pub fn base_url(&self) -> &str {
         &self.base_url
+    }
+
+    fn orders_base_url(&self) -> Result<&str, AxHttpError> {
+        self.orders_base_url.as_deref().ok_or_else(|| {
+            AxHttpError::ValidationError(
+                "Orders base URL is required for order-management operations with a custom API base URL"
+                    .to_string(),
+            )
+        })
     }
 
     /// Returns a masked version of the API key for logging purposes.
@@ -174,22 +188,18 @@ impl AxRawHttpClient {
         retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
-        let retry_config = RetryConfig {
+        let retry_config = retry_config(
+            timeout_secs,
             max_retries,
-            initial_delay_ms: retry_delay_ms,
-            max_delay_ms: retry_delay_max_ms,
-            backoff_factor: 2.0,
-            jitter_ms: 1000,
-            operation_timeout_ms: Some(60_000),
-            immediate_first: false,
-            max_elapsed_ms: Some(180_000),
-        };
-
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )?;
         let retry_manager = RetryManager::new(retry_config);
+        let (base_url, orders_base_url) = resolve_base_urls(base_url, orders_base_url);
 
         Ok(Self {
-            base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
-            orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
+            base_url,
+            orders_base_url,
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
@@ -225,22 +235,18 @@ impl AxRawHttpClient {
         retry_delay_max_ms: u64,
         proxy_url: Option<String>,
     ) -> Result<Self, AxHttpError> {
-        let retry_config = RetryConfig {
+        let retry_config = retry_config(
+            timeout_secs,
             max_retries,
-            initial_delay_ms: retry_delay_ms,
-            max_delay_ms: retry_delay_max_ms,
-            backoff_factor: 2.0,
-            jitter_ms: 1000,
-            operation_timeout_ms: Some(60_000),
-            immediate_first: false,
-            max_elapsed_ms: Some(180_000),
-        };
-
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )?;
         let retry_manager = RetryManager::new(retry_config);
+        let (base_url, orders_base_url) = resolve_base_urls(base_url, orders_base_url);
 
         Ok(Self {
-            base_url: base_url.unwrap_or_else(|| AX_HTTP_URL.to_string()),
-            orders_base_url: orders_base_url.unwrap_or_else(|| AX_ORDERS_URL.to_string()),
+            base_url,
+            orders_base_url,
             client: HttpClient::builder()
                 .redirect_policy(HttpRedirectPolicy::Reject)
                 .headers(Self::default_headers())
@@ -619,7 +625,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxPlaceOrderResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/place-order",
             None,
@@ -642,7 +648,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(&request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxCancelOrderResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/cancel-order",
             None,
@@ -670,7 +676,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxReplaceOrderResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/replace-order",
             None,
@@ -695,7 +701,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxCancelAllOrdersResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/cancel-all-orders",
             None,
@@ -727,7 +733,7 @@ impl AxRawHttpClient {
         params: &GetOpenOrdersParams,
     ) -> Result<AxOpenOrdersResponse, AxHttpError> {
         self.send_request_to_url::<AxOpenOrdersResponse, _>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::GET,
             "/open-orders",
             Some(params),
@@ -1041,7 +1047,7 @@ impl AxRawHttpClient {
     ) -> Result<AxOrderStatusQueryResponse, AxHttpError> {
         let params = GetOrderStatusParams::by_order_id(order_id);
         self.send_request_to_url::<AxOrderStatusQueryResponse, _>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::GET,
             "/order-status",
             Some(&params),
@@ -1065,7 +1071,7 @@ impl AxRawHttpClient {
     ) -> Result<AxOrderStatusQueryResponse, AxHttpError> {
         let params = GetOrderStatusParams::by_client_order_id(client_order_id);
         self.send_request_to_url::<AxOrderStatusQueryResponse, _>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::GET,
             "/order-status",
             Some(&params),
@@ -1088,7 +1094,7 @@ impl AxRawHttpClient {
         params: &GetOrdersParams,
     ) -> Result<AxOrdersResponse, AxHttpError> {
         self.send_request_to_url::<AxOrdersResponse, _>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::GET,
             "/orders",
             Some(params),
@@ -1113,7 +1119,7 @@ impl AxRawHttpClient {
         let body = serde_json::to_vec(request)
             .map_err(|e| AxHttpError::JsonError(format!("Failed to serialize request: {e}")))?;
         self.send_request_to_url::<AxInitialMarginRequirementResponse, ()>(
-            &self.orders_base_url,
+            self.orders_base_url()?,
             Method::POST,
             "/initial-margin-requirement",
             None,
@@ -1122,6 +1128,70 @@ impl AxRawHttpClient {
         )
         .await
     }
+}
+
+fn retry_config(
+    timeout_secs: u64,
+    max_retries: u32,
+    retry_delay_ms: u64,
+    retry_delay_max_ms: u64,
+) -> Result<RetryConfig, AxHttpError> {
+    if timeout_secs == 0 {
+        return Err(AxHttpError::ValidationError(
+            "HTTP timeout must be non-zero".to_string(),
+        ));
+    }
+
+    let operation_timeout_ms = timeout_secs.checked_mul(1_000).ok_or_else(|| {
+        AxHttpError::ValidationError("HTTP timeout in milliseconds exceeds u64::MAX".to_string())
+    })?;
+
+    ExponentialBackoff::new(
+        Duration::from_millis(retry_delay_ms),
+        Duration::from_millis(retry_delay_max_ms),
+        2.0,
+        1_000,
+        false,
+    )
+    .map_err(|e| AxHttpError::ValidationError(format!("Invalid retry configuration: {e}")))?;
+
+    Ok(RetryConfig {
+        max_retries,
+        initial_delay_ms: retry_delay_ms,
+        max_delay_ms: retry_delay_max_ms,
+        backoff_factor: 2.0,
+        jitter_ms: 1_000,
+        operation_timeout_ms: Some(operation_timeout_ms),
+        immediate_first: false,
+        max_elapsed_ms: None,
+    })
+}
+
+fn resolve_base_urls(
+    base_url: Option<String>,
+    orders_base_url: Option<String>,
+) -> (String, Option<String>) {
+    let base_url = base_url.map_or_else(|| AX_HTTP_URL.to_string(), normalize_base_url);
+
+    let orders_base_url = match orders_base_url {
+        Some(url) => Some(normalize_base_url(url)),
+        None => match base_url.as_str() {
+            AX_HTTP_URL => Some(AX_ORDERS_URL.to_string()),
+            AX_HTTP_SANDBOX_URL => Some(AX_ORDERS_SANDBOX_URL.to_string()),
+            _ => None,
+        },
+    };
+
+    (base_url, orders_base_url)
+}
+
+fn normalize_base_url(url: String) -> String {
+    let normalized = url.trim_end_matches('/');
+    if normalized.ends_with(':') {
+        return url;
+    }
+
+    normalized.to_string()
 }
 
 /// High-level HTTP client for the Ax REST API.
@@ -2549,5 +2619,225 @@ impl AxHttpClient {
         let request = CancelAllOrdersRequest::new().with_symbol(instrument_id.symbol.inner());
         self.inner.cancel_all_orders(&request).await?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use rstest::rstest;
+
+    use super::*;
+    use crate::common::enums::{AxOrderSide, AxTimeInForce};
+
+    #[derive(Clone, Copy, Debug)]
+    enum OrderOperation {
+        Place,
+        Cancel,
+        Replace,
+        CancelAll,
+        OpenOrders,
+        OrderStatusById,
+        OrderStatusByCid,
+        Orders,
+        InitialMargin,
+    }
+
+    fn custom_api_client() -> AxRawHttpClient {
+        AxRawHttpClient::new(
+            Some("http://mock".to_string()),
+            None,
+            60,
+            3,
+            1_000,
+            10_000,
+            None,
+        )
+        .unwrap()
+    }
+
+    #[rstest]
+    #[case::production_defaults(None, None, AX_HTTP_URL, Some(AX_ORDERS_URL))]
+    #[case::sandbox_default_orders(
+        Some(AX_HTTP_SANDBOX_URL),
+        None,
+        AX_HTTP_SANDBOX_URL,
+        Some(AX_ORDERS_SANDBOX_URL)
+    )]
+    #[case::sandbox_trailing_slash(
+        Some("https://gateway.sandbox.architect.exchange/api/"),
+        None,
+        AX_HTTP_SANDBOX_URL,
+        Some(AX_ORDERS_SANDBOX_URL)
+    )]
+    #[case::custom_without_orders(Some("http://mock/"), None, "http://mock", None)]
+    #[case::explicit_orders(
+        Some("http://mock/"),
+        Some("http://orders/"),
+        "http://mock",
+        Some("http://orders")
+    )]
+    fn test_resolve_base_urls(
+        #[case] base_url: Option<&str>,
+        #[case] orders_base_url: Option<&str>,
+        #[case] expected_base: &str,
+        #[case] expected_orders: Option<&str>,
+    ) {
+        let (base, orders) = resolve_base_urls(
+            base_url.map(str::to_string),
+            orders_base_url.map(str::to_string),
+        );
+
+        assert_eq!(base, expected_base);
+        assert_eq!(orders.as_deref(), expected_orders);
+    }
+
+    #[rstest]
+    fn test_custom_base_url_without_orders_url_rejects_order_route() {
+        let client = custom_api_client();
+
+        let error = client.orders_base_url().unwrap_err();
+
+        assert!(matches!(error, AxHttpError::ValidationError(_)));
+    }
+
+    #[rstest]
+    #[case::place(OrderOperation::Place)]
+    #[case::cancel(OrderOperation::Cancel)]
+    #[case::replace(OrderOperation::Replace)]
+    #[case::cancel_all(OrderOperation::CancelAll)]
+    #[case::open_orders(OrderOperation::OpenOrders)]
+    #[case::order_status_by_id(OrderOperation::OrderStatusById)]
+    #[case::order_status_by_cid(OrderOperation::OrderStatusByCid)]
+    #[case::orders(OrderOperation::Orders)]
+    #[case::initial_margin(OrderOperation::InitialMargin)]
+    #[tokio::test]
+    async fn test_order_operations_require_orders_url_for_custom_api_url(
+        #[case] operation: OrderOperation,
+    ) {
+        let client = custom_api_client();
+
+        let place_request = PlaceOrderRequest::new(
+            AxOrderSide::Buy,
+            Decimal::from(100),
+            1,
+            Ustr::from("XAU-PERP"),
+            AxTimeInForce::Gtc,
+            false,
+        );
+
+        let result = match operation {
+            OrderOperation::Place => client.place_order(&place_request).await.map(|_| ()),
+            OrderOperation::Cancel => client.cancel_order("OID-1").await.map(|_| ()),
+            OrderOperation::Replace => client
+                .replace_order(&ReplaceOrderRequest::new("OID-1"))
+                .await
+                .map(|_| ()),
+            OrderOperation::CancelAll => client
+                .cancel_all_orders(&CancelAllOrdersRequest::new())
+                .await
+                .map(|_| ()),
+            OrderOperation::OpenOrders => client.get_open_orders().await.map(|_| ()),
+            OrderOperation::OrderStatusById => {
+                client.get_order_status_by_id("OID-1").await.map(|_| ())
+            }
+            OrderOperation::OrderStatusByCid => {
+                client.get_order_status_by_cid(123).await.map(|_| ())
+            }
+            OrderOperation::Orders => client
+                .get_orders(&GetOrdersParams::default())
+                .await
+                .map(|_| ()),
+            OrderOperation::InitialMargin => client
+                .check_initial_margin(&place_request)
+                .await
+                .map(|_| ()),
+        };
+
+        let error = result.unwrap_err();
+        match error {
+            AxHttpError::ValidationError(message) => assert_eq!(
+                message,
+                "Orders base URL is required for order-management operations with a custom API base URL"
+            ),
+            other => panic!("Expected validation error, was {other}"),
+        }
+    }
+
+    #[rstest]
+    #[case::new(false)]
+    #[case::with_credentials(true)]
+    fn test_raw_http_constructors_reject_invalid_timing(#[case] with_credentials: bool) {
+        let result = if with_credentials {
+            AxRawHttpClient::with_credentials(
+                "key".to_string(),
+                "secret".to_string(),
+                None,
+                None,
+                0,
+                3,
+                1_000,
+                10_000,
+                None,
+            )
+        } else {
+            AxRawHttpClient::new(None, None, 0, 3, 1_000, 10_000, None)
+        };
+
+        assert!(matches!(
+            result.unwrap_err(),
+            AxHttpError::ValidationError(_)
+        ));
+    }
+
+    #[rstest]
+    fn test_low_level_http_accepts_socks_proxy() {
+        let result = AxRawHttpClient::new(
+            None,
+            None,
+            60,
+            3,
+            1_000,
+            10_000,
+            Some("socks5://127.0.0.1:1080".to_string()),
+        );
+
+        assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_retry_config_uses_configured_timeout_without_hidden_elapsed_cap() {
+        let config = retry_config(120, 4, 2_000, 8_000).unwrap();
+
+        assert_eq!(config.max_retries, 4);
+        assert_eq!(config.initial_delay_ms, 2_000);
+        assert_eq!(config.max_delay_ms, 8_000);
+        assert_eq!(config.backoff_factor, 2.0);
+        assert_eq!(config.jitter_ms, 1_000);
+        assert_eq!(config.operation_timeout_ms, Some(120_000));
+        assert!(!config.immediate_first);
+        assert_eq!(config.max_elapsed_ms, None);
+    }
+
+    #[rstest]
+    #[case::zero_timeout(0, 3, 1_000, 10_000)]
+    #[case::timeout_overflow(u64::MAX, 3, 1_000, 10_000)]
+    #[case::zero_initial_delay(60, 3, 0, 10_000)]
+    #[case::zero_initial_delay_without_retries(60, 0, 0, 10_000)]
+    #[case::reversed_delays(60, 3, 10_001, 10_000)]
+    fn test_retry_config_rejects_invalid_timing(
+        #[case] timeout_secs: u64,
+        #[case] max_retries: u32,
+        #[case] retry_delay_ms: u64,
+        #[case] retry_delay_max_ms: u64,
+    ) {
+        let error = retry_config(
+            timeout_secs,
+            max_retries,
+            retry_delay_ms,
+            retry_delay_max_ms,
+        )
+        .unwrap_err();
+
+        assert!(matches!(error, AxHttpError::ValidationError(_)));
     }
 }

@@ -131,6 +131,10 @@ impl AxDataClient {
         http_client: AxHttpClient,
         ws_client: AxMdWebSocketClient,
     ) -> anyhow::Result<Self> {
+        config
+            .validate_proxy_url()
+            .context("Invalid AX proxy URL")?;
+
         let clock = get_atomic_clock_realtime();
         let data_sender = get_data_event_sender();
         let ws_client = ws_client.with_socket_control(SocketControl::new(
@@ -488,40 +492,31 @@ impl DataClient for AxDataClient {
                 ws_client.begin_shutdown();
             });
 
-        let credential = if self.config.has_api_credentials() {
-            let credential = Credential::resolve(
-                self.config.api_key.clone().map(|value| value.into_inner()),
-                self.config
-                    .api_secret
-                    .clone()
-                    .map(|value| value.into_inner()),
+        let credential = Credential::resolve(
+            self.config.api_key.clone().map(|value| value.into_inner()),
+            self.config
+                .api_secret
+                .clone()
+                .map(|value| value.into_inner()),
+        )
+        .context("API credentials not configured")?;
+
+        let token = self
+            .http_client
+            .authenticate(
+                credential.api_key(),
+                credential.api_secret(),
+                AX_AUTH_TOKEN_TTL_SECS,
             )
-            .context("API credentials not configured")?;
+            .await
+            .context("Failed to authenticate with Ax")?;
+        log::debug!("Authenticated with Ax");
+        self.ws_client.set_auth_token(token);
 
-            let token = self
-                .http_client
-                .authenticate(
-                    credential.api_key(),
-                    credential.api_secret(),
-                    AX_AUTH_TOKEN_TTL_SECS,
-                )
-                .await
-                .context("Failed to authenticate with Ax")?;
-            log::debug!("Authenticated with Ax");
-            self.ws_client.set_auth_token(token);
-
-            // Only an authenticated client can read fee rates, and a data client may
-            // legitimately run without credentials.
-            self.http_client
-                .request_account_fees()
-                .await
-                .context("Failed to resolve Ax account fee rates")?;
-
-            Some(credential)
-        } else {
-            log::debug!("No Ax credentials configured");
-            None
-        };
+        self.http_client
+            .request_account_fees()
+            .await
+            .context("Failed to resolve Ax account fee rates")?;
 
         let instruments = self
             .http_client
@@ -561,14 +556,12 @@ impl DataClient for AxDataClient {
             self.spawn_message_handler()?;
             self.spawn_instrument_refresh()?;
 
-            if let Some(credential) = credential {
-                let ws_client = self.ws_client.clone();
-                self.session_tasks.spawn(run_auth_token_refresh(
-                    self.http_client.clone(),
-                    credential,
-                    move |token| ws_client.update_auth_token(token),
-                ))?;
-            }
+            let ws_client = self.ws_client.clone();
+            self.session_tasks.spawn(run_auth_token_refresh(
+                self.http_client.clone(),
+                credential,
+                move |token| ws_client.update_auth_token(token),
+            ))?;
             Ok::<(), anyhow::Error>(())
         }
         .await;

@@ -1238,6 +1238,31 @@ async fn test_orders_client_connection() {
 
 #[rstest]
 #[tokio::test]
+async fn test_orders_client_rejects_second_connect_while_running() {
+    let (addr, state) = start_test_server().await.unwrap();
+
+    let mut client = AxOrdersWebSocketClient::new(
+        format!("ws://{addr}/orders/ws"),
+        AccountId::from("AX-001"),
+        TraderId::from("TESTER-001"),
+        30,
+        TransportBackend::default(),
+        None,
+    );
+    client.connect("test_bearer_token").await.unwrap();
+    wait_for_connection(&state).await;
+
+    let error = client.connect("test_bearer_token").await.unwrap_err();
+
+    assert!(matches!(
+        error,
+        AxOrdersWsClientError::ClientError(message) if message == "WebSocket handler is already running"
+    ));
+    client.close().await.expect("close WebSocket client");
+}
+
+#[rstest]
+#[tokio::test]
 async fn test_orders_client_not_active_before_connect() {
     let account_id = AccountId::from("AX-001");
     let trader_id = TraderId::from("TESTER-001");

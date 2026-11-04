@@ -18,7 +18,7 @@
 //! These tests use the mock HTTP+WS server from `common::server` to verify
 //! client creation, connection lifecycle, and account state handling.
 
-use std::{cell::RefCell, collections::HashSet, rc::Rc, time::Duration};
+use std::{cell::RefCell, collections::HashSet, rc::Rc, sync::atomic::Ordering, time::Duration};
 
 use nautilus_architect_ax::{
     common::{
@@ -93,8 +93,8 @@ use ustr::Ustr;
 
 use crate::common::{
     execution::{
-        add_test_account_to_cache, create_test_exec_config, create_test_execution_client, drain_rx,
-        setup_exec_channel,
+        add_test_account_to_cache, create_test_exec_config, create_test_execution_client,
+        create_test_execution_client_from_config, drain_rx, setup_exec_channel,
     },
     server::{TestServerState, load_test_data, start_test_server},
 };
@@ -914,6 +914,7 @@ async fn test_cancel_on_disconnect_appends_to_ws_url(
     #[case] expected_query: &str,
 ) {
     let (addr, state) = start_test_server().await.unwrap();
+    *state.order_login_cod.lock().await = Some(true);
     let cache = Rc::new(RefCell::new(Cache::default()));
     add_test_account_to_cache(&cache, AccountId::from("AX-001"));
 
@@ -947,6 +948,154 @@ async fn test_cancel_on_disconnect_appends_to_ws_url(
         state.order_upgrade_queries.lock().await.as_slice(),
         [expected_query]
     );
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[case::enabled_rejected(Some(false), true, Some(true))]
+#[case::enabled_missing(None, true, Some(true))]
+#[case::disabled_rejected(Some(true), false, None)]
+#[tokio::test]
+async fn test_cancel_on_disconnect_acknowledgment_mismatch_fails_and_recovers(
+    #[case] initial_cod: Option<bool>,
+    #[case] cancel_on_disconnect: bool,
+    #[case] accepted_cod: Option<bool>,
+) {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.order_login_cod.lock().await = initial_cod;
+
+    let config = AxExecutionClientConfig {
+        cancel_on_disconnect,
+        ..create_test_exec_config(addr)
+    };
+
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+
+    let error = client.connect().await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("cancel-on-disconnect acknowledgment mismatch"),
+        "unexpected error: {error:#}"
+    );
+    assert!(!client.is_connected());
+
+    *state.order_login_cod.lock().await = accepted_cod;
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_missing_login_times_out_and_recovers() {
+    let (addr, state) = start_test_server().await.unwrap();
+    state.order_login_response.store(false, Ordering::Relaxed);
+    *state.order_login_cod.lock().await = Some(true);
+
+    let config = AxExecutionClientConfig {
+        cancel_on_disconnect: true,
+        ..create_test_exec_config(addr)
+    };
+
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+
+    let error = client.connect().await.unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("Orders WebSocket login timed out"),
+        "unexpected error: {error:#}"
+    );
+    assert!(!client.is_connected());
+
+    state.order_login_response.store(true, Ordering::Relaxed);
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_reconnect_mismatch_closes_session() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.order_login_cod.lock().await = Some(true);
+
+    let config = AxExecutionClientConfig {
+        cancel_on_disconnect: true,
+        ..create_test_exec_config(addr)
+    };
+
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+
+    state.disconnect_trigger.store(true, Ordering::Relaxed);
+    wait_until_async(
+        || async { *state.connection_count.lock().await == 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+    *state.order_login_cod.lock().await = Some(false);
+    state.reset().await;
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+    wait_until_async(
+        || async { *state.connection_count.lock().await == 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(!client.is_connected());
+
+    *state.order_login_cod.lock().await = Some(true);
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_cancel_on_disconnect_reconnect_login_timeout_closes_session() {
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.order_login_cod.lock().await = Some(true);
+
+    let config = AxExecutionClientConfig {
+        cancel_on_disconnect: true,
+        ..create_test_exec_config(addr)
+    };
+
+    let (mut client, _rx, cache) = create_test_execution_client_from_config(config);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+
+    state.disconnect_trigger.store(true, Ordering::Relaxed);
+    wait_until_async(
+        || async { *state.connection_count.lock().await == 0 },
+        Duration::from_secs(5),
+    )
+    .await;
+    state.order_login_response.store(false, Ordering::Relaxed);
+    state.reset().await;
+    wait_until_async(
+        || async { state.authenticated.load(Ordering::Relaxed) },
+        Duration::from_secs(5),
+    )
+    .await;
+    wait_until_async(
+        || async { *state.connection_count.lock().await == 0 },
+        Duration::from_secs(10),
+    )
+    .await;
+    assert!(!client.is_connected());
+
+    state.order_login_response.store(true, Ordering::Relaxed);
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
     client.disconnect().await.unwrap();
 }
 
@@ -2269,6 +2418,204 @@ async fn test_live_report_tasks_sandbox() {
         positions.len()
     );
     client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "requires AX sandbox credentials and network access"]
+async fn test_live_default_execution_connect_sandbox() {
+    let credential = Credential::resolve(None, None).expect("AX sandbox credentials");
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *AX_CLIENT_ID,
+        *AX_VENUE,
+        OmsType::Netting,
+        AccountId::from("AX-001"),
+        AccountType::Margin,
+        None,
+        cache,
+    );
+
+    let config = AxExecutionClientConfig {
+        api_key: Some(credential.api_key().to_owned().into()),
+        api_secret: Some(credential.api_secret().to_owned().into()),
+        environment: AxEnvironment::Sandbox,
+        ..Default::default()
+    };
+
+    assert!(!config.cancel_on_disconnect);
+    let _rx = setup_exec_channel();
+    let mut client = AxExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+
+    client.connect().await.unwrap();
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "requires AX sandbox credentials and network access; places and cancels a sandbox order"]
+async fn test_live_cancel_on_disconnect_sandbox() {
+    let credential = Credential::resolve(None, None).expect("AX sandbox credentials");
+    let environment = AxEnvironment::Sandbox;
+    let raw = AxRawHttpClient::with_credentials(
+        credential.api_key().to_owned(),
+        credential.api_secret().to_owned(),
+        Some(environment.http_url().to_string()),
+        Some(environment.orders_url().to_string()),
+        30,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    let token = raw
+        .authenticate(credential.api_key(), credential.api_secret(), 3_600)
+        .await
+        .unwrap();
+    raw.set_session_token(token.into_token());
+
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+
+    let core = ExecutionClientCore::new(
+        TraderId::from("TESTER-001"),
+        *AX_CLIENT_ID,
+        *AX_VENUE,
+        OmsType::Netting,
+        AccountId::from("AX-001"),
+        AccountType::Margin,
+        None,
+        cache.clone(),
+    );
+
+    let config = AxExecutionClientConfig {
+        api_key: Some(credential.api_key().to_owned().into()),
+        api_secret: Some(credential.api_secret().to_owned().into()),
+        environment,
+        cancel_on_disconnect: true,
+        ..Default::default()
+    };
+
+    let mut rx = setup_exec_channel();
+    let mut client = AxExecutionClient::new(core, config).unwrap();
+    client.start().unwrap();
+    let client_order_id = ClientOrderId::from("O-LIVE-COD-001");
+    let mut test_order_id = None;
+
+    let result = async {
+        client.connect().await?;
+        let instrument = raw.get_instrument(Ustr::from("XAG-PERP")).await?;
+        let ticker = raw.get_ticker(Ustr::from("XAG-PERP")).await?;
+        let reference_price = ticker
+            .bid
+            .or(ticker.mark)
+            .or(ticker.last)
+            .ok_or_else(|| anyhow::anyhow!("Sandbox ticker has no reference price"))?;
+        let price = reference_price - instrument.tick_size;
+        anyhow::ensure!(price > Decimal::ZERO, "Sandbox price is not positive");
+
+        if let Some(lower) = ticker.price_band_lower {
+            anyhow::ensure!(price >= lower, "Sandbox price is below the lower band");
+        }
+
+        if let Some(upper) = ticker.price_band_upper {
+            anyhow::ensure!(price <= upper, "Sandbox price exceeds the upper band");
+        }
+
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TESTER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(InstrumentId::from("XAG-PERP.AX"))
+            .client_order_id(client_order_id)
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(instrument.minimum_order_size.to_string()))
+            .price(Price::from(price.to_string()))
+            .time_in_force(TimeInForce::Gtc)
+            .post_only(true)
+            .build();
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)?;
+        client.submit_order(make_submit_order_cmd(&order))?;
+
+        let venue_order_id = loop {
+            let event = tokio::time::timeout(Duration::from_secs(15), rx.recv())
+                .await
+                .map_err(|_| anyhow::anyhow!("Timed out waiting for sandbox order acceptance"))?
+                .ok_or_else(|| anyhow::anyhow!("Execution event channel closed"))?;
+
+            match event {
+                ExecutionEvent::Order(OrderEventAny::Accepted(accepted))
+                    if accepted.client_order_id == client_order_id =>
+                {
+                    break accepted.venue_order_id;
+                }
+                ExecutionEvent::Order(OrderEventAny::Rejected(rejected))
+                    if rejected.client_order_id == client_order_id =>
+                {
+                    anyhow::bail!("Sandbox order rejected: {}", rejected.reason);
+                }
+                ExecutionEvent::Order(OrderEventAny::Denied(denied))
+                    if denied.client_order_id == client_order_id =>
+                {
+                    anyhow::bail!("Sandbox order denied: {}", denied.reason);
+                }
+                ExecutionEvent::Order(OrderEventAny::Canceled(canceled))
+                    if canceled.client_order_id == client_order_id =>
+                {
+                    anyhow::bail!("Sandbox order canceled before disconnect");
+                }
+                ExecutionEvent::Order(OrderEventAny::Expired(expired))
+                    if expired.client_order_id == client_order_id =>
+                {
+                    anyhow::bail!("Sandbox order expired before disconnect");
+                }
+                _ => {}
+            }
+        };
+
+        test_order_id = Some(venue_order_id);
+
+        let open = raw.get_open_orders().await?;
+        anyhow::ensure!(
+            open.orders
+                .iter()
+                .any(|order| order.oid == venue_order_id.as_str()),
+            "Sandbox order was not open after acceptance"
+        );
+
+        client.disconnect().await?;
+
+        let mut canceled = false;
+
+        for _ in 0..20 {
+            let status = raw.get_order_status_by_id(venue_order_id.as_str()).await?;
+            if status.status.state == AxOrderStatus::Canceled {
+                canceled = true;
+                break;
+            }
+
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+
+        anyhow::ensure!(canceled, "Sandbox order was not canceled after disconnect");
+        Ok::<(), anyhow::Error>(())
+    }
+    .await;
+
+    let _ = client.disconnect().await;
+
+    if let Some(venue_order_id) = test_order_id {
+        let _ = raw.cancel_order(venue_order_id.as_str()).await;
+    }
+
+    result.unwrap();
 }
 
 #[rstest]

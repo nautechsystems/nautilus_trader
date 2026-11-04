@@ -21,10 +21,12 @@ use std::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
+    time::Duration,
 };
 
 use ahash::AHashMap;
 use dashmap::DashMap;
+use nautilus_core::UUID4;
 use nautilus_model::identifiers::{ClientOrderId, VenueOrderId};
 use nautilus_network::websocket::{AuthTracker, WebSocketClient};
 use tokio_tungstenite::tungstenite::Message;
@@ -35,11 +37,13 @@ use crate::{
     websocket::{
         messages::{
             AxOrdersWsFrame, AxOrdersWsMessage, AxWsCancelOrder, AxWsError, AxWsGetOpenOrders,
-            AxWsOrderEvent, AxWsOrderResponse, AxWsPlaceOrder, OrderMetadata,
+            AxWsListResponse, AxWsOrderEvent, AxWsOrderResponse, AxWsPlaceOrder, OrderMetadata,
         },
         parse::parse_order_message,
     },
 };
+
+const LOGIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Simple tracking info for pending WebSocket orders.
 #[derive(Clone, Debug)]
@@ -50,6 +54,20 @@ pub struct WsOrderInfo {
     pub symbol: Ustr,
     /// Numeric AX client ID.
     pub cid: u64,
+}
+
+#[derive(Debug)]
+enum OrderSendError {
+    NotSent(String),
+    Ambiguous(String),
+}
+
+impl core::fmt::Display for OrderSendError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::NotSent(message) | Self::Ambiguous(message) => f.write_str(message),
+        }
+    }
 }
 
 /// Commands sent from the outer client to the inner orders handler.
@@ -68,7 +86,12 @@ pub enum HandlerCommand {
         order_info: WsOrderInfo,
     },
     /// Cancel an order.
-    CancelOrder { request_id: i64, order_id: String },
+    CancelOrder {
+        request_id: i64,
+        order_id: String,
+        client_order_id: ClientOrderId,
+        command_id: Option<UUID4>,
+    },
     /// Get open orders.
     GetOpenOrders { request_id: i64 },
 }
@@ -81,8 +104,13 @@ pub(crate) struct AxOrdersWsFeedHandler {
     signal: Arc<AtomicBool>,
     inner: Option<WebSocketClient>,
     cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-    raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+    raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
     auth_tracker: AuthTracker,
+    cancel_on_disconnect: Option<bool>,
+    awaiting_login: bool,
+    authenticated_epoch: Option<u64>,
+    login_deadline: Option<tokio::time::Instant>,
+    session_failed: bool,
     pending_orders: AHashMap<i64, WsOrderInfo>,
     message_queue: VecDeque<AxOrdersWsMessage>,
     orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
@@ -97,8 +125,9 @@ impl AxOrdersWsFeedHandler {
     pub(crate) fn new(
         signal: Arc<AtomicBool>,
         cmd_rx: tokio::sync::mpsc::UnboundedReceiver<HandlerCommand>,
-        raw_rx: tokio::sync::mpsc::UnboundedReceiver<Message>,
+        raw_rx: tokio::sync::mpsc::UnboundedReceiver<(u64, Message)>,
         auth_tracker: AuthTracker,
+        cancel_on_disconnect: Option<bool>,
         orders_metadata: Arc<DashMap<ClientOrderId, OrderMetadata>>,
         venue_to_client_order_id: Arc<DashMap<VenueOrderId, ClientOrderId>>,
     ) -> Self {
@@ -108,6 +137,13 @@ impl AxOrdersWsFeedHandler {
             cmd_rx,
             raw_rx,
             auth_tracker,
+            cancel_on_disconnect,
+            awaiting_login: cancel_on_disconnect.is_some(),
+            authenticated_epoch: None,
+            login_deadline: cancel_on_disconnect
+                .is_some()
+                .then(|| tokio::time::Instant::now() + LOGIN_TIMEOUT),
+            session_failed: false,
             pending_orders: AHashMap::new(),
             message_queue: VecDeque::new(),
             orders_metadata,
@@ -145,7 +181,35 @@ impl AxOrdersWsFeedHandler {
                 return Some(msg);
             }
 
+            if self.awaiting_login
+                && self
+                    .login_deadline
+                    .is_some_and(|deadline| deadline <= tokio::time::Instant::now())
+            {
+                let messages = self.fail_login("Orders WebSocket login timed out".to_string());
+                self.message_queue.extend(messages);
+            }
+
+            if self.session_failed && self.message_queue.is_empty() {
+                self.cmd_rx.close();
+
+                while let Some(cmd) = self.cmd_rx.recv().await {
+                    self.handle_command(cmd).await;
+                }
+
+                if let Some(msg) = self.message_queue.pop_front() {
+                    return Some(msg);
+                }
+
+                if let Some(inner) = self.inner.take() {
+                    inner.disconnect().await;
+                }
+
+                return None;
+            }
+
             tokio::select! {
+                biased;
                 Some(cmd) = self.cmd_rx.recv() => {
                     self.handle_command(cmd).await;
                 }
@@ -158,10 +222,13 @@ impl AxOrdersWsFeedHandler {
                 }
 
                 msg = self.raw_rx.recv() => {
-                    let msg = match msg {
+                    let (epoch, msg) = match msg {
                         Some(msg) => msg,
                         None => {
                             log::debug!("WebSocket stream closed");
+                            if self.awaiting_login {
+                                self.auth_tracker.fail("Orders WebSocket closed before session login");
+                            }
                             return None;
                         }
                     };
@@ -177,7 +244,7 @@ impl AxOrdersWsFeedHandler {
                         continue;
                     }
 
-                    if let Some(messages) = self.parse_raw_message(msg) {
+                    if let Some(messages) = self.parse_raw_message(epoch, msg) {
                         self.message_queue.extend(messages);
                     }
 
@@ -207,6 +274,7 @@ impl AxOrdersWsFeedHandler {
             HandlerCommand::SessionAuthenticated => {
                 log::debug!("Session authenticated command received");
                 self.has_authenticated_session = true;
+                self.awaiting_login = false;
                 self.auth_tracker.succeed();
                 self.message_queue
                     .push_back(AxOrdersWsMessage::Authenticated);
@@ -224,21 +292,37 @@ impl AxOrdersWsFeedHandler {
 
                 if let Err(e) = self.send_json(&order).await {
                     log::error!("Failed to send place order message: {e}");
-                    self.message_queue
-                        .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
-                            "Failed to send place order for {}: {e}",
-                            order_info.client_order_id
-                        ))));
+
+                    match e {
+                        OrderSendError::NotSent(reason) => {
+                            self.pending_orders.remove(&request_id);
+                            self.message_queue
+                                .push_back(AxOrdersWsMessage::PlaceOrderError {
+                                    client_order_id: order_info.client_order_id,
+                                    reason,
+                                });
+                        }
+                        OrderSendError::Ambiguous(reason) => {
+                            self.message_queue
+                                .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
+                                    "Failed to send place order for {}: {reason}",
+                                    order_info.client_order_id
+                                ))));
+                        }
+                    }
                 }
             }
             HandlerCommand::CancelOrder {
                 request_id,
                 order_id,
+                client_order_id,
+                command_id,
             } => {
                 log::debug!(
                     "CancelOrder command received: request_id={request_id}, order_id={order_id}"
                 );
-                self.send_cancel_order(request_id, &order_id).await;
+                self.send_cancel_order(request_id, &order_id, client_order_id, command_id)
+                    .await;
             }
             HandlerCommand::GetOpenOrders { request_id } => {
                 log::debug!("GetOpenOrders command received: request_id={request_id}");
@@ -247,7 +331,13 @@ impl AxOrdersWsFeedHandler {
         }
     }
 
-    async fn send_cancel_order(&mut self, request_id: i64, order_id: &str) {
+    async fn send_cancel_order(
+        &mut self,
+        request_id: i64,
+        order_id: &str,
+        client_order_id: ClientOrderId,
+        command_id: Option<UUID4>,
+    ) {
         let msg = AxWsCancelOrder {
             rid: request_id,
             t: AxOrderRequestType::CancelOrder,
@@ -256,10 +346,23 @@ impl AxOrdersWsFeedHandler {
 
         if let Err(e) = self.send_json(&msg).await {
             log::error!("Failed to send cancel order message: {e}");
-            self.message_queue
-                .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
-                    "Failed to send cancel for order {order_id}: {e}"
-                ))));
+
+            match e {
+                OrderSendError::NotSent(reason) => {
+                    self.message_queue
+                        .push_back(AxOrdersWsMessage::CancelOrderError {
+                            client_order_id,
+                            reason,
+                            command_id,
+                        });
+                }
+                OrderSendError::Ambiguous(reason) => {
+                    self.message_queue
+                        .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
+                            "Failed to send cancel for order {order_id}: {reason}"
+                        ))));
+                }
+            }
         }
     }
 
@@ -270,35 +373,88 @@ impl AxOrdersWsFeedHandler {
         };
 
         if let Err(e) = self.send_json(&msg).await {
-            log::error!("Failed to send get open orders message: {e}");
+            let reason = match e {
+                OrderSendError::NotSent(reason) | OrderSendError::Ambiguous(reason) => reason,
+            };
+
+            log::error!("Failed to send get open orders message: {reason}");
             self.message_queue
                 .push_back(AxOrdersWsMessage::Error(AxWsError::new(format!(
-                    "Failed to send get open orders request: {e}"
+                    "Failed to send get open orders request: {reason}"
                 ))));
         }
     }
 
-    async fn send_json<T: serde::Serialize>(&self, msg: &T) -> Result<(), String> {
+    async fn send_json<T: serde::Serialize>(&self, msg: &T) -> Result<(), OrderSendError> {
+        if self.awaiting_login {
+            return Err(OrderSendError::NotSent(
+                "Orders WebSocket session login pending".to_string(),
+            ));
+        }
+
+        if self.session_failed {
+            return Err(OrderSendError::NotSent(
+                "Orders WebSocket session authentication failed".to_string(),
+            ));
+        }
+
         let Some(inner) = &self.inner else {
-            return Err("No WebSocket client available".to_string());
+            return Err(OrderSendError::NotSent(
+                "No WebSocket client available".to_string(),
+            ));
         };
 
-        let payload = serde_json::to_string(msg).map_err(|e| e.to_string())?;
+        let payload =
+            serde_json::to_string(msg).map_err(|e| OrderSendError::NotSent(e.to_string()))?;
         log::trace!("Sending WebSocket payload ({} bytes)", payload.len());
+
+        if self.cancel_on_disconnect.is_some() {
+            let expected_epoch = self.authenticated_epoch.ok_or_else(|| {
+                OrderSendError::NotSent(
+                    "No authenticated orders WebSocket session available".to_string(),
+                )
+            })?;
+
+            if inner.connection_epoch() != expected_epoch {
+                return Err(OrderSendError::Ambiguous(
+                    "Orders WebSocket session changed before login".to_string(),
+                ));
+            }
+
+            return inner
+                .send_text_on_connection(payload, None, expected_epoch)
+                .await
+                .map_err(|e| OrderSendError::Ambiguous(e.to_string()));
+        }
 
         inner
             .send_text(payload, None)
             .await
-            .map_err(|e| e.to_string())
+            .map_err(|e| OrderSendError::Ambiguous(e.to_string()))
     }
 
-    fn parse_raw_message(&mut self, msg: Message) -> Option<Vec<AxOrdersWsMessage>> {
+    fn parse_raw_message(&mut self, epoch: u64, msg: Message) -> Option<Vec<AxOrdersWsMessage>> {
         match msg {
             Message::Text(text) => {
                 if text == nautilus_network::RECONNECTED {
                     log::info!("Received WebSocket reconnected signal");
-                    self.auth_tracker.fail("Reconnecting");
-                    self.needs_session_restore = true;
+
+                    if self.cancel_on_disconnect.is_some() {
+                        let has_current_login = self.authenticated_epoch.is_some()
+                            && !self.awaiting_login
+                            && self.authenticated_epoch == Some(epoch);
+
+                        if !has_current_login {
+                            self.awaiting_login = true;
+                            self.authenticated_epoch = None;
+                            self.login_deadline = Some(tokio::time::Instant::now() + LOGIN_TIMEOUT);
+                            self.auth_tracker.invalidate();
+                        }
+                    } else {
+                        self.auth_tracker.fail("Reconnecting");
+                        self.needs_session_restore = true;
+                    }
+
                     return Some(vec![AxOrdersWsMessage::Reconnected]);
                 }
 
@@ -312,7 +468,7 @@ impl AxOrdersWsFeedHandler {
                     }
                 };
 
-                self.handle_raw_message(raw_msg)
+                self.handle_raw_message(epoch, raw_msg)
             }
             Message::Binary(data) => {
                 log::debug!("Received binary message with {} bytes", data.len());
@@ -326,7 +482,11 @@ impl AxOrdersWsFeedHandler {
         }
     }
 
-    fn handle_raw_message(&mut self, raw_msg: AxOrdersWsFrame) -> Option<Vec<AxOrdersWsMessage>> {
+    fn handle_raw_message(
+        &mut self,
+        epoch: u64,
+        raw_msg: AxOrdersWsFrame,
+    ) -> Option<Vec<AxOrdersWsMessage>> {
         match raw_msg {
             AxOrdersWsFrame::Error(err) => {
                 log::warn!(
@@ -338,12 +498,16 @@ impl AxOrdersWsFeedHandler {
 
                 Some(vec![AxOrdersWsMessage::Error(err.into())])
             }
-            AxOrdersWsFrame::Response(resp) => self.handle_response(resp),
+            AxOrdersWsFrame::Response(resp) => self.handle_response(epoch, resp),
             AxOrdersWsFrame::Event(event) => self.handle_event(*event),
         }
     }
 
-    fn handle_response(&mut self, resp: AxWsOrderResponse) -> Option<Vec<AxOrdersWsMessage>> {
+    fn handle_response(
+        &mut self,
+        epoch: u64,
+        resp: AxWsOrderResponse,
+    ) -> Option<Vec<AxOrdersWsMessage>> {
         match resp {
             AxWsOrderResponse::PlaceOrder(msg) => {
                 log::debug!("Place order response: rid={} oid={}", msg.rid, msg.res.oid);
@@ -395,17 +559,70 @@ impl AxOrdersWsFeedHandler {
                 log::debug!("Open orders response: {} orders", msg.res.orders.len());
                 Some(vec![AxOrdersWsMessage::OpenOrdersResponse(msg)])
             }
-            AxWsOrderResponse::List(msg) => {
-                let order_count = msg.res.o.as_ref().map_or(0, |o| o.len());
-                log::debug!(
-                    "List subscription response: rid={} li={} orders={}",
-                    msg.rid,
-                    msg.res.li,
-                    order_count
-                );
-                None
-            }
+            AxWsOrderResponse::List(msg) => self.handle_login(epoch, &msg),
         }
+    }
+
+    fn fail_login(&mut self, error: String) -> Vec<AxOrdersWsMessage> {
+        log::error!("{error}");
+        self.awaiting_login = false;
+        self.authenticated_epoch = None;
+        self.login_deadline = None;
+        self.session_failed = true;
+        self.auth_tracker.fail(error.clone());
+        vec![AxOrdersWsMessage::Error(AxWsError::new(error))]
+    }
+
+    fn handle_login(
+        &mut self,
+        epoch: u64,
+        msg: &AxWsListResponse,
+    ) -> Option<Vec<AxOrdersWsMessage>> {
+        if self.session_failed {
+            log::warn!("Ignoring orders WebSocket login after session failure");
+            return None;
+        }
+
+        if self.cancel_on_disconnect.is_some()
+            && self
+                .inner
+                .as_ref()
+                .is_some_and(|inner| inner.connection_epoch() != epoch)
+        {
+            log::warn!("Ignoring stale orders WebSocket login: epoch={epoch}");
+            return None;
+        }
+
+        let order_count = msg.res.o.as_ref().map_or(0, |o| o.len());
+        log::debug!(
+            "List subscription response: rid={} li={} orders={}",
+            msg.rid,
+            msg.res.li,
+            order_count
+        );
+
+        let expected = self.cancel_on_disconnect?;
+        let acknowledged = msg.res.cod;
+        let accepted = if expected {
+            acknowledged == Some(true)
+        } else {
+            acknowledged != Some(true)
+        };
+
+        if !accepted {
+            let error = format!(
+                "AX cancel-on-disconnect acknowledgment mismatch: expected {expected}, was {acknowledged:?}"
+            );
+            log::error!("{error}");
+            return Some(self.fail_login(error));
+        }
+
+        self.awaiting_login = false;
+        self.authenticated_epoch = Some(epoch);
+        self.login_deadline = None;
+        self.has_authenticated_session = true;
+        self.auth_tracker.succeed();
+        Some(vec![AxOrdersWsMessage::Authenticated])
     }
 
     fn handle_event(&self, event: AxWsOrderEvent) -> Option<Vec<AxOrdersWsMessage>> {
@@ -422,12 +639,13 @@ mod tests {
     use std::sync::{Arc, atomic::AtomicBool};
 
     use dashmap::DashMap;
+    use futures_util::StreamExt;
     use nautilus_core::time::get_atomic_clock_realtime;
     use nautilus_model::{
         identifiers::{AccountId, InstrumentId, StrategyId, TraderId},
         types::{Currency, Money},
     };
-    use nautilus_network::websocket::AuthTracker;
+    use nautilus_network::websocket::{AuthTracker, WebSocketConfig, auth::AuthState};
     use rstest::rstest;
     use rust_decimal::Decimal;
     use ustr::Ustr;
@@ -438,14 +656,14 @@ mod tests {
         execution::create_order_filled,
         websocket::{
             messages::{
-                AxWsOrderError, AxWsOrderErrorResponse, AxWsOrderFilled, AxWsPlaceOrderResponse,
-                AxWsPlaceOrderResult,
+                AxWsListResponse, AxWsListResult, AxWsOrderError, AxWsOrderErrorResponse,
+                AxWsOrderFilled, AxWsPlaceOrderResponse, AxWsPlaceOrderResult,
             },
             orders::OrdersCaches,
         },
     };
 
-    fn test_handler() -> AxOrdersWsFeedHandler {
+    fn test_handler(cancel_on_disconnect: Option<bool>) -> AxOrdersWsFeedHandler {
         let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
         let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
         AxOrdersWsFeedHandler::new(
@@ -453,14 +671,477 @@ mod tests {
             cmd_rx,
             raw_rx,
             AuthTracker::default(),
+            cancel_on_disconnect,
             Arc::new(DashMap::new()),
             Arc::new(DashMap::new()),
         )
     }
 
+    fn login(cod: Option<bool>) -> AxWsListResponse {
+        AxWsListResponse {
+            rid: 0,
+            res: AxWsListResult {
+                li: "test-user".to_string(),
+                o: Some(vec![]),
+                cod,
+                chb: None,
+            },
+        }
+    }
+
+    async fn connected_client() -> (WebSocketClient, tokio::task::JoinHandle<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = tokio_tungstenite::accept_async(socket).await.unwrap();
+            while socket.next().await.is_some() {}
+        });
+
+        let config = WebSocketConfig::builder()
+            .url(format!("ws://{addr}"))
+            .build()
+            .unwrap();
+        let (_, client) = WebSocketClient::stream_builder()
+            .config(config)
+            .connect()
+            .await
+            .unwrap();
+        (client, server)
+    }
+
+    #[tokio::test]
+    async fn test_order_writes_wait_for_login_after_reconnect() {
+        let mut handler = test_handler(Some(true));
+
+        let request = AxWsGetOpenOrders {
+            rid: 72,
+            t: AxOrderRequestType::GetOpenOrders,
+        };
+
+        let error = handler.send_json(&request).await.unwrap_err();
+        assert!(matches!(
+            error,
+            OrderSendError::NotSent(reason) if reason == "Orders WebSocket session login pending"
+        ));
+
+        let messages = handler
+            .handle_response(0, AxWsOrderResponse::List(login(Some(true))))
+            .unwrap();
+        assert!(matches!(
+            messages.as_slice(),
+            [AxOrdersWsMessage::Authenticated]
+        ));
+        assert!(handler.auth_tracker.is_authenticated());
+
+        handler.authenticated_epoch = Some(1);
+        let messages = handler
+            .parse_raw_message(0, Message::Text(nautilus_network::RECONNECTED.into()))
+            .unwrap();
+        assert!(matches!(
+            messages.as_slice(),
+            [AxOrdersWsMessage::Reconnected]
+        ));
+        assert_eq!(
+            handler.auth_tracker.auth_state(),
+            AuthState::Unauthenticated
+        );
+
+        let error = handler.send_json(&request).await.unwrap_err();
+        assert!(matches!(
+            error,
+            OrderSendError::NotSent(reason) if reason == "Orders WebSocket session login pending"
+        ));
+
+        let messages = handler
+            .handle_response(0, AxWsOrderResponse::List(login(Some(true))))
+            .unwrap();
+        assert!(matches!(
+            messages.as_slice(),
+            [AxOrdersWsMessage::Authenticated]
+        ));
+        let error = handler.send_json(&request).await.unwrap_err();
+        assert!(matches!(
+            error,
+            OrderSendError::NotSent(reason) if reason == "No WebSocket client available"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_early_login_is_preserved_and_stale_epoch_is_rejected() {
+        let (inner, server) = connected_client().await;
+        let mut handler = test_handler(Some(true));
+        handler.inner = Some(inner);
+
+        let request = AxWsGetOpenOrders {
+            rid: 72,
+            t: AxOrderRequestType::GetOpenOrders,
+        };
+
+        handler.handle_response(0, AxWsOrderResponse::List(login(Some(true))));
+        tokio::time::timeout(Duration::from_secs(1), handler.send_json(&request))
+            .await
+            .unwrap()
+            .unwrap();
+        handler.parse_raw_message(0, Message::Text(nautilus_network::RECONNECTED.into()));
+
+        assert!(!handler.awaiting_login);
+        assert_eq!(handler.authenticated_epoch, Some(0));
+        assert_eq!(handler.login_deadline, None);
+        assert!(handler.auth_tracker.is_authenticated());
+
+        handler.authenticated_epoch = Some(1);
+        let error = handler.send_json(&request).await.unwrap_err();
+        assert!(matches!(
+            error,
+            OrderSendError::Ambiguous(reason) if reason == "Orders WebSocket session changed before login"
+        ));
+
+        handler.inner.take().unwrap().disconnect().await;
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_stale_login_does_not_authenticate_current_connection() {
+        let (inner, server) = connected_client().await;
+        let mut handler = test_handler(Some(true));
+        handler.inner = Some(inner);
+
+        let messages = handler.handle_response(1, AxWsOrderResponse::List(login(Some(true))));
+
+        assert!(messages.is_none());
+        assert_eq!(handler.authenticated_epoch, None);
+        assert!(handler.awaiting_login);
+        assert!(!handler.auth_tracker.is_authenticated());
+        assert!(handler.login_deadline.is_some());
+
+        handler.handle_response(0, AxWsOrderResponse::List(login(Some(true))));
+        assert_eq!(handler.authenticated_epoch, Some(0));
+        assert!(handler.auth_tracker.is_authenticated());
+        handler.inner.take().unwrap().disconnect().await;
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_set_client_is_processed_before_initial_login() {
+        let (inner, server) = connected_client().await;
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = AxOrdersWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            AuthTracker::default(),
+            Some(true),
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+        );
+        cmd_tx.send(HandlerCommand::SetClient(inner)).unwrap();
+        raw_tx
+            .send((
+                0,
+                Message::Text(r#"{"rid":0,"res":{"li":"test-user","o":[],"cod":true}}"#.into()),
+            ))
+            .unwrap();
+
+        let message = handler.next().await.unwrap();
+
+        assert!(matches!(message, AxOrdersWsMessage::Authenticated));
+        assert_eq!(handler.authenticated_epoch, Some(0));
+        assert!(handler.auth_tracker.is_authenticated());
+        handler.inner.take().unwrap().disconnect().await;
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn test_order_writes_stop_after_cancel_on_disconnect_mismatch() {
+        let mut handler = test_handler(Some(true));
+
+        let request = AxWsGetOpenOrders {
+            rid: 72,
+            t: AxOrderRequestType::GetOpenOrders,
+        };
+
+        let messages = handler
+            .handle_response(0, AxWsOrderResponse::List(login(Some(false))))
+            .unwrap();
+
+        assert!(matches!(messages.as_slice(), [AxOrdersWsMessage::Error(_)]));
+        assert!(handler.session_failed);
+        assert!(!handler.auth_tracker.is_authenticated());
+        let error = handler.send_json(&request).await.unwrap_err();
+        assert!(matches!(
+            error,
+            OrderSendError::NotSent(reason) if reason == "Orders WebSocket session authentication failed"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_failed_session_drains_buffered_commands_before_close() {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = AxOrdersWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            AuthTracker::default(),
+            Some(true),
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+        );
+        handler.session_failed = true;
+        handler.awaiting_login = false;
+        let client_order_id = ClientOrderId::from("CID-SHUTDOWN");
+        let command_id = UUID4::new();
+
+        let order_info = WsOrderInfo {
+            client_order_id,
+            symbol: Ustr::from("EURUSD-PERP"),
+            cid: 42,
+        };
+
+        cmd_tx
+            .send(HandlerCommand::PlaceOrder {
+                request_id: 1,
+                order: AxWsPlaceOrder {
+                    rid: 1,
+                    t: AxOrderRequestType::PlaceOrder,
+                    s: order_info.symbol,
+                    d: AxOrderSide::Buy,
+                    q: 1,
+                    p: Decimal::from(100),
+                    tif: AxTimeInForce::Gtc,
+                    po: true,
+                    st: None,
+                    tag: None,
+                    cid: Some(order_info.cid),
+                },
+                order_info,
+            })
+            .unwrap();
+
+        cmd_tx
+            .send(HandlerCommand::CancelOrder {
+                request_id: 2,
+                order_id: "OID-SHUTDOWN".to_string(),
+                client_order_id,
+                command_id: Some(command_id),
+            })
+            .unwrap();
+
+        let place = handler.next().await.unwrap();
+        assert!(matches!(
+            place,
+            AxOrdersWsMessage::PlaceOrderError {
+                client_order_id: id,
+                reason,
+            } if id == client_order_id && reason == "Orders WebSocket session authentication failed"
+        ));
+        let cancel = handler.next().await.unwrap();
+        assert!(matches!(
+            cancel,
+            AxOrdersWsMessage::CancelOrderError {
+                client_order_id: id,
+                reason,
+                command_id: actual_command_id,
+            } if id == client_order_id
+                && reason == "Orders WebSocket session authentication failed"
+                && actual_command_id == Some(command_id)
+        ));
+        assert!(
+            cmd_tx
+                .send(HandlerCommand::GetOpenOrders { request_id: 3 })
+                .is_err()
+        );
+        assert!(handler.next().await.is_none());
+        assert!(handler.pending_orders.is_empty());
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn test_failed_session_drains_concurrent_commands() {
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = AxOrdersWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            AuthTracker::default(),
+            Some(true),
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+        );
+        handler.session_failed = true;
+        handler.awaiting_login = false;
+        let client_order_id = ClientOrderId::from("CID-CONCURRENT-SHUTDOWN");
+
+        let order_info = WsOrderInfo {
+            client_order_id,
+            symbol: Ustr::from("EURUSD-PERP"),
+            cid: 42,
+        };
+
+        let command_count = 32;
+        let barrier = Arc::new(tokio::sync::Barrier::new(command_count + 1));
+        let mut senders = Vec::with_capacity(command_count);
+
+        for index in 0..command_count {
+            let cmd_tx = cmd_tx.clone();
+            let barrier = barrier.clone();
+            let order_info = order_info.clone();
+
+            senders.push(tokio::spawn(async move {
+                barrier.wait().await;
+                cmd_tx
+                    .send(HandlerCommand::PlaceOrder {
+                        request_id: index as i64,
+                        order: AxWsPlaceOrder {
+                            rid: index as i64,
+                            t: AxOrderRequestType::PlaceOrder,
+                            s: order_info.symbol,
+                            d: AxOrderSide::Buy,
+                            q: 1,
+                            p: Decimal::from(100),
+                            tif: AxTimeInForce::Gtc,
+                            po: true,
+                            st: None,
+                            tag: None,
+                            cid: Some(order_info.cid),
+                        },
+                        order_info,
+                    })
+                    .is_ok()
+            }));
+        }
+
+        barrier.wait().await;
+        let mut rejected = 0;
+
+        while let Some(message) = handler.next().await {
+            assert!(matches!(
+                message,
+                AxOrdersWsMessage::PlaceOrderError {
+                    client_order_id: id,
+                    ..
+                } if id == client_order_id
+            ));
+            rejected += 1;
+        }
+
+        let accepted = futures_util::future::join_all(senders)
+            .await
+            .into_iter()
+            .filter(|result| matches!(result, Ok(true)))
+            .count();
+
+        assert_eq!(rejected, accepted);
+        assert!(handler.pending_orders.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_late_login_does_not_authenticate_failed_session() {
+        let mut handler = test_handler(Some(true));
+        handler.session_failed = true;
+        handler.auth_tracker.fail("login failed");
+
+        let messages = handler.handle_response(0, AxWsOrderResponse::List(login(Some(true))));
+
+        assert!(messages.is_none());
+        assert!(handler.session_failed);
+        assert!(!handler.auth_tracker.is_authenticated());
+    }
+
+    #[tokio::test]
+    async fn test_gate_rejections_carry_client_order_id() {
+        let mut handler = test_handler(Some(true));
+        let client_order_id = ClientOrderId::from("CID-GATE");
+        let command_id = UUID4::new();
+
+        let order_info = WsOrderInfo {
+            client_order_id,
+            symbol: Ustr::from("EURUSD-PERP"),
+            cid: 42,
+        };
+
+        handler
+            .handle_command(HandlerCommand::PlaceOrder {
+                request_id: 1,
+                order: AxWsPlaceOrder {
+                    rid: 1,
+                    t: AxOrderRequestType::PlaceOrder,
+                    s: order_info.symbol,
+                    d: AxOrderSide::Buy,
+                    q: 1,
+                    p: Decimal::from(100),
+                    tif: AxTimeInForce::Gtc,
+                    po: true,
+                    st: None,
+                    tag: None,
+                    cid: Some(order_info.cid),
+                },
+                order_info,
+            })
+            .await;
+
+        handler
+            .handle_command(HandlerCommand::CancelOrder {
+                request_id: 2,
+                order_id: "OID-GATE".to_string(),
+                client_order_id,
+                command_id: Some(command_id),
+            })
+            .await;
+
+        let place = handler.message_queue.pop_front().unwrap();
+        assert!(matches!(
+            place,
+            AxOrdersWsMessage::PlaceOrderError {
+                client_order_id: id,
+                reason,
+            } if id == client_order_id && reason == "Orders WebSocket session login pending"
+        ));
+        let cancel = handler.message_queue.pop_front().unwrap();
+        assert!(matches!(
+            cancel,
+            AxOrdersWsMessage::CancelOrderError {
+                client_order_id: id,
+                reason,
+                command_id: actual_command_id,
+            } if id == client_order_id
+                && reason == "Orders WebSocket session login pending"
+                && actual_command_id == Some(command_id)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_login_timeout_emits_error_before_close() {
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = AxOrdersWsFeedHandler::new(
+            Arc::new(AtomicBool::new(false)),
+            cmd_rx,
+            raw_rx,
+            AuthTracker::default(),
+            Some(true),
+            Arc::new(DashMap::new()),
+            Arc::new(DashMap::new()),
+        );
+        handler.login_deadline = Some(tokio::time::Instant::now());
+
+        let message = handler.next().await.unwrap();
+        assert!(matches!(
+            message,
+            AxOrdersWsMessage::Error(AxWsError { message, .. }) if message == "Orders WebSocket login timed out"
+        ));
+        assert!(handler.next().await.is_none());
+    }
+
     #[rstest]
     fn test_late_place_order_response_does_not_restore_cleared_tracking() {
-        let mut handler = test_handler();
+        let mut handler = test_handler(None);
         let request_id = 12;
         let client_order_id = ClientOrderId::from("CID-12");
         handler.pending_orders.insert(
@@ -479,7 +1160,7 @@ mod tests {
             },
         });
 
-        let messages = handler.handle_response(response).unwrap();
+        let messages = handler.handle_response(0, response).unwrap();
 
         assert_eq!(messages.len(), 1);
         assert!(handler.pending_orders.get(&request_id).is_none());
@@ -489,7 +1170,7 @@ mod tests {
 
     #[rstest]
     fn test_place_order_error_preserves_cid_for_reconciliation() {
-        let mut handler = test_handler();
+        let mut handler = test_handler(None);
         let request_id = 13;
         let cid = 1013;
         let client_order_id = ClientOrderId::from("CID-13");
@@ -506,13 +1187,16 @@ mod tests {
         );
 
         let messages = handler
-            .handle_raw_message(AxOrdersWsFrame::Error(AxWsOrderErrorResponse {
-                rid: request_id,
-                err: AxWsOrderError {
-                    code: Some(400),
-                    msg: Some("invalid order".to_string()),
-                },
-            }))
+            .handle_raw_message(
+                0,
+                AxOrdersWsFrame::Error(AxWsOrderErrorResponse {
+                    rid: request_id,
+                    err: AxWsOrderError {
+                        code: Some(400),
+                        msg: Some("invalid order".to_string()),
+                    },
+                }),
+            )
             .unwrap();
 
         assert_eq!(messages.len(), 1);
@@ -525,12 +1209,15 @@ mod tests {
             client_order_id,
         );
         assert!(handler.orders_metadata.contains_key(&client_order_id));
-        handler.handle_response(AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
-            rid: request_id,
-            res: AxWsPlaceOrderResult {
-                oid: "OID-13".to_string(),
-            },
-        }));
+        handler.handle_response(
+            0,
+            AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
+                rid: request_id,
+                res: AxWsPlaceOrderResult {
+                    oid: "OID-13".to_string(),
+                },
+            }),
+        );
 
         assert_eq!(
             handler
@@ -550,11 +1237,14 @@ mod tests {
     }
 
     #[rstest]
-    #[case::send_failure(true)]
-    #[case::request_error(false)]
+    #[case::known_unsent(true, false)]
+    #[case::ambiguous_request_error(false, true)]
     #[tokio::test]
-    async fn test_uncertain_place_error_then_fill(#[case] send_failure: bool) {
-        let mut handler = test_handler();
+    async fn test_place_error_tracking_depends_on_send_certainty(
+        #[case] send_failure: bool,
+        #[case] expect_pending: bool,
+    ) {
+        let mut handler = test_handler(None);
         let client_order_id = ClientOrderId::from("CID-UNCERTAIN");
         let request_id = 17;
         let cid = 1017;
@@ -591,17 +1281,25 @@ mod tests {
 
             assert!(matches!(
                 handler.message_queue.pop_front(),
-                Some(AxOrdersWsMessage::Error(_))
+                Some(AxOrdersWsMessage::PlaceOrderError { .. })
             ));
         } else {
             handler.pending_orders.insert(request_id, order_info);
-            handler.handle_raw_message(AxOrdersWsFrame::Error(AxWsOrderErrorResponse {
-                rid: request_id,
-                err: AxWsOrderError {
-                    code: Some(500),
-                    msg: Some("unresolved request".to_string()),
-                },
-            }));
+            handler.handle_raw_message(
+                0,
+                AxOrdersWsFrame::Error(AxWsOrderErrorResponse {
+                    rid: request_id,
+                    err: AxWsOrderError {
+                        code: Some(500),
+                        msg: Some("unresolved request".to_string()),
+                    },
+                }),
+            );
+        }
+
+        if !expect_pending {
+            assert!(handler.pending_orders.get(&request_id).is_none());
+            return;
         }
 
         let caches = OrdersCaches {
@@ -650,7 +1348,7 @@ mod tests {
 
     #[rstest]
     fn test_late_place_response_preserves_replacement_binding() {
-        let mut handler = test_handler();
+        let mut handler = test_handler(None);
         let client_order_id = ClientOrderId::from("CID-REPLACED");
         let replacement_id = VenueOrderId::from("OID-CHILD");
         let mut metadata = test_order_metadata(client_order_id);
@@ -668,12 +1366,15 @@ mod tests {
             },
         );
 
-        handler.handle_response(AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
-            rid: 18,
-            res: AxWsPlaceOrderResult {
-                oid: "OID-PARENT".to_string(),
-            },
-        }));
+        handler.handle_response(
+            0,
+            AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
+                rid: 18,
+                res: AxWsPlaceOrderResult {
+                    oid: "OID-PARENT".to_string(),
+                },
+            }),
+        );
 
         assert_eq!(
             handler
@@ -695,7 +1396,7 @@ mod tests {
 
     #[rstest]
     fn test_handle_event_suppresses_heartbeat() {
-        let handler = test_handler();
+        let handler = test_handler(None);
 
         let event = AxWsOrderEvent::Heartbeat;
         let result = handler.handle_event(event);

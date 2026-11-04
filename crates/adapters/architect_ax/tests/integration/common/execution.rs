@@ -62,6 +62,16 @@ pub(crate) fn create_test_execution_client(
     tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
     Rc<RefCell<Cache>>,
 ) {
+    create_test_execution_client_from_config(create_test_exec_config(addr))
+}
+
+pub(crate) fn create_test_execution_client_from_config(
+    config: AxExecutionClientConfig,
+) -> (
+    AxExecutionClient,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    Rc<RefCell<Cache>>,
+) {
     let trader_id = TraderId::from("TESTER-001");
     let account_id = AccountId::from("AX-001");
     let client_id = *AX_CLIENT_ID;
@@ -79,7 +89,6 @@ pub(crate) fn create_test_execution_client(
         cache.clone(),
     );
 
-    let config = create_test_exec_config(addr);
     let rx = setup_exec_channel();
     let client = AxExecutionClient::new(core, config).expect("Failed to create exec client");
 

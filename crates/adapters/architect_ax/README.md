@@ -54,9 +54,14 @@ AX Exchange uses bearer token authentication via HTTP headers:
 
 ## Usage
 
-Run example binaries to test the adapter:
+Run example binaries to test the adapter. `AX_IS_SANDBOX` defaults to `true`.
+The WebSocket examples also require API credentials:
 
 ```bash
+export AX_IS_SANDBOX=true
+export AX_API_KEY="your-sandbox-api-key"
+export AX_API_SECRET="your-sandbox-api-secret"
+
 # HTTP client example
 cargo run -p nautilus-architect-ax --bin ax-http-public
 
