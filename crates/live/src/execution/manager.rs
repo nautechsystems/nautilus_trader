@@ -298,7 +298,6 @@ impl ExecutionManager {
         client_id: Option<ClientId>,
     ) {
         let client_order_id = initialized.client_order_id;
-
         if self.submissions.contains_key(&client_order_id)
             || self.submission_retention_enabled(client_order_id, client_id)
         {
@@ -564,7 +563,6 @@ impl ExecutionManager {
         self.order_lookback_warnings.shift_remove(client_order_id);
         self.order_coverage_unresolved.shift_remove(client_order_id);
         self.remove_targeted_order_queries(&[*client_order_id]);
-
         if drop_last_query {
             self.order_query_recency.remove(client_order_id);
         }
@@ -593,7 +591,7 @@ impl ExecutionManager {
     /// Marks a fill as recently processed when it is present on its canonical order.
     pub fn commit_recent_fill_if_applied(&mut self, fill: &OrderFilled) {
         let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
-        if self.is_fill_applied(fill, fill_key) {
+        if self.applied_fill_key(fill) == Some(fill_key) {
             self.mark_fill_processed(fill_key.0, fill_key.1, fill_key.2);
         }
     }
@@ -915,6 +913,7 @@ impl ExecutionManager {
                                 .unwrap_or(order)
                         })
                 });
+
             let order_client = order
                 .as_ref()
                 .filter(|order| Some(order.client_order_id()) == report.client_order_id);
@@ -1121,6 +1120,7 @@ impl ExecutionManager {
                         log::warn!("Cannot project queued reconciliation event: {e}");
                     }
                 }
+
                 orders_projected.insert(order.client_order_id(), order);
             }
         }
@@ -1281,6 +1281,8 @@ impl ExecutionManager {
                 continue;
             };
 
+            let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
+            let queued_fill_key = fill_queue.event_fill_keys.get(&fill.event_id).copied();
             let historical = should_project_fill(
                 fill,
                 &retained_fill_state,
@@ -1289,6 +1291,7 @@ impl ExecutionManager {
                 &order_only_fill_keys,
             );
             let bounded = !historical && bounded_order_only_ids.contains(&fill.venue_order_id);
+
             let uncovered = bounded
                 && *uncovered_instruments
                     .entry(fill.instrument_id)
@@ -1300,35 +1303,36 @@ impl ExecutionManager {
                                 !client.provides_bulk_position_coverage(fill.instrument_id)
                             })
                     });
+
             let recovered = uncovered
                 && recover_closing_fills
-                && fill_queue.event_fill_keys.get(&fill.event_id)
-                    == Some(&(fill.account_id, fill.instrument_id, fill.trade_id))
+                && queued_fill_key == Some(fill_key)
                 && self.fill_reduces_position(fill, &exec_engine.borrow());
 
-            if historical || bounded && !recovered {
-                // Warn only for fills this projection adds to their order, so a restart that
-                // replays a fill the cached order already holds stays silent
-                let fill_key = (fill.account_id, fill.instrument_id, fill.trade_id);
-                let withheld_position_id = (uncovered && !self.is_fill_applied(fill, fill_key))
+            // Warn only for fills this projection adds to their order, so a restart that
+            // replays a fill the cached order already holds stays silent
+            let withheld_position_id =
+                (uncovered && !recovered && self.applied_fill_key(fill) != Some(fill_key))
                     .then(|| exec_engine.borrow().reconciliation_position_id(fill));
-
+            if historical || bounded && !recovered {
                 exec_engine.borrow_mut().project_reconciliation_fill(fill);
-
-                if let Some(position_id) = withheld_position_id
-                    && self.is_fill_applied(fill, fill_key)
-                {
-                    withheld_fills
-                        .entry((fill.account_id, fill.instrument_id, position_id))
-                        .or_default()
-                        .push((fill.trade_id, fill.client_order_id));
-                }
             } else {
                 exec_engine.borrow_mut().process(event);
             }
 
-            if let Some(fill_key) = fill_queue.event_fill_keys.get(&fill.event_id).copied() {
-                if self.is_fill_applied(fill, fill_key) {
+            let applied_fill_key = self.applied_fill_key(fill);
+
+            if let Some(position_id) = withheld_position_id
+                && applied_fill_key == Some(fill_key)
+            {
+                withheld_fills
+                    .entry((fill.account_id, fill.instrument_id, position_id))
+                    .or_default()
+                    .push((fill.trade_id, fill.client_order_id));
+            }
+
+            if let Some(fill_key) = queued_fill_key {
+                if applied_fill_key == Some(fill_key) {
                     self.fills_processed.mark(fill_key);
                 } else if let Some(venue_position_id) = fill.position_id {
                     log::error!(
@@ -1584,7 +1588,6 @@ impl ExecutionManager {
     ) -> bool {
         let comparison = self.position_quantity_comparison(key, reports);
         let cache = self.cache.borrow();
-
         !comparison.cached_positions.is_empty()
             && comparison
                 .cached_positions
@@ -1886,7 +1889,6 @@ impl ExecutionManager {
                     .client_order_id(&venue_order_id)
                     .copied()
                     .filter(|client_order_id| cache.order_exists(client_order_id));
-
                 for client_order_id in [direct_client_order_id, indexed_client_order_id]
                     .into_iter()
                     .flatten()
@@ -1974,7 +1976,6 @@ impl ExecutionManager {
 
         for client_order_id in to_check {
             self.confirm_submission_outcome(&client_order_id);
-
             if self
                 .config
                 .filtered_client_order_ids
@@ -2005,7 +2006,6 @@ impl ExecutionManager {
             self.order_query_recency.mark(client_order_id);
             self.order_recon_retries
                 .insert(client_order_id, check.retry_count);
-
             if check.retry_count >= self.config.inflight_max_retries {
                 let retry_count = check.retry_count;
 
@@ -2115,7 +2115,6 @@ impl ExecutionManager {
         let mut orders = cache.orders_open(None, None, None, None, None);
         orders.extend(cache.orders_inflight(None, None, None, None, None));
         let mut seen_client_order_ids = IndexSet::new();
-
         orders
             .into_iter()
             .filter(|order| {
@@ -2315,7 +2314,6 @@ impl ExecutionManager {
         });
 
         let mut queries = Vec::new();
-
         for order in filtered_orders {
             if queries.len() >= query_limit {
                 break;
@@ -2651,7 +2649,6 @@ impl ExecutionManager {
         for result in results {
             let client_order_id = result.client_order_id;
             self.remove_targeted_order_queries(&[client_order_id]);
-
             if let Some(report) = result.report {
                 self.order_recon_retries.shift_remove(&client_order_id);
                 self.order_coverage_warnings.shift_remove(&client_order_id);
@@ -2772,7 +2769,6 @@ impl ExecutionManager {
             .collect();
 
         let mut activity_revisions = self.position_activity_revisions.clone();
-
         for key in &position_keys {
             activity_revisions
                 .entry(*key)
@@ -2847,7 +2843,6 @@ impl ExecutionManager {
                 .unwrap_or_default();
             let comparison = self.position_quantity_comparison(key, venue_reports);
             let tolerance = self.position_reconciliation_tolerance(key.1);
-
             if comparison.quantities_match(tolerance) {
                 self.clear_position_reconciliation(&key);
                 continue;
@@ -2960,6 +2955,7 @@ impl ExecutionManager {
     ) -> anyhow::Result<PositionFillReportPreparation> {
         let cache = self.cache();
         let venue_client_order_id = cache.client_order_id(&report.venue_order_id).copied();
+
         if let (Some(report_client_order_id), Some(venue_client_order_id)) =
             (report.client_order_id, venue_client_order_id)
         {
@@ -3744,6 +3740,7 @@ impl ExecutionManager {
                 {
                     return events;
                 }
+
                 log::warn!(
                     "Order {client_order_id} not found at venue after {retries} retries and a targeted query, marking as REJECTED"
                 );
@@ -4636,7 +4633,6 @@ impl ExecutionManager {
         sorted_fills.sort_by_key(|f| f.ts_event);
 
         let ts_now = self.clock.borrow().timestamp_ns();
-
         if matches!(
             report.order_status,
             OrderStatus::Canceled | OrderStatus::Expired
@@ -4689,7 +4685,7 @@ impl ExecutionManager {
                 };
 
                 if let Err(e) = working.apply(OrderEventAny::Filled(event.clone())) {
-                    if self.is_fill_applied(&event, fill_key) {
+                    if self.applied_fill_key(&event) == Some(fill_key) {
                         self.fills_processed.mark(fill_key);
                         continue;
                     }
@@ -4782,7 +4778,6 @@ impl ExecutionManager {
             .cache
             .borrow()
             .external_order_claim(&report.instrument_id);
-
         let (strategy_id, tags) = if let Some(claimed_strategy) = claimed_strategy {
             let order_id = report
                 .client_order_id
@@ -4911,7 +4906,6 @@ impl ExecutionManager {
             .as_deref()
             .map(|queue| queue.pending_fill_keys.clone())
             .unwrap_or_default();
-        let mut real_fill_total = Decimal::ZERO;
 
         if replace_inferred_fill {
             let mut sorted_fills: Vec<&FillReport> = fills.to_vec();
@@ -4928,13 +4922,16 @@ impl ExecutionManager {
                 if let Some((fill_event, fill_key)) =
                     self.create_order_fill(&order, fill, instrument, &prepared_fill_keys)
                 {
-                    real_fill_total += fill.last_qty.as_decimal();
                     prepared_fill_keys.insert(fill_key);
                     prepared_fills.push((fill_event, fill_key));
                 }
             }
         }
 
+        let real_fill_total: Decimal = prepared_fills
+            .iter()
+            .map(|(fill, _)| fill.last_qty.as_decimal())
+            .sum();
         let report_filled = report.filled_qty.as_decimal();
 
         let inferred_qty = if report_filled.is_zero()
@@ -5099,7 +5096,6 @@ impl ExecutionManager {
 
             let fill_queue =
                 fill_queue.expect("fill queue availability was checked before cache mutation");
-
             for (fill_event, fill_key) in prepared_fills {
                 fill_queue.push(&mut order_events, fill_event, fill_key);
             }
@@ -5242,7 +5238,6 @@ impl ExecutionManager {
 
         for instrument in &instruments_to_adjust {
             let instrument_id = instrument.id();
-
             let result = if self.config.generate_missing_orders {
                 process_mass_status_for_reconciliation(mass_status, instrument, None)
             } else {
@@ -5288,24 +5283,23 @@ impl ExecutionManager {
         }
     }
 
-    fn is_fill_applied(&self, fill: &OrderFilled, fill_key: FillKey) -> bool {
+    fn applied_fill_key(&self, fill: &OrderFilled) -> Option<FillKey> {
         if fill.last_qty.is_zero() {
-            return false;
+            return None;
         }
 
         let cache = self.cache();
-        cache
-            .order(&fill.client_order_id)
-            .or_else(|| {
-                cache
-                    .client_order_id(&fill.venue_order_id)
-                    .and_then(|client_order_id| cache.order(client_order_id))
-            })
-            .is_some_and(|order| {
-                order.account_id() == Some(fill_key.0)
-                    && order.instrument_id() == fill_key.1
-                    && order.trade_ids().contains(&&fill_key.2)
-            })
+        let order = cache.order(&fill.client_order_id).or_else(|| {
+            cache
+                .client_order_id(&fill.venue_order_id)
+                .and_then(|client_order_id| cache.order(client_order_id))
+        })?;
+
+        order.trade_ids().contains(&&fill.trade_id).then_some((
+            order.account_id()?,
+            order.instrument_id(),
+            fill.trade_id,
+        ))
     }
 
     fn create_order_fill(
@@ -6016,7 +6010,6 @@ mod tests {
             Some(&failing_client),
         );
         let mut working = order;
-
         for event in &first_events {
             working
                 .apply(event.clone())
@@ -6752,6 +6745,7 @@ mod tests {
     ) {
         let clock = Rc::new(RefCell::new(VirtualClock::new()));
         let cache = Rc::new(RefCell::new(Cache::default()));
+
         let mut manager = ExecutionManager::new(
             clock,
             cache.clone(),
@@ -6761,6 +6755,7 @@ mod tests {
             },
         )
         .expect("valid config");
+
         let order = OrderTestBuilder::new(OrderType::Limit)
             .instrument_id(InstrumentId::from("ETHUSDT.BYBIT"))
             .quantity(Quantity::from("10.0"))
@@ -6772,6 +6767,7 @@ mod tests {
         if previously_registered {
             manager.register_submission(order.init_event(), None);
         }
+
         cache
             .borrow_mut()
             .add_order(order, None, None, false)
@@ -6784,6 +6780,7 @@ mod tests {
         if previously_registered {
             manager.confirm_submission_outcome(&client_order_id);
         }
+
         assert!(!manager.submissions.contains_key(&client_order_id));
         assert!(!manager.order_inflight_checks.contains_key(&client_order_id));
 
@@ -7806,7 +7803,6 @@ mod tests {
             None,
         );
         let mut projected = order;
-
         for event in &events {
             projected.apply(event.clone()).unwrap();
         }
