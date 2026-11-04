@@ -98,7 +98,6 @@ struct TestServerState {
     balance_response: Arc<tokio::sync::Mutex<Value>>,
     rate_limit_after: Arc<AtomicUsize>,
     rate_limit_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
-    /// Delay before `handle_get_orders` responds. Used by the timeout test.
     get_orders_delay_secs: Arc<AtomicUsize>,
     orders_pages: Arc<tokio::sync::Mutex<VecDeque<Value>>>,
     orders_query_log: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,

@@ -127,6 +127,10 @@ impl RequestGate {
     }
 }
 
+/// Configurable responses and recorded requests for the mock execution venue.
+///
+/// For retry tests, `order_post_500_remaining` sets how many order submissions return HTTP 500
+/// before the handler uses `order_response_status`.
 #[derive(Clone)]
 pub(super) struct TestServerState {
     pub(super) last_body: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -149,8 +153,6 @@ pub(super) struct TestServerState {
     pub(super) order_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) order_response_headers: Arc<tokio::sync::Mutex<HeaderMap>>,
     pub(super) order_post_count: Arc<tokio::sync::Mutex<usize>>,
-    /// When > 0, `handle_post_order` returns 500 on this many calls before
-    /// reverting to the configured `order_response_status`. Used by retry tests.
     pub(super) order_post_500_remaining: Arc<tokio::sync::Mutex<usize>>,
     pub(super) order_response_uses_request_hash: Arc<AtomicBool>,
     pub(super) order_market_versions: Arc<tokio::sync::Mutex<HashMap<String, String>>>,

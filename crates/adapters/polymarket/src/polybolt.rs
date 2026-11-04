@@ -173,6 +173,11 @@ impl Drop for PolyBoltTaskSlots {
     }
 }
 
+/// Shared connection, authentication, and subscription state for the PolyBolt feed.
+///
+/// Reconciliation waits for any scheduled retry delay before the next attempt.
+/// Sequence numbers are tracked per channel for each connection. A gap queues all subscriptions
+/// on the affected channel for resubscription to obtain a fresh snapshot.
 #[derive(Debug)]
 struct PolymarketPolyBoltFeedInner {
     url: String,
@@ -191,11 +196,8 @@ struct PolymarketPolyBoltFeedInner {
     // Blocks recovery during a drain delay and after terminal authentication or policy closes
     halted: AtomicBool,
     auth_budget: Mutex<AuthBudget>,
-    /// Delay the next reconcile attempt must wait out first (auth retry or drain reconnect).
     retry_delay: Mutex<Option<Duration>>,
-    /// Last envelope `seq` per channel on the current connection, for gap detection.
     last_seq_by_channel: Mutex<AHashMap<&'static str, u64>>,
-    /// Channels whose subscriptions must be resubscribed for a fresh snapshot after a gap.
     resync_channels: Mutex<AHashSet<&'static str>>,
     subscriptions: dashmap::DashMap<String, TrackedSubscription>,
     last_emitted_timestamps_ms: dashmap::DashMap<String, u64>,
