@@ -1120,8 +1120,11 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
     let latest_bar = cache_api.bar(&bar_type);
     let indexed_bar = cache_api.bar_at_index(&bar_type, 0);
     let latest_mark_price = cache_api.mark_price(&instrument_id);
+    let indexed_mark_price = cache_api.mark_price_at_index(&instrument_id, 0);
     let latest_index_price = cache_api.index_price(&instrument_id);
+    let indexed_index_price = cache_api.index_price_at_index(&instrument_id, 0);
     let latest_funding_rate = cache_api.funding_rate(&instrument_id);
+    let indexed_funding_rate = cache_api.funding_rate_at_index(&instrument_id, 0);
     let latest_status = cache_api.instrument_status(&instrument_id);
     let book_update_count = cache_api.book_update_count(&instrument_id);
     let quote_count = cache_api.quote_count(&instrument_id);
@@ -1140,6 +1143,9 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
     let quote_out_of_range = cache_api.quote_at_index(&instrument_id, 1);
     let trade_out_of_range = cache_api.trade_at_index(&instrument_id, 1);
     let bar_out_of_range = cache_api.bar_at_index(&bar_type, 1);
+    let mark_price_out_of_range = cache_api.mark_price_at_index(&instrument_id, 1);
+    let index_price_out_of_range = cache_api.index_price_at_index(&instrument_id, 1);
+    let funding_rate_out_of_range = cache_api.funding_rate_at_index(&instrument_id, 1);
     let missing_currency_code = Ustr::from("ZZZ");
     let missing_currency = cache_api.currency(&missing_currency_code);
     let missing_currency_error = cache_api.try_currency(&missing_currency_code).unwrap_err();
@@ -1155,8 +1161,11 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
     assert_eq!(latest_bar, Some(bar));
     assert_eq!(indexed_bar, Some(bar));
     assert_eq!(latest_mark_price, Some(mark_price));
+    assert_eq!(indexed_mark_price, Some(mark_price));
     assert_eq!(latest_index_price, Some(index_price));
+    assert_eq!(indexed_index_price, Some(index_price));
     assert_eq!(latest_funding_rate, Some(funding_rate));
+    assert_eq!(indexed_funding_rate, Some(funding_rate));
     assert_eq!(latest_status, Some(status));
     assert_eq!(book_update_count, 1);
     assert_eq!(quote_count, 1);
@@ -1175,6 +1184,9 @@ fn test_data_actor_cache_api_returns_owned_market_data_point_reads(
     assert_eq!(cached_option_greeks, Some(option_greeks));
     assert_eq!(quote_out_of_range, None);
     assert_eq!(trade_out_of_range, None);
+    assert_eq!(mark_price_out_of_range, None);
+    assert_eq!(index_price_out_of_range, None);
+    assert_eq!(funding_rate_out_of_range, None);
     assert_eq!(bar_out_of_range, None);
     assert_eq!(missing_currency, None);
     assert_eq!(
@@ -1520,8 +1532,11 @@ fn test_data_actor_cache_api_surface_returns_owned_values(
     let _: Option<Bar> = cache_api.bar(&bar_type);
     let _: Option<Bar> = cache_api.bar_at_index(&bar_type, 0);
     let _: Option<MarkPriceUpdate> = cache_api.mark_price(&instrument_id);
+    let _: Option<MarkPriceUpdate> = cache_api.mark_price_at_index(&instrument_id, 0);
     let _: Option<IndexPriceUpdate> = cache_api.index_price(&instrument_id);
+    let _: Option<IndexPriceUpdate> = cache_api.index_price_at_index(&instrument_id, 0);
     let _: Option<FundingRateUpdate> = cache_api.funding_rate(&instrument_id);
+    let _: Option<FundingRateUpdate> = cache_api.funding_rate_at_index(&instrument_id, 0);
     let _: Option<InstrumentStatus> = cache_api.instrument_status(&instrument_id);
     let _: Option<Vec<QuoteTick>> = cache_api.quotes(&instrument_id);
     let _: Option<Vec<TradeTick>> = cache_api.trades(&instrument_id);

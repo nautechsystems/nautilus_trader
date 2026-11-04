@@ -565,6 +565,9 @@ fn test_cache_api_empty_read_surface_returns_empty(cache: Cache) {
     assert_eq!(api.quote_at_index(&instrument_id, 0), None);
     assert_eq!(api.trade_at_index(&instrument_id, 0), None);
     assert_eq!(api.bar_at_index(&bar_type, 0), None);
+    assert_eq!(api.mark_price_at_index(&instrument_id, 0), None);
+    assert_eq!(api.index_price_at_index(&instrument_id, 0), None);
+    assert_eq!(api.funding_rate_at_index(&instrument_id, 0), None);
     assert_eq!(api.mark_price_count(&instrument_id), 0);
     assert_eq!(api.index_price_count(&instrument_id), 0);
     assert_eq!(api.funding_rate_count(&instrument_id), 0);
@@ -7417,6 +7420,48 @@ fn test_add_funding_rates_indexes_each_instrument() {
             .collect::<Vec<_>>(),
         vec![(2, 2)]
     );
+}
+
+#[rstest]
+fn test_price_updates_at_index_most_recent_first(mut cache: Cache) {
+    let instrument_id = InstrumentId::from("AUDUSD.SIM");
+
+    for ts_event in 0..2 {
+        cache
+            .add_mark_price(mark_price_with_ts(instrument_id, ts_event))
+            .unwrap();
+        cache
+            .add_index_price(index_price_with_ts(instrument_id, ts_event))
+            .unwrap();
+        cache
+            .add_funding_rate(funding_rate_with_ts(instrument_id, ts_event))
+            .unwrap();
+    }
+
+    for (index, ts_event) in [(0, 1), (1, 0)] {
+        let ts_event = UnixNanos::from(ts_event);
+        assert_eq!(
+            cache
+                .mark_price_at_index(&instrument_id, index)
+                .map(|update| update.ts_event),
+            Some(ts_event)
+        );
+        assert_eq!(
+            cache
+                .index_price_at_index(&instrument_id, index)
+                .map(|update| update.ts_event),
+            Some(ts_event)
+        );
+        assert_eq!(
+            cache
+                .funding_rate_at_index(&instrument_id, index)
+                .map(|update| update.ts_event),
+            Some(ts_event)
+        );
+    }
+    assert_eq!(cache.mark_price_at_index(&instrument_id, 2), None);
+    assert_eq!(cache.index_price_at_index(&instrument_id, 2), None);
+    assert_eq!(cache.funding_rate_at_index(&instrument_id, 2), None);
 }
 
 #[rstest]

@@ -343,10 +343,16 @@ impl PyCache {
             .collect()
     }
 
-    /// Returns the most recently added mark price update for the `instrument_id`, or `None` if absent.
-    #[pyo3(name = "mark_price")]
-    fn py_mark_price(&self, instrument_id: InstrumentId) -> Option<MarkPriceUpdate> {
-        self.0.borrow().mark_price(&instrument_id).copied()
+    /// Returns the mark price update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[pyo3(name = "mark_price", signature = (instrument_id, index=0))]
+    fn py_mark_price(&self, instrument_id: InstrumentId, index: usize) -> Option<MarkPriceUpdate> {
+        self.0
+            .borrow()
+            .mark_price_at_index(&instrument_id, index)
+            .copied()
     }
 
     /// Returns cached mark price updates for the `instrument_id` in reverse insertion order.
@@ -358,10 +364,20 @@ impl PyCache {
         self.0.borrow().mark_prices(&instrument_id)
     }
 
-    /// Returns the most recently added index price update for the `instrument_id`, or `None` if absent.
-    #[pyo3(name = "index_price")]
-    fn py_index_price(&self, instrument_id: InstrumentId) -> Option<IndexPriceUpdate> {
-        self.0.borrow().index_price(&instrument_id).copied()
+    /// Returns the index price update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[pyo3(name = "index_price", signature = (instrument_id, index=0))]
+    fn py_index_price(
+        &self,
+        instrument_id: InstrumentId,
+        index: usize,
+    ) -> Option<IndexPriceUpdate> {
+        self.0
+            .borrow()
+            .index_price_at_index(&instrument_id, index)
+            .copied()
     }
 
     /// Returns cached index price updates for the `instrument_id` in reverse insertion order.
@@ -373,10 +389,20 @@ impl PyCache {
         self.0.borrow().index_prices(&instrument_id)
     }
 
-    /// Returns the most recently added funding rate update for the `instrument_id`, or `None` if absent.
-    #[pyo3(name = "funding_rate")]
-    fn py_funding_rate(&self, instrument_id: InstrumentId) -> Option<FundingRateUpdate> {
-        self.0.borrow().funding_rate(&instrument_id).copied()
+    /// Returns the funding rate update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[pyo3(name = "funding_rate", signature = (instrument_id, index=0))]
+    fn py_funding_rate(
+        &self,
+        instrument_id: InstrumentId,
+        index: usize,
+    ) -> Option<FundingRateUpdate> {
+        self.0
+            .borrow()
+            .funding_rate_at_index(&instrument_id, index)
+            .copied()
     }
 
     /// Returns cached funding rate updates for the `instrument_id` in reverse insertion order.

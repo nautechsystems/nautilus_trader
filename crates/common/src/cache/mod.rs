@@ -6916,6 +6916,21 @@ impl Cache {
             .and_then(|mark_prices| mark_prices.front())
     }
 
+    /// Returns the mark price update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[must_use]
+    pub fn mark_price_at_index(
+        &self,
+        instrument_id: &InstrumentId,
+        index: usize,
+    ) -> Option<&MarkPriceUpdate> {
+        self.mark_prices
+            .get(instrument_id)
+            .and_then(|mark_prices| mark_prices.get(index))
+    }
+
     /// Returns the most recently added index price update for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn index_price(&self, instrument_id: &InstrumentId) -> Option<&IndexPriceUpdate> {
@@ -6924,12 +6939,42 @@ impl Cache {
             .and_then(|index_prices| index_prices.front())
     }
 
+    /// Returns the index price update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[must_use]
+    pub fn index_price_at_index(
+        &self,
+        instrument_id: &InstrumentId,
+        index: usize,
+    ) -> Option<&IndexPriceUpdate> {
+        self.index_prices
+            .get(instrument_id)
+            .and_then(|index_prices| index_prices.get(index))
+    }
+
     /// Returns the most recently added funding rate update for the `instrument_id`, or `None` if absent.
     #[must_use]
     pub fn funding_rate(&self, instrument_id: &InstrumentId) -> Option<&FundingRateUpdate> {
         self.funding_rates
             .get(instrument_id)
             .and_then(|funding_rates| funding_rates.front())
+    }
+
+    /// Returns the funding rate update at `index` for the `instrument_id`.
+    ///
+    /// Index 0 is the most recently added update; index 1 is the previous insertion.
+    /// Entries are not sorted by timestamp. Returns `None` when no update exists at the index.
+    #[must_use]
+    pub fn funding_rate_at_index(
+        &self,
+        instrument_id: &InstrumentId,
+        index: usize,
+    ) -> Option<&FundingRateUpdate> {
+        self.funding_rates
+            .get(instrument_id)
+            .and_then(|funding_rates| funding_rates.get(index))
     }
 
     /// Returns the most recently added instrument status for the `instrument_id`, or `None` if absent.
