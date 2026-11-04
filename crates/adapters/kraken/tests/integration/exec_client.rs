@@ -3711,7 +3711,7 @@ enum FuturesLookupRead {
     TokenPageWithoutEvents,
     /// The order's own event on a page with a continuation token.
     OrderOnTokenPage,
-    /// A history row of a kind the documentation does not list, which names no order.
+    /// A history row of a kind the documentation does not list, which rules out no order.
     UndocumentedRow,
     /// A history row whose direction the venue could not decode, of this order.
     UndecodableRowOf(&'static str),
@@ -3723,14 +3723,19 @@ enum FuturesLookupRead {
     UnresolvedOpenOrder,
     /// A history row of this order that cannot be parsed, its quantity negative.
     UnparsableRowOf(&'static str),
+    /// A history row of this order whose payload does not decode.
+    UnreadableRowOf(&'static str),
+    /// A history row of this order whose payload does not decode, newer than a readable row of
+    /// the order, which then does not answer for it.
+    UnreadableRowOver(&'static str),
 }
 
 /// The futures lookup answers that the venue has no such order only from a read that rules the
 /// order out. A history page handed back with a continuation token holds the newest events, so it
 /// rules out an order placed after its oldest event by more than the clock skew allowance, and a
 /// page with no events rules out none. A skipped row, one the client cannot resolve or parse
-/// included, rules out every other order with a venue order ID, and a row naming no order rules out
-/// none. An order the cut-short read returns is reported.
+/// included, rules out every other order with a venue order ID, and a row naming no order, or any
+/// row of an undocumented kind, rules out none. An order the cut-short read returns is reported.
 #[rstest]
 #[case::complete_read(FuturesLookupRead::Complete, "V-LOOKUP-1", LookupAnswer::Absent)]
 #[case::token_page_reaching_past_the_order(
@@ -3810,6 +3815,21 @@ enum FuturesLookupRead {
 )]
 #[case::unparsable_row_of_the_order(
     FuturesLookupRead::UnparsableRowOf("V-LOOKUP-1"),
+    "V-LOOKUP-1",
+    LookupAnswer::Deferred
+)]
+#[case::unreadable_row_of_another_order(
+    FuturesLookupRead::UnreadableRowOf("V-OTHER-1"),
+    "V-LOOKUP-1",
+    LookupAnswer::Absent
+)]
+#[case::unreadable_row_of_the_order(
+    FuturesLookupRead::UnreadableRowOf("V-LOOKUP-1"),
+    "V-LOOKUP-1",
+    LookupAnswer::Deferred
+)]
+#[case::unreadable_row_over_the_order(
+    FuturesLookupRead::UnreadableRowOver("V-LOOKUP-1"),
     "V-LOOKUP-1",
     LookupAnswer::Deferred
 )]
@@ -3910,6 +3930,37 @@ async fn test_futures_order_lookup_reports_absence_only_from_a_read_that_rules_t
                 Some(futures_open_orders_json("V-UNRESOLVED", "PF_NOSUCHUSD"));
             futures_order_history_json(&[])
         }
+        FuturesLookupRead::UnreadableRowOf(order_uid) => {
+            futures_order_history_json(&[futures_history_element(
+                "OrderCancelled",
+                "e-unreadable",
+                order_uid,
+                "PI_XBTUSD",
+                "oops",
+                "0",
+                FUTURES_LOOKUP_ORDER_MS,
+            )])
+        }
+        FuturesLookupRead::UnreadableRowOver(order_uid) => futures_order_history_json(&[
+            futures_history_element(
+                "OrderCancelled",
+                "e-unreadable",
+                order_uid,
+                "PI_XBTUSD",
+                "oops",
+                "0",
+                FUTURES_LOOKUP_ORDER_MS + 1_000,
+            ),
+            futures_history_element(
+                "OrderPlaced",
+                "e-readable",
+                order_uid,
+                "PI_XBTUSD",
+                "1000",
+                "0",
+                FUTURES_LOOKUP_ORDER_MS,
+            ),
+        ]),
         FuturesLookupRead::UnresolvedRowOf(order_uid) => {
             futures_order_history_json(&[futures_history_element(
                 "OrderCancelled",
@@ -5267,6 +5318,158 @@ async fn test_futures_mass_status_withholds_a_closing_order_on_a_flat_instrument
     );
     assert!(snapshot.fill_reports().values().all(Vec::is_empty));
     assert!(!snapshot.reports_complete());
+}
+
+/// An uncached order the read withholds for an unreadable newest row takes its page fills with it,
+/// since with no order the engine would only count them against a synthetic opening; a cached
+/// order keeps them, since the engine reconciles them against it, and so does an order the
+/// unreadable row is too old to withhold. A sibling keeps its report and fills either way, and the
+/// set is incomplete.
+#[rstest]
+#[case::uncached(false, 1680877245500, false, false)]
+#[case::cached(true, 1680877245500, false, true)]
+#[case::uncached_reported_from_a_newer_state(false, 1680877244000, true, true)]
+#[tokio::test]
+async fn test_futures_mass_status_withholds_the_fills_of_an_uncached_order_the_read_withholds(
+    #[case] order_cached: bool,
+    #[case] unreadable_ms: i64,
+    #[case] expected_report: bool,
+    #[case] expected_fills_kept: bool,
+) {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+
+    if order_cached {
+        let placed = UnixNanos::from(FUTURES_LOOKUP_ORDER_MS as u64 * 1_000_000);
+        let order = add_futures_limit_order_created_at(
+            &cache,
+            ClientOrderId::new("futures-withheld-1"),
+            test_instrument_id(),
+            OrderSide::Buy,
+            test_strategy_id(),
+            placed,
+        );
+        accept_cached_order_at(&cache, &order, "V-WITHHELD", placed);
+    }
+    *state.futures_open_positions_json.lock().await =
+        Some(futures_open_positions_json("PI_XBTUSD"));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element(
+            "OrderCancelled",
+            "e3",
+            "V-WITHHELD",
+            "PI_XBTUSD",
+            "oops",
+            "0",
+            unreadable_ms,
+        ),
+        futures_history_element(
+            "OrderPlaced",
+            "e2",
+            "V-WITHHELD",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1680877245000,
+        ),
+        futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "V-SIBLING",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1680877245000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(futures_recent_fills_json(&[
+        ("f-withheld", "V-WITHHELD", "buy", "500", "49000.0"),
+        ("f-sibling", "V-SIBLING", "buy", "500", "49000.0"),
+    ]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("V-SIBLING"))
+    );
+    assert_eq!(
+        snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("V-WITHHELD")),
+        expected_report
+    );
+    assert!(
+        snapshot
+            .fill_reports()
+            .contains_key(&VenueOrderId::from("V-SIBLING"))
+    );
+    assert_eq!(
+        snapshot
+            .fill_reports()
+            .contains_key(&VenueOrderId::from("V-WITHHELD")),
+        expected_fills_kept
+    );
+    assert!(!snapshot.reports_complete());
+}
+
+/// A fill of a withheld order that echoes a cached order stays although the cache does not index
+/// the venue order yet, since the engine applies it to that order by its client order ID.
+#[rstest]
+#[tokio::test]
+async fn test_futures_mass_status_keeps_a_withheld_order_fill_echoing_a_cached_order() {
+    let (client, _rx, cache, state) =
+        connected_client_with_command_responses(CommandResponses::default()).await;
+    let order = add_futures_limit_order_created_at(
+        &cache,
+        ClientOrderId::new(LONG_CLIENT_ORDER_ID),
+        test_instrument_id(),
+        OrderSide::Buy,
+        test_strategy_id(),
+        UnixNanos::default(),
+    );
+    mark_cached_order_submitted(&cache, &order);
+    *state.futures_open_positions_json.lock().await =
+        Some(futures_open_positions_json("PI_XBTUSD"));
+    *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+        futures_history_element(
+            "OrderCancelled",
+            "e2",
+            "V-WITHHELD",
+            "PI_XBTUSD",
+            "oops",
+            "0",
+            1680877245500,
+        ),
+        futures_history_element(
+            "OrderPlaced",
+            "e1",
+            "V-WITHHELD",
+            "PI_XBTUSD",
+            "1000",
+            "0",
+            1680877245000,
+        ),
+    ]));
+    *state.fills_response.lock().await = Some(recent_fills_body(&[(
+        "f-withheld",
+        "V-WITHHELD",
+        LONG_CLIENT_ORDER_ID,
+    )]));
+
+    let snapshot = client.generate_mass_status(None).await.unwrap().unwrap();
+
+    assert!(
+        !snapshot
+            .order_reports()
+            .contains_key(&VenueOrderId::from("V-WITHHELD"))
+    );
+    assert!(
+        snapshot
+            .fill_reports()
+            .contains_key(&VenueOrderId::from("V-WITHHELD"))
+    );
 }
 
 /// A round trip whose fills are all on the page nets to zero on the flat instrument and is kept.
@@ -8096,11 +8299,29 @@ async fn test_futures_cancel_and_modify_name_the_order_by_one_identifier(
     false,
     Err("several venue orders")
 )]
+#[case::rows_of_two_venue_orders_one_withheld(
+    false,
+    LookupRow::TwoHistoryRowsOneWithheld,
+    false,
+    Err("several venue orders")
+)]
 #[case::full_id_row_of_another_venue_order(
     true,
     LookupRow::OnlyAnotherWithTheId,
     false,
     Err("carries its client order ID")
+)]
+#[case::full_id_row_of_another_venue_order_withheld(
+    true,
+    LookupRow::WithheldAnotherWithTheId,
+    false,
+    Err("carries its client order ID")
+)]
+#[case::full_id_row_withheld_without_venue_order_id(
+    false,
+    LookupRow::WithheldAnotherWithTheId,
+    false,
+    Err("does not rule it out")
 )]
 #[case::full_id_window_row_of_another_venue_order(
     true,
@@ -8277,6 +8498,18 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
         )
         .replace(r#""clientId":"""#, &format!(r#""clientId":"{client_id}""#))
     };
+    // Newer than `history_row`, with a quantity that does not decode
+    let unreadable_row = |order_uid: &str| {
+        futures_history_element(
+            "OrderCancelled",
+            &format!("e-unreadable-{order_uid}"),
+            order_uid,
+            "PI_XBTUSD",
+            "oops",
+            "0",
+            1_700_000_001_000,
+        )
+    };
 
     match row {
         LookupRow::HistoryOfAnother(echoed) => {
@@ -8298,6 +8531,19 @@ async fn test_futures_order_lookup_takes_only_the_queried_order(
             *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
                 history_row("V-OTHER-1", LONG_CLIENT_ORDER_ID),
                 history_row("V-OTHER-2", SHORTENED_CLIENT_ORDER_ID),
+            ]));
+        }
+        LookupRow::WithheldAnotherWithTheId => {
+            *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+                unreadable_row("V-OTHER-1"),
+                history_row("V-OTHER-1", LONG_CLIENT_ORDER_ID),
+            ]));
+        }
+        LookupRow::TwoHistoryRowsOneWithheld => {
+            *state.futures_order_history_json.lock().await = Some(futures_order_history_json(&[
+                unreadable_row("V-OTHER-2"),
+                history_row("V-OTHER-2", SHORTENED_CLIENT_ORDER_ID),
+                history_row("V-OTHER-1", LONG_CLIENT_ORDER_ID),
             ]));
         }
         LookupRow::WindowOnAnotherInstrument => {
@@ -8702,6 +8948,10 @@ enum LookupRow {
     HistoryOfAnother(&'static str),
     /// Only a history row of `V-OTHER-1` echoing the full ID, the order's own row absent.
     OnlyAnotherWithTheId,
+    /// As `OnlyAnotherWithTheId`, with an unreadable newer row withholding `V-OTHER-1`.
+    WithheldAnotherWithTheId,
+    /// As `TwoHistoryRows`, with an unreadable newer row withholding `V-OTHER-2`.
+    TwoHistoryRowsOneWithheld,
     /// History rows of `V-OTHER-1` and `V-OTHER-2`, echoing the full and the shortened ID.
     TwoHistoryRows,
     /// A window entry of `V-OTHER-1` echoing the full ID on another instrument.

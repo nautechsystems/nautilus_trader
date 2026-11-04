@@ -1123,7 +1123,7 @@ pub fn parse_futures_order_event_status_report(
         venue_order_id,
         order_side,
         order_type,
-        time_in_force: TimeInForce::Gtc,
+        time_in_force: event.time_in_force,
         order_status,
         quantity,
         filled_qty,
@@ -1146,7 +1146,7 @@ pub fn parse_futures_order_event_status_report(
         trailing_offset_type: None,
         display_qty: None,
         avg_px: None,
-        post_only: false,
+        post_only: event.post_only,
         reduce_only: event.reduce_only,
         cancel_reason: None,
         ts_triggered: None,
@@ -2372,6 +2372,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2406,6 +2408,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: true,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2442,6 +2446,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: true,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2474,6 +2480,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2505,6 +2513,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");
@@ -2536,6 +2546,8 @@ mod tests {
             timestamp: "2023-11-14T22:13:20.000Z".to_string(),
             last_update_timestamp: "2023-11-14T22:13:21.000Z".to_string(),
             reduce_only: false,
+            time_in_force: TimeInForce::Gtc,
+            post_only: false,
         };
         let instrument = create_mock_perp();
         let account_id = AccountId::new("KRAKEN-001");

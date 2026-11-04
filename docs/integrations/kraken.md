@@ -706,7 +706,9 @@ lookup for that trigger fails while it is skipped, so reconciliation defers it.
 Both clients return no rows for a query scoped to an instrument they do not hold. Spot and Futures share the
 `KRAKEN` venue, so either client can receive a query for an order it did not route. Single-order status
 lookups and `query_order` inspect only the command's instrument. Unresolved or unparsable records on another
-instrument cannot fail that scoped read, though a lookup cannot rule out an order such a record may name.
+instrument cannot fail that scoped read, though a lookup cannot rule out an order such a record may name. A
+Futures history row of a documented kind that names both its order and a contract resolving to another
+instrument is outside the read and does not count. See [Order history and pricing](#order-history-and-pricing).
 
 Other gaps mark the set incomplete: closed or historical orders and fills that cannot be parsed, or whose
 instruments cannot be resolved. Position records do not contribute to the completeness flag. In-scope position
@@ -724,8 +726,8 @@ reconciliation defers the order:
   order before answering.
 - A read that skipped a row, including one whose instrument the client cannot
   resolve, rules out an order with a venue order ID that no skipped row carries. A
-  skipped row that names no order, such as an undocumented history event kind, rules
-  out none.
+  skipped row that names no order, or any row of an undocumented history event kind,
+  rules out none.
 - A lookup on an instrument of the other product reads complete, since the other
   client answers for its orders. One on an instrument of the client's own product
   that it does not hold reads nothing and rules out none.
@@ -947,7 +949,8 @@ filled orders. Historical reads have the limits below.
 
 The adapter reads order lifecycle events from
 [`/api/history/v3/orders`](https://docs.kraken.com/api-reference/account-history/get-order-events). Each read
-takes one page: Kraken `/history` endpoints share a pool of 100 tokens, replenished at 100 every 10 minutes.
+takes one page of up to 1000 events, the most the venue serves: Kraken `/history` endpoints share a pool of 100
+tokens, replenished at 100 every 10 minutes.
 An order-history page costs one token, so a page that hands back a continuation token, in the body or the
 `Next-Continuation-Token` header, logs a warning and leaves the set incomplete rather than reading further. A
 single-order status lookup can still report a cached order absent when it was placed after the page's oldest
@@ -957,20 +960,38 @@ The history lists every lifecycle event. The read returns one report per order: 
 venue still lists it. Otherwise, it returns the latest history state. A closed order is not reopened by an
 open state stamped later, such as a refused edit logged after a cancel.
 
-The contract name is resolved as the venue spells it, exactly first and then case-insensitively. The history
-carries no trigger price. Thus, a stop order is reported as the limit or market order it executes as once
-triggered. Venue-initiated orders (liquidation, assignment, hedge assignment, unwind, block, RFQ) are reported
-as market orders.
+The contract name is resolved as the venue spells it, exactly first and then case-insensitively. A spelling that
+matches two contracts case-insensitively resolves to neither. The history carries no trigger price. Thus, a stop
+order is reported as the limit or market order it executes as once triggered. Venue-initiated orders (liquidation,
+assignment, hedge assignment, unwind, block, RFQ) are reported as market orders.
 
-The adapter skips unrepresentable rows with a warning and marks the set incomplete:
+The order type is the only place the history states a time in force. `IoC` and `HedgeImmediateOrCancel` rows are
+reported as `IOC`, `FillOrKill` rows as `FOK`, and `Post` rows as post-only `GTC`. Other rows are reported as
+`GTC`. A `FOK` row comes from another tool, since the adapter does not submit `FOK` on Futures.
+
+The adapter skips unrepresentable rows with a warning:
 
 - An unknown event kind.
+- A documented event kind whose payload does not decode.
 - An order type reported as `Unknown` or omitted.
 - An unknown direction.
 - A timestamp before the epoch.
 
-`OrderNotFound` carries no order state and is skipped without affecting completeness.
-A venue error returned under an HTTP success status fails the read.
+A skipped row marks the set incomplete unless it is provably outside the read: the open-order snapshot reports
+its order, or a scoped read finds it names an order and a contract resolving to another instrument. Any other
+row whose order or contract cannot be read stays in scope, as does any row of an unknown event kind. A row with
+an invalid order ID names no order.
+
+A skipped row in scope that is at least as new as the state an order would be reported from withholds that order,
+whether that state is open or closed, so an unreadable newest row cannot fall back to an older state. The page's
+other orders are still reported. A later lookup of the withheld order is deferred like any order a read cannot
+rule out. A row that names no order can withhold nothing, so its order's older state can still be reported in the
+incomplete set. A canceled or rejected row's state counts from its event. Any other state stamped before its
+event, such as a refused edit's, counts from the earlier stamp.
+
+A decoded `OrderNotFound` carries no order state and is skipped without affecting completeness.
+A venue error returned under an HTTP success status fails the read, as does a body without an `elements` array or
+an element without the documented `uid`, `timestamp` and `event`.
 
 A terminal history row with executions carries no average price. The adapter prices
 it from page fills that cover its filled quantity exactly, or from page fills plus
@@ -986,7 +1007,8 @@ order that reached a terminal state during downtime when that page contains it.
 A venue error body under an HTTP success status, regardless of its code, or HTTP
 429 triggers a warning and fallback to open orders alone, with the set marked incomplete.
 Other HTTP errors, transport failures, and unparsable bodies fail mass status,
-as does a failed open-order read.
+as does a failed open-order read. A documented event whose payload does not decode
+does not: it is skipped as described in [Order history and pricing](#order-history-and-pricing).
 
 #### Startup pricing safeguard
 
@@ -996,7 +1018,9 @@ only the latest fills page. They cannot page back to recover an older missing ex
 
 A withheld order's page fills remain when the cache holds the order, because the
 engine can reconcile those fills against it without a report. An uncached order's
-fills are withheld with the order.
+fills are withheld with the order, including an order the history read itself left
+without a report because a skipped row names it. A fill of such an order that echoes a
+cached order stays, since the engine applies it to that order by its client order ID.
 
 #### Flat instruments
 
