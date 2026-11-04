@@ -6502,6 +6502,7 @@ dependencies = [
  "anyhow",
  "async-stream",
  "async-trait",
+ "base64 0.23.1",
  "bytes",
  "codspeed-criterion-compat",
  "derive_builder",

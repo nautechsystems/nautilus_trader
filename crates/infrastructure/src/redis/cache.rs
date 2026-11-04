@@ -44,6 +44,7 @@ use std::{
 
 use ahash::AHashMap;
 use anyhow::Context;
+use base64::{Engine, prelude::BASE64_STANDARD};
 use bytes::Bytes;
 #[cfg(feature = "defi")]
 use nautilus_common::defi::cache::InstrumentMigration;
@@ -315,6 +316,7 @@ pub struct RedisCacheDatabase {
     pub trader_key: String,
     pub encoding: SerializationEncoding,
     pub bulk_read_batch_size: Option<usize>,
+    timestamps_as_iso8601: bool,
     tx: tokio::sync::mpsc::UnboundedSender<DatabaseCommand>,
     handle: Option<tokio::task::JoinHandle<()>>,
 }
@@ -351,6 +353,7 @@ impl RedisCacheDatabase {
         let trader_key_clone = trader_key.clone();
         let encoding = config.encoding;
         let bulk_read_batch_size = config.bulk_read_batch_size;
+        let timestamps_as_iso8601 = config.timestamps_as_iso8601;
 
         let handle = get_runtime().spawn(async move {
             if let Err(e) =
@@ -366,6 +369,7 @@ impl RedisCacheDatabase {
             trader_key,
             encoding,
             bulk_read_batch_size,
+            timestamps_as_iso8601,
             tx,
             handle: Some(handle),
         })
@@ -483,10 +487,18 @@ impl RedisCacheDatabase {
         let con = self.con.clone();
         let trader_key = self.trader_key.clone();
         let data_type = data_type.clone();
+        let batch_size = self.bulk_read_batch_size.unwrap_or(usize::MAX);
         let (tx, rx) = mpsc::channel();
 
         get_runtime().spawn(async move {
-            let result = DatabaseQueries::load_custom_data(&con, &trader_key, &data_type).await;
+            let result = DatabaseQueries::load_custom_data_batched(
+                &con,
+                &trader_key,
+                &data_type,
+                batch_size,
+            )
+            .await;
+
             if let Err(e) = tx.send(result) {
                 log::error!("Failed to send custom data result for '{data_type}': {e:?}");
             }
@@ -510,6 +522,8 @@ impl RedisCacheDatabase {
 
     /// Stores custom data in Redis (key format: `custom:<ts_init_020>:<uuid>`, value: full JSON).
     ///
+    /// Uses the registered JSON format independently of cache encoding and timestamp options.
+    ///
     /// # Errors
     ///
     /// Returns an error if serialization fails or the insert command cannot be sent.
@@ -523,6 +537,14 @@ impl RedisCacheDatabase {
             UUID4::new()
         );
         self.insert(key, Some(vec![Bytes::from(json_bytes)]))
+    }
+
+    fn serialize_payload<T: Serialize>(&self, payload: &T) -> anyhow::Result<Vec<u8>> {
+        DatabaseQueries::serialize_payload_with_timestamps(
+            self.encoding,
+            payload,
+            self.timestamps_as_iso8601,
+        )
     }
 
     #[cfg(feature = "defi")]
@@ -1033,23 +1055,10 @@ async fn update_order_event_log(
     update_list(&mut append_pipe, key, value[0].as_ref());
     append_pipe.query_async::<()>(conn).await?;
 
-    let mut events: Vec<OrderEventAny> = result
-        .iter()
-        .map(|payload| DatabaseQueries::deserialize_payload(encoding, payload))
-        .collect::<anyhow::Result<_>>()
-        .with_context(|| {
-            format!(
-                "Order event append succeeded for {key}, but index replay failed decoding history"
-            )
-        })?;
-    let event: OrderEventAny = DatabaseQueries::deserialize_payload(encoding, value[0].as_ref())
-        .with_context(|| {
-            format!(
-                "Order event append succeeded for {key}, but index replay failed decoding appended event"
-            )
-        })?;
-    events.push(event);
-    let order = OrderAny::from_events(events).with_context(|| {
+    let mut payloads = result;
+    payloads.push(value[0].clone());
+
+    let order = DatabaseQueries::deserialize_order(encoding, &payloads).with_context(|| {
         format!("Order event append succeeded for {key}, but index replay failed rebuilding order")
     })?;
 
@@ -1361,21 +1370,18 @@ impl RedisCacheDatabaseAdapter {
             })?;
 
             let record = CurrencyRecord::from(&currency);
-            payloads.push(Bytes::from(DatabaseQueries::serialize_payload(
-                self.encoding(),
-                &record,
-            )?));
+            payloads.push(Bytes::from(self.database.serialize_payload(&record)?));
         }
 
         let payload = if codes.is_empty() {
-            DatabaseQueries::serialize_payload(self.encoding(), instrument)?
+            self.database.serialize_payload(instrument)?
         } else {
             let record = crate::defi::InstrumentRecord {
                 defi_currency_codes: codes.clone(),
                 instrument: serde_json::to_value(instrument)?,
             };
 
-            DatabaseQueries::serialize_payload(self.encoding(), &record)?
+            self.database.serialize_payload(&record)?
         };
 
         payloads.push(Bytes::from(payload));
@@ -1413,12 +1419,13 @@ impl RedisCacheDatabaseAdapter {
         let event: AccountState = account.last_event().ok_or_else(|| {
             anyhow::anyhow!("Cannot persist account with no events: {}", account.id())
         })?;
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), &event)?;
+
+        let payload = self.database.serialize_payload(&event)?;
         Ok(Bytes::from(payload))
     }
 
     fn serialize_order_event(&self, order_event: &OrderEventAny) -> anyhow::Result<Bytes> {
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), order_event)?;
+        let payload = self.database.serialize_payload(order_event)?;
         Ok(Bytes::from(payload))
     }
 
@@ -1426,7 +1433,8 @@ impl RedisCacheDatabaseAdapter {
         let event: OrderFilled = position.last_event().ok_or_else(|| {
             anyhow::anyhow!("Cannot persist position with no events: {}", position.id)
         })?;
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), &event)?;
+
+        let payload = self.database.serialize_payload(&event)?;
         Ok(Bytes::from(payload))
     }
 
@@ -1444,7 +1452,7 @@ impl RedisCacheDatabaseAdapter {
                     return Ok(AHashMap::new());
                 };
 
-                DatabaseQueries::deserialize_payload(encoding, &value)
+                Self::deserialize_state(encoding, &value)
             }
             .await;
 
@@ -1456,8 +1464,36 @@ impl RedisCacheDatabaseAdapter {
         blocking_recv(&rx).map_err(|e| anyhow::anyhow!("load_state channel closed: {e}"))?
     }
 
+    fn deserialize_state(
+        encoding: SerializationEncoding,
+        value: &[u8],
+    ) -> anyhow::Result<AHashMap<String, Bytes>> {
+        match encoding {
+            SerializationEncoding::MsgPack => Ok(rmp_serde::from_slice(value)?),
+            SerializationEncoding::Json => {
+                let values: AHashMap<String, serde_json::Value> = serde_json::from_slice(value)?;
+                values
+                    .into_iter()
+                    .map(|(key, value)| {
+                        let bytes = match value {
+                            serde_json::Value::String(value) => {
+                                Bytes::from(BASE64_STANDARD.decode(value)?)
+                            }
+                            value => serde_json::from_value(value)?,
+                        };
+
+                        Ok((key, bytes))
+                    })
+                    .collect()
+            }
+            SerializationEncoding::Sbe => {
+                anyhow::bail!("SBE encoding is not supported for Redis cache payloads")
+            }
+        }
+    }
+
     fn update_state(&self, key: String, state: &AHashMap<String, Bytes>) -> anyhow::Result<()> {
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), state)?;
+        let payload = self.database.serialize_payload(state)?;
         self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
@@ -1494,10 +1530,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     async fn load_all(&self) -> anyhow::Result<CacheMap> {
         log::debug!("Loading all data");
 
-        DatabaseQueries::load_all(
+        DatabaseQueries::load_all_batched(
             &self.database.con,
             self.encoding(),
             &self.database.trader_key,
+            self.database.bulk_read_batch_size.unwrap_or(usize::MAX),
         )
         .await
     }
@@ -1505,6 +1542,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn load(&self) -> anyhow::Result<AHashMap<String, Bytes>> {
         let con = self.database.con.clone();
         let trader_key = self.database.trader_key.clone();
+        let batch_size = self.database.bulk_read_batch_size.unwrap_or(usize::MAX);
         let (tx, rx) = mpsc::channel();
 
         get_runtime().spawn(async move {
@@ -1516,7 +1554,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
                     return Ok(AHashMap::new());
                 }
 
-                let values = DatabaseQueries::read_bulk(&con, &keys).await?;
+                let values = DatabaseQueries::read_bulk_batched(&con, &keys, batch_size).await?;
                 let prefix = format!("{trader_key}{REDIS_DELIMITER}{GENERAL}{REDIS_DELIMITER}");
                 let mut general = AHashMap::new();
 
@@ -1543,10 +1581,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
-        DatabaseQueries::load_currencies(
+        DatabaseQueries::load_currencies_batched(
             &self.database.con,
             &self.database.trader_key,
             self.encoding(),
+            self.database.bulk_read_batch_size.unwrap_or(usize::MAX),
         )
         .await
     }
@@ -1563,10 +1602,11 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     async fn load_instrument_closes(
         &self,
     ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
-        DatabaseQueries::load_instrument_closes(
+        DatabaseQueries::load_instrument_closes_batched(
             &self.database.con,
             &self.database.trader_key,
             self.encoding(),
+            self.database.bulk_read_batch_size.unwrap_or(usize::MAX),
         )
         .await
     }
@@ -1658,6 +1698,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             &self.database.trader_key,
             instrument_id,
             self.encoding(),
+            self.database.bulk_read_batch_size.unwrap_or(usize::MAX),
         )
         .await
     }
@@ -1683,8 +1724,9 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         let trader_key = self.database.trader_key.clone();
         let encoding = self.encoding();
         let instrument_id = *instrument_id;
+        let batch_size = self.database.bulk_read_batch_size.unwrap_or(usize::MAX);
         block_on_nautilus_with(move || async move {
-            load_instrument(&con, &trader_key, &instrument_id, encoding).await
+            load_instrument(&con, &trader_key, &instrument_id, encoding, batch_size).await
         })
     }
 
@@ -1798,7 +1840,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             || currency.code.contains('@')
         {
             let record = CurrencyRecord::from(currency);
-            let payload = DatabaseQueries::serialize_payload(self.encoding(), &record)?;
+            let payload = self.database.serialize_payload(&record)?;
             return self.database.write_defi(
                 format!("currencies:{}", currency.code),
                 vec![currency.code.to_string()],
@@ -1810,7 +1852,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
 
         let key = format!("{CURRENCIES}{REDIS_DELIMITER}{}", currency.code);
         let record = CurrencyRecord::from(currency);
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), &record)?;
+        let payload = self.database.serialize_payload(&record)?;
         self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
@@ -1823,7 +1865,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
         #[cfg(not(feature = "defi"))]
         {
             let key = format!("{INSTRUMENTS}{REDIS_DELIMITER}{}", instrument.id());
-            let payload = DatabaseQueries::serialize_payload(self.encoding(), instrument)?;
+            let payload = self.database.serialize_payload(instrument)?;
             self.database.insert(key, Some(vec![Bytes::from(payload)]))
         }
     }
@@ -1842,13 +1884,13 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             "{INSTRUMENT_CLOSES}{REDIS_DELIMITER}{}",
             close.instrument_id
         );
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), close)?;
+        let payload = self.database.serialize_payload(close)?;
         self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
     fn add_synthetic(&self, synthetic: &SyntheticInstrument) -> anyhow::Result<()> {
         let key = format!("{SYNTHETICS}{REDIS_DELIMITER}{}", synthetic.id);
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), synthetic)?;
+        let payload = self.database.serialize_payload(synthetic)?;
         self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
@@ -1894,7 +1936,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             "{SNAPSHOTS}{REDIS_DELIMITER}{ORDERS}{REDIS_DELIMITER}{}",
             snapshot.client_order_id
         );
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), snapshot)?;
+        let payload = self.database.serialize_payload(snapshot)?;
         self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
@@ -1932,7 +1974,7 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
             "{SNAPSHOTS}{REDIS_DELIMITER}{POSITIONS}{REDIS_DELIMITER}{}",
             snapshot.position_id
         );
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), snapshot)?;
+        let payload = self.database.serialize_payload(snapshot)?;
         self.database.insert(key, Some(vec![Bytes::from(payload)]))
     }
 
@@ -2064,7 +2106,8 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     fn update_order(&self, order_event: &OrderEventAny) -> anyhow::Result<()> {
         let client_order_id = order_event.client_order_id();
         let key = format!("{ORDERS}{REDIS_DELIMITER}{client_order_id}");
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), order_event)?;
+        let payload = self.database.serialize_payload(order_event)?;
+
         let op = DatabaseCommand::new(
             DatabaseOperation::UpdateOrder,
             key,
@@ -2143,8 +2186,10 @@ async fn load_instrument(
     trader_key: &str,
     instrument_id: &InstrumentId,
     encoding: SerializationEncoding,
+    batch_size: usize,
 ) -> anyhow::Result<Option<InstrumentAny>> {
-    let mut currencies = DatabaseQueries::load_currencies(con, trader_key, encoding).await?;
+    let mut currencies =
+        DatabaseQueries::load_currencies_batched(con, trader_key, encoding, batch_size).await?;
     register_loaded_currencies(&mut currencies)?;
     DatabaseQueries::load_instrument(con, trader_key, instrument_id, encoding).await
 }

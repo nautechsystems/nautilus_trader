@@ -18,13 +18,13 @@ use std::{collections::HashMap, str::FromStr};
 use ahash::AHashMap;
 use bytes::Bytes;
 use futures::future::join_all;
-use jiff::Timestamp;
 #[cfg(feature = "defi")]
 use nautilus_common::{cache::CacheSnapshotRef, defi::cache::InstrumentMigration};
 use nautilus_common::{
     cache::database::{CacheMap, register_loaded_currencies},
     enums::SerializationEncoding,
 };
+use nautilus_core::serialization::timestamps;
 use nautilus_model::{
     accounts::AccountAny,
     data::{CustomData, DataType, HasTsInit, InstrumentClose},
@@ -32,7 +32,7 @@ use nautilus_model::{
     events::{AccountState, OrderEventAny, OrderFilled, PositionSnapshot},
     identifiers::{AccountId, ClientId, ClientOrderId, InstrumentId, PositionId},
     instruments::{InstrumentAny, SyntheticInstrument},
-    orders::OrderAny,
+    orders::{Order, OrderAny},
     position::Position,
     types::Currency,
 };
@@ -41,7 +41,6 @@ use nautilus_model::{
     defi::currency::{self, TokenCurrency},
     events::OrderSnapshot,
     instruments::Instrument,
-    orders::Order,
 };
 use redis::{AsyncCommands, aio::ConnectionManager};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
@@ -171,19 +170,21 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         payload: &T,
     ) -> anyhow::Result<Vec<u8>> {
+        Self::serialize_payload_with_timestamps(encoding, payload, true)
+    }
+
+    pub(crate) fn serialize_payload_with_timestamps<T: Serialize>(
+        encoding: SerializationEncoding,
+        payload: &T,
+        timestamps_as_iso8601: bool,
+    ) -> anyhow::Result<Vec<u8>> {
+        let mut value = serde_json::to_value(payload)?;
+        timestamps::serialize(&mut value, timestamps_as_iso8601)?;
         match encoding {
-            SerializationEncoding::MsgPack => {
-                let mut value = serde_json::to_value(payload)?;
-                convert_timestamps(&mut value);
-                rmp_serde::to_vec(&value)
-                    .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}"))
-            }
-            SerializationEncoding::Json => {
-                let mut value = serde_json::to_value(payload)?;
-                convert_timestamps(&mut value);
-                serde_json::to_vec(&value)
-                    .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}"))
-            }
+            SerializationEncoding::MsgPack => rmp_serde::to_vec(&value)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize msgpack `payload`: {e}")),
+            SerializationEncoding::Json => serde_json::to_vec(&value)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize json `payload`: {e}")),
             SerializationEncoding::Sbe => {
                 anyhow::bail!("SBE encoding is not supported for Redis cache payloads")
             }
@@ -191,6 +192,8 @@ impl DatabaseQueries {
     }
 
     /// Deserializes the given byte slice `payload` into type `T` using the specified `encoding`.
+    ///
+    /// Timestamp-like keys in general metadata also convert numeric and ISO strings to integers.
     ///
     /// # Errors
     ///
@@ -209,10 +212,9 @@ impl DatabaseQueries {
             }
         };
 
-        convert_timestamp_strings(&mut value);
+        timestamps::deserialize(&mut value)?;
 
-        serde_json::from_value(value)
-            .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
+        deserialize_payload_value(value)
     }
 
     #[cfg(feature = "defi")]
@@ -826,15 +828,25 @@ impl DatabaseQueries {
         encoding: SerializationEncoding,
         trader_key: &str,
     ) -> anyhow::Result<CacheMap> {
+        Self::load_all_batched(con, encoding, trader_key, usize::MAX).await
+    }
+
+    pub(crate) async fn load_all_batched(
+        con: &ConnectionManager,
+        encoding: SerializationEncoding,
+        trader_key: &str,
+        batch_size: usize,
+    ) -> anyhow::Result<CacheMap> {
         // Currencies must be registered before the dependent payloads decode, because a `Money`
         // or a `Currency` in them resolves its code through the global registry.
-        let mut currencies = Self::load_currencies(con, trader_key, encoding).await?;
+        let mut currencies =
+            Self::load_currencies_batched(con, trader_key, encoding, batch_size).await?;
         register_loaded_currencies(&mut currencies)?;
 
         let (instruments, instrument_closes, synthetics, accounts, orders, positions) =
             tokio::try_join!(
                 Self::load_instruments(con, trader_key, encoding),
-                Self::load_instrument_closes(con, trader_key, encoding),
+                Self::load_instrument_closes_batched(con, trader_key, encoding, batch_size),
                 Self::load_synthetics(con, trader_key, encoding),
                 Self::load_accounts(con, trader_key, encoding),
                 Self::load_orders(con, trader_key, encoding),
@@ -862,33 +874,52 @@ impl DatabaseQueries {
     /// that is not a bare code is a record, and a record that does not decode or describes an
     /// invalid currency is an error, since the intent is recoverable and dropping it would omit a
     /// currency the dependent payloads need.
-    fn decode_currency(encoding: SerializationEncoding, value_bytes: &Bytes) -> CurrencyDecode {
-        match Self::deserialize_payload::<CurrencyRecord>(encoding, value_bytes) {
-            Ok(record) => match Currency::try_from(record) {
-                Ok(currency) => CurrencyDecode::Currency(currency),
-                Err(e) => CurrencyDecode::InvalidRecord(e),
-            },
-            Err(record_err) => match Self::deserialize_payload::<String>(encoding, value_bytes) {
-                Ok(code) => match Currency::try_from_str(&code) {
-                    Some(currency) => {
-                        #[cfg(feature = "defi")]
-                        if currency::lookup(currency.code).is_some() {
-                            return CurrencyDecode::InvalidRecord(integrity_error(format!(
-                                "Missing token metadata for {}",
-                                currency.code,
-                            )));
-                        }
+    fn decode_currency(
+        encoding: SerializationEncoding,
+        value_bytes: &Bytes,
+        code: Ustr,
+    ) -> CurrencyDecode {
+        let record =
+            Self::deserialize_payload::<Value>(encoding, value_bytes).and_then(|mut value| {
+                if let Some(object) = value.as_object_mut()
+                    && !object.contains_key("code")
+                {
+                    object.insert("code".into(), Value::String(code.to_string()));
+                }
 
-                        CurrencyDecode::Currency(currency)
+                serde_json::from_value::<CurrencyRecord>(value).map_err(Into::into)
+            });
+
+        let record_err = match record {
+            Ok(record) => {
+                return match Currency::try_from(record) {
+                    Ok(currency) => CurrencyDecode::Currency(currency),
+                    Err(e) => CurrencyDecode::InvalidRecord(e),
+                };
+            }
+            Err(e) => e,
+        };
+
+        match Self::deserialize_payload::<String>(encoding, value_bytes) {
+            Ok(code) => match Currency::try_from_str(&code) {
+                Some(currency) => {
+                    #[cfg(feature = "defi")]
+                    if currency::lookup(currency.code).is_some() {
+                        return CurrencyDecode::InvalidRecord(integrity_error(format!(
+                            "Missing token metadata for {}",
+                            currency.code,
+                        )));
                     }
-                    None => CurrencyDecode::Undecodable(anyhow::anyhow!(
-                        "bare currency code {code} is not registered"
-                    )),
-                },
-                Err(_) => CurrencyDecode::InvalidRecord(anyhow::anyhow!(
-                    "payload is not a bare code and does not decode as a currency record: {record_err}"
+
+                    CurrencyDecode::Currency(currency)
+                }
+                None => CurrencyDecode::Undecodable(anyhow::anyhow!(
+                    "bare currency code {code} is not registered"
                 )),
             },
+            Err(_) => CurrencyDecode::InvalidRecord(anyhow::anyhow!(
+                "payload is not a bare code and does not decode as a currency record: {record_err}"
+            )),
         }
     }
 
@@ -903,6 +934,15 @@ impl DatabaseQueries {
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
+        Self::load_currencies_batched(con, trader_key, encoding, usize::MAX).await
+    }
+
+    pub(crate) async fn load_currencies_batched(
+        con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        batch_size: usize,
+    ) -> anyhow::Result<AHashMap<Ustr, Currency>> {
         let mut currencies = AHashMap::new();
         let prefix = format!("{trader_key}{REDIS_DELIMITER}{CURRENCIES}{REDIS_DELIMITER}");
         let pattern = format!("{prefix}*");
@@ -916,7 +956,7 @@ impl DatabaseQueries {
         }
 
         // Use bulk loading with MGET for efficiency
-        let bulk_values = Self::read_bulk(&con, &keys).await?;
+        let bulk_values = Self::read_bulk_batched(&con, &keys, batch_size).await?;
 
         // Process the bulk results
         for (key, value_opt) in keys.iter().zip(bulk_values.iter()) {
@@ -931,7 +971,7 @@ impl DatabaseQueries {
             };
 
             if let Some(value_bytes) = value_opt {
-                match Self::decode_currency(encoding, value_bytes) {
+                match Self::decode_currency(encoding, value_bytes, currency_code) {
                     CurrencyDecode::Currency(currency) => {
                         // The key names the code the dependents resolve, so a record filed under
                         // another code would register one currency and index another.
@@ -1040,13 +1080,22 @@ impl DatabaseQueries {
         trader_key: &str,
         encoding: SerializationEncoding,
     ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
+        Self::load_instrument_closes_batched(con, trader_key, encoding, usize::MAX).await
+    }
+
+    pub(crate) async fn load_instrument_closes_batched(
+        con: &ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        batch_size: usize,
+    ) -> anyhow::Result<AHashMap<InstrumentId, InstrumentClose>> {
         let prefix = format!("{trader_key}{REDIS_DELIMITER}{INSTRUMENT_CLOSES}{REDIS_DELIMITER}");
         let pattern = format!("{prefix}*");
         log::debug!("Loading {pattern}");
 
         let mut con = con.clone();
         let keys = Self::scan_keys(&mut con, pattern).await?;
-        let values = Self::read_bulk(&con, &keys).await?;
+        let values = Self::read_bulk_batched(&con, &keys, batch_size).await?;
         let mut closes = AHashMap::with_capacity(keys.len());
 
         for (key, value) in keys.into_iter().zip(values) {
@@ -1362,6 +1411,15 @@ impl DatabaseQueries {
         trader_key: &str,
         data_type: &DataType,
     ) -> anyhow::Result<Vec<CustomData>> {
+        Self::load_custom_data_batched(con, trader_key, data_type, usize::MAX).await
+    }
+
+    pub(crate) async fn load_custom_data_batched(
+        con: &ConnectionManager,
+        trader_key: &str,
+        data_type: &DataType,
+        batch_size: usize,
+    ) -> anyhow::Result<Vec<CustomData>> {
         let pattern = format!("{trader_key}{REDIS_DELIMITER}{CUSTOM}*");
         log::debug!("Loading custom data {pattern}");
 
@@ -1372,7 +1430,7 @@ impl DatabaseQueries {
             return Ok(Vec::new());
         }
 
-        let values = Self::read_bulk(&con, &keys).await?;
+        let values = Self::read_bulk_batched(&con, &keys, batch_size).await?;
         let request_type_name = data_type.type_name();
         let request_short = request_type_name
             .rsplit([':', '.'])
@@ -1432,7 +1490,7 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        match Self::decode_currency(encoding, &result[0]) {
+        match Self::decode_currency(encoding, &result[0], *code) {
             CurrencyDecode::Currency(currency) => Ok(Some(currency)),
             CurrencyDecode::InvalidRecord(e) | CurrencyDecode::Undecodable(e) => {
                 Err(e.context(format!("Failed to load currency {code}")))
@@ -1564,12 +1622,32 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
-        let events: Vec<OrderEventAny> = result
-            .iter()
-            .map(|payload| Self::deserialize_payload(encoding, payload))
-            .collect::<anyhow::Result<_>>()?;
-        let order = OrderAny::from_events(events)?;
+        let order = Self::deserialize_order(encoding, &result)?;
         Ok(Some(order))
+    }
+
+    pub(crate) fn deserialize_order(
+        encoding: SerializationEncoding,
+        payloads: &[Bytes],
+    ) -> anyhow::Result<OrderAny> {
+        let (first, remaining) = payloads
+            .split_first()
+            .ok_or_else(|| anyhow::anyhow!("Cannot restore an order without initialization"))?;
+        let initial = Self::deserialize_payload(encoding, first)?;
+        let mut order = OrderAny::from_events(vec![initial])?;
+
+        for payload in remaining {
+            let value: Value = Self::deserialize_payload(encoding, payload)?;
+            let legacy_init = value.get("type").and_then(Value::as_str) == Some("OrderInitialized");
+            let event = deserialize_payload_value(value)?;
+            if legacy_init {
+                order = transform_order(&order, event)?;
+            } else {
+                order.apply(event)?;
+            }
+        }
+
+        Ok(order)
     }
 
     /// Loads a single position for `trader_key` and `position_id` using the specified `encoding`.
@@ -1686,6 +1764,167 @@ impl DatabaseQueries {
     }
 }
 
+fn transform_order(order: &OrderAny, event: OrderEventAny) -> anyhow::Result<OrderAny> {
+    let history = order.events();
+    anyhow::ensure!(
+        !history.contains(&&event),
+        "Duplicate initialization in legacy order history"
+    );
+    let mut transformed = OrderAny::from_events(vec![event])?;
+    anyhow::ensure!(
+        (
+            transformed.trader_id(),
+            transformed.strategy_id(),
+            transformed.instrument_id(),
+            transformed.client_order_id()
+        ) == (
+            order.trader_id(),
+            order.strategy_id(),
+            order.instrument_id(),
+            order.client_order_id()
+        ),
+        "Legacy order transformation changes the order identity"
+    );
+    let history = history.into_iter().cloned();
+
+    match &mut transformed {
+        OrderAny::Market(target) => {
+            target.ts_init = order.ts_init();
+            target.prepend_events(history);
+        }
+        OrderAny::Limit(target) => {
+            target.ts_init = order.ts_init();
+            target.liquidity_side = order.liquidity_side();
+            target.prepend_events(history);
+        }
+        _ => anyhow::bail!("Legacy order transformation must produce a market or limit order"),
+    }
+
+    Ok(transformed)
+}
+
+fn deserialize_payload_value<T: DeserializeOwned>(mut value: Value) -> anyhow::Result<T> {
+    normalize_account_state(&mut value);
+    if let Some(kind) = value
+        .get("type")
+        .and_then(Value::as_str)
+        .and_then(legacy_variant)
+    {
+        let kind = kind.to_string();
+        if kind == "Initialized" {
+            normalize_order_options(&mut value);
+        }
+
+        if let Some(object) = value.as_object_mut()
+            && let Some(tick_scheme) = object.remove("tick_scheme_name")
+        {
+            object.entry("tick_scheme").or_insert(tick_scheme);
+        }
+
+        if let Ok(payload) = T::deserialize(&value) {
+            return Ok(payload);
+        }
+
+        value = Value::Object(serde_json::Map::from_iter([(kind, value)]));
+    }
+
+    serde_json::from_value(value)
+        .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
+}
+
+fn normalize_account_state(value: &mut Value) {
+    if value.get("type").and_then(Value::as_str) != Some("AccountState") {
+        return;
+    }
+
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+
+    let Some(reported) = object.remove("reported") else {
+        return;
+    };
+
+    object.entry("is_reported").or_insert(reported);
+    for field in ["balances", "margins"] {
+        if let Some(Value::Array(balances)) = object.get_mut(field) {
+            for balance in balances {
+                normalize_balance(balance);
+            }
+        }
+    }
+}
+
+fn normalize_balance(value: &mut Value) {
+    let Some(balance) = value.as_object_mut() else {
+        return;
+    };
+
+    let Some(code) = balance
+        .get("currency")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+    else {
+        return;
+    };
+
+    for field in ["total", "locked", "free", "initial", "maintenance"] {
+        if let Some(Value::String(value)) = balance.get_mut(field)
+            && !value.contains(' ')
+        {
+            value.push(' ');
+            value.push_str(&code);
+        }
+    }
+}
+
+fn normalize_order_options(value: &mut Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+
+    let Some(Value::Object(options)) = object.remove("options") else {
+        return;
+    };
+
+    for (key, mut value) in options {
+        let key = if key == "expire_time_ns" {
+            if value.as_u64() == Some(0) {
+                value = Value::Null;
+            }
+
+            "expire_time".into()
+        } else {
+            key
+        };
+
+        object.entry(key).or_insert(value);
+    }
+}
+
+fn legacy_variant(kind: &str) -> Option<&str> {
+    match kind {
+        "BettingInstrument" => Some("Betting"),
+        "BinaryOption"
+        | "Cfd"
+        | "Commodity"
+        | "CryptoFuture"
+        | "CryptoFuturesSpread"
+        | "CryptoOption"
+        | "CryptoOptionSpread"
+        | "CryptoPerpetual"
+        | "CurrencyPair"
+        | "Equity"
+        | "FuturesContract"
+        | "FuturesSpread"
+        | "IndexInstrument"
+        | "OptionContract"
+        | "OptionSpread"
+        | "PerpetualContract" => Some(kind),
+        _ => kind.strip_prefix("Order"),
+    }
+}
+
 fn parse_instrument_key(key: &str, prefix: &str) -> anyhow::Result<InstrumentId> {
     let value = key
         .strip_prefix(prefix)
@@ -1693,59 +1932,6 @@ fn parse_instrument_key(key: &str, prefix: &str) -> anyhow::Result<InstrumentId>
         .ok_or_else(|| anyhow::anyhow!("Invalid instrument key '{key}'"))?;
     InstrumentId::from_str(value)
         .map_err(|e| anyhow::anyhow!("Failed to parse instrument ID from key '{key}': {e}"))
-}
-
-fn is_timestamp_field(key: &str) -> bool {
-    let expire_match = key == "expire_time_ns";
-    let ts_match = key.starts_with("ts_");
-    expire_match || ts_match
-}
-
-fn convert_timestamps(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            for (key, v) in map {
-                if is_timestamp_field(key)
-                    && let Value::Number(n) = v
-                    && let Some(n) = n.as_u64()
-                {
-                    let dt = Timestamp::from_nanosecond(i128::from(n))
-                        .expect("UnixNanos is within Jiff's timestamp range");
-                    *v = Value::String(format!("{dt:.9}"));
-                }
-                convert_timestamps(v);
-            }
-        }
-        Value::Array(arr) => {
-            for item in arr {
-                convert_timestamps(item);
-            }
-        }
-        _ => {}
-    }
-}
-
-fn convert_timestamp_strings(value: &mut Value) {
-    match value {
-        Value::Object(map) => {
-            for (key, v) in map {
-                if is_timestamp_field(key)
-                    && let Value::String(s) = v
-                    && let Ok(dt) = s.parse::<Timestamp>()
-                {
-                    let nanos = u64::try_from(dt.as_nanosecond()).expect("Invalid timestamp");
-                    *v = Value::Number(nanos.into());
-                }
-                convert_timestamp_strings(v);
-            }
-        }
-        Value::Array(arr) => {
-            for item in arr {
-                convert_timestamp_strings(item);
-            }
-        }
-        _ => {}
-    }
 }
 
 #[cfg(test)]
@@ -1757,17 +1943,292 @@ mod tests {
     use nautilus_core::{UUID4, UnixNanos};
     use nautilus_model::{
         data::{Data, stubs::stub_custom_data},
-        enums::{AccountType, CurrencyType},
-        events::{AccountState, order::spec::OrderFilledSpec},
+        enums::{AccountType, CurrencyType, OrderType},
+        events::{
+            AccountState, OrderEventAny, OrderInitialized,
+            order::spec::{OrderFillVoidedSpec, OrderFilledSpec},
+        },
         identifiers::{AccountId, InstrumentId, PositionId, TradeId},
         instruments::{Instrument, InstrumentAny, stubs::currency_pair_btcusdt},
+        orders::{Order, OrderError},
         position::Position,
-        types::{AccountBalance, Currency, Money, Price, Quantity},
+        types::{AccountBalance, Currency, MarginBalance, Money, Price, Quantity},
     };
     use rstest::rstest;
     use serde::{Deserialize, Serialize, de::DeserializeOwned};
+    use ustr::Ustr;
 
     use super::{CurrencyDecode, CurrencyRecord, DatabaseQueries, parse_instrument_key};
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_legacy_margin_account_preserves_amounts(#[case] encoding: SerializationEncoding) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/redis_cache_v1.json")).unwrap();
+
+        let payload = match encoding {
+            SerializationEncoding::Json => serde_json::to_vec(&fixture["margin_account"]).unwrap(),
+            SerializationEncoding::MsgPack => {
+                rmp_serde::to_vec_named(&fixture["margin_account"]).unwrap()
+            }
+            SerializationEncoding::Sbe => unreachable!(),
+        };
+
+        let expected = AccountState::new(
+            AccountId::from("BINANCE-MARGIN-001"),
+            AccountType::Margin,
+            vec![AccountBalance::new(
+                Money::from("999 USDT"),
+                Money::from("100 USDT"),
+                Money::from("899 USDT"),
+            )],
+            vec![MarginBalance::new(
+                Money::from("12.34 USDT"),
+                Money::from("5.67 USDT"),
+                Some(InstrumentId::from("BTCUSDT.BINANCE")),
+            )],
+            false,
+            UUID4::from_str("77777777-7777-4777-8777-777777777777").unwrap(),
+            UnixNanos::from(700),
+            UnixNanos::from(701),
+            Some(Currency::USDT()),
+        );
+
+        let restored: AccountState =
+            DatabaseQueries::deserialize_payload(encoding, &payload).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(restored).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
+
+    #[rstest]
+    fn test_legacy_order_transformation_rejects_stop_limit() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/redis_cache_v1.json")).unwrap();
+        let original = fixture["order_initialized"].clone();
+        let mut transformed = original.clone();
+        transformed["order_type"] = "STOP_LIMIT".into();
+        transformed["options"]["trigger_price"] = "12340.00".into();
+        transformed["options"]["trigger_type"] = "LAST_PRICE".into();
+        let payloads =
+            [original, transformed].map(|value| Bytes::from(serde_json::to_vec(&value).unwrap()));
+
+        let error =
+            DatabaseQueries::deserialize_order(SerializationEncoding::Json, &payloads).unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "Legacy order transformation must produce a market or limit order"
+        );
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_native_order_timestamp_parameters_round_trip(
+        #[case] encoding: SerializationEncoding,
+        #[values(false, true)] iso8601: bool,
+    ) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/redis_cache_v1.json")).unwrap();
+        let mut event: OrderInitialized = DatabaseQueries::deserialize_payload(
+            SerializationEncoding::Json,
+            &serde_json::to_vec(&fixture["order_initialized"]).unwrap(),
+        )
+        .unwrap();
+        event.exec_algorithm_params = Some(
+            [
+                (Ustr::from("ts_start"), Ustr::from("9007199254740993")),
+                (
+                    Ustr::from("ts_end"),
+                    Ustr::from("1970-01-01T00:00:00.000000987Z"),
+                ),
+            ]
+            .into_iter()
+            .collect(),
+        );
+        let event = OrderEventAny::Initialized(event);
+        let payload =
+            DatabaseQueries::serialize_payload_with_timestamps(encoding, &event, iso8601).unwrap();
+
+        let restored: OrderEventAny =
+            DatabaseQueries::deserialize_payload(encoding, &payload).unwrap();
+        let order = DatabaseQueries::deserialize_order(encoding, &[Bytes::from(payload)]).unwrap();
+
+        assert_eq!(restored, event);
+        assert_eq!(order.events(), vec![&event]);
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_native_instrument_legacy_info_timestamps(#[case] encoding: SerializationEncoding) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/redis_cache_v1.json")).unwrap();
+        let mut instrument = currency_pair_btcusdt();
+        instrument.info = Some(
+            serde_json::from_value(serde_json::json!({
+                "ts_source": 456,
+                "label": "legacy-source"
+            }))
+            .unwrap(),
+        );
+        let expected = InstrumentAny::CurrencyPair(instrument);
+        let mut value = serde_json::to_value(&expected).unwrap();
+        value["CurrencyPair"]["info"] = fixture["native_info"].clone();
+        let payload = match encoding {
+            SerializationEncoding::Json => serde_json::to_vec(&value).unwrap(),
+            SerializationEncoding::MsgPack => rmp_serde::to_vec_named(&value).unwrap(),
+            SerializationEncoding::Sbe => unreachable!(),
+        };
+
+        let restored: InstrumentAny =
+            DatabaseQueries::deserialize_payload(encoding, &payload).unwrap();
+
+        assert_eq!(
+            serde_json::to_value(restored).unwrap(),
+            serde_json::to_value(expected).unwrap()
+        );
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_native_fill_timestamp_info_round_trip(
+        #[case] encoding: SerializationEncoding,
+        #[values(false, true)] iso8601: bool,
+        #[values(false, true)] voided: bool,
+    ) {
+        let info = [
+            ("ts_source", "123"),
+            ("expire_time_ns", "456"),
+            ("ts_original", "1970-01-01T00:00:00.000000789Z"),
+            ("label", "fill-source"),
+        ]
+        .map(|(key, value)| (Ustr::from(key), Ustr::from(value)))
+        .into_iter()
+        .collect();
+
+        let event = if voided {
+            OrderEventAny::FillVoided(OrderFillVoidedSpec::builder().info(info).build())
+        } else {
+            OrderEventAny::Filled(OrderFilledSpec::builder().info(info).build())
+        };
+
+        let payload =
+            DatabaseQueries::serialize_payload_with_timestamps(encoding, &event, iso8601).unwrap();
+
+        let restored: OrderEventAny =
+            DatabaseQueries::deserialize_payload(encoding, &payload).unwrap();
+
+        assert_eq!(restored, event);
+    }
+
+    #[rstest]
+    #[case(SerializationEncoding::Json)]
+    #[case(SerializationEncoding::MsgPack)]
+    fn test_legacy_order_transformation_preserves_history(
+        #[case] encoding: SerializationEncoding,
+        #[values("MARKET", "LIMIT")] order_type: &str,
+    ) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/redis_cache_v1.json")).unwrap();
+        let original = fixture["order_initialized"].clone();
+        let mut transformed = original.clone();
+        transformed["order_type"] = order_type.into();
+        transformed["event_id"] = "33333333-3333-4333-8333-333333333333".into();
+        transformed["ts_event"] = "600".into();
+        transformed["ts_init"] = "600".into();
+        transformed["time_in_force"] = "GTC".into();
+        transformed["options"]["expire_time_ns"] = 0.into();
+        if order_type == "MARKET" {
+            transformed["post_only"] = false.into();
+            transformed["options"] = serde_json::Value::Object(serde_json::Map::new());
+        }
+
+        let payloads = [original, transformed].map(|value| {
+            Bytes::from(match encoding {
+                SerializationEncoding::Json => serde_json::to_vec(&value).unwrap(),
+                SerializationEncoding::MsgPack => rmp_serde::to_vec_named(&value).unwrap(),
+                SerializationEncoding::Sbe => unreachable!(),
+            })
+        });
+
+        let expected_initial: OrderEventAny =
+            DatabaseQueries::deserialize_payload(encoding, &payloads[0]).unwrap();
+        let expected_transformed: OrderEventAny =
+            DatabaseQueries::deserialize_payload(encoding, &payloads[1]).unwrap();
+        let concrete: OrderInitialized =
+            DatabaseQueries::deserialize_payload(encoding, &payloads[0]).unwrap();
+
+        let order = DatabaseQueries::deserialize_order(encoding, &payloads).unwrap();
+
+        assert_eq!(
+            order.order_type(),
+            if order_type == "MARKET" {
+                OrderType::Market
+            } else {
+                OrderType::Limit
+            }
+        );
+        assert_eq!(order.ts_init(), UnixNanos::from(100));
+        assert_eq!(order.ts_last(), UnixNanos::from(600));
+        assert_eq!(
+            order.events(),
+            vec![&expected_initial, &expected_transformed]
+        );
+        assert_eq!(expected_initial, OrderEventAny::Initialized(concrete));
+    }
+
+    #[rstest]
+    #[case::duplicate(false, "Duplicate initialization")]
+    #[case::identity(true, "changes the order identity")]
+    fn test_legacy_order_transformation_rejects_invalid_history(
+        #[case] change_identity: bool,
+        #[case] expected: &str,
+    ) {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/redis_cache_v1.json")).unwrap();
+        let original = fixture["order_initialized"].clone();
+        let mut transformed = original.clone();
+        if change_identity {
+            transformed["client_order_id"] = "O-OTHER".into();
+        }
+
+        let payloads =
+            [original, transformed].map(|value| Bytes::from(serde_json::to_vec(&value).unwrap()));
+
+        let error =
+            DatabaseQueries::deserialize_order(SerializationEncoding::Json, &payloads).unwrap_err();
+
+        assert!(error.to_string().contains(expected), "{error}");
+    }
+
+    #[rstest]
+    fn test_native_order_history_still_rejects_duplicate_initialization() {
+        let fixture: serde_json::Value =
+            serde_json::from_str(include_str!("../../test_data/redis_cache_v1.json")).unwrap();
+        let event: OrderEventAny = DatabaseQueries::deserialize_payload(
+            SerializationEncoding::Json,
+            &serde_json::to_vec(&fixture["order_initialized"]).unwrap(),
+        )
+        .unwrap();
+        let payload = Bytes::from(serde_json::to_vec(&event).unwrap());
+
+        let error = DatabaseQueries::deserialize_order(
+            SerializationEncoding::Json,
+            &[payload.clone(), payload],
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error.downcast_ref::<OrderError>(),
+            Some(OrderError::AlreadyInitialized)
+        ));
+    }
 
     /// A currency the process never registered must survive the round trip.
     ///
@@ -1794,7 +2255,7 @@ mod tests {
             DatabaseQueries::serialize_payload(encoding, &CurrencyRecord::from(&currency)).unwrap();
 
         let CurrencyDecode::Currency(restored) =
-            DatabaseQueries::decode_currency(encoding, &Bytes::from(payload))
+            DatabaseQueries::decode_currency(encoding, &Bytes::from(payload), currency.code)
         else {
             panic!("a valid record decodes to a currency");
         };
@@ -1814,7 +2275,7 @@ mod tests {
         let payload = DatabaseQueries::serialize_payload(encoding, &Currency::USD()).unwrap();
 
         let CurrencyDecode::Currency(restored) =
-            DatabaseQueries::decode_currency(encoding, &Bytes::from(payload))
+            DatabaseQueries::decode_currency(encoding, &Bytes::from(payload), Currency::USD().code)
         else {
             panic!("a registered bare code decodes to a currency");
         };
@@ -1838,7 +2299,7 @@ mod tests {
         let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &record).unwrap());
 
         assert!(matches!(
-            DatabaseQueries::decode_currency(encoding, &bytes),
+            DatabaseQueries::decode_currency(encoding, &bytes, Ustr::from("ZZQ1")),
             CurrencyDecode::InvalidRecord(_)
         ));
     }
@@ -1863,7 +2324,7 @@ mod tests {
         let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &record).unwrap());
 
         assert!(matches!(
-            DatabaseQueries::decode_currency(encoding, &bytes),
+            DatabaseQueries::decode_currency(encoding, &bytes, Ustr::from("ZZQ3")),
             CurrencyDecode::InvalidRecord(_)
         ));
     }
@@ -1877,7 +2338,8 @@ mod tests {
     ) {
         let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &"ZZQ2").unwrap());
 
-        let CurrencyDecode::Undecodable(error) = DatabaseQueries::decode_currency(encoding, &bytes)
+        let CurrencyDecode::Undecodable(error) =
+            DatabaseQueries::decode_currency(encoding, &bytes, Ustr::from("ZZQ2"))
         else {
             panic!("an unregistered bare code is undecodable");
         };

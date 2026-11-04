@@ -95,6 +95,11 @@ Released on TBD (UTC).
 - Fixed catalog display queries failing on clear-book deltas with no order side
 - Fixed closed-order and position purges ignoring `purge_from_database` in execution timers
 - Fixed Redis order and position deletion leaving routine snapshots and restoring purged positions
+- Fixed built-in Redis cache records ignoring `timestamps_as_iso8601`; disabled now writes nanosecond strings
+- Fixed external message bus payloads ignoring `timestamps_as_iso8601`
+- Fixed Redis cache bulk loads ignoring `bulk_read_batch_size`
+- Fixed Redis cache decoding of v1 Cython currencies, instruments, accounts, and component state
+- Fixed Redis cache replay of v1 Cython order and position histories, including transformed orders
 - Fixed `Cache` indexing closed positions as open and excluding them from purging after insertion
 - Fixed NETTING realized PnL for cycles with equal PnL and after fill voids (#5534), thanks @d0ra-1h3-3xpl0ra
 - Fixed managed order book subscriptions reusing a cached book of a different type

@@ -294,6 +294,7 @@ pub struct MessageBus {
     encoding: SerializationEncoding,
     encoding_market_data: Option<SerializationEncoding>,
     encoding_builtin: Option<SerializationEncoding>,
+    timestamps_as_iso8601: bool,
     types_filter: AHashSet<BusPayloadType>,
     streaming_types: AHashSet<BusPayloadType>,
 }
@@ -391,6 +392,7 @@ impl MessageBus {
             encoding: SerializationEncoding::Json,
             encoding_market_data: None,
             encoding_builtin: None,
+            timestamps_as_iso8601: false,
             types_filter: AHashSet::new(),
             streaming_types: AHashSet::new(),
         }
@@ -442,6 +444,7 @@ impl MessageBus {
         self.encoding = encoding;
         self.encoding_market_data = None;
         self.encoding_builtin = None;
+        self.timestamps_as_iso8601 = false;
         self.has_backing = true;
         HAS_EXTERNAL_EGRESS.with(|flag| flag.set(true));
     }
@@ -468,6 +471,7 @@ impl MessageBus {
         self.encoding = config.encoding;
         self.encoding_market_data = config.encoding_market_data;
         self.encoding_builtin = config.encoding_builtin;
+        self.timestamps_as_iso8601 = config.timestamps_as_iso8601;
         self.has_backing = true;
         HAS_EXTERNAL_EGRESS.with(|flag| flag.set(true));
 
@@ -542,6 +546,10 @@ impl MessageBus {
             BusPayloadCategory::BuiltIn => self.encoding_builtin.unwrap_or(self.encoding),
             BusPayloadCategory::Other => self.encoding,
         }
+    }
+
+    pub(crate) fn timestamps_as_iso8601(&self) -> bool {
+        self.timestamps_as_iso8601
     }
 
     pub(crate) fn types_filter(&self) -> &AHashSet<BusPayloadType> {

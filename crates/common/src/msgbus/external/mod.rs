@@ -142,7 +142,7 @@ where
         return;
     }
 
-    let (external_egress, encoding) = {
+    let (external_egress, encoding, timestamps_as_iso8601) = {
         let bus_rc = get_message_bus();
         let bus = bus_rc.borrow();
 
@@ -158,24 +158,29 @@ where
             return;
         }
 
-        (external_egress, bus.encoding_for(payload_type))
+        (
+            external_egress,
+            bus.encoding_for(payload_type),
+            bus.timestamps_as_iso8601(),
+        )
     };
 
     if external_egress.borrow().is_closed() {
         return;
     }
 
-    let payload = match codec::serialize_payload(encoding, payload_type, message) {
-        Ok(payload) => payload,
-        Err(PayloadCodecError::Dropped(e)) => {
-            log::debug!("{e}");
-            return;
-        }
-        Err(PayloadCodecError::Failed(e)) => {
-            log::error!("{e}");
-            return;
-        }
-    };
+    let payload =
+        match codec::serialize_payload(encoding, payload_type, message, timestamps_as_iso8601) {
+            Ok(payload) => payload,
+            Err(PayloadCodecError::Dropped(e)) => {
+                log::debug!("{e}");
+                return;
+            }
+            Err(PayloadCodecError::Failed(e)) => {
+                log::error!("{e}");
+                return;
+            }
+        };
 
     let external_egress = external_egress.borrow();
     if external_egress.is_closed() {
@@ -1020,6 +1025,7 @@ mod tests {
             SerializationEncoding::Json,
             BusPayloadType::RequestCommand,
             &request,
+            false,
         )
         .unwrap();
         let mut message = BusMessage::with_str_topic(
@@ -1223,6 +1229,7 @@ mod tests {
                 SerializationEncoding::MsgPack,
                 BusPayloadType::DataResponse,
                 &response,
+                false,
             )
             .unwrap(),
             SerializationEncoding::MsgPack,
@@ -1271,9 +1278,13 @@ mod tests {
             .add_streaming_type(BusPayloadType::DataResponseEnvelope);
         let id = nautilus_core::UUID4::new();
         let envelope = DataResponseEnvelope::terminal(id, Some("Source unavailable".to_owned()));
-        let payload =
-            codec::serialize_payload(encoding, BusPayloadType::DataResponseEnvelope, &envelope)
-                .unwrap();
+        let payload = codec::serialize_payload(
+            encoding,
+            BusPayloadType::DataResponseEnvelope,
+            &envelope,
+            false,
+        )
+        .unwrap();
         let message = BusMessage::with_str_topic(
             "responses.data.FEED",
             BusPayloadType::DataResponseEnvelope,

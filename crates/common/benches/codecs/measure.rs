@@ -98,13 +98,15 @@ fn native_codec_measurements() {
     let selected_case = std::env::var("NAUTILUS_BENCH_CASE").ok();
     let selected_format = std::env::var("NAUTILUS_BENCH_FORMAT").ok();
     let profile = std::env::var("NAUTILUS_BENCH_PROFILE").ok();
+    let timestamps_as_iso8601 =
+        std::env::var("NAUTILUS_BENCH_ISO8601").is_ok_and(|value| value.parse().unwrap());
     let formats = [
         ("json", SerializationEncoding::Json),
         ("msgpack", SerializationEncoding::MsgPack),
     ];
     println!(
         "{}",
-        json!({"environment": {"samples": samples, "trials": trials, "warmup": warmup, "queue_capacity": CAPACITY, "profile": profile}})
+        json!({"environment": {"samples": samples, "trials": trials, "warmup": warmup, "queue_capacity": CAPACITY, "profile": profile, "timestamps_as_iso8601": timestamps_as_iso8601}})
     );
 
     for trial in 0..trials {
@@ -124,6 +126,7 @@ fn native_codec_measurements() {
                 trial,
                 format,
                 encoding,
+                timestamps_as_iso8601,
                 profile: profile.as_deref(),
                 selected_case: selected_case.as_deref(),
             };
@@ -956,9 +959,20 @@ fn execution_concrete(name: &str, command: &TradingCommand, config: &Run<'_>) {
     macro_rules! concrete {
         ($value:expr, $ty:ty) => {{
             assert_eq!(
-                serialize_payload(config.encoding, BusPayloadType::TradingCommand, command)
-                    .unwrap(),
-                serialize_payload(config.encoding, BusPayloadType::TradingCommand, $value).unwrap(),
+                serialize_payload(
+                    config.encoding,
+                    BusPayloadType::TradingCommand,
+                    command,
+                    config.timestamps_as_iso8601
+                )
+                .unwrap(),
+                serialize_payload(
+                    config.encoding,
+                    BusPayloadType::TradingCommand,
+                    $value,
+                    config.timestamps_as_iso8601
+                )
+                .unwrap(),
             );
             run(
                 &case,
@@ -1591,6 +1605,7 @@ fn market_data(config: &Run<'_>) {
                     config.encoding,
                     BusPayloadType::$kind,
                     &Data::$variant(Box::new(value.clone())),
+                    config.timestamps_as_iso8601,
                 )
                 .unwrap();
                 let decoded: $ty =
@@ -1644,6 +1659,7 @@ struct Run<'a> {
     trial: usize,
     format: &'a str,
     encoding: SerializationEncoding,
+    timestamps_as_iso8601: bool,
     profile: Option<&'a str>,
     selected_case: Option<&'a str>,
 }
@@ -1673,7 +1689,8 @@ fn run<T: Serialize + DeserializeOwned + Any>(
         return;
     }
 
-    let payload = serialize_payload(config.encoding, kind, value).unwrap();
+    let payload =
+        serialize_payload(config.encoding, kind, value, config.timestamps_as_iso8601).unwrap();
     let decoded: T = deserialize_payload(kind, config.encoding, &payload)
         .unwrap()
         .unwrap();
@@ -1684,7 +1701,15 @@ fn run<T: Serialize + DeserializeOwned + Any>(
 
     wire_fixture(name, kind, value, &payload, config);
     for _ in 0..config.warmup {
-        black_box(serialize_payload(config.encoding, kind, black_box(value)).unwrap());
+        black_box(
+            serialize_payload(
+                config.encoding,
+                kind,
+                black_box(value),
+                config.timestamps_as_iso8601,
+            )
+            .unwrap(),
+        );
         black_box(
             deserialize_payload::<T>(kind, config.encoding, black_box(&payload))
                 .unwrap()
@@ -1747,7 +1772,12 @@ fn measure_codec<T: Serialize + DeserializeOwned + Any>(
         for _ in 0..config.samples {
             match operation {
                 "encode" => {
-                    black_box(encode(config.encoding, kind, black_box(value)));
+                    black_box(encode(
+                        config.encoding,
+                        kind,
+                        black_box(value),
+                        config.timestamps_as_iso8601,
+                    ));
                 }
                 "decode" => {
                     black_box(decode::<T>(config.encoding, kind, black_box(payload)));
@@ -1758,7 +1788,7 @@ fn measure_codec<T: Serialize + DeserializeOwned + Any>(
 
         println!(
             "{}",
-            json!({"case": name, "format": config.format, "operation": operation, "profile_calls": config.samples, "bytes": payload.len()})
+            json!({"case": name, "format": config.format, "operation": operation, "profile_calls": config.samples, "bytes": payload.len(), "timestamps_as_iso8601": config.timestamps_as_iso8601})
         );
         return;
     }
@@ -1767,7 +1797,12 @@ fn measure_codec<T: Serialize + DeserializeOwned + Any>(
     let mut decoded_times = Vec::with_capacity(config.samples);
     for _ in 0..config.samples {
         let started = Instant::now();
-        let bytes = encode(config.encoding, kind, black_box(value));
+        let bytes = encode(
+            config.encoding,
+            kind,
+            black_box(value),
+            config.timestamps_as_iso8601,
+        );
         encoded.push(started.elapsed().as_nanos() as u64);
         black_box(bytes);
         let started = Instant::now();
@@ -1794,7 +1829,13 @@ fn wire_fixture<T: Serialize + DeserializeOwned + Any>(
     payload: &Bytes,
     config: &Run<'_>,
 ) {
-    let filename = format!("{name}.{}.json", config.format);
+    let timestamp_format = if config.timestamps_as_iso8601 {
+        ".iso8601"
+    } else {
+        ""
+    };
+
+    let filename = format!("{name}.{}{timestamp_format}.json", config.format);
 
     if let Ok(directory) = std::env::var("NAUTILUS_BENCH_FIXTURE_DIR") {
         let directory = Path::new(&directory);
@@ -1803,7 +1844,13 @@ fn wire_fixture<T: Serialize + DeserializeOwned + Any>(
         let decoded: T = deserialize_payload(kind, config.encoding, payload)
             .unwrap()
             .unwrap();
-        let reencoded = serialize_payload(config.encoding, kind, &decoded).unwrap();
+        let reencoded = serialize_payload(
+            config.encoding,
+            kind,
+            &decoded,
+            config.timestamps_as_iso8601,
+        )
+        .unwrap();
         let fixture = json!({"case": name, "message": message, "reencoded": reencoded,
             "expected": serde_json::to_value(value).unwrap(),
             "diagnostic": name.starts_with("generic_"),
@@ -1826,7 +1873,13 @@ fn wire_fixture<T: Serialize + DeserializeOwned + Any>(
             .unwrap();
         assert_eq!(serde_json::to_value(&decoded).unwrap(), fixture["expected"]);
         assert_eq!(
-            serialize_payload(config.encoding, kind, &decoded).unwrap(),
+            serialize_payload(
+                config.encoding,
+                kind,
+                &decoded,
+                config.timestamps_as_iso8601
+            )
+            .unwrap(),
             serde_json::from_value::<Bytes>(fixture["reencoded"].clone()).unwrap()
         );
     }
@@ -1898,8 +1951,9 @@ fn encode<T: Serialize + Any>(
     encoding: SerializationEncoding,
     kind: BusPayloadType,
     value: &T,
+    timestamps_as_iso8601: bool,
 ) -> Bytes {
-    serialize_payload(encoding, kind, value).unwrap()
+    serialize_payload(encoding, kind, value, timestamps_as_iso8601).unwrap()
 }
 
 #[inline(never)]
@@ -1936,7 +1990,13 @@ fn stages<T: Serialize + DeserializeOwned + Any>(
 
     for _ in 0..config.samples {
         let started = Instant::now();
-        let encoded = serialize_payload(config.encoding, kind, black_box(value)).unwrap();
+        let encoded = serialize_payload(
+            config.encoding,
+            kind,
+            black_box(value),
+            config.timestamps_as_iso8601,
+        )
+        .unwrap();
         let encoded_at = instrumented.then(Instant::now);
         let decoded: T = deserialize_payload(kind, config.encoding, &encoded)
             .unwrap()
@@ -2019,6 +2079,7 @@ fn delivery<T: Serialize + Any>(
         Box::new(queue.clone()),
         &MessageBusConfig {
             encoding: config.encoding,
+            timestamps_as_iso8601: config.timestamps_as_iso8601,
             external_streams: Some(vec!["benchmark".into()]),
             ..Default::default()
         },
@@ -2129,6 +2190,13 @@ fn install_position(seen: Rc<Cell<usize>>) {
 }
 
 fn install_account(seen: Rc<Cell<usize>>) {
+    msgbus::register_account_state_endpoint(
+        msgbus::MessagingSwitchboard::portfolio_update_account(),
+        TypedHandler::from(|value: &AccountState| {
+            msgbus::publish_account_state(TOPIC.into(), value);
+        }),
+    );
+
     msgbus::subscribe_account_state(
         TOPIC.into(),
         TypedHandler::from(move |value: &AccountState| {
@@ -2161,6 +2229,6 @@ fn emit(name: &str, operation: &str, times: &[u64], bytes: usize, config: &Run<'
 
     println!(
         "{}",
-        json!({"case": name, "format": config.format, "trial": config.trial, "operation": operation, "samples": times.len(), "bytes": bytes, "mean_ns": times.iter().map(|value| *value as f64).sum::<f64>() / times.len() as f64, "p50_ns": percentile(50,100), "p95_ns": percentile(95,100), "p99_ns": percentile(99,100), "p999_ns": percentile(999,1000), "max_ns": sorted.last().unwrap(), "extra": extra})
+        json!({"case": name, "format": config.format, "timestamps_as_iso8601": config.timestamps_as_iso8601, "trial": config.trial, "operation": operation, "samples": times.len(), "bytes": bytes, "mean_ns": times.iter().map(|value| *value as f64).sum::<f64>() / times.len() as f64, "p50_ns": percentile(50,100), "p95_ns": percentile(95,100), "p99_ns": percentile(99,100), "p999_ns": percentile(999,1000), "max_ns": sorted.last().unwrap(), "extra": extra})
     );
 }

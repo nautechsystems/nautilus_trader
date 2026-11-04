@@ -35,6 +35,7 @@ use serde_json::value::RawValue;
 use ustr::Ustr;
 
 pub mod decimal;
+pub mod timestamps;
 
 /// Sorted serialization for `AHashSet<T>` where element order must be deterministic.
 ///
