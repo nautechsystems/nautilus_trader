@@ -64,8 +64,6 @@ pub struct OrderEmulator {
     cache: Rc<RefCell<Cache>>,
     manager: OrderManager,
     matching_cores: AHashMap<InstrumentId, OrderMatchingCore>,
-    subscribed_quotes: AHashSet<InstrumentId>,
-    subscribed_trades: AHashSet<InstrumentId>,
     subscribed_strategies: AHashSet<StrategyId>,
     monitored_positions: AHashSet<PositionId>,
     quote_tick_handler: Option<TypedHandler<QuoteTick>>,
@@ -80,8 +78,8 @@ impl Debug for OrderEmulator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct(stringify!(OrderEmulator))
             .field("cores", &self.matching_cores.len())
-            .field("subscribed_quotes", &self.subscribed_quotes.len())
-            .field("subscribed_trades", &self.subscribed_trades.len())
+            .field("subscribed_quotes", &self.quote_handlers.len())
+            .field("subscribed_trades", &self.trade_handlers.len())
             .field("subscribed_strategies", &self.subscribed_strategies.len())
             .finish()
     }
@@ -97,8 +95,6 @@ impl OrderEmulator {
             cache,
             manager,
             matching_cores: AHashMap::new(),
-            subscribed_quotes: AHashSet::new(),
-            subscribed_trades: AHashSet::new(),
             subscribed_strategies: AHashSet::new(),
             monitored_positions: AHashSet::new(),
             quote_tick_handler: None,
@@ -167,15 +163,15 @@ impl OrderEmulator {
     }
 
     /// Subscribes to quote data for the given instrument.
-    fn subscribe_quotes_for_instrument(&mut self, instrument_id: InstrumentId) -> bool {
+    fn subscribe_quotes_for_instrument(&mut self, instrument_id: InstrumentId) {
         if self.quote_handlers.contains_key(&instrument_id) {
             log::warn!("OrderEmulator attempted duplicate quote subscription for {instrument_id}");
-            return true;
+            return;
         }
 
         let Some(handler) = self.quote_tick_handler.clone() else {
             log::warn!("Cannot subscribe to quotes: msgbus handlers not registered");
-            return false;
+            return;
         };
 
         let topic = get_quotes_topic(instrument_id);
@@ -192,20 +188,18 @@ impl OrderEmulator {
                 None,
             ),
         )));
-
-        true
     }
 
     /// Subscribes to trade data for the given instrument.
-    fn subscribe_trades_for_instrument(&mut self, instrument_id: InstrumentId) -> bool {
+    fn subscribe_trades_for_instrument(&mut self, instrument_id: InstrumentId) {
         if self.trade_handlers.contains_key(&instrument_id) {
             log::warn!("OrderEmulator attempted duplicate trade subscription for {instrument_id}");
-            return true;
+            return;
         }
 
         let Some(handler) = self.trade_tick_handler.clone() else {
             log::warn!("Cannot subscribe to trades: msgbus handlers not registered");
-            return false;
+            return;
         };
 
         let topic = get_trades_topic(instrument_id);
@@ -222,20 +216,18 @@ impl OrderEmulator {
                 None,
             ),
         )));
-
-        true
     }
 
     #[must_use]
     pub fn subscribed_quotes(&self) -> Vec<InstrumentId> {
-        let mut quotes: Vec<InstrumentId> = self.subscribed_quotes.iter().copied().collect();
+        let mut quotes: Vec<InstrumentId> = self.quote_handlers.keys().copied().collect();
         quotes.sort();
         quotes
     }
 
     #[must_use]
     pub fn subscribed_trades(&self) -> Vec<InstrumentId> {
-        let mut trades: Vec<_> = self.subscribed_trades.iter().copied().collect();
+        let mut trades: Vec<_> = self.trade_handlers.keys().copied().collect();
         trades.sort();
         trades
     }
@@ -327,8 +319,9 @@ impl OrderEmulator {
         }
 
         if let Some(parent_order_id) = &order.parent_order_id() {
-            let parent_order = if let Some(order) = self.cache.borrow().order(parent_order_id) {
-                order.clone()
+            let parent_order = if let Some(order) = self.cache.borrow().order_owned(parent_order_id)
+            {
+                order
             } else {
                 log::error!("Cannot handle order: parent {parent_order_id} not found");
                 return;
@@ -428,15 +421,15 @@ impl OrderEmulator {
 
     fn unsubscribe_all_market_data(&mut self) {
         // Sort so the emitted unsubscribe commands, and the UUID4 draws they consume,
-        // follow the same sequence across runs; the drained sets are AHash-backed.
-        let mut quote_instrument_ids: Vec<_> = self.subscribed_quotes.drain().collect();
+        // follow the same sequence across runs; the handler maps are AHash-backed.
+        let mut quote_instrument_ids: Vec<_> = self.quote_handlers.keys().copied().collect();
         quote_instrument_ids.sort();
 
         for instrument_id in quote_instrument_ids {
             self.unsubscribe_quotes_for_instrument(instrument_id);
         }
 
-        let mut trade_instrument_ids: Vec<_> = self.subscribed_trades.drain().collect();
+        let mut trade_instrument_ids: Vec<_> = self.trade_handlers.keys().copied().collect();
         trade_instrument_ids.sort();
 
         for instrument_id in trade_instrument_ids {
@@ -537,33 +530,6 @@ impl OrderEmulator {
         }
     }
 
-    fn create_matching_core(
-        &mut self,
-        instrument_id: InstrumentId,
-        price_increment: Price,
-        emulation_trigger: TriggerType,
-    ) -> OrderMatchingCore {
-        let mut matching_core = OrderMatchingCore::new(instrument_id, price_increment);
-        let cache = self.cache.borrow();
-        if emulation_trigger == TriggerType::LastPrice {
-            if let Some(trade) = cache.trade(&instrument_id) {
-                matching_core.set_bid_raw(trade.price);
-                matching_core.set_ask_raw(trade.price);
-                matching_core.set_last_raw(trade.price);
-            }
-        } else if let Some(quote) = cache.quote(&instrument_id) {
-            matching_core.set_bid_raw(quote.bid_price);
-            matching_core.set_ask_raw(quote.ask_price);
-        }
-
-        drop(cache);
-        self.matching_cores
-            .insert(instrument_id, matching_core.clone());
-
-        log::info!("Creating matching core for {instrument_id:?}");
-        matching_core
-    }
-
     /// # Panics
     ///
     /// Panics if the emulation trigger type is not set or if the order is not in the cache.
@@ -573,8 +539,7 @@ impl OrderEmulator {
         let mut order = self
             .cache
             .borrow()
-            .order(&client_order_id)
-            .map(|o| o.clone())
+            .order_owned(&client_order_id)
             .expect("order must exist in cache");
 
         if order.is_closed() {
@@ -614,48 +579,12 @@ impl OrderEmulator {
             .trigger_instrument_id()
             .unwrap_or_else(|| order.instrument_id());
 
-        let matching_core = self.matching_cores.get(&trigger_instrument_id).cloned();
-
-        let mut matching_core = if let Some(core) = matching_core {
-            core
-        } else {
-            // Handle synthetic instruments
-            let (instrument_id, price_increment) = if trigger_instrument_id.is_synthetic() {
-                let synthetic = self
-                    .cache
-                    .borrow()
-                    .try_synthetic(&trigger_instrument_id)
-                    .cloned();
-
-                match synthetic {
-                    Ok(synthetic) => (synthetic.id, synthetic.price_increment),
-                    Err(e) => {
-                        log::error!("Cannot emulate order: {e}");
-                        let actions = self.manager.cancel_order(&order);
-                        self.dispatch_manager_actions(actions);
-                        return;
-                    }
-                }
-            } else {
-                let instrument = self
-                    .cache
-                    .borrow()
-                    .instrument(&trigger_instrument_id)
-                    .cloned();
-
-                if let Some(instrument) = instrument {
-                    (instrument.id(), instrument.price_increment())
-                } else {
-                    log::error!(
-                        "Cannot emulate order: no instrument {trigger_instrument_id} for trigger"
-                    );
-                    let actions = self.manager.cancel_order(&order);
-                    self.dispatch_manager_actions(actions);
-                    return;
-                }
-            };
-
-            self.create_matching_core(instrument_id, price_increment, emulation_trigger)
+        let Some(mut matching_core) =
+            self.get_or_create_matching_core(trigger_instrument_id, emulation_trigger)
+        else {
+            let actions = self.manager.cancel_order(&order);
+            self.dispatch_manager_actions(actions);
+            return;
         };
 
         // Update trailing stop
@@ -679,21 +608,7 @@ impl OrderEmulator {
         self.check_monitoring(strategy_id, position_id);
 
         // Check if immediately marketable
-        let is_activated = is_order_activated(&order);
-
-        let match_info = RestingOrder::new_with_trigger_type(
-            order.client_order_id(),
-            order.order_side(),
-            order.order_type(),
-            order.emulation_trigger(),
-            if is_activated {
-                order.trigger_price()
-            } else {
-                None
-            },
-            if is_activated { order.price() } else { None },
-            is_activated,
-        );
+        let match_info = matching_core_entry(&order);
 
         if let Some(action) = matching_core.match_order(&match_info) {
             self.dispatch_match_action(action);
@@ -702,17 +617,13 @@ impl OrderEmulator {
         // Handle data subscriptions
         match emulation_trigger {
             TriggerType::Default | TriggerType::BidAsk => {
-                if !self.subscribed_quotes.contains(&trigger_instrument_id)
-                    && self.subscribe_quotes_for_instrument(trigger_instrument_id)
-                {
-                    self.subscribed_quotes.insert(trigger_instrument_id);
+                if !self.quote_handlers.contains_key(&trigger_instrument_id) {
+                    self.subscribe_quotes_for_instrument(trigger_instrument_id);
                 }
             }
             TriggerType::LastPrice => {
-                if !self.subscribed_trades.contains(&trigger_instrument_id)
-                    && self.subscribe_trades_for_instrument(trigger_instrument_id)
-                {
-                    self.subscribed_trades.insert(trigger_instrument_id);
+                if !self.trade_handlers.contains_key(&trigger_instrument_id) {
+                    self.subscribe_trades_for_instrument(trigger_instrument_id);
                 }
             }
             _ => {
@@ -767,6 +678,58 @@ impl OrderEmulator {
         log::info!("Emulating {order}");
     }
 
+    fn get_or_create_matching_core(
+        &mut self,
+        instrument_id: InstrumentId,
+        emulation_trigger: TriggerType,
+    ) -> Option<OrderMatchingCore> {
+        if let Some(matching_core) = self.matching_cores.get(&instrument_id) {
+            return Some(matching_core.clone());
+        }
+
+        // Handle synthetic instruments
+        let (instrument_id, price_increment) = if instrument_id.is_synthetic() {
+            let synthetic = self.cache.borrow().try_synthetic(&instrument_id).cloned();
+
+            match synthetic {
+                Ok(synthetic) => (synthetic.id, synthetic.price_increment),
+                Err(e) => {
+                    log::error!("Cannot emulate order: {e}");
+                    return None;
+                }
+            }
+        } else {
+            let instrument = self.cache.borrow().instrument(&instrument_id).cloned();
+
+            if let Some(instrument) = instrument {
+                (instrument.id(), instrument.price_increment())
+            } else {
+                log::error!("Cannot emulate order: no instrument {instrument_id} for trigger");
+                return None;
+            }
+        };
+
+        let mut matching_core = OrderMatchingCore::new(instrument_id, price_increment);
+        let cache = self.cache.borrow();
+        if emulation_trigger == TriggerType::LastPrice {
+            if let Some(trade) = cache.trade(&instrument_id) {
+                matching_core.set_bid_raw(trade.price);
+                matching_core.set_ask_raw(trade.price);
+                matching_core.set_last_raw(trade.price);
+            }
+        } else if let Some(quote) = cache.quote(&instrument_id) {
+            matching_core.set_bid_raw(quote.bid_price);
+            matching_core.set_ask_raw(quote.ask_price);
+        }
+
+        drop(cache);
+        self.matching_cores
+            .insert(instrument_id, matching_core.clone());
+
+        log::info!("Creating matching core for {instrument_id:?}");
+        Some(matching_core)
+    }
+
     fn handle_submit_order_list(&mut self, command: &SubmitOrderList) {
         self.check_monitoring(command.strategy_id, command.position_id);
 
@@ -813,11 +776,7 @@ impl OrderEmulator {
     }
 
     fn handle_modify_order(&mut self, command: &ModifyOrder) {
-        let order = self
-            .cache
-            .borrow()
-            .order(&command.client_order_id)
-            .map(|order| order.clone());
+        let order = self.cache.borrow().order_owned(&command.client_order_id);
 
         let Some(order) = order else {
             self.deny_modify_command(command, "Order not found in cache");
@@ -895,20 +854,7 @@ impl OrderEmulator {
                 log::debug!("Cannot update order match info: {e:?}");
             }
 
-            let is_activated = is_order_activated(&order);
-            let match_info = RestingOrder::new_with_trigger_type(
-                order.client_order_id(),
-                order.order_side(),
-                order.order_type(),
-                order.emulation_trigger(),
-                if is_activated {
-                    order.trigger_price()
-                } else {
-                    None
-                },
-                if is_activated { order.price() } else { None },
-                is_activated,
-            );
+            let match_info = matching_core_entry(&order);
 
             (matching_core.match_order(&match_info), match_info)
         } else {
@@ -940,11 +886,7 @@ impl OrderEmulator {
     }
 
     pub fn handle_cancel_order(&mut self, command: CancelOrder) {
-        let order = self
-            .cache
-            .borrow()
-            .order(&command.client_order_id)
-            .map(|order| order.clone());
+        let order = self.cache.borrow().order_owned(&command.client_order_id);
 
         let Some(order) = order else {
             self.deny_cancel_command(&command, "Order not found in cache");
@@ -1111,8 +1053,7 @@ impl OrderEmulator {
         let instrument_id = &trade.instrument_id;
         if let Some(matching_core) = self.matching_cores.get_mut(instrument_id) {
             matching_core.set_last_raw(trade.price);
-
-            if !self.subscribed_quotes.contains(instrument_id) {
+            if !self.quote_handlers.contains_key(instrument_id) {
                 matching_core.set_bid_raw(trade.price);
                 matching_core.set_ask_raw(trade.price);
             }
@@ -1165,12 +1106,7 @@ impl OrderEmulator {
                 continue;
             }
 
-            let mut order = match self
-                .cache
-                .borrow()
-                .order(&match_info.client_order_id)
-                .map(|o| o.clone())
-            {
+            let mut order = match self.cache.borrow().order_owned(&match_info.client_order_id) {
                 Some(order) => order,
                 None => continue,
             };
@@ -1269,9 +1205,7 @@ impl OrderEmulator {
             }
         }
 
-        if let Some(position_id) = position_id
-            && !self.monitored_positions.contains(&position_id)
-        {
+        if let Some(position_id) = position_id {
             self.monitored_positions.insert(position_id);
         }
     }
@@ -1280,12 +1214,7 @@ impl OrderEmulator {
     ///
     /// Panics if the order type is invalid for a stop order.
     pub fn trigger_stop_order(&mut self, client_order_id: ClientOrderId) {
-        let order = match self
-            .cache
-            .borrow()
-            .order(&client_order_id)
-            .map(|o| o.clone())
-        {
+        let order = match self.cache.borrow().order_owned(&client_order_id) {
             Some(order) => order,
             None => {
                 log::error!(
@@ -1866,11 +1795,7 @@ impl OrderEmulator {
 
     fn deny_modify_command(&self, command: &ModifyOrder, reason: &str) {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let order = self
-            .cache
-            .borrow()
-            .order(&command.client_order_id)
-            .map(|order| order.clone());
+        let order = self.cache.borrow().order_owned(&command.client_order_id);
 
         let mut event = OrderModifyDenied::new(
             order.as_ref().map_or(command.trader_id, Order::trader_id),
@@ -1897,11 +1822,7 @@ impl OrderEmulator {
 
     fn deny_cancel_command(&self, command: &CancelOrder, reason: &str) {
         let ts_now = self.clock.borrow().timestamp_ns();
-        let order = self
-            .cache
-            .borrow()
-            .order(&command.client_order_id)
-            .map(|order| order.clone());
+        let order = self.cache.borrow().order_owned(&command.client_order_id);
 
         let mut event = OrderCancelDenied::new(
             order.as_ref().map_or(command.trader_id, Order::trader_id),
@@ -1955,6 +1876,23 @@ fn publish_order_event(event: &OrderEventAny) {
     };
 
     msgbus::publish_order_event(topic, event);
+}
+
+fn matching_core_entry(order: &OrderAny) -> RestingOrder {
+    let is_activated = is_order_activated(order);
+    RestingOrder::new_with_trigger_type(
+        order.client_order_id(),
+        order.order_side(),
+        order.order_type(),
+        order.emulation_trigger(),
+        if is_activated {
+            order.trigger_price()
+        } else {
+            None
+        },
+        if is_activated { order.price() } else { None },
+        is_activated,
+    )
 }
 
 fn is_order_activated(order: &OrderAny) -> bool {
@@ -2733,13 +2671,13 @@ mod tests {
 
     #[rstest]
     fn test_create_matching_core(instrument: CryptoPerpetual) {
-        let (_clock, _cache, emulator) = create_emulator();
+        let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
 
-        emulator.borrow_mut().create_matching_core(
-            instrument.id(),
-            instrument.price_increment,
-            TriggerType::BidAsk,
-        );
+        emulator
+            .borrow_mut()
+            .get_or_create_matching_core(instrument.id(), TriggerType::BidAsk)
+            .unwrap();
 
         assert!(
             emulator
@@ -2865,12 +2803,84 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset_unsubscribes_market_data_and_clears_state(instrument: CryptoPerpetual) {
+    #[case(TriggerType::Default)]
+    #[case(TriggerType::BidAsk)]
+    #[case(TriggerType::LastPrice)]
+    fn test_subscriptions_retry_after_handler_registration_without_duplicates(
+        instrument: CryptoPerpetual,
+        #[case] emulation_trigger: TriggerType,
+    ) {
+        let clock = Rc::new(RefCell::new(VirtualClock::new()));
+        let cache = Rc::new(RefCell::new(Cache::default()));
+        let emulator = Rc::new(RefCell::new(OrderEmulator::new(clock, cache.clone())));
+        let data_commands = register_data_command_handler("DataEngine.queue_execute.retry");
+        add_instrument_to_cache(&cache, &instrument);
+
+        for i in 0..3 {
+            if i == 1 {
+                OrderEmulator::register_msgbus_handlers(&emulator);
+            }
+
+            let order = OrderTestBuilder::new(OrderType::StopMarket)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from(format!("O-SUBSCRIBE-{i}")))
+                .side(OrderSide::Buy)
+                .trigger_price(Price::from("5100.00"))
+                .quantity(Quantity::from(1))
+                .emulation_trigger(emulation_trigger)
+                .build();
+            submit_to_emulator(&cache, &emulator, &instrument, &order);
+
+            let expected = if i == 0 {
+                Vec::new()
+            } else {
+                vec![instrument.id()]
+            };
+
+            let emulator = emulator.borrow();
+
+            if emulation_trigger == TriggerType::LastPrice {
+                assert_eq!(emulator.subscribed_trades(), expected);
+                assert_eq!(emulator.subscribed_quotes(), Vec::new());
+            } else {
+                assert_eq!(emulator.subscribed_quotes(), expected);
+                assert_eq!(emulator.subscribed_trades(), Vec::new());
+            }
+
+            assert_eq!(data_commands.get_messages().len(), usize::from(i != 0));
+        }
+
+        let quote = create_quote_tick(&instrument, "5000.00", "5001.00");
+        let trade = create_trade_tick(&instrument, "4999.00");
+        msgbus::publish_quote(get_quotes_topic(instrument.id()), &quote);
+        msgbus::publish_trade(get_trades_topic(instrument.id()), &trade);
+        let core = emulator
+            .borrow()
+            .get_matching_core(&instrument.id())
+            .unwrap();
+
+        if emulation_trigger == TriggerType::LastPrice {
+            assert_eq!(core.bid, Some(trade.price));
+            assert_eq!(core.ask, Some(trade.price));
+            assert_eq!(core.last, Some(trade.price));
+        } else {
+            assert_eq!(core.bid, Some(quote.bid_price));
+            assert_eq!(core.ask, Some(quote.ask_price));
+            assert_eq!(core.last, None);
+        }
+    }
+
+    #[rstest]
+    fn test_reset_unsubscribes_market_data_and_clears_state(
+        instrument: CryptoPerpetual,
+        #[values(false, true)] reregister: bool,
+    ) {
         let (_clock, cache, emulator) = create_emulator();
         let data_commands = register_data_command_handler("DataEngine.queue_execute.reset");
         add_instrument_to_cache(&cache, &instrument);
         let quote_order = create_stop_market_order(&instrument, TriggerType::BidAsk);
-        let quote_command = create_submit_order(&instrument, &quote_order);
+        let mut quote_command = create_submit_order(&instrument, &quote_order);
+        quote_command.position_id = Some(PositionId::from("P-RESET"));
         let trade_order = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument.id())
             .client_order_id(ClientOrderId::from("O-RESET-TRADE"))
@@ -2879,7 +2889,8 @@ mod tests {
             .quantity(Quantity::from(1))
             .emulation_trigger(TriggerType::LastPrice)
             .build();
-        let trade_command = create_submit_order(&instrument, &trade_order);
+        let mut trade_command = create_submit_order(&instrument, &trade_order);
+        trade_command.position_id = quote_command.position_id;
         cache
             .borrow_mut()
             .add_order(quote_order, None, None, false)
@@ -2898,12 +2909,19 @@ mod tests {
         emulator.borrow_mut().handle_submit_order(&trade_command);
         data_commands.clear();
 
+        assert_eq!(emulator.borrow().subscribed_strategy_count(), 1);
+        assert_eq!(emulator.borrow().monitored_position_count(), 1);
+
+        if reregister {
+            OrderEmulator::register_msgbus_handlers(&emulator);
+        }
+
         emulator.borrow_mut().reset();
         let commands = data_commands.get_messages();
         let emulator_ref = emulator.borrow();
 
-        assert!(emulator_ref.subscribed_quotes.is_empty());
-        assert!(emulator_ref.subscribed_trades.is_empty());
+        assert!(emulator_ref.subscribed_quotes().is_empty());
+        assert!(emulator_ref.subscribed_trades().is_empty());
         assert!(emulator_ref.subscribed_strategies.is_empty());
         assert!(emulator_ref.monitored_positions.is_empty());
         assert!(emulator_ref.quote_handlers.is_empty());
@@ -2922,11 +2940,10 @@ mod tests {
         )));
 
         drop(emulator_ref);
-        emulator.borrow_mut().create_matching_core(
-            instrument.id(),
-            instrument.price_increment,
-            TriggerType::BidAsk,
-        );
+        emulator
+            .borrow_mut()
+            .get_or_create_matching_core(instrument.id(), TriggerType::BidAsk)
+            .unwrap();
         let quote = create_quote_tick(&instrument, "5060.00", "5070.00");
         let trade = create_trade_tick(&instrument, "5065.00");
         msgbus::publish_quote(get_quotes_topic(instrument.id()), &quote);
@@ -2941,7 +2958,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_reset_unsubscribes_in_sorted_instrument_order(instrument: CryptoPerpetual) {
+    fn test_reset_unsubscribes_in_sorted_instrument_order(
+        instrument: CryptoPerpetual,
+        #[values(TriggerType::BidAsk, TriggerType::LastPrice)] emulation_trigger: TriggerType,
+    ) {
         let (_clock, cache, emulator) = create_emulator();
         let data_commands = register_data_command_handler("DataEngine.queue_execute.reset_order");
 
@@ -2966,7 +2986,7 @@ mod tests {
                 .side(OrderSide::Buy)
                 .trigger_price(Price::from("5100.00"))
                 .quantity(Quantity::from(1))
-                .emulation_trigger(TriggerType::BidAsk)
+                .emulation_trigger(emulation_trigger)
                 .build();
             let command = create_submit_order(&variant, &order);
             cache
@@ -2986,7 +3006,14 @@ mod tests {
             .get_messages()
             .iter()
             .filter_map(|command| match command {
-                DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command)) => {
+                DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
+                    if emulation_trigger == TriggerType::BidAsk =>
+                {
+                    Some(command.single_instrument_id().unwrap())
+                }
+                DataCommand::Unsubscribe(UnsubscribeCommand::Trades(command))
+                    if emulation_trigger == TriggerType::LastPrice =>
+                {
                     Some(command.single_instrument_id().unwrap())
                 }
                 _ => None,
@@ -3122,17 +3149,26 @@ mod tests {
     }
 
     #[rstest]
-    fn test_submit_order_missing_synthetic_trigger_cancels_order(instrument: CryptoPerpetual) {
+    fn test_submit_order_missing_trigger_instrument_cancels_order(
+        instrument: CryptoPerpetual,
+        #[values(false, true)] synthetic: bool,
+    ) {
         let (_clock, cache, emulator) = create_emulator();
         add_instrument_to_cache(&cache, &instrument);
-        let synthetic_id = InstrumentId::from("BTC-ETH-INDEX.SYNTH");
+
+        let trigger_instrument_id = if synthetic {
+            InstrumentId::from("BTC-ETH-INDEX.SYNTH")
+        } else {
+            InstrumentId::from("BTCUSDT-PERP.BINANCE")
+        };
+
         let order = OrderTestBuilder::new(OrderType::StopMarket)
             .instrument_id(instrument.id())
             .side(OrderSide::Buy)
             .trigger_price(Price::from("5100.00"))
             .quantity(Quantity::from(1))
             .emulation_trigger(TriggerType::BidAsk)
-            .trigger_instrument_id(synthetic_id)
+            .trigger_instrument_id(trigger_instrument_id)
             .build();
         let client_order_id = order.client_order_id();
         let command = create_submit_order(&instrument, &order);
@@ -3152,7 +3188,7 @@ mod tests {
         let commands = emulator.get_submit_order_commands();
 
         assert_eq!(cached_order.status(), OrderStatus::Canceled);
-        assert!(emulator.get_matching_core(&synthetic_id).is_none());
+        assert!(emulator.get_matching_core(&trigger_instrument_id).is_none());
         assert!(emulator.subscribed_quotes().is_empty());
         assert!(emulator.subscribed_trades().is_empty());
         assert!(!commands.contains_key(&client_order_id));
@@ -3347,6 +3383,7 @@ mod tests {
         #[case] expected_last: Option<&str>,
     ) {
         let (_clock, cache, emulator) = create_emulator();
+        add_instrument_to_cache(&cache, &instrument);
         cache
             .borrow_mut()
             .add_quote(create_quote_tick(&instrument, "5099.00", "5101.00"))
@@ -3356,11 +3393,10 @@ mod tests {
             .add_trade(create_trade_tick(&instrument, "5098.00"))
             .unwrap();
 
-        let core = emulator.borrow_mut().create_matching_core(
-            instrument.id(),
-            instrument.price_increment,
-            emulation_trigger,
-        );
+        let core = emulator
+            .borrow_mut()
+            .get_or_create_matching_core(instrument.id(), emulation_trigger)
+            .unwrap();
 
         let emulator = emulator.borrow();
         let stored_core = emulator.get_matching_core(&instrument.id()).unwrap();
@@ -4867,7 +4903,10 @@ mod tests {
     }
 
     #[rstest]
-    fn test_trade_tick_updates_matching_core_last_price(instrument: CryptoPerpetual) {
+    fn test_trade_tick_updates_matching_core_last_price(
+        instrument: CryptoPerpetual,
+        #[values(false, true)] quotes_subscribed: bool,
+    ) {
         let (_clock, cache, emulator) = create_emulator();
         add_instrument_to_cache(&cache, &instrument);
         let order = create_stop_market_order(&instrument, TriggerType::LastPrice);
@@ -4881,6 +4920,21 @@ mod tests {
             .cache_submit_order_command(command.clone());
         emulator.borrow_mut().handle_submit_order(&command);
 
+        let quote = create_quote_tick(&instrument, "5060.00", "5070.00");
+
+        if quotes_subscribed {
+            let order = OrderTestBuilder::new(OrderType::StopMarket)
+                .instrument_id(instrument.id())
+                .client_order_id(ClientOrderId::from("O-QUOTES"))
+                .side(OrderSide::Buy)
+                .trigger_price(Price::from("5200.00"))
+                .quantity(Quantity::from(1))
+                .emulation_trigger(TriggerType::BidAsk)
+                .build();
+            submit_to_emulator(&cache, &emulator, &instrument, &order);
+            emulator.borrow_mut().on_quote_tick(quote);
+        }
+
         let trade = create_trade_tick(&instrument, "5065.00");
         emulator.borrow_mut().on_trade_tick(trade);
 
@@ -4889,6 +4943,22 @@ mod tests {
             .get_matching_core(&instrument.id())
             .unwrap();
         assert_eq!(core.last, Some(Price::from("5065.00")));
+        assert_eq!(
+            core.bid,
+            Some(if quotes_subscribed {
+                quote.bid_price
+            } else {
+                trade.price
+            })
+        );
+        assert_eq!(
+            core.ask,
+            Some(if quotes_subscribed {
+                quote.ask_price
+            } else {
+                trade.price
+            })
+        );
     }
 
     #[rstest]
@@ -5034,6 +5104,7 @@ mod tests {
     #[rstest]
     fn test_pending_activation_trailing_stop_limit_not_matched_as_plain_limit(
         instrument: CryptoPerpetual,
+        #[values(false, true)] modified: bool,
     ) {
         let (_clock, cache, emulator) = create_emulator();
         let (handler, risk_commands): (_, TypedIntoMessageSavingHandler<TradingCommand>) =
@@ -5057,7 +5128,7 @@ mod tests {
             .instrument_id(instrument.id())
             .client_order_id(ClientOrderId::from("O-TRAILING-LIMIT-1"))
             .side(OrderSide::Sell)
-            .price(Price::from("5010.00"))
+            .price(Price::from("4990.00"))
             .quantity(Quantity::from(1))
             .activation_price(Price::from("5050.00"))
             .trailing_offset(dec!(10))
@@ -5077,6 +5148,27 @@ mod tests {
             .cache_submit_order_command(command.clone());
         emulator.borrow_mut().handle_submit_order(&command);
 
+        let trigger_price = modified.then(|| Price::from("4995.00"));
+
+        if modified {
+            let modify = ModifyOrder::new(
+                command.trader_id,
+                None,
+                command.strategy_id,
+                instrument.id(),
+                client_order_id,
+                None,
+                None,
+                None,
+                trigger_price,
+                UUID4::new(),
+                0.into(),
+                None,
+                None,
+            );
+            emulator.borrow_mut().handle_modify_order(&modify);
+        }
+
         // The market falls below where the trailed trigger would sit (4990)
         // while staying below the 5050 activation price: must not release.
         emulator
@@ -5090,6 +5182,14 @@ mod tests {
                 .get_submit_order_commands()
                 .contains_key(&client_order_id),
             "order must remain held by the emulator before activation"
+        );
+        assert_eq!(
+            cache
+                .borrow()
+                .order(&client_order_id)
+                .unwrap()
+                .trigger_price(),
+            trigger_price
         );
     }
 
