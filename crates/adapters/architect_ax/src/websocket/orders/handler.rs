@@ -63,25 +63,14 @@ pub enum HandlerCommand {
     SessionAuthenticated,
     /// Place an order.
     PlaceOrder {
-        /// Request ID for correlation.
         request_id: i64,
-        /// Order placement message.
         order: AxWsPlaceOrder,
-        /// Order info for tracking.
         order_info: WsOrderInfo,
     },
     /// Cancel an order.
-    CancelOrder {
-        /// Request ID for correlation.
-        request_id: i64,
-        /// Order ID to cancel.
-        order_id: String,
-    },
+    CancelOrder { request_id: i64, order_id: String },
     /// Get open orders.
-    GetOpenOrders {
-        /// Request ID for correlation.
-        request_id: i64,
-    },
+    GetOpenOrders { request_id: i64 },
 }
 
 /// Orders feed handler that processes WebSocket messages.

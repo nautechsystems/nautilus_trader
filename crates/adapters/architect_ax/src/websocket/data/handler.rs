@@ -56,11 +56,8 @@ pub enum HandlerCommand {
     ReplaySubscriptions,
     /// Subscribe to market data for a symbol.
     Subscribe {
-        /// Request ID for correlation.
         request_id: i64,
-        /// Instrument symbol.
         symbol: Ustr,
-        /// Market data subscription options.
         spec: AxMdSubscriptionSpec,
     },
     /// Writes a book subscription on the current connection, opening `gate` once written.
@@ -70,48 +67,31 @@ pub enum HandlerCommand {
     /// reconnect replay. Cancellation skips unsent work and keeps the gate closed. A write already
     /// admitted to the network can still complete, ahead of later subscription changes.
     WriteBook {
-        /// Request ID for correlation.
         request_id: i64,
-        /// Request ID of the unsubscribe that replaces an open stream.
         unsubscribe_request_id: Option<i64>,
-        /// Instrument symbol.
         symbol: Ustr,
-        /// Market data subscription options.
         spec: AxMdSubscriptionSpec,
-        /// Cancels unsent work and keeps the gate closed.
         cancel: CancellationToken,
-        /// Snapshot gate opened once the write completes.
         gate: SnapshotGate,
-        /// Receives the write result.
         completion: tokio::sync::oneshot::Sender<Result<(), AxWsClientError>>,
     },
     /// Unsubscribe from market data for a symbol.
     Unsubscribe {
-        /// Request ID for correlation.
         request_id: i64,
-        /// Instrument symbol.
         symbol: Ustr,
-        /// Subscription topic for state tracking.
         topic: String,
     },
     /// Subscribe to candle data for a symbol.
     SubscribeCandles {
-        /// Request ID for correlation.
         request_id: i64,
-        /// Instrument symbol.
         symbol: Ustr,
-        /// Candle width/interval.
         width: AxCandleWidth,
     },
     /// Unsubscribe from candle data for a symbol.
     UnsubscribeCandles {
-        /// Request ID for correlation.
         request_id: i64,
-        /// Instrument symbol.
         symbol: Ustr,
-        /// Candle width/interval.
         width: AxCandleWidth,
-        /// Subscription topic for state tracking.
         topic: String,
     },
 }

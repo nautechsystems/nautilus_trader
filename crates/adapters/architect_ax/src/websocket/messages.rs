@@ -52,12 +52,7 @@ pub enum AxDataWsMessage {
     /// WebSocket reconnected notification.
     Reconnected,
     /// A candle subscription was removed (clear cached state for this key).
-    CandleUnsubscribed {
-        /// Instrument symbol.
-        symbol: Ustr,
-        /// Candle width/interval.
-        width: AxCandleWidth,
-    },
+    CandleUnsubscribed { symbol: Ustr, width: AxCandleWidth },
 }
 
 /// Subscribe request for market data.
