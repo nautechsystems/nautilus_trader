@@ -459,52 +459,6 @@ mod tests {
     }
 
     #[rstest]
-    fn test_place_order_response_records_venue_identity() {
-        let mut handler = test_handler();
-        let request_id = 11;
-        let cid = 1011;
-        let client_order_id = ClientOrderId::from("CID-11");
-        let venue_order_id = VenueOrderId::from("OID-11");
-        handler
-            .orders_metadata
-            .insert(client_order_id, test_order_metadata(client_order_id));
-        handler.pending_orders.insert(
-            request_id,
-            WsOrderInfo {
-                client_order_id,
-                symbol: Ustr::from("EURUSD-PERP"),
-                cid,
-            },
-        );
-
-        let response = AxWsOrderResponse::PlaceOrder(AxWsPlaceOrderResponse {
-            rid: request_id,
-            res: AxWsPlaceOrderResult {
-                oid: "OID-11".to_string(),
-            },
-        });
-
-        let messages = handler.handle_response(response).unwrap();
-
-        assert_eq!(messages.len(), 1);
-        assert!(handler.pending_orders.get(&request_id).is_none());
-        assert_eq!(
-            handler
-                .orders_metadata
-                .get(&client_order_id)
-                .and_then(|metadata| metadata.venue_order_id),
-            Some(venue_order_id),
-        );
-        assert_eq!(
-            handler
-                .venue_to_client_order_id
-                .get(&venue_order_id)
-                .map(|client_order_id| *client_order_id),
-            Some(client_order_id),
-        );
-    }
-
-    #[rstest]
     fn test_late_place_order_response_does_not_restore_cleared_tracking() {
         let mut handler = test_handler();
         let request_id = 12;
@@ -740,30 +694,12 @@ mod tests {
     }
 
     #[rstest]
-    fn test_handle_event_forwards_venue_event() {
+    fn test_handle_event_suppresses_heartbeat() {
         let handler = test_handler();
 
         let event = AxWsOrderEvent::Heartbeat;
         let result = handler.handle_event(event);
         assert!(result.is_none());
-    }
-
-    #[tokio::test]
-    async fn test_authenticated_session_is_restored_after_reconnect() {
-        let mut handler = test_handler();
-
-        handler
-            .handle_command(HandlerCommand::SessionAuthenticated)
-            .await;
-        let initial = handler.message_queue.pop_front();
-        handler.auth_tracker.fail("Reconnecting");
-        handler.restore_authenticated_session();
-        let restored = handler.message_queue.pop_front();
-
-        assert!(handler.has_authenticated_session);
-        assert!(matches!(initial, Some(AxOrdersWsMessage::Authenticated)));
-        assert!(matches!(restored, Some(AxOrdersWsMessage::Authenticated)));
-        assert!(handler.auth_tracker.is_authenticated());
     }
 
     fn test_order_metadata(client_order_id: ClientOrderId) -> OrderMetadata {

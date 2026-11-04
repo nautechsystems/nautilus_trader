@@ -33,7 +33,7 @@ use axum::{
         Query, State,
         ws::{Message, WebSocket, WebSocketUpgrade},
     },
-    http::header::CONTENT_TYPE,
+    http::{Uri, header::CONTENT_TYPE},
     response::{IntoResponse, Response},
     routing::{get, post},
 };
@@ -76,6 +76,7 @@ pub(crate) struct TestServerState {
     pub invalid_book: Arc<AtomicBool>,
     // When set, an unsubscribe is answered with an L2 frame sent before the venue processed it
     pub trailing_book: Arc<AtomicBool>,
+    pub md_ticker_states: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub authenticated: Arc<AtomicBool>,
     pub disconnect_trigger: Arc<AtomicBool>,
     pub ping_count: Arc<AtomicUsize>,
@@ -90,6 +91,7 @@ pub(crate) struct TestServerState {
     pub order_fill_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub order_injected_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
     pub order_initial_events: Arc<tokio::sync::Mutex<Vec<serde_json::Value>>>,
+    pub order_upgrade_queries: Arc<tokio::sync::Mutex<Vec<String>>>,
     pub instrument_queries: Arc<tokio::sync::Mutex<Vec<GetInstrumentParams>>>,
     pub instrument_payload: Arc<tokio::sync::Mutex<Option<serde_json::Value>>>,
     pub instrument_fail: Arc<AtomicBool>,
@@ -135,6 +137,7 @@ impl Default for TestServerState {
             withhold_book: Arc::new(AtomicBool::new(false)),
             invalid_book: Arc::new(AtomicBool::new(false)),
             trailing_book: Arc::new(AtomicBool::new(false)),
+            md_ticker_states: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             authenticated: Arc::new(AtomicBool::new(false)),
             disconnect_trigger: Arc::new(AtomicBool::new(false)),
             ping_count: Arc::new(AtomicUsize::new(0)),
@@ -149,6 +152,7 @@ impl Default for TestServerState {
             order_fill_payload: Arc::new(tokio::sync::Mutex::new(None)),
             order_injected_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             order_initial_events: Arc::new(tokio::sync::Mutex::new(Vec::new())),
+            order_upgrade_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_queries: Arc::new(tokio::sync::Mutex::new(Vec::new())),
             instrument_payload: Arc::new(tokio::sync::Mutex::new(None)),
             instrument_fail: Arc::new(AtomicBool::new(false)),
@@ -192,12 +196,14 @@ impl TestServerState {
         self.subscriptions.lock().await.clear();
         self.subscription_events.lock().await.clear();
         self.fail_next_subscriptions.lock().await.clear();
+        self.md_ticker_states.lock().await.clear();
         self.authenticated.store(false, Ordering::Relaxed);
         self.disconnect_trigger.store(false, Ordering::Relaxed);
         self.ping_count.store(0, Ordering::Relaxed);
         self.pong_count.store(0, Ordering::Relaxed);
         self.heartbeat_count.store(0, Ordering::Relaxed);
         self.messages_received.lock().await.clear();
+        self.order_upgrade_queries.lock().await.clear();
         self.cancel_all_count.store(0, Ordering::Relaxed);
         self.instrument_fail.store(false, Ordering::Relaxed);
         self.instrument_response_delay
@@ -365,6 +371,19 @@ async fn handle_md_socket(mut socket: WebSocket, state: TestServerState) {
                                 break;
                             }
                         }
+
+                        for instrument_state in state.md_ticker_states.lock().await.clone() {
+                            let mut ticker = load_test_data("ws_md_ticker.json");
+                            ticker["i"] = json!(instrument_state);
+
+                            if socket
+                                .send(Message::Text(ticker.to_string().into()))
+                                .await
+                                .is_err()
+                            {
+                                break;
+                            }
+                        }
                     }
                     Some("unsubscribe") => {
                         let rid = value.get("rid").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -525,8 +544,13 @@ fn book_message(state: &TestServerState, level: &str) -> Option<serde_json::Valu
 async fn handle_orders_websocket(
     ws: WebSocketUpgrade,
     State(state): State<TestServerState>,
+    uri: Uri,
 ) -> Response {
-    ws.on_upgrade(|socket| handle_orders_socket(socket, state))
+    let query = uri.query().unwrap_or("").to_string();
+    ws.on_upgrade(|socket| async move {
+        state.order_upgrade_queries.lock().await.push(query);
+        handle_orders_socket(socket, state).await;
+    })
 }
 
 async fn handle_orders_socket(mut socket: WebSocket, state: TestServerState) {

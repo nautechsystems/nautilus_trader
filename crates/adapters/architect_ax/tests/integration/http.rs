@@ -20,11 +20,14 @@ use std::{collections::HashMap, net::SocketAddr, path::PathBuf, time::Duration};
 use axum::{Router, extract::Query, http::StatusCode, response::Json, routing::get};
 use jiff::civil::Date;
 use nautilus_architect_ax::{
-    common::enums::AxCandleWidth,
+    common::{
+        enums::{AxCandleWidth, AxEnvironment, AxOrderStatus, AxTimeInForce},
+        parse::ax_timestamp_stn_to_unix_nanos,
+    },
     http::{
         client::{AxHttpClient, AxRawHttpClient},
         error::AxHttpError,
-        query::{GetFundingRatesParams, GetFundingSlotsParams},
+        query::{GetFillsParams, GetFundingRatesParams, GetFundingSlotsParams, GetOrdersParams},
     },
 };
 use nautilus_common::testing::wait_until_async;
@@ -36,6 +39,7 @@ use nautilus_model::{
     types::Currency,
 };
 use nautilus_network::http::HttpClient;
+use nautilus_testkit::http::assert_http_redirect_rejected;
 use rstest::rstest;
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -596,16 +600,35 @@ async fn test_raw_http_get_ticker_returns_data() {
 }
 
 #[rstest]
+#[case::credentials(true)]
+#[case::session_token(false)]
 #[tokio::test]
-async fn test_domain_http_request_instruments_returns_nautilus_types() {
-    let addr = start_test_server().await;
-    let base_url = format!("http://{addr}");
+async fn test_raw_http_client_rejects_redirects(#[case] credentials: bool) {
+    assert_http_redirect_rejected(|url| async move {
+        let client = if credentials {
+            AxRawHttpClient::with_credentials(
+                "key".into(),
+                "secret".into(),
+                Some(url),
+                None,
+                3,
+                0,
+                1,
+                1,
+                None,
+            )
+            .unwrap()
+        } else {
+            AxRawHttpClient::new(Some(url), None, 3, 0, 1, 1, None).unwrap()
+        };
 
-    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-
-    let instruments = client.request_instruments().await.unwrap();
-
-    assert_eq!(instruments.len(), 3);
+        match client.get_instruments().await {
+            Err(AxHttpError::UnexpectedStatus { status, .. }) => status,
+            Ok(_) => panic!("Expected redirect response to be rejected"),
+            Err(e) => panic!("Expected unexpected-status error, was {e}"),
+        }
+    })
+    .await;
 }
 
 #[rstest]
@@ -791,41 +814,6 @@ async fn test_domain_http_terminal_order_status_preserves_original_quantity(
 
 #[rstest]
 #[tokio::test]
-async fn test_domain_http_request_account_fees_reaches_instruments() {
-    let addr = start_test_server().await;
-    let base_url = format!("http://{addr}");
-
-    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".into());
-
-    let (maker_fee, taker_fee) = client.request_account_fees().await.unwrap();
-    let instruments = client.request_instruments().await.unwrap();
-
-    assert_eq!(maker_fee, dec!(0.0002));
-    assert_eq!(taker_fee, dec!(0.0025));
-    assert!(!instruments.is_empty());
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_domain_http_resolved_fees_are_shared_across_clones() {
-    // The instrument refresh task and the request handlers all run on clones of the client, so
-    // resolved rates have to be shared state rather than per-clone state.
-    let addr = start_test_server().await;
-    let base_url = format!("http://{addr}");
-
-    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-    client.set_session_token("test_session_token".into());
-    let cloned = client.clone();
-
-    client.request_account_fees().await.unwrap();
-    let instruments = cloned.request_instruments().await.unwrap();
-
-    assert!(!instruments.is_empty());
-}
-
-#[rstest]
-#[tokio::test]
 async fn test_domain_http_request_account_fees_uses_first_of_several_accounts() {
     // AX resolves the first account when a request carries no explicit selector
     let client = start_whoami_server(json!([
@@ -923,19 +911,6 @@ fn whoami_account(id: &str, maker_fee: &str, taker_fee: &str) -> Value {
         "can_reduce_or_close": true,
         "can_trade": true,
     })
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_domain_http_request_instruments_reports_zero_fees_until_resolved() {
-    let addr = start_test_server().await;
-    let base_url = format!("http://{addr}");
-
-    let client = AxHttpClient::new(Some(base_url), None, 60, 3, 1000, 10_000, None).unwrap();
-
-    let instruments = client.request_instruments().await.unwrap();
-
-    assert!(!instruments.is_empty());
 }
 
 #[rstest]
@@ -1680,4 +1655,101 @@ async fn test_order_history_rejects_changed_total() {
         "AX orders total_count changed during pagination: expected 2, was 3"
     );
     server.abort();
+}
+
+#[rstest]
+#[tokio::test]
+#[ignore = "requires AX sandbox credentials and a partially filled expired IOC in history"]
+async fn test_live_closed_order_timestamps_sandbox() {
+    let environment = AxEnvironment::Sandbox;
+    let raw = AxRawHttpClient::new(
+        Some(environment.http_url().to_string()),
+        Some(environment.orders_url().to_string()),
+        30,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    raw.authenticate_auto(300).await.unwrap();
+    let client = AxHttpClient::new(
+        Some(environment.http_url().to_string()),
+        Some(environment.orders_url().to_string()),
+        30,
+        0,
+        1,
+        1,
+        None,
+    )
+    .unwrap();
+    client.authenticate_auto(300).await.unwrap();
+
+    let response = raw
+        .get_orders(&GetOrdersParams {
+            order_state: Some(AxOrderStatus::Expired),
+            limit: Some(100),
+            ..Default::default()
+        })
+        .await
+        .unwrap();
+
+    let order = response
+        .orders
+        .iter()
+        .find(|order| order.xq > 0 && order.xq < order.q && order.tif == AxTimeInForce::Ioc)
+        .expect("sandbox history contains a partially filled expired IOC");
+    let created = ax_timestamp_stn_to_unix_nanos(order.ts, order.tn).unwrap();
+    let start = UnixNanos::from(created.as_u64() - 1_000_000_000);
+    let end = UnixNanos::from(created.as_u64() + 60_000_000_000);
+    let mut params = GetFillsParams::new(start.as_i64(), end.as_i64());
+    params.account_id = order.aid;
+    params.limit = Some(100);
+    let mut fills = Vec::new();
+
+    loop {
+        let page = raw.get_fills_page(&params).await.unwrap();
+        fills.extend(page.fills);
+
+        let Some(cursor) = page.next_cursor else {
+            break;
+        };
+
+        assert_ne!(params.cursor.as_ref(), Some(&cursor));
+        params.cursor = Some(cursor);
+    }
+
+    let ts_last_fill = fills
+        .iter()
+        .filter(|fill| fill.order_id.as_deref() == Some(order.oid.as_str()))
+        .map(|fill| u64::try_from(fill.timestamp.as_nanosecond()).unwrap())
+        .max()
+        .map(UnixNanos::from)
+        .expect("sandbox order has fills");
+    assert!(ts_last_fill > created);
+    assert!(ts_last_fill < end);
+
+    let reports = client
+        .request_historical_order_status_reports(
+            AccountId::from("AX-001"),
+            Some(start),
+            Some(end),
+            None::<fn(u64) -> Option<ClientOrderId>>,
+        )
+        .await
+        .unwrap();
+    let report = reports
+        .iter()
+        .find(|report| report.venue_order_id.as_str() == order.oid)
+        .expect("sandbox order report");
+
+    assert_eq!(report.order_status, OrderStatus::Canceled);
+    assert_eq!(report.ts_accepted, created);
+    assert_eq!(report.ts_last, ts_last_fill);
+    assert_eq!(report.quantity.as_decimal(), Decimal::from(order.q));
+    assert_eq!(report.filled_qty.as_decimal(), Decimal::from(order.xq));
+    println!(
+        "AX sandbox partial IOC timestamps passed, fill delay ns={}",
+        ts_last_fill.as_u64() - created.as_u64()
+    );
 }

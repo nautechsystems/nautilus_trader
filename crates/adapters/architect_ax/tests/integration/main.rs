@@ -18,4 +18,5 @@ mod common;
 mod data_client;
 mod exec_client;
 mod http;
+mod replacement;
 mod websocket;

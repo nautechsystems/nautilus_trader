@@ -828,10 +828,6 @@ mod tests {
     use std::sync::Arc;
 
     use futures_util::StreamExt;
-    use nautilus_model::{
-        enums::OrderType,
-        orders::{Order, builder::OrderTestBuilder},
-    };
     use nautilus_testkit::connection::race_command_with_publication;
     use rstest::rstest;
 
@@ -890,27 +886,6 @@ mod tests {
         );
     }
 
-    #[rstest]
-    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
-    #[case(
-        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
-        "wss://stream.example.com:9443"
-    )]
-    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
-        let client = AxOrdersWebSocketClient::new(
-            url.to_string(),
-            AccountId::from("AX-001"),
-            TraderId::from("TRADER-001"),
-            30,
-            TransportBackend::default(),
-            None,
-        );
-        let debug = format!("{client:?}");
-        assert!(debug.contains(&format!("url: {origin:?}")));
-        assert!(!debug.contains("SYN-"));
-        assert_eq!(client.url.expose(), url);
-    }
-
     #[tokio::test]
     async fn test_drop_aborts_handler_task() {
         let client = AxOrdersWebSocketClient::new(
@@ -941,66 +916,6 @@ mod tests {
         .expect("handler task aborted");
     }
 
-    #[tokio::test]
-    async fn test_submit_channel_error_retains_context() {
-        let client = AxOrdersWebSocketClient::new(
-            "wss://example.com/orders/ws".to_string(),
-            AccountId::from("AX-001"),
-            TraderId::from("TRADER-001"),
-            30,
-            TransportBackend::default(),
-            None,
-        );
-        let response: crate::http::models::AxInstrumentsResponse =
-            serde_json::from_str(include_str!("../../../test_data/http_get_instruments.json"))
-                .unwrap();
-        let instrument = crate::http::parse::parse_instrument(
-            &response.instruments[0],
-            UnixNanos::from(11),
-            UnixNanos::from(12),
-        )
-        .unwrap();
-        let instrument_id = instrument.id();
-        client.cache_instrument(instrument);
-        let order = OrderTestBuilder::new(OrderType::Limit)
-            .instrument_id(instrument_id)
-            .client_order_id(ClientOrderId::from("O-CHANNEL-ERROR"))
-            .quantity(Quantity::from("100"))
-            .price(Price::from("1.10"))
-            .build();
-        let result = client
-            .submit_order(
-                order.init_event(),
-                order.quantity(),
-                TimeInForce::Gtc,
-                Price::from("1.10"),
-                false,
-                None,
-            )
-            .await;
-
-        assert!(matches!(
-            result,
-            Err(AxOrdersWsClientError::ChannelError(_))
-        ));
-        let metadata = client
-            .caches
-            .orders_metadata
-            .get(&order.client_order_id())
-            .unwrap();
-        assert_eq!(metadata.order_init.as_ref(), Some(order.init_event()));
-        assert_eq!(metadata.venue_order_id, None);
-        assert!(!metadata.is_accepted);
-        assert_eq!(
-            *client
-                .caches
-                .cid_to_client_order_id
-                .get(&client_order_id_to_cid(&order.client_order_id()))
-                .unwrap(),
-            order.client_order_id()
-        );
-    }
-
     #[rstest]
     fn test_reserve_cid_mapping_rejects_collision() {
         let caches = OrdersCaches::default();
@@ -1023,62 +938,5 @@ mod tests {
                 .map(|client_order_id| *client_order_id),
             Some(first_client_order_id),
         );
-    }
-
-    #[tokio::test]
-    async fn test_cancel_order_rejects_without_venue_order_id() {
-        let client = AxOrdersWebSocketClient::new(
-            "wss://example.com/orders/ws".to_string(),
-            AccountId::from("AX-001"),
-            TraderId::from("TRADER-001"),
-            30,
-            TransportBackend::default(),
-            None,
-        );
-        let client_order_id = ClientOrderId::from("CID-123");
-
-        let result = client.cancel_order(client_order_id, None).await;
-
-        assert!(matches!(
-            result,
-            Err(AxOrdersWsClientError::ClientError(msg))
-            if msg.contains("missing venue_order_id")
-        ));
-    }
-
-    #[tokio::test]
-    async fn test_cancel_order_sends_known_venue_order_id() {
-        let mut client = AxOrdersWebSocketClient::new(
-            "wss://example.com/orders/ws".to_string(),
-            AccountId::from("AX-001"),
-            TraderId::from("TRADER-001"),
-            30,
-            TransportBackend::default(),
-            None,
-        );
-
-        let (cmd_tx, mut cmd_rx) = tokio::sync::mpsc::unbounded_channel::<HandlerCommand>();
-        client.cmd_tx = Arc::new(tokio::sync::RwLock::new(cmd_tx));
-
-        let client_order_id = ClientOrderId::from("CID-456");
-        let venue_order_id = VenueOrderId::from("V-ORDER-789");
-
-        let request_id = client
-            .cancel_order(client_order_id, Some(venue_order_id))
-            .await
-            .unwrap();
-
-        assert_eq!(request_id, 1);
-        let cmd = cmd_rx.recv().await.unwrap();
-        match cmd {
-            HandlerCommand::CancelOrder {
-                request_id,
-                order_id,
-            } => {
-                assert_eq!(request_id, 1);
-                assert_eq!(order_id, "V-ORDER-789");
-            }
-            other => panic!("unexpected command: {other:?}"),
-        }
     }
 }

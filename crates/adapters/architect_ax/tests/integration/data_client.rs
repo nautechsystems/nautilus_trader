@@ -38,8 +38,8 @@ use nautilus_common::{
     messages::{
         DataEvent, DataResponse, SystemEvent,
         data::{
-            RequestInstrument, SubscribeBars, SubscribeBookDeltas, SubscribeQuotes,
-            SubscribeTrades, UnsubscribeBookDeltas,
+            RequestInstrument, SubscribeBars, SubscribeBookDeltas, SubscribeInstrumentStatus,
+            SubscribeQuotes, SubscribeTrades, UnsubscribeBookDeltas,
         },
         system::SocketState,
     },
@@ -48,13 +48,14 @@ use nautilus_common::{
 use nautilus_core::UUID4;
 use nautilus_live::{SocketReconnectRegistry, SocketReconnectRequestOutcome};
 use nautilus_model::{
-    data::{BarType, Data, OrderBookDeltas},
+    data::{BarType, Data, InstrumentStatus, OrderBookDeltas, QuoteTick},
     enums::{BookAction, BookType, RecordFlag},
     identifiers::{ClientId, InstrumentId},
     instruments::Instrument,
 };
 use nautilus_network::websocket::TransportBackend;
 use rstest::rstest;
+use rust_decimal_macros::dec;
 use serde_json::Value;
 use ustr::Ustr;
 
@@ -327,6 +328,127 @@ async fn test_data_client_emits_quote_tick_via_channel() {
             Err(_) => panic!("Timeout waiting for quote event"),
         }
     }
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_l2_book_emits_quote_when_quotes_subscribed() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+
+    let subscribe_cmd = SubscribeQuotes {
+        instrument_ids: vec![instrument_id],
+        client_id: Some(client_id),
+        venue: None,
+        command_id: UUID4::new(),
+        ts_init: 0.into(),
+        correlation_id: None,
+        params: None,
+    };
+
+    client
+        .subscribe_quotes(subscribe_cmd)
+        .expect("Subscribe quotes failed");
+    wait_for_quote(&mut rx).await;
+    client
+        .subscribe_book_deltas(book_deltas_subscription(instrument_id, client_id))
+        .expect("Subscribe book deltas failed");
+    let quote = wait_for_quote(&mut rx).await;
+
+    assert_eq!(quote.instrument_id, instrument_id);
+    assert_eq!(quote.bid_price.as_decimal(), dec!(49999.50));
+    assert_eq!(quote.ask_price.as_decimal(), dec!(50000.50));
+    assert_eq!(quote.bid_size.as_decimal(), dec!(500));
+    assert_eq!(quote.ask_size.as_decimal(), dec!(300));
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ticker_instrument_status_emitted_once_when_state_unchanged() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.md_ticker_states.lock().await = vec!["OPEN".to_string(), "OPEN".to_string()];
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(instrument_id, client_id))
+        .expect("Subscribe instrument status failed");
+    let statuses = collect_instrument_statuses(&mut rx).await;
+
+    assert_eq!(statuses.len(), 1);
+    assert_eq!(statuses[0].instrument_id, instrument_id);
+    assert_eq!(statuses[0].is_trading, Some(true));
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ticker_instrument_status_emitted_on_transition() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.md_ticker_states.lock().await = vec!["OPEN".to_string(), "CLOSED".to_string()];
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    client
+        .subscribe_instrument_status(instrument_status_subscription(instrument_id, client_id))
+        .expect("Subscribe instrument status failed");
+    let statuses = collect_instrument_statuses(&mut rx).await;
+
+    assert_eq!(statuses.len(), 2);
+    assert_eq!(statuses[0].instrument_id, instrument_id);
+    assert_eq!(statuses[0].is_trading, Some(true));
+    assert_eq!(statuses[1].instrument_id, instrument_id);
+    assert_eq!(statuses[1].is_trading, Some(false));
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_ticker_instrument_status_skipped_when_not_subscribed() {
+    let mut rx = setup_data_channel();
+    let (addr, state) = start_test_server().await.unwrap();
+    *state.md_ticker_states.lock().await = vec!["OPEN".to_string()];
+    let client_id = ClientId::from("AX-TEST");
+    let mut client = create_data_client(addr, client_id, AxDataClientConfig::default());
+    client.connect().await.expect("Failed to connect");
+    wait_for_connection(&state).await;
+
+    let subscribe_cmd = SubscribeTrades {
+        instrument_ids: vec![InstrumentId::from("EURUSD-PERP.AX")],
+        client_id: Some(client_id),
+        venue: None,
+        command_id: UUID4::new(),
+        ts_init: 0.into(),
+        correlation_id: None,
+        params: None,
+    };
+
+    client
+        .subscribe_trades(subscribe_cmd)
+        .expect("Subscribe trades failed");
+    let statuses = collect_instrument_statuses(&mut rx).await;
+
+    assert!(statuses.is_empty());
 
     client.disconnect().await.expect("Failed to disconnect");
 }
@@ -1118,6 +1240,21 @@ fn create_data_client(
         .expect("Failed to create data client")
 }
 
+fn instrument_status_subscription(
+    instrument_id: InstrumentId,
+    client_id: ClientId,
+) -> SubscribeInstrumentStatus {
+    SubscribeInstrumentStatus::new(
+        instrument_id,
+        Some(client_id),
+        None,
+        UUID4::new(),
+        0.into(),
+        None,
+        None,
+    )
+}
+
 fn book_config(book_snapshot_timeout_secs: u64) -> AxDataClientConfig {
     AxDataClientConfig {
         book_snapshot_timeout_secs,
@@ -1164,6 +1301,37 @@ async fn wait_for_requests(
         timeout,
     )
     .await;
+}
+
+async fn collect_instrument_statuses(
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) -> Vec<InstrumentStatus> {
+    let mut statuses = Vec::new();
+
+    loop {
+        match tokio::time::timeout(Duration::from_millis(250), rx.recv()).await {
+            Ok(Some(DataEvent::Data(Data::InstrumentStatus(status)))) => statuses.push(status),
+            Ok(Some(_)) => {}
+            Ok(None) => panic!("Data event channel closed"),
+            Err(_) => break,
+        }
+    }
+
+    statuses
+}
+
+async fn wait_for_quote(rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>) -> QuoteTick {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let event = tokio::time::timeout_at(deadline, rx.recv())
+            .await
+            .expect("Timeout waiting for quote")
+            .expect("Data event channel closed");
+
+        if let DataEvent::Data(Data::Quote(quote)) = event {
+            return quote;
+        }
+    }
 }
 
 async fn wait_for_book_deltas(

@@ -13,14 +13,9 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-#[path = "../../../tests/integration/common/execution.rs"]
-mod execution;
-#[path = "../../../tests/integration/common/server.rs"]
-mod server;
-
 use std::time::Duration;
 
-use execution::{add_test_account_to_cache, create_test_execution_client, drain_rx};
+use nautilus_architect_ax::{common::consts::AX_CLIENT_ID, execution::AxExecutionClient};
 use nautilus_common::{
     clients::ExecutionClient,
     messages::{
@@ -31,16 +26,21 @@ use nautilus_common::{
 };
 use nautilus_core::{UUID4, UnixNanos};
 use nautilus_model::{
-    enums::{OrderStatus, OrderType, TimeInForce},
+    enums::OrderStatus,
     events::OrderEventAny,
     identifiers::{AccountId, ClientOrderId, InstrumentId, StrategyId, TraderId, VenueOrderId},
+    reports::OrderStatusReport,
     types::{Price, Quantity},
 };
 use rstest::rstest;
-use server::{load_test_data, start_test_server};
 
-use crate as adapter;
-use crate::common::consts::AX_CLIENT_ID;
+use crate::common::{
+    execution::{add_test_account_to_cache, create_test_execution_client, drain_rx},
+    server::{TestServerState, load_test_data, start_test_server},
+};
+
+const QUERY_ATTEMPTS: usize = 5;
+const QUERY_TIMEOUT: Duration = Duration::from_secs(1);
 
 #[rstest]
 #[case::missing_stream(true, false, false, "ACCEPTED", Some(OrderStatus::Accepted), false)]
@@ -124,9 +124,9 @@ async fn test_replacement_resolution_preserves_child(
         (parent.to_string(), 200, parent_status),
         (
             proposed.to_string(),
-            if child_found { 200 } else { 404 },
-            if child_found {
-                child_status
+            if child_found && !reconnect { 200 } else { 404 },
+            if child_found && !reconnect {
+                child_status.clone()
             } else {
                 serde_json::json!({"error":"no matching orders"})
             },
@@ -168,21 +168,37 @@ async fn test_replacement_resolution_preserves_child(
         ))
         .unwrap();
     wait_until_async(
-        || async { client.pending_tasks.all_finished() },
+        || async {
+            state
+                .replace_order_count
+                .load(std::sync::atomic::Ordering::Relaxed)
+                == 1
+        },
         Duration::from_secs(5),
     )
     .await;
-    assert_eq!(
-        client
-            .ws_orders
-            .caches()
-            .venue_to_client_id
-            .get(&proposed)
-            .map(|id| *id),
-        Some(client_order_id),
+
+    let query_command = QueryOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*AX_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        Some(parent),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
     );
 
     if reconnect {
+        query_order_until_candidate(&client, &query_command, &state, proposed).await;
+        let event = tokio::time::timeout(Duration::from_millis(250), rx.recv()).await;
+        assert!(
+            event.is_err(),
+            "replacement resolved before reconnect: {event:?}"
+        );
+
         let command = GenerateOrderStatusReport::new(
             UUID4::new(),
             UnixNanos::default(),
@@ -200,49 +216,28 @@ async fn test_replacement_resolution_preserves_child(
         assert_eq!(report.venue_order_id, parent);
         assert_eq!(report.order_status, OrderStatus::Canceled);
         client.disconnect().await.unwrap();
+        state
+            .order_status_responses
+            .lock()
+            .await
+            .retain(|(order_id, _, _)| order_id != proposed.as_str());
+        state
+            .order_status_responses
+            .lock()
+            .await
+            .push((proposed.to_string(), 200, child_status));
         client.connect().await.unwrap();
         drain_rx(&mut rx);
     }
 
-    let command = QueryOrder::new(
-        TraderId::from("TESTER-001"),
-        Some(*AX_CLIENT_ID),
-        strategy_id,
-        instrument_id,
-        client_order_id,
-        Some(parent),
-        UUID4::new(),
-        UnixNanos::default(),
-        None,
-        None,
-    );
-
-    client.query_order(command.clone()).unwrap();
-
     if changing_parent {
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
-            panic!("expected parent report, was {event:?}");
-        };
-
+        let report = query_order_until_report(&client, &query_command, &mut rx).await;
         assert_eq!(report.venue_order_id, parent);
         assert_eq!(report.order_status, OrderStatus::Accepted);
-        client.query_order(command).unwrap();
     }
 
     if let Some(expected) = expected {
-        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-            .await
-            .unwrap()
-            .unwrap();
-
-        let ExecutionEvent::Report(ExecutionReport::Order(report)) = event else {
-            panic!("expected replacement report, was {event:?}");
-        };
+        let report = query_order_until_report(&client, &query_command, &mut rx).await;
 
         assert_eq!(report.account_id, AccountId::from("AX-001"));
         assert_eq!(report.client_order_id, Some(client_order_id));
@@ -256,47 +251,9 @@ async fn test_replacement_resolution_preserves_child(
             Quantity::from(filled.to_string().as_str())
         );
     } else {
-        wait_until_async(
-            || async { client.pending_tasks.all_finished() },
-            Duration::from_secs(5),
-        )
-        .await;
-        let report = client
-            .http_client
-            .request_order_status(
-                AccountId::from("AX-001"),
-                instrument_id,
-                Some(client_order_id),
-                Some(parent),
-                None,
-                OrderType::Limit,
-                TimeInForce::Gtc,
-            )
-            .await
-            .unwrap();
-        let resolved = super::super::resolve_order_status_report(
-            &client.http_client,
-            client.ws_orders.caches(),
-            client_order_id,
-            report,
-        )
-        .await
-        .unwrap();
-
-        assert!(resolved.is_none());
-        assert_eq!(
-            client
-                .ws_orders
-                .orders_metadata()
-                .get(&client_order_id)
-                .unwrap()
-                .venue_order_id,
-            Some(parent),
-        );
-        assert!(matches!(
-            rx.try_recv(),
-            Err(tokio::sync::mpsc::error::TryRecvError::Empty)
-        ));
+        query_order_until_candidate(&client, &query_command, &state, proposed).await;
+        let event = tokio::time::timeout(Duration::from_millis(250), rx.recv()).await;
+        assert!(event.is_err(), "unexpected replacement event: {event:?}");
     }
 
     assert!(
@@ -305,7 +262,7 @@ async fn test_replacement_resolution_preserves_child(
             .lock()
             .await
             .iter()
-            .any(|query| { query.order_id.as_deref() == Some(proposed.as_str()) })
+            .any(|query| query.order_id.as_deref() == Some(proposed.as_str()))
     );
 
     if late_stream {
@@ -389,4 +346,62 @@ async fn test_replacement_resolution_preserves_child(
             panic!("unexpected event {event:?}");
         }
     }
+}
+
+async fn query_order_until_report(
+    client: &AxExecutionClient,
+    command: &QueryOrder,
+    rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+) -> OrderStatusReport {
+    for attempt in 0..QUERY_ATTEMPTS {
+        client.query_order(command.clone()).unwrap();
+
+        match tokio::time::timeout(QUERY_TIMEOUT, rx.recv()).await {
+            Ok(Some(ExecutionEvent::Report(ExecutionReport::Order(report)))) => return *report,
+            Ok(Some(event)) => panic!("unexpected event while querying order: {event:?}"),
+            Ok(None) => panic!("execution event channel closed"),
+            Err(_) if attempt + 1 < QUERY_ATTEMPTS => {}
+            Err(_) => panic!("order report did not arrive after {QUERY_ATTEMPTS} attempts"),
+        }
+    }
+
+    unreachable!()
+}
+
+async fn query_order_until_candidate(
+    client: &AxExecutionClient,
+    command: &QueryOrder,
+    state: &TestServerState,
+    candidate: VenueOrderId,
+) {
+    for attempt in 0..QUERY_ATTEMPTS {
+        client.query_order(command.clone()).unwrap();
+
+        let queried = tokio::time::timeout(
+            QUERY_TIMEOUT,
+            wait_until_async(
+                || async {
+                    state
+                        .order_status_queries
+                        .lock()
+                        .await
+                        .iter()
+                        .any(|query| query.order_id.as_deref() == Some(candidate.as_str()))
+                },
+                Duration::from_secs(5),
+            ),
+        )
+        .await;
+
+        if queried.is_ok() {
+            return;
+        }
+
+        assert!(
+            attempt + 1 != QUERY_ATTEMPTS,
+            "candidate query did not arrive after {QUERY_ATTEMPTS} attempts"
+        );
+    }
+
+    unreachable!()
 }

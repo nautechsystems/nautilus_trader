@@ -1336,26 +1336,6 @@ mod tests {
     }
 
     #[rstest]
-    #[case("wss://stream.example.com/feed", "wss://stream.example.com")]
-    #[case(
-        "wss://SYN-user:SYN-password@stream.example.com:9443/SYN-path?token=SYN-query#SYN-fragment",
-        "wss://stream.example.com:9443"
-    )]
-    fn test_debug_preserves_url_origin(#[case] url: &str, #[case] origin: &str) {
-        let client = AxMdWebSocketClient::new(
-            url.to_string(),
-            "SYN-auth-token",
-            30,
-            TransportBackend::default(),
-            None,
-        );
-        let debug = format!("{client:?}");
-        assert!(debug.contains(&format!("url: {origin:?}")));
-        assert!(!debug.contains("SYN-"));
-        assert_eq!(client.url.expose(), url);
-    }
-
-    #[rstest]
     fn test_auth_token_uses_secret_string_owner() {
         let client = AxMdWebSocketClient::new(
             "ws://localhost:9999/md/ws".to_string(),

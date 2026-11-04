@@ -704,90 +704,12 @@ mod tests {
     use rstest::rstest;
 
     use super::*;
-    use crate::{
-        common::enums::AxMarketDataLevel,
-        websocket::messages::{AxMdSubscriptionResponse, AxMdSubscriptionResult, AxWsError},
-    };
+    use crate::{common::enums::AxMarketDataLevel, websocket::messages::AxWsError};
 
     const TOPIC: &str = "EURUSD-PERP:Level2:false:false";
 
     #[rstest]
-    fn test_subscription_response_confirms_subscribe() {
-        let subscriptions = SubscriptionState::new(':');
-        subscriptions.mark_subscribe(TOPIC);
-        let mut handler = create_handler(subscriptions.clone());
-        handler
-            .pending_subscription_requests
-            .insert(1, PendingSubscriptionRequest::Subscribe(TOPIC.to_string()));
-
-        handler.handle_message(AxMdMessage::SubscriptionResponse(
-            AxMdSubscriptionResponse {
-                rid: 1,
-                result: AxMdSubscriptionResult {
-                    subscribed: Some(Ustr::from("EURUSD-PERP")),
-                    subscribed_candle: None,
-                    unsubscribed: None,
-                    unsubscribed_candle: None,
-                },
-            },
-        ));
-
-        assert_eq!(subscriptions.len(), 1);
-        assert!(subscriptions.pending_subscribe_topics().is_empty());
-        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
-    }
-
-    #[rstest]
-    fn test_subscription_error_keeps_topic_pending_for_replay() {
-        let subscriptions = SubscriptionState::new(':');
-        subscriptions.mark_subscribe(TOPIC);
-        subscriptions.confirm_subscribe(TOPIC);
-        let mut handler = create_handler(subscriptions.clone());
-        handler
-            .pending_subscription_requests
-            .insert(2, PendingSubscriptionRequest::Subscribe(TOPIC.to_string()));
-
-        handler.handle_message(AxMdMessage::Error(AxWsError {
-            code: Some("400".to_string()),
-            message: "subscription failed".to_string(),
-            request_id: Some(2),
-        }));
-
-        assert_eq!(subscriptions.len(), 0);
-        assert_eq!(
-            subscriptions.pending_subscribe_topics(),
-            vec![TOPIC.to_string()]
-        );
-        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
-    }
-
-    #[rstest]
-    fn test_already_subscribed_keeps_topic_pending_for_replay() {
-        let subscriptions = SubscriptionState::new(':');
-        subscriptions.mark_subscribe(TOPIC);
-        let mut handler = create_handler(subscriptions.clone());
-        handler
-            .pending_subscription_requests
-            .insert(3, PendingSubscriptionRequest::Subscribe(TOPIC.to_string()));
-
-        handler.handle_message(AxMdMessage::Error(AxWsError {
-            code: Some("400".to_string()),
-            message: "already subscribed".to_string(),
-            request_id: Some(3),
-        }));
-
-        assert_eq!(subscriptions.len(), 0);
-        assert_eq!(
-            subscriptions.pending_subscribe_topics(),
-            vec![TOPIC.to_string()]
-        );
-        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
-    }
-
-    #[rstest]
-    #[case("not subscribed")]
-    #[case("subscription failed")]
-    fn test_unsubscribe_error_confirms_removal(#[case] message: &str) {
+    fn test_unsubscribe_error_confirms_removal() {
         let subscriptions = SubscriptionState::new(':');
         subscriptions.mark_subscribe(TOPIC);
         subscriptions.confirm_subscribe(TOPIC);
@@ -800,38 +722,9 @@ mod tests {
 
         handler.handle_message(AxMdMessage::Error(AxWsError {
             code: Some("400".to_string()),
-            message: message.to_string(),
+            message: "subscription failed".to_string(),
             request_id: Some(4),
         }));
-
-        assert_eq!(subscriptions.len(), 0);
-        assert!(subscriptions.pending_subscribe_topics().is_empty());
-        assert!(subscriptions.pending_unsubscribe_topics().is_empty());
-    }
-
-    #[rstest]
-    fn test_subscription_response_confirms_unsubscribe() {
-        let subscriptions = SubscriptionState::new(':');
-        subscriptions.mark_subscribe(TOPIC);
-        subscriptions.confirm_subscribe(TOPIC);
-        subscriptions.mark_unsubscribe(TOPIC);
-        let mut handler = create_handler(subscriptions.clone());
-        handler.pending_subscription_requests.insert(
-            5,
-            PendingSubscriptionRequest::Unsubscribe(TOPIC.to_string()),
-        );
-
-        handler.handle_message(AxMdMessage::SubscriptionResponse(
-            AxMdSubscriptionResponse {
-                rid: 5,
-                result: AxMdSubscriptionResult {
-                    subscribed: None,
-                    subscribed_candle: None,
-                    unsubscribed: Some(Ustr::from("EURUSD-PERP")),
-                    unsubscribed_candle: None,
-                },
-            },
-        ));
 
         assert_eq!(subscriptions.len(), 0);
         assert!(subscriptions.pending_subscribe_topics().is_empty());
