@@ -19,7 +19,7 @@
 //! Gamma, CLOB public, and Data API endpoints.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     net::SocketAddr,
     num::NonZeroUsize,
     path::PathBuf,
@@ -49,9 +49,9 @@ use nautilus_common::{
         DataEvent, DataResponse, SystemEvent,
         data::{
             RequestBookSnapshot, RequestInstrument, RequestInstruments, RequestTrades,
-            SubscribeBookDepth, SubscribeCustomData, SubscribeInstrument, SubscribeInstrumentClose,
-            SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades, UnsubscribeInstrument,
-            UnsubscribeQuotes, UnsubscribeTrades,
+            SubscribeBookDeltas, SubscribeBookDepth, SubscribeCustomData, SubscribeInstrument,
+            SubscribeInstrumentClose, SubscribeInstrumentStatus, SubscribeQuotes, SubscribeTrades,
+            UnsubscribeInstrument, UnsubscribeQuotes, UnsubscribeTrades,
         },
         system::SocketState,
     },
@@ -67,7 +67,7 @@ use nautilus_model::{
 };
 use nautilus_network::{retry::RetryConfig, websocket::TransportBackend};
 use nautilus_polymarket::{
-    common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE, WS_DEFAULT_SUBSCRIPTIONS},
+    common::consts::{POLYMARKET_CLIENT_ID, POLYMARKET_VENUE},
     config::PolymarketDataClientConfig,
     data::PolymarketDataClient,
     data_types::{PolymarketCryptoPrice, PolymarketCryptoTwap, PolymarketEquityPrice},
@@ -139,9 +139,12 @@ fn gamma_market_for_protocol(version: &str) -> Value {
     market
 }
 
+type GammaReply = (Value, Option<Arc<tokio::sync::Semaphore>>);
+
 #[derive(Clone, Default)]
 struct TestServerState {
     gamma_response: Arc<tokio::sync::Mutex<Option<Value>>>,
+    gamma_replies: Arc<tokio::sync::Mutex<VecDeque<GammaReply>>>,
     gamma_request_count: Arc<AtomicUsize>,
     book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
     book_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
@@ -151,11 +154,21 @@ struct TestServerState {
     market_upgrade_status: Arc<AtomicU16>,
     market_upgrade_attempts: Arc<AtomicUsize>,
     market_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
+    market_snapshot: Arc<tokio::sync::Mutex<Option<Value>>>,
     polybolt_payloads: Arc<tokio::sync::Mutex<Vec<Value>>>,
 }
 
 async fn handle_gamma_markets(State(state): State<TestServerState>) -> Json<Value> {
     state.gamma_request_count.fetch_add(1, Ordering::Relaxed);
+    let reply = state.gamma_replies.lock().await.pop_front();
+    if let Some((body, release)) = reply {
+        if let Some(release) = release {
+            release.acquire().await.unwrap().forget();
+        }
+
+        return Json(body);
+    }
+
     let body = state
         .gamma_response
         .lock()
@@ -238,7 +251,18 @@ async fn handle_market_socket(mut socket: WebSocket, state: TestServerState) {
                 if payload.get("type").and_then(Value::as_str) == Some("market")
                     || payload.get("operation").and_then(Value::as_str).is_some()
                 {
+                    let subscribes = payload["operation"] != "unsubscribe";
                     state.market_payloads.lock().await.push(payload);
+
+                    if subscribes
+                        && let Some(snapshot) = state.market_snapshot.lock().await.clone()
+                        && socket
+                            .send(Message::Text(snapshot.to_string().into()))
+                            .await
+                            .is_err()
+                    {
+                        break;
+                    }
                 }
             }
             Message::Close(_) => break,
@@ -655,6 +679,23 @@ fn create_test_data_client_with_resolution_options(
     PolymarketDataClient,
     tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
 ) {
+    create_test_data_client_with_config(
+        addr,
+        PolymarketDataClientConfig {
+            subscribe_new_markets,
+            resolve_poll_enabled,
+            ..Default::default()
+        },
+    )
+}
+
+fn create_test_data_client_with_config(
+    addr: SocketAddr,
+    config: PolymarketDataClientConfig,
+) -> (
+    PolymarketDataClient,
+    tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+) {
     let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
     // Use replace_ rather than set_ so this test can run on a thread that
     // already had a sender installed by another test in the same harness.
@@ -667,9 +708,9 @@ fn create_test_data_client_with_resolution_options(
     let data_api = PolymarketDataApiHttpClient::new(Some(base_url.clone()), 5).expect("data_api");
     let ws = PolymarketMarketConnectionPool::new(
         Some(format!("ws://{addr}/ws/market")),
-        subscribe_new_markets,
+        config.subscribe_new_markets,
         TransportBackend::default(),
-        WS_DEFAULT_SUBSCRIPTIONS,
+        config.ws_max_subscriptions,
     );
 
     let config = PolymarketDataClientConfig {
@@ -681,9 +722,7 @@ fn create_test_data_client_with_resolution_options(
         passphrase: Some("fixture-passphrase".into()),
         base_url_gamma: Some(base_url.clone()),
         base_url_data_api: Some(base_url),
-        subscribe_new_markets,
-        resolve_poll_enabled,
-        ..PolymarketDataClientConfig::default()
+        ..config
     };
     let client = PolymarketDataClient::new(
         *POLYMARKET_CLIENT_ID,
@@ -1665,4 +1704,415 @@ async fn test_quote_list_admits_both_tokens_through_debounced_gamma_loader() {
         .unwrap();
     client.disconnect().await.unwrap();
     assert!(client.is_disconnected());
+}
+
+mod subscriptions {
+    use nautilus_model::{
+        enums::{InstrumentCloseType, MarketStatusAction},
+        instruments::Instrument,
+    };
+
+    use super::*;
+
+    #[rstest]
+    #[case::deadline(1, true, false, true)]
+    #[case::disabled(0, false, false, true)]
+    #[case::received(1, false, true, true)]
+    #[case::auto_load(1, true, false, false)]
+    #[case::auto_load_disabled(0, false, false, false)]
+    #[tokio::test]
+    async fn fresh_book_subscription_recovers_a_missing_snapshot(
+        #[case] timeout_secs: u64,
+        #[case] recovers: bool,
+        #[case] received: bool,
+        #[case] cached: bool,
+    ) {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(json!([gamma_market_request_fixture()]));
+
+        if received {
+            let mut snapshot = load_json("ws_market_book_msg.json");
+            snapshot["asset_id"] = TEST_TOKEN_ID_YES.into();
+            snapshot["market"] = TEST_CONDITION_ID.into();
+            *state.market_snapshot.lock().await = Some(snapshot);
+        }
+
+        let addr = start_mock_server(state.clone()).await;
+
+        let (mut client, mut rx) = create_test_data_client_with_config(
+            addr,
+            PolymarketDataClientConfig {
+                book_snapshot_timeout_secs: timeout_secs,
+                auto_load_debounce_ms: 1,
+                resolve_poll_enabled: false,
+                ..Default::default()
+            },
+        );
+
+        client.connect().await.unwrap();
+        if cached {
+            prime_instrument(&client, &mut rx, yes_instrument_id()).await;
+        }
+
+        subscribe_book(&mut client, yes_instrument_id());
+        wait_for_market_payload_count(&state, 1, false, Duration::from_secs(3)).await;
+
+        if received {
+            tokio::time::timeout(Duration::from_secs(3), async {
+                loop {
+                    if let DataEvent::Data(NautilusData::BookDeltas(deltas)) =
+                        rx.recv().await.unwrap()
+                    {
+                        assert_eq!(deltas.instrument_id, yes_instrument_id());
+                        break;
+                    }
+                }
+            })
+            .await
+            .unwrap();
+        }
+
+        if recovers {
+            wait_for_market_payload_count(&state, 3, false, Duration::from_secs(3)).await;
+        } else {
+            tokio::time::sleep(Duration::from_millis(1500)).await;
+        }
+
+        let payloads = state.market_payloads.lock().await.clone();
+        client.disconnect().await.unwrap();
+        let operations = payloads
+            .iter()
+            .map(|p| p["operation"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            operations,
+            if recovers {
+                vec![None, Some("unsubscribe"), Some("subscribe")]
+            } else {
+                vec![None]
+            }
+        );
+        assert!(
+            payloads
+                .iter()
+                .all(|p| p["assets_ids"] == json!([TEST_TOKEN_ID_YES]))
+        );
+    }
+
+    #[rstest]
+    #[case::fresh_token(false)]
+    #[case::open_token(true)]
+    #[tokio::test]
+    async fn book_delta_subscription_cycles_only_an_open_token(#[case] quotes_first: bool) {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(json!([gamma_market_request_fixture()]));
+        let addr = start_mock_server(state.clone()).await;
+
+        let (mut client, mut rx) = create_test_data_client_with_config(
+            addr,
+            PolymarketDataClientConfig {
+                resolve_poll_enabled: false,
+                ..Default::default()
+            },
+        );
+
+        client.connect().await.unwrap();
+        prime_instrument(&client, &mut rx, yes_instrument_id()).await;
+        if quotes_first {
+            client
+                .subscribe_quotes(SubscribeQuotes::new(
+                    yes_instrument_id(),
+                    Some(*POLYMARKET_CLIENT_ID),
+                    Some(*POLYMARKET_VENUE),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+            wait_for_market_payload_count(&state, 1, false, Duration::from_secs(3)).await;
+        }
+
+        subscribe_book(&mut client, yes_instrument_id());
+
+        let expected = if quotes_first { 3 } else { 1 };
+        wait_for_market_payload_count(&state, expected, false, Duration::from_secs(3)).await;
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        let payloads = state.market_payloads.lock().await.clone();
+        client.disconnect().await.unwrap();
+        let operations = payloads
+            .iter()
+            .map(|p| p["operation"].as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            operations,
+            if quotes_first {
+                vec![None, Some("unsubscribe"), Some("subscribe")]
+            } else {
+                vec![None]
+            }
+        );
+        assert!(
+            payloads
+                .iter()
+                .all(|p| p["assets_ids"] == json!([TEST_TOKEN_ID_YES]))
+        );
+    }
+
+    #[rstest]
+    #[case::before_fetch(false)]
+    #[case::during_fetch(true)]
+    #[tokio::test]
+    async fn resolution_subscription_resumes_after_reconnect(#[case] during_fetch: bool) {
+        let release = Arc::new(tokio::sync::Semaphore::new(0));
+        let state = TestServerState::default();
+        let mut resolved = gamma_market_request_fixture();
+        resolved["closed"] = true.into();
+        resolved["outcomePrices"] = json!("[\"1\",\"0\"]");
+
+        if during_fetch {
+            state.gamma_replies.lock().await.push_back((
+                json!([gamma_market_request_fixture()]),
+                Some(release.clone()),
+            ));
+        }
+
+        state
+            .gamma_replies
+            .lock()
+            .await
+            .push_back((json!([resolved]), None));
+        let addr = start_mock_server(state.clone()).await;
+
+        let (mut client, mut rx) = create_test_data_client_with_config(
+            addr,
+            PolymarketDataClientConfig {
+                resolve_poll_enabled: false,
+                auto_load_debounce_ms: if during_fetch { 0 } else { 10_000 },
+                ..Default::default()
+            },
+        );
+
+        client.connect().await.unwrap();
+        client
+            .subscribe_instrument_status(SubscribeInstrumentStatus::new(
+                yes_instrument_id(),
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        client
+            .subscribe_instrument_close(SubscribeInstrumentClose::new(
+                yes_instrument_id(),
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+
+        if during_fetch {
+            wait_until_async(
+                || async { state.gamma_request_count.load(Ordering::Relaxed) == 1 },
+                Duration::from_secs(3),
+            )
+            .await;
+        }
+
+        client.disconnect().await.unwrap();
+        release.add_permits(1);
+        // Retained intents resume with the original debounce after reconnect
+        client.connect().await.unwrap();
+        let mut events = Vec::new();
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let event = rx.recv().await.unwrap();
+                let closes = matches!(event, DataEvent::Data(NautilusData::InstrumentClose(_)));
+                events.push(event);
+
+                if closes {
+                    break;
+                }
+            }
+        })
+        .await
+        .unwrap();
+
+        client.disconnect().await.unwrap();
+        events.extend(std::iter::from_fn(|| rx.try_recv().ok()));
+
+        let statuses = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::InstrumentStatus(status)) => Some(status),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let closes = events
+            .iter()
+            .filter_map(|event| match event {
+                DataEvent::Data(NautilusData::InstrumentClose(close)) => Some(close),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        assert_eq!(statuses.len(), 1);
+        assert_eq!(statuses[0].instrument_id, yes_instrument_id());
+        assert_eq!(statuses[0].action, MarketStatusAction::Close);
+        assert_eq!(closes.len(), 1);
+        assert_eq!(closes[0].instrument_id, yes_instrument_id());
+        assert_eq!(
+            closes[0].close_price.as_decimal(),
+            rust_decimal::Decimal::ONE
+        );
+        assert_eq!(closes[0].close_type, InstrumentCloseType::ContractExpired);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn pool_assigns_distinct_endpoint_sinks_and_handles_before_connect() {
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await = Some(json!([gamma_market_request_fixture()]));
+        let addr = start_mock_server(state).await;
+        let (system_tx, mut system_rx) = tokio::sync::mpsc::unbounded_channel();
+        replace_system_event_sender(system_tx);
+        let registry = SocketReconnectRegistry::default();
+
+        let (mut client, mut rx) = registry.scope(|| {
+            create_test_data_client_with_config(
+                addr,
+                PolymarketDataClientConfig {
+                    subscribe_new_markets: true,
+                    ws_max_subscriptions: 1,
+                    resolve_poll_enabled: false,
+                    ..Default::default()
+                },
+            )
+        });
+
+        client.connect().await.unwrap();
+        let market = gamma_market_request_fixture();
+        let tokens: Vec<String> = from_str(market["clobTokenIds"].as_str().unwrap()).unwrap();
+        for token in tokens {
+            let instrument_id =
+                InstrumentId::from(format!("{TEST_CONDITION_ID}-{token}.POLYMARKET").as_str());
+            prime_instrument(&client, &mut rx, instrument_id).await;
+            client
+                .subscribe_quotes(SubscribeQuotes::new(
+                    instrument_id,
+                    Some(*POLYMARKET_CLIENT_ID),
+                    Some(*POLYMARKET_VENUE),
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    None,
+                    None,
+                ))
+                .unwrap();
+        }
+
+        let mut connected = Vec::new();
+        while connected.len() < 2 {
+            let event = tokio::time::timeout(Duration::from_secs(2), system_rx.recv())
+                .await
+                .expect("wait for socket state event")
+                .expect("system event channel closed");
+            let SystemEvent::SocketState(change) = event;
+            if change.state == SocketState::Connected {
+                connected.push(change.endpoint);
+            }
+        }
+
+        connected.sort_unstable();
+
+        assert_eq!(
+            connected,
+            vec![
+                ustr::Ustr::from("polymarket-market-streams"),
+                ustr::Ustr::from("polymarket-market-streams-1"),
+            ],
+        );
+        let client_id = *POLYMARKET_CLIENT_ID;
+        let primary = registry
+            .handle(client_id, ustr::Ustr::from("polymarket-market-streams"))
+            .expect("primary reconnect handle should be registered");
+        let secondary = registry
+            .handle(client_id, ustr::Ustr::from("polymarket-market-streams-1"))
+            .expect("secondary reconnect handle should be registered");
+        assert_eq!(
+            primary.request_reconnect(),
+            SocketReconnectRequestOutcome::Accepted,
+        );
+        let event = system_rx
+            .try_recv()
+            .expect("selected shard should report reconnect state");
+        let SystemEvent::SocketState(change) = event;
+        assert_eq!(change.client_id, client_id);
+        assert_eq!(
+            change.endpoint,
+            ustr::Ustr::from("polymarket-market-streams")
+        );
+        assert_eq!(change.state, SocketState::Disconnected);
+        assert_eq!(
+            secondary.request_reconnect(),
+            SocketReconnectRequestOutcome::Accepted,
+        );
+
+        client.disconnect().await.unwrap();
+        assert!(
+            registry
+                .handle(client_id, ustr::Ustr::from("polymarket-market-streams"))
+                .is_none()
+        );
+        assert!(
+            registry
+                .handle(client_id, ustr::Ustr::from("polymarket-market-streams-1"))
+                .is_none()
+        );
+    }
+
+    fn subscribe_book(client: &mut PolymarketDataClient, instrument_id: InstrumentId) {
+        client
+            .subscribe_book_deltas(SubscribeBookDeltas::new(
+                instrument_id,
+                BookType::L2_MBP,
+                Some(*POLYMARKET_CLIENT_ID),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                true,
+                None,
+                None,
+            ))
+            .unwrap();
+    }
+
+    async fn prime_instrument(
+        client: &PolymarketDataClient,
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<DataEvent>,
+        instrument_id: InstrumentId,
+    ) {
+        let request_id = UUID4::new();
+        client
+            .request_instrument(RequestInstrument::new(
+                instrument_id,
+                None,
+                None,
+                Some(*POLYMARKET_CLIENT_ID),
+                request_id,
+                UnixNanos::default(),
+                None,
+            ))
+            .unwrap();
+        let events =
+            collect_data_events_until_response(rx, request_id, Duration::from_secs(5)).await;
+        assert!(events.iter().any(|event| matches!(event, DataEvent::Data(NautilusData::Instrument(instrument)) if instrument.id() == instrument_id)));
+    }
 }

@@ -15,6 +15,10 @@
 
 //! Factory functions for creating Polymarket clients and components.
 
+#[cfg(test)]
+#[path = "../tests/integration/harness/proxy.rs"]
+pub(crate) mod proxy;
+
 use std::{any::Any, cell::RefCell, rc::Rc, sync::Arc};
 
 use nautilus_common::{
@@ -29,8 +33,6 @@ use nautilus_model::{
     identifiers::{ClientId, TraderId},
 };
 use nautilus_network::retry::RetryConfig;
-#[cfg(test)]
-use nautilus_network::websocket::proxy::ProxyUrl;
 
 use crate::{
     common::consts::{POLYMARKET, POLYMARKET_VENUE},
@@ -224,52 +226,6 @@ impl ExecutionClientFactory for PolymarketExecutionClientFactory {
 }
 
 #[cfg(test)]
-pub(crate) async fn spawn_rejecting_proxy(
-    connection_count: usize,
-) -> (
-    std::net::SocketAddr,
-    std::sync::Arc<tokio::sync::Mutex<Vec<String>>>,
-) {
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let addr = listener.local_addr().unwrap();
-    let requests = std::sync::Arc::new(tokio::sync::Mutex::new(Vec::new()));
-    let captured = std::sync::Arc::clone(&requests);
-
-    tokio::spawn(async move {
-        for _ in 0..connection_count {
-            let (mut stream, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            let mut chunk = [0u8; 1024];
-            loop {
-                let read = stream.read(&mut chunk).await.unwrap();
-                if read == 0 {
-                    break;
-                }
-                request.extend_from_slice(&chunk[..read]);
-                if request.windows(4).any(|window| window == b"\r\n\r\n") {
-                    break;
-                }
-            }
-            // Keep the request log locked until the client consumes the CONNECT rejection
-            let mut captured = captured.lock().await;
-            captured.push(String::from_utf8(request).unwrap());
-            stream
-                .write_all(
-                    b"HTTP/1.1 407 Proxy Authentication Required\r\nContent-Length: 0\r\n\r\n",
-                )
-                .await
-                .unwrap();
-
-            let _ = stream.read(&mut chunk).await;
-        }
-    });
-
-    (addr, requests)
-}
-
-#[cfg(test)]
 mod tests {
     use std::{cell::RefCell, rc::Rc, time::Duration};
 
@@ -285,12 +241,8 @@ mod tests {
     };
     use rstest::rstest;
 
-    use super::*;
-    use crate::{
-        common::credential::Credential,
-        config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig},
-        http::clob::PolymarketClobHttpClient,
-    };
+    use super::{proxy::spawn_rejecting_proxy, *};
+    use crate::config::{PolymarketDataClientConfig, PolymarketExecutionClientConfig};
 
     #[derive(Debug)]
     struct WrongConfig;
@@ -516,54 +468,6 @@ mod tests {
             assert!(!error.contains(&BASE64.encode(SECRET)));
             assert!(!error.contains(&expected_auth));
         }
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn authenticated_clob_http_client_uses_configured_proxy() {
-        const USERNAME: &str = "proxytest";
-        const SECRET: &str = "authenticated-clob-proxy-secret";
-        let (proxy_addr, requests) = spawn_rejecting_proxy(1).await;
-        let proxy_url =
-            ProxyUrl::parse(format!("http://{USERNAME}:{SECRET}@{proxy_addr}")).unwrap();
-        let credential = Credential::new(
-            "fixture-key".into(),
-            "Zml4dHVyZQ==".into(),
-            "fixture-passphrase".into(),
-        )
-        .unwrap();
-        let clob_auth = PolymarketClobHttpClient::new_with_proxy(
-            credential,
-            "0x0000000000000000000000000000000000000001".to_string(),
-            Some("https://clob-auth.fixture".to_string()),
-            2,
-            Some(proxy_url),
-        )
-        .unwrap();
-
-        let error = clob_auth
-            .get_book("auth-token")
-            .await
-            .unwrap_err()
-            .to_string();
-        let requests = requests.lock().await;
-        let request = requests.first().expect("captured CONNECT request");
-        let request_line = request.lines().next().unwrap();
-        let expected_auth = format!("Basic {}", BASE64.encode(format!("{USERNAME}:{SECRET}")));
-        let auth = request
-            .lines()
-            .find_map(|line| {
-                let (name, value) = line.split_once(':')?;
-                name.eq_ignore_ascii_case("proxy-authorization")
-                    .then_some(value.trim())
-            })
-            .expect("Proxy-Authorization header");
-
-        assert_eq!(request_line, "CONNECT clob-auth.fixture:443 HTTP/1.1");
-        assert_eq!(auth, expected_auth);
-        assert!(!error.contains(SECRET));
-        assert!(!error.contains(&BASE64.encode(SECRET)));
-        assert!(!error.contains(&expected_auth));
     }
 
     #[rstest]

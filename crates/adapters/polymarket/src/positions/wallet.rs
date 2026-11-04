@@ -300,7 +300,6 @@ struct RpcResponse {
 
 #[cfg(test)]
 mod tests {
-    use axum::{Router, http::StatusCode, routing::post};
     use rstest::rstest;
 
     use super::*;
@@ -318,84 +317,6 @@ mod tests {
             format!("{verifier:?}"),
             "WalletVerifier { rpc_url: \"<redacted>\", .. }"
         );
-    }
-
-    #[tokio::test]
-    async fn test_rpc_url_is_redacted_from_transport_errors() {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-
-        let server = tokio::spawn(async move {
-            let (stream, _) = listener.accept().await.unwrap();
-            drop(stream);
-        });
-
-        let mut verifier = WalletVerifier::new(2, None).unwrap();
-        verifier.set_rpc_url(format!(
-            "http://{addr}/dummy-path-secret?key=dummy-query-secret"
-        ));
-        let error = verifier.rpc("eth_getCode", json!([])).await.unwrap_err();
-        server.await.unwrap();
-        assert!(matches!(error, Error::Transport(_)));
-        let rendered = format!("{error}; {error:?}");
-        assert!(!rendered.contains(&addr.to_string()));
-        assert!(!rendered.contains("dummy-path-secret"));
-        assert!(!rendered.contains("dummy-query-secret"));
-    }
-
-    #[rstest]
-    #[case(400, false)]
-    #[case(429, false)]
-    #[case(500, false)]
-    #[case(200, true)]
-    #[tokio::test]
-    async fn test_rpc_response_errors_do_not_expose_provider_text(
-        #[case] status: u16,
-        #[case] malformed: bool,
-    ) {
-        let secret = "https://rpc.example/dummy-path-secret?key=dummy-query-secret";
-        let body = if malformed {
-            json!({"jsonrpc": "2.0", "id": secret, "result": "0x"}).to_string()
-        } else {
-            secret.to_string()
-        };
-        let app = Router::new().route(
-            "/",
-            post(move || async move { (StatusCode::from_u16(status).unwrap(), body) }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let mut verifier = WalletVerifier::new(2, None).unwrap();
-        verifier.set_rpc_url(format!("http://{addr}/"));
-
-        let error = verifier.rpc("eth_getCode", json!([])).await.unwrap_err();
-        server.abort();
-        let rendered = format!("{error}; {error:?}");
-
-        assert!(!rendered.contains("dummy-path-secret"));
-        assert!(!rendered.contains("dummy-query-secret"));
-        if malformed {
-            assert!(
-                matches!(error, Error::Decode(ref message) if message == "Polygon RPC returned an invalid response")
-            );
-        } else {
-            match &error {
-                Error::Http {
-                    status: actual,
-                    message,
-                } => {
-                    assert_eq!(*actual, status);
-                    assert_eq!(message, "Polygon RPC request failed");
-                }
-                Error::RateLimit { message, .. } => {
-                    assert_eq!(status, 429);
-                    assert_eq!(message, "Polygon RPC request failed");
-                }
-                other => panic!("Unexpected error: {other:?}"),
-            }
-            assert_eq!(error.is_retryable(), status == 429 || status == 500);
-        }
     }
 
     #[tokio::test]

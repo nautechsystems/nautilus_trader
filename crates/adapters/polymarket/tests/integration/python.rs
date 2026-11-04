@@ -338,3 +338,135 @@ fn fee_instrument() -> InstrumentAny {
     let def = parse_gamma_market(&market).unwrap().remove(0);
     create_instrument_from_def(&def, UnixNanos::default()).unwrap()
 }
+
+mod fee_loader {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    };
+
+    use axum::{Router, routing::get};
+    use pyo3::{
+        Python,
+        ffi::c_str,
+        types::{PyAnyMethods, PyDict, PyDictMethods, PyModule},
+    };
+    use rstest::rstest;
+    use serde_json::{Value, json};
+
+    #[rstest]
+    #[case(false, "0")]
+    #[case(true, "0")]
+    #[case(true, "0.04")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn build_loader_uses_gamma_taker_rate_without_clob_fee_rate(
+        #[case] missing_schedule: bool,
+        #[case] expected_rate: &str,
+    ) {
+        Python::initialize();
+        let calls = Arc::new(AtomicUsize::new(0));
+        let asserted = calls.clone();
+        let mut market: Value =
+            serde_json::from_str(include_str!("../../test_data/gamma_market_fee_crypto.json"))
+                .unwrap();
+        market["conditionId"] = "0xcondition".into();
+        market["clobTokenIds"] = json!("[\"101\",\"202\"]");
+        market["feeSchedule"]["rate"] = serde_json::from_str(expected_rate).unwrap();
+        let recovery = json!({"markets": [market.clone()]}).to_string();
+
+        if missing_schedule {
+            market["feeSchedule"] = Value::Null;
+        }
+
+        let initial = serde_json::to_string(&market).unwrap();
+        let mut details: Value =
+            serde_json::from_str(include_str!("../../test_data/clob_market_response.json"))
+                .unwrap();
+        details["condition_id"] = "0xcondition".into();
+        details["tokens"] = json!([
+            {"token_id": "101", "outcome": "Yes", "winner": true},
+            {"token_id": "202", "outcome": "No", "winner": false}
+        ]);
+        let details = details.to_string();
+
+        let router = Router::new()
+            .route(
+                "/markets/slug/test-market",
+                get(move || {
+                    let initial = initial.clone();
+                    async move { initial }
+                }),
+            )
+            .route(
+                "/markets/keyset",
+                get(move || {
+                    let recovery = recovery.clone();
+                    async move { recovery }
+                }),
+            )
+            .route(
+                "/markets/0xcondition",
+                get(move || {
+                    let details = details.clone();
+                    async move { details }
+                }),
+            )
+            .route(
+                "/fee-rate",
+                get(move || {
+                    let calls = calls.clone();
+                    async move {
+                        calls.fetch_add(1, Ordering::SeqCst);
+                        include_str!("../../test_data/clob_fee_rate_response_nonzero.json")
+                    }
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        Python::attach(|py| {
+            let module = PyModule::new(py, "polymarket").unwrap();
+            nautilus_polymarket::python::polymarket(py, &module).unwrap();
+            let globals = PyDict::new(py);
+            globals
+                .set_item(
+                    "PolymarketDataLoader",
+                    module.getattr("PolymarketDataLoader").unwrap(),
+                )
+                .unwrap();
+            globals
+                .set_item("base_url", format!("http://{address}"))
+                .unwrap();
+            globals.set_item("expected_rate", expected_rate).unwrap();
+            py.run(
+                c_str!(
+                    r#"
+import asyncio
+from decimal import Decimal
+
+async def check_loader():
+    loader = await PolymarketDataLoader.from_market_slug(
+        "test-market", base_url_http=base_url, base_url_gamma=base_url,
+        base_url_data_api=base_url,
+    )
+    assert loader.token_id == "101"
+    schedule = loader.instrument.info["fee_schedule"]
+    assert Decimal(str(schedule["rate"])) == Decimal(expected_rate)
+    assert Decimal(str(schedule["exponent"])) == Decimal("1")
+    assert schedule["takerOnly"] is True
+    assert Decimal(str(schedule["rebateRate"])) == Decimal("0.2")
+
+asyncio.run(check_loader())
+"#
+                ),
+                Some(&globals),
+                None,
+            )
+            .unwrap();
+        });
+
+        server.abort();
+        assert_eq!(asserted.load(Ordering::SeqCst), 0);
+    }
+}

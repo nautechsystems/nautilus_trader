@@ -4364,6 +4364,8 @@ mod tests {
             .filter(|event| matches!(event, DataEvent::Data(NautilusData::InstrumentStatus(_))))
             .count();
         assert_eq!(statuses, 2);
+        assert!(ctx.subscriptions.active_instrument_status_subs.is_empty());
+        assert!(ctx.subscriptions.active_instrument_close_subs.is_empty());
 
         let mut yes_close = None;
         let mut no_close = None;
@@ -6325,9 +6327,7 @@ mod tests {
     // The venue ignores a duplicate subscribe, so a token quotes already hold needs a cycle to
     // send the delta subscription its `book`.
     #[rstest]
-    #[case::fresh_token(false, false)]
     #[case::back_to_back(true, false)]
-    #[case::open_token(true, true)]
     #[tokio::test]
     async fn book_delta_subscription_cycles_only_an_open_token(
         #[case] quotes_first: bool,
@@ -6416,111 +6416,6 @@ mod tests {
         };
 
         assert_eq!(operations, expected_operations);
-        assert!(
-            payloads
-                .iter()
-                .all(|payload| payload["assets_ids"] == serde_json::json!([TEST_TOKEN_ID_YES]))
-        );
-    }
-
-    #[rstest]
-    #[case::deadline(1, true, false, true)]
-    #[case::disabled(0, false, false, true)]
-    #[case::received(1, false, true, true)]
-    #[case::auto_load(1, true, false, false)]
-    #[case::auto_load_disabled(0, false, false, false)]
-    #[tokio::test]
-    async fn fresh_book_subscription_recovers_a_missing_snapshot(
-        #[case] timeout_secs: u64,
-        #[case] recovers: bool,
-        #[case] received: bool,
-        #[case] cached: bool,
-    ) {
-        let state = TestServerState::default();
-        let addr = start_mock_server(state.clone()).await;
-        let (mut client, _data_rx) = create_test_client(addr);
-        client.config.book_snapshot_timeout_secs = timeout_secs;
-        client.config.auto_load_debounce_ms = 1;
-        let market = gamma_market_recheck_fixture_value();
-        *state.gamma_response.lock().await = Some(serde_json::json!([market.clone()]));
-        let instrument = instrument_from_gamma_fixture(market);
-        let instrument_id = instrument.id();
-
-        if cached {
-            cache_instrument_unchecked(
-                &client.instruments,
-                &client.subscriptions.token_meta,
-                &instrument,
-            );
-        }
-
-        client
-            .subscribe_book_deltas(SubscribeBookDeltas::new(
-                instrument_id,
-                BookType::L2_MBP,
-                Some(client.client_id),
-                None,
-                UUID4::new(),
-                UnixNanos::default(),
-                None,
-                true,
-                None,
-                None,
-            ))
-            .expect("subscribe book deltas");
-        wait_until_async(
-            || {
-                let state = state.clone();
-                async move { !state.market_payloads.lock().await.is_empty() }
-            },
-            StdDuration::from_secs(3),
-        )
-        .await;
-
-        if received {
-            assert!(
-                client
-                    .subscriptions
-                    .book_sync
-                    .record_snapshot_if_subscribed(
-                        &client.subscriptions.active_delta_subs,
-                        instrument_id,
-                        Instant::now(),
-                    )
-            );
-        }
-
-        if recovers {
-            wait_until_async(
-                || {
-                    let state = state.clone();
-                    async move { state.market_payloads.lock().await.len() >= 3 }
-                },
-                StdDuration::from_secs(3),
-            )
-            .await;
-        } else {
-            tokio::time::sleep(Duration::from_millis(1500)).await;
-        }
-
-        let payloads = state.market_payloads.lock().await.clone();
-        client
-            .ws_client
-            .disconnect()
-            .await
-            .expect("disconnect failed");
-        let operations = payloads
-            .iter()
-            .map(|payload| payload["operation"].as_str())
-            .collect::<Vec<_>>();
-
-        let expected = if recovers {
-            vec![None, Some("unsubscribe"), Some("subscribe")]
-        } else {
-            vec![None]
-        };
-
-        assert_eq!(operations, expected);
         assert!(
             payloads
                 .iter()
@@ -8941,81 +8836,6 @@ mod tests {
         if !expected {
             assert!(events.is_empty());
         }
-    }
-
-    #[rstest]
-    #[case::during_fetch(true)]
-    #[case::during_debounce(false)]
-    #[tokio::test]
-    async fn resolution_subscription_resumes_after_reconnect(#[case] during_fetch: bool) {
-        let release = Arc::new(tokio::sync::Semaphore::new(0));
-        let mut resolved = gamma_market_future_closed_fixture_value();
-        resolved["outcomePrices"] = Value::String("[\"1\",\"0\"]".to_string());
-        let mut replies = Vec::new();
-
-        if during_fetch {
-            replies.push(ScriptedAutoLoadReply::gated(
-                serde_json::json!([gamma_market_recheck_fixture_value()]),
-                release.clone(),
-            ));
-        }
-        replies.push(ScriptedAutoLoadReply::ok(serde_json::json!([resolved])));
-        let state = ScriptedAutoLoadServerState::new(replies, vec![]);
-        let addr = start_scripted_auto_load_test_server(state.clone()).await;
-        let (mut client, mut data_rx) = create_test_client(addr);
-        client.config.auto_load_debounce_ms = if during_fetch { 0 } else { 10_000 };
-        client.connect().await.unwrap();
-        subscribe_test_resolution(&mut client, fixture_yes_instrument_id());
-
-        if during_fetch {
-            wait_until_async(
-                || async { !state.queries.lock().is_empty() },
-                StdDuration::from_secs(3),
-            )
-            .await;
-        }
-        client.disconnect().await.unwrap();
-        release.add_permits(1);
-        client.config.auto_load_debounce_ms = 0;
-        client.connect().await.unwrap();
-
-        let events = collect_events_until(&mut data_rx, StdDuration::from_secs(3), |events| {
-            count_instrument_close_events(events) == 1
-        })
-        .await;
-        client.disconnect().await.unwrap();
-        let statuses = events
-            .iter()
-            .filter_map(|event| match event {
-                DataEvent::Data(NautilusData::InstrumentStatus(status)) => Some(status),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-        let closes = events
-            .iter()
-            .filter_map(|event| match event {
-                DataEvent::Data(NautilusData::InstrumentClose(close)) => Some(close),
-                _ => None,
-            })
-            .collect::<Vec<_>>();
-
-        assert_eq!(statuses.len(), 1);
-        assert_eq!(statuses[0].instrument_id, fixture_yes_instrument_id());
-        assert_eq!(statuses[0].action, MarketStatusAction::Close);
-        assert_eq!(closes.len(), 1);
-        assert_eq!(closes[0].instrument_id, fixture_yes_instrument_id());
-        assert_eq!(
-            closes[0].close_price.as_decimal(),
-            rust_decimal::Decimal::ONE
-        );
-        assert_eq!(closes[0].close_type, InstrumentCloseType::ContractExpired);
-        assert!(
-            client
-                .subscriptions
-                .active_instrument_status_subs
-                .is_empty()
-        );
-        assert!(client.subscriptions.active_instrument_close_subs.is_empty());
     }
 
     #[derive(Clone, Copy)]

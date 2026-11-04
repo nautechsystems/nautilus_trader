@@ -1595,3 +1595,96 @@ fn market_v2_json(module: u8) -> Value {
         {"token_id":yes.to_string(),"outcome":"Yes","winner":false}
     ]})
 }
+
+#[tokio::test]
+async fn test_rpc_url_is_redacted_from_transport_errors() {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        drop(stream);
+    });
+
+    let state = TestServerState::default();
+    let metadata_addr = start_mock_server(state.clone()).await;
+    let client = position_client(&metadata_addr).with_rpc_url(format!(
+        "http://{addr}/dummy-path-secret?key=dummy-query-secret"
+    ));
+    let error = client
+        .split_position(CONDITION_ID, dec!(1))
+        .await
+        .unwrap_err();
+    assert_eq!(state.submit_count.load(Ordering::SeqCst), 0);
+    assert_eq!(*state.last_submit.lock().await, None);
+    server.await.unwrap();
+    assert!(matches!(error, Error::Transport(_)));
+    let rendered = format!("{error}; {error:?}");
+    assert!(!rendered.contains(&addr.to_string()));
+    assert!(!rendered.contains("dummy-path-secret"));
+    assert!(!rendered.contains("dummy-query-secret"));
+}
+
+#[rstest]
+#[case(400, false)]
+#[case(429, false)]
+#[case(500, false)]
+#[case(200, true)]
+#[tokio::test]
+async fn test_rpc_response_errors_do_not_expose_provider_text(
+    #[case] status: u16,
+    #[case] malformed: bool,
+) {
+    let secret = "https://rpc.example/dummy-path-secret?key=dummy-query-secret";
+
+    let body = if malformed {
+        json!({"jsonrpc": "2.0", "id": secret, "result": "0x"}).to_string()
+    } else {
+        secret.to_string()
+    };
+
+    let app = Router::new().route(
+        "/",
+        post(move || async move { (StatusCode::from_u16(status).unwrap(), body) }),
+    );
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let state = TestServerState::default();
+    let metadata_addr = start_mock_server(state.clone()).await;
+    let client = position_client(&metadata_addr).with_rpc_url(format!("http://{addr}/"));
+
+    let error = client
+        .split_position(CONDITION_ID, dec!(1))
+        .await
+        .unwrap_err();
+    assert_eq!(state.submit_count.load(Ordering::SeqCst), 0);
+    assert_eq!(*state.last_submit.lock().await, None);
+    server.abort();
+    let rendered = format!("{error}; {error:?}");
+
+    assert!(!rendered.contains("dummy-path-secret"));
+    assert!(!rendered.contains("dummy-query-secret"));
+
+    if malformed {
+        assert!(
+            matches!(error, Error::Decode(ref message) if message == "Polygon RPC returned an invalid response")
+        );
+    } else {
+        match &error {
+            Error::Http {
+                status: actual,
+                message,
+            } => {
+                assert_eq!(*actual, status);
+                assert_eq!(message, "Polygon RPC request failed");
+            }
+            Error::RateLimit { message, .. } => {
+                assert_eq!(status, 429);
+                assert_eq!(message, "Polygon RPC request failed");
+            }
+            other => panic!("Unexpected error: {other:?}"),
+        }
+
+        assert_eq!(error.is_retryable(), status == 429 || status == 500);
+    }
+}

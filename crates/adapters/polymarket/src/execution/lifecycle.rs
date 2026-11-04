@@ -1892,7 +1892,7 @@ mod tests {
             },
             state::LegApplication,
         },
-        factories::spawn_rejecting_proxy,
+        factories::proxy::spawn_rejecting_proxy,
     };
 
     const TEST_PRIVATE_KEY: &str =
