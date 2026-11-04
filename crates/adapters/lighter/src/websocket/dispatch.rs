@@ -877,81 +877,61 @@ struct PositionSnapshot {
 
 /// Per-client WebSocket dispatch state.
 ///
-/// Threaded into the consumption loop and the order-action methods; cloned
-/// freely thanks to interior `Arc` sharing on each field.
+/// Clones share state between the consumption loop and order-action methods
+/// through per-field `Arc`s.
+///
+/// # Account State
+///
+/// Account and position queries use WebSocket snapshots because Lighter has no
+/// equivalent REST snapshots. Connection readiness waits for every account stream's
+/// first frame.
+///
+/// - **Snapshot consistency**: Position reports and coverage share one lock to keep
+///   reconciliation from combining data from different frames.
+/// - **Query scope**: Mass-status queries visit account-active markets to avoid a
+///   full-market REST quota bottleneck.
+///
+/// # Order Lifecycle
+///
+/// - **Identity updates**: Create identity replacement and generation-checked
+///   sequencer-rejection cleanup share a lock.
+/// - **Pending actions**: Venue frames and reconciliation reports cannot bypass
+///   a pending action's confirming event or rejection.
+/// - **Shape changes**: Snapshots distinguish modifications from venue echoes,
+///   reconnect replay, and partial-fill updates. `OrderAccepted` seeds the snapshot;
+///   `OrderUpdated` refreshes it.
+/// - **Response attribution**: Pending submissions retain attribution when sendTx
+///   errors lack correlation fields.
+///
+/// # Replay Protection
+///
+/// - **Retired identities**: Late trade frames and reconnect replay retain attribution.
+///   Client indices remain reserved while their retired entries are retained.
+/// - **Fills**: Trade deduplication spans live frames, reconnect replay, and HTTP
+///   reconciliation to prevent duplicate fills.
+/// - **Triggers**: Trigger deduplication suppresses repeated `Ready` frames after
+///   an order triggers.
 #[derive(Debug, Clone)]
 pub(crate) struct WsDispatchState {
-    /// Maps the venue-side `client_order_index` (i64) we derive at submit
-    /// time back to the originating Nautilus [`ClientOrderId`]. The venue
-    /// echoes the index on `account_*` order frames; the consumption loop
-    /// uses this map to substitute the original cloid before forwarding.
     pub(crate) cloid_map: Arc<DashMap<i64, ClientOrderId>>,
-    /// Terminal identity retained for late account-trade frames and reconnect
-    /// replay. Active indices are never reused while their retired entry is
-    /// inside this bounded process replay horizon.
     pub(crate) retired_orders: Arc<RetiredOrderCache>,
-    /// Maps Nautilus [`ClientOrderId`] to the venue-assigned
-    /// [`VenueOrderId`]. Populated by the consumption loop on the first
-    /// `OrderStatusReport` and consumed by `cancel_order` / `modify_order`.
     pub(crate) venue_id_map: Arc<DashMap<ClientOrderId, VenueOrderId>>,
-    /// Optimistic nonce allocator keyed by `(account_index, api_key_index)`.
     pub(crate) nonce_manager: Arc<NonceManager>,
-    /// Last [`AccountState`] received from the WebSocket account stream,
-    /// used to back `query_account` since the venue does not currently
-    /// expose a REST account snapshot endpoint.
     pub(crate) last_account_state: Arc<Mutex<Option<AccountState>>>,
-    /// Set of account-active `market_index` values surfaced by account
-    /// streams or reconciliation reports. Mass-status reconciliation
-    /// iterates over this set because Lighter's `accountActiveOrders` is
-    /// per-market and the venue's REST quota would make a full-market
-    /// fan-out prohibitively slow.
     pub(crate) active_markets: Arc<DashSet<i64>>,
-    /// WS-driven position reports and their coverage state. Lighter has no REST
-    /// equivalent, so both values share one lock to keep reconciliation from
-    /// pairing reports from one frame with completeness from another.
     position_snapshot: Arc<Mutex<PositionSnapshot>>,
-    /// Identity context for orders this client submitted. Keyed on the
-    /// originating [`ClientOrderId`]; populated by the execution client at
-    /// submit time, consumed by the consumption loop to decide whether an
-    /// inbound venue frame should produce a typed `OrderEventAny` or fall
-    /// back to a report for an externally-managed order.
     pub(crate) order_identities: Arc<DashMap<ClientOrderId, OrderIdentity>>,
     order_restorations: Arc<DashMap<VenueOrderId, OrderAny>>,
-    /// Serializes create identity replacement against generation-checked
-    /// sequencer-rejection cleanup.
     create_registry: Arc<Mutex<()>>,
-    /// Trade ids already routed to `OrderFilled` / `FillReport`. The venue
-    /// can re-emit the same `account_all_trades` payload across reconnects
-    /// and HTTP reconciliation seeds this bounded source-aware cache so a
-    /// later live replay cannot double-book a reported fill.
     pub(crate) seen_trade_ids: Arc<TradeDedupCache>,
-    /// Cloids for which `OrderTriggered` has already been emitted. The
-    /// venue keeps surfacing `trigger_status = Ready` on every subsequent
-    /// `Open` frame for a conditional order once the trigger fires; the
-    /// dedup keeps the engine from receiving phantom `Triggered` repeats.
     pub(crate) triggered_emitted: Arc<DashSet<ClientOrderId>>,
-    /// Last known order-shape snapshot per tracked cloid. The consumption
-    /// loop diffs incoming `Open` frames against this map to distinguish
-    /// a real modify (qty / price / trigger changed) from a venue echo
-    /// (snapshot, reconnect replay, partial-fill update). The snapshot
-    /// is initialized on the first emitted `OrderAccepted` and refreshed
-    /// on every emitted `OrderUpdated`.
     pub(crate) order_snapshots: Arc<DashMap<ClientOrderId, OrderShapeSnapshot>>,
     pub(crate) order_events: Arc<Mutex<AHashMap<ClientOrderId, DeferredOrderEvents>>>,
     pub(crate) terminals_pending: Arc<Mutex<AHashMap<ClientOrderId, PendingTerminal>>>,
     pub(crate) terminals_recover: Arc<tokio::sync::Notify>,
     fill_sequence: Arc<AtomicU64>,
-    /// Local lifecycle action that a venue frame or reconciliation report
-    /// must not bypass before its confirming event or rejection arrives.
     pending_order_actions: Arc<DashMap<ClientOrderId, PendingOrderActionState>>,
-    /// FIFO queue of submits awaiting a venue response. The consumption loop
-    /// pops on every `SendTxAck` / `SendTxRejected` so it can attribute a
-    /// rejection back to the originating order (sendTx error frames carry no
-    /// correlation field). Single-account WS connection, so one global queue.
     pub(crate) pending_sendtx: Arc<Mutex<VecDeque<PendingSendTx>>>,
-    /// First-frame readiness flags handed to the WS feed handler so
-    /// `connect()` blocks until every account stream has produced a frame.
-    /// Cloned cheaply since the inner state is shared via `Arc`.
     pub(crate) account_streams_ready: Arc<AccountStreamsReady>,
 }
 

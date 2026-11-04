@@ -125,6 +125,7 @@ fn client_id() -> ClientId {
     ClientId::new("LIGHTER")
 }
 
+// Queued test frames are sent one per subscribe acknowledgement in FIFO order
 #[derive(Clone, Default)]
 struct TestServerState {
     connection_count: Arc<tokio::sync::Mutex<usize>>,
@@ -132,9 +133,7 @@ struct TestServerState {
     unsubscribes: Arc<tokio::sync::Mutex<Vec<Value>>>,
     unsubscribe_received: Arc<tokio::sync::Notify>,
     subscribe_errors: Arc<tokio::sync::Mutex<Vec<u64>>>,
-    /// Frames queued by tests, drained one per `subscribe` ack in FIFO order.
     push_after_subscribe: Arc<tokio::sync::Mutex<Vec<String>>>,
-    /// When set, the server closes the socket after sending the next subscribe ack.
     drop_after_next_subscribe: Arc<AtomicBool>,
     funding_cap: Arc<AtomicBool>,
     funding_calls: Arc<AtomicUsize>,

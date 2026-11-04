@@ -719,15 +719,13 @@ pub(crate) enum ParsedOrderEvent {
 /// [`crate::websocket::dispatch::WsDispatchState::order_snapshots`]. The parser
 /// uses the flags to pick the correct typed event without dispatch state
 /// lookups.
+///
+/// `shape_changed` compares quantity, price, and trigger price with the stored
+/// snapshot and is meaningful only after `OrderAccepted` has been emitted.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct OpenFrameContext {
-    /// `true` if an `OrderAccepted` has already been emitted for the cloid.
     pub(crate) accepted_already_emitted: bool,
-    /// `true` if an `OrderTriggered` has already been emitted for the cloid.
     pub(crate) triggered_already_emitted: bool,
-    /// `true` if (qty, price, trigger_price) differ from the last stored
-    /// snapshot. Computed by the caller; only meaningful when
-    /// `accepted_already_emitted` is `true`.
     pub(crate) shape_changed: bool,
 }
 
