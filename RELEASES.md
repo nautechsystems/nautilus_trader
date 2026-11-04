@@ -21,6 +21,7 @@ Released on TBD (UTC).
 - Added CoinAPI flat-file support for numeric book update codes
 - Added Deribit `load_ids` so a scoped node can omit other instruments during reconciliation
 - Added Deribit routed spot metadata and local order and market data capability checks
+- Added OKX Python contract filters, execution families, and spot margin configuration
 - Added Polymarket Protocol V2 market data, execution, account reporting, and resolution support
 - Added Polymarket Protocol V2 split, merge, and redemption support for Deposit Wallets
 
@@ -75,6 +76,12 @@ Released on TBD (UTC).
 - Changed Interactive Brokers futures IDs to two-digit years by default; use `futures_year_digits=1`, thanks @faysou
 - Changed Interactive Brokers futures-option IDs and underlyings to match `futures_year_digits`
 - Changed Interactive Brokers provider config literals; add `futures_year_digits: FuturesYearDigits::Two`
+- Changed OKX options to require non-blank families; set `instrument_families` before connecting
+- Changed OKX filtered `EVENTS` and derivatives to require separate clients
+- Changed OKX VIP4+ data configs to require complete API credentials
+- Changed OKX retry delays to require `0 < initial <= max` in configs and HTTP clients
+- Changed `OKXRawHttpClient` constructors to `anyhow::Result`; use downcasts for typed error handling
+- Changed OKX `use_mm_mass_cancel` to reject `true`; use ordinary cancellation for non-MMP orders
 - Changed OKX WebSocket batch order tuples; add `quote_quantity` after `reduce_only`
 - Changed Polymarket `AssetType` with `ConditionalV2`; update exhaustive matches
 - Changed Polymarket `build_limit_order` expiry to `Option<UnixNanos>`; pass `None` for no expiry
@@ -124,6 +131,7 @@ Released on TBD (UTC).
 - Fixed exchange-rate conversions failing on overflow despite a representable route or returning zero on underflow
 - Fixed Sockudo WebSocket timeouts overriding the client heartbeat and idle policy
 - Fixed false WebSocket heartbeat timeouts while receiving fragmented messages
+- Fixed startup reconciliation failing when execution clients publish recovered instruments
 - Fixed Architect AX clients failing to connect when `/whoami` omits onboarding and frozen states
 - Fixed Binance Futures initial margin underestimation (#5531), thanks for reporting @wangzengzhi
 - Fixed Binance startup reconciliation omitting closed orders from selected instruments
@@ -170,6 +178,15 @@ Released on TBD (UTC).
 - Fixed Lighter slippage overrides silently accepting invalid types and overflowing integers
 - Fixed Lighter public data startup failing on unused malformed credentials
 - Fixed Lighter execution config credential checks ignoring environment fallback
+- Fixed OKX VIP4+ book subscriptions failing without public WebSocket login
+- Fixed OKX HTTP retries ignoring `http_timeout_secs`
+- Fixed OKX rejected WebSocket logins waiting for the authentication timeout
+- Fixed OKX private updates being dropped when their instrument definitions are missing
+- Fixed OKX empty execution discovery failures omitting the selected scope from startup logs
+- Fixed OKX `MARGIN` selection using cash accounting and spot order trade mode
+- Fixed OKX event orders following derivative margin mode instead of using isolated mode
+- Fixed OKX execution discovery ignoring `contract_types`
+- Fixed OKX filtered execution missing active instruments and their WebSocket order identifiers
 - Fixed OKX order status reports accepting incomplete active coverage and discarding valid partial history
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects

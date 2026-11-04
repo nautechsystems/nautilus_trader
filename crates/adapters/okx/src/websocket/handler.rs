@@ -431,6 +431,7 @@ impl OKXWsFeedHandler {
                             }
                         }
                         OKXWsFrame::Error { arg, code, msg } => {
+                            self.handle_login_error(&code, &msg);
                             let arg = arg.or_else(|| subscription_arg_from_error_message(&msg));
                             if let Some(arg) = arg
                                 && self.handle_subscription_error(&arg, &code, &msg)
@@ -626,6 +627,29 @@ impl OKXWsFeedHandler {
                 }
                 false
             }
+        }
+    }
+
+    fn handle_login_error(&self, code: &str, msg: &str) {
+        if self.requires_auth
+            && !self.auth_tracker.is_authenticated()
+            && matches!(
+                code,
+                "60004"
+                    | "60005"
+                    | "60006"
+                    | "60007"
+                    | "60009"
+                    | "60023"
+                    | "60024"
+                    | "60026"
+                    | "60031"
+                    | "60032"
+                    | "63999"
+            )
+        {
+            self.auth_tracker
+                .fail(format!("OKX authentication error {code}: {msg}"));
         }
     }
 
@@ -2606,6 +2630,64 @@ mod tests {
         assert_eq!(data, *fixture["response"]["data"].as_array().unwrap());
         assert!(peer.handler.pending_messages.is_empty());
         assert!(peer.frames.try_recv().is_err());
+        peer.handler.inner.as_ref().unwrap().disconnect().await;
+        peer.server.abort();
+    }
+
+    #[rstest]
+    #[case::login("login_error", false, true)]
+    #[case::key("api_key_error", false, true)]
+    #[case::login_rate_limit("login_rate_limit", false, true)]
+    #[case::login_method("login_method_error", false, true)]
+    #[case::subscription("subscription_error", false, false)]
+    #[case::authenticated("api_key_error", true, false)]
+    #[tokio::test]
+    async fn authentication_error_frame_resolves_only_rejected_login(
+        #[case] fixture_key: &str,
+        #[case] authenticated: bool,
+        #[case] rejected: bool,
+    ) {
+        let mut peer = handler_peer().await;
+        peer.handler.requires_auth = true;
+        let mut pending = peer.handler.auth_tracker.begin();
+        if authenticated {
+            peer.handler.auth_tracker.succeed();
+            assert_eq!(pending.try_recv().unwrap(), Ok(()));
+        }
+
+        let fixture: Value =
+            serde_json::from_str(&load_test_json("ws_reconnect_queued_frames.json")).unwrap();
+        let (raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        peer.handler.raw_rx = raw_rx;
+        raw_tx
+            .send(Message::Text(fixture[fixture_key].to_string().into()))
+            .unwrap();
+
+        let message = peer.handler.next().await.unwrap();
+
+        let OKXWsMessage::Error(error) = message else {
+            panic!("expected venue error");
+        };
+
+        assert_eq!(error.code, fixture[fixture_key]["code"].as_str().unwrap());
+        assert_eq!(error.message, fixture[fixture_key]["msg"].as_str().unwrap());
+        assert_eq!(peer.handler.auth_tracker.is_authenticated(), authenticated);
+
+        if rejected {
+            assert_eq!(
+                pending.try_recv().unwrap(),
+                Err(format!(
+                    "OKX authentication error {}: {}",
+                    error.code, error.message
+                ))
+            );
+        } else if !authenticated {
+            assert!(matches!(
+                pending.try_recv(),
+                Err(tokio::sync::oneshot::error::TryRecvError::Empty)
+            ));
+        }
+
         peer.handler.inner.as_ref().unwrap().disconnect().await;
         peer.server.abort();
     }

@@ -162,7 +162,7 @@ impl ExecutionClientFactory for OKXExecutionClientFactory {
             )
         });
 
-        let account_type = if okx_config.use_spot_margin || has_derivatives {
+        let account_type = if okx_config.uses_spot_margin() || has_derivatives {
             AccountType::Margin
         } else {
             AccountType::Cash

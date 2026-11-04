@@ -273,3 +273,60 @@ fn test_execution_oms_type(
         .unwrap();
     assert_eq!(client.oms_type(), expected);
 }
+
+#[rstest]
+#[case::spot(OKXInstrumentType::Spot, false, AccountType::Cash)]
+#[case::margin(OKXInstrumentType::Margin, false, AccountType::Margin)]
+#[case::spot_margin(OKXInstrumentType::Spot, true, AccountType::Margin)]
+fn test_factory_configures_account_type(
+    #[case] instrument_type: OKXInstrumentType,
+    #[case] use_spot_margin: bool,
+    #[case] expected: AccountType,
+) {
+    std::thread::spawn(move || {
+        let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_exec_event_sender(sender);
+
+        let config = OKXExecutionClientConfig {
+            instrument_types: vec![instrument_type],
+            use_spot_margin,
+            api_key: Some("factory-key".into()),
+            api_secret: Some("factory-secret".into()),
+            api_passphrase: Some("factory-passphrase".into()),
+            ..Default::default()
+        };
+
+        let client = OKXExecutionClientFactory::new()
+            .create(
+                TraderId::from("FACTORY-001"),
+                "OKX",
+                &config,
+                Rc::new(RefCell::new(Cache::default())).into(),
+                Rc::new(RefCell::new(VirtualClock::new())),
+            )
+            .unwrap();
+        let balances = vec![AccountBalance::new(
+            Money::from("71 USDT"),
+            Money::from("13 USDT"),
+            Money::from("58 USDT"),
+        )];
+        client
+            .generate_account_state(balances.clone(), vec![], true, UnixNanos::from(29), None)
+            .unwrap();
+
+        let ExecutionEvent::Account(state) = receiver.try_recv().unwrap() else {
+            panic!("Expected account state")
+        };
+
+        assert_eq!(state.account_id, config.account_id);
+        assert_eq!(state.account_type, expected);
+        assert_eq!(state.balances, balances);
+        assert_eq!(state.margins, vec![]);
+        assert_eq!(state.base_currency, None);
+        assert_eq!(state.ts_event, UnixNanos::from(29));
+        assert_eq!(state.info, None);
+        assert!(state.is_reported);
+    })
+    .join()
+    .unwrap();
+}

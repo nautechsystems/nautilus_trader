@@ -112,6 +112,7 @@ use nautilus_core::{
     UUID4,
     datetime::{mins_to_secs, secs_to_nanos_unchecked},
 };
+use nautilus_execution::client::ExecutionClientAdapter;
 #[cfg(test)]
 use nautilus_model::reports::OrderStatusReport;
 use nautilus_model::{
@@ -912,7 +913,6 @@ impl LiveNode {
     /// # Errors
     ///
     /// Returns an error if reconciliation fails or times out.
-    #[expect(clippy::await_holding_refcell_ref)] // Single-threaded runtime, intentional design
     async fn perform_startup_reconciliation(&mut self) -> anyhow::Result<()> {
         if !self.config.exec_engine.reconciliation {
             log::info!("Startup reconciliation disabled");
@@ -954,13 +954,18 @@ impl LiveNode {
                 color = LogColor::Blue
             );
 
-            let mass_status_result = dst::time::timeout(remaining, async {
-                self.kernel
-                    .exec_engine
-                    .borrow_mut()
-                    .generate_mass_status(&client_id, lookback_mins)
-                    .await
-            })
+            let client = self
+                .exec_clients
+                .iter()
+                .find(|client| client.client_id() == client_id)
+                .ok_or_else(|| anyhow::anyhow!("Execution client {client_id} has no live handle"))?
+                .clone();
+            let client = Box::new(client);
+            let client = ExecutionClientAdapter::new(client);
+
+            let mass_status_query = client.generate_mass_status(lookback_mins);
+
+            let mass_status_result = dst::time::timeout(remaining, mass_status_query)
             .await
             .map_err(|_| {
                 anyhow::anyhow!(

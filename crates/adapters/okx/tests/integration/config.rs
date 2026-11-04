@@ -26,6 +26,7 @@ use nautilus_okx::{
     common::enums::{OKXContractType, OKXEnvironment, OKXInstrumentType, OKXRegion},
     config::{OKXDataClientConfig, OKXExecutionClientConfig},
     execution::OKXExecutionClient,
+    http::client::{OKXHttpClient, OKXRawHttpClient},
 };
 use rstest::rstest;
 
@@ -401,5 +402,166 @@ fn test_execution_client_rejects_duplicate_types() {
     assert_eq!(
         error.downcast_ref::<ConfigError>(),
         Some(&ConfigError::duplicate("instrument_types", None))
+    );
+}
+
+#[rstest]
+#[case(0, 10_000, "retry_delay_initial_ms")]
+#[case(2_000, 1_000, "retry_delay_max_ms")]
+#[case(1_000, u64::MAX, "retry_delay_max_ms")]
+fn test_config_rejects_invalid_retry_delays(
+    #[case] initial: u64,
+    #[case] maximum: u64,
+    #[case] field: &str,
+) {
+    let data = OKXDataClientConfig {
+        retry_delay_initial_ms: initial,
+        retry_delay_max_ms: maximum,
+        ..Default::default()
+    };
+
+    let execution = OKXExecutionClientConfig {
+        retry_delay_initial_ms: initial,
+        retry_delay_max_ms: maximum,
+        ..Default::default()
+    };
+
+    for result in [data.validate(), execution.validate()] {
+        let ConfigError::Range { field: actual, .. } =
+            result.expect_err("invalid retries must fail validation")
+        else {
+            panic!("Expected a range error")
+        };
+
+        assert_eq!(actual, field);
+    }
+}
+
+#[rstest]
+#[case(None)]
+#[case(Some(vec![]))]
+fn test_config_requires_option_families(#[case] instrument_families: Option<Vec<String>>) {
+    let data = OKXDataClientConfig {
+        instrument_types: vec![OKXInstrumentType::Option],
+        instrument_families: instrument_families.clone(),
+        ..Default::default()
+    };
+
+    let execution = OKXExecutionClientConfig {
+        instrument_types: vec![OKXInstrumentType::Option],
+        instrument_families,
+        ..Default::default()
+    };
+
+    let expected = Err(ConfigError::dependency(
+        "instrument_types",
+        "instrument_families",
+        "OPTION requires at least one family",
+    ));
+    assert_eq!(data.validate(), expected);
+    assert_eq!(execution.validate(), expected);
+}
+
+#[rstest]
+#[case(OKXInstrumentType::Swap)]
+#[case(OKXInstrumentType::Futures)]
+#[case(OKXInstrumentType::Option)]
+fn test_config_rejects_mixed_event_family_namespace(#[case] derivative: OKXInstrumentType) {
+    let data = OKXDataClientConfig {
+        instrument_types: vec![derivative, OKXInstrumentType::Events],
+        instrument_families: Some(vec!["BTC-USD".to_string()]),
+        ..Default::default()
+    };
+
+    let execution = OKXExecutionClientConfig {
+        instrument_types: data.instrument_types.clone(),
+        instrument_families: data.instrument_families.clone(),
+        ..Default::default()
+    };
+
+    let expected = Err(ConfigError::invalid_value(
+        "instrument_families",
+        "EVENTS series and derivative families require separate clients",
+    ));
+    assert_eq!(data.validate(), expected);
+    assert_eq!(execution.validate(), expected);
+}
+
+#[rstest]
+#[case::public(false)]
+#[case::authenticated(true)]
+fn test_http_constructor_preserves_config_error(#[case] authenticated: bool) {
+    let result = if authenticated {
+        OKXHttpClient::with_credentials(
+            None,
+            None,
+            None,
+            None,
+            60,
+            0,
+            0,
+            1_000,
+            OKXEnvironment::Demo,
+            None,
+        )
+    } else {
+        OKXHttpClient::new(None, 60, 0, 0, 1_000, OKXEnvironment::Demo, None)
+    };
+
+    let error =
+        result.expect_err("invalid retries must fail before credentials or transport setup");
+    assert_eq!(
+        error.downcast_ref::<ConfigError>(),
+        Some(&ConfigError::range(
+            "retry_delay_initial_ms",
+            "must be positive"
+        ))
+    );
+}
+
+#[rstest]
+#[case::public(false)]
+#[case::authenticated(true)]
+fn test_raw_http_constructor_preserves_config_error(#[case] authenticated: bool) {
+    let result = if authenticated {
+        OKXRawHttpClient::with_credentials(
+            "key".into(),
+            "secret".into(),
+            "passphrase".into(),
+            "http://127.0.0.1:1".into(),
+            60,
+            0,
+            0,
+            1_000,
+            OKXEnvironment::Demo,
+            None,
+        )
+    } else {
+        OKXRawHttpClient::new(None, 60, 0, 0, 1_000, OKXEnvironment::Demo, None)
+    };
+
+    let error = result.expect_err("invalid retries must fail before transport setup");
+    assert_eq!(
+        error.downcast_ref::<ConfigError>(),
+        Some(&ConfigError::range(
+            "retry_delay_initial_ms",
+            "must be positive"
+        ))
+    );
+}
+
+#[rstest]
+fn test_execution_config_rejects_mmp_only_mass_cancel() {
+    let config = OKXExecutionClientConfig {
+        use_mm_mass_cancel: true,
+        ..Default::default()
+    };
+
+    assert_eq!(
+        config.validate(),
+        Err(ConfigError::unsupported_value(
+            "use_mm_mass_cancel",
+            "MMP-only family cancellation does not cancel ordinary orders"
+        ))
     );
 }

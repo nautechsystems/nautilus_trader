@@ -42,17 +42,19 @@ use axum::{
 use futures_util::StreamExt;
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     clock::VirtualClock,
-    live::runner::set_exec_event_sender,
+    live::runner::{replace_data_event_sender, set_exec_event_sender},
     messages::{
-        ExecutionEvent,
+        DataEvent, ExecutionEvent,
         execution::{
-            BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport, ModifyOrder,
-            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
+            BatchCancelOrders, CancelOrder, ExecutionReport as CommonExecutionReport,
+            GeneratePositionStatusReports, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
+            SubmitOrderList, TradingCommand,
             report::{GenerateFillReports, GenerateOrderStatusReport, GenerateOrderStatusReports},
         },
     },
+    msgbus::{self, MessagingSwitchboard, TypedIntoHandler},
     testing::wait_until_async,
 };
 use nautilus_core::{AtomicMap, DurationNanos, UUID4, UnixNanos, time::get_atomic_clock_realtime};
@@ -63,6 +65,7 @@ use nautilus_live::{
 };
 use nautilus_model::{
     accounts::{AccountAny, MarginAccount},
+    data::Data,
     enums::{
         AccountType, LiquiditySide, OmsType, OrderSide, OrderStatus, OrderType, PositionSide,
         TimeInForce, TriggerType,
@@ -99,8 +102,8 @@ use nautilus_okx::{
             OKX_VENUE,
         },
         enums::{
-            OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXOrderStatus, OKXOrderType,
-            OKXSide, OKXTradeMode,
+            OKXContractType, OKXEnvironment, OKXInstrumentType, OKXMarginMode, OKXOrderStatus,
+            OKXOrderType, OKXSide, OKXTradeMode,
         },
         models::OKXInstrument,
         parse::parse_instrument_any,
@@ -128,7 +131,7 @@ use nautilus_okx::{
 };
 use rstest::rstest;
 use rust_decimal_macros::dec;
-use serde_json::json;
+use serde_json::{Value, json};
 use ustr::Ustr;
 
 const MARGIN_SPOT_PARENT_CLIENT_ORDER_ID: &str = "OEEADEMOSTOPLIMIT001";
@@ -3191,9 +3194,19 @@ async fn handle_exec_ws_socket(mut socket: WebSocket, state: Arc<WsTeardownState
                     None => std::future::pending().await,
                 }
             } => {
-                if socket.send(Message::Text(message.to_string().into())).await.is_err() {
+                if message.is_null() {
+                    let _ = socket.send(Message::Close(None)).await;
                     break;
                 }
+
+                if socket
+                    .send(Message::Text(message.to_string().into()))
+                    .await
+                    .is_err()
+                {
+                    break;
+                }
+
                 continue;
             }
         };
@@ -3616,6 +3629,9 @@ fn test_bulk_position_coverage(
     let (client, _rx, _cache) =
         create_test_execution_client_configured("http://127.0.0.1:1", |config| {
             config.instrument_types = instrument_types;
+            if config.instrument_types.contains(&OKXInstrumentType::Option) {
+                config.instrument_families = Some(vec!["BTC-USD".to_string()]);
+            }
         });
 
     assert_eq!(
@@ -7871,13 +7887,12 @@ async fn start_stale_pending_order_report_server() -> SocketAddr {
 }
 
 #[rstest]
-#[case::types(false, false)]
-#[case::families(true, false)]
-#[case::option_skip(false, true)]
+#[case::types(false)]
+#[case::families(true)]
 #[tokio::test]
-async fn test_bootstrap_waits_for_every_scope(#[case] families: bool, #[case] skip_option: bool) {
+async fn test_bootstrap_waits_for_every_scope(#[case] families: bool) {
     let mut server = BootstrapServer::start().await;
-    let (mut client, mut rx, cache) = server.client(families, skip_option);
+    let (mut client, mut rx, cache) = server.client(families);
     assert!(!client.is_connected());
     let mut connect = Box::pin(client.connect());
 
@@ -7897,7 +7912,7 @@ async fn test_bootstrap_waits_for_every_scope(#[case] families: bool, #[case] sk
     assert_eq!(server.ws.opened.load(Ordering::Relaxed), 2);
     assert!(server.requests.try_recv().is_err());
     assert_bootstrap_reports(&client, families).await;
-    server.assert_order_events(&mut rx, families).await;
+    server.assert_order_events(&mut rx, &cache, families).await;
     client.disconnect().await.unwrap();
     server.assert_closed().await;
 }
@@ -7916,7 +7931,7 @@ async fn test_bootstrap_failure_retries_all_scopes(
     #[case] request_failure: bool,
 ) {
     let mut server = BootstrapServer::start().await;
-    let (mut client, mut rx, cache) = server.client(families, false);
+    let (mut client, mut rx, cache) = server.client(families);
     let mut connect = Box::pin(client.connect());
 
     for scope in 0..=failed_scope {
@@ -7985,7 +8000,7 @@ async fn test_bootstrap_failure_retries_all_scopes(
         .unwrap();
     assert!(client.is_connected());
     assert_bootstrap_reports(&client, families).await;
-    server.assert_order_events(&mut rx, families).await;
+    server.assert_order_events(&mut rx, &cache, families).await;
     client.disconnect().await.unwrap();
     server.assert_closed().await;
 }
@@ -8029,7 +8044,7 @@ async fn test_bootstrap_wholly_empty_scope_stays_disconnected(#[case] preopen: b
 #[tokio::test]
 async fn test_bootstrap_cancel_discards_late_response(#[case] restart: bool) {
     let mut server = BootstrapServer::start().await;
-    let (mut client, mut rx, cache) = server.client(true, false);
+    let (mut client, mut rx, cache) = server.client(true);
     let mut connect = Box::pin(client.connect());
     let first = server.next_request(&mut connect).await;
     first.respond(bootstrap_response(true, 0));
@@ -8062,9 +8077,690 @@ async fn test_bootstrap_cancel_discards_late_response(#[case] restart: bool) {
         .unwrap();
     assert!(client.is_connected());
     assert_bootstrap_reports(&client, true).await;
-    server.assert_order_events(&mut rx, true).await;
+    server.assert_order_events(&mut rx, &cache, true).await;
     client.disconnect().await.unwrap();
     server.assert_closed().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_filtered_bootstrap_prepares_active_instrument_before_streams() {
+    let mut server = BootstrapServer::start().await;
+
+    let (mut client, mut rx, cache) =
+        create_test_execution_client_configured(&format!("http://{}", server.addr), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.instrument_families = Some(vec!["ETH-USDT".to_string()]);
+            config.base_url_ws_private = Some(format!("ws://{}/ws/v5/private", server.addr));
+            config.base_url_ws_business = Some(format!("ws://{}/ws/v5/business", server.addr));
+            config.max_retries = 0;
+        });
+
+    client.start().unwrap();
+    let mut connect = Box::pin(client.connect());
+    let selected = server.next_request(&mut connect).await;
+    assert_eq!(
+        selected.params,
+        HashMap::from([
+            ("instType".to_string(), "SWAP".to_string()),
+            ("instFamily".to_string(), "ETH-USDT".to_string())
+        ])
+    );
+    selected.respond(bootstrap_response(true, 1));
+    let recovered = server.next_request(&mut connect).await;
+    assert_eq!(
+        recovered.params,
+        HashMap::from([
+            ("instType".to_string(), "SWAP".to_string()),
+            ("instId".to_string(), "BTC-USDT-SWAP".to_string())
+        ])
+    );
+    assert_eq!(server.ws.opened.load(Ordering::Relaxed), 0);
+    recovered.respond(bootstrap_response(true, 0));
+    finish_bootstrap_connect(connect, &mut rx, &cache)
+        .await
+        .unwrap();
+
+    server.assert_order_events(&mut rx, &cache, true).await;
+
+    assert!(client.is_connected());
+    assert!(server.requests.try_recv().is_err());
+    client.disconnect().await.unwrap();
+    server.assert_closed().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_filtered_stream_registers_metadata_before_replaying_orders_and_fills() {
+    let mut server = BootstrapServer::start_with_active_orders(false).await;
+    let (mut client, mut rx, cache) = server.connect_filtered().await;
+    let target = InstrumentId::from("BTC-USDT-SWAP.OKX");
+    let mut orders = external_stream_order("BTC-USDT-SWAP", "live");
+    orders["data"][0]["ordId"] = json!("stream-first");
+    let mut second = orders["data"][0].clone();
+    second["ordId"] = json!("stream-second");
+    orders["data"].as_array_mut().unwrap().push(second);
+    server.ws.messages.as_ref().unwrap().send(orders).unwrap();
+    let request = tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        request.params,
+        HashMap::from([
+            ("instType".into(), "SWAP".into()),
+            ("instId".into(), "BTC-USDT-SWAP".into())
+        ])
+    );
+    assert!(rx.try_recv().is_err());
+    assert!(cache.borrow().instrument(&target).is_none());
+
+    server
+        .ws
+        .messages
+        .as_ref()
+        .unwrap()
+        .send(external_stream_order("ETH-USDT-SWAP", "live"))
+        .unwrap();
+    let mut data_events = server.data_events.lock().await;
+
+    let DataEvent::Data(Data::Instrument(unrelated)) =
+        tokio::time::timeout(Duration::from_secs(5), data_events.recv())
+            .await
+            .unwrap()
+            .unwrap()
+    else {
+        panic!("expected unrelated metadata");
+    };
+
+    assert_eq!(unrelated.id(), InstrumentId::from("ETH-USDT-SWAP.OKX"));
+    register_stream_definition(&cache, &unrelated);
+
+    for _ in 0..2 {
+        let ExecutionEvent::Report(CommonExecutionReport::Order(report)) =
+            tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected unrelated report");
+        };
+
+        assert_eq!(report.instrument_id, unrelated.id());
+    }
+
+    request.respond(bootstrap_response(true, 0));
+
+    let DataEvent::Data(Data::Instrument(recovered)) =
+        tokio::time::timeout(Duration::from_secs(5), data_events.recv())
+            .await
+            .unwrap()
+            .unwrap()
+    else {
+        panic!("expected recovered metadata");
+    };
+
+    assert_eq!(recovered.id(), target);
+    assert!(cache.borrow().instrument(&target).is_none());
+    let mut wrong = recovered.clone();
+
+    let InstrumentAny::CryptoPerpetual(definition) = &mut *wrong else {
+        panic!("expected perpetual definition");
+    };
+
+    definition.price_increment = Price::from("0.2");
+    register_stream_definition(&cache, &wrong);
+    server
+        .ws
+        .messages
+        .as_ref()
+        .unwrap()
+        .send(external_stream_order("ETH-USDT-SWAP", "live"))
+        .unwrap();
+
+    for _ in 0..2 {
+        let ExecutionEvent::Report(CommonExecutionReport::Order(report)) =
+            tokio::time::timeout(Duration::from_secs(5), rx.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected unrelated report while registration is withheld");
+        };
+
+        assert_eq!(report.instrument_id, unrelated.id());
+    }
+
+    let mut fill = external_stream_order("BTC-USDT-SWAP", "filled");
+    fill["data"][0]["ordId"] = json!("stream-first");
+    server
+        .ws
+        .messages
+        .as_ref()
+        .unwrap()
+        .send(fill.clone())
+        .unwrap();
+    server.ws.messages.as_ref().unwrap().send(fill).unwrap();
+    register_stream_definition(&cache, &recovered);
+    let mut order_ids = Vec::new();
+    let mut fills = Vec::new();
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while order_ids.len() < 4 || fills.is_empty() {
+            assert_eq!(
+                serde_json::to_value(cache.borrow().instrument(&target).unwrap()).unwrap(),
+                serde_json::to_value(&*recovered).unwrap()
+            );
+
+            match rx.recv().await.unwrap() {
+                ExecutionEvent::Report(CommonExecutionReport::Order(report)) => {
+                    assert_eq!(report.instrument_id, target);
+                    assert_eq!(report.order_status, OrderStatus::Accepted);
+                    order_ids.push(report.venue_order_id.to_string());
+                }
+                ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => {
+                    assert_eq!(report.instrument_id, target);
+                    assert_eq!(report.trade_id, TradeId::from("stream-fill-17"));
+                    assert_eq!(report.last_qty, Quantity::from("1"));
+                    fills.push(report);
+                }
+                event => panic!("unexpected recovered event: {event:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    server
+        .ws
+        .messages
+        .as_ref()
+        .unwrap()
+        .send(external_stream_order("ETH-USDT-SWAP", "live"))
+        .unwrap();
+    let mut controls = 0;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while controls < 2 {
+            match rx.recv().await.unwrap() {
+                ExecutionEvent::Report(CommonExecutionReport::Order(report))
+                    if report.instrument_id == unrelated.id() =>
+                {
+                    controls += 1;
+                }
+                ExecutionEvent::Report(CommonExecutionReport::Fill(report)) => fills.push(report),
+                event => panic!("unexpected duplicate-stream outcome: {event:?}"),
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    client.disconnect().await.unwrap();
+    assert!(rx.try_recv().is_err());
+    assert_eq!(
+        order_ids,
+        [
+            "stream-first",
+            "stream-second",
+            "stream-first",
+            "stream-second"
+        ]
+    );
+    assert_eq!(fills.len(), 1);
+    assert!(server.requests.try_recv().is_err());
+    server.assert_closed().await;
+}
+
+#[rstest]
+#[case::positions("positions", false)]
+#[case::cached_positions("positions", true)]
+#[case::algo("algo", false)]
+#[case::spread("spread", false)]
+#[tokio::test]
+async fn test_filtered_stream_recovers_other_instrument_messages(
+    #[case] kind: &str,
+    #[case] cached: bool,
+) {
+    let mut server = BootstrapServer::start_with_active_orders(false).await;
+    let (mut client, mut rx, cache) = server.connect_filtered_with_spreads(kind == "spread").await;
+
+    let mut message = match kind {
+        "positions" => {
+            json!({"arg":{"channel":"positions","instType":"SWAP"},"data":load_test_data("http_get_positions.json")["data"]})
+        }
+        "algo" => {
+            let mut frame = load_test_data("ws_orders_algo.json");
+            frame["data"].as_array_mut().unwrap().truncate(1);
+            frame["data"][0]["sz"] = json!("1");
+            frame
+        }
+        "spread" => {
+            let mut frame = load_test_data("ws_sprd_orders.json");
+            frame["data"][0]["sprdId"] = json!("ETH-USD-SWAP_ETH-USD-231229");
+            frame["data"][0]["sz"] = json!("10");
+            frame
+        }
+        _ => unreachable!(),
+    };
+
+    if kind == "algo" {
+        message["data"][0]["instId"] = json!("BTC-USDT-SWAP");
+    }
+
+    let target = InstrumentId::from(if kind == "spread" {
+        "ETH-USD-SWAP_ETH-USD-231229.OKX"
+    } else {
+        "BTC-USDT-SWAP.OKX"
+    });
+
+    if cached {
+        let response = load_test_data("http_get_instruments_swap.json");
+        let raw = serde_json::from_value(
+            response["data"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|row| row["instId"] == "BTC-USDT-SWAP")
+                .unwrap()
+                .clone(),
+        )
+        .unwrap();
+        let instrument = parse_instrument_any(&raw, None, None, UnixNanos::default())
+            .unwrap()
+            .unwrap();
+        client.on_instrument(instrument.clone());
+        register_stream_definition(&cache, &instrument);
+    }
+
+    server.ws.messages.as_ref().unwrap().send(message).unwrap();
+    let request = tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    if kind == "spread" {
+        assert_eq!(
+            request.params,
+            HashMap::from([("sprdId".into(), "ETH-USD-SWAP_ETH-USD-231229".into())])
+        );
+        let mut response = load_test_data("http_get_spreads.json");
+        response["data"].as_array_mut().unwrap().truncate(1);
+        request.respond(Json(response).into_response());
+    } else {
+        request.respond(bootstrap_response(true, 0));
+    }
+
+    let mut data = server.data_events.lock().await;
+
+    let DataEvent::Data(Data::Instrument(instrument)) =
+        tokio::time::timeout(Duration::from_secs(5), data.recv())
+            .await
+            .unwrap()
+            .unwrap()
+    else {
+        panic!("expected instrument registration");
+    };
+
+    assert_eq!(instrument.id(), target);
+    assert!(rx.try_recv().is_err());
+    register_stream_definition(&cache, &instrument);
+
+    for _ in 0..2 {
+        let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+            .await
+            .unwrap()
+            .unwrap();
+
+        match event {
+            ExecutionEvent::Report(CommonExecutionReport::Position(report))
+                if kind == "positions" =>
+            {
+                assert_eq!(report.instrument_id, target);
+                assert_eq!(report.quantity, Quantity::from("0.5"));
+                assert_eq!(report.position_side, PositionSide::Long);
+            }
+            ExecutionEvent::Report(CommonExecutionReport::Order(report)) => {
+                assert_eq!(report.instrument_id, target);
+                assert_eq!(report.order_status, OrderStatus::Accepted);
+                assert_eq!(
+                    report.quantity,
+                    Quantity::from(if kind == "spread" { "10" } else { "1" })
+                );
+            }
+            event => panic!("unexpected stream report: {event:?}"),
+        }
+
+        assert_eq!(
+            serde_json::to_value(cache.borrow().instrument(&target).unwrap()).unwrap(),
+            serde_json::to_value(&*instrument).unwrap()
+        );
+    }
+
+    client.disconnect().await.unwrap();
+    assert!(server.requests.try_recv().is_err());
+    server.assert_closed().await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_filtered_stream_recovery_failure_disconnects_client() {
+    let mut server = BootstrapServer::start_with_active_orders(false).await;
+    let (mut client, mut rx, _cache) = server.connect_filtered().await;
+    server
+        .ws
+        .messages
+        .as_ref()
+        .unwrap()
+        .send(external_stream_order("BTC-USDT-SWAP", "live"))
+        .unwrap();
+    let request = tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    request.respond(
+        (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"code":"51000","msg":"invalid instrument","data":[]})),
+        )
+            .into_response(),
+    );
+    wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
+    assert!(rx.try_recv().is_err());
+    let error = client.disconnect().await.unwrap_err();
+    assert!(
+        error.to_string().contains(
+            "required instrument BTC-USDT-SWAP.OKX could not be recovered and registered"
+        )
+    );
+    server.assert_closed().await;
+}
+
+#[rstest]
+#[case::empty("")]
+#[case::blank(" \t")]
+#[tokio::test]
+async fn test_filtered_stream_invalid_symbol_disconnects_client(#[case] symbol: &str) {
+    let mut server = BootstrapServer::start_with_active_orders(false).await;
+    let (mut client, mut events, _cache) = server.connect_filtered().await;
+    server
+        .ws
+        .messages
+        .as_ref()
+        .unwrap()
+        .send(external_stream_order(symbol, "live"))
+        .unwrap();
+    wait_until_async(|| async { !client.is_connected() }, Duration::from_secs(5)).await;
+    let error = client.disconnect().await.unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("invalid execution instrument symbol")
+    );
+    assert!(server.requests.try_recv().is_err());
+    assert!(server.data_events.lock().await.try_recv().is_err());
+    assert!(events.try_recv().is_err());
+    server.assert_closed().await;
+}
+
+#[rstest]
+#[case::lookup(false)]
+#[case::registration(true)]
+#[tokio::test]
+async fn test_filtered_stream_shutdown_reports_incomplete_recovery(#[case] registration: bool) {
+    let mut server = BootstrapServer::start_with_active_orders(false).await;
+    let (mut client, mut rx, cache) = server.connect_filtered().await;
+    server
+        .ws
+        .messages
+        .as_ref()
+        .unwrap()
+        .send(external_stream_order("BTC-USDT-SWAP", "live"))
+        .unwrap();
+    let request = tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+
+    let pending = if registration {
+        request.respond(bootstrap_response(true, 0));
+        let mut data = server.data_events.lock().await;
+
+        let DataEvent::Data(Data::Instrument(instrument)) =
+            tokio::time::timeout(Duration::from_secs(5), data.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected pending registration");
+        };
+
+        Some(instrument)
+    } else {
+        None
+    };
+
+    let error = client.disconnect().await.unwrap_err();
+    assert!(error.to_string().contains("incomplete stream recovery"));
+
+    if let Some(instrument) = pending {
+        register_stream_definition(&cache, &instrument);
+    }
+
+    assert!(!client.is_connected());
+    assert!(rx.try_recv().is_err());
+    server.assert_closed().await;
+}
+
+#[rstest]
+#[case::reconnect_lookup(false, false)]
+#[case::reconnect_registration(false, true)]
+#[case::restart_lookup(true, false)]
+#[case::restart_registration(true, true)]
+#[tokio::test]
+async fn test_filtered_stream_session_transition_preserves_generation(
+    #[case] restart: bool,
+    #[case] registration: bool,
+) {
+    let mut server = BootstrapServer::start_with_active_orders(false).await;
+    let (mut client, mut rx, cache) = server.connect_filtered().await;
+    let messages = server.ws.messages.as_ref().unwrap().clone();
+    let mut old = external_stream_order("BTC-USDT-SWAP", "live");
+    old["data"][0]["ordId"] = json!("old-generation");
+    messages.send(old).unwrap();
+    let mut request = tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+        .await
+        .unwrap()
+        .unwrap();
+    let mut metadata = None;
+
+    if registration {
+        request.respond(bootstrap_response(true, 0));
+        let mut data = server.data_events.lock().await;
+
+        let DataEvent::Data(Data::Instrument(instrument)) =
+            tokio::time::timeout(Duration::from_secs(5), data.recv())
+                .await
+                .unwrap()
+                .unwrap()
+        else {
+            panic!("expected metadata registration");
+        };
+
+        metadata = Some(instrument);
+    } else if restart {
+        client.stop().unwrap();
+        assert!(
+            client
+                .disconnect()
+                .await
+                .unwrap_err()
+                .to_string()
+                .contains("incomplete stream recovery")
+        );
+        tokio::time::timeout(Duration::from_secs(5), request.response.closed())
+            .await
+            .unwrap();
+        assert!(request.response.send(bootstrap_response(true, 0)).is_err());
+    } else {
+        request.respond(bootstrap_response(true, 0));
+    }
+
+    if restart {
+        if registration {
+            client.stop().unwrap();
+            assert!(
+                client
+                    .disconnect()
+                    .await
+                    .unwrap_err()
+                    .to_string()
+                    .contains("incomplete stream recovery")
+            );
+        }
+
+        client.start().unwrap();
+        finish_bootstrap_connect(Box::pin(client.connect()), &mut rx, &cache)
+            .await
+            .unwrap();
+    } else {
+        messages.send(Value::Null).unwrap();
+        wait_until_async(
+            || async { server.ws.opened.load(Ordering::Relaxed) == 4 },
+            Duration::from_secs(10),
+        )
+        .await;
+    }
+
+    let mut fresh = external_stream_order("BTC-USDT-SWAP", "live");
+    fresh["data"][0]["ordId"] = json!("current-generation");
+    messages.send(fresh).unwrap();
+
+    if restart && !registration {
+        tokio::time::timeout(Duration::from_secs(5), server.requests.recv())
+            .await
+            .unwrap()
+            .unwrap()
+            .respond(bootstrap_response(true, 0));
+    }
+
+    if let Some(instrument) = metadata {
+        register_stream_definition(&cache, &instrument);
+    }
+
+    let mut old_reports = 0;
+    let mut new_reports = 0;
+    let mut data = server.data_events.lock().await;
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while new_reports < 2 {
+            tokio::select! {
+                event = rx.recv() => {
+                    let event = event.unwrap();
+                    if let ExecutionEvent::Account(account) = &event {
+                        assert!(restart);
+                        assert_eq!(account.account_id, AccountId::from("OKX-001"));
+                        continue;
+                    }
+                    let ExecutionEvent::Report(CommonExecutionReport::Order(report)) = event
+                    else { panic!("expected order report: {event:?}"); };
+                    assert_eq!(report.instrument_id, InstrumentId::from("BTC-USDT-SWAP.OKX"));
+                    match report.venue_order_id.as_str() {
+                        "old-generation" => old_reports += 1,
+                        "current-generation" => new_reports += 1,
+                        id => panic!("unexpected venue order {id}"),
+                    }
+                }
+                event = data.recv() => {
+                    let DataEvent::Data(Data::Instrument(instrument)) = event.unwrap()
+                    else { panic!("expected metadata registration"); };
+                    register_stream_definition(&cache, &instrument);
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
+
+    assert_eq!(new_reports, 2);
+
+    if restart {
+        assert_eq!(old_reports, 0);
+    } else {
+        assert!(old_reports >= 1);
+    }
+
+    assert!(client.is_connected());
+    client.disconnect().await.unwrap();
+    wait_until_async(
+        || async { server.ws.closed.load(Ordering::Relaxed) == 4 },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(server.ws.opened.load(Ordering::Relaxed), 4);
+    assert_eq!(server.ws.closed.load(Ordering::Relaxed), 4);
+}
+
+fn external_stream_order(symbol: &str, status: &str) -> Value {
+    let mut message = load_test_data("ws_orders.json");
+    let row = &mut message["data"][0];
+    row["instId"] = json!(symbol);
+    row["state"] = json!(status);
+    row["clOrdId"] = json!("");
+    row["ordType"] = json!("limit");
+    row["px"] = json!("103698.9");
+    row["sz"] = json!("1");
+    row["accFillSz"] = json!(if status == "filled" { "1" } else { "0" });
+    row["fillSz"] = row["accFillSz"].clone();
+    row["tradeId"] = json!(if status == "filled" {
+        "stream-fill-17"
+    } else {
+        ""
+    });
+    message
+}
+
+fn register_stream_definition(cache: &Rc<RefCell<Cache>>, instrument: &InstrumentAny) {
+    cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    let topic = nautilus_common::msgbus::switchboard::get_instrument_topic(instrument.id());
+    msgbus::publish_instrument(topic, instrument);
+}
+
+#[rstest]
+#[case::whole_type(false)]
+#[case::family(true)]
+#[tokio::test]
+async fn test_bootstrap_rejects_scope_without_selected_contract_type(#[case] family: bool) {
+    let mut server = BootstrapServer::start().await;
+
+    let (mut client, _rx, _cache) =
+        create_test_execution_client_configured(&format!("http://{}", server.addr), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.contract_types = Some(vec![OKXContractType::Inverse]);
+            config.instrument_families = family.then(|| vec!["BTC-USDT".to_string()]);
+            config.base_url_ws_private = Some(format!("ws://{}/ws/v5/private", server.addr));
+            config.base_url_ws_business = Some(format!("ws://{}/ws/v5/business", server.addr));
+            config.max_retries = 0;
+        });
+
+    let mut connect = Box::pin(client.connect());
+    let request = server.next_request(&mut connect).await;
+    assert_eq!(
+        request.params.get("instType").map(String::as_str),
+        Some("SWAP")
+    );
+    assert_eq!(
+        request.params.get("instFamily").map(String::as_str),
+        family.then_some("BTC-USDT")
+    );
+    request.respond(bootstrap_response(true, 0));
+    let error = tokio::time::timeout(Duration::from_secs(1), connect)
+        .await
+        .unwrap()
+        .unwrap_err();
+    assert!(error.to_string().contains("No usable instruments for Swap"));
+    assert_eq!(server.ws.opened.load(Ordering::Relaxed), 0);
+    assert!(!client.is_connected());
 }
 
 struct BootstrapRequest {
@@ -8083,21 +8779,50 @@ struct BootstrapServer {
     ws: Arc<WsTeardownState>,
     requests: tokio::sync::mpsc::UnboundedReceiver<BootstrapRequest>,
     task: tokio::task::JoinHandle<()>,
+    data_events: tokio::sync::Mutex<tokio::sync::mpsc::UnboundedReceiver<DataEvent>>,
 }
 
 impl BootstrapServer {
     async fn start() -> Self {
-        let (messages, _) = tokio::sync::broadcast::channel(4);
+        Self::start_with_active_orders(true).await
+    }
+
+    async fn start_with_active_orders(active: bool) -> Self {
+        let (data_tx, data_events) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(data_tx);
+        let (messages, _) = tokio::sync::broadcast::channel(16);
+
         let ws = Arc::new(WsTeardownState {
             messages: Some(messages),
             ..Default::default()
         });
+
         let (tx, requests) = tokio::sync::mpsc::unbounded_channel();
+
+        let instruments_tx = tx.clone();
 
         let router = create_exec_test_router()
             .route(
                 "/api/v5/account/positions",
                 get(|| async { Json(json!({"code": "0", "msg": "", "data": []})) }),
+            )
+            .route(
+                "/api/v5/trade/orders-pending",
+                get(move || async move {
+                    Json(if active {
+                        load_test_data("http_get_orders_pending.json")
+                    } else {
+                        json!({"code":"0","msg":"","data":[]})
+                    })
+                }),
+            )
+            .route(
+                "/api/v5/trade/orders-algo-pending",
+                get(|| async { Json(json!({"code":"0","msg":"","data":[]})) }),
+            )
+            .route(
+                "/api/v5/trade/orders-algo-history",
+                get(|| async { Json(json!({"code":"0","msg":"","data":[]})) }),
             )
             .route(
                 "/ws/v5/private",
@@ -8109,6 +8834,21 @@ impl BootstrapServer {
             )
             .route(
                 "/api/v5/public/instruments",
+                get(move |Query(params): Query<HashMap<String, String>>| {
+                    let tx = instruments_tx.clone();
+                    async move {
+                        let (response, rx) = tokio::sync::oneshot::channel();
+                        tx.send(BootstrapRequest { params, response }).unwrap();
+                        rx.await.unwrap()
+                    }
+                }),
+            )
+            .route(
+                "/api/v5/sprd/orders-pending",
+                get(|| async { Json(json!({"code":"0","msg":"","data":[]})) }),
+            )
+            .route(
+                "/api/v5/sprd/spreads",
                 get(move |Query(params): Query<HashMap<String, String>>| {
                     let tx = tx.clone();
                     async move {
@@ -8130,6 +8870,7 @@ impl BootstrapServer {
                     Json(response)
                 }),
             );
+
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
         let addr = listener.local_addr().unwrap();
         let task = tokio::spawn(async move {
@@ -8137,18 +8878,58 @@ impl BootstrapServer {
                 .await
                 .unwrap();
         });
+
         Self {
             addr,
             ws,
             requests,
             task,
+            data_events: tokio::sync::Mutex::new(data_events),
         }
+    }
+
+    async fn connect_filtered(
+        &mut self,
+    ) -> (
+        OKXExecutionClient,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        Rc<RefCell<Cache>>,
+    ) {
+        self.connect_filtered_with_spreads(false).await
+    }
+
+    async fn connect_filtered_with_spreads(
+        &mut self,
+        spreads: bool,
+    ) -> (
+        OKXExecutionClient,
+        tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        Rc<RefCell<Cache>>,
+    ) {
+        let (mut client, mut rx, cache) =
+            create_test_execution_client_configured(&format!("http://{}", self.addr), |config| {
+                config.instrument_types = vec![OKXInstrumentType::Swap];
+                config.instrument_families = Some(vec!["ETH-USDT".into()]);
+                config.base_url_ws_private = Some(format!("ws://{}/ws/v5/private", self.addr));
+                config.base_url_ws_business = Some(format!("ws://{}/ws/v5/business", self.addr));
+                config.max_retries = 0;
+                config.load_spreads = spreads;
+            });
+
+        client.start().unwrap();
+        let mut connect = Box::pin(client.connect());
+        self.next_request(&mut connect)
+            .await
+            .respond(bootstrap_response(true, 1));
+        finish_bootstrap_connect(connect, &mut rx, &cache)
+            .await
+            .unwrap();
+        (client, rx, cache)
     }
 
     fn client(
         &self,
         families: bool,
-        skip_option: bool,
     ) -> (
         OKXExecutionClient,
         tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
@@ -8162,15 +8943,13 @@ impl BootstrapServer {
                     vec![OKXInstrumentType::Swap, OKXInstrumentType::Spot]
                 };
 
-                if skip_option {
-                    config.instrument_types.push(OKXInstrumentType::Option);
-                }
                 config.instrument_families =
                     families.then(|| vec!["BTC-USDT".to_string(), "ETH-USDT".to_string()]);
                 config.base_url_ws_private = Some(format!("ws://{}/ws/v5/private", self.addr));
                 config.base_url_ws_business = Some(format!("ws://{}/ws/v5/business", self.addr));
                 config.max_retries = 0;
             });
+
         client.start().unwrap();
         (client, rx, cache)
     }
@@ -8190,6 +8969,7 @@ impl BootstrapServer {
     async fn assert_order_events(
         &self,
         rx: &mut tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+        cache: &Rc<RefCell<Cache>>,
         families: bool,
     ) {
         for symbol in [
@@ -8205,19 +8985,32 @@ impl BootstrapServer {
             order["tradeId"] = json!("");
             self.ws.messages.as_ref().unwrap().send(message).unwrap();
 
-            // Both execution streams must parse the order using their bootstrap cache
             for _ in 0..2 {
-                let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-                    .await
-                    .unwrap()
-                    .unwrap();
+                let mut data_events = self.data_events.lock().await;
+
+                let event = tokio::time::timeout(Duration::from_secs(5), async {
+                    loop {
+                        tokio::select! {
+                            event = rx.recv() => return event.unwrap(),
+                            data = data_events.recv() => {
+                                let DataEvent::Data(Data::Instrument(instrument)) = data.unwrap() else { panic!("expected instrument registration"); };
+                                cache.borrow_mut().add_instrument(*instrument.clone()).unwrap();
+                                let topic = nautilus_common::msgbus::switchboard::get_instrument_topic(instrument.id());
+                                msgbus::publish_instrument(topic, &instrument);
+                            }
+                        }
+                    }
+                }).await.unwrap();
+
                 let ExecutionEvent::Report(CommonExecutionReport::Order(report)) = event else {
                     panic!("expected order report, received {event:?}");
                 };
+
                 assert_eq!(
                     report.instrument_id,
                     InstrumentId::from(format!("{symbol}.OKX").as_str())
                 );
+                assert!(cache.borrow().instrument(&report.instrument_id).is_some());
                 assert_eq!(
                     report.venue_order_id,
                     VenueOrderId::from("2497956918703120384")
@@ -8283,6 +9076,11 @@ fn bootstrap_response(families: bool, scope: usize) -> Response {
                     }
             });
     }
+
+    if !families && scope == 1 {
+        response["data"][0]["instIdCode"] = json!(20461);
+    }
+
     Json(response).into_response()
 }
 
@@ -8515,7 +9313,16 @@ async fn test_generate_order_status_report_http_failure_is_error() {
 #[rstest]
 #[tokio::test]
 async fn test_generate_mass_status_marks_historical_cache_miss_incomplete() {
+    let lookups = Arc::new(AtomicUsize::new(0));
+    let lookup_count = Arc::clone(&lookups);
     let router = Router::new()
+        .route(
+            "/api/v5/public/instruments",
+            get(move || {
+                lookup_count.fetch_add(1, Ordering::Relaxed);
+                async { Json(json!({"code":"0","msg":"","data":[]})) }
+            }),
+        )
         .route("/health", get(|| async { Json(json!({"ok": true})) }))
         .route(
             "/api/v5/trade/orders-pending",
@@ -8575,6 +9382,7 @@ async fn test_generate_mass_status_marks_historical_cache_miss_incomplete() {
     assert!(mass_status.lookback_start().is_some());
     assert!(!mass_status.reports_complete());
     assert!(mass_status.order_reports().is_empty());
+    assert_eq!(lookups.load(Ordering::Relaxed), 0);
 }
 
 #[rstest]
@@ -8713,7 +9521,7 @@ async fn test_imported_order_first_amend_confirmation(
     #[case] with_fill: bool,
 ) {
     let mut server = BootstrapServer::start().await;
-    let (mut client, mut rx, cache) = server.client(true, false);
+    let (mut client, mut rx, cache) = server.client(true);
     let mut connect = Box::pin(client.connect());
     for scope in 0..2 {
         let request = server.next_request(&mut connect).await;
@@ -8781,10 +9589,22 @@ async fn test_imported_order_first_amend_confirmation(
     msg["tradeId"] = json!(if with_fill { "1518905529" } else { "" });
     msg["fee"] = json!("0");
     server.ws.messages.as_ref().unwrap().send(message).unwrap();
-    let first = tokio::time::timeout(Duration::from_secs(5), rx.recv())
-        .await
-        .unwrap()
-        .unwrap();
+    let mut data = server.data_events.lock().await;
+
+    let first = tokio::time::timeout(Duration::from_secs(5), async {
+        loop {
+            tokio::select! {
+                event = rx.recv() => return event.unwrap(),
+                event = data.recv() => {
+                    let DataEvent::Data(Data::Instrument(instrument)) = event.unwrap()
+                    else { panic!("expected imported-order metadata registration"); };
+                    register_stream_definition(&cache, &instrument);
+                }
+            }
+        }
+    })
+    .await
+    .unwrap();
 
     let ExecutionEvent::Order(OrderEventAny::Updated(updated)) = first else {
         panic!("expected imported amendment first, was {first:?}");
@@ -9329,4 +10149,213 @@ async fn test_local_cancel_validation_emits_correlated_denial() {
         serde_json::to_value(cache.borrow().order_owned(&client_order_id).unwrap()).unwrap(),
         before
     );
+}
+
+#[rstest]
+#[case::regular("orders")]
+#[case::algo("algo")]
+#[case::position("positions")]
+#[tokio::test]
+async fn test_filtered_execution_recovers_current_instrument(
+    #[case] kind: &'static str,
+    #[values("direct", "accepted", "discarded")] delivery: &str,
+    #[values(false, true)] cached_definition: bool,
+) {
+    let queries = Arc::new(AtomicUsize::new(0));
+    let query_count = Arc::clone(&queries);
+    let router = Router::new()
+        .route(
+            "/api/v5/public/instruments",
+            get(move |Query(params): Query<HashMap<String, String>>| {
+                let count = Arc::clone(&query_count);
+                async move {
+                    assert_eq!(
+                        params.get("instId").map(String::as_str),
+                        Some("BTC-USDT-SWAP")
+                    );
+                    count.fetch_add(1, Ordering::Relaxed);
+                    let mut response = load_test_data("http_get_instruments_swap.json");
+                    response["data"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|row| row["instId"] == "BTC-USDT-SWAP");
+                    Json(response)
+                }
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-pending",
+            get(move || async move {
+                let response =
+                    current_instrument_response(kind, "orders", "http_get_orders_pending.json");
+                Json(response)
+            }),
+        )
+        .route(
+            "/api/v5/trade/orders-history",
+            get(|| async { Json(json!({"code":"0","msg":"","data":[]})) }),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-pending",
+            get(
+                move |Query(params): Query<HashMap<String, String>>| async move {
+                    Json(
+                        if kind == "algo"
+                            && params.get("ordType").map(String::as_str) == Some("conditional")
+                        {
+                            load_test_data("http_get_orders_algo_pending.json")
+                        } else {
+                            json!({"code":"0","msg":"","data":[]})
+                        },
+                    )
+                },
+            ),
+        )
+        .route(
+            "/api/v5/trade/orders-algo-history",
+            get(|| async { Json(json!({"code":"0","msg":"","data":[]})) }),
+        )
+        .route(
+            "/api/v5/account/positions",
+            get(move || async move {
+                let response =
+                    current_instrument_response(kind, "positions", "http_get_positions.json");
+                Json(response)
+            }),
+        )
+        .route(
+            "/api/v5/account/balance",
+            get(|| async { Json(load_test_data("http_get_account_balance.json")) }),
+        );
+
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, router).await.unwrap();
+    });
+
+    let (mut client, _rx, cache) =
+        create_test_execution_client_configured(&format!("http://{address}"), |config| {
+            config.instrument_types = vec![OKXInstrumentType::Swap];
+            config.instrument_families = Some(vec!["ETH-USDT".to_string()]);
+        });
+
+    if cached_definition {
+        client.on_instrument(btc_usdt_swap_instrument());
+    }
+
+    let cache_sink = Rc::clone(&cache);
+    let endpoint = MessagingSwitchboard::data_engine_process_data();
+    msgbus::register_data_endpoint(
+        endpoint,
+        TypedIntoHandler::from(move |data: Data| {
+            let Data::Instrument(instrument) = data else {
+                panic!("Expected instrument")
+            };
+
+            cache_sink.borrow_mut().add_instrument(*instrument).unwrap();
+        }),
+    );
+
+    let expected = InstrumentId::from("BTC-USDT-SWAP.OKX");
+
+    let actual: Vec<_> = if kind == "positions" {
+        let command = GeneratePositionStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let reports = if delivery == "direct" {
+            client
+                .generate_position_status_reports(&command)
+                .await
+                .unwrap()
+        } else {
+            let task = client
+                .generate_position_status_reports_task(&command)
+                .unwrap();
+            finish_recovered_report(task, &cache, expected, delivery == "accepted").await
+        };
+
+        assert_eq!(
+            reports.first().map(|report| report.quantity),
+            (delivery != "discarded").then(|| Quantity::from("0.5"))
+        );
+
+        reports
+            .into_iter()
+            .map(|report| report.instrument_id)
+            .collect()
+    } else {
+        let command = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            UnixNanos::default(),
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        let reports = if delivery == "direct" {
+            client
+                .generate_order_status_reports(&command)
+                .await
+                .unwrap()
+        } else {
+            let task = client.generate_order_status_reports_task(&command).unwrap();
+            finish_recovered_report(task, &cache, expected, delivery == "accepted").await
+        };
+
+        reports
+            .into_iter()
+            .map(|report| report.instrument_id)
+            .collect()
+    };
+
+    assert_eq!(
+        actual,
+        if delivery == "discarded" {
+            vec![]
+        } else {
+            vec![expected]
+        }
+    );
+    assert_eq!(queries.load(Ordering::Relaxed), 1);
+    assert_eq!(
+        cache.borrow().instrument(&expected).map(Instrument::id),
+        (delivery != "discarded").then_some(expected)
+    );
+    server.abort();
+}
+
+async fn finish_recovered_report<T: 'static>(
+    task: ExecutionReportTask<Vec<T>>,
+    cache: &Rc<RefCell<Cache>>,
+    instrument_id: InstrumentId,
+    accept: bool,
+) -> Vec<T> {
+    task.collection.await;
+    assert_eq!(cache.borrow().instrument(&instrument_id), None);
+
+    if accept {
+        (task.finish)().unwrap()
+    } else {
+        drop(task.finish);
+        Vec::new()
+    }
+}
+
+fn current_instrument_response(kind: &str, requested: &str, fixture: &str) -> Value {
+    if kind == requested {
+        load_test_data(fixture)
+    } else {
+        json!({"code":"0","msg":"","data":[]})
+    }
 }

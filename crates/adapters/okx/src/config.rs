@@ -15,7 +15,7 @@
 
 //! Configuration structures for the OKX adapter.
 
-use nautilus_common::config::{ConfigResult, check_unique_values};
+use nautilus_common::config::{ConfigError, ConfigResult, check_range, check_unique_values};
 use nautilus_core::string::secret::SecretString;
 use nautilus_live::book::DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS;
 use nautilus_model::{enums::OmsType, identifiers::AccountId};
@@ -60,7 +60,8 @@ pub struct OKXDataClientConfig {
     #[builder(default)]
     pub load_spreads: bool,
     /// Instrument families to load (e.g., "BTC-USD", "ETH-USD").
-    /// Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
+    /// Required for OPTION; optional for FUTURES/SWAP. For EVENTS, values are series IDs.
+    /// Filtered EVENTS and derivatives require separate clients. Ignored for SPOT/MARGIN.
     pub instrument_families: Option<Vec<String>>,
     /// The API environment (live or demo).
     #[builder(default)]
@@ -76,7 +77,8 @@ pub struct OKXDataClientConfig {
     pub base_url_ws_business: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// HTTP timeout in seconds.
+    /// Timeout per HTTP attempt in seconds.
+    /// The retry budget is the greater of this timeout and 180 seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
     /// Maximum retry attempts for requests.
@@ -106,9 +108,10 @@ pub struct OKXDataClientConfig {
     /// snapshot in seconds.
     #[builder(default = DEFAULT_BOOK_SNAPSHOT_TIMEOUT_SECS)]
     pub book_snapshot_timeout_secs: u64,
-    /// Optional VIP level that unlocks additional subscriptions.
+    /// Optional VIP level that selects book channels.
+    /// VIP4 and above require complete API credentials and venue permission.
     pub vip_level: Option<OKXVipLevel>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
 }
@@ -116,6 +119,7 @@ pub struct OKXDataClientConfig {
 #[cfg(feature = "python")]
 nautilus_core::impl_pyo3_config_getters!(OKXDataClientConfig {
     instrument_types: Vec<OKXInstrumentType>,
+    contract_types: Option<Vec<OKXContractType>>,
     instrument_families: Option<Vec<String>>,
     environment: OKXEnvironment,
     region: OKXRegion,
@@ -148,32 +152,43 @@ impl OKXDataClientConfig {
         Self::default()
     }
 
-    /// Validates that configured selections contain no duplicates.
+    /// Validates instrument selections, authentication requirements, and retry delays.
     ///
     /// # Errors
     ///
-    /// Returns an error if a selection repeats a value.
+    /// Returns an error if selections are duplicated, blank, or conflicting, required settings
+    /// are missing, or retry delays are invalid.
     pub fn validate(&self) -> ConfigResult<()> {
-        check_unique_values("instrument_types", &self.instrument_types)?;
+        validate_instrument_selections(
+            &self.instrument_types,
+            self.contract_types.as_deref(),
+            self.instrument_families.as_deref(),
+        )?;
+        validate_retry_delays(self.retry_delay_initial_ms, self.retry_delay_max_ms)?;
 
-        if let Some(values) = &self.contract_types {
-            check_unique_values("contract_types", values)?;
-        }
-
-        if let Some(values) = &self.instrument_families {
-            check_unique_values("instrument_families", values)?;
+        if self
+            .vip_level
+            .is_some_and(|level| level >= OKXVipLevel::Vip4)
+            && !self.has_api_credentials()
+        {
+            return Err(ConfigError::dependency(
+                "vip_level",
+                "api_key, api_secret, api_passphrase",
+                "VIP book channels require authentication",
+            ));
         }
 
         Ok(())
     }
 
-    /// Returns `true` when all API credential fields are available (in config or env vars).
+    /// Returns whether all credential fields have non-blank config or environment values.
+    /// Explicit blank values do not fall back to environment variables.
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
         let (key_var, secret_var, passphrase_var) = credential_env_vars();
-        let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
-        let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
-        let has_passphrase = self.api_passphrase.is_some() || std::env::var(passphrase_var).is_ok();
+        let has_key = has_credential(self.api_key.as_ref(), key_var);
+        let has_secret = has_credential(self.api_secret.as_ref(), secret_var);
+        let has_passphrase = has_credential(self.api_passphrase.as_ref(), passphrase_var);
         has_key && has_secret && has_passphrase
     }
 
@@ -238,10 +253,11 @@ pub struct OKXExecutionClientConfig {
     /// Instrument types the execution client should support.
     #[builder(default = vec![OKXInstrumentType::Spot])]
     pub instrument_types: Vec<OKXInstrumentType>,
-    /// Contract type filter applied to operations.
+    /// Contract type filter applied to instrument discovery.
     pub contract_types: Option<Vec<OKXContractType>>,
     /// Instrument families to load (e.g., "BTC-USD", "ETH-USD").
-    /// Required for OPTIONS. Optional for FUTURES/SWAP. Not applicable for SPOT/MARGIN.
+    /// Required for OPTION; optional for FUTURES/SWAP. For EVENTS, values are series IDs.
+    /// Filtered EVENTS and derivatives require separate clients. Ignored for SPOT/MARGIN.
     pub instrument_families: Option<Vec<String>>,
     /// The API environment (live or demo).
     #[builder(default)]
@@ -257,13 +273,15 @@ pub struct OKXExecutionClientConfig {
     pub base_url_ws_business: Option<String>,
     /// Optional proxy URL for HTTP and WebSocket transports.
     pub proxy_url: Option<SecretString>,
-    /// HTTP timeout in seconds.
+    /// Timeout per HTTP attempt in seconds.
+    /// The retry budget is the greater of this timeout and 180 seconds.
     #[builder(default = 60)]
     pub http_timeout_secs: u64,
     /// Whether to subscribe to spread order updates from the separate spread channel.
     #[builder(default)]
     pub load_spreads: bool,
-    /// Enables mass-cancel support when true.
+    /// Selects MMP-only family cancellation, which is unsupported for ordinary orders.
+    /// Must remain false; true fails validation.
     #[builder(default)]
     pub use_mm_mass_cancel: bool,
     /// Maximum retry attempts for requests.
@@ -278,6 +296,7 @@ pub struct OKXExecutionClientConfig {
     /// Optional margin mode (CROSS or ISOLATED) for margin/derivative accounts.
     pub margin_mode: Option<OKXMarginMode>,
     /// Enables margin/leverage for SPOT trading when true.
+    /// Selecting MARGIN in `instrument_types` also enables spot margin.
     #[builder(default)]
     pub use_spot_margin: bool,
     /// Optional SPOT `tradeQuoteCcy` override sent on order payloads.
@@ -290,7 +309,7 @@ pub struct OKXExecutionClientConfig {
     /// Optional WebSocket authentication timeout (seconds), defaulting to
     /// `AUTHENTICATION_TIMEOUT_SECS` when unset.
     pub auth_timeout_secs: Option<u64>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
+    /// WebSocket transport backend (defaults to `Sockudo`).
     #[builder(default)]
     pub transport_backend: TransportBackend,
     /// Maximum pages per startup reconciliation history query, capped at 50.
@@ -306,6 +325,9 @@ nautilus_core::impl_pyo3_config_getters!(OKXExecutionClientConfig {
     account_id: AccountId,
     oms_type: Option<OmsType>,
     instrument_types: Vec<OKXInstrumentType>,
+    contract_types: Option<Vec<OKXContractType>>,
+    instrument_families: Option<Vec<String>>,
+    use_spot_margin: bool,
     environment: OKXEnvironment,
     region: OKXRegion,
     base_url_http: Option<String>,
@@ -336,32 +358,52 @@ impl OKXExecutionClientConfig {
         Self::default()
     }
 
-    /// Validates that configured selections contain no duplicates.
+    /// Validates instrument selections, cancellation support, and retry delays.
     ///
     /// # Errors
     ///
-    /// Returns an error if a selection repeats a value.
+    /// Returns an error if selections are duplicated, blank, or conflicting, required settings
+    /// are missing, retry delays are invalid, or MMP cancellation is enabled.
     pub fn validate(&self) -> ConfigResult<()> {
-        check_unique_values("instrument_types", &self.instrument_types)?;
+        validate_instrument_selections(
+            &self.instrument_types,
+            self.contract_types.as_deref(),
+            self.instrument_families.as_deref(),
+        )?;
+        validate_retry_delays(self.retry_delay_initial_ms, self.retry_delay_max_ms)?;
 
-        if let Some(values) = &self.contract_types {
-            check_unique_values("contract_types", values)?;
-        }
-
-        if let Some(values) = &self.instrument_families {
-            check_unique_values("instrument_families", values)?;
+        if self.use_mm_mass_cancel {
+            return Err(ConfigError::unsupported_value(
+                "use_mm_mass_cancel",
+                "MMP-only family cancellation does not cancel ordinary orders",
+            ));
         }
 
         Ok(())
     }
 
-    /// Returns `true` when all API credential fields are available (in config or env vars).
+    pub(crate) fn has_instrument_filters(&self) -> bool {
+        self.instrument_families
+            .as_ref()
+            .is_some_and(|values| !values.is_empty())
+            || self
+                .contract_types
+                .as_ref()
+                .is_some_and(|values| !values.is_empty())
+    }
+
+    pub(crate) fn uses_spot_margin(&self) -> bool {
+        self.use_spot_margin || self.instrument_types.contains(&OKXInstrumentType::Margin)
+    }
+
+    /// Returns whether all credential fields have non-blank config or environment values.
+    /// Explicit blank values do not fall back to environment variables.
     #[must_use]
     pub fn has_api_credentials(&self) -> bool {
         let (key_var, secret_var, passphrase_var) = credential_env_vars();
-        let has_key = self.api_key.is_some() || std::env::var(key_var).is_ok();
-        let has_secret = self.api_secret.is_some() || std::env::var(secret_var).is_ok();
-        let has_passphrase = self.api_passphrase.is_some() || std::env::var(passphrase_var).is_ok();
+        let has_key = has_credential(self.api_key.as_ref(), key_var);
+        let has_secret = has_credential(self.api_secret.as_ref(), secret_var);
+        let has_passphrase = has_credential(self.api_passphrase.as_ref(), passphrase_var);
         has_key && has_secret && has_passphrase
     }
 
@@ -388,4 +430,74 @@ impl OKXExecutionClientConfig {
             .clone()
             .unwrap_or_else(|| get_ws_base_url_business(self.region, self.environment).to_string())
     }
+}
+
+fn validate_instrument_selections(
+    instrument_types: &[OKXInstrumentType],
+    contract_types: Option<&[OKXContractType]>,
+    instrument_families: Option<&[String]>,
+) -> ConfigResult<()> {
+    check_unique_values("instrument_types", instrument_types)?;
+
+    if let Some(values) = contract_types {
+        check_unique_values("contract_types", values)?;
+    }
+
+    if let Some(values) = instrument_families {
+        check_unique_values("instrument_families", values)?;
+        if values.iter().any(|value| value.trim().is_empty()) {
+            return Err(ConfigError::invalid_value(
+                "instrument_families",
+                "entries must not be blank",
+            ));
+        }
+    }
+
+    if instrument_types.contains(&OKXInstrumentType::Option)
+        && instrument_families.is_none_or(<[String]>::is_empty)
+    {
+        return Err(ConfigError::dependency(
+            "instrument_types",
+            "instrument_families",
+            "OPTION requires at least one family",
+        ));
+    }
+
+    if instrument_types.contains(&OKXInstrumentType::Events)
+        && instrument_types.iter().any(|value| {
+            matches!(
+                value,
+                OKXInstrumentType::Option | OKXInstrumentType::Swap | OKXInstrumentType::Futures
+            )
+        })
+        && instrument_families.is_some_and(|values| !values.is_empty())
+    {
+        return Err(ConfigError::invalid_value(
+            "instrument_families",
+            "EVENTS series and derivative families require separate clients",
+        ));
+    }
+
+    Ok(())
+}
+
+pub(crate) fn validate_retry_delays(initial_ms: u64, max_ms: u64) -> ConfigResult<()> {
+    check_range("retry_delay_initial_ms", initial_ms > 0, "must be positive")?;
+    check_range(
+        "retry_delay_max_ms",
+        max_ms >= initial_ms,
+        "must be >= retry_delay_initial_ms",
+    )?;
+    check_range(
+        "retry_delay_max_ms",
+        max_ms <= u64::MAX / 1_000_000,
+        "exceeds maximum representable backoff duration",
+    )
+}
+
+fn has_credential(value: Option<&SecretString>, env_var: &str) -> bool {
+    value.map_or_else(
+        || std::env::var(env_var).is_ok_and(|value| !value.trim().is_empty()),
+        |value| !value.expose_secret().trim().is_empty(),
+    )
 }

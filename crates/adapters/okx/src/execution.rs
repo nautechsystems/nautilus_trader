@@ -20,7 +20,6 @@ use std::{future::Future, sync::Arc};
 use ahash::{AHashMap, AHashSet};
 use anyhow::Context;
 use async_trait::async_trait;
-use futures_util::{StreamExt, pin_mut};
 use nautilus_common::{
     clients::{ExecutionClient, ExecutionReportTask},
     live::{
@@ -37,6 +36,10 @@ use nautilus_common::{
             GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
             SubmitOrder, SubmitOrderList,
         },
+    },
+    msgbus::{
+        self, TypedHandler,
+        switchboard::{MessagingSwitchboard, get_instruments_pattern},
     },
 };
 use nautilus_core::{
@@ -64,20 +67,24 @@ use nautilus_model::{
         AccountId, ClientId, ClientOrderId, InstrumentId, PositionId, StrategyId, Venue,
         VenueOrderId,
     },
-    instruments::InstrumentAny,
+    instruments::{Instrument, InstrumentAny},
     orders::Order,
     reports::{ExecutionMassStatus, FillReport, OrderStatusReport, PositionStatusReport},
     types::{AccountBalance, MarginBalance, Quantity},
 };
 use rust_decimal::Decimal;
 
+mod stream;
+
+use self::stream::{ExecutionStream, StreamState};
 use crate::{
     common::{
         consts::{
             OKX_CONDITIONAL_ORDER_TYPES, OKX_RECONCILIATION_LOOKBACK_DEFAULT_MINS,
             OKX_RECONCILIATION_LOOKBACK_MAX_MINS, OKX_SUCCESS_CODE, OKX_VENUE,
-            OKX_WS_HEARTBEAT_SECS, okx_algo_target_currency, okx_reduce_only_wire_value,
-            resolve_instrument_families, validate_algo_trigger_type, validate_okx_client_order_id,
+            OKX_WS_HEARTBEAT_SECS, contract_filter_with_config_types, okx_algo_target_currency,
+            okx_reduce_only_wire_value, resolve_instrument_families, validate_algo_trigger_type,
+            validate_okx_client_order_id,
         },
         enums::{
             OKXAlgoOrderType, OKXInstrumentType, OKXMarginMode, OKXPositionMode, OKXPositionSide,
@@ -102,12 +109,10 @@ use crate::{
     websocket::{
         client::OKXWebSocketClient,
         dispatch::{
-            AlgoCancelContext, AlgoOrderState, WsDispatchState, dispatch_ws_message,
-            emit_algo_cancel_rejections, emit_send_failed_cancel, format_order_response_reason,
+            AlgoCancelContext, AlgoOrderState, WsDispatchState, emit_algo_cancel_rejections,
+            emit_send_failed_cancel, format_order_response_reason,
         },
         error::OKXWsError,
-        messages::OKXWsMessage,
-        parse::{FeeCache, FilledQtyCache, OrderStateSnapshot},
     },
 };
 
@@ -125,6 +130,8 @@ pub struct OKXExecutionClient {
     ws_dispatch_state: Arc<WsDispatchState>,
     session_tasks: TaskGroup,
     pending_tasks: TaskGroup,
+    stream_state: Arc<StreamState>,
+    stream_instruments: Option<TypedHandler<InstrumentAny>>,
 }
 
 impl OKXExecutionClient {
@@ -227,6 +234,13 @@ impl OKXExecutionClient {
             ws_private.pending_command_ids.clone(),
         ));
 
+        let stream_state = Arc::new(StreamState::new(
+            http_client.clone(),
+            ws_private.clone(),
+            ws_business.clone(),
+            std::iter::empty(),
+        ));
+
         Ok(Self {
             core,
             clock,
@@ -240,6 +254,8 @@ impl OKXExecutionClient {
             ws_dispatch_state,
             session_tasks: TaskGroup::new(),
             pending_tasks: TaskGroup::new(),
+            stream_state,
+            stream_instruments: None,
         })
     }
 
@@ -252,9 +268,8 @@ impl OKXExecutionClient {
         config: &OKXExecutionClientConfig,
     ) -> OKXTradeMode {
         let is_cross_margin = config.margin_mode == Some(OKXMarginMode::Cross);
-
         if account_type == AccountType::Cash {
-            if !config.use_spot_margin {
+            if !config.uses_spot_margin() {
                 return OKXTradeMode::Cash;
             }
             return if is_cross_margin {
@@ -288,8 +303,17 @@ impl OKXExecutionClient {
         derive_trade_mode_for_instrument(
             instrument_id,
             self.config.margin_mode,
-            self.config.use_spot_margin,
+            self.config.uses_spot_margin(),
         )
+    }
+
+    fn report_context(&self) -> ReportContext {
+        ReportContext {
+            core: self.core.clone(),
+            http_client: self.http_client.clone(),
+            ws_private: self.ws_private.clone(),
+            ws_business: self.ws_business.clone(),
+        }
     }
 
     fn report_client(&self) -> OKXReportClient {
@@ -297,6 +321,7 @@ impl OKXExecutionClient {
             account_id: self.core.account_id,
             http_client: self.http_client.clone(),
             instrument_types: self.config.instrument_types.clone(),
+            recover_inst_id_codes: self.config.has_instrument_filters(),
             load_spreads: self.config.load_spreads,
             margin_mode: (self.position_mode == OKXPositionMode::LongShortMode).then_some(
                 self.config
@@ -320,6 +345,8 @@ impl OKXExecutionClient {
             .report_client()
             .collect_order_status_reports(cmd, max_history_pages)
             .await?;
+        self.report_context()
+            .register(sweep.reports.iter().map(|report| report.instrument_id));
         Ok(finish_order_report_sweep(&self.core, sweep, cmd))
     }
 
@@ -329,18 +356,26 @@ impl OKXExecutionClient {
         history: FillHistory,
         max_history_pages: Option<u32>,
     ) -> anyhow::Result<(Vec<FillReport>, bool)> {
-        self.report_client()
+        let result = self
+            .report_client()
             .collect_fill_reports(cmd, history, max_history_pages)
-            .await
+            .await?;
+        self.report_context()
+            .register(result.0.iter().map(|report| report.instrument_id));
+        Ok(result)
     }
 
     async fn collect_position_status_reports(
         &self,
         cmd: &GeneratePositionStatusReports,
     ) -> anyhow::Result<(Vec<PositionStatusReport>, bool)> {
-        self.report_client()
+        let result = self
+            .report_client()
             .collect_position_status_reports(cmd)
-            .await
+            .await?;
+        self.report_context()
+            .register(result.0.iter().map(|report| report.instrument_id));
+        Ok(result)
     }
 
     fn query_order_state(&self, cmd: &GenerateOrderStatusReport) -> Option<CachedQueryOrderState> {
@@ -1221,6 +1256,8 @@ impl OKXExecutionClient {
                 .start_generation()
                 .context("failed to start OKX execution stream task generation")?;
         }
+
+        self.register_stream_instruments();
         let instrument_types = self.instrument_types();
 
         self.update_position_mode().await?;
@@ -1237,7 +1274,7 @@ impl OKXExecutionClient {
                 };
 
                 if families.is_empty() {
-                    let (instruments, inst_id_codes) = self
+                    let (mut instruments, inst_id_codes) = self
                         .http_client
                         .request_instruments(*instrument_type, None)
                         .await
@@ -1245,12 +1282,14 @@ impl OKXExecutionClient {
                             format!("failed to request OKX instruments for {instrument_type:?}")
                         })?;
 
-                    if instruments.is_empty() {
-                        anyhow::bail!(
-                            "No usable instruments for {instrument_type:?}, \
-                             cannot initialize execution client"
-                        );
-                    }
+                    instruments.retain(|instrument| {
+                        contract_filter_with_config_types(
+                            self.config.contract_types.as_ref(),
+                            instrument,
+                        )
+                    });
+
+                    self.check_discovery(&instruments, *instrument_type, None)?;
 
                     log::debug!(
                         "Loaded {} {instrument_type:?} instruments",
@@ -1262,7 +1301,7 @@ impl OKXExecutionClient {
                     all_inst_id_codes.extend(inst_id_codes);
                 } else {
                     for family in &families {
-                        let (instruments, inst_id_codes) = self
+                        let (mut instruments, inst_id_codes) = self
                             .http_client
                             .request_instruments(*instrument_type, Some(family.clone()))
                             .await
@@ -1272,12 +1311,14 @@ impl OKXExecutionClient {
                                 )
                             })?;
 
-                        if instruments.is_empty() {
-                            anyhow::bail!(
-                                "No usable instruments for {instrument_type:?} family {family}, \
-                                 cannot initialize execution client"
-                            );
-                        }
+                        instruments.retain(|instrument| {
+                            contract_filter_with_config_types(
+                                self.config.contract_types.as_ref(),
+                                instrument,
+                            )
+                        });
+
+                        self.check_discovery(&instruments, *instrument_type, Some(family))?;
 
                         log::debug!(
                             "Loaded {} {instrument_type:?} instruments for family {family}",
@@ -1320,123 +1361,35 @@ impl OKXExecutionClient {
             self.core.set_instruments_initialized();
         }
 
+        Box::pin(self.prepare_active_instruments()).await?;
+
         self.ws_private.connect().await?;
         self.ws_private.wait_until_active(10.0).await?;
         log::info!("Connected to private WebSocket");
 
-        {
-            let stream = self.ws_private.stream();
-            let emitter = self.emitter.clone();
-            let state = Arc::clone(&self.ws_dispatch_state);
-            let account_id = self.core.account_id;
-            let account_type = self.core.account_type;
-            let instruments = self.ws_private.instruments_cache_arc();
-            let tasks = self
-                .session_tasks
-                .spawner()
-                .context("OKX execution stream task admission is closed")?;
-            let cancel = tasks.cancellation_token();
-            let clock = self.clock;
-
-            spawn_task(&tasks, async move {
-                let mut fee_cache = FeeCache::new();
-                let mut filled_qty_cache = FilledQtyCache::new();
-                let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
-                    AHashMap::new();
-
-                pin_mut!(stream);
-
-                loop {
-                    tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => break,
-                        message = stream.next() => {
-                            let Some(message) = message else {
-                                break;
-                            };
-                            dispatch_ws_message(
-                                message,
-                                &emitter,
-                                &state,
-                                account_id,
-                                account_type,
-                                &instruments,
-                                &mut fee_cache,
-                                &mut filled_qty_cache,
-                                &mut order_state_cache,
-                                clock,
-                            );
-                        }
-                        () = state.wait_for_linked_child_route() => {
-                            dispatch_ws_message(
-                                OKXWsMessage::Orders(Vec::new()),
-                                &emitter,
-                                &state,
-                                account_id,
-                                account_type,
-                                &instruments,
-                                &mut fee_cache,
-                                &mut filled_qty_cache,
-                                &mut order_state_cache,
-                                clock,
-                            );
-                        }
-                    }
-                }
-            });
-        }
-
+        let private_stream = self.ws_private.stream();
         self.ws_business.connect().await?;
         self.ws_business.wait_until_active(10.0).await?;
         log::info!("Connected to business WebSocket");
+        let business_stream = self.ws_business.stream();
+        let tasks = self
+            .session_tasks
+            .spawner()
+            .context("OKX execution stream task admission is closed")?;
 
-        {
-            let stream = self.ws_business.stream();
-            let emitter = self.emitter.clone();
-            let state = Arc::clone(&self.ws_dispatch_state);
-            let account_id = self.core.account_id;
-            let account_type = self.core.account_type;
-            let instruments = self.ws_business.instruments_cache_arc();
-            let tasks = self
-                .session_tasks
-                .spawner()
-                .context("OKX execution stream task admission is closed")?;
-            let cancel = tasks.cancellation_token();
-            let clock = self.clock;
-
-            spawn_task(&tasks, async move {
-                let mut fee_cache = FeeCache::new();
-                let mut filled_qty_cache = FilledQtyCache::new();
-                let mut order_state_cache: AHashMap<ClientOrderId, OrderStateSnapshot> =
-                    AHashMap::new();
-
-                pin_mut!(stream);
-
-                loop {
-                    tokio::select! {
-                        biased;
-                        () = cancel.cancelled() => break,
-                        message = stream.next() => {
-                            let Some(message) = message else {
-                                break;
-                            };
-                            dispatch_ws_message(
-                                message,
-                                &emitter,
-                                &state,
-                                account_id,
-                                account_type,
-                                &instruments,
-                                &mut fee_cache,
-                                &mut filled_qty_cache,
-                                &mut order_state_cache,
-                                clock,
-                            );
-                        }
-                    }
-                }
-            });
-        }
+        let worker = ExecutionStream::new(
+            Arc::clone(&self.stream_state),
+            Arc::clone(&self.ws_dispatch_state),
+            self.emitter.clone(),
+            self.core.account_type,
+            self.clock,
+            nautilus_common::live::runner::try_get_data_event_sender(),
+        );
+        let cancel = tasks.cancellation_token();
+        tasks.spawn(worker.run(
+            futures_util::stream::select(private_stream, business_stream),
+            cancel,
+        ))?;
 
         let order_routing_types = order_routing_instrument_types(&instrument_types);
 
@@ -1492,6 +1445,101 @@ impl OKXExecutionClient {
 
         // Wait for account to be registered in cache before completing connect
         self.await_account_registered(30.0).await?;
+
+        Ok(())
+    }
+
+    fn register_stream_instruments(&mut self) {
+        self.unregister_stream_instruments();
+        let registered = self
+            .core
+            .cache()
+            .instrument_ids(Some(&OKX_VENUE))
+            .into_iter()
+            .copied()
+            .collect::<Vec<_>>();
+
+        self.stream_state = Arc::new(StreamState::new(
+            self.http_client.clone(),
+            self.ws_private.clone(),
+            self.ws_business.clone(),
+            registered,
+        ));
+        let state = Arc::downgrade(&self.stream_state);
+        let core = self.core.clone();
+
+        let handler = TypedHandler::from(move |instrument: &InstrumentAny| {
+            if let Some(state) = state.upgrade() {
+                let cache = core.cache();
+                state.observe(instrument, cache.instrument(&instrument.id()));
+            }
+        });
+
+        msgbus::subscribe_instruments(get_instruments_pattern(*OKX_VENUE), handler.clone(), None);
+        self.stream_instruments = Some(handler);
+    }
+
+    fn unregister_stream_instruments(&mut self) {
+        if let Some(handler) = self.stream_instruments.take() {
+            msgbus::unsubscribe_instruments(get_instruments_pattern(*OKX_VENUE), &handler);
+        }
+    }
+
+    fn check_discovery(
+        &self,
+        instruments: &[InstrumentAny],
+        instrument_type: OKXInstrumentType,
+        family: Option<&str>,
+    ) -> anyhow::Result<()> {
+        if !instruments.is_empty() {
+            return Ok(());
+        }
+
+        log::error!(
+            "OKX execution discovery found no usable instruments: instrument_type={instrument_type:?}, instrument_family={family:?}, contract_types={:?}",
+            self.config.contract_types,
+        );
+        let scope = family.map_or_else(
+            || format!("{instrument_type:?}"),
+            |family| format!("{instrument_type:?} family {family}"),
+        );
+        anyhow::bail!("No usable instruments for {scope}, cannot initialize execution client")
+    }
+
+    async fn prepare_active_instruments(&self) -> anyhow::Result<()> {
+        if !self.config.has_instrument_filters() {
+            return Ok(());
+        }
+
+        let ts_now = self.clock.get_time_ns();
+
+        let orders = GenerateOrderStatusReports::new(
+            UUID4::new(),
+            ts_now,
+            true,
+            None,
+            None,
+            None,
+            None,
+            None,
+        );
+        let positions =
+            GeneratePositionStatusReports::new(UUID4::new(), ts_now, None, None, None, None, None);
+        let client = self.report_client();
+        let (orders, (positions, _)) = tokio::try_join!(
+            client.collect_order_status_reports(&orders, Some(0)),
+            client.collect_position_status_reports(&positions),
+        )?;
+        // Connect holds the execution-engine borrow, so only adapter caches can be updated here
+        let context = self.report_context();
+        for instrument_id in orders
+            .reports
+            .iter()
+            .map(|report| report.instrument_id)
+            .chain(positions.iter().map(|report| report.instrument_id))
+        {
+            context.cache_instrument(instrument_id);
+        }
 
         Ok(())
     }
@@ -1578,7 +1626,12 @@ impl OKXExecutionClient {
 
         self.core.set_disconnected();
 
+        self.unregister_stream_instruments();
         let mut errors = Vec::new();
+        if let Some(failure) = self.stream_state.take_failure() {
+            errors.push(failure);
+        }
+
         if let Err(e) = pending_result {
             errors.push(e.to_string());
         }
@@ -1603,40 +1656,31 @@ impl OKXExecutionClient {
     }
 }
 
+impl Drop for OKXExecutionClient {
+    fn drop(&mut self) {
+        self.begin_generation_shutdown();
+        self.unregister_stream_instruments();
+    }
+}
+
 fn derive_trade_mode_for_instrument(
     instrument_id: InstrumentId,
     margin_mode: Option<OKXMarginMode>,
     use_spot_margin: bool,
 ) -> OKXTradeMode {
     let inst_type = okx_instrument_type_from_symbol(instrument_id.symbol.as_str());
-    let is_cross_margin = margin_mode == Some(OKXMarginMode::Cross);
-
     match inst_type {
-        OKXInstrumentType::Spot => {
-            if use_spot_margin {
-                if is_cross_margin {
-                    OKXTradeMode::Cross
-                } else {
-                    OKXTradeMode::Isolated
-                }
-            } else {
-                OKXTradeMode::Cash
-            }
-        }
-        _ => {
-            if is_cross_margin {
-                OKXTradeMode::Cross
-            } else {
-                OKXTradeMode::Isolated
-            }
-        }
+        OKXInstrumentType::Events => OKXTradeMode::Isolated,
+        OKXInstrumentType::Spot if !use_spot_margin => OKXTradeMode::Cash,
+        _ if margin_mode == Some(OKXMarginMode::Cross) => OKXTradeMode::Cross,
+        _ => OKXTradeMode::Isolated,
     }
 }
 
 #[async_trait(?Send)]
 impl ExecutionClient for OKXExecutionClient {
     fn is_connected(&self) -> bool {
-        self.core.is_connected()
+        self.core.is_connected() && self.stream_state.is_healthy()
     }
 
     fn client_id(&self) -> ClientId {
@@ -1696,8 +1740,7 @@ impl ExecutionClient for OKXExecutionClient {
     }
 
     async fn connect(&mut self) -> anyhow::Result<()> {
-        if self.core.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open()
-        {
+        if self.is_connected() && self.pending_tasks.is_open() && self.session_tasks.is_open() {
             return Ok(());
         }
         let ws_private = self.ws_private.clone();
@@ -1715,6 +1758,15 @@ impl ExecutionClient for OKXExecutionClient {
                 )));
             }
             return Err(e);
+        }
+
+        if !self.stream_state.is_healthy() {
+            let failure = self.teardown_session().await;
+            return failure.and_then(|()| {
+                Err(anyhow::anyhow!(
+                    "OKX execution stream recovery failed during connect"
+                ))
+            });
         }
 
         self.core.set_connected();
@@ -2003,6 +2055,7 @@ impl ExecutionClient for OKXExecutionClient {
         cmd: &GenerateOrderStatusReport,
     ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
         let client = self.report_client();
+        let context = self.report_context();
         let order_state = self.query_order_state(cmd);
         let command = cmd.clone();
         Some(ExecutionReportTask::new(
@@ -2011,7 +2064,10 @@ impl ExecutionClient for OKXExecutionClient {
                     .generate_order_status_report(&command, order_state)
                     .await
             },
-            Ok,
+            move |report: Option<OrderStatusReport>| {
+                context.register(report.iter().map(|report| report.instrument_id));
+                Ok(report)
+            },
         ))
     }
 
@@ -2020,6 +2076,7 @@ impl ExecutionClient for OKXExecutionClient {
         cmd: &GenerateOrderStatusReports,
     ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
         let client = self.report_client();
+        let context = self.report_context();
         let core = self.core.clone();
         let command = cmd.clone();
         let collection_command = command.clone();
@@ -2032,7 +2089,10 @@ impl ExecutionClient for OKXExecutionClient {
                 sweep.ambiguous_triggered_child_ids = AHashSet::new();
                 Ok(sweep)
             },
-            move |sweep| Ok(finish_order_report_sweep(&core, sweep, &command).reports),
+            move |sweep| {
+                context.register(sweep.reports.iter().map(|report| report.instrument_id));
+                Ok(finish_order_report_sweep(&core, sweep, &command).reports)
+            },
         ))
     }
 
@@ -2041,6 +2101,7 @@ impl ExecutionClient for OKXExecutionClient {
         cmd: &GenerateFillReports,
     ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
         let client = self.report_client();
+        let context = self.report_context();
         let command = cmd.clone();
         Some(ExecutionReportTask::new(
             async move {
@@ -2048,7 +2109,10 @@ impl ExecutionClient for OKXExecutionClient {
                     .collect_fill_reports(command, FillHistory::Recent, None)
                     .await
             },
-            |(reports, _)| Ok(reports),
+            move |(reports, _)| {
+                context.register(reports.iter().map(|report| report.instrument_id));
+                Ok(reports)
+            },
         ))
     }
 
@@ -2057,10 +2121,14 @@ impl ExecutionClient for OKXExecutionClient {
         cmd: &GeneratePositionStatusReports,
     ) -> Option<ExecutionReportTask<Vec<PositionStatusReport>>> {
         let client = self.report_client();
+        let context = self.report_context();
         let command = cmd.clone();
         Some(ExecutionReportTask::new(
             async move { client.collect_position_status_reports(&command).await },
-            |(reports, _)| Ok(reports),
+            move |(reports, _)| {
+                context.register(reports.iter().map(|report| report.instrument_id));
+                Ok(reports)
+            },
         ))
     }
 
@@ -2068,9 +2136,13 @@ impl ExecutionClient for OKXExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        self.report_client()
+        let report = self
+            .report_client()
             .generate_order_status_report(cmd, self.query_order_state(cmd))
-            .await
+            .await?;
+        self.report_context()
+            .register(report.iter().map(|report| report.instrument_id));
+        Ok(report)
     }
 
     async fn generate_order_status_reports(
@@ -2135,22 +2207,24 @@ impl ExecutionClient for OKXExecutionClient {
             .build()
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
+        let client = self.report_client();
         let (
             order_sweep,
             (fill_reports, fills_complete),
             (mut position_reports, positions_complete),
         ) = tokio::try_join!(
-            self.collect_order_status_reports(
+            client.collect_order_status_reports(
                 &order_cmd,
                 self.config.max_reconciliation_history_pages,
             ),
-            self.collect_fill_reports(
+            client.collect_fill_reports(
                 fill_cmd,
                 fill_history,
                 self.config.max_reconciliation_history_pages,
             ),
-            self.collect_position_status_reports(&position_cmd),
+            client.collect_position_status_reports(&position_cmd),
         )?;
+        let order_sweep = finish_order_report_sweep(&self.core, order_sweep, &order_cmd);
         let OrderReportSweep {
             fallback_parents: _,
             reports: mut order_reports,
@@ -2179,6 +2253,14 @@ impl ExecutionClient for OKXExecutionClient {
         log::info!("Received {} OrderStatusReports", order_reports.len());
         log::info!("Received {} FillReports", fill_reports.len());
         log::info!("Received {} PositionReports", position_reports.len());
+
+        self.report_context().register(
+            order_reports
+                .iter()
+                .map(|report| report.instrument_id)
+                .chain(fill_reports.iter().map(|report| report.instrument_id))
+                .chain(position_reports.iter().map(|report| report.instrument_id)),
+        );
 
         let mut mass_status = ExecutionMassStatus::new(
             self.core.client_id,
@@ -2778,11 +2860,20 @@ impl OKXExecutionClient {
         position_side: Option<PositionSide>,
         trade_mode: OKXTradeMode,
     ) -> Result<(), OrderDeniedReason> {
+        if okx_instrument_type_from_symbol(instrument_id.symbol.as_str())
+            == OKXInstrumentType::Events
+            && trade_mode != OKXTradeMode::Isolated
+        {
+            return Err(OrderDeniedReason::ValidationFailed {
+                detail: "OKX event contracts require isolated trade mode".to_string(),
+            });
+        }
+
         if position_side.is_some() {
             let expected = derive_trade_mode_for_instrument(
                 instrument_id,
                 self.config.margin_mode,
-                self.config.use_spot_margin,
+                self.config.uses_spot_margin(),
             );
 
             if trade_mode != expected {
@@ -2944,10 +3035,59 @@ impl OKXExecutionClient {
     }
 }
 
+struct ReportContext {
+    core: ExecutionClientCore,
+    http_client: OKXHttpClient,
+    ws_private: OKXWebSocketClient,
+    ws_business: OKXWebSocketClient,
+}
+
+impl ReportContext {
+    fn register(&self, instrument_ids: impl IntoIterator<Item = InstrumentId>) {
+        let mut seen = AHashSet::new();
+        for instrument_id in instrument_ids {
+            if !seen.insert(instrument_id) {
+                continue;
+            }
+
+            let Some(instrument) = self.cache_instrument(instrument_id) else {
+                continue;
+            };
+
+            let cached = self.core.cache().instrument(&instrument_id).is_some();
+            if !cached {
+                let endpoint = MessagingSwitchboard::data_engine_process_data();
+                msgbus::send_data(endpoint, instrument.into());
+            }
+        }
+    }
+
+    fn cache_instrument(&self, instrument_id: InstrumentId) -> Option<InstrumentAny> {
+        let instrument = self
+            .http_client
+            .get_instrument(&instrument_id.symbol.inner())?;
+        let symbol = instrument_id.symbol.inner();
+        for ws_client in [&self.ws_private, &self.ws_business] {
+            if !ws_client.instruments_cache_arc().contains_key(&symbol) {
+                ws_client.cache_instrument(instrument.clone());
+            }
+
+            if let Some(code) = self.http_client.inst_id_code(&symbol)
+                && ws_client.get_inst_id_code(&symbol) != Some(code)
+            {
+                ws_client.cache_inst_id_code(symbol, code);
+            }
+        }
+
+        Some(instrument)
+    }
+}
+
 struct OKXReportClient {
     account_id: AccountId,
     http_client: OKXHttpClient,
     instrument_types: Vec<OKXInstrumentType>,
+    recover_inst_id_codes: bool,
     load_spreads: bool,
     margin_mode: Option<OKXMarginMode>,
 }
@@ -2967,6 +3107,10 @@ impl OKXReportClient {
                 "generate_order_status_report requires client_order_id or venue_order_id"
             );
         }
+
+        self.http_client.resolve_instrument(instrument_id).await?;
+        self.prepare_inst_id_codes(AHashSet::from_iter([instrument_id]))
+            .await?;
 
         let cached_venue_order_id = order_state.and_then(|state| state.venue_order_id);
 
@@ -3277,6 +3421,13 @@ impl OKXReportClient {
                 .await?;
         }
 
+        let instrument_ids = reports
+            .iter()
+            .filter(|report| report.order_status.is_open())
+            .map(|report| report.instrument_id)
+            .collect();
+        self.prepare_inst_id_codes(instrument_ids).await?;
+
         Ok(OrderReportSweep {
             fallback_parents,
             reports,
@@ -3424,7 +3575,25 @@ impl OKXReportClient {
 
         reports.append(&mut margin_reports);
 
+        let instrument_ids = reports.iter().map(|report| report.instrument_id).collect();
+        self.prepare_inst_id_codes(instrument_ids).await?;
+
         Ok((reports, complete))
+    }
+
+    async fn prepare_inst_id_codes(
+        &self,
+        instrument_ids: AHashSet<InstrumentId>,
+    ) -> anyhow::Result<()> {
+        if !self.recover_inst_id_codes {
+            return Ok(());
+        }
+
+        for instrument_id in instrument_ids {
+            prepare_inst_id_code(&self.http_client, instrument_id).await?;
+        }
+
+        Ok(())
     }
 
     async fn recover_triggered_child_order_reports(
@@ -3853,6 +4022,18 @@ fn algo_amend_request(
     Ok(request)
 }
 
+async fn prepare_inst_id_code(
+    http: &OKXHttpClient,
+    instrument_id: InstrumentId,
+) -> anyhow::Result<()> {
+    if !http.is_spread(instrument_id) && http.inst_id_code(&instrument_id.symbol.inner()).is_none()
+    {
+        http.request_instrument(instrument_id).await?;
+    }
+
+    Ok(())
+}
+
 fn emit_cancel_failure(
     failure: CommandFailure,
     emit_venue: Option<(&ExecutionEventEmitter, &'static AtomicTime)>,
@@ -4129,14 +4310,17 @@ mod tests {
         extract::ws::{Message, WebSocketUpgrade},
         routing::{get, post},
     };
+    use futures_util::StreamExt;
     use nautilus_common::{
         cache::Cache,
         live::runner::replace_exec_event_sender,
         messages::{ExecutionEvent, ExecutionReport as CommonExecutionReport},
+        msgbus::TypedIntoHandler,
         testing::wait_until_async,
     };
     use nautilus_core::{AtomicMap, UUID4};
     use nautilus_model::{
+        data::Data,
         enums::{LiquiditySide, OrderSide, OrderStatus, TriggerType},
         events::{OrderEventAny, OrderInitialized, order::spec::OrderSubmittedSpec},
         identifiers::{OrderListId, Symbol, TradeId, TraderId},
@@ -4156,9 +4340,14 @@ mod tests {
     use crate::{
         common::{
             consts::OKX_CLIENT_ID, enums::OKXEnvironment, models::OKXInstrument,
-            parse::parse_instrument_any,
+            parse::parse_instrument_any, testing::load_test_json,
         },
-        websocket::enums::OKXWsOperation,
+        websocket::{
+            dispatch::dispatch_ws_message,
+            enums::OKXWsOperation,
+            messages::OKXWsMessage,
+            parse::{FeeCache, FilledQtyCache},
+        },
     };
 
     struct DropSignal(Option<tokio::sync::oneshot::Sender<()>>);
@@ -4511,6 +4700,358 @@ mod tests {
         let result = derive_trade_mode_for_instrument(instrument_id, margin_mode, use_spot_margin);
 
         assert_eq!(result, expected);
+    }
+
+    #[rstest]
+    #[case::mass_status("mass_status")]
+    #[case::single_order("single_order")]
+    #[case::fills("fills")]
+    #[case::spread_fills("spread_fills")]
+    #[tokio::test]
+    async fn test_filtered_reports_register_complete_instrument_context(
+        #[case] kind: &'static str,
+    ) {
+        let empty_response = || async { Json(serde_json::json!({"code":"0","msg":"","data":[]})) };
+
+        let router = Router::new()
+            .route(
+                "/api/v5/sprd/spreads",
+                get(|| async {
+                    let mut response: Value =
+                        serde_json::from_str(&load_test_json("http_get_spreads.json")).unwrap();
+                    response["data"].as_array_mut().unwrap().truncate(1);
+                    Json(response)
+                }),
+            )
+            .route(
+                "/api/v5/sprd/trades",
+                get(|| async {
+                    Json(
+                        serde_json::from_str::<Value>(&load_test_json(
+                            "http_get_spread_trades.json",
+                        ))
+                        .unwrap(),
+                    )
+                }),
+            )
+            .route(
+                "/api/v5/public/instruments",
+                get(|| async {
+                    let mut response: Value =
+                        serde_json::from_str(&load_test_json("http_get_instruments_swap.json"))
+                            .unwrap();
+                    response["data"]
+                        .as_array_mut()
+                        .unwrap()
+                        .retain(|row| row["instId"] == "BTC-USDT-SWAP");
+                    Json(response)
+                }),
+            )
+            .route(
+                "/api/v5/account/positions",
+                get(|| async {
+                    Json(
+                        serde_json::from_str::<Value>(&load_test_json("http_get_positions.json"))
+                            .unwrap(),
+                    )
+                }),
+            )
+            .route(
+                "/api/v5/account/balance",
+                get(|| async {
+                    Json(
+                        serde_json::from_str::<Value>(&load_test_json(
+                            "http_get_account_balance.json",
+                        ))
+                        .unwrap(),
+                    )
+                }),
+            )
+            .route("/api/v5/trade/orders-pending", get(empty_response))
+            .route("/api/v5/trade/orders-history", get(empty_response))
+            .route("/api/v5/trade/orders-algo-pending", get(empty_response))
+            .route("/api/v5/trade/orders-algo-history", get(empty_response))
+            .route(
+                "/api/v5/trade/order",
+                get(|| async {
+                    Json(
+                        serde_json::from_str::<Value>(&load_test_json(
+                            "http_get_orders_pending.json",
+                        ))
+                        .unwrap(),
+                    )
+                }),
+            )
+            .route(
+                "/api/v5/trade/fills",
+                get(move || async move {
+                    if kind != "fills" {
+                        return Json(serde_json::json!({"code":"0","msg":"","data":[]}));
+                    }
+
+                    let mut fill: Value =
+                        serde_json::from_str(&load_test_json("http_transaction_detail.json"))
+                            .unwrap();
+                    fill["instType"] = serde_json::json!("SWAP");
+                    fill["instId"] = serde_json::json!("BTC-USDT-SWAP");
+                    fill["fillSz"] = serde_json::json!("1");
+                    Json(serde_json::json!({"code":"0","msg":"","data":[fill]}))
+                }),
+            );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move { axum::serve(listener, router).await.unwrap() });
+        let (mut client, cache) = build_test_exec_client_with_cache();
+        client.config.instrument_types = vec![OKXInstrumentType::Swap];
+        client.config.instrument_families = Some(vec!["ETH-USDT".to_string()]);
+        client.config.max_reconciliation_history_pages = Some(0);
+        client.core.account_type = AccountType::Margin;
+        client.http_client = OKXHttpClient::with_credentials(
+            Some("key".into()),
+            Some("secret".into()),
+            Some("passphrase".into()),
+            Some(format!("http://{address}")),
+            2,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        let sink = Rc::clone(&cache);
+        msgbus::register_data_endpoint(
+            MessagingSwitchboard::data_engine_process_data(),
+            TypedIntoHandler::from(move |data: Data| {
+                let Data::Instrument(instrument) = data else {
+                    panic!("Expected instrument")
+                };
+
+                sink.borrow_mut().add_instrument(*instrument).unwrap();
+            }),
+        );
+
+        let instrument_id = if kind == "spread_fills" {
+            InstrumentId::from("ETH-USD-SWAP_ETH-USD-231229.OKX")
+        } else {
+            InstrumentId::from("BTC-USDT-SWAP.OKX")
+        };
+
+        match kind {
+            "mass_status" => {
+                let status = client
+                    .generate_mass_status(Some(60))
+                    .await
+                    .unwrap()
+                    .unwrap();
+                assert!(status.order_reports().is_empty());
+                assert!(status.fill_reports().is_empty());
+                assert_eq!(status.position_reports().len(), 1);
+                assert_eq!(
+                    status.position_reports()[&instrument_id][0].quantity,
+                    Quantity::from("0.5")
+                );
+            }
+            "single_order" => {
+                let command = GenerateOrderStatusReport::new(
+                    UUID4::new(),
+                    UnixNanos::default(),
+                    Some(instrument_id),
+                    None,
+                    Some(VenueOrderId::from("1234567890123456789")),
+                    None,
+                    None,
+                );
+                let task = client.generate_order_status_report_task(&command).unwrap();
+                task.collection.await;
+                assert_eq!(cache.borrow().instrument(&instrument_id), None);
+                let report = (task.finish)().unwrap().unwrap();
+                assert_eq!(report.instrument_id, instrument_id);
+                assert_eq!(
+                    report.venue_order_id,
+                    VenueOrderId::from("1234567890123456789")
+                );
+            }
+            "fills" | "spread_fills" => {
+                let command = GenerateFillReportsBuilder::default()
+                    .ts_init(UnixNanos::default())
+                    .instrument_id(Some(instrument_id))
+                    .build()
+                    .unwrap();
+                let task = client.generate_fill_reports_task(&command).unwrap();
+                task.collection.await;
+                assert_eq!(cache.borrow().instrument(&instrument_id), None);
+                let reports = (task.finish)().unwrap();
+                assert_eq!(reports.len(), 1);
+                assert_eq!(reports[0].instrument_id, instrument_id);
+
+                let (trade_id, quantity) = if kind == "spread_fills" {
+                    ("9001", "5")
+                } else {
+                    ("123456789", "1")
+                };
+
+                assert_eq!(reports[0].trade_id, TradeId::from(trade_id));
+                assert_eq!(reports[0].last_qty, Quantity::from(quantity));
+            }
+            _ => unreachable!(),
+        }
+
+        let expected = client
+            .http_client
+            .get_instrument(&instrument_id.symbol.inner())
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(cache.borrow().instrument(&instrument_id).cloned()).unwrap(),
+            serde_json::to_value(Some(expected.clone())).unwrap()
+        );
+
+        for ws_client in [&client.ws_private, &client.ws_business] {
+            assert_eq!(
+                serde_json::to_value(
+                    ws_client
+                        .instruments_cache_arc()
+                        .get_cloned(&instrument_id.symbol.inner())
+                )
+                .unwrap(),
+                serde_json::to_value(Some(expected.clone())).unwrap()
+            );
+            assert_eq!(
+                ws_client.get_inst_id_code(&instrument_id.symbol.inner()),
+                if kind == "spread_fills" {
+                    None
+                } else {
+                    Some(10459)
+                }
+            );
+        }
+
+        server.abort();
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn test_report_context_restores_websocket_instrument_and_code() {
+        let mut response: serde_json::Value =
+            serde_json::from_str(include_str!("../test_data/http_get_instruments_swap.json"))
+                .unwrap();
+        response["data"]
+            .as_array_mut()
+            .unwrap()
+            .retain(|row| row["instId"] == "BTC-USDT-SWAP");
+
+        let definition: OKXInstrument =
+            serde_json::from_value(response["data"][0].clone()).unwrap();
+        let instrument = parse_instrument_any(&definition, None, None, UnixNanos::default())
+            .unwrap()
+            .unwrap();
+
+        let router = Router::new().route(
+            "/api/v5/public/instruments",
+            get(move || {
+                let response = response.clone();
+                async move { Json(response) }
+            }),
+        );
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            axum::serve(listener, router).await.unwrap();
+        });
+
+        let mut client = build_test_exec_client();
+        client.config.instrument_types = vec![OKXInstrumentType::Swap];
+        client.config.instrument_families = Some(vec!["ETH-USDT".to_string()]);
+        client.http_client = OKXHttpClient::new(
+            Some(format!("http://{address}")),
+            5,
+            0,
+            1,
+            1,
+            OKXEnvironment::Demo,
+            None,
+        )
+        .unwrap();
+        let instrument_id = InstrumentId::from("BTC-USDT-SWAP.OKX");
+        client.http_client.cache_instrument(instrument.clone());
+        assert_eq!(
+            client
+                .http_client
+                .inst_id_code(&instrument_id.symbol.inner()),
+            None
+        );
+        client
+            .report_client()
+            .prepare_inst_id_codes(AHashSet::from_iter([instrument_id]))
+            .await
+            .unwrap();
+        let instrument = client
+            .http_client
+            .get_instrument(&instrument_id.symbol.inner())
+            .unwrap();
+        client.report_context().register([instrument_id]);
+        assert_eq!(
+            client
+                .ws_private
+                .instruments_cache_arc()
+                .get_cloned(&instrument_id.symbol.inner()),
+            Some(instrument.clone())
+        );
+        assert_eq!(
+            client
+                .ws_business
+                .instruments_cache_arc()
+                .get_cloned(&instrument_id.symbol.inner()),
+            Some(instrument)
+        );
+        assert_eq!(
+            client
+                .ws_private
+                .get_inst_id_code(&instrument_id.symbol.inner()),
+            Some(10459)
+        );
+        assert_eq!(
+            client
+                .ws_business
+                .get_inst_id_code(&instrument_id.symbol.inner()),
+            Some(10459)
+        );
+        server.abort();
+    }
+
+    #[rstest]
+    #[case::spot(vec![OKXInstrumentType::Spot], "BTC-USDT.OKX", OKXTradeMode::Cash)]
+    #[case::margin(vec![OKXInstrumentType::Margin], "BTC-USDT.OKX", OKXTradeMode::Cross)]
+    #[case::events(vec![OKXInstrumentType::Events], "BTC-ABOVE-DAILY-260224-1600-65000.OKX", OKXTradeMode::Isolated)]
+    fn test_configured_trade_mode(
+        #[case] instrument_types: Vec<OKXInstrumentType>,
+        #[case] symbol: &str,
+        #[case] expected: OKXTradeMode,
+    ) {
+        let mut client = build_test_exec_client();
+        client.config.instrument_types = instrument_types;
+        client.config.margin_mode = Some(OKXMarginMode::Cross);
+        let instrument_id = InstrumentId::from(symbol);
+        assert_eq!(client.trade_mode_for_order(instrument_id, None), expected);
+    }
+
+    #[rstest]
+    #[case(OKXTradeMode::Cash)]
+    #[case(OKXTradeMode::Cross)]
+    fn test_event_trade_mode_rejects_override(#[case] trade_mode: OKXTradeMode) {
+        let client = build_test_exec_client();
+        assert_eq!(
+            client.validate_trade_mode(
+                InstrumentId::from("BTC-ABOVE-DAILY-260224-1600-65000.OKX"),
+                None,
+                trade_mode
+            ),
+            Err(OrderDeniedReason::ValidationFailed {
+                detail: "OKX event contracts require isolated trade mode".to_string()
+            })
+        );
     }
 
     #[rstest]

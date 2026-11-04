@@ -22,11 +22,13 @@ use nautilus_model::{
     enums::{OrderSide, OrderType, PositionSide, TimeInForce, TriggerType},
     events::OrderDeniedReason,
     identifiers::{ClientId, Venue},
+    instruments::{Instrument, InstrumentAny},
 };
 use ustr::Ustr;
 
 use super::enums::{
-    OKXBookChannel, OKXInstrumentType, OKXTargetCurrency, OKXTradeMode, OKXVipLevel,
+    OKXBookChannel, OKXContractType, OKXInstrumentType, OKXTargetCurrency, OKXTradeMode,
+    OKXVipLevel,
 };
 
 /// Venue identifier string.
@@ -493,6 +495,21 @@ pub(crate) fn select_book_channel(depth: usize, vip: OKXVipLevel) -> OKXBookChan
         0 | 400 if vip >= OKXVipLevel::Vip4 => OKXBookChannel::BookL2Tbt,
         0 | 50 | 400 => OKXBookChannel::Book,
         _ => unreachable!("book depth must be resolved before channel selection"),
+    }
+}
+
+pub(crate) fn contract_filter_with_config_types(
+    contract_types: Option<&Vec<OKXContractType>>,
+    instrument: &InstrumentAny,
+) -> bool {
+    match contract_types {
+        None => true,
+        Some(filter) if filter.is_empty() => true,
+        Some(filter) => {
+            let is_inverse = instrument.is_inverse();
+            (is_inverse && filter.contains(&OKXContractType::Inverse))
+                || (!is_inverse && filter.contains(&OKXContractType::Linear))
+        }
     }
 }
 

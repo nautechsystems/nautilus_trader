@@ -406,12 +406,8 @@ async fn handle_socket(mut socket: WebSocket, state: Arc<TestServerState>) {
                         }
 
                         if state.fail_next_login.swap(false, Ordering::Relaxed) {
-                            let response = json!({
-                                "event": "login",
-                                "code": "60015",
-                                "msg": "Invalid signature",
-                                "connId": "test-conn",
-                            });
+                            let fixture = load_json("ws_reconnect_queued_frames.json");
+                            let response = fixture["api_key_error"].clone();
                             let _result = socket
                                 .send(Message::Text(response.to_string().into()))
                                 .await;
@@ -2562,42 +2558,40 @@ async fn test_reconnect_authentication_failure_opens_new_connection(#[case] supp
     assert_eq!(logins, vec![0, 1, 2]);
 }
 
+#[rstest]
+#[case(TransportBackend::Sockudo)]
+#[case(TransportBackend::Tungstenite)]
 #[tokio::test]
-async fn test_login_failure_emits_error() {
+async fn test_login_failure_emits_error(#[case] backend: TransportBackend) {
     let state = Arc::new(TestServerState::default());
     state.fail_next_login.store(true, Ordering::Relaxed);
-
     let addr = start_ws_server(state.clone()).await;
-    let ws_url = format!("ws://{addr}/ws");
+    let mut client = OKXWebSocketClient::new(
+        Some(format!("ws://{addr}/ws")),
+        Some("key".into()),
+        Some("secret".into()),
+        Some("passphrase".into()),
+        None,
+        None,
+        Some(5),
+        backend,
+        None,
+    )
+    .unwrap();
 
-    let instruments = load_instruments();
-
-    let mut client = connect_client(&ws_url);
-    client.cache_instruments(&instruments);
-
-    let connect_result = tokio::time::timeout(Duration::from_secs(1), client.connect()).await;
-
-    match connect_result {
-        Ok(Ok(())) => panic!("connect unexpectedly succeeded"),
-        Ok(Err(e)) => assert!(format!("{e}").contains("Authentication")),
-        Err(_) => {
-            tokio::time::timeout(Duration::from_secs(1), async {
-                loop {
-                    if *state.login_count.lock().await >= 1 {
-                        break;
-                    }
-                    tokio::time::sleep(Duration::from_millis(25)).await;
-                }
-            })
-            .await
-            .expect("login error did not arrive in time");
-        }
-    }
-
+    let error = tokio::time::timeout(Duration::from_secs(1), client.connect())
+        .await
+        .expect("explicit login denial must settle before the auth timeout")
+        .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("OKX authentication error 60005: Invalid apiKey")
+    );
     assert_eq!(*state.login_count.lock().await, 1);
     assert!(!state.authenticated.load(Ordering::Relaxed));
-
-    client.close().await.expect("close failed");
+    assert!(!client.is_active());
+    client.close().await.unwrap();
 }
 
 #[tokio::test]

@@ -2830,6 +2830,34 @@ pub fn nanos_to_datetime(value: Option<UnixNanos>) -> Option<jiff::Timestamp> {
     value.map(|nanos| nanos.to_datetime_utc())
 }
 
+/// Returns `true` when two instruments carry the same tradable definition,
+/// ignoring event timestamps.
+///
+/// Comparison runs on the serialized form so every venue field, including
+/// the free-form `info` metadata, participates without listing each field.
+pub(crate) fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
+    fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
+        let mut value = serde_json::to_value(instrument).ok()?;
+
+        if let Some(definition) = value
+            .as_object_mut()
+            .and_then(|obj| obj.values_mut().next())
+            .and_then(serde_json::Value::as_object_mut)
+        {
+            definition.remove("ts_event");
+            definition.remove("ts_init");
+        }
+
+        Some(value)
+    }
+
+    // A serialization failure compares as changed so updates are never suppressed
+    match (normalized(a), normalized(b)) {
+        (Some(a), Some(b)) => a == b,
+        _ => false,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{enums::OrderSide, identifiers::PositionId, instruments::Instrument};

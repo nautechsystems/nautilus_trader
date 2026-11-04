@@ -51,6 +51,7 @@ use nautilus_common::{
 use nautilus_core::{
     AtomicMap, AtomicSet, Params, UUID4, UnixNanos,
     datetime::datetime_to_unix_nanos,
+    env::get_or_env_var,
     time::{AtomicTime, get_atomic_clock_realtime},
 };
 use nautilus_live::{
@@ -74,18 +75,18 @@ use crate::{
     },
     common::{
         consts::{
-            OKX_VENUE, OKX_WS_HEARTBEAT_SECS, resolve_book_depth, resolve_instrument_families,
-            select_book_channel,
+            OKX_VENUE, OKX_WS_HEARTBEAT_SECS, contract_filter_with_config_types,
+            resolve_book_depth, resolve_instrument_families, select_book_channel,
         },
         enums::{
-            OKXBookAction, OKXBookChannel, OKXContractType, OKXGreeksType, OKXInstrumentStatus,
-            OKXInstrumentType, OKXVipLevel,
+            OKXBookAction, OKXBookChannel, OKXGreeksType, OKXInstrumentStatus, OKXInstrumentType,
+            OKXVipLevel,
         },
         models::OKXInstrument,
         parse::{
-            extract_inst_family, okx_instrument_type_from_symbol, okx_status_to_market_action,
-            parse_base_quote_from_symbol, parse_instrument_any, parse_instrument_id,
-            parse_millisecond_timestamp, parse_price, parse_quantity,
+            extract_inst_family, instrument_definitions_match, okx_instrument_type_from_symbol,
+            okx_status_to_market_action, parse_base_quote_from_symbol, parse_instrument_any,
+            parse_instrument_id, parse_millisecond_timestamp, parse_price, parse_quantity,
         },
         task::{spawn_task, terminate_tasks},
     },
@@ -170,9 +171,9 @@ impl OKXDataClient {
 
         let http_client = if config.has_api_credentials() {
             OKXHttpClient::with_credentials(
-                api_key,
-                api_secret,
-                api_passphrase,
+                api_key.clone(),
+                api_secret.clone(),
+                api_passphrase.clone(),
                 Some(config.http_base_url()),
                 config.http_timeout_secs,
                 config.max_retries,
@@ -193,11 +194,24 @@ impl OKXDataClient {
             )?
         };
 
+        let (ws_api_key, ws_api_secret, ws_api_passphrase) = if config
+            .vip_level
+            .is_some_and(|level| level >= OKXVipLevel::Vip4)
+        {
+            (
+                Some(get_or_env_var(api_key, "OKX_API_KEY")?),
+                Some(get_or_env_var(api_secret, "OKX_API_SECRET")?),
+                Some(get_or_env_var(api_passphrase, "OKX_API_PASSPHRASE")?),
+            )
+        } else {
+            (None, None, None)
+        };
+
         let ws_public = OKXWebSocketClient::new(
             Some(config.ws_public_url()),
-            None,
-            None,
-            None,
+            ws_api_key,
+            ws_api_secret,
+            ws_api_passphrase,
             None,
             Some(OKX_WS_HEARTBEAT_SECS),
             None,
@@ -1811,21 +1825,6 @@ fn definition_in_scope(
     families.iter().any(|family| family.as_str() == family_key)
 }
 
-fn contract_filter_with_config_types(
-    contract_types: Option<&Vec<OKXContractType>>,
-    instrument: &InstrumentAny,
-) -> bool {
-    match contract_types {
-        None => true,
-        Some(filter) if filter.is_empty() => true,
-        Some(filter) => {
-            let is_inverse = instrument.is_inverse();
-            (is_inverse && filter.contains(&OKXContractType::Inverse))
-                || (!is_inverse && filter.contains(&OKXContractType::Linear))
-        }
-    }
-}
-
 fn configured_instrument_types(config: &OKXDataClientConfig) -> Vec<OKXInstrumentType> {
     if config.instrument_types.is_empty() {
         vec![OKXInstrumentType::Spot]
@@ -1896,34 +1895,6 @@ async fn fetch_configured_instruments(
     }
 
     Ok(all_instruments)
-}
-
-/// Returns `true` when two instruments carry the same tradable definition,
-/// ignoring event timestamps.
-///
-/// Comparison runs on the serialized form so every venue field, including
-/// the free-form `info` metadata, participates without listing each field.
-fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
-    fn normalized(instrument: &InstrumentAny) -> Option<serde_json::Value> {
-        let mut value = serde_json::to_value(instrument).ok()?;
-
-        if let Some(definition) = value
-            .as_object_mut()
-            .and_then(|obj| obj.values_mut().next())
-            .and_then(serde_json::Value::as_object_mut)
-        {
-            definition.remove("ts_event");
-            definition.remove("ts_init");
-        }
-
-        Some(value)
-    }
-
-    // A serialization failure compares as changed so updates are never suppressed
-    match (normalized(a), normalized(b)) {
-        (Some(a), Some(b)) => a == b,
-        _ => false,
-    }
 }
 
 /// Summary of a single instrument reconciliation pass.
@@ -3272,11 +3243,56 @@ mod tests {
     use super::*;
     use crate::{
         common::{
-            consts::OKX_CLIENT_ID, enums::OKXEnvironment, models::OKXInstrument,
+            consts::OKX_CLIENT_ID,
+            enums::{OKXContractType, OKXEnvironment},
+            models::OKXInstrument,
             testing::load_test_json,
         },
         websocket::{enums::OKXWsChannel, messages::OKXWsFrame},
     };
+
+    #[rstest]
+    #[case(None, None)]
+    #[case(Some(OKXVipLevel::Vip4), Some("vip-key"))]
+    fn vip_public_socket_receives_credentials(
+        #[case] vip_level: Option<OKXVipLevel>,
+        #[case] expected_key: Option<&str>,
+    ) {
+        let (sender, _receiver) = tokio::sync::mpsc::unbounded_channel();
+        replace_data_event_sender(sender);
+
+        let config = OKXDataClientConfig {
+            api_key: Some("vip-key".into()),
+            api_secret: Some("vip-secret".into()),
+            api_passphrase: Some("vip-passphrase".into()),
+            vip_level,
+            ..Default::default()
+        };
+
+        let client = OKXDataClient::new(*OKX_CLIENT_ID, config).unwrap();
+        assert_eq!(client.public_ws().unwrap().api_key(), expected_key);
+        assert_eq!(client.business_ws().unwrap().api_key(), None);
+    }
+
+    #[rstest]
+    fn vip_public_socket_rejects_empty_credentials() {
+        let config = OKXDataClientConfig {
+            api_key: Some(" ".into()),
+            api_secret: Some("vip-secret".into()),
+            api_passphrase: Some("vip-passphrase".into()),
+            vip_level: Some(OKXVipLevel::Vip4),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            config.validate(),
+            Err(ConfigError::dependency(
+                "vip_level",
+                "api_key, api_secret, api_passphrase",
+                "VIP book channels require authentication"
+            ))
+        );
+    }
 
     #[rstest]
     #[case("BTC-USD_UM_XPERP-310404.OKX")]
