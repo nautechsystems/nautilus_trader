@@ -475,11 +475,11 @@ impl CappedOptionFeeModel {
         taker_rate: Decimal,
         cap_rate: Option<Decimal>,
     ) -> anyhow::Result<Self> {
-        check_fee_rate(Some(maker_rate), "maker_rate")?;
-        check_fee_rate(Some(taker_rate), "taker_rate")?;
+        check_fee_rate(maker_rate, "maker_rate")?;
+        check_fee_rate(taker_rate, "taker_rate")?;
 
         let cap_rate = cap_rate.unwrap_or(dec!(0.125));
-        check_fee_rate(Some(cap_rate), "cap_rate")?;
+        check_fee_rate(cap_rate, "cap_rate")?;
 
         Ok(Self {
             schedule: MakerTakerFeeSchedule::new(maker_rate, taker_rate),
@@ -497,8 +497,8 @@ impl CappedOptionFeeModel {
         instrument_id: InstrumentId,
         rates: MakerTakerFeeRates,
     ) -> anyhow::Result<()> {
-        check_fee_rate(Some(rates.maker), "maker_rate")?;
-        check_fee_rate(Some(rates.taker), "taker_rate")?;
+        check_fee_rate(rates.maker, "maker_rate")?;
+        check_fee_rate(rates.taker, "taker_rate")?;
         self.schedule.set_override(instrument_id, rates);
         Ok(())
     }
@@ -538,7 +538,7 @@ impl FeeModel for CappedOptionFeeModel {
         }
 
         let rate = self.schedule.rate_for(instrument.id(), liquidity_side)?;
-        check_fee_rate(Some(rate), "fee_rate")?;
+        check_fee_rate(rate, "fee_rate")?;
         let multiplier = instrument.multiplier().as_decimal();
         let rate_fee = if instrument.is_inverse() {
             rate
@@ -577,8 +577,8 @@ impl TieredNotionalOptionFeeModel {
     ///
     /// Returns an error if any supplied rate is negative.
     pub fn new(maker_rate: Decimal, taker_rate: Decimal) -> anyhow::Result<Self> {
-        check_fee_rate(Some(maker_rate), "maker_rate")?;
-        check_fee_rate(Some(taker_rate), "taker_rate")?;
+        check_fee_rate(maker_rate, "maker_rate")?;
+        check_fee_rate(taker_rate, "taker_rate")?;
 
         Ok(Self {
             schedule: MakerTakerFeeSchedule::new(maker_rate, taker_rate),
@@ -595,8 +595,8 @@ impl TieredNotionalOptionFeeModel {
         instrument_id: InstrumentId,
         rates: MakerTakerFeeRates,
     ) -> anyhow::Result<()> {
-        check_fee_rate(Some(rates.maker), "maker_rate")?;
-        check_fee_rate(Some(rates.taker), "taker_rate")?;
+        check_fee_rate(rates.maker, "maker_rate")?;
+        check_fee_rate(rates.taker, "taker_rate")?;
         self.schedule.set_override(instrument_id, rates);
         Ok(())
     }
@@ -625,7 +625,7 @@ impl FeeModel for TieredNotionalOptionFeeModel {
         }
 
         let rate = self.schedule.rate_for(instrument.id(), liquidity_side)?;
-        check_fee_rate(Some(rate), "fee_rate")?;
+        check_fee_rate(rate, "fee_rate")?;
         let notional =
             instrument.try_calculate_notional_value(fill_quantity, fill_px, Some(false))?;
         let total = mul_checked(notional.as_decimal(), rate)?;
@@ -633,8 +633,8 @@ impl FeeModel for TieredNotionalOptionFeeModel {
     }
 }
 
-fn check_fee_rate(rate: Option<Decimal>, name: &str) -> anyhow::Result<()> {
-    if rate.is_some_and(|rate| rate < Decimal::ZERO) {
+fn check_fee_rate(rate: Decimal, name: &str) -> anyhow::Result<()> {
+    if rate < Decimal::ZERO {
         anyhow::bail!("`{name}` must be greater than or equal to zero");
     }
     Ok(())
@@ -1346,6 +1346,33 @@ mod tests {
             result.unwrap_err().to_string(),
             format!("`{expected_field}` must be greater than or equal to zero")
         );
+    }
+
+    #[rstest]
+    #[case::capped(FeeModelAny::CappedOption(
+        CappedOptionFeeModel::new(Decimal::ZERO, Decimal::ZERO, Some(Decimal::ZERO)).unwrap(),
+    ))]
+    #[case::tiered(FeeModelAny::TieredNotionalOption(
+        TieredNotionalOptionFeeModel::new(Decimal::ZERO, Decimal::ZERO).unwrap(),
+    ))]
+    fn test_option_fee_models_allow_zero_rates(
+        crypto_option_btc_deribit: CryptoOption,
+        #[case] fee_model: FeeModelAny,
+    ) {
+        let instrument = InstrumentAny::CryptoOption(crypto_option_btc_deribit);
+        let fill = option_fill_order(&instrument, LiquiditySide::Taker);
+
+        let commission = fee_model
+            .get_commission_with_context(
+                &fill,
+                Quantity::from("2.0"),
+                Price::from("100.00"),
+                &instrument,
+                Some(Price::from("50000.00")),
+            )
+            .unwrap();
+
+        assert_eq!(commission, Money::zero(Currency::USD()));
     }
 
     #[rstest]

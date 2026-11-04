@@ -277,7 +277,8 @@ pub(crate) fn is_price_tradable(instrument: &InstrumentAny, price: Price) -> boo
         && instrument.max_price().is_none_or(|max| price <= max)
 }
 
-#[derive(Debug)]
+/// Fill model that uses fill and slippage probabilities with standard matching-engine liquidity.
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -304,14 +305,6 @@ impl DefaultFillModel {
         Ok(Self {
             state: ProbabilisticFillState::new(prob_fill_on_limit, prob_slippage, random_seed)?,
         })
-    }
-}
-
-impl Clone for DefaultFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
     }
 }
 
@@ -352,7 +345,7 @@ impl FillModel for DefaultFillModel {
 }
 
 /// Fill model that executes all orders at the best available price with unlimited liquidity.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -379,14 +372,6 @@ impl BestPriceFillModel {
         Ok(Self {
             state: ProbabilisticFillState::new(prob_fill_on_limit, prob_slippage, random_seed)?,
         })
-    }
-}
-
-impl Clone for BestPriceFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
     }
 }
 
@@ -465,7 +450,7 @@ impl FillModel for BestPriceFillModel {
 }
 
 /// Fill model that forces exactly one tick of slippage for all orders.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -492,14 +477,6 @@ impl OneTickSlippageFillModel {
         Ok(Self {
             state: ProbabilisticFillState::new(prob_fill_on_limit, prob_slippage, random_seed)?,
         })
-    }
-}
-
-impl Clone for OneTickSlippageFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
     }
 }
 
@@ -554,7 +531,7 @@ impl FillModel for OneTickSlippageFillModel {
 }
 
 /// Fill model with 50/50 chance of best price fill or one tick slippage.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -581,14 +558,6 @@ impl ProbabilisticFillModel {
         Ok(Self {
             state: ProbabilisticFillState::new(prob_fill_on_limit, prob_slippage, random_seed)?,
         })
-    }
-}
-
-impl Clone for ProbabilisticFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
     }
 }
 
@@ -622,47 +591,34 @@ impl FillModel for ProbabilisticFillModel {
         let size_prec = instrument.size_precision();
         let mut book = build_l2_book(instrument.id());
 
-        if self.state.random_bool(0.5) {
-            add_order(
-                &mut book,
-                instrument,
-                OrderSide::Buy,
-                best_bid,
-                unlimited_liquidity(size_prec),
-                1,
-            );
-            add_order(
-                &mut book,
-                instrument,
-                OrderSide::Sell,
-                best_ask,
-                unlimited_liquidity(size_prec),
-                2,
-            );
+        let (best_bid, best_ask) = if self.state.random_bool(0.5) {
+            (best_bid, best_ask)
         } else {
-            add_order(
-                &mut book,
-                instrument,
-                OrderSide::Buy,
-                best_bid - tick,
-                unlimited_liquidity(size_prec),
-                1,
-            );
-            add_order(
-                &mut book,
-                instrument,
-                OrderSide::Sell,
-                best_ask + tick,
-                unlimited_liquidity(size_prec),
-                2,
-            );
-        }
+            (best_bid - tick, best_ask + tick)
+        };
+
+        add_order(
+            &mut book,
+            instrument,
+            OrderSide::Buy,
+            best_bid,
+            unlimited_liquidity(size_prec),
+            1,
+        );
+        add_order(
+            &mut book,
+            instrument,
+            OrderSide::Sell,
+            best_ask,
+            unlimited_liquidity(size_prec),
+            2,
+        );
         Ok(Some(book))
     }
 }
 
 /// Fill model with two tiers: first 10 contracts at best price, remainder one tick worse.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -689,14 +645,6 @@ impl TwoTierFillModel {
         Ok(Self {
             state: ProbabilisticFillState::new(prob_fill_on_limit, prob_slippage, random_seed)?,
         })
-    }
-}
-
-impl Clone for TwoTierFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
     }
 }
 
@@ -767,7 +715,7 @@ impl FillModel for TwoTierFillModel {
 }
 
 /// Fill model with three tiers: 50 at best, 30 at +1 tick, 20 at +2 ticks.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -794,14 +742,6 @@ impl ThreeTierFillModel {
         Ok(Self {
             state: ProbabilisticFillState::new(prob_fill_on_limit, prob_slippage, random_seed)?,
         })
-    }
-}
-
-impl Clone for ThreeTierFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
     }
 }
 
@@ -889,7 +829,7 @@ impl FillModel for ThreeTierFillModel {
 }
 
 /// Fill model that simulates partial fills: max 5 contracts at best, unlimited one tick worse.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -916,14 +856,6 @@ impl LimitOrderPartialFillModel {
         Ok(Self {
             state: ProbabilisticFillState::new(prob_fill_on_limit, prob_slippage, random_seed)?,
         })
-    }
-}
-
-impl Clone for LimitOrderPartialFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
     }
 }
 
@@ -995,7 +927,7 @@ impl FillModel for LimitOrderPartialFillModel {
 
 /// Fill model that applies different execution based on order size.
 /// Small orders (<=10) get 50 contracts at best. Large orders get 10 at best, remainder at +1 tick.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -1022,14 +954,6 @@ impl SizeAwareFillModel {
         Ok(Self {
             state: ProbabilisticFillState::new(prob_fill_on_limit, prob_slippage, random_seed)?,
         })
-    }
-}
-
-impl Clone for SizeAwareFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-        }
     }
 }
 
@@ -1123,7 +1047,7 @@ impl FillModel for SizeAwareFillModel {
 }
 
 /// Fill model that reduces available liquidity by a factor to simulate market competition.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -1157,15 +1081,6 @@ impl CompetitionAwareFillModel {
             state,
             liquidity_factor,
         })
-    }
-}
-
-impl Clone for CompetitionAwareFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            liquidity_factor: self.liquidity_factor,
-        }
     }
 }
 
@@ -1226,7 +1141,7 @@ impl FillModel for CompetitionAwareFillModel {
 
 /// Fill model that adjusts liquidity based on recent trading volume.
 /// Uses 25% of recent volume at best price, unlimited one tick worse.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -1259,15 +1174,6 @@ impl VolumeSensitiveFillModel {
 
     pub fn set_recent_volume(&mut self, volume: f64) {
         self.recent_volume = volume;
-    }
-}
-
-impl Clone for VolumeSensitiveFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            recent_volume: self.recent_volume,
-        }
     }
 }
 
@@ -1346,7 +1252,7 @@ impl FillModel for VolumeSensitiveFillModel {
 
 /// Fill model that simulates varying conditions based on market hours.
 /// During low liquidity: wider spreads (one tick worse). Normal hours: standard liquidity.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "python",
     pyo3::pyclass(module = "nautilus_trader.execution", unsendable, from_py_object)
@@ -1386,15 +1292,6 @@ impl MarketHoursFillModel {
     }
 }
 
-impl Clone for MarketHoursFillModel {
-    fn clone(&self) -> Self {
-        Self {
-            state: self.state.clone(),
-            is_low_liquidity: self.is_low_liquidity,
-        }
-    }
-}
-
 impl Default for MarketHoursFillModel {
     fn default() -> Self {
         Self::new(1.0, 0.0, None).unwrap()
@@ -1426,41 +1323,28 @@ impl FillModel for MarketHoursFillModel {
         let mut book = build_l2_book(instrument.id());
         let normal_volume = 500.0;
 
-        if self.is_low_liquidity {
-            add_order(
-                &mut book,
-                instrument,
-                OrderSide::Buy,
-                best_bid - tick,
-                Quantity::new(normal_volume, size_prec),
-                1,
-            );
-            add_order(
-                &mut book,
-                instrument,
-                OrderSide::Sell,
-                best_ask + tick,
-                Quantity::new(normal_volume, size_prec),
-                2,
-            );
+        let (best_bid, best_ask) = if self.is_low_liquidity {
+            (best_bid - tick, best_ask + tick)
         } else {
-            add_order(
-                &mut book,
-                instrument,
-                OrderSide::Buy,
-                best_bid,
-                Quantity::new(normal_volume, size_prec),
-                1,
-            );
-            add_order(
-                &mut book,
-                instrument,
-                OrderSide::Sell,
-                best_ask,
-                Quantity::new(normal_volume, size_prec),
-                2,
-            );
-        }
+            (best_bid, best_ask)
+        };
+
+        add_order(
+            &mut book,
+            instrument,
+            OrderSide::Buy,
+            best_bid,
+            Quantity::new(normal_volume, size_prec),
+            1,
+        );
+        add_order(
+            &mut book,
+            instrument,
+            OrderSide::Sell,
+            best_ask,
+            Quantity::new(normal_volume, size_prec),
+            2,
+        );
         Ok(Some(book))
     }
 }
@@ -2062,6 +1946,46 @@ mod tests {
     }
 
     #[rstest]
+    fn test_probabilistic_fill_model_seeded_books() {
+        let instrument = InstrumentAny::CurrencyPair(audusd_sim());
+        let order = OrderTestBuilder::new(OrderType::Market)
+            .instrument_id(instrument.id())
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from(17))
+            .build();
+        let mut model = ProbabilisticFillModel::new(0.5, 0.1, Some(42)).unwrap();
+        for (bid, ask) in [
+            (dec!(0.79999), dec!(0.80011)),
+            (dec!(0.79999), dec!(0.80011)),
+            (dec!(0.79999), dec!(0.80011)),
+            (dec!(0.80000), dec!(0.80010)),
+            (dec!(0.80000), dec!(0.80010)),
+            (dec!(0.80000), dec!(0.80010)),
+            (dec!(0.79999), dec!(0.80011)),
+            (dec!(0.79999), dec!(0.80011)),
+        ] {
+            let book = model
+                .get_orderbook_for_fill_simulation(
+                    &instrument,
+                    &order,
+                    Some(Price::from("0.80000")),
+                    Some(Price::from("0.80010")),
+                )
+                .unwrap()
+                .unwrap();
+
+            assert_eq!(
+                book.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+                vec![(bid, dec!(10_000_000_000))]
+            );
+            assert_eq!(
+                book.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+                vec![(ask, dec!(10_000_000_000))]
+            );
+        }
+    }
+
+    #[rstest]
     fn test_fill_model_any_dispatch() {
         let model = FillModelAny::default();
         assert!(matches!(model, FillModelAny::Default(_)));
@@ -2091,6 +2015,34 @@ mod tests {
         assert!(has_variation);
         assert_eq!(first_results, expected);
         assert_eq!(second_results, expected);
+    }
+
+    #[rstest]
+    #[expect(clippy::redundant_clone, reason = "Clone is the behavior under test")]
+    fn test_fill_model_clone_restarts_seeded_sequence() {
+        let mut model = DefaultFillModel::new(0.5, 0.25, Some(42)).unwrap();
+
+        let expected: Vec<_> = (0..16)
+            .map(|_| {
+                (
+                    model.is_limit_filled().unwrap(),
+                    model.is_slipped().unwrap(),
+                )
+            })
+            .collect();
+
+        let mut cloned = model.clone();
+
+        let actual: Vec<_> = (0..16)
+            .map(|_| {
+                (
+                    cloned.is_limit_filled().unwrap(),
+                    cloned.is_slipped().unwrap(),
+                )
+            })
+            .collect();
+
+        assert_eq!(actual, expected);
     }
 
     #[rstest]
