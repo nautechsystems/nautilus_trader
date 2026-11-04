@@ -19,7 +19,7 @@ use std::{sync::atomic::Ordering, time::Duration};
 
 use log::{Level, LevelFilter, Log, Metadata, Record};
 use nautilus_architect_ax::{
-    common::enums::{AxCandleWidth, AxMarketDataLevel},
+    common::enums::{AxCandleWidth, AxMarketDataLevel, AxSelfTradeBehavior},
     websocket::{
         data::{AxMdWebSocketClient, AxWsClientError},
         orders::{AxOrdersWebSocketClient, AxOrdersWsClientError},
@@ -1436,6 +1436,7 @@ async fn test_orders_submit_order() {
             TimeInForce::Gtc,
             Price::from("50000.00"),
             false,
+            None,
         )
         .await
         .unwrap();
@@ -1458,6 +1459,74 @@ async fn test_orders_submit_order() {
     assert_eq!(place.get("q").and_then(|v| v.as_i64()), Some(100));
     assert_eq!(place.get("p").and_then(|v| v.as_str()), Some("50000.00"));
     assert_eq!(place.get("tif").and_then(|v| v.as_str()), Some("GTC"));
+    assert_eq!(place.get("tag").and_then(|v| v.as_str()), Some("Nautilus"));
+    assert!(place.get("st").is_none());
+
+    client.close().await.expect("close WebSocket client");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_orders_submit_order_sends_custom_params() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let ws_url = format!("ws://{addr}/orders/ws");
+    let account_id = AccountId::from("AX-001");
+    let trader_id = TraderId::from("TESTER-001");
+
+    let mut client = AxOrdersWebSocketClient::new(
+        ws_url,
+        account_id,
+        trader_id,
+        30,
+        TransportBackend::default(),
+        None,
+    );
+
+    let instrument = create_test_instrument("EURUSD-PERP");
+    client.cache_instrument(instrument.clone());
+
+    client.connect("test_token").await.unwrap();
+    wait_for_connection(&state).await;
+
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(trader_id)
+        .strategy_id(StrategyId::from("TEST-STRATEGY"))
+        .instrument_id(instrument.id())
+        .client_order_id(ClientOrderId::from("TEST-ST-001"))
+        .side(OrderSide::Sell)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("50000.00"))
+        .build();
+    let request_id = client
+        .submit_order(
+            order.init_event(),
+            Quantity::from("100"),
+            TimeInForce::Gtc,
+            Price::from("50000.00"),
+            false,
+            Some(AxSelfTradeBehavior::CancelResting),
+        )
+        .await
+        .unwrap();
+
+    assert!(request_id > 0);
+
+    wait_until_async(
+        || async { !state.get_messages().await.is_empty() },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.get_messages().await;
+    let place = messages
+        .iter()
+        .find(|m| m.get("t").and_then(|v| v.as_str()) == Some("p"))
+        .expect("expected a place-order message");
+    assert_eq!(
+        place.get("st").and_then(|v| v.as_str()),
+        Some("CancelResting")
+    );
+    assert_eq!(place.get("tag").and_then(|v| v.as_str()), Some("Nautilus"));
 
     client.close().await.expect("close WebSocket client");
 }
@@ -1496,6 +1565,7 @@ async fn test_orders_submit_order_missing_cached_instrument_returns_lookup_error
             TimeInForce::Gtc,
             Price::from("50000.00"),
             false,
+            None,
         )
         .await;
 

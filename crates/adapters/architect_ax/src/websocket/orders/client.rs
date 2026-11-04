@@ -62,7 +62,7 @@ use super::handler::{AxOrdersWsFeedHandler, HandlerCommand, WsOrderInfo};
 use crate::{
     common::{
         consts::AX_NAUTILUS_TAG,
-        enums::{AxOrderRequestType, AxOrderSide, AxTimeInForce},
+        enums::{AxOrderRequestType, AxOrderSide, AxSelfTradeBehavior, AxTimeInForce},
         parse::{client_order_id_to_cid, quantity_to_contracts},
     },
     websocket::messages::{AxOrdersWsMessage, AxWsPlaceOrder, OrderMetadata},
@@ -573,7 +573,8 @@ impl AxOrdersWebSocketClient {
     ///
     /// Retains `order_init` for event correlation and the original order type and side.
     /// The remaining arguments describe the current wire order, including a market order's
-    /// preview price and IOC time-in-force.
+    /// preview price and IOC time-in-force. `self_trade` carries the venue `st` option parsed
+    /// from strategy order params.
     ///
     /// # Errors
     ///
@@ -588,6 +589,7 @@ impl AxOrdersWebSocketClient {
         time_in_force: TimeInForce,
         price: Price,
         post_only: bool,
+        self_trade: Option<AxSelfTradeBehavior>,
     ) -> AxOrdersWsResult<i64> {
         let trader_id = order_init.trader_id;
         let strategy_id = order_init.strategy_id;
@@ -640,6 +642,7 @@ impl AxOrdersWebSocketClient {
             p: price.as_decimal(),
             tif: ax_tif,
             po: post_only,
+            st: self_trade,
             tag: Some(AX_NAUTILUS_TAG.to_string()),
             cid: Some(cid),
         };
@@ -972,6 +975,7 @@ mod tests {
                 TimeInForce::Gtc,
                 Price::from("1.10"),
                 false,
+                None,
             )
             .await;
 

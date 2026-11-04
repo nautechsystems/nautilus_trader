@@ -34,7 +34,7 @@ use pyo3::{prelude::*, types::PyType};
 use crate::{
     common::{
         consts::{AX, AX_CLIENT_ID, AX_VENUE},
-        enums::{AxEnvironment, AxMarketDataLevel},
+        enums::{AxEnvironment, AxMarketDataLevel, AxSelfTradeBehavior},
     },
     config::{AxDataClientConfig, AxExecutionClientConfig},
     factories::{AxDataClientFactory, AxExecutionClientFactory},
@@ -161,6 +161,55 @@ impl AxMarketDataLevel {
     }
 }
 
+#[pymethods]
+#[pyo3_stub_gen::derive::gen_stub_pymethods]
+impl AxSelfTradeBehavior {
+    fn __repr__(&self) -> String {
+        format!(
+            "<{}.{}: '{}'>",
+            stringify!(AxSelfTradeBehavior),
+            self.name(),
+            self.value(),
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
+
+    const fn __hash__(&self) -> isize {
+        *self as isize
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn name(&self) -> String {
+        match self {
+            Self::CancelIncoming => "CANCEL_INCOMING".to_string(),
+            Self::CancelResting => "CANCEL_RESTING".to_string(),
+            Self::CancelBoth => "CANCEL_BOTH".to_string(),
+        }
+    }
+
+    #[getter]
+    #[must_use]
+    pub fn value(&self) -> u8 {
+        *self as u8
+    }
+
+    #[classmethod]
+    #[pyo3(name = "from_str")]
+    fn py_from_str(_: &Bound<'_, PyType>, data: &Bound<'_, PyAny>) -> PyResult<Self> {
+        let data_str: &str = data.extract()?;
+        match data_str.to_uppercase().as_str() {
+            "CANCEL_INCOMING" => Ok(Self::CancelIncoming),
+            "CANCEL_RESTING" => Ok(Self::CancelResting),
+            "CANCEL_BOTH" => Ok(Self::CancelBoth),
+            _ => Self::parse_wire(data_str).map_err(to_pyvalue_err),
+        }
+    }
+}
+
 /// Exposed through `nautilus_trader.adapters.architect_ax`.
 ///
 /// # Errors
@@ -173,6 +222,7 @@ pub fn architect_ax(_: Python<'_>, m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(stringify!(AX_VENUE), *AX_VENUE)?;
     m.add_class::<AxEnvironment>()?;
     m.add_class::<AxMarketDataLevel>()?;
+    m.add_class::<AxSelfTradeBehavior>()?;
     m.add_class::<AxDataClientConfig>()?;
     m.add_class::<AxDataClientFactory>()?;
     m.add_class::<AxExecutionClientConfig>()?;

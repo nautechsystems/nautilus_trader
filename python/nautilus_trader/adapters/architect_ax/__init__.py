@@ -32,6 +32,7 @@ __all__ = [
     "AxExecutionClientConfig",
     "AxExecutionClientFactory",
     "AxMarketDataLevel",
+    "AxSelfTradeBehavior",
 ]
 
 fixup_module_names(globals(), __name__)

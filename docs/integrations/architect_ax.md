@@ -419,6 +419,43 @@ The adapter also rejects quote-quantity and display-quantity instructions becaus
 cannot encode those semantics. This is an adapter boundary, not a claim that AX Exchange rejects
 equivalent venue-native features.
 
+### Order parameters
+
+Strategies can pass AX-specific placement options through the `params` argument of `submit_order`.
+Unknown keys are ignored. An invalid value denies the order locally before submission.
+
+The `st` key selects self-trade prevention: `CancelIncoming` (venue default), `CancelResting`, or
+`CancelBoth`, with the venue's input aliases `xi`, `xr`, and `xb` also accepted. Pass these strings
+in `params`, not `AxSelfTradeBehavior` enum objects, which `params` cannot serialize. To produce a
+value from the enum, use `str(AxSelfTradeBehavior.CANCEL_RESTING)`; the `.name` property is not a
+valid `st` value. The AX `tag` field is always `Nautilus`; neither `params` nor Nautilus order `tags`
+changes it.
+
+```python
+order = strategy.order_factory.limit(
+    instrument_id=InstrumentId.from_str("EURUSD-PERP.AX"),
+    order_side=OrderSide.BUY,
+    quantity=Quantity.from_int(100),
+    price=Price.from_str("1.12"),
+)
+strategy.submit_order(order, params={"st": "CancelResting"})
+```
+
+The option applies to order placement; the adapter sends no `st` on replace requests. Whether a
+replacement inherits the original order's self-trade behavior is unverified. A self-crossing
+aggressive order can be rejected with `OrderRejected` carrying the venue reason
+`order would trade against your own resting order`; resting orders are canceled with `OrderCanceled`.
+
+### Price bands
+
+AX enforces a limit-price band for each symbol and publishes the current bounds on ticker
+events (`pl` lower limit, `pu` upper limit). The adapter also exposes the venue's band definition
+in `Instrument.info`: `price_bands`, `price_band_upper_deviation_pct`, and
+`price_band_lower_deviation_pct`. Orders priced outside the band are rejected with
+`PRICE_OUT_OF_BOUNDS`, which the adapter surfaces as an `OrderRejected` event. A fixed tick offset
+from top of book can cross the band on lower-priced instruments: sandbox testing rejected orders
+$5 from a ~$49.70 market.
+
 ### Time in force
 
 | Time in Force  | Supported | Notes                            |

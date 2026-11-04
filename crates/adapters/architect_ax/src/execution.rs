@@ -81,7 +81,9 @@ use crate::{
             AX_FILLS_MAX_LOOKBACK_DAYS, AX_POST_ONLY_REJECT, AX_VENUE,
         },
         credential::Credential,
-        enums::{AxCancelRejectionReason, AxOrderSide, AxOrderStatus, AxTimeInForce},
+        enums::{
+            AxCancelRejectionReason, AxOrderSide, AxOrderStatus, AxSelfTradeBehavior, AxTimeInForce,
+        },
         parse::{
             ax_timestamp_stn_to_unix_nanos, cid_to_client_order_id, client_order_id_to_cid,
             quantity_to_contracts,
@@ -280,7 +282,11 @@ impl AxExecutionClient {
         });
     }
 
-    fn submit_order_internal(&self, cmd: &SubmitOrder) -> anyhow::Result<()> {
+    fn submit_order_internal(
+        &self,
+        cmd: &SubmitOrder,
+        self_trade: Option<AxSelfTradeBehavior>,
+    ) -> anyhow::Result<()> {
         let (
             order_for_task,
             client_order_id,
@@ -399,6 +405,7 @@ impl AxExecutionClient {
                     submit_time_in_force,
                     price,
                     submit_post_only,
+                    self_trade,
                 )
                 .await;
 
@@ -921,7 +928,7 @@ impl ExecutionClient for AxExecutionClient {
     }
 
     fn submit_order(&self, cmd: SubmitOrder) -> anyhow::Result<()> {
-        {
+        let self_trade = {
             let cache = self.core.cache();
             let order = cache.try_order(&cmd.client_order_id)?;
 
@@ -930,18 +937,24 @@ impl ExecutionClient for AxExecutionClient {
                 return Ok(());
             }
 
-            if let Err(e) = validate_order_for_ax_submit(&order)
+            let self_trade = match validate_order_for_ax_submit(&order)
                 .and_then(|()| validate_order_init_instructions(&cmd.order_init))
+                .and_then(|()| self_trade_from_params(cmd.params.as_ref()))
             {
-                self.emitter.emit_order_denied(&order, &e.to_string());
-                return Ok(());
-            }
+                Ok(self_trade) => self_trade,
+                Err(e) => {
+                    self.emitter.emit_order_denied(&order, &e.to_string());
+                    return Ok(());
+                }
+            };
 
             log::debug!("OrderSubmitted client_order_id={}", order.client_order_id());
             self.emitter.emit_order_submitted(&order);
-        }
 
-        self.submit_order_internal(&cmd)
+            self_trade
+        };
+
+        self.submit_order_internal(&cmd, self_trade)
     }
 
     fn submit_order_list(&self, cmd: SubmitOrderList) -> anyhow::Result<()> {
@@ -3184,6 +3197,20 @@ fn validate_order_instructions(
     }
 
     Ok(())
+}
+
+// Maps the optional strategy `st` order param onto the venue's self-trade behavior.
+// Unknown keys are ignored; an invalid value is denied by the caller before submission.
+fn self_trade_from_params(params: Option<&Params>) -> anyhow::Result<Option<AxSelfTradeBehavior>> {
+    let Some(value) = params.and_then(|params| params.get("st")) else {
+        return Ok(None);
+    };
+
+    let value = value
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Invalid self-trade behavior value: expected a string"))?;
+
+    AxSelfTradeBehavior::parse_wire(value).map(Some)
 }
 
 // The AX HTTP API documents only a bare 400 with no error schema, so no venue
@@ -5943,6 +5970,56 @@ mod tests {
             .quantity(quantity)
             .price(Price::from("1.10"))
             .build()
+    }
+
+    #[rstest]
+    fn test_self_trade_from_params_parses_wire_alias() {
+        let params = Params::new([("st".to_string(), serde_json::json!("xb"))].into());
+
+        assert_eq!(
+            self_trade_from_params(Some(&params)).unwrap(),
+            Some(AxSelfTradeBehavior::CancelBoth)
+        );
+    }
+
+    #[rstest]
+    fn test_self_trade_from_params_ignores_unknown_keys() {
+        let params = Params::new(
+            [
+                (
+                    "execution_instruction".to_string(),
+                    serde_json::json!("anything"),
+                ),
+                ("tag".to_string(), serde_json::json!("ignored")),
+            ]
+            .into(),
+        );
+
+        assert_eq!(self_trade_from_params(Some(&params)).unwrap(), None);
+    }
+
+    #[rstest]
+    fn test_self_trade_from_params_rejects_unknown_value() {
+        let params = Params::new([("st".to_string(), serde_json::json!("cancel"))].into());
+
+        let err = self_trade_from_params(Some(&params)).unwrap_err();
+
+        assert!(
+            err.to_string()
+                .starts_with("Unsupported self-trade behavior")
+        );
+    }
+
+    #[rstest]
+    fn test_self_trade_from_params_rejects_non_string_value() {
+        let params = Params::new([("st".to_string(), serde_json::json!(1))].into());
+
+        let err = self_trade_from_params(Some(&params)).unwrap_err();
+
+        assert_eq!(
+            err.to_string(),
+            "Invalid self-trade behavior value: expected a string"
+        );
     }
 
     #[rstest]
