@@ -608,6 +608,38 @@ fn test_liquidation_bar_fallback_selection(
     }
 }
 
+#[rstest]
+fn test_liquidation_bar_fallback_refreshes_between_checks(audusd_sim: CurrencyPair) {
+    let audusd = InstrumentAny::CurrencyPair(audusd_sim);
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let (exchange, cache) = liquidation_fallback_exchange(&audusd, OrderSide::Buy, &clock);
+    let mut actual = Vec::new();
+
+    for (bar_type, value, ts) in [
+        ("AUD/USD.SIM-1-MINUTE-LAST-EXTERNAL", "1.00000", 2),
+        ("AUD/USD.SIM-1-SECOND-LAST-INTERNAL", "0.99000", 3),
+    ] {
+        let close = Price::from(value);
+        let ts = UnixNanos::from(ts);
+
+        let bar = Bar::new(
+            BarType::from(bar_type),
+            close,
+            close,
+            close,
+            close,
+            Quantity::from("1000000"),
+            ts,
+            ts,
+        );
+        cache.borrow_mut().add_bar(bar).unwrap();
+        exchange.borrow_mut().process_bar(bar).unwrap();
+        actual.push(run_liquidation_check(&exchange, &clock, ts));
+    }
+
+    assert_eq!(actual, vec![false, true]);
+}
+
 // Opens 100,000 AUD/USD at 1.00000 on `side` against 1,000 USD and 10 USD maintenance margin,
 // so the account is safe at 1.00000 and a 0.01000 adverse move takes equity to zero.
 fn liquidation_fallback_exchange(
