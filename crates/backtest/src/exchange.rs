@@ -17,6 +17,7 @@
 
 use std::{
     cell::{Cell, RefCell},
+    cmp::Reverse,
     collections::{BTreeMap, BTreeSet, BinaryHeap, VecDeque},
     fmt::Debug,
     rc::Rc,
@@ -2325,12 +2326,12 @@ fn revert_funding_adjustments(
 }
 
 // Values a position for the liquidation check with the portfolio's price fallback: mark price,
-// then the side-appropriate quote, then the last trade, then the most recent bar close
+// then the side-appropriate quote, then the last trade, then the most recent bar close.
 fn liquidation_unrealized_pnl(cache: &Cache, position: &Position) -> Option<Money> {
     let instrument_id = &position.instrument_id;
-    let is_long = match position.side {
-        PositionSide::Long => true,
-        PositionSide::Short => false,
+    let price_type = match position.side {
+        PositionSide::Long => PriceType::Bid,
+        PositionSide::Short => PriceType::Ask,
         PositionSide::Flat => return Some(Money::zero(position.settlement_currency)),
     };
 
@@ -2339,26 +2340,41 @@ fn liquidation_unrealized_pnl(cache: &Cache, position: &Position) -> Option<Mone
             .instrument(instrument_id)
             .is_some_and(Instrument::allows_negative_price)
     };
-    let is_valid = |price: &Price| price.as_decimal() > Decimal::ZERO || allows_non_positive();
+    let is_valid = |price: &Price| {
+        !price.is_undefined()
+            && !price.is_error()
+            && (price.as_decimal() > Decimal::ZERO || allows_non_positive())
+    };
     let quote_price = || {
         cache.quote(instrument_id).and_then(|quote| {
-            let (price, size) = if is_long {
-                (quote.bid_price, quote.bid_size)
-            } else {
-                (quote.ask_price, quote.ask_size)
+            let (price, size) = match price_type {
+                PriceType::Bid => (quote.bid_price, quote.bid_size),
+                _ => (quote.ask_price, quote.ask_size),
             };
             (is_valid(&price) && (price.as_decimal() > Decimal::ZERO || size.is_positive()))
                 .then_some(price)
         })
     };
+
+    // Bars closing together rank in the fallback order above, then mid, then the opposite quote
+    // side, then by bar type, so the choice never depends on cache iteration order.
+    let bar_rank = |bar: &Bar| match bar.bar_type.spec().price_type {
+        PriceType::Mark => 0,
+        bar_price_type if bar_price_type == price_type => 1,
+        PriceType::Last => 2,
+        PriceType::Mid => 3,
+        PriceType::Bid | PriceType::Ask => 4,
+    };
+
+    // In a backtest `ts_init` is the bar close for open- and close-stamped bars alike
     let bar_close = || {
         [AggregationSource::External, AggregationSource::Internal]
             .into_iter()
             .flat_map(|source| cache.bar_types(Some(instrument_id), None, source))
             .filter_map(|bar_type| cache.bar(bar_type))
-            .max_by_key(|bar| bar.ts_event)
+            .filter(|bar| is_valid(&bar.close))
+            .min_by_key(|bar| (Reverse(bar.ts_init), bar_rank(bar), bar.bar_type))
             .map(|bar| bar.close)
-            .filter(is_valid)
     };
 
     let Some(price) = cache
