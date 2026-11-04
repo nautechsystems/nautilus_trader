@@ -1254,11 +1254,7 @@ impl ExecutionEngine {
 
         self.materialize_external_order(
             initialized,
-            client_order_id,
             report.venue_order_id,
-            report.instrument_id,
-            strategy_id,
-            ts_now,
             Some(report.order_status),
             self.source_client_id_for_account(report.account_id, &report.instrument_id),
         )
@@ -1345,11 +1341,7 @@ impl ExecutionEngine {
 
         self.materialize_external_order(
             initialized,
-            client_order_id,
             report.venue_order_id,
-            report.instrument_id,
-            strategy_id,
-            ts_now,
             None,
             self.source_client_id_for_account(report.account_id, &report.instrument_id),
         )
@@ -1368,22 +1360,19 @@ impl ExecutionEngine {
 
     /// Adds an external order to the cache and registers it for adapter routing.
     /// Returns the registered order on success.
-    #[allow(
-        clippy::too_many_arguments,
-        reason = "external order materialization threads several ids and a timestamp"
-    )]
     fn materialize_external_order(
         &self,
         initialized: OrderInitialized,
-        client_order_id: ClientOrderId,
         venue_order_id: VenueOrderId,
-        instrument_id: InstrumentId,
-        strategy_id: StrategyId,
-        ts_now: UnixNanos,
         order_status: Option<OrderStatus>,
         source_client_id: Option<ClientId>,
     ) -> Option<OrderAny> {
+        let client_order_id = initialized.client_order_id;
+        let instrument_id = initialized.instrument_id;
+        let strategy_id = initialized.strategy_id;
+        let ts_init = initialized.ts_init;
         let initialized = OrderEventAny::Initialized(initialized);
+
         let order = match OrderAny::from_events(vec![initialized.clone()]) {
             Ok(order) => order,
             Err(e) => {
@@ -1421,7 +1410,7 @@ impl ExecutionEngine {
             venue_order_id,
             instrument_id,
             strategy_id,
-            ts_now,
+            ts_init,
         );
 
         Some(order)
@@ -1781,11 +1770,7 @@ impl ExecutionEngine {
             return;
         };
 
-        let cached_signed_qty = match position.side {
-            PositionSide::Long => position.quantity.as_decimal(),
-            PositionSide::Short => -position.quantity.as_decimal(),
-            _ => Decimal::ZERO,
-        };
+        let cached_signed_qty = Self::position_signed_decimal_qty(&position);
         let venue_signed_qty = report.signed_decimal_qty;
 
         if cached_signed_qty != venue_signed_qty {
@@ -2031,11 +2016,7 @@ impl ExecutionEngine {
     /// (e.g. via an internal `is_stopped` guard); the backtest teardown
     /// sequence calls `stop()` more than once per run.
     pub fn stop(&mut self) {
-        for client in self.get_clients_mut() {
-            if client.stop().is_err() {
-                log::error!("Failed to stop execution client {}", client.client_id());
-            }
-        }
+        self.stop_clients();
 
         self.stop_snapshot_timer();
         self.stop_purge_timers();
@@ -2349,18 +2330,11 @@ impl ExecutionEngine {
 
     fn routing_context_for_command(command: &TradingCommand) -> String {
         match command {
-            TradingCommand::SubmitOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
-            TradingCommand::SubmitOrderList(cmd) => format!("venue={}", cmd.instrument_id.venue),
-            TradingCommand::ModifyOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
-            TradingCommand::ModifyOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
-            TradingCommand::CancelOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
-            TradingCommand::CancelOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
-            TradingCommand::CancelAllOrders(cmd) => format!("venue={}", cmd.instrument_id.venue),
-            TradingCommand::QueryOrder(cmd) => format!("venue={}", cmd.instrument_id.venue),
             TradingCommand::QueryAccount(cmd) => {
                 let issuer = cmd.account_id.get_issuer();
                 format!("account_id={}, issuer={issuer}", cmd.account_id)
             }
+            _ => format!("venue={}", command.instrument_id().venue),
         }
     }
 
@@ -4877,11 +4851,6 @@ impl ExecutionEngine {
             return None;
         }
 
-        // Verify cache state after update
-        let cache = self.cache.borrow();
-
-        drop(cache);
-
         // Create position state snapshot if enabled
         if self.config.snapshot_positions {
             self.create_position_state_snapshot(position, false);
@@ -5571,16 +5540,7 @@ mod tests {
             panic!("Expected initialized order");
         };
 
-        let result = engine.materialize_external_order(
-            initialized,
-            claimant_id,
-            venue_order_id,
-            instrument.id(),
-            order.strategy_id(),
-            UnixNanos::default(),
-            None,
-            None,
-        );
+        let result = engine.materialize_external_order(initialized, venue_order_id, None, None);
 
         assert!(result.is_none());
         assert!(!cache.borrow().order_exists(&claimant_id));
