@@ -106,6 +106,7 @@ Released on TBD (UTC).
 - Fixed queued timer callbacks logging missing-actor errors or targeting reused actor IDs after retirement
 - Fixed backtest timer cancellation across data gaps and tail flushes
 - Fixed `BacktestEngine` reset hiding component reset failures
+- Fixed `EmaCross`, `BookImbalanceActor`, and `DeltaNeutralVol` retaining runtime state on engine reset
 - Fixed streaming backtests failing to resume when the first batch has only data before the start time
 - Fixed Python `ForexSession.__repr__` identifying sessions as `PositionSide`
 - Fixed `ExecTester` panicking on unsupported `GTD` brackets

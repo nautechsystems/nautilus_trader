@@ -19,6 +19,7 @@ use nautilus_common::{
     actor::DataActor,
     cache::Cache,
     clock::{Clock, VirtualClock},
+    component::Component,
 };
 use nautilus_indicators::indicator::{Indicator, MovingAverage};
 use nautilus_model::{
@@ -311,4 +312,33 @@ fn test_from_config_with_custom_strategy_id() {
     assert_eq!(strategy.trade_size, Quantity::from("50000"));
     assert_eq!(strategy.ema_fast.period, 5);
     assert_eq!(strategy.ema_slow.period, 20);
+}
+
+#[rstest]
+fn test_on_reset_restores_constructor_state() {
+    let mut strategy = create_strategy(2, 5);
+    register_strategy(&mut strategy);
+    strategy.initialize().unwrap();
+    warm_up(&mut strategy, "1.25000", 6);
+
+    assert!(strategy.ema_fast.initialized());
+    assert!(strategy.ema_slow.initialized());
+    assert!(strategy.prev_fast_above.is_some());
+
+    strategy.reset().unwrap();
+
+    assert!(!strategy.ema_fast.has_inputs());
+    assert!(!strategy.ema_fast.initialized());
+    assert_eq!(strategy.ema_fast.count(), 0);
+    assert_eq!(strategy.ema_fast.value(), 0.0);
+    assert!(!strategy.ema_slow.has_inputs());
+    assert!(!strategy.ema_slow.initialized());
+    assert_eq!(strategy.ema_slow.count(), 0);
+    assert_eq!(strategy.ema_slow.value(), 0.0);
+    assert_eq!(strategy.prev_fast_above, None);
+    assert_eq!(strategy.ema_fast.period, 2);
+    assert_eq!(strategy.ema_slow.period, 5);
+    assert_eq!(strategy.instrument_id, InstrumentId::from(INSTRUMENT_ID));
+    assert_eq!(strategy.trade_size, Quantity::from("100000"));
+    assert!(strategy.is_ready());
 }

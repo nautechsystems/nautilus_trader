@@ -146,4 +146,11 @@ impl DataActor for EmaCross {
         self.prev_fast_above = Some(fast_above);
         Ok(())
     }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.ema_fast.reset();
+        self.ema_slow.reset();
+        self.prev_fast_above = None;
+        Ok(())
+    }
 }

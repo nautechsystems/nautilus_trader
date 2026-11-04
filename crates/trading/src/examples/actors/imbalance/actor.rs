@@ -204,4 +204,9 @@ impl DataActor for BookImbalanceActor {
 
         Ok(())
     }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.states.clear();
+        Ok(())
+    }
 }
