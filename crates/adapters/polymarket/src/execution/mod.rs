@@ -38,7 +38,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 use anyhow::Context;
 use async_trait::async_trait;
 use nautilus_common::{
-    clients::ExecutionClient,
+    clients::{ExecutionClient, ExecutionReportTask},
     messages::execution::{
         BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
         GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
@@ -475,6 +475,34 @@ impl ExecutionClient for PolymarketExecutionClient {
         self.disconnect_client().await
     }
 
+    fn generate_order_status_report_task(
+        &self,
+        cmd: &GenerateOrderStatusReport,
+    ) -> Option<ExecutionReportTask<Option<OrderStatusReport>>> {
+        Some(self.order_status_report_task(cmd))
+    }
+
+    fn generate_order_status_reports_task(
+        &self,
+        cmd: &GenerateOrderStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<OrderStatusReport>>> {
+        self.order_status_reports_task(cmd)
+    }
+
+    fn generate_fill_reports_task(
+        &self,
+        cmd: &GenerateFillReports,
+    ) -> Option<ExecutionReportTask<Vec<FillReport>>> {
+        Some(self.fill_reports_task(cmd))
+    }
+
+    fn generate_position_status_reports_task(
+        &self,
+        cmd: &GeneratePositionStatusReports,
+    ) -> Option<ExecutionReportTask<Vec<PositionStatusReport>>> {
+        Some(self.position_status_reports_task(cmd))
+    }
+
     async fn generate_order_status_report(
         &self,
         cmd: &GenerateOrderStatusReport,
@@ -517,7 +545,7 @@ impl ExecutionClient for PolymarketExecutionClient {
                     .settlement
                     .ensure_resolved(instrument_id, "fill reports"),
             },
-            self.generate_fill_reports_impl(cmd),
+            Box::pin(self.generate_fill_reports_impl(cmd)),
         )
         .await
     }
@@ -562,9 +590,17 @@ async fn gate_report<T>(
 
 #[cfg(test)]
 mod tests {
+    use std::{cell::RefCell, rc::Rc};
+
+    use nautilus_common::{cache::Cache, config::ConfigError};
+    use nautilus_model::{
+        enums::{AccountType, OmsType},
+        identifiers::{TraderId, Venue},
+    };
     use rstest::rstest;
 
     use super::*;
+    use crate::config::PolymarketInstrumentProviderConfig;
 
     #[rstest]
     #[tokio::test]
@@ -631,16 +667,6 @@ mod tests {
 
     #[rstest]
     fn test_execution_client_rejects_duplicate_config_before_setup() {
-        use std::{cell::RefCell, rc::Rc};
-
-        use nautilus_common::{cache::Cache, config::ConfigError};
-        use nautilus_model::{
-            enums::{AccountType, OmsType},
-            identifiers::{TraderId, Venue},
-        };
-
-        use crate::config::PolymarketInstrumentProviderConfig;
-
         let core = ExecutionClientCore::new(
             TraderId::from("TESTER-001"),
             ClientId::from("POLYMARKET"),

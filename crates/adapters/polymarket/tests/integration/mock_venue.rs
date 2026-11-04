@@ -193,6 +193,7 @@ pub(super) struct TestServerState {
     pub(super) batch_order_request_gate: Arc<RequestGate>,
     pub(super) open_order_ids: Arc<tokio::sync::Mutex<HashSet<String>>>,
     pub(super) orders_response_override: Arc<tokio::sync::Mutex<Option<Value>>>,
+    pub(super) orders_response_pages: Arc<tokio::sync::Mutex<HashMap<String, Value>>>,
     pub(super) orders_response_status: Arc<tokio::sync::Mutex<StatusCode>>,
     pub(super) orders_get_count: Arc<AtomicUsize>,
     pub(super) book_response: Arc<tokio::sync::Mutex<Option<Value>>>,
@@ -282,6 +283,7 @@ impl Default for TestServerState {
             batch_order_request_gate: Arc::new(RequestGate::default()),
             open_order_ids: Arc::new(tokio::sync::Mutex::new(HashSet::new())),
             orders_response_override: Arc::new(tokio::sync::Mutex::new(None)),
+            orders_response_pages: Arc::new(tokio::sync::Mutex::new(HashMap::new())),
             orders_response_status: Arc::new(tokio::sync::Mutex::new(StatusCode::OK)),
             orders_get_count: Arc::new(AtomicUsize::new(0)),
             single_order_responses: Arc::new(tokio::sync::Mutex::new(VecDeque::new())),
@@ -366,9 +368,20 @@ async fn handle_get_orders(
     Query(query): Query<HashMap<String, String>>,
 ) -> Response {
     *state.last_path.lock().await = uri.path().to_string();
+    let cursor = query.get("next_cursor").cloned().unwrap_or_default();
     *state.last_query.lock().await = query;
     state.orders_get_count.fetch_add(1, Ordering::AcqRel);
     let status = *state.orders_response_status.lock().await;
+    if let Some(body) = state
+        .orders_response_pages
+        .lock()
+        .await
+        .get(&cursor)
+        .cloned()
+    {
+        return (status, Json(body)).into_response();
+    }
+
     let body = state
         .orders_response_override
         .lock()

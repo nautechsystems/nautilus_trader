@@ -183,6 +183,7 @@ Released on TBD (UTC).
 - Improved Docker publishing with temporary digest directories isolated per job
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Refined Polymarket limit submit responses and venue order ID lookup
+- Refined Polymarket report generation with HTTP collection on runtime workers (#5216)
 - Optimized empty command-queue drains and L1 order-book quote replacement
 - Upgraded `cargo-binstall` tool to v1.26.2
 - Upgraded `cargo-codspeed` tool to v6.0.0

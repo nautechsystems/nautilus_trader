@@ -1876,7 +1876,10 @@ mod tests {
             LimitOrder, Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs,
         },
         position::Position,
-        types::{Currency, Money, Price, Price as ModelPrice, Quantity, Quantity as ModelQuantity},
+        types::{
+            AccountBalance, Currency, Money, Price, Price as ModelPrice, Quantity,
+            Quantity as ModelQuantity,
+        },
     };
     use rstest::rstest;
     use serde_json::Value;
@@ -1884,13 +1887,19 @@ mod tests {
     use super::*;
     use crate::{
         common::enums::PolymarketTradeStatus,
-        execution::settlement::{
-            AdmittedLeg,
-            admission::AdmittedTrade,
-            registry::tests::{
-                force_client_fault, force_trade_fault, leg_application, trade_hard_fault,
+        execution::{
+            collateral::AppliedBalance,
+            settlement::{
+                AdmittedLeg,
+                admission::AdmittedTrade,
+                registry::{
+                    CollectedFillReports,
+                    tests::{
+                        force_client_fault, force_trade_fault, leg_application, trade_hard_fault,
+                    },
+                },
+                state::LegApplication,
             },
-            state::LegApplication,
         },
         factories::proxy::spawn_rejecting_proxy,
     };
@@ -3115,10 +3124,6 @@ mod tests {
 
     #[rstest]
     fn buy_fill_reduces_free_until_drained_refresh() {
-        use nautilus_model::types::AccountBalance;
-
-        use crate::execution::collateral::AppliedBalance;
-
         let (mut client, cache) = test_client();
         let instrument = test_binary_option("0xUNSETTLED_BUY", false, false);
         cache
@@ -3196,10 +3201,6 @@ mod tests {
 
     #[rstest]
     fn load_orders_from_cache_keeps_unsettled_buy_spend() {
-        use nautilus_model::types::AccountBalance;
-
-        use crate::execution::collateral::AppliedBalance;
-
         let (mut client, cache) = test_client();
         let instrument = test_binary_option("0xRECONNECT_BUY", false, false);
         cache
@@ -3272,10 +3273,6 @@ mod tests {
 
     #[rstest]
     fn terminal_rest_buy_fill_is_not_locked() {
-        use nautilus_model::types::AccountBalance;
-
-        use crate::execution::collateral::AppliedBalance;
-
         let (mut client, cache) = test_client();
         let instrument = test_binary_option("0xREST_BUY", false, false);
         cache
@@ -3357,10 +3354,6 @@ mod tests {
 
     #[rstest]
     fn confirmed_fill_report_is_not_locked() {
-        use nautilus_model::types::AccountBalance;
-
-        use crate::execution::collateral::AppliedBalance;
-
         let (mut client, cache) = test_client();
         let instrument = test_binary_option("0xREPORT_BUY", false, false);
         cache
@@ -3383,10 +3376,18 @@ mod tests {
             ts_event: UnixNanos::from(19_000_000_000_u64),
         };
 
-        client
+        let report = client
             .settlement
             .build_fill_report("REPORT-BUY", &leg, UnixNanos::from(1))
             .unwrap();
+        client
+            .settlement
+            .accept_fill_reports(&CollectedFillReports {
+                reports: vec![report],
+                venue_trade_ids: ahash::AHashMap::from_iter([(trade_id, "REPORT-BUY".to_string())]),
+            })
+            .unwrap();
+
         let ticket = client
             .collateral_locks
             .lock()
@@ -3452,10 +3453,6 @@ mod tests {
 
     #[rstest]
     fn sell_fill_does_not_lock_unsettled_collateral() {
-        use nautilus_model::types::AccountBalance;
-
-        use crate::execution::collateral::AppliedBalance;
-
         let (mut client, cache) = test_client();
         let instrument = test_binary_option("0xSELL_FILL", false, false);
         cache
@@ -3698,10 +3695,6 @@ mod tests {
 
     #[rstest]
     fn reset_clears_subscriptions_and_lookup_state() {
-        use nautilus_model::types::AccountBalance;
-
-        use crate::execution::collateral::AppliedBalance;
-
         let (mut client, _cache) = test_client();
         let expired = test_binary_option("0xRESET", true, true);
         client.upsert_execution_lookup(&expired);
