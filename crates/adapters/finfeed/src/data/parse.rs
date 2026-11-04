@@ -108,23 +108,7 @@ pub(super) fn bar(
         return Ok(None);
     }
 
-    let expected_end = source
-        .time_period_start
-        .to_zoned(TimeZone::UTC)
-        .checked_add(
-            Span::new()
-                .seconds(period.length_seconds)
-                .months(period.length_months),
-        )?
-        .timestamp();
-    anyhow::ensure!(
-        source.time_period_end == expected_end,
-        "FinFeed OHLCV period does not match requested bar specification"
-    );
-    anyhow::ensure!(
-        source.time_period_start < source.time_period_end,
-        "invalid FinFeed OHLCV period"
-    );
+    bar_end(source, period)?;
     anyhow::ensure!(
         source.trades_count >= 0,
         "negative FinFeed OHLCV trade count"
@@ -165,6 +149,27 @@ pub(super) fn bar(
     let volume = volume(source.volume_traded, instrument)?;
     let ts_event = timestamp(source.time_period_end)?;
     Bar::new_checked(bar_type, open, high, low, close, volume, ts_event, ts_event).map(Some)
+}
+
+pub(super) fn bar_end(source: &Ohlcv, period: &OhlcvPeriod) -> anyhow::Result<Timestamp> {
+    let expected_end = source
+        .time_period_start
+        .to_zoned(TimeZone::UTC)
+        .checked_add(
+            Span::new()
+                .seconds(period.length_seconds)
+                .months(period.length_months),
+        )?
+        .timestamp();
+    anyhow::ensure!(
+        source.time_period_end == expected_end,
+        "FinFeed OHLCV period does not match requested bar specification"
+    );
+    anyhow::ensure!(
+        source.time_period_start < source.time_period_end,
+        "invalid FinFeed OHLCV period"
+    );
+    Ok(expected_end)
 }
 
 pub(super) fn book(

@@ -27,12 +27,13 @@ use nautilus_model::{
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use strum::{AsRefStr, EnumString};
 
 use super::{
     error::Error,
     models::{Market, MarketStatus, OutcomeType},
 };
-use crate::common::{consts::FINFEED, symbol::to_instrument_id};
+use crate::common::{consts::FINFEED, enums::Exchange, symbol::to_instrument_id};
 
 pub(crate) const TOKEN_ID_KEY: &str = "token_id";
 const PRICE_PRECISION: u8 = 4;
@@ -80,7 +81,7 @@ pub fn parse_instrument(market: &Market, ts_init: UnixNanos) -> Result<BinaryOpt
         return Err(definition_error(market, "outcome_type", "is unsupported"));
     }
 
-    if exchange_id != "POLYMARKET" {
+    if !matches!(exchange_id.parse::<Exchange>(), Ok(Exchange::Polymarket)) {
         return Err(definition_error(
             market,
             "source_specific_data",
@@ -112,9 +113,14 @@ fn parse_polymarket(
     let outcome = market
         .outcome_name
         .as_deref()
-        .filter(|outcome| matches!(*outcome, "Yes" | "No"))
+        .and_then(|outcome| outcome.parse::<BinaryOutcome>().ok())
         .ok_or_else(|| definition_error(market, "outcome_name", "must be Yes or No"))?;
-    let suffix = if outcome == "Yes" { "_YES" } else { "_NO" };
+
+    let suffix = match outcome {
+        BinaryOutcome::Yes => "_YES",
+        BinaryOutcome::No => "_NO",
+    };
+
     if !instrument_id.symbol.as_str().ends_with(suffix) {
         return Err(definition_error(
             market,
@@ -227,7 +233,7 @@ fn parse_polymarket(
         .size_precision(SIZE_PRECISION)
         .price_increment(price_increment)
         .size_increment(size_increment)
-        .outcome(outcome.into())
+        .outcome(outcome.as_ref().into())
         .description(description.as_str().into())
         .info(info)
         .ts_event(ts_init)
@@ -236,13 +242,19 @@ fn parse_polymarket(
         .map_err(|_| definition_error(market, "instrument", "failed checked construction"))
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, AsRefStr, EnumString)]
+enum BinaryOutcome {
+    Yes,
+    No,
+}
+
 #[derive(Deserialize)]
 struct OutcomeToken {
     token_id: String,
     outcome: String,
 }
 
-fn outcome_token(market: &Market, outcome: &str) -> Result<String, Error> {
+fn outcome_token(market: &Market, outcome: BinaryOutcome) -> Result<String, Error> {
     let value = source_string(market, "Tokens")?;
     let mut tokens: Vec<OutcomeToken> = serde_json::from_str(&value)
         .map_err(|_| definition_error(market, "Tokens", "is not a valid token array"))?;
@@ -254,12 +266,14 @@ fn outcome_token(market: &Market, outcome: &str) -> Result<String, Error> {
         ));
     }
 
+    let outcomes =
+        [&tokens[0].outcome, &tokens[1].outcome].map(|label| label.parse::<BinaryOutcome>().ok());
+
     if tokens[0].token_id == tokens[1].token_id
-        || tokens[0].outcome == tokens[1].outcome
+        || outcomes[0] == outcomes[1]
+        || outcomes.iter().any(Option::is_none)
         || tokens.iter().any(|token| {
-            !matches!(token.outcome.as_str(), "Yes" | "No")
-                || token.token_id.is_empty()
-                || !token.token_id.bytes().all(|byte| byte.is_ascii_digit())
+            token.token_id.is_empty() || !token.token_id.bytes().all(|byte| byte.is_ascii_digit())
         })
     {
         return Err(definition_error(
@@ -268,7 +282,8 @@ fn outcome_token(market: &Market, outcome: &str) -> Result<String, Error> {
             "contains ambiguous or invalid identities",
         ));
     }
-    let index = usize::from(tokens[0].outcome != outcome);
+
+    let index = usize::from(outcomes[0] != Some(outcome));
     Ok(tokens.swap_remove(index).token_id)
 }
 
@@ -548,6 +563,7 @@ mod tests {
     #[case("duplicate-token")]
     #[case("duplicate-outcome")]
     #[case("unsupported-outcome")]
+    #[case("lowercase-outcome")]
     #[case("empty-token")]
     fn ambiguous_tokens_are_rejected(#[case] change: &str) {
         let mut value: Value = serde_json::from_str(MARKET).unwrap();
@@ -559,6 +575,7 @@ mod tests {
             "duplicate-token" => tokens[1]["token_id"] = tokens[0]["token_id"].clone(),
             "duplicate-outcome" => tokens[1]["outcome"] = tokens[0]["outcome"].clone(),
             "unsupported-outcome" => tokens[1]["outcome"] = "Maybe".into(),
+            "lowercase-outcome" => tokens[1]["outcome"] = "yes".into(),
             "empty-token" => tokens[1]["token_id"] = "".into(),
             _ => unreachable!(),
         }
@@ -573,6 +590,35 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[rstest]
+    #[case("yes")]
+    #[case("no")]
+    #[case("YES")]
+    #[case("NO")]
+    #[case("Maybe")]
+    #[case("")]
+    #[case(" Yes")]
+    fn native_outcomes_require_exact_binary_labels(#[case] label: &str) {
+        let mut market: Market = serde_json::from_str(MARKET).unwrap();
+        market.outcome_name = Some(label.to_owned());
+        let error = parse_instrument(&market, UnixNanos::default()).unwrap_err();
+
+        let Error::Definition {
+            exchange_id,
+            market_id,
+            field,
+            reason,
+        } = error
+        else {
+            panic!("expected invalid outcome definition");
+        };
+
+        assert_eq!(exchange_id, "POLYMARKET");
+        assert_eq!(Some(market_id), market.market_id);
+        assert_eq!(field, "outcome_name");
+        assert_eq!(reason, "must be Yes or No");
     }
 
     #[rstest]

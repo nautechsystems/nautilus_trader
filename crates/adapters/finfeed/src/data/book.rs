@@ -14,10 +14,13 @@
 // -------------------------------------------------------------------------------------------------
 
 //! Deterministic L2 replay of bounded returned records, without a source-coverage guarantee.
+//! Groups preserve source order and exchange clocks. Their derived ordering time is the cumulative
+//! maximum of available processing clocks or exchange-clock fallbacks, used for seed and bounds.
 
 use std::{collections::HashSet, num::NonZeroUsize};
 
 use anyhow::Context;
+use jiff::Timestamp;
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas, OrderBookDepth},
@@ -26,6 +29,7 @@ use nautilus_model::{
     orderbook::{OrderBook, analysis::book_check_integrity},
 };
 use rust_decimal::Decimal;
+use strum::FromRepr;
 
 use super::parse;
 use crate::http::models::BookEvent;
@@ -40,31 +44,36 @@ pub(super) fn replay(
     let mut batches = Vec::new();
     let mut seeded = false;
     let mut previous = None;
+    let mut ordering = UnixNanos::default();
     let mut offset = 0;
     while offset < source.len() {
         let time = source[offset].time_exchange;
-        let ts_event = parse::timestamp(time)?;
-        anyhow::ensure!(
-            previous.is_none_or(|prior| prior <= time),
-            "FinFeed book timestamps are out of order"
-        );
-
         let count = source[offset..]
             .iter()
             .take_while(|row| {
                 row.time_exchange == time
-                    && (row.update_type == 3) == (source[offset].update_type == 3)
+                    && (row.update_type == UpdateType::Snapshot as i64)
+                        == (source[offset].update_type == UpdateType::Snapshot as i64)
             })
             .count();
         let rows = &source[offset..offset + count];
+        for row in rows {
+            ordering = ordering.max(parse::timestamp(time_ordering(row))?);
+        }
+
         if offset > 0 && previous != Some(time) {
             anyhow::ensure!(
-                source[offset - 1].update_type != 3 || rows[0].update_type != 3,
+                source[offset - 1].update_type != UpdateType::Snapshot as i64
+                    || rows[0].update_type != UpdateType::Snapshot as i64,
                 "FinFeed snapshot spans timestamps without a completion marker"
             );
         }
 
-        if ts_event > start && batches.is_empty() {
+        if ordering > end {
+            break;
+        }
+
+        if ordering > start && batches.is_empty() {
             anyhow::ensure!(
                 seeded,
                 "FinFeed book has no snapshot seed at or before start"
@@ -72,9 +81,8 @@ pub(super) fn replay(
             batches.push(book.to_deltas(start, start));
         }
 
-        if let Some(batch) = apply(rows, instrument, &mut book, &mut seeded)?
-            && ts_event > start
-            && ts_event <= end
+        if let Some(batch) = apply(rows, instrument, &mut book, &mut seeded, ordering)?
+            && ordering > start
         {
             batches.push(batch);
         }
@@ -89,17 +97,6 @@ pub(super) fn replay(
             "FinFeed book has no snapshot seed at or before start"
         );
         batches.push(book.to_deltas(start, start));
-    }
-
-    // Downstream trimming and pipeline ordering use ts_init
-    let mut ts_init = start;
-
-    for delta in batches.iter().flat_map(|batch| &batch.deltas) {
-        anyhow::ensure!(
-            delta.ts_init >= ts_init && delta.ts_init <= end,
-            "FinFeed book receive clocks cannot preserve request bounds and order"
-        );
-        ts_init = delta.ts_init;
     }
 
     Ok(batches)
@@ -187,18 +184,21 @@ fn apply(
     instrument: &BinaryOption,
     book: &mut OrderBook,
     seeded: &mut bool,
+    ts_init: UnixNanos,
 ) -> anyhow::Result<Option<OrderBookDeltas>> {
     let mut deltas = Vec::new();
     let mut snapshot = false;
     let mut prices = HashSet::new();
 
     for row in rows {
-        let delta = parse_delta(row, instrument, book)?;
-        if !*seeded && row.update_type != 3 {
+        let mut delta = parse_delta(row, instrument, book)?;
+        delta.ts_init = ts_init;
+
+        if !*seeded && row.update_type != UpdateType::Snapshot as i64 {
             continue;
         }
 
-        if row.update_type == 3 {
+        if row.update_type == UpdateType::Snapshot as i64 {
             if !snapshot {
                 let clear = OrderBookDelta::clear(instrument.id, 0, delta.ts_event, delta.ts_init);
                 book.apply_delta(&clear)?;
@@ -213,7 +213,7 @@ fn apply(
             );
         }
 
-        snapshot = row.update_type == 3;
+        snapshot = row.update_type == UpdateType::Snapshot as i64;
         book.apply_delta(&delta)?;
         deltas.push(delta);
     }
@@ -241,13 +241,10 @@ fn parse_delta(
         row.id.is_empty(),
         "FinFeed historical replay requires L2 events without order IDs"
     );
-    anyhow::ensure!(
-        matches!(row.update_type, 0 | 1 | 3),
-        "unsupported FinFeed book action {}",
-        row.update_type
-    );
+    let update_type = UpdateType::from_repr(row.update_type)
+        .with_context(|| format!("unsupported FinFeed book action {}", row.update_type))?;
     let ts_event = parse::timestamp(row.time_exchange)?;
-    let ts_init = parse::timestamp(row.time_coinapi.unwrap_or(row.time_exchange))?;
+    let ts_init = parse::timestamp(time_ordering(row))?;
     let price = parse::price(row.price, instrument)?;
     let mut size = parse::qty(row.size, instrument)?;
 
@@ -257,7 +254,7 @@ fn parse_delta(
         OrderSide::Buy
     };
 
-    if row.update_type == 0 {
+    if update_type == UpdateType::Add {
         let prior = book
             .bids(None)
             .chain(book.asks(None))
@@ -270,7 +267,7 @@ fn parse_delta(
         size = parse::qty(total, instrument)?;
     }
 
-    let snapshot = row.update_type == 3;
+    let snapshot = update_type == UpdateType::Snapshot;
     anyhow::ensure!(
         !snapshot || row.size > Decimal::ZERO,
         "FinFeed snapshot level size must be positive"
@@ -292,6 +289,18 @@ fn parse_delta(
 
     let order = BookOrder::new(side, price, size, 0);
     OrderBookDelta::new_checked(instrument.id, action, order, flags, 0, ts_event, ts_init)
+}
+
+pub(super) fn time_ordering(row: &BookEvent) -> Timestamp {
+    row.time_coinapi.unwrap_or(row.time_exchange)
+}
+
+#[repr(i64)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromRepr)]
+enum UpdateType {
+    Add = 0,
+    Set = 1,
+    Snapshot = 3,
 }
 
 #[cfg(test)]
@@ -579,6 +588,97 @@ mod tests {
     }
 
     #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn groups_past_end_do_not_invalidate_the_requested_prefix(#[case] received: bool) {
+        let mut source = events();
+        source.truncate(8);
+        let instrument = instrument();
+        let start = parse::timestamp(source[0].time_exchange).unwrap();
+        let end = parse::timestamp(source[4].time_exchange).unwrap();
+        let expected = replay(&source, &instrument, start, end).unwrap();
+        let mut tail = source[4].clone();
+        tail.price = "0.7".parse().unwrap();
+        let after = "2026-10-11T00:00:03Z".parse().unwrap();
+
+        if received {
+            tail.time_exchange = source[0].time_exchange;
+            tail.time_coinapi = Some(after);
+        } else {
+            tail.time_exchange = after;
+        }
+
+        source.push(tail);
+        let actual = replay(&source, &instrument, start, end).unwrap();
+        let at_end = replay(
+            &source,
+            &instrument,
+            start,
+            parse::timestamp(after).unwrap(),
+        )
+        .unwrap_err();
+
+        assert_eq!(actual, expected);
+        assert_eq!(actual.len(), 2);
+        assert!(matches!(
+            at_end.downcast_ref::<BookIntegrityError>(),
+            Some(BookIntegrityError::OrdersCrossed(..))
+        ));
+    }
+
+    #[rstest]
+    #[case(-1)]
+    #[case(2)]
+    #[case(4)]
+    #[case(5)]
+    #[case(99)]
+    #[case(i64::MIN)]
+    #[case(i64::MAX)]
+    fn raw_unsupported_actions_are_rejected_only_inside_the_replay_window(#[case] code: i64) {
+        let mut source = events();
+        source.truncate(8);
+        let instrument = instrument();
+        let start = parse::timestamp(source[0].time_exchange).unwrap();
+        let end = parse::timestamp(source[4].time_exchange).unwrap();
+        let expected = replay(&source, &instrument, start, end).unwrap();
+        let mut tail = source[4].clone();
+        tail.time_exchange = "2026-10-11T00:00:03Z".parse().unwrap();
+        tail.update_type = code;
+        let after = parse::timestamp(tail.time_exchange).unwrap();
+        source.push(tail);
+        let actual = replay(&source, &instrument, start, end).unwrap();
+        let error = replay(&source, &instrument, start, after).unwrap_err();
+
+        assert_eq!(actual, expected);
+        assert_eq!(actual.len(), 2);
+        assert_eq!(
+            error.to_string(),
+            format!("unsupported FinFeed book action {code}")
+        );
+    }
+
+    #[rstest]
+    #[case("2026-10-11T00:00:01.0000001Z")]
+    #[case("2026-10-11T00:00:01.5000000Z")]
+    fn snapshot_continuation_past_end_rejects_an_incomplete_seed(#[case] end: Timestamp) {
+        let mut source = events();
+        source[1].time_exchange = source[4].time_exchange;
+        let start = parse::timestamp(source[0].time_exchange).unwrap();
+        let error = replay(
+            &source,
+            &instrument(),
+            start,
+            parse::timestamp(end).unwrap(),
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "FinFeed snapshot spans timestamps without a completion marker"
+        );
+    }
+
+    #[rstest]
     fn bounds_seed_state_and_limits_preserve_whole_batches() {
         let source = events();
         let instrument = instrument();
@@ -636,7 +736,6 @@ mod tests {
     #[case("negative-size")]
     #[case("crossed")]
     #[case("duplicate")]
-    #[case("decreasing-time")]
     #[case("split-snapshot")]
     #[case("zero-snapshot")]
     fn invalid_replay_fails_atomically_before_depth(#[case] invalid: &str) {
@@ -653,7 +752,6 @@ mod tests {
             "negative-size" => source[1].size = "-1".parse::<Decimal>().unwrap(),
             "crossed" => source[1].price = "0.8".parse::<Decimal>().unwrap(),
             "duplicate" => source[1].price = source[0].price,
-            "decreasing-time" => source.swap(3, 4),
             "split-snapshot" => source[1].time_exchange = source[4].time_exchange,
             "zero-snapshot" => source[1].size = Decimal::ZERO,
             _ => unreachable!(),
@@ -681,7 +779,6 @@ mod tests {
             "round-size" => "FinFeed size requires rounding",
             "negative-size" => "Decimal value '-1' is negative, Quantity must be non-negative",
             "duplicate" => "duplicate FinFeed snapshot price level",
-            "decreasing-time" => "FinFeed book timestamps are out of order",
             "split-snapshot" => "FinFeed snapshot spans timestamps without a completion marker",
             "zero-snapshot" => "FinFeed snapshot level size must be positive",
             _ => unreachable!(),
@@ -823,15 +920,19 @@ mod tests {
     }
 
     #[rstest]
-    #[case("after-end")]
-    #[case("before-start")]
-    #[case("reversed")]
-    fn incompatible_receive_clocks_reject_the_complete_response(#[case] invalid: &str) {
+    #[case("after-end", 1, "2026-10-11T00:00:01.0000001Z")]
+    #[case("before-start", 2, "2026-10-11T00:00:02.0000001Z")]
+    #[case("reversed", 2, "2026-10-11T00:00:02.0000003Z")]
+    fn mixed_source_clocks_use_one_derived_time_per_group(
+        #[case] clocks: &str,
+        #[case] count: usize,
+        #[case] expected: Timestamp,
+    ) {
         let mut source = events();
         let start = parse::timestamp(source[0].time_exchange).unwrap();
         let end = parse::timestamp("2026-10-11T00:00:02.0000005Z".parse().unwrap()).unwrap();
 
-        match invalid {
+        match clocks {
             "after-end" => {
                 source[7].time_coinapi = Some("2026-10-11T00:00:02.0000009Z".parse().unwrap());
             }
@@ -844,11 +945,103 @@ mod tests {
             _ => unreachable!(),
         }
 
-        assert_eq!(
-            replay(&source, &instrument(), start, end)
-                .unwrap_err()
-                .to_string(),
-            "FinFeed book receive clocks cannot preserve request bounds and order"
-        );
+        let batches = replay(&source, &instrument(), start, end).unwrap();
+        let last = batches.last().unwrap();
+
+        assert_eq!(batches.len(), count);
+        assert_eq!(last.ts_init, parse::timestamp(expected).unwrap());
+
+        for delta in &last.deltas {
+            assert_eq!(delta.ts_init, last.ts_init);
+        }
+
+        if count == 2 {
+            for delta in &last.deltas {
+                assert_eq!(
+                    delta.ts_event,
+                    parse::timestamp(source[4].time_exchange).unwrap()
+                );
+            }
+
+            assert_eq!(
+                last.deltas[1].order.size.as_decimal(),
+                "5.25".parse::<Decimal>().unwrap()
+            );
+        }
+    }
+
+    #[rstest]
+    #[case(
+        "2026-10-11T00:00:01.0000001Z",
+        "2026-10-11T00:00:02.0000005Z",
+        3,
+        "2",
+        "5.25"
+    )]
+    #[case(
+        "2026-10-11T00:00:02.0000003Z",
+        "2026-10-11T00:00:02.0000005Z",
+        3,
+        "2",
+        "5.25"
+    )]
+    #[case(
+        "2026-10-11T00:00:01.0000001Z",
+        "2026-10-11T00:00:02.0000003Z",
+        1,
+        "2",
+        "2"
+    )]
+    #[case(
+        "2026-10-11T00:00:02.0000005Z",
+        "2026-10-11T00:00:02.0000005Z",
+        1,
+        "5.25",
+        "5.25"
+    )]
+    fn late_events_preserve_source_order_and_seed_on_the_derived_clock(
+        #[case] start: Timestamp,
+        #[case] end: Timestamp,
+        #[case] count: usize,
+        #[case] seed_qty: Decimal,
+        #[case] final_qty: Decimal,
+    ) {
+        let mut source = events();
+        source[4].time_exchange = "2026-10-11T00:00:02.0000005Z".parse().unwrap();
+        let instrument = instrument();
+        let start = parse::timestamp(start).unwrap();
+        let end = parse::timestamp(end).unwrap();
+        let batches = replay(&source, &instrument, start, end).unwrap();
+        let seed = snapshot(&batches[..1], &instrument, None).unwrap();
+        let book = snapshot(&batches, &instrument, None).unwrap();
+        let price = "0.4".parse::<Decimal>().unwrap();
+
+        assert_eq!(batches.len(), count);
+        assert_eq!(seed.bids_as_map(None)[&price], seed_qty);
+        assert_eq!(book.bids_as_map(None)[&price], final_qty);
+
+        for delta in &batches[0].deltas {
+            assert_eq!(delta.ts_event, start);
+            assert_eq!(delta.ts_init, start);
+        }
+
+        if count == 3 {
+            assert_eq!(
+                batches[1].ts_event,
+                parse::timestamp(source[4].time_exchange).unwrap()
+            );
+            assert_eq!(
+                batches[2].ts_event,
+                parse::timestamp(source[7].time_exchange).unwrap()
+            );
+
+            for batch in &batches[1..] {
+                assert_eq!(batch.ts_init, end);
+
+                for delta in &batch.deltas {
+                    assert_eq!(delta.ts_init, end);
+                }
+            }
+        }
     }
 }

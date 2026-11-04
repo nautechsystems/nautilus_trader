@@ -97,13 +97,18 @@ mod tests {
 
     #[rstest]
     fn builder_and_serde_defaults_match() {
-        let expected = serde_json::to_value(FinFeedDataClientConfig::default()).unwrap();
+        let config = FinFeedDataClientConfig::default();
+        let expected = serde_json::to_value(&config).unwrap();
+        let empty = serde_json::Value::Object(serde_json::Map::new());
+        let decoded: FinFeedDataClientConfig = serde_json::from_value(empty).unwrap();
+
+        assert_eq!(config.http.timeout_secs, 300);
+        assert_eq!(config.http.retry.operation_timeout_ms, Some(330_000));
+        assert_eq!(config.http.retry.max_elapsed_ms, Some(600_000));
         assert_eq!(
             serde_json::to_value(FinFeedDataClientConfig::builder().build()).unwrap(),
             expected
         );
-        let empty = serde_json::Value::Object(serde_json::Map::new());
-        let decoded: FinFeedDataClientConfig = serde_json::from_value(empty).unwrap();
         assert_eq!(serde_json::to_value(decoded).unwrap(), expected);
     }
 
@@ -120,9 +125,9 @@ mod tests {
                 "max_delay_ms": 10000,
                 "backoff_factor": 2.0,
                 "jitter_ms": 0,
-                "operation_timeout_ms": 30000,
+                "operation_timeout_ms": 330000,
                 "immediate_first": false,
-                "max_elapsed_ms": 120000,
+                "max_elapsed_ms": 600000,
             })
         );
     }

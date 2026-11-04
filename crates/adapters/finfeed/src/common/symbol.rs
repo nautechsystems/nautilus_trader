@@ -18,7 +18,7 @@
 use nautilus_model::identifiers::{InstrumentId, Symbol, Venue};
 use ustr::Ustr;
 
-use crate::http::error::Error;
+use crate::{common::enums::Exchange, http::error::Error};
 
 const VENUE_PREFIX: &str = "FINFEED_";
 
@@ -30,7 +30,9 @@ const VENUE_PREFIX: &str = "FINFEED_";
 ///
 /// Returns an error if the exchange is unknown or the outcome ID is invalid.
 pub fn to_instrument_id(exchange_id: &str, market_id: &str) -> Result<InstrumentId, Error> {
-    validate_exchange_id(exchange_id)?;
+    exchange_id
+        .parse::<Exchange>()
+        .map_err(|_| Error::Validation(format!("unknown exchange {exchange_id}")))?;
 
     if matches!(market_id, "." | "..") {
         return Err(Error::Validation("invalid outcome ID".into()));
@@ -57,25 +59,6 @@ pub fn from_instrument_id(instrument_id: InstrumentId) -> Result<(Ustr, Ustr), E
     let market_id = instrument_id.symbol.as_str();
     to_instrument_id(exchange_id, market_id)?;
     Ok((exchange_id.into(), market_id.into()))
-}
-
-pub(crate) fn validate_exchange_id(exchange_id: &str) -> Result<(), Error> {
-    if !matches!(
-        exchange_id,
-        "KALSHI"
-            | "POLYMARKET"
-            | "MYRIAD"
-            | "MANIFOLD"
-            | "HYPERLIQUIDOUTCOME"
-            | "PASCAL"
-            | "GEMINIPM"
-            | "CRYPTOCOMPM"
-            | "FORECASTEX"
-    ) {
-        return Err(Error::Validation(format!("unknown exchange {exchange_id}")));
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]

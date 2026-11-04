@@ -19,12 +19,16 @@ optional Python bindings. Order execution is unsupported.
 - **Polling**: Quotes and trades share latest-activity requests; L2 market-by-price (MBP) deltas and depth
   share current-book snapshots. Deltas are complete replacements. Bars publish completed `EXTERNAL` and
   `LAST` periods. Polling can miss events and provides no completeness or automatic backfill guarantee.
-- **History**: Trades and quotes retrieve whole UTC dates; L2 book replay retrieves whole UTC hours and
-  requires a returned snapshot at or before the requested start. Native history rejects saturated
-  responses without partial delivery or inferred continuation. Replay relies on documented source
-  action and continuity assumptions; complete source coverage remains unverified.
+- **History**: Trades, quotes, and L2 books share covering UTC-hour retrieval with checked overlapping
+  continuation. Book replay requires a returned snapshot at or before the requested start. Bars
+  continue from validated period ends, including short pages. Ambiguous continuation fails without
+  partial delivery. Timestamp selection and source action semantics remain assumptions, not
+  complete-coverage guarantees.
 
-Provider timestamps are preserved rather than replaced with local arrival times. Trades use
+Provider event timestamps are preserved rather than replaced with local arrival times. Historical
+book replay derives a monotone group ordering clock for `ts_init` and request bounds, using the
+cumulative maximum of processing timestamps when present and exchange timestamps otherwise.
+This clock preserves source order but does not measure receipt time. Trades use
 `NO_AGGRESSOR`. Book snapshots do not establish incremental continuity or full venue depth.
 OHLCV `LAST` does not establish trade-only prices or final revisions. Prices and raw sizes remain exact;
 OHLCV volume permits only [bounded normalization](../../../docs/integrations/finfeed.md#prices-and-finality).
@@ -33,8 +37,8 @@ Fresh `Closed` or `Resolved` metadata ends polling and rejects new subscriptions
 Metadata has no periodic refresh, and no authoritative settlement or close event is inferred.
 The provider end date sets the simulated trading cutoff; it does not establish actual venue closure or settlement.
 
-Historical-trade delivery has a bounded Python comparison; nonempty historical-quote delivery and
-positive bar delivery after reconnect remain unverified. See the
+Historical books, quotes, trades, and bars have bounded Rust and Python checks and live Polymarket
+[samples](tests/README.md#observed-historical-samples). Positive bar delivery after reconnect remains unverified. See the
 [capability matrix](../../../docs/integrations/finfeed.md#supported-capabilities) and
 [evidence and limits](../../../docs/integrations/finfeed.md#limitations) before relying on a data surface.
 

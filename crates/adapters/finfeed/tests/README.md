@@ -119,7 +119,7 @@ Replace the exact name to select the bar check:
 
 | Test                                                             | GET allowance | Required delivery                                                                                         | Deadlines and cadence                     |
 | ---------------------------------------------------------------- | ------------- | --------------------------------------------------------------------------------------------------------- | ----------------------------------------- |
-| `delivery::bounded_quote_history_matches_received_provider_rows` | 4             | Three quotes from the requested hour, selected from whole-date history in receive-time order              | 600 s per GET; 640 s for native delivery  |
+| `delivery::bounded_quote_history_matches_received_provider_rows` | 4             | Three quotes from the requested hour, selected from covering-hour history in receive-time order           | 600 s per GET; 640 s for native delivery  |
 | `delivery::bounded_closed_bar_publication_and_reconnect`         | 18 total      | Positive initial and resumed bars; exact returned periods; strict advancement past the retained watermark | 600 s per generation; 100 s poll interval |
 
 The first resumed bar must end before reconnect starts, exposing an incorrect reconnect-time watermark
@@ -128,6 +128,32 @@ Both delivery checks use at least ten-second GET spacing, no retries, and stop f
 non-200 response or transport failure. A captured status of `None` means no provider HTTP status is established;
 the peer supplies a synthetic 504. Empty or saturated data, deadlines, and quota failures leave delivery
 unverified. The quote check's covering-hour control does not prove native delivery or complete history.
+
+### Observed historical samples
+
+Bounded read-only Polymarket samples exercise native pagination and delivery on 2026-11-02 UTC.
+For outcome `BITCOIN-ABOVE-76K-ON-NOVEMBER-3-2026_YES`:
+
+| Native history | Window (UTC)           | Observed result                                                         |
+| -------------- | ---------------------- | ----------------------------------------------------------------------- |
+| Book deltas    | `[20:00:05, 20:02:00]` | 13900 deltas; 13774 completed groups pass book integrity checks         |
+| Quotes         | `[20:00:00, 20:59:59]` | 30132 quotes across four pages; every field matches joined raw controls |
+| Trades         | `[20:00:00, 20:59:59]` | 8 trades; every field matches the raw control                           |
+
+Reconstructed bid/ask prices and sizes match quote history at all 639 comparable timestamps in the
+book window. These are comparisons between FinFeed surfaces, not independent historical venue books.
+A separate capped cross-hour book response matches all 10000 records against independent hourly controls.
+
+For outcome `WILL-SANDRA-HULLER-BE-NOMINATED-FOR-BEST-SUPPORTING-ACTRESS-AT-THE-99TH-ACADEMY-AWARDS-2026101318015_YES`,
+native one-minute bars in `[20:00:00, 21:00:00]` match all seven raw control periods. Native activity in
+`[20:01:00, 21:56:00]` matches 294 quotes and one trade against both hourly controls. The native book
+request for that two-hour window times out with a 180-second HTTP timeout. Its raw cross-hour control
+returns 508 records in approximately 105 seconds, matching both hourly book controls.
+
+These samples do not establish complete coverage, a maximum timestamp delay, all markets or dates,
+or a reliable response-time bound. Live trades and bars do not saturate their production page caps.
+The quote smoke above selects an end 100 ns before the next UTC hour to retain its four-GET allowance;
+local native request tests separately cover inclusive hour boundaries.
 
 ## LiveNode and DataTester checks
 
@@ -177,18 +203,18 @@ pagination termination/bounds/cycles/duplicates, malformed data, precision, over
 redirects, timeouts, cancellation, pacing, concurrency, budgets, and redaction. Native tests cover
 explicit proxies and disabled ambient proxies.
 
-| Endpoint family              | Transport evidence                                             | Domain evidence                                                          |
-| ---------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Exchanges and metadata       | `exchanges_use_authenticated_shared_transport`                 | Startup and selected-exchange validation                                 |
-| Listings and active IDs      | `cursor_and_active_pagination_terminate_only_at_terminal_page` | `dst::paginated_discovery_loads_only_the_explicit_outcome`               |
-| Outcome metadata             | Exact route/model tests                                        | `data::fresh_instrument_requests_and_empty_windows_preserve_every_field` |
-| Current/latest activity      | Exact route/model tests                                        | Exact quote/trade polling and deduplication                              |
-| Current book                 | Exact route/model tests                                        | Atomic L2 MBP snapshots, delta batches, and depth                        |
-| Historical book events       | [Book history tests](integration/book_history.rs)              | [Bounded replay](book_history.md#bounded-replay-contract)                |
-| OHLCV periods/latest/history | Exact route/model tests                                        | Catalog matching, closed-bar polling, and historical bars                |
-| Exchange-wide OHLCV          | [Exchange OHLCV tests](integration/exchange_ohlcv.rs)          | Raw market rows; no native mapping or metadata traversal                 |
-| Flat-file OHLCV              | [Flat-file tests](integration/flat_file_ohlcv.rs)              | Explicit raw source; native bars stay DB-backed                          |
-| Trade/quote history          | Exact route/model tests                                        | Daily retrieval, filtering, ordering, ties, and limits                   |
+| Endpoint family              | Transport evidence                                             | Domain evidence                                                                      |
+| ---------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| Exchanges and metadata       | `exchanges_use_authenticated_shared_transport`                 | Startup and selected-exchange validation                                             |
+| Listings and active IDs      | `cursor_and_active_pagination_terminate_only_at_terminal_page` | `dst::paginated_discovery_loads_only_the_explicit_outcome`                           |
+| Outcome metadata             | Exact route/model tests                                        | `data::fresh_instrument_requests_and_empty_windows_preserve_every_field`             |
+| Current/latest activity      | Exact route/model tests                                        | Exact quote/trade polling and deduplication                                          |
+| Current book                 | Exact route/model tests                                        | Atomic L2 MBP snapshots, delta batches, and depth                                    |
+| Historical book events       | [Book history tests](integration/book_history.rs)              | [Bounded replay](book_history.md#bounded-replay-contract)                            |
+| OHLCV periods/latest/history | Exact route/model tests                                        | Catalog matching, closed-bar polling, and historical bars                            |
+| Exchange-wide OHLCV          | [Exchange OHLCV tests](integration/exchange_ohlcv.rs)          | Raw market rows; no native mapping or metadata traversal                             |
+| Flat-file OHLCV              | [Flat-file tests](integration/flat_file_ohlcv.rs)              | Explicit raw source; native bars stay DB-backed                                      |
+| Trade/quote history          | Exact route/model tests                                        | Covering-hour retrieval, checked continuation, filtering, ordering, ties, and limits |
 
 `all_endpoint_paths_queries_and_models` supplies the shared route/model checks.
 [Model](../src/http/models.rs), [symbol](../src/common/symbol.rs), [parser](../src/http/parse.rs),
@@ -212,7 +238,7 @@ Python cases run through the [node suite](../../../../python/tests/unit/adapters
 | TC-D12         | Book depth                         | `book_polling` depth-limit, duplicate-command, and above-inline-capacity cases                       |
 | TC-D13, TC-D41 | Book snapshots and historical bars | `data::books_and_closed_bars_preserve_complete_envelopes`; future-closing bars excluded              |
 | TC-D20, TC-D30 | Quote/trade polling                | `polling::shared_latest_poll_preserves_every_field_ties_duplicates_and_older_events`                 |
-| TC-D21, TC-D31 | Quote/trade history                | `data::quotes_and_trades_preserve_envelopes_boundaries_order_and_exact_limits`; empty dates and ties |
+| TC-D21, TC-D31 | Quote/trade history                | `data::quotes_and_trades_preserve_envelopes_boundaries_order_and_exact_limits`; empty hours and ties |
 | TC-D40         | Bar polling                        | `bar_polling::public_bars_start_at_subscribe_and_restore_without_duplicates`                         |
 | TC-D50, TC-D51 | Mark/index prices                  | Unsupported subscriptions                                                                            |
 | TC-D52, TC-D53 | Funding rates/history              | Unsupported                                                                                          |
@@ -230,7 +256,7 @@ Additional test-to-case mappings:
 - **TC-D12**: `book_polling::depth_limits_return_available_levels_and_duplicate_commands_are_idempotent`
   and `book_polling::depth_above_inline_capacity_keeps_sorted_available_levels`.
 - **TC-D31**: `data::empty_daily_page_advances_and_point_window_retains_shared_timestamps`.
-- **TC-D21/TC-D31**: `data::multi_month_history_crosses_empty_dates_and_keeps_earliest_records`.
+- **TC-D21/TC-D31**: `data::multi_day_history_crosses_empty_hours_and_keeps_earliest_records`.
 - **TC-D21**: `data::oversized_history_preserves_allowance_for_a_smaller_request` rejects oversized
   windows before spending allowance.
 - **TC-D41**: `data::periods_closing_after_now_never_become_historical_bars`,

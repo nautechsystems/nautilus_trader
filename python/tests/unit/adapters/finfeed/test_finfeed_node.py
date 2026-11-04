@@ -957,7 +957,9 @@ def test_public_activity_history_preserves_every_field_and_ties(polling_node, fa
         try:
             path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
             assert path == (
-                f"/v1/activity/POLYMARKET/{MARKET_ID}/history/{family}?date=2026-10-11&limit=10000"
+                f"/v1/activity/POLYMARKET/{MARKET_ID}/history/{family}?"
+                "time_start=2026-10-11T00%3A00%3A00.0000000Z&"
+                "time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000"
             )
             reply.put((TEST_DATA / f"client-{family}.json").read_bytes())
             await _wait_for(lambda: consumer.records is not None)
@@ -1048,28 +1050,28 @@ def test_public_activity_history_preserves_every_field_and_ties(polling_node, fa
 
 
 @pytest.mark.parametrize(
-    ("receive_rows", "incompatible", "second", "microsecond", "tie_rows"),
+    ("receive_rows", "count", "second", "microsecond", "tie_rows"),
     [
-        pytest.param([], False, 6, 0, [], id="missing"),
-        pytest.param([], False, 6, 0, [9], id="snapshot-update"),
-        pytest.param([], False, 6, 0, [8], id="update-snapshot"),
-        pytest.param([], False, 6, 0, [8, 9], id="multiple-transitions"),
-        pytest.param([7], False, 2, 3, [], id="within"),
-        pytest.param([7], True, 2, 1, [], id="partial-after-end"),
-        pytest.param([4, 5, 6, 7], True, 2, 1, [], id="all-after-end"),
-        pytest.param([4], True, 2, 3, [], id="reversed"),
+        pytest.param([], 5, 6, 0, [], id="missing"),
+        pytest.param([], 5, 6, 0, [9], id="snapshot-update"),
+        pytest.param([], 5, 6, 0, [8], id="update-snapshot"),
+        pytest.param([], 5, 6, 0, [8, 9], id="multiple-transitions"),
+        pytest.param([7], 2, 2, 3, [], id="within"),
+        pytest.param([7], 1, 2, 1, [], id="partial-after-end"),
+        pytest.param([4, 5, 6, 7], 1, 2, 1, [], id="all-after-end"),
+        pytest.param([4], 2, 2, 3, [], id="reversed"),
     ],
 )
 def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 - One actor lifecycle verifies all clock cases
     polling_node,
     receive_rows: list[int],
-    incompatible: bool,
+    count: int,
     second: int,
     microsecond: int,
     tie_rows: list[int],
 ) -> None:
     """
-    Preserve complete historical actor delivery or reject incompatible clocks.
+    Preserve complete historical actor delivery on the derived group ordering clock.
     """
     node, observed, requests = polling_node
     rows = json.loads((TEST_DATA / "book-replay.json").read_bytes())
@@ -1081,7 +1083,6 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
     source = json.dumps(rows).encode()
     start = datetime(2026, 10, 11, 0, 0, 1, 1, tzinfo=UTC)
     end = datetime(2026, 10, 11, 0, 0, second, microsecond, tzinfo=UTC)
-    count = 5 if second == 6 else 2
 
     class HistoricalConsumer(DataActor):
         """
@@ -1154,17 +1155,13 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
                 path, reply, _ = await asyncio.to_thread(observed.get, True, 5)
                 assert path.startswith(f"/v1/orderbook/POLYMARKET/{MARKET_ID}/history?")
                 reply.put(source)
-            if incompatible:
-                await _wait_for(lambda: consumer.point is not None)
-                await asyncio.sleep(0.2)
-            else:
-                await _wait_for(
-                    lambda: (
-                        consumer.depths is not None
-                        and consumer.point is not None
-                        and len(consumer.ladders) == count
-                    ),
-                )
+            await _wait_for(
+                lambda: (
+                    consumer.depths is not None
+                    and consumer.point is not None
+                    and len(consumer.ladders) == count
+                ),
+            )
         finally:
             handle.stop()
             await asyncio.wait_for(task, timeout=10)
@@ -1187,40 +1184,48 @@ def test_historical_books_reach_actor_and_existing_book_consumer(  # noqa: C901 
             ({Decimal(".2"): Decimal(6)}, {Decimal(".9"): Decimal(10)}),
         ]
 
-        if incompatible:
-            assert consumer.deltas is None
-            assert consumer.depths is None
-            assert consumer.ladders == []
-        else:
-            assert consumer.ladders == expected[:count]
-            assert [delta for group in consumer.groups for delta in group] == consumer.deltas
-            for group in consumer.groups:
-                snapshot = RecordFlag.F_SNAPSHOT.matches(group[0].flags)
-                assert all(
-                    RecordFlag.F_SNAPSHOT.matches(delta.flags) == snapshot for delta in group
-                )
+        ordering = [
+            1_791_676_801_000_001_000,
+            1_791_676_802_000_000_100,
+            1_791_676_803_000_000_100,
+            1_791_676_804_000_000_100,
+            1_791_676_805_000_000_100,
+        ]
 
-                if snapshot:
-                    assert group[0].action == BookAction.CLEAR
-                    assert all(delta.action == BookAction.ADD for delta in group[1:])
-                else:
-                    assert all(delta.action != BookAction.CLEAR for delta in group)
-            assert len(consumer.depths) == count
-            assert [(depth.ts_event, depth.ts_init) for depth in consumer.depths] == [
-                (group[-1].ts_event, group[-1].ts_init) for group in consumer.groups
-            ]
-            assert [
-                (order.price.as_decimal(), order.size.as_decimal())
-                for order in consumer.depths[1].bids
-            ] == [(Decimal(".4"), Decimal("5.25"))]
-            assert [
-                (order.price.as_decimal(), order.size.as_decimal())
-                for order in consumer.depths[1].asks
-            ] == [(Decimal(".65"), Decimal(8))]
+        if 8 in tie_rows:
+            ordering[2] = ordering[1]
+        if 9 in tie_rows:
+            ordering[3] = ordering[2]
+        if receive_rows:
+            ordering[1] = 1_791_676_802_000_003_000
 
-            if receive_rows:
-                assert consumer.deltas[-1].ts_init == consumer.deltas[-1].ts_event + 2900
-                assert consumer.depths[-1].ts_init == consumer.deltas[-1].ts_init
+        assert consumer.ladders == expected[:count]
+        assert [delta for group in consumer.groups for delta in group] == consumer.deltas
+        for index, group in enumerate(consumer.groups):
+            snapshot = RecordFlag.F_SNAPSHOT.matches(group[0].flags)
+            assert all(RecordFlag.F_SNAPSHOT.matches(delta.flags) == snapshot for delta in group)
+            assert [delta.ts_init for delta in group] == [ordering[index]] * len(group)
+
+            if snapshot:
+                assert group[0].action == BookAction.CLEAR
+                assert all(delta.action == BookAction.ADD for delta in group[1:])
+            else:
+                assert all(delta.action != BookAction.CLEAR for delta in group)
+        assert len(consumer.depths) == count
+        assert [(depth.ts_event, depth.ts_init) for depth in consumer.depths] == [
+            (group[-1].ts_event, group[-1].ts_init) for group in consumer.groups
+        ]
+        assert [
+            (
+                [(order.price.as_decimal(), order.size.as_decimal()) for order in depth.bids],
+                [(order.price.as_decimal(), order.size.as_decimal()) for order in depth.asks],
+            )
+            for depth in consumer.depths
+        ] == [(list(bids.items())[:1], list(asks.items())[:1]) for bids, asks in expected[:count]]
+
+        if receive_rows and count > 1:
+            assert consumer.deltas[-1].ts_init == consumer.deltas[-1].ts_event + 2900
+            assert consumer.depths[-1].ts_init == consumer.deltas[-1].ts_init
         point_ladder = expected[1]
         if 8 in tie_rows:
             point_ladder = expected[3] if 9 in tie_rows else expected[2]

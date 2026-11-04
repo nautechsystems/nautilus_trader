@@ -44,11 +44,12 @@ use nautilus_model::{
     instruments::{BinaryOption, InstrumentAny},
 };
 use parking_lot::Mutex;
+use serde::{Deserialize, de::IntoDeserializer};
 
 use crate::{
     common::{consts::FINFEED, credential::resolve_api_key},
     config::FinFeedDataClientConfig,
-    http::{client::FinFeedHttpClient, error::Error, query::PAGE_LIMIT_MAX},
+    http::{client::FinFeedHttpClient, error::Error, models::MarketStatus, query::PAGE_LIMIT_MAX},
     instruments::{FinFeedInstrumentProvider, selected_ids},
 };
 
@@ -90,24 +91,29 @@ const TASK_FORCE: Duration = Duration::from_secs(2);
 ///
 /// Historical series require a start and share the configured attempt budget.
 ///
-/// - Trades and quotes retrieve whole dates, then filter and order records by exposed timestamps.
-///   Saturated responses fail without inferred continuation. Completeness under provider
-///   processing-time selection remains unverified.
+/// - Trades and quotes retrieve covering UTC hours with checked overlapping continuation, then filter
+///   and order records by exposed timestamps. Completeness under provider processing-time selection
+///   remains unverified.
 /// - Quotes use entry time for `ts_event` and receive time for `ts_init`.
 /// - Trades use their sole timestamp for both fields and infer no aggressor side.
-/// - Bars use complete external OHLCV periods contained in the requested window.
+/// - Bars continue from validated period ends, including short nonempty pages, and emit only complete
+///   external OHLCV periods contained in the requested window.
 ///
 /// # Historical Books
 ///
-/// Historical L2 books retrieve UTC hours and replay returned records from a snapshot seed assumed
-/// to be complete. Source coverage and continuity remain assumptions.
+/// Historical L2 books use hour-boundary selectors with checked overlapping continuation and replay
+/// returned records from a snapshot seed assumed to be complete. Source coverage, bounded timestamp
+/// delay, and continuity remain assumptions.
 ///
 /// - Numeric actions `0`, `1`, and `3` mean relative ADD, absolute SET, and replacement snapshot.
-/// - Missing receive clocks use exchange time.
+/// - Source order and exchange timestamps are preserved. Each completed group's derived `ts_init`
+///   is the cumulative maximum of processing clocks when present and exchange clocks otherwise.
+///   Seed placement and window bounds use this ordering clock, not measured receipt time.
 /// - Series begin with a generated replacement at start. Point snapshots select an `end` timestamp
 ///   in request params.
-/// - Series reject emitted receive clocks outside the window or out of order.
-/// - Saturated responses, missing seeds, and unsupported actions fail.
+/// - Changed or noncontiguous overlap, nonprogress, exhausted allowance, missing seeds, rewound lower
+///   selectors at or past their hourly upper bound, and unsupported actions fail without
+///   partial delivery.
 ///
 /// # Validation and Failures
 ///
@@ -892,7 +898,12 @@ fn terminal(instrument: &BinaryOption) -> bool {
         .info
         .as_ref()
         .and_then(|info| info.get_str("status"))
-        .is_some_and(|status| matches!(status, "Closed" | "Resolved"))
+        .and_then(|status| {
+            let decoded: Result<MarketStatus, serde::de::value::Error> =
+                MarketStatus::deserialize(status.into_deserializer());
+            decoded.ok()
+        })
+        .is_some_and(|status| matches!(status, MarketStatus::Closed | MarketStatus::Resolved))
 }
 
 fn publish(
@@ -954,7 +965,7 @@ fn book_params(params: Option<&Params>) -> anyhow::Result<()> {
         && params.contains_key("book_type")
     {
         anyhow::ensure!(
-            params.get_str("book_type") == Some("L2_MBP"),
+            params.get_str("book_type") == Some(BookType::L2_MBP.as_ref()),
             "FinFeed books require L2_MBP"
         );
     }
@@ -973,6 +984,61 @@ mod tests {
         http::{models::Market, parse::parse_instrument},
         instruments::FinFeedInstrumentSelection,
     };
+
+    #[rstest]
+    #[case(Some(serde_json::json!("Closed")), true)]
+    #[case(Some(serde_json::json!("Resolved")), true)]
+    #[case(Some(serde_json::json!("Open")), false)]
+    #[case(Some(serde_json::json!("Suspended")), false)]
+    #[case(Some(serde_json::json!("Unknown")), false)]
+    #[case(Some(serde_json::json!("FutureStatus")), false)]
+    #[case(Some(serde_json::json!("closed")), false)]
+    #[case(Some(serde_json::json!({"Closed": null})), false)]
+    #[case(Some(serde_json::json!(7)), false)]
+    #[case(Some(serde_json::Value::Null), false)]
+    #[case(None, false)]
+    fn terminal_status_requires_a_recognized_string(
+        #[case] status: Option<serde_json::Value>,
+        #[case] expected: bool,
+    ) {
+        let market =
+            serde_json::from_str(include_str!("../test_data/polymarket-market.json")).unwrap();
+        let mut instrument = parse_instrument(&market, UnixNanos::default()).unwrap();
+        let mut info = serde_json::json!({});
+        if let Some(status) = status {
+            info["status"] = status;
+        }
+
+        instrument.info = Some(serde_json::from_value(info).unwrap());
+
+        assert_eq!(terminal(&instrument), expected);
+    }
+
+    #[rstest]
+    #[case(serde_json::json!({}), true)]
+    #[case(serde_json::json!({"book_type": "L2_MBP"}), true)]
+    #[case(serde_json::json!({"book_type": "l2_mbp"}), false)]
+    #[case(serde_json::json!({"book_type": "L1_MBP"}), false)]
+    #[case(serde_json::json!({"book_type": "L3_MBO"}), false)]
+    #[case(serde_json::json!({"book_type": 2}), false)]
+    #[case(serde_json::json!({"book_type": null}), false)]
+    fn book_type_params_preserve_exact_wire_validation(
+        #[case] value: serde_json::Value,
+        #[case] valid: bool,
+    ) {
+        let params: Params = serde_json::from_value(value).unwrap();
+
+        let expected = if valid {
+            Ok(())
+        } else {
+            Err("FinFeed books require L2_MBP".to_owned())
+        };
+
+        assert_eq!(
+            book_params(Some(&params)).map_err(|e| e.to_string()),
+            expected
+        );
+    }
 
     #[rstest]
     #[case("instrument")]

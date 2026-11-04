@@ -106,13 +106,14 @@ impl Default for FinFeedHttpConfig {
         Self {
             base_url: REST_URL.into(),
             proxy_url: None,
-            timeout_secs: 30,
+            timeout_secs: 300,
             max_concurrent_requests: 1,
             attempt_budget: 100,
             min_request_interval_ms: 10_000,
             retry: RetryConfig {
                 jitter_ms: 0,
-                max_elapsed_ms: Some(120_000),
+                operation_timeout_ms: Some(330_000),
+                max_elapsed_ms: Some(600_000),
                 ..RetryConfig::default()
             },
         }

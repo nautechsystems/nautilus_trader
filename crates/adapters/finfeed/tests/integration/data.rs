@@ -325,14 +325,14 @@ async fn quotes_and_trades_preserve_envelopes_boundaries_order_and_exact_limits(
             .lines()
             .next()
             .unwrap()
-            .ends_with("/history/quotes?date=2026-10-11&limit=10000 HTTP/1.1")
+            .ends_with("/history/quotes?time_start=2026-10-11T00%3A00%3A00.0000000Z&time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000 HTTP/1.1")
     );
     assert!(
         requests[3]
             .lines()
             .next()
             .unwrap()
-            .ends_with("/history/trades?date=2026-10-11&limit=10000 HTTP/1.1")
+            .ends_with("/history/trades?time_start=2026-10-11T00%3A00%3A00.0000000Z&time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000 HTTP/1.1")
     );
 }
 
@@ -597,14 +597,14 @@ async fn books_and_closed_bars_preserve_complete_envelopes() {
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn quote_history_preserves_every_tick() {
+    let source: serde_json::Value =
+        serde_json::from_str(include_str!("../../test_data/polymarket-quotes-day.json")).unwrap();
+    let tail = serde_json::to_string(&vec![source[2].clone()]).unwrap();
     let (peer, http) = start_peer(vec![
-        (200, "", EXCHANGES),
-        (200, "", MARKET),
-        (
-            200,
-            "",
-            include_str!("../../test_data/polymarket-quotes-day.json"),
-        ),
+        (200, "", EXCHANGES.to_owned()),
+        (200, "", MARKET.to_owned()),
+        (200, "", source.to_string()),
+        (200, "", tail),
     ])
     .await;
     let (mut client, mut receiver) =
@@ -678,12 +678,15 @@ async fn quote_history_preserves_every_tick() {
     }
 
     let requests = peer.await.unwrap();
-    assert_eq!(requests.len(), 3);
+    assert_eq!(requests.len(), 4);
     assert_request(
         &requests[2],
-        &format!("/v1/activity/POLYMARKET/{MARKET_ID}/history/quotes?date=2026-10-11&limit=10000"),
+        &format!(
+            "/v1/activity/POLYMARKET/{MARKET_ID}/history/quotes?time_start=2026-10-11T00%3A00%3A00.0000000Z&time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000"
+        ),
         &http,
     );
+    assert!(requests[3].contains("time_start=2026-10-11T00%3A02%3A59.0000000Z&time_end=2026-10-11T02%3A00%3A00.0000000Z&limit=10000"));
 }
 
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
@@ -1028,7 +1031,7 @@ async fn failed_requests_emit_no_partial_response(#[case] scenario: &str) {
             body = serde_json::Value::Array(rows);
         }
         "history-price" => body[1]["price"] = json!("0.30001"),
-        "history-action" => body[11]["update_type"] = json!(99),
+        "history-action" => body[7]["update_type"] = json!(99),
         "history-empty" => body = serde_json::Value::Array(Vec::new()),
         "quote-rounding" => body[0]["bid"] = json!("0.12345"),
         "trade-id" => body[0]["id"] = serde_json::Value::Null,
@@ -1465,14 +1468,14 @@ async fn missing_instruments_invalid_windows_and_historical_books_fail_before_io
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn empty_daily_page_advances_and_point_window_retains_shared_timestamps() {
     let next_day = QUOTES.replace("2026-10-11", "2026-10-12");
-    let (peer, http) = start_peer(vec![
+    let mut replies = vec![
         (200, "", EXCHANGES.to_owned()),
         (200, "", MARKET.to_owned()),
-        (200, "", "[]".to_owned()),
-        (200, "", next_day),
-        (200, "", TRADES.to_owned()),
-    ])
-    .await;
+    ];
+    replies.extend((0..24).map(|_| (200, "", "[]".to_owned())));
+    replies.push((200, "", next_day));
+    replies.push((200, "", TRADES.to_owned()));
+    let (peer, http) = start_peer(replies).await;
     let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
     let mut client =
         FinFeedDataClient::new(ClientId::from("FINFEED"), config(http), sender.into()).unwrap();
@@ -1524,20 +1527,20 @@ async fn empty_daily_page_advances_and_point_window_retains_shared_timestamps() 
     );
     client.disconnect().await.unwrap();
     let requests = peer.await.unwrap();
-    assert_eq!(requests.len(), 5);
+    assert_eq!(requests.len(), 28);
     assert!(
         requests[2]
             .lines()
             .next()
             .unwrap()
-            .contains("date=2026-10-11")
+            .contains("time_end=2026-10-11T01%3A00%3A00.0000000Z")
     );
     assert!(
-        requests[3]
+        requests[26]
             .lines()
             .next()
             .unwrap()
-            .contains("date=2026-10-12")
+            .contains("time_end=2026-10-12T01%3A00%3A00.0000000Z")
     );
 }
 
@@ -2097,7 +2100,7 @@ async fn historical_books_preserve_correlation_bounds_and_reconnect_replay() {
 #[case(true)]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
-async fn hourly_book_replay_preserves_handoff_and_rejects_overlap(#[case] overlap: bool) {
+async fn hourly_book_replay_preserves_handoff_and_rejects_changed_overlap(#[case] changed: bool) {
     let rows: serde_json::Value = serde_json::from_str(REPLAY).unwrap();
     let first = serde_json::Value::Array(rows.as_array().unwrap()[..10].to_vec());
     let mut second = rows.clone();
@@ -2109,9 +2112,13 @@ async fn hourly_book_replay_preserves_handoff_and_rejects_overlap(#[case] overla
         row["time_exchange"] = time.into();
     }
 
-    if overlap {
-        second.as_array_mut().unwrap().insert(0, first[9].clone());
+    let mut prefix = first.as_array().unwrap()[8..10].to_vec();
+    if changed {
+        prefix[0]["size"] = 42.into();
     }
+
+    prefix.extend(second.as_array().unwrap().iter().cloned());
+    second = serde_json::Value::Array(prefix);
 
     let (peer, http) = start_peer(vec![
         (200, "", EXCHANGES.to_owned()),
@@ -2139,7 +2146,7 @@ async fn hourly_book_replay_preserves_handoff_and_rejects_overlap(#[case] overla
         .unwrap();
     let requests = peer.await.unwrap();
 
-    if overlap {
+    if changed {
         assert!(
             time::timeout(Duration::from_millis(200), receiver.recv())
                 .await
@@ -2189,7 +2196,7 @@ async fn hourly_book_replay_preserves_handoff_and_rejects_overlap(#[case] overla
         "time_start=2026-10-11T00%3A00%3A00.0000000Z&time_end=2026-10-11T01%3A00%3A00.0000000Z"
     ));
     assert!(requests[3].contains(
-        "time_start=2026-10-11T01%3A00%3A00.0000000Z&time_end=2026-10-11T02%3A00%3A00.0000000Z"
+        "time_start=2026-10-11T00%3A00%3A03.0000000Z&time_end=2026-10-11T02%3A00%3A00.0000000Z"
     ));
 }
 
@@ -2287,25 +2294,35 @@ async fn complete_calendar_bars_use_the_full_window(
 #[case(true)]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
-async fn multi_month_history_crosses_empty_dates_and_keeps_earliest_records(#[case] trades: bool) {
+async fn multi_day_history_crosses_empty_hours_and_keeps_earliest_records(#[case] trades: bool) {
     let start: jiff::Timestamp = "2024-01-01T00:00:02Z".parse().unwrap();
-    let end: jiff::Timestamp = "2024-03-01T00:00:02Z".parse().unwrap();
-    let first_day = start.as_second().div_euclid(86_400);
-    let last_day = end.as_second().div_euclid(86_400);
+    let end: jiff::Timestamp = "2024-01-03T12:00:02Z".parse().unwrap();
+    let first_hour = start.as_second().div_euclid(3600);
+    let last_hour = end.as_second().div_euclid(3600);
     let mut responses = vec![
         (200, "", EXCHANGES.to_owned()),
         (200, "", MARKET.to_owned()),
     ];
 
-    for day in first_day..=last_day {
-        let body = if day == first_day || day == last_day {
-            let date = jiff::Timestamp::from_second(day * 86_400)
+    let fixture = if trades { TRADES } else { QUOTES };
+    let source: serde_json::Value =
+        serde_json::from_str(&fixture.replace("2026-10-11", "2024-01-01")).unwrap();
+    let tail = source.as_array().unwrap()[4..].to_vec();
+
+    for hour in first_hour..=last_hour {
+        let body = if hour == first_hour {
+            source.to_string()
+        } else if hour == last_hour {
+            let time = jiff::Timestamp::from_second(hour * 3600)
                 .unwrap()
                 .to_string();
-            let date = &date[..10];
-            if trades { TRADES } else { QUOTES }.replace("2026-10-11", date)
+            let mut rows = tail.clone();
+            let last: serde_json::Value =
+                serde_json::from_str(&fixture.replace("2026-10-11T00:00", &time[..16])).unwrap();
+            rows.extend_from_slice(last.as_array().unwrap());
+            serde_json::to_string(&rows).unwrap()
         } else {
-            "[]".to_owned()
+            serde_json::to_string(&tail).unwrap()
         };
 
         responses.push((200, "", body));
@@ -2387,11 +2404,12 @@ async fn multi_month_history_crosses_empty_dates_and_keeps_earliest_records(#[ca
     assert_eq!(times, vec![expected, expected]);
     assert_eq!(requests.len(), 63);
 
-    for (request, day) in requests[2..].iter().zip(first_day..=last_day) {
-        let date = jiff::Timestamp::from_second(day * 86_400)
+    for (request, hour) in requests[2..].iter().zip(first_hour..=last_hour) {
+        let end = jiff::Timestamp::from_second((hour + 1) * 3600)
             .unwrap()
             .to_string();
-        assert!(request.contains(&format!("date={}&limit=10000 HTTP/1.1", &date[..10])));
+        let encoded = end.replace(':', "%3A").replace('Z', ".0000000Z");
+        assert!(request.contains(&format!("time_end={encoded}&limit=10000 HTTP/1.1")));
     }
 }
 
@@ -2451,6 +2469,287 @@ async fn oversized_history_preserves_allowance_for_a_smaller_request() {
     client.disconnect().await.unwrap();
 
     assert_eq!(requests.len(), 3);
-    assert!(requests[2].contains("date=2026-10-11&limit=10000 HTTP/1.1"));
+    assert!(requests[2].contains("time_start=2026-10-11T00%3A00%3A00.0000000Z&time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000 HTTP/1.1"));
     assert!(receiver.try_recv().is_err());
+}
+
+#[rstest]
+#[case(false, false)]
+#[case(true, false)]
+#[case(false, true)]
+#[case(true, true)]
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn capped_activity_pages_preserve_multiplicity_or_fail_atomically(
+    #[case] trades: bool,
+    #[case] changed: bool,
+) {
+    let rows: serde_json::Value =
+        serde_json::from_str(if trades { TRADES } else { QUOTES }).unwrap();
+    let mut first = vec![rows[0].clone(); 9999];
+    first.push(rows[5].clone());
+    let mut second = vec![rows[5].clone(), rows[4].clone(), rows[4].clone()];
+    if changed {
+        second[0][if trades { "quantity" } else { "bid_volume" }] = json!("42");
+    }
+
+    let (peer, http) = start_peer(vec![
+        (200, "", EXCHANGES.to_owned()),
+        (200, "", MARKET.to_owned()),
+        (200, "", serde_json::to_string(&first).unwrap()),
+        (200, "", serde_json::to_string(&second).unwrap()),
+    ])
+    .await;
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut client =
+        FinFeedDataClient::new(ClientId::from("FINFEED"), config(http), sender.into()).unwrap();
+    client.connect().await.unwrap();
+    receiver.try_recv().unwrap();
+    let start = Some("2026-10-11T00:00:00Z".parse().unwrap());
+    let end = Some("2026-10-11T00:00:06Z".parse().unwrap());
+    let id = UUID4::new();
+
+    if trades {
+        client
+            .request_trades(RequestTrades::new(
+                instrument_id(),
+                start,
+                end,
+                None,
+                None,
+                id,
+                UnixNanos::from(7),
+                None,
+            ))
+            .unwrap();
+    } else {
+        client
+            .request_quotes(RequestQuotes::new(
+                instrument_id(),
+                start,
+                end,
+                None,
+                None,
+                id,
+                UnixNanos::from(7),
+                None,
+            ))
+            .unwrap();
+    }
+
+    if changed {
+        assert!(
+            time::timeout(Duration::from_millis(200), receiver.recv())
+                .await
+                .is_err()
+        );
+    } else {
+        let result = response(&mut receiver).await;
+        let stamp = 1_791_676_800_000_000_000_u64;
+
+        match result {
+            DataResponse::Trades(result) => {
+                assert_eq!(result.correlation_id, id);
+                assert_eq!(result.data.len(), 10002);
+                let late = TradeTick::new_checked(
+                    instrument_id(),
+                    Price::from("0.4000"),
+                    Quantity::from("5.000005"),
+                    AggressorSide::NoAggressor,
+                    TradeId::from("trade-4"),
+                    UnixNanos::from(stamp + 3_000_000_000),
+                    UnixNanos::from(stamp + 3_000_000_000),
+                )
+                .unwrap();
+                let last = TradeTick::new_checked(
+                    instrument_id(),
+                    Price::from("0.5000"),
+                    Quantity::from("6.000006"),
+                    AggressorSide::NoAggressor,
+                    TradeId::from("trade-5"),
+                    UnixNanos::from(stamp + 4_000_000_000),
+                    UnixNanos::from(stamp + 4_000_000_000),
+                )
+                .unwrap();
+                assert_eq!(&result.data[9999..], &[late, late, last]);
+            }
+            DataResponse::Quotes(result) => {
+                assert_eq!(result.correlation_id, id);
+                assert_eq!(result.data.len(), 10002);
+                let late = QuoteTick::new_checked(
+                    instrument_id(),
+                    Price::from("0.4000"),
+                    Price::from("0.5000"),
+                    Quantity::from("9.000009"),
+                    Quantity::from("10.000010"),
+                    UnixNanos::from(stamp + 2_000_000_000),
+                    UnixNanos::from(stamp + 3_000_000_000),
+                )
+                .unwrap();
+                let last = QuoteTick::new_checked(
+                    instrument_id(),
+                    Price::from("0.5000"),
+                    Price::from("0.6000"),
+                    Quantity::from("11.000011"),
+                    Quantity::from("12.000012"),
+                    UnixNanos::from(stamp + 3_000_000_000),
+                    UnixNanos::from(stamp + 4_000_000_000),
+                )
+                .unwrap();
+                assert_eq!(&result.data[9999..], &[late, late, last]);
+            }
+            _ => panic!("expected activity history"),
+        }
+    }
+
+    client.disconnect().await.unwrap();
+    let requests = peer.await.unwrap();
+
+    let family = if trades { "trades" } else { "quotes" };
+    assert_eq!(requests.len(), 4);
+    assert!(requests[2].contains(&format!("/history/{family}?time_start=2026-10-11T00%3A00%3A00.0000000Z&time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000")));
+    assert!(requests[3].contains(&format!("/history/{family}?time_start=2026-10-11T00%3A00%3A03.0000000Z&time_end=2026-10-11T01%3A00%3A00.0000000Z&limit=10000")));
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn short_bar_pages_continue_before_the_local_limit() {
+    let rows: serde_json::Value = serde_json::from_str(BARS).unwrap();
+    let source = rows.as_array().unwrap();
+    let (peer, http) = start_peer(vec![
+        (200, "", EXCHANGES.to_owned()),
+        (200, "", MARKET.to_owned()),
+        (
+            200,
+            "",
+            include_str!("../../test_data/periods.json").to_owned(),
+        ),
+        (200, "", serde_json::to_string(&source[..2]).unwrap()),
+        (200, "", serde_json::to_string(&source[2..]).unwrap()),
+        (200, "", "[]".to_owned()),
+    ])
+    .await;
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut client =
+        FinFeedDataClient::new(ClientId::from("FINFEED"), config(http), sender.into()).unwrap();
+    client.connect().await.unwrap();
+    receiver.try_recv().unwrap();
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument_id()).as_str());
+    client
+        .request_bars(RequestBars::new(
+            bar_type,
+            Some("2020-10-11T00:00:00Z".parse().unwrap()),
+            Some("2020-10-11T00:05:00Z".parse().unwrap()),
+            NonZeroUsize::new(1),
+            None,
+            UUID4::new(),
+            UnixNanos::from(7),
+            None,
+        ))
+        .unwrap();
+
+    let DataResponse::Bars(result) = response(&mut receiver).await else {
+        panic!("expected bars")
+    };
+
+    client.disconnect().await.unwrap();
+    let requests = peer.await.unwrap();
+    let end = "2020-10-11T00:01:00Z".parse().unwrap();
+    let expected = Bar::new_checked(
+        bar_type,
+        Price::from("0.2000"),
+        Price::from("0.4000"),
+        Price::from("0.1000"),
+        Price::from("0.3000"),
+        Quantity::from("12.345678"),
+        end,
+        end,
+    )
+    .unwrap();
+    assert_eq!(&*result.data, &[expected]);
+    assert_eq!(requests.len(), 6);
+    assert!(requests[4].contains("time_start=2020-10-11T00%3A02%3A00.0000000Z"));
+    assert!(requests[5].contains("time_start=2020-10-11T00%3A03%3A00.0000000Z"));
+    assert!(
+        requests[3..]
+            .iter()
+            .all(|request| request
+                .contains("time_end=2020-10-11T00%3A05%3A00.0000000Z&limit=100000"))
+    );
+}
+
+#[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
+#[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
+async fn bar_subtick_bounds_expand_wire_selectors_without_emitting_partial_periods() {
+    let (peer, http) = start_peer(vec![
+        (200, "", EXCHANGES),
+        (200, "", MARKET),
+        (200, "", include_str!("../../test_data/periods.json")),
+        (200, "", BARS),
+    ])
+    .await;
+    let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+    let mut client = FinFeedDataClient::new(
+        ClientId::from("FINFEED"),
+        config(http.clone()),
+        sender.into(),
+    )
+    .unwrap();
+    client.connect().await.unwrap();
+    receiver.try_recv().unwrap();
+    let bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument_id()).as_str());
+    let start = "2020-10-11T00:00:00.000000001Z".parse().unwrap();
+    let end = "2020-10-11T00:02:59.999999999Z".parse().unwrap();
+    client
+        .request_bars(RequestBars::new(
+            bar_type,
+            Some(start),
+            Some(end),
+            None,
+            None,
+            UUID4::new(),
+            UnixNanos::from(7),
+            None,
+        ))
+        .unwrap();
+
+    let DataResponse::Bars(result) = response(&mut receiver).await else {
+        panic!("expected bars")
+    };
+
+    client.disconnect().await.unwrap();
+    let requests = time::timeout(Duration::from_secs(3), peer)
+        .await
+        .expect("FinFeed test peer did not receive the expected requests")
+        .unwrap();
+    let close = "2020-10-11T00:02:00Z".parse().unwrap();
+    let expected = Bar::new_checked(
+        bar_type,
+        Price::from("0.2000"),
+        Price::from("0.4000"),
+        Price::from("0.1000"),
+        Price::from("0.3000"),
+        Quantity::from("12.345678"),
+        close,
+        close,
+    )
+    .unwrap();
+
+    assert_eq!(&*result.data, &[expected]);
+    assert_eq!(
+        result.start,
+        nautilus_core::datetime::datetime_to_unix_nanos(Some(start))
+    );
+    assert_eq!(
+        result.end,
+        nautilus_core::datetime::datetime_to_unix_nanos(Some(end))
+    );
+    assert_eq!(requests.len(), 4);
+    assert_request(
+        &requests[3],
+        &format!(
+            "/v1/ohlcv/POLYMARKET/{MARKET_ID}/history?period_id=1MIN&time_start=2020-10-11T00%3A00%3A00.0000000Z&time_end=2020-10-11T00%3A03%3A00.0000000Z&limit=100000"
+        ),
+        &http,
+    );
 }

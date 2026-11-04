@@ -13,12 +13,12 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-//! Bounded retrieval without inferred timestamp continuation or completeness guarantees.
+//! Bounded historical pagination without a source-completeness guarantee.
 
-use std::{future::Future, num::NonZeroUsize, ops::RangeInclusive};
+use std::{collections::HashSet, future::Future, num::NonZeroUsize, ops::RangeInclusive};
 
 use anyhow::Context;
-use jiff::{Timestamp, civil::Date, tz::TimeZone};
+use jiff::Timestamp;
 use nautilus_model::{
     data::{Bar, BarType, HasTsInit, OrderBookDeltas, QuoteTick, TradeTick},
     enums::{AggregationSource, BarAggregation, PriceType},
@@ -29,7 +29,7 @@ use super::{book, parse};
 use crate::http::{
     client::FinFeedHttpClient,
     error::Error,
-    models::{BookEvent, OhlcvPeriod},
+    models::{BookEvent, Ohlcv, OhlcvPeriod, Quote, Trade},
     query::{HOUR_SECONDS, HistoryQuery, OHLCV_LIMIT_MAX, OhlcvQuery, PAGE_LIMIT_MAX},
 };
 
@@ -59,14 +59,6 @@ impl Window {
 
     fn partitions(&self, seconds: i64) -> RangeInclusive<i64> {
         self.start.as_second().div_euclid(seconds)..=self.end.as_second().div_euclid(seconds)
-    }
-
-    fn days(&self) -> impl Iterator<Item = anyhow::Result<Date>> {
-        self.partitions(DAY_SECONDS).map(|day| {
-            Ok(Timestamp::from_second(day * DAY_SECONDS)?
-                .to_zoned(TimeZone::UTC)
-                .date())
-        })
     }
 
     fn check_budget(&self, http: &FinFeedHttpClient, seconds: i64) -> anyhow::Result<()> {
@@ -103,33 +95,12 @@ pub(super) async fn books(
 ) -> anyhow::Result<Vec<OrderBookDeltas>> {
     window.check_budget(http, HOUR_SECONDS)?;
     let (exchange, id) = crate::common::symbol::from_instrument_id(instrument.id)?;
-    let mut records: Vec<BookEvent> = Vec::new();
-
-    for hour in window.partitions(HOUR_SECONDS) {
-        let start = Timestamp::from_second(hour * HOUR_SECONDS)?;
-
-        let query = HistoryQuery {
-            date: None,
-            time_start: Some(start),
-            time_end: Some(Timestamp::from_second((hour + 1) * HOUR_SECONDS)?),
-            limit: PAGE_LIMIT_MAX,
-        };
-
-        let page = http.get_book_history(&exchange, &id, &query).await?;
-        anyhow::ensure!(
-            page.len() < PAGE_LIMIT_MAX as usize,
-            "FinFeed book history hour starting {start} reached the {PAGE_LIMIT_MAX}-record cap and may be truncated; no verified continuation is available; no result is published"
-        );
-
-        if let (Some(prior), Some(next)) = (records.last(), page.first()) {
-            anyhow::ensure!(
-                prior.time_exchange < next.time_exchange,
-                "FinFeed book history has overlapping or unordered hourly responses"
-            );
-        }
-
-        records.extend(page);
-    }
+    let records = collect_books(window, |query| {
+        let exchange = &exchange;
+        let id = &id;
+        async move { http.get_book_history(exchange, id, &query).await }
+    })
+    .await?;
 
     book::replay(
         &records,
@@ -150,13 +121,19 @@ pub(super) async fn quotes(
     instrument: &BinaryOption,
     window: &Window,
 ) -> anyhow::Result<Vec<QuoteTick>> {
-    window.check_budget(http, DAY_SECONDS)?;
+    window.check_budget(http, HOUR_SECONDS)?;
     let (exchange, id) = crate::common::symbol::from_instrument_id(instrument.id)?;
-    let records = collect_days(window, |query| {
-        let exchange = &exchange;
-        let id = &id;
-        async move { http.get_quotes_history(exchange, id, &query).await }
-    })
+
+    let records = collect_hours(
+        window,
+        |row: &Quote| row.recv_time,
+        |_| false,
+        |query| {
+            let exchange = &exchange;
+            let id = &id;
+            async move { http.get_quotes_history(exchange, id, &query).await }
+        },
+    )
     .await?;
 
     let parsed = records
@@ -171,13 +148,19 @@ pub(super) async fn trades(
     instrument: &BinaryOption,
     window: &Window,
 ) -> anyhow::Result<Vec<TradeTick>> {
-    window.check_budget(http, DAY_SECONDS)?;
+    window.check_budget(http, HOUR_SECONDS)?;
     let (exchange, id) = crate::common::symbol::from_instrument_id(instrument.id)?;
-    let records = collect_days(window, |query| {
-        let exchange = &exchange;
-        let id = &id;
-        async move { http.get_trades_history(exchange, id, &query).await }
-    })
+
+    let records = collect_hours(
+        window,
+        |row: &Trade| row.timestamp,
+        |_| false,
+        |query| {
+            let exchange = &exchange;
+            let id = &id;
+            async move { http.get_trades_history(exchange, id, &query).await }
+        },
+    )
     .await?;
 
     let parsed = records
@@ -185,34 +168,6 @@ pub(super) async fn trades(
         .map(|record| parse::trade(&record, instrument))
         .collect::<anyhow::Result<Vec<_>>>()?;
     window.finish(parsed)
-}
-
-async fn collect_days<T, F, Fut>(window: &Window, mut fetch: F) -> anyhow::Result<Vec<T>>
-where
-    F: FnMut(HistoryQuery) -> Fut,
-    Fut: Future<Output = Result<Vec<T>, Error>>,
-{
-    let mut records = Vec::new();
-
-    for date in window.days() {
-        let date = date?;
-
-        let query = HistoryQuery {
-            date: Some(date),
-            time_start: None,
-            time_end: None,
-            limit: PAGE_LIMIT_MAX,
-        };
-
-        let page = fetch(query).await?;
-        anyhow::ensure!(
-            page.len() < PAGE_LIMIT_MAX as usize,
-            "FinFeed history date {date} reached the {PAGE_LIMIT_MAX}-record cap and may be truncated; a smaller caller limit cannot avoid the cap; no verified continuation is available; no result is published"
-        );
-        records.extend(page);
-    }
-
-    Ok(records)
 }
 
 pub(super) async fn bars(
@@ -230,25 +185,13 @@ pub(super) async fn bars(
     let periods = http.get_periods().await?;
     let period = period(&periods, period_length)?;
     let (exchange, id) = crate::common::symbol::from_instrument_id(instrument.id)?;
+    let records = collect_bars(window, period, |query| {
+        let exchange = &exchange;
+        let id = &id;
+        async move { http.get_ohlcv_history(exchange, id, &query).await }
+    })
+    .await?;
 
-    let query = OhlcvQuery {
-        period_id: period.period_id.context("FinFeed period ID is missing")?,
-        time_start: Some(Timestamp::from_nanosecond(
-            window.start.as_nanosecond().div_euclid(100) * 100,
-        )?),
-        time_end: Some(Timestamp::from_nanosecond(
-            (window.end.as_nanosecond() + 99).div_euclid(100) * 100,
-        )?),
-        limit: OHLCV_LIMIT_MAX,
-    };
-
-    let records = http.get_ohlcv_history(&exchange, &id, &query).await?;
-    anyhow::ensure!(
-        records.len() < OHLCV_LIMIT_MAX as usize,
-        "FinFeed OHLCV history window [{}, {}] reached the {OHLCV_LIMIT_MAX}-record cap and may be truncated; shorten the window; no verified continuation is available; no result is published",
-        window.start,
-        window.end
-    );
     let mut bars = Vec::new();
 
     for record in records {
@@ -315,6 +258,150 @@ pub(super) fn period(
         .context("FinFeed has no matching OHLCV period")
 }
 
+async fn collect_books<F, Fut>(window: &Window, fetch: F) -> anyhow::Result<Vec<BookEvent>>
+where
+    F: FnMut(HistoryQuery) -> Fut,
+    Fut: Future<Output = Result<Vec<BookEvent>, Error>>,
+{
+    collect_hours(
+        window,
+        |row| row.time_exchange,
+        |rows| rows.iter().any(|row| book::time_ordering(row) > window.end),
+        fetch,
+    )
+    .await
+}
+
+async fn collect_hours<T, F, Fut>(
+    window: &Window,
+    clock: impl Fn(&T) -> Timestamp,
+    stop: impl Fn(&[T]) -> bool,
+    mut fetch: F,
+) -> anyhow::Result<Vec<T>>
+where
+    T: Clone + PartialEq,
+    F: FnMut(HistoryQuery) -> Fut,
+    Fut: Future<Output = Result<Vec<T>, Error>>,
+{
+    let hours = window.partitions(HOUR_SECONDS);
+    let mut start = Timestamp::from_second(hours.start() * HOUR_SECONDS)?;
+    let mut overlap = Vec::new();
+    let mut records = Vec::new();
+
+    for hour in hours {
+        let end = Timestamp::from_second((hour + 1) * HOUR_SECONDS)?;
+
+        loop {
+            let query = HistoryQuery {
+                date: None,
+                time_start: Some(start),
+                time_end: Some(end),
+                limit: PAGE_LIMIT_MAX,
+            };
+
+            let page = fetch(query).await?;
+            anyhow::ensure!(
+                page.starts_with(&overlap),
+                "FinFeed history overlap changed in [{start}, {end}]; no result is published"
+            );
+            let full = page.len() == PAGE_LIMIT_MAX as usize;
+            let matched = overlap.len();
+            let added = page.len() - matched;
+            if stop(&page) {
+                records.extend(page.into_iter().skip(matched));
+                return Ok(records);
+            }
+
+            let continuing = full || hour < *window.partitions(HOUR_SECONDS).end();
+            let mut next = start;
+            overlap.clear();
+
+            if continuing && let Some(maximum) = page.iter().map(&clock).max() {
+                next = start.max(Timestamp::from_second(maximum.as_second() - 1)?);
+                anyhow::ensure!(
+                    next < end,
+                    "FinFeed history continuation clock exceeds its hourly selector; no result is published"
+                );
+                let offset = page
+                    .iter()
+                    .position(|row| clock(row) >= next)
+                    .context("FinFeed history has no continuation overlap")?;
+                anyhow::ensure!(
+                    page[offset..].iter().all(|row| clock(row) >= next),
+                    "FinFeed history overlap is not a contiguous suffix; no result is published"
+                );
+                overlap.extend_from_slice(&page[offset..]);
+            }
+
+            anyhow::ensure!(
+                !full || (added > 0 && next > start),
+                "FinFeed history cannot advance within the {PAGE_LIMIT_MAX}-record cap in [{start}, {end}]; no result is published"
+            );
+            records.extend(page.into_iter().skip(matched));
+            start = next;
+
+            if !full {
+                break;
+            }
+        }
+    }
+
+    Ok(records)
+}
+
+async fn collect_bars<F, Fut>(
+    window: &Window,
+    period: &OhlcvPeriod,
+    mut fetch: F,
+) -> anyhow::Result<Vec<Ohlcv>>
+where
+    F: FnMut(OhlcvQuery) -> Fut,
+    Fut: Future<Output = Result<Vec<Ohlcv>, Error>>,
+{
+    let mut start = Timestamp::from_nanosecond(window.start.as_nanosecond().div_euclid(100) * 100)?;
+    let end = Timestamp::from_nanosecond((window.end.as_nanosecond() + 99).div_euclid(100) * 100)?;
+    let period_id = period.period_id.context("FinFeed period ID is missing")?;
+    let mut records = Vec::new();
+
+    loop {
+        let query = OhlcvQuery {
+            period_id,
+            time_start: Some(start),
+            time_end: Some(end),
+            limit: OHLCV_LIMIT_MAX,
+        };
+
+        let page = fetch(query).await?;
+        if page.is_empty() {
+            return Ok(records);
+        }
+
+        let mut next = start;
+        let mut periods = HashSet::new();
+
+        for row in &page {
+            let period_end = parse::bar_end(row, period)?;
+            anyhow::ensure!(
+                periods.insert(row.time_period_start)
+                    && (records.is_empty() || row.time_period_start >= start),
+                "FinFeed OHLCV history contains repeated or overlapping periods; no result is published"
+            );
+            next = next.max(period_end);
+        }
+
+        anyhow::ensure!(
+            next > start,
+            "FinFeed OHLCV history cannot advance past {start}; no result is published"
+        );
+        records.extend(page);
+        if next >= end {
+            return Ok(records);
+        }
+
+        start = next;
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use nautilus_model::{
@@ -325,11 +412,632 @@ mod tests {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     use super::*;
-    use crate::http::{client::FinFeedHttpConfig, parse::parse_instrument};
+    use crate::{
+        common::enums::OhlcvUnit,
+        http::{client::FinFeedHttpConfig, parse::parse_instrument},
+    };
+
+    #[tokio::test]
+    async fn book_pages_preserve_overlap_multiplicity_and_late_rows() {
+        let source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        let mut first = vec![source[0].clone(); PAGE_LIMIT_MAX as usize];
+        for row in &mut first[9997..] {
+            row.time_exchange = "2026-10-11T00:00:10.9502711Z".parse().unwrap();
+        }
+
+        let mut late = source[4].clone();
+        late.time_exchange = "2026-10-11T00:00:10.9500713Z".parse().unwrap();
+        let mut second = first[9997..].to_vec();
+        second.extend(vec![late.clone(); 3]);
+        second.push(source[11].clone());
+        second.last_mut().unwrap().time_exchange = "2026-10-11T00:00:11Z".parse().unwrap();
+        let mut expected = first.clone();
+        expected.extend_from_slice(&second[3..]);
+        let mut pages = vec![first, second].into_iter();
+        let start = "2026-10-11T00:00:00Z".parse().unwrap();
+        let end = "2026-10-11T00:00:30Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut queries = Vec::new();
+        let actual = collect_books(&window, |query| {
+            queries.push(query);
+            std::future::ready(Ok(pages.next().unwrap()))
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(actual, expected);
+        assert_eq!(actual.iter().filter(|row| **row == late).count(), 3);
+        assert_eq!(queries.len(), 2);
+
+        for query in &queries {
+            assert_eq!(query.date, None);
+            assert_eq!(
+                query.time_end,
+                Some("2026-10-11T01:00:00Z".parse().unwrap())
+            );
+            assert_eq!(query.limit, PAGE_LIMIT_MAX);
+        }
+
+        assert_eq!(queries[0].time_start, Some(start));
+        assert_eq!(
+            queries[1].time_start,
+            Some("2026-10-11T00:00:09Z".parse().unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn book_pages_finish_a_split_snapshot_at_the_inclusive_end() {
+        let source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        let mut first = source[..4].to_vec();
+        first.extend(vec![source[4].clone(); 9995]);
+        first.push(source[8].clone());
+        let mut bid = source[10].clone();
+        bid.time_exchange = source[8].time_exchange;
+        let mut second = first[4..].to_vec();
+        second.push(bid);
+        let mut pages = vec![first, second].into_iter();
+        let start = source[0].time_exchange;
+        let end = source[8].time_exchange;
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut calls = 0;
+        let rows = collect_books(&window, |_| {
+            calls += 1;
+            std::future::ready(Ok(pages.next().unwrap()))
+        })
+        .await
+        .unwrap();
+
+        let market =
+            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+        let instrument = parse_instrument(&market, 0.into()).unwrap();
+        let batches = book::replay(
+            &rows,
+            &instrument,
+            parse::timestamp(start).unwrap(),
+            parse::timestamp(end).unwrap(),
+        )
+        .unwrap();
+        let result = book::snapshot(&batches, &instrument, None).unwrap();
+
+        assert_eq!(calls, 2);
+        assert_eq!(rows.len(), 10001);
+        assert_eq!(batches.len(), 3);
+        assert_eq!(
+            result.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![("0.2".parse::<rust_decimal::Decimal>().unwrap(), 6.into())]
+        );
+        assert_eq!(
+            result.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![("0.8".parse::<rust_decimal::Decimal>().unwrap(), 9.into())]
+        );
+        assert_eq!(batches[2].deltas.len(), 3);
+
+        for delta in &batches[2].deltas {
+            assert_eq!(delta.ts_event, parse::timestamp(end).unwrap());
+            assert_eq!(delta.ts_init, parse::timestamp(end).unwrap());
+        }
+    }
+
+    #[tokio::test]
+    async fn book_short_hour_rejects_a_noncontiguous_overlap() {
+        let mut source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        source.truncate(3);
+        source[0].time_exchange = "2026-10-11T00:59:58.0000077Z".parse().unwrap();
+        source[1].time_exchange = "2026-10-11T00:59:57.9866770Z".parse().unwrap();
+        source[2].time_exchange = "2026-10-11T00:59:59.0182848Z".parse().unwrap();
+        let start = "2026-10-11T00:00:00Z".parse().unwrap();
+        let end = "2026-10-11T01:30:00Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut calls = 0;
+        let error = collect_books(&window, |_| {
+            calls += 1;
+            std::future::ready(Ok(source.clone()))
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "FinFeed history overlap is not a contiguous suffix; no result is published"
+        );
+        assert_eq!(calls, 1);
+    }
+
+    #[tokio::test]
+    async fn final_short_hour_retains_unordered_rows_without_a_continuation_cursor() {
+        let mut source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        source.truncate(2);
+        source[0].time_exchange = "2026-10-11T00:59:59.500Z".parse().unwrap();
+        source[1].time_exchange = "2026-10-11T00:59:57Z".parse().unwrap();
+        let start = "2026-10-11T00:30:00Z".parse().unwrap();
+        let end = "2026-10-11T00:59:59.900Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut queries = Vec::new();
+
+        let rows = collect_hours(
+            &window,
+            |row: &BookEvent| row.time_exchange,
+            |_| false,
+            |query| {
+                queries.push(query);
+                std::future::ready(Ok(source.clone()))
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(rows, source);
+        assert_eq!(queries.len(), 1);
+        assert_eq!(queries[0].date, None);
+        assert_eq!(queries[0].limit, PAGE_LIMIT_MAX);
+        assert_eq!(
+            queries[0].time_start,
+            Some("2026-10-11T00:00:00Z".parse().unwrap())
+        );
+        assert_eq!(
+            queries[0].time_end,
+            Some("2026-10-11T01:00:00Z".parse().unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn continuation_rejects_a_lower_selector_equal_to_the_hourly_upper_bound() {
+        let mut source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        source.truncate(1);
+        source[0].time_exchange = "2026-10-11T01:00:01Z".parse().unwrap();
+        let start = "2026-10-11T00:00:00Z".parse().unwrap();
+        let end = "2026-10-11T01:30:00Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut calls = 0;
+
+        let error = collect_hours(
+            &window,
+            |row: &BookEvent| row.time_exchange,
+            |_| false,
+            |_| {
+                calls += 1;
+                std::future::ready(if calls == 1 {
+                    Ok(source.clone())
+                } else {
+                    Err(Error::AttemptBudget)
+                })
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "FinFeed history continuation clock exceeds its hourly selector; no result is published"
+        );
+        assert_eq!(calls, 1);
+    }
 
     #[rstest]
-    #[case("quotes", 3)]
-    #[case("trades", 3)]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn book_pages_stop_after_the_ordering_clock_passes_end(#[case] received: bool) {
+        let source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        let mut page = vec![source[0].clone(); PAGE_LIMIT_MAX as usize];
+        let after = "2026-10-11T00:00:03Z".parse().unwrap();
+        if received {
+            page[9999].time_coinapi = Some(after);
+        } else {
+            page[9999].time_exchange = after;
+        }
+
+        let start = "2026-10-11T00:00:00Z".parse().unwrap();
+        let end = "2026-10-11T00:00:02Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut calls = 0;
+        let actual = collect_books(&window, |_| {
+            calls += 1;
+            std::future::ready(Ok(page.clone()))
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(actual, page);
+        assert_eq!(calls, 1);
+    }
+
+    #[tokio::test]
+    async fn full_book_page_with_a_cut_post_end_group_replays_the_requested_prefix() {
+        let source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        let mut page = source[..8].to_vec();
+        page.resize(PAGE_LIMIT_MAX as usize - 1, source[7].clone());
+        let mut tail = source[4].clone();
+        tail.time_exchange = source[8].time_exchange;
+        tail.price = "0.7".parse().unwrap();
+        page.push(tail);
+        let start = source[0].time_exchange;
+        let end = source[4].time_exchange;
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut calls = 0;
+        let rows = collect_books(&window, |_| {
+            calls += 1;
+            std::future::ready(if calls == 1 {
+                Ok(page.clone())
+            } else {
+                Err(Error::AttemptBudget)
+            })
+        })
+        .await
+        .unwrap();
+
+        let market =
+            serde_json::from_str(include_str!("../../test_data/polymarket-market.json")).unwrap();
+        let instrument = parse_instrument(&market, 0.into()).unwrap();
+        let batches = book::replay(
+            &rows,
+            &instrument,
+            parse::timestamp(start).unwrap(),
+            parse::timestamp(end).unwrap(),
+        )
+        .unwrap();
+        let result = book::snapshot(&batches, &instrument, None).unwrap();
+
+        assert_eq!(calls, 1);
+        assert_eq!(rows, page);
+        assert_eq!(batches.len(), 2);
+        assert_eq!(batches[1].ts_init, parse::timestamp(end).unwrap());
+        assert_eq!(batches[1].deltas.len(), PAGE_LIMIT_MAX as usize - 5);
+        assert_eq!(
+            result.bids_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                (
+                    "0.4".parse::<rust_decimal::Decimal>().unwrap(),
+                    "5.25".parse().unwrap()
+                ),
+                ("0.3".parse::<rust_decimal::Decimal>().unwrap(), 5.into()),
+            ]
+        );
+        assert_eq!(
+            result.asks_as_map(None).into_iter().collect::<Vec<_>>(),
+            vec![
+                ("0.65".parse::<rust_decimal::Decimal>().unwrap(), 8.into()),
+                ("0.7".parse::<rust_decimal::Decimal>().unwrap(), 7.into()),
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn empty_book_hours_do_not_infer_a_cursor() {
+        let start = "2026-10-11T00:30:00Z".parse().unwrap();
+        let end = "2026-10-11T02:30:00Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut queries = Vec::new();
+        let actual = collect_books(&window, |query| {
+            queries.push(query);
+            std::future::ready(Ok(Vec::new()))
+        })
+        .await
+        .unwrap();
+
+        assert!(actual.is_empty());
+        assert_eq!(queries.len(), 3);
+
+        for query in &queries {
+            assert_eq!(
+                query.time_start,
+                Some("2026-10-11T00:00:00Z".parse().unwrap())
+            );
+        }
+
+        assert_eq!(
+            queries[0].time_end,
+            Some("2026-10-11T01:00:00Z".parse().unwrap())
+        );
+        assert_eq!(
+            queries[1].time_end,
+            Some("2026-10-11T02:00:00Z".parse().unwrap())
+        );
+        assert_eq!(
+            queries[2].time_end,
+            Some("2026-10-11T03:00:00Z".parse().unwrap())
+        );
+    }
+
+    #[rstest]
+    #[case("changed", 2, "overlap changed")]
+    #[case("missing", 2, "overlap changed")]
+    #[case("stalled", 2, "cannot advance")]
+    #[case("budget", 2, "local attempt budget exhausted")]
+    #[case("suffix", 1, "not a contiguous suffix")]
+    #[case("dense", 1, "cannot advance")]
+    #[tokio::test]
+    async fn book_continuation_fails_without_returning_a_prefix(
+        #[case] failure: &str,
+        #[case] expected_calls: usize,
+        #[case] expected_error: &str,
+    ) {
+        let source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        let mut first = vec![source[0].clone(); PAGE_LIMIT_MAX as usize];
+        first[9999].time_exchange = "2026-10-11T00:00:10.0502711Z".parse().unwrap();
+        if failure == "suffix" {
+            first.swap(9998, 9999);
+        } else if failure == "dense" {
+            first[9999] = source[0].clone();
+        }
+
+        let mut second = vec![first[9999].clone()];
+        match failure {
+            "changed" => second[0].size += rust_decimal::Decimal::ONE,
+            "missing" => second.clear(),
+            "stalled" => second.resize(PAGE_LIMIT_MAX as usize, second[0].clone()),
+            _ => {}
+        }
+
+        let mut pages = vec![
+            Ok(first),
+            if failure == "budget" {
+                Err(Error::AttemptBudget)
+            } else {
+                Ok(second)
+            },
+        ]
+        .into_iter();
+        let start = "2026-10-11T00:00:00Z".parse().unwrap();
+        let end = "2026-10-11T00:00:30Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut calls = 0;
+        let error = collect_books(&window, |_| {
+            calls += 1;
+            std::future::ready(pages.next().unwrap())
+        })
+        .await
+        .unwrap_err();
+
+        assert!(error.to_string().contains(expected_error), "{error:#}");
+        assert_eq!(calls, expected_calls);
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    #[tokio::test]
+    async fn book_hour_expansion_checks_overlap_before_appending(#[case] changed: bool) {
+        let source: Vec<BookEvent> =
+            serde_json::from_str(include_str!("../../test_data/book-replay.json")).unwrap();
+        let mut before = source[0].clone();
+        before.time_exchange = "2026-10-11T00:59:59.900Z".parse().unwrap();
+        let mut after = source[4].clone();
+        after.time_exchange = "2026-10-11T01:00:00.100Z".parse().unwrap();
+        let mut late = source[5].clone();
+        late.time_exchange = "2026-10-11T00:59:59.800Z".parse().unwrap();
+
+        let first = if changed {
+            vec![before.clone(), late.clone()]
+        } else {
+            vec![before.clone()]
+        };
+
+        let second = vec![before, after, late];
+        let expected = second.clone();
+        let mut pages = vec![first, second].into_iter();
+        let start = "2026-10-11T00:30:00Z".parse().unwrap();
+        let end = "2026-10-11T01:30:00Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut queries = Vec::new();
+        let actual = collect_books(&window, |query| {
+            queries.push(query);
+            std::future::ready(Ok(pages.next().unwrap()))
+        })
+        .await;
+
+        if changed {
+            assert_eq!(
+                actual.unwrap_err().to_string(),
+                "FinFeed history overlap changed in [2026-10-11T00:59:58Z, 2026-10-11T02:00:00Z]; no result is published"
+            );
+        } else {
+            assert_eq!(actual.unwrap(), expected);
+        }
+
+        assert_eq!(queries.len(), 2);
+        assert_eq!(
+            queries[0].time_start,
+            Some("2026-10-11T00:00:00Z".parse().unwrap())
+        );
+        assert_eq!(
+            queries[0].time_end,
+            Some("2026-10-11T01:00:00Z".parse().unwrap())
+        );
+        assert_eq!(
+            queries[1].time_start,
+            Some("2026-10-11T00:59:58Z".parse().unwrap())
+        );
+        assert_eq!(
+            queries[1].time_end,
+            Some("2026-10-11T02:00:00Z".parse().unwrap())
+        );
+    }
+
+    #[tokio::test]
+    async fn bars_continue_short_pages_until_the_period_bound_or_an_empty_page() {
+        let source: Vec<Ohlcv> =
+            serde_json::from_str(include_str!("../../test_data/client-bars.json")).unwrap();
+        let periods: Vec<OhlcvPeriod> =
+            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+        let period = super::period(&periods, (60, 0)).unwrap();
+        let start = "2020-10-11T00:00:00Z".parse().unwrap();
+        let end = "2020-10-11T00:05:00Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), NonZeroUsize::new(1), end).unwrap();
+        let mut pages = vec![source[..2].to_vec(), source[2..].to_vec(), Vec::new()].into_iter();
+        let mut queries = Vec::new();
+        let actual = collect_bars(&window, period, |query| {
+            queries.push(query);
+            std::future::ready(Ok(pages.next().unwrap()))
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(actual, source);
+        assert_eq!(queries.len(), 3);
+        assert_eq!(queries[0].time_start, Some(start));
+        assert_eq!(
+            queries[1].time_start,
+            Some("2020-10-11T00:02:00Z".parse().unwrap())
+        );
+        assert_eq!(
+            queries[2].time_start,
+            Some("2020-10-11T00:03:00Z".parse().unwrap())
+        );
+
+        for query in queries {
+            assert_eq!(query.period_id, period.period_id.unwrap());
+            assert_eq!(query.time_end, Some(end));
+            assert_eq!(query.limit, OHLCV_LIMIT_MAX);
+        }
+    }
+
+    #[tokio::test]
+    async fn bars_continue_a_valid_full_page_and_finish_at_the_exact_end() {
+        let template: Vec<Ohlcv> =
+            serde_json::from_str(include_str!("../../test_data/client-bars.json")).unwrap();
+        let periods: Vec<OhlcvPeriod> =
+            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+        let period = super::period(&periods, (1, 0)).unwrap();
+        let start: Timestamp = "2020-10-11T00:00:00Z".parse().unwrap();
+        let end =
+            Timestamp::from_second(start.as_second() + i64::from(OHLCV_LIMIT_MAX) + 1).unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+
+        let source = (0..=OHLCV_LIMIT_MAX)
+            .map(|offset| {
+                let mut row = template[0].clone();
+                row.time_period_start =
+                    Timestamp::from_second(start.as_second() + i64::from(offset)).unwrap();
+                row.time_period_end =
+                    Timestamp::from_second(row.time_period_start.as_second() + 1).unwrap();
+                row.time_open = Some(row.time_period_start);
+                row.time_close = Some(row.time_period_end);
+                row.volume_traded = (offset + 1).into();
+                row.trades_count = i64::from(offset) + 1;
+                row
+            })
+            .collect::<Vec<_>>();
+
+        let mut pages = vec![
+            source[..OHLCV_LIMIT_MAX as usize].to_vec(),
+            source[OHLCV_LIMIT_MAX as usize..].to_vec(),
+        ]
+        .into_iter();
+        let mut queries = Vec::new();
+        let actual = collect_bars(&window, period, |query| {
+            queries.push(query);
+            std::future::ready(Ok(pages.next().unwrap()))
+        })
+        .await
+        .unwrap();
+
+        assert_eq!(actual, source);
+        assert_eq!(queries.len(), 2);
+        assert_eq!(queries[0].time_start, Some(start));
+        assert_eq!(
+            queries[1].time_start,
+            Some(Timestamp::from_second(start.as_second() + i64::from(OHLCV_LIMIT_MAX)).unwrap())
+        );
+
+        for query in queries {
+            assert_eq!(query.period_id, period.period_id.unwrap());
+            assert_eq!(query.time_end, Some(end));
+            assert_eq!(query.limit, OHLCV_LIMIT_MAX);
+        }
+    }
+
+    #[tokio::test]
+    async fn bars_reject_a_page_that_cannot_advance_the_lower_selector() {
+        let source: Vec<Ohlcv> =
+            serde_json::from_str(include_str!("../../test_data/client-bars.json")).unwrap();
+        let periods: Vec<OhlcvPeriod> =
+            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+        let period = super::period(&periods, (60, 0)).unwrap();
+        let start = "2020-10-11T00:05:00Z".parse().unwrap();
+        let end = "2020-10-11T00:10:00Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut pages = vec![source, Vec::new()].into_iter();
+        let mut calls = 0;
+        let error = collect_bars(&window, period, |_| {
+            calls += 1;
+            std::future::ready(Ok(pages.next().unwrap()))
+        })
+        .await
+        .unwrap_err();
+
+        assert_eq!(
+            error.to_string(),
+            "FinFeed OHLCV history cannot advance past 2020-10-11T00:05:00Z; no result is published"
+        );
+        assert_eq!(calls, 1);
+    }
+
+    #[rstest]
+    #[case(
+        "overlap",
+        "FinFeed OHLCV history contains repeated or overlapping periods; no result is published"
+    )]
+    #[case(
+        "period",
+        "FinFeed OHLCV period does not match requested bar specification"
+    )]
+    #[case("budget", "FinFeed local attempt budget exhausted")]
+    #[tokio::test]
+    async fn bar_continuation_failures_discard_the_complete_request(
+        #[case] failure: &str,
+        #[case] expected: &str,
+    ) {
+        let source: Vec<Ohlcv> =
+            serde_json::from_str(include_str!("../../test_data/client-bars.json")).unwrap();
+        let periods: Vec<OhlcvPeriod> =
+            serde_json::from_str(include_str!("../../test_data/periods.json")).unwrap();
+        let period = super::period(&periods, (60, 0)).unwrap();
+        let start = "2020-10-11T00:00:00Z".parse().unwrap();
+        let end = "2020-10-11T00:05:00Z".parse().unwrap();
+        let window = Window::new(Some(start), Some(end), None, end).unwrap();
+        let mut calls = 0;
+        let result = collect_bars(&window, period, |_| {
+            calls += 1;
+
+            let page = if calls == 1 {
+                Ok(source[..2].to_vec())
+            } else if failure == "budget" {
+                Err(Error::AttemptBudget)
+            } else {
+                let mut row = source[if failure == "overlap" { 0 } else { 2 }].clone();
+                if failure == "period" {
+                    row.time_period_end = end;
+                    row.trades_count = 0;
+                    row.volume_traded = Default::default();
+                    row.price_open = None;
+                    row.price_high = None;
+                    row.price_low = None;
+                    row.price_close = None;
+                }
+
+                Ok(vec![row])
+            };
+
+            std::future::ready(page)
+        })
+        .await;
+
+        assert_eq!(result.unwrap_err().to_string(), expected);
+        assert_eq!(calls, 2);
+    }
+
+    #[rstest]
+    #[case("quotes", 49)]
+    #[case("trades", 49)]
     #[case("books", 49)]
     #[tokio::test]
     async fn history_exceeding_budget_fails_without_spending(
@@ -411,19 +1119,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn daily_history_cap_identifies_date_and_limit_remedy() {
+    async fn history_cap_rejects_nonprogress_before_applying_a_local_limit() {
         let start = "2026-10-11T00:00:00Z".parse().unwrap();
         let window = Window::new(Some(start), Some(start), NonZeroUsize::new(1), start).unwrap();
 
-        let error = collect_days(&window, |_| {
-            std::future::ready(Ok(vec![(); PAGE_LIMIT_MAX as usize]))
-        })
+        let error = collect_hours(
+            &window,
+            |row| *row,
+            |_| false,
+            |_| std::future::ready(Ok(vec![start; PAGE_LIMIT_MAX as usize])),
+        )
         .await
         .unwrap_err();
 
         assert_eq!(
             error.to_string(),
-            "FinFeed history date 2026-10-11 reached the 10000-record cap and may be truncated; a smaller caller limit cannot avoid the cap; no verified continuation is available; no result is published"
+            "FinFeed history cannot advance within the 10000-record cap in [2026-10-11T00:00:00Z, 2026-10-11T01:00:00Z]; no result is published"
         );
     }
 
@@ -514,8 +1225,8 @@ mod tests {
         peer.await.unwrap();
 
         let expected = match failure {
-            "book-cap" => "FinFeed book history hour starting 2026-10-11T00:00:00Z reached the 10000-record cap and may be truncated; no verified continuation is available; no result is published".to_owned(),
-            "bar-cap" => "FinFeed OHLCV history window [2026-10-11T00:00:00Z, 2026-10-11T00:30:00Z] reached the 100000-record cap and may be truncated; shorten the window; no verified continuation is available; no result is published".to_owned(),
+            "book-cap" => "FinFeed history cannot advance within the 10000-record cap in [2026-10-11T00:00:00Z, 2026-10-11T01:00:00Z]; no result is published".to_owned(),
+            "bar-cap" => "FinFeed OHLCV history contains repeated or overlapping periods; no result is published".to_owned(),
             "book-seed" => format!("FinFeed book replay failed for {} in [2026-10-11T00:00:00Z, 2026-10-11T00:30:00Z]; retrieval starts at the containing UTC hour and does not look back for an earlier snapshot: FinFeed book has no snapshot seed at or before start", instrument.id),
             _ => unreachable!(),
         };
@@ -533,26 +1244,23 @@ mod tests {
     #[case("2024-04-01T00:00:00Z", "2024-05-01T00:00:00Z", 31)]
     #[case("2024-01-01T00:00:00Z", "2024-02-01T00:00:00Z", 32)]
     #[case("2023-01-01T00:00:00Z", "2025-01-01T00:00:00Z", 732)]
-    fn daily_partitions_cover_the_entire_inclusive_window(
+    fn hourly_partitions_cover_the_entire_inclusive_window(
         #[case] start: Timestamp,
         #[case] end: Timestamp,
         #[case] count: usize,
     ) {
         let window = Window::new(Some(start), Some(end), None, end).unwrap();
-        let dates = window.days().collect::<anyhow::Result<Vec<_>>>().unwrap();
+        let hours = window.partitions(HOUR_SECONDS).collect::<Vec<_>>();
+        let count = (count - 1) * 24 + 1;
 
-        assert_eq!(dates.len(), count);
-        assert_eq!(dates[0], start.to_zoned(TimeZone::UTC).date());
-        assert_eq!(dates[count - 1], end.to_zoned(TimeZone::UTC).date());
-        assert!(
-            dates
-                .windows(2)
-                .all(|pair| pair[0].tomorrow().unwrap() == pair[1])
-        );
+        assert_eq!(hours.len(), count);
+        assert_eq!(hours[0], start.as_second().div_euclid(HOUR_SECONDS));
+        assert_eq!(hours[count - 1], end.as_second().div_euclid(HOUR_SECONDS));
+        assert!(hours.windows(2).all(|pair| pair[0] + 1 == pair[1]));
     }
 
     #[tokio::test]
-    async fn daily_partitions_stop_at_budget_exhaustion_without_returning_a_prefix() {
+    async fn hourly_partitions_stop_at_budget_exhaustion_without_returning_a_prefix() {
         let window = Window::new(
             Some("2024-01-01T00:00:00Z".parse().unwrap()),
             Some("2025-01-01T00:00:00Z".parse().unwrap()),
@@ -561,14 +1269,20 @@ mod tests {
         )
         .unwrap();
         let mut calls = 0;
-        let result = collect_days(&window, |_| {
-            calls += 1;
-            std::future::ready(if calls == 4 {
-                Err(Error::AttemptBudget)
-            } else {
-                Ok(vec![calls])
-            })
-        })
+
+        let result = collect_hours(
+            &window,
+            |row: &Timestamp| *row,
+            |_| false,
+            |_| {
+                calls += 1;
+                std::future::ready(if calls == 4 {
+                    Err(Error::AttemptBudget)
+                } else {
+                    Ok(Vec::new())
+                })
+            },
+        )
         .await;
 
         assert_eq!(calls, 4);
@@ -585,16 +1299,17 @@ mod tests {
         let mut claimed = Vec::new();
 
         for period in &periods {
-            let (step, aggregation) = match period.unit_name.as_ref().map(AsRef::as_ref).unwrap() {
-                "second" => (period.unit_count.unwrap() as usize, BarAggregation::Second),
-                "minute" => (period.unit_count.unwrap() as usize, BarAggregation::Minute),
-                "hour" => (period.unit_count.unwrap() as usize, BarAggregation::Hour),
-                "day" => (period.unit_count.unwrap() as usize, BarAggregation::Day),
-                "month" => (period.unit_count.unwrap() as usize, BarAggregation::Month),
-                "year" => (period.unit_count.unwrap() as usize, BarAggregation::Year),
-                _ => unreachable!(),
+            let aggregation = match period.unit_name.unwrap() {
+                OhlcvUnit::Second => BarAggregation::Second,
+                OhlcvUnit::Minute => BarAggregation::Minute,
+                OhlcvUnit::Hour => BarAggregation::Hour,
+                OhlcvUnit::Day => BarAggregation::Day,
+                OhlcvUnit::Month => BarAggregation::Month,
+                OhlcvUnit::Year => BarAggregation::Year,
+                OhlcvUnit::Other(_) => panic!("unexpected catalog unit"),
             };
 
+            let step = period.unit_count.unwrap() as usize;
             let spec = BarSpecification::new_checked(step, aggregation, PriceType::Last).unwrap();
 
             let bar_type = BarType::new(
