@@ -74,6 +74,7 @@ use nautilus_network::{
     ratelimiter::quota::Quota,
     retry::{RetryConfig, RetryManager},
 };
+use nautilus_testkit::http::assert_http_redirect_rejected;
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -121,6 +122,23 @@ struct LatestFundingsState {
 struct CappedHistoryState {
     calls: Arc<AtomicUsize>,
     row_page: Option<usize>,
+}
+
+#[tokio::test]
+async fn test_authenticated_client_rejects_redirects() {
+    assert_http_redirect_rejected(|url| async move {
+        let client =
+            LighterRawHttpClient::new(LighterEnvironment::Testnet, Some(url), 3, None).unwrap();
+        let query = LighterOrderBooksQuery::default();
+        let error = client.get_order_books(&query).await.unwrap_err();
+
+        let LighterHttpError::Http { status, .. } = error else {
+            panic!("expected HTTP redirect status, was {error:?}");
+        };
+
+        status
+    })
+    .await;
 }
 
 #[tokio::test]

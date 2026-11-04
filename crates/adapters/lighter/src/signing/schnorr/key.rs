@@ -229,7 +229,7 @@ mod tests {
     #[case(3)]
     #[case(4)]
     fn try_from_le_bytes_rejects_non_canonical_limb(#[case] limb_index: usize) {
-        let mut bytes = [0u8; PUBLIC_KEY_BYTES];
+        let mut bytes = Fp5::ZERO.to_le_bytes();
         bytes[limb_index * 8..(limb_index + 1) * 8].copy_from_slice(&MODULUS.to_le_bytes());
         assert!(
             PublicKey::try_from_le_bytes(bytes).is_none(),

@@ -1574,26 +1574,9 @@ fn venue_error(code: i32, message: Option<&str>, default_message: &str) -> Light
 
 #[cfg(test)]
 mod tests {
-    use nautilus_testkit::http::assert_http_redirect_rejected;
     use rstest::rstest;
 
     use super::*;
-
-    #[tokio::test]
-    async fn test_authenticated_client_rejects_redirects() {
-        let client = LighterRawHttpClient::new(LighterEnvironment::Testnet, None, 3, None)
-            .unwrap()
-            .client;
-        assert_http_redirect_rejected(|url| async move {
-            client
-                .get(url, None, None, Some(3), None)
-                .await
-                .unwrap()
-                .status
-                .as_u16()
-        })
-        .await;
-    }
 
     #[rstest]
     #[case(ENDPOINT_TRADES, "lighter:trades")]

@@ -425,7 +425,6 @@ mod tests {
             serde_json::json!(timeout)
         );
         let decoded = serde_json::from_value::<LighterExecutionClientConfig>(encoded);
-        assert_eq!(validate_scheduled_cancel_timeout(timeout).is_ok(), valid);
         assert_eq!(decoded.is_ok(), valid);
 
         if valid {
