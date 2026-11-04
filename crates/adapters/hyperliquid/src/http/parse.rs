@@ -111,7 +111,7 @@ pub struct HyperliquidInstrumentDef {
     pub raw_symbol: Ustr,
     /// Base currency/asset (e.g., "BTC", "PURR").
     pub base: Ustr,
-    /// Quote currency (e.g., "USD" for perps, "USDC" for spot).
+    /// Quote currency (e.g., the dex collateral token such as "USDC" for perps, "USDC" for spot).
     pub quote: Ustr,
     /// Settlement currency for perps. `None` for spot and outcome instruments.
     #[serde(default, skip_serializing_if = "Option::is_none")]

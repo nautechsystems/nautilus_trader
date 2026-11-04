@@ -187,9 +187,9 @@ All four product types load automatically at connect when their metadata is avai
 No per-product opt-in is required.
 
 :::note
-Standard Hyperliquid perpetuals are settled in USDC. HIP-3 dexes may settle in
-their own collateral token, such as USDH, USDE, or USDT0, while keeping Nautilus
-symbols quoted as `USD`. Spot markets are standard currency pairs. See
+Perpetuals are quoted and settled in their dex's collateral token: USDC for standard
+perps, and for HIP-3 dexes possibly another token such as USDH, USDE, or USDT0.
+Perp symbols keep the `USD` suffix. Spot markets are standard currency pairs. See
 [HIP-3 builder-deployed perpetuals](#hip-3-builder-deployed-perpetuals) and
 [HIP-4 outcome markets](#hip-4-outcome-markets) for the details of each.
 :::
@@ -415,9 +415,9 @@ The key differences are:
 - **Isolated margin**: HIP-3 markets default to isolated-only margin.
 - **Per-dex collateral**: Each HIP-3 dex declares its settlement token through
   its `collateralToken` entry in `allPerpMetas`. Nautilus resolves that token
-  through `spotMeta` and keeps the symbol's quote leg as `USD`. If a non-USDC
-  collateral token cannot resolve from `spotMeta`, instrument loading returns
-  an error rather than falling back to USDC.
+  through `spotMeta` as the quote and settlement currency, while the symbol
+  keeps the `USD` suffix. If a non-USDC collateral token cannot resolve from `spotMeta`,
+  instrument loading returns an error rather than falling back to USDC.
 - **Deployer-managed oracles**: The deployer operates the oracle feed, not validators.
 - **Growth mode**: Dexes whose markets are disjoint from validator-operated perps can opt into
   growth mode, which Hyperliquid documents as at least a 90% cut to all-in fees.
