@@ -25,6 +25,9 @@ pub mod config;
 pub mod strategy;
 
 #[cfg(test)]
+mod cache_database;
+
+#[cfg(test)]
 mod tests;
 
 pub use config::HurstVpinDirectionalConfig;

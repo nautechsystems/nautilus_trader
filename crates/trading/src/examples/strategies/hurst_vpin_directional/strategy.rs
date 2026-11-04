@@ -279,7 +279,12 @@ impl HurstVpinDirectional {
             None, // client_order_id
         );
         self.entry_order_id = Some(order.client_order_id());
-        self.submit_order(order, None, None, None)
+        if let Err(e) = self.submit_order(order, None, None, None) {
+            self.entry_order_id = None;
+            return Err(e);
+        }
+
+        Ok(())
     }
 
     fn submit_close(&mut self) -> anyhow::Result<()> {
@@ -315,8 +320,12 @@ impl HurstVpinDirectional {
                 None,
                 None,
             );
-            self.exit_order_ids.insert(close_order.client_order_id());
-            self.submit_order(close_order, Some(position_id), None, None)?;
+            let client_order_id = close_order.client_order_id();
+            self.exit_order_ids.insert(client_order_id);
+            if let Err(e) = self.submit_order(close_order, Some(position_id), None, None) {
+                self.exit_order_ids.remove(&client_order_id);
+                return Err(e);
+            }
         }
 
         Ok(())
@@ -329,6 +338,17 @@ impl HurstVpinDirectional {
             .cache()
             .positions_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
             .is_empty()
+    }
+
+    fn refresh_position_opened_ns(&mut self) {
+        let instrument_id = self.config.instrument_id;
+        let strategy_id = self.strategy_id().expect("Strategy must be registered");
+        let cache = self.cache();
+        self.position_opened_ns = cache
+            .positions_open(None, Some(&instrument_id), Some(&strategy_id), None, None)
+            .iter()
+            .map(|position| position.ts_opened)
+            .min();
     }
 
     fn clear_latch_for(&mut self, client_order_id: ClientOrderId) {
@@ -348,7 +368,7 @@ nautilus_strategy!(HurstVpinDirectional, {
 
     fn on_position_closed(&mut self, event: PositionClosed) {
         if event.instrument_id == self.config.instrument_id {
-            self.position_opened_ns = None;
+            self.refresh_position_opened_ns();
         }
     }
 
@@ -413,10 +433,13 @@ impl DataActor for HurstVpinDirectional {
                 "bar_type instrument {bar_instrument_id} does not match traded instrument {instrument_id}"
             );
         }
+
         {
             let cache = self.cache();
             cache.try_instrument(&instrument_id)?;
         }
+
+        self.refresh_position_opened_ns();
 
         self.subscribe_bars(self.config.bar_type, None, None);
         self.subscribe_quotes(instrument_id, None, None);
@@ -483,12 +506,12 @@ impl DataActor for HurstVpinDirectional {
     }
 
     fn on_quote(&mut self, quote: &QuoteTick) -> anyhow::Result<()> {
-        if !self.signals_ready() {
-            return Ok(());
-        }
-
         if self.has_open_position() {
             return self.check_holding_timeout(quote);
+        }
+
+        if !self.signals_ready() {
+            return Ok(());
         }
 
         if self.exit_cooldown {

@@ -7271,7 +7271,9 @@ version = "0.68.0"
 dependencies = [
  "ahash",
  "anyhow",
+ "async-trait",
  "bon",
+ "bytes",
  "indexmap 2.14.2",
  "jiff",
  "log",
