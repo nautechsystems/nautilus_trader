@@ -217,10 +217,9 @@ pub(super) fn publish_cached_condition_closed(
     }
 
     let ts_init = clock.get_time_ns();
-    let mut updated = Vec::new();
-
+    let mut updated_ids = Vec::new();
     instruments.rcu(|map| {
-        updated.clear();
+        updated_ids.clear();
 
         for (instrument_id, instrument) in map.iter_mut() {
             if !extract_condition_id(instrument_id).is_ok_and(|candidate| candidate == condition_id)
@@ -234,21 +233,14 @@ pub(super) fn publish_cached_condition_closed(
                 set_market_closed(binary, true);
                 binary.ts_init = ts_init;
                 binary.ts_event = ts_init;
-                updated.push(InstrumentAny::BinaryOption(binary.clone()));
+                updated_ids.push(binary.id);
             }
         }
     });
 
-    for instrument in &updated {
-        let instrument_id = instrument.id();
-        if let Some(latest) = instruments.get_cloned(&instrument_id)
-            && let Err(e) = data_sender.send(DataEvent::Data(latest.into()))
-        {
-            log::warn!("Failed to publish market closure update for {instrument_id}: {e}");
-        }
-    }
+    publish_market_closure_updates(instruments, data_sender, &updated_ids);
 
-    updated.len()
+    updated_ids.len()
 }
 
 impl TokenMeta {
@@ -496,14 +488,14 @@ pub(super) async fn refresh_expired_market_closure(
         return Ok(0);
     }
 
-    let mut updated = Vec::new();
+    let mut updated_ids = Vec::new();
 
     // Compose against the latest cached value, so a concurrent tick size change is not discarded.
     // Guarded because `rcu` clones the whole cache, and most ticks have nothing to close.
     if !closing_ids.is_empty() {
         let ts_init = clock.get_time_ns();
         cache.rcu(|map| {
-            updated.clear();
+            updated_ids.clear();
 
             for instrument_id in &closing_ids {
                 if let Some(InstrumentAny::BinaryOption(binary)) = map.get_mut(instrument_id)
@@ -512,22 +504,13 @@ pub(super) async fn refresh_expired_market_closure(
                     set_market_closed(binary, true);
                     binary.ts_init = ts_init;
                     binary.ts_event = ts_init;
-                    updated.push(InstrumentAny::BinaryOption(binary.clone()));
+                    updated_ids.push(binary.id);
                 }
             }
         });
     }
 
-    for instrument in &updated {
-        let instrument_id = instrument.id();
-
-        // Retirement wins if the instrument was removed after the cache update
-        if let Some(latest) = cache.get_cloned(&instrument_id)
-            && let Err(e) = sender.send(DataEvent::Data(latest.into()))
-        {
-            log::warn!("Failed to publish market closure update for {instrument_id}: {e}");
-        }
-    }
+    publish_market_closure_updates(cache, sender, &updated_ids);
 
     if failed_chunks > 0 {
         anyhow::bail!(
@@ -535,7 +518,22 @@ pub(super) async fn refresh_expired_market_closure(
         );
     }
 
-    Ok(updated.len())
+    Ok(updated_ids.len())
+}
+
+fn publish_market_closure_updates(
+    instruments: &Arc<AtomicMap<InstrumentId, InstrumentAny>>,
+    data_sender: &EventSender<DataEvent>,
+    instrument_ids: &[InstrumentId],
+) {
+    for instrument_id in instrument_ids {
+        // Retirement wins if the instrument was removed after the cache update
+        if let Some(latest) = instruments.get_cloned(instrument_id)
+            && let Err(e) = data_sender.send(DataEvent::Data(latest.into()))
+        {
+            log::warn!("Failed to publish market closure update for {instrument_id}: {e}");
+        }
+    }
 }
 
 impl PolymarketDataClient {
@@ -1169,6 +1167,49 @@ mod tests {
         clock.set_time(UnixNanos::from(101));
         assert_eq!(publish(), 0);
         assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::missing(false)]
+    #[case::cached(true)]
+    #[tokio::test]
+    async fn closure_publication_reports_closed_receiver(#[case] cached: bool) {
+        if super::super::test_logging::run_in_isolated_process() {
+            return;
+        }
+
+        let _capture = super::super::test_logging::capture_logs().await;
+        let instrument = InstrumentAny::BinaryOption(past_end_open_instrument());
+        let instrument_id = instrument.id();
+        let instruments = Arc::new(AtomicMap::new());
+        if cached {
+            instruments.insert(instrument_id, instrument.clone());
+        }
+
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        drop(rx);
+        let sender = tx.into();
+
+        publish_market_closure_updates(&instruments, &sender, &[instrument_id]);
+
+        let warnings = super::super::test_logging::messages()
+            .into_iter()
+            .filter_map(|(level, message)| (level == log::Level::Warn).then_some(message))
+            .collect::<Vec<_>>();
+
+        let expected = if cached {
+            vec![format!(
+                "Failed to publish market closure update for {instrument_id}: channel closed"
+            )]
+        } else {
+            Vec::new()
+        };
+
+        assert_eq!(warnings, expected);
+        assert_eq!(
+            instruments.get_cloned(&instrument_id),
+            cached.then_some(instrument),
+        );
     }
 
     fn requested_condition_ids(query: Option<&str>) -> Vec<String> {

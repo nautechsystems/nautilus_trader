@@ -799,8 +799,7 @@ impl BacktestEngine {
         let clocks = self.collect_all_clocks();
         Self::set_all_clocks_time(&clocks, start_ns);
 
-        // First-iteration initialization
-        if self.iteration == 0 {
+        if self.run_id.is_none() {
             self.set_instrument_expiration_timers()?;
 
             self.run_config_id = run_config_id;
@@ -1198,15 +1197,17 @@ impl BacktestEngine {
             .collect()
     }
 
-    /// Reset the backtest engine.
+    /// Resets the backtest engine.
     ///
     /// All stateful fields are reset to their initial value. Data and instruments
     /// persist across resets to enable repeated runs with different strategies.
+    /// The trader must be initialized before reset, normally by running the engine.
     ///
     /// # Errors
     ///
-    /// Returns an error if ending the run, resetting a simulation module, or clearing callback
-    /// ownership fails.
+    /// Returns an error if ending the run, resetting a venue or trader, reopening the streaming
+    /// writer, or clearing callback ownership fails. The engine attempts the remaining cleanup
+    /// steps before returning the first error.
     pub fn reset(&mut self) -> anyhow::Result<()> {
         log::debug!("Resetting");
 
@@ -1243,6 +1244,10 @@ impl BacktestEngine {
         // Reset trader
         if let Err(e) = self.kernel.trader.borrow_mut().reset() {
             log::error!("Error resetting trader: {e:?}");
+
+            if reset_error.is_none() {
+                reset_error = Some(e);
+            }
         }
 
         self.kernel.portfolio.borrow_mut().reset();
@@ -1720,9 +1725,7 @@ impl BacktestEngine {
         ts_now: UnixNanos,
         clocks: &[Rc<RefCell<dyn Clock>>],
     ) -> anyhow::Result<()> {
-        for clock in clocks {
-            Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-        }
+        self.accumulate_time_events(clocks, ts_now);
 
         // Process events with ts_event < ts_now
         let ts_before = ts_now.saturating_sub(DurationNanos::new(1));
@@ -1734,7 +1737,7 @@ impl BacktestEngine {
             .peek_next_time()
             .filter(|ts_event| *ts_event <= ts_before)
         {
-            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event, ts_now)?;
+            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1750,9 +1753,7 @@ impl BacktestEngine {
                 break;
             }
 
-            for clock in clocks {
-                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-            }
+            self.accumulate_time_events(clocks, ts_now);
         }
 
         // On a mid-drain shutdown, anchor state at the firing timer's ts so
@@ -1781,16 +1782,13 @@ impl BacktestEngine {
 
         let last_ns = self.last_ns;
 
-        for clock in clocks {
-            Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-        }
-
+        self.accumulate_time_events(clocks, ts_now);
         while let Some(ts_event) = self
             .accumulator
             .peek_next_time()
             .filter(|ts_event| *ts_event <= ts_now)
         {
-            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event, ts_now)?;
+            let settlement_scope = self.run_timer_handlers_at(clocks, ts_event)?;
 
             if self.kernel.is_shutdown_requested() {
                 self.accumulator.clear();
@@ -1804,9 +1802,7 @@ impl BacktestEngine {
                 break;
             }
 
-            for clock in clocks {
-                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-            }
+            self.accumulate_time_events(clocks, ts_now);
         }
 
         if !self.kernel.is_shutdown_requested() {
@@ -1819,22 +1815,7 @@ impl BacktestEngine {
     fn process_next_timer(&mut self, clocks: &[Rc<RefCell<dyn Clock>>]) -> anyhow::Result<bool> {
         self.flush_accumulator_events(clocks, self.last_ns)?;
 
-        // Find minimum next timer time across all component clocks
-        let mut min_next_time: Option<UnixNanos> = None;
-
-        for clock in clocks {
-            let clock_ref = clock.borrow();
-            for name in clock_ref.timer_names() {
-                if let Some(next_time) = clock_ref.next_time_ns(name)
-                    && next_time > self.last_ns
-                {
-                    min_next_time = Some(match min_next_time {
-                        Some(current_min) => next_time.min(current_min),
-                        None => next_time,
-                    });
-                }
-            }
-        }
+        let min_next_time = Self::next_timer_time(clocks).filter(|time| *time > self.last_ns);
 
         match min_next_time {
             None => Ok(true),
@@ -1851,7 +1832,6 @@ impl BacktestEngine {
         &mut self,
         clocks: &[Rc<RefCell<dyn Clock>>],
         ts_event: UnixNanos,
-        advance_to: UnixNanos,
     ) -> anyhow::Result<SettlementScope> {
         self.last_ns = ts_event;
         let mut settlement_scope = SettlementScope::Data(None);
@@ -1875,9 +1855,7 @@ impl BacktestEngine {
                 return Ok(settlement_scope);
             }
 
-            for clock in clocks {
-                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, advance_to, false);
-            }
+            self.accumulate_time_events(clocks, ts_event);
         }
 
         Ok(settlement_scope)
@@ -1897,13 +1875,11 @@ impl BacktestEngine {
                 break;
             }
 
-            for clock in clocks {
-                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, ts_now, false);
-            }
+            self.accumulate_time_events(clocks, ts_now);
 
             if self.accumulator.peek_next_time() == Some(ts_now) {
                 if matches!(
-                    self.run_timer_handlers_at(clocks, ts_now, ts_now)?,
+                    self.run_timer_handlers_at(clocks, ts_now)?,
                     SettlementScope::All
                 ) {
                     settlement_scope = SettlementScope::All;
@@ -2248,18 +2224,72 @@ impl BacktestEngine {
         replace_exec_cmd_sender(Arc::new(SyncTradingCommandSender));
     }
 
+    fn accumulate_time_events(&mut self, clocks: &[Rc<RefCell<dyn Clock>>], until: UnixNanos) {
+        loop {
+            let Some(next_time) = self
+                .accumulator
+                .peek_next_time()
+                .into_iter()
+                .chain(Self::next_timer_time(clocks))
+                .min()
+            else {
+                return;
+            };
+
+            if next_time > until {
+                return;
+            }
+
+            for clock in clocks {
+                Self::advance_clock_on_accumulator(&mut self.accumulator, clock, next_time);
+            }
+
+            if self
+                .accumulator
+                .peek_next_time()
+                .is_some_and(|time| time <= next_time)
+            {
+                return;
+            }
+        }
+    }
+
+    fn next_timer_time(clocks: &[Rc<RefCell<dyn Clock>>]) -> Option<UnixNanos> {
+        clocks
+            .iter()
+            .filter_map(|clock| {
+                let clock = clock.borrow();
+                let clock = clock
+                    .as_any()
+                    .downcast_ref::<VirtualClock>()
+                    .expect("BacktestEngine requires VirtualClock");
+                clock.next_event_time_ns()
+            })
+            .min()
+    }
+
     fn advance_clock_on_accumulator(
         accumulator: &mut TimeEventAccumulator,
         clock: &Rc<RefCell<dyn Clock>>,
         to_time_ns: UnixNanos,
-        set_time: bool,
     ) {
         let mut clock_ref = clock.borrow_mut();
         let test_clock = clock_ref
             .as_any_mut()
             .downcast_mut::<VirtualClock>()
             .expect("BacktestEngine requires VirtualClock");
-        accumulator.advance_clock(test_clock, to_time_ns, set_time);
+        let previous_time = test_clock.timestamp_ns();
+        let rewind = to_time_ns < previous_time;
+
+        // Timers registered with allow_past can be due before the stored clock time
+        if rewind {
+            test_clock.set_time(to_time_ns);
+        }
+
+        accumulator.advance_clock(test_clock, to_time_ns, false);
+        if rewind {
+            test_clock.set_time(previous_time);
+        }
     }
 
     fn set_all_clocks_time(clocks: &[Rc<RefCell<dyn Clock>>], time_ns: UnixNanos) {
@@ -2525,7 +2555,7 @@ mod tests {
 
     use indexmap::IndexMap;
     use nautilus_common::{
-        actor::DataActor,
+        actor::{DataActor, DataActorCore, data_actor::DataActorConfig},
         enums::Environment,
         messages::{
             data::{DataCommand, UnsubscribeCommand},
@@ -2537,6 +2567,7 @@ mod tests {
             self, MessagingSwitchboard, TypedHandler,
             stubs::{TypedIntoMessageSavingHandler, get_typed_into_message_saving_handler},
         },
+        nautilus_actor,
     };
     use nautilus_execution::{
         engine::{SnapshotAnchorer, stubs::StubExecutionClient},
@@ -3945,12 +3976,11 @@ mod tests {
                 &mut engine.accumulator,
                 clock,
                 UnixNanos::from(30),
-                false,
             );
         }
 
         let settlement_scope = engine
-            .run_timer_handlers_at(&clocks, UnixNanos::from(20), UnixNanos::from(30))
+            .run_timer_handlers_at(&clocks, UnixNanos::from(20))
             .unwrap();
 
         assert_eq!(fired.get(), timer_names.len());
@@ -5175,6 +5205,7 @@ mod tests {
         let instrument_id = instrument.id();
         engine.add_instrument(&instrument).unwrap();
 
+        engine.kernel.trader.borrow_mut().initialize().unwrap();
         engine.reset().unwrap();
 
         assert!(
@@ -5212,6 +5243,7 @@ mod tests {
         drop(order_emulator);
         data_commands.clear();
 
+        engine.kernel.trader.borrow_mut().initialize().unwrap();
         engine.reset().unwrap();
 
         let commands = data_commands.get_messages();
@@ -5224,6 +5256,99 @@ mod tests {
             DataCommand::Unsubscribe(UnsubscribeCommand::Quotes(command))
                 if command.instrument_ids == [instrument_id]
         )));
+    }
+
+    #[rstest]
+    #[case(false)]
+    #[case(true)]
+    fn test_reset_returns_component_failure_after_cleanup(
+        crypto_perpetual_ethusdt: CryptoPerpetual,
+        #[case] streaming: bool,
+    ) {
+        let mut engine = create_engine();
+        let instrument = InstrumentAny::CryptoPerpetual(crypto_perpetual_ethusdt);
+        let instrument_id = instrument.id();
+        engine.add_instrument(&instrument).unwrap();
+        let actor_id = ActorId::from("ResetFailureActor");
+
+        let actor = ResetFailureActor {
+            core: DataActorCore::new(DataActorConfig {
+                actor_id: Some(actor_id),
+                ..Default::default()
+            }),
+        };
+
+        engine.add_actor(actor).unwrap();
+
+        let quote = QuoteTick::new(
+            instrument_id,
+            Price::from("1003.00"),
+            Price::from("1004.00"),
+            Quantity::from("3.000"),
+            Quantity::from("4.000"),
+            UnixNanos::from(1_000_000_000),
+            UnixNanos::from(1_000_000_001),
+        );
+        engine
+            .add_data(vec![Data::Quote(quote)], None, true, true)
+            .unwrap();
+        engine
+            .run(None, None, Some("reset-test".to_string()), streaming)
+            .unwrap();
+        assert_eq!(engine.iteration, 1);
+        assert!(engine.data_iterator.is_done());
+        assert_eq!(engine.run_config_id.as_deref(), Some("reset-test"));
+
+        let result = engine.reset();
+
+        assert_eq!(engine.run_config_id, None);
+        assert_eq!(engine.run_id, None);
+        assert_eq!(engine.run_started, None);
+        assert_eq!(engine.run_finished, None);
+        assert_eq!(engine.backtest_start, None);
+        assert_eq!(engine.backtest_end, None);
+        assert_eq!(engine.iteration, 0);
+        assert_eq!(engine.last_ns, UnixNanos::default());
+        assert_eq!(engine.end_ns, UnixNanos::default());
+        assert_eq!(engine.data_iterator.next(), Some(Data::Quote(quote)));
+        assert_eq!(
+            component_state(&actor_id.inner()).unwrap(),
+            ComponentState::Resetting
+        );
+        assert_eq!(
+            engine.kernel.trader.borrow().state(),
+            ComponentState::Resetting
+        );
+        assert_eq!(result.unwrap_err().to_string(), "synthetic reset failure");
+    }
+
+    #[rstest]
+    fn test_reset_preserves_error_from_end() {
+        let mut engine = create_engine();
+        engine.run(None, None, None, true).unwrap();
+        engine
+            .fail_funding::<()>("prior funding failure".to_string())
+            .unwrap_err();
+
+        let e = engine.reset().unwrap_err();
+
+        assert_eq!(e.to_string(), "prior funding failure");
+        assert_eq!(engine.funding_error, None);
+        assert_eq!(engine.run_id, None);
+        assert_eq!(engine.iteration, 0);
+    }
+
+    #[derive(Debug)]
+    struct ResetFailureActor {
+        core: DataActorCore,
+    }
+
+    nautilus_actor!(ResetFailureActor);
+
+    impl DataActor for ResetFailureActor {
+        fn on_reset(&mut self) -> anyhow::Result<()> {
+            anyhow::bail!("synthetic reset failure");
+        }
     }
 
     #[rstest]

@@ -663,11 +663,27 @@ pub fn decode_cancel_order(buf: &[u8]) -> Result<BinanceCancelOrderResponse, Sbe
     })
 }
 
+pub(crate) fn decode_cancel_order_or_list(
+    buf: &[u8],
+) -> Result<BinanceCancelOpenOrdersResponse, SbeDecodeError> {
+    let mut cursor = SbeCursor::new(buf);
+    let header = MessageHeader::decode_cursor(&mut cursor)?;
+    header.validate()?;
+    match header.template_id {
+        CANCEL_ORDER_TEMPLATE_ID => Ok(BinanceCancelOpenOrdersResponse::Order(
+            decode_cancel_order(buf)?,
+        )),
+        CANCEL_ORDER_LIST_TEMPLATE_ID => Ok(BinanceCancelOpenOrdersResponse::OrderList(
+            decode_cancel_order_list(buf)?,
+        )),
+        template_id => Err(SbeDecodeError::UnknownTemplateId(template_id)),
+    }
+}
+
 fn decode_cancel_order_list(buf: &[u8]) -> Result<BinanceCancelOrderListResponse, SbeDecodeError> {
     let mut cursor = SbeCursor::new(buf);
     let header = MessageHeader::decode_cursor(&mut cursor)?;
     header.validate()?;
-
     if header.template_id != CANCEL_ORDER_LIST_TEMPLATE_ID {
         return Err(SbeDecodeError::UnknownTemplateId(header.template_id));
     }
@@ -947,18 +963,7 @@ pub fn decode_cancel_open_orders(
     for _ in 0..count {
         let response_len = cursor.read_u16_le()? as usize;
         let embedded_bytes = cursor.read_bytes(response_len)?;
-        let mut embedded_cursor = SbeCursor::new(embedded_bytes);
-        let embedded_header = MessageHeader::decode_cursor(&mut embedded_cursor)?;
-        embedded_header.validate()?;
-        let response = match embedded_header.template_id {
-            CANCEL_ORDER_TEMPLATE_ID => {
-                BinanceCancelOpenOrdersResponse::Order(decode_cancel_order(embedded_bytes)?)
-            }
-            CANCEL_ORDER_LIST_TEMPLATE_ID => BinanceCancelOpenOrdersResponse::OrderList(
-                decode_cancel_order_list(embedded_bytes)?,
-            ),
-            template_id => return Err(SbeDecodeError::UnknownTemplateId(template_id)),
-        };
+        let response = decode_cancel_order_or_list(embedded_bytes)?;
         responses.push(response);
     }
 
@@ -2909,11 +2914,17 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decode_cancel_open_orders_order_list() {
+    #[case::single_order_cancel(true)]
+    #[case::cancel_all(false)]
+    fn test_decode_cancel_open_orders_order_list(#[case] single: bool) {
         let order_list = create_cancel_order_list_response_buffer();
-        let buf = create_cancel_open_orders_buffer(&[order_list]);
 
-        let responses = decode_cancel_open_orders(&buf).unwrap();
+        let responses = if single {
+            vec![decode_cancel_order_or_list(&order_list).unwrap()]
+        } else {
+            let buf = create_cancel_open_orders_buffer(&[order_list]);
+            decode_cancel_open_orders(&buf).unwrap()
+        };
 
         let BinanceCancelOpenOrdersResponse::OrderList(response) = &responses[0] else {
             panic!("Expected order-list cancel response");

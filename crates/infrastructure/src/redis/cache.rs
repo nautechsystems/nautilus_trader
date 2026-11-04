@@ -45,6 +45,8 @@ use std::{
 use ahash::AHashMap;
 use anyhow::Context;
 use bytes::Bytes;
+#[cfg(feature = "defi")]
+use nautilus_common::defi::cache::InstrumentMigration;
 use nautilus_common::{
     cache::{
         CacheConfig,
@@ -257,6 +259,13 @@ impl RedisConnectionConfig for RedisCacheConfig {
 /// A type of database operation.
 #[derive(Clone, Debug)]
 pub enum DatabaseOperation {
+    #[cfg(feature = "defi")]
+    Defi {
+        codes: Vec<String>,
+        references: Vec<String>,
+        migration: Option<InstrumentMigration>,
+        reply: SyncSender<anyhow::Result<()>>,
+    },
     Insert,
     Update,
     UpdateOrder,
@@ -516,6 +525,34 @@ impl RedisCacheDatabase {
         self.insert(key, Some(vec![Bytes::from(json_bytes)]))
     }
 
+    #[cfg(feature = "defi")]
+    fn write_defi(
+        &self,
+        key: String,
+        codes: Vec<String>,
+        payloads: Vec<Bytes>,
+        references: Vec<String>,
+        migration: Option<InstrumentMigration>,
+    ) -> anyhow::Result<()> {
+        let (reply, receiver) = mpsc::sync_channel(1);
+
+        let command = DatabaseCommand::new(
+            DatabaseOperation::Defi {
+                codes,
+                references,
+                migration,
+                reply,
+            },
+            key,
+            Some(payloads),
+        );
+
+        self.tx
+            .send(command)
+            .map_err(crate::defi::integrity_error)?;
+        blocking_recv(&receiver).map_err(crate::defi::integrity_error)?
+    }
+
     /// Sends an update command for `key` with optional `payload` to Redis via the background task.
     ///
     /// # Errors
@@ -759,6 +796,37 @@ async fn handle_command(
     log::trace!("Received {cmd:?}");
 
     match cmd.op_type {
+        #[cfg(feature = "defi")]
+        DatabaseOperation::Defi {
+            codes,
+            references,
+            migration,
+            reply,
+        } => {
+            if !buffer.is_empty() {
+                drain_buffer(con, trader_key, encoding, buffer).await;
+            }
+
+            let result = match (cmd.key, cmd.payload) {
+                (Some(key), Some(payloads)) => {
+                    DatabaseQueries::write_defi(
+                        con,
+                        trader_key,
+                        encoding,
+                        &key,
+                        &codes,
+                        &payloads,
+                        &references,
+                        migration.as_ref(),
+                    )
+                    .await
+                }
+                _ => Err(crate::defi::integrity_error("Missing DeFi write payload")),
+            };
+
+            let _ = reply.send(result);
+            return ControlFlow::Continue(());
+        }
         DatabaseOperation::Close => {
             if !buffer.is_empty() {
                 drain_buffer(con, trader_key, encoding, buffer).await;
@@ -835,6 +903,8 @@ async fn drain_buffer(
                 execute_state_command(conn, trader_key, encoding, &key, msg.op_type, msg.payload)
                     .await
             }
+            #[cfg(feature = "defi")]
+            DatabaseOperation::Defi { .. } => unreachable!("DeFi writes execute before buffering"),
             DatabaseOperation::Close => panic!("Close command should not be drained"),
             DatabaseOperation::Flush(_) => panic!("Flush command should not be drained"),
             operation => {
@@ -1276,6 +1346,48 @@ pub struct RedisCacheDatabaseAdapter {
 }
 
 impl RedisCacheDatabaseAdapter {
+    #[cfg(feature = "defi")]
+    fn write_token_instrument(
+        &self,
+        instrument: &InstrumentAny,
+        migration: Option<InstrumentMigration>,
+    ) -> anyhow::Result<()> {
+        use nautilus_model::defi::currency;
+        let codes = currency::instrument_codes(instrument).map_err(crate::defi::integrity_error)?;
+        let mut payloads = Vec::with_capacity(codes.len() + 1);
+        for code in &codes {
+            let (currency, _) = currency::lookup(Ustr::from(code)).ok_or_else(|| {
+                crate::defi::integrity_error(format!("Missing token definition for {code}"))
+            })?;
+
+            let record = CurrencyRecord::from(&currency);
+            payloads.push(Bytes::from(DatabaseQueries::serialize_payload(
+                self.encoding(),
+                &record,
+            )?));
+        }
+
+        let payload = if codes.is_empty() {
+            DatabaseQueries::serialize_payload(self.encoding(), instrument)?
+        } else {
+            let record = crate::defi::InstrumentRecord {
+                defi_currency_codes: codes.clone(),
+                instrument: serde_json::to_value(instrument)?,
+            };
+
+            DatabaseQueries::serialize_payload(self.encoding(), &record)?
+        };
+
+        payloads.push(Bytes::from(payload));
+        self.database.write_defi(
+            format!("instruments:{}", instrument.id()),
+            codes,
+            payloads,
+            crate::defi::currency_references(instrument),
+            migration,
+        )
+    }
+
     fn encoding(&self) -> SerializationEncoding {
         self.database.get_encoding()
     }
@@ -1679,6 +1791,23 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
+        #[cfg(feature = "defi")]
+        if nautilus_model::defi::currency::check(*currency)
+            .map_err(crate::defi::integrity_error)?
+            .is_some()
+            || currency.code.contains('@')
+        {
+            let record = CurrencyRecord::from(currency);
+            let payload = DatabaseQueries::serialize_payload(self.encoding(), &record)?;
+            return self.database.write_defi(
+                format!("currencies:{}", currency.code),
+                vec![currency.code.to_string()],
+                vec![Bytes::from(payload)],
+                Vec::new(),
+                None,
+            );
+        }
+
         let key = format!("{CURRENCIES}{REDIS_DELIMITER}{}", currency.code);
         let record = CurrencyRecord::from(currency);
         let payload = DatabaseQueries::serialize_payload(self.encoding(), &record)?;
@@ -1686,9 +1815,26 @@ impl CacheDatabaseAdapter for RedisCacheDatabaseAdapter {
     }
 
     fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        let key = format!("{INSTRUMENTS}{REDIS_DELIMITER}{}", instrument.id());
-        let payload = DatabaseQueries::serialize_payload(self.encoding(), instrument)?;
-        self.database.insert(key, Some(vec![Bytes::from(payload)]))
+        #[cfg(feature = "defi")]
+        {
+            self.write_token_instrument(instrument, None)
+        }
+
+        #[cfg(not(feature = "defi"))]
+        {
+            let key = format!("{INSTRUMENTS}{REDIS_DELIMITER}{}", instrument.id());
+            let payload = DatabaseQueries::serialize_payload(self.encoding(), instrument)?;
+            self.database.insert(key, Some(vec![Bytes::from(payload)]))
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    fn add_defi_instrument(
+        &self,
+        instrument: &InstrumentAny,
+        migration: InstrumentMigration,
+    ) -> anyhow::Result<()> {
+        self.write_token_instrument(instrument, Some(migration))
     }
 
     fn add_instrument_close(&self, close: &InstrumentClose) -> anyhow::Result<()> {

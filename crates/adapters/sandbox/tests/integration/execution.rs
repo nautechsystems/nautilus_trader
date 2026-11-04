@@ -33,7 +33,8 @@ use nautilus_common::{
     messages::{
         ExecutionEvent,
         execution::{
-            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder, ModifyOrder,
+            BatchCancelOrders, BatchModifyOrders, CancelAllOrders, CancelOrder,
+            GenerateOrderStatusReportBuilder, GenerateOrderStatusReportsBuilder, ModifyOrder,
             SubmitOrder, SubmitOrderList, TradingCommand,
         },
     },
@@ -77,11 +78,13 @@ use nautilus_model::{
     enums::{
         AccountType, AggressorSide, BookType, ContingencyType, InstrumentCloseType, LiquiditySide,
         MarketStatusAction, OmsType, OrderSide, OrderStatus, OrderType, PositionSide, RecordFlag,
-        TimeInForce,
+        TimeInForce, TrailingOffsetType, TriggerType,
     },
     events::{
         AccountState, OrderDenied, OrderEventAny, OrderEventType, OrderFilled, OrderPendingCancel,
-        OrderPendingUpdate, PositionClosed, PositionEvent, account::stubs::margin_account_state,
+        OrderPendingUpdate, PositionClosed, PositionEvent,
+        account::stubs::margin_account_state,
+        order::spec::{OrderCanceledSpec, OrderTriggeredSpec},
     },
     identifiers::{
         AccountId, ClientId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId,
@@ -93,6 +96,7 @@ use nautilus_model::{
     },
     orders::{Order, OrderAny, OrderList, OrderTestBuilder, stubs::TestOrderEventStubs},
     position::Position,
+    reports::OrderStatusReport,
     types::{Currency, Money, Price, Quantity},
 };
 use nautilus_sandbox::{
@@ -4931,6 +4935,111 @@ fn test_process_bar_disabled(test_context: TestContext, instrument: InstrumentAn
 }
 
 #[rstest]
+#[case::tick("TICK")]
+#[case::volume("VOLUME")]
+#[case::value("VALUE")]
+fn test_non_time_bars_preserve_time_bar_fills(
+    trader_id: TraderId,
+    account_id: AccountId,
+    instrument: InstrumentAny,
+    #[case] aggregation: &str,
+    #[values(false, true)] via_bus: bool,
+) {
+    *msgbus::get_message_bus().borrow_mut() = MessageBus::default();
+
+    let mut context =
+        create_test_context_with(trader_id, account_id, instrument.id().venue, |config| {
+            config.bar_execution = true;
+        });
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel::<ExecutionEvent>();
+    set_exec_event_sender(tx);
+    context
+        .cache
+        .borrow_mut()
+        .add_instrument(instrument.clone())
+        .unwrap();
+    context.client.start().unwrap();
+    let received = Rc::new(RefCell::new(Vec::new()));
+
+    let handler = {
+        let received = received.clone();
+        TypedHandler::from(move |bar: &Bar| received.borrow_mut().push(*bar))
+    };
+
+    if via_bus {
+        msgbus::subscribe_bars("data.bars.*".into(), handler.clone(), Some(0));
+    }
+
+    let order = resting_limit(&instrument, "NON-TIME-BAR", "1495.00", 1.into());
+    submit_to_client(&context, trader_id, &order);
+    let _ = drain_order_events(&mut rx);
+
+    let mut bar = Bar::new(
+        BarType::from(format!(
+            "{}-200-{aggregation}-LAST-EXTERNAL",
+            instrument.id()
+        )),
+        Price::from("1500.00"),
+        Price::from("1505.00"),
+        Price::from("1490.00"),
+        Price::from("1494.00"),
+        Quantity::from("100.000"),
+        2.into(),
+        2.into(),
+    );
+
+    if via_bus {
+        msgbus::publish_bar(format!("data.bars.{}", bar.bar_type).into(), &bar);
+    } else {
+        context.client.process_bar(&bar).unwrap();
+    }
+
+    assert_eq!(context.client.matching_engine_count(), 1);
+    assert!(drain_order_events(&mut rx).is_empty());
+
+    if via_bus {
+        assert_eq!(*received.borrow(), vec![bar]);
+    }
+
+    let non_time_bar = bar;
+    bar.bar_type = BarType::from(format!("{}-1-MINUTE-LAST-EXTERNAL", instrument.id()));
+    bar.ts_event = 3.into();
+    bar.ts_init = 3.into();
+    if via_bus {
+        msgbus::publish_bar(format!("data.bars.{}", bar.bar_type).into(), &bar);
+    } else {
+        context.client.process_bar(&bar).unwrap();
+    }
+
+    let fills: Vec<_> = drain_order_events(&mut rx)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(fill) => {
+                Some((fill.client_order_id, fill.last_px, fill.last_qty))
+            }
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(
+            order.client_order_id(),
+            Price::from("1495.00"),
+            Quantity::from("1.000")
+        )]
+    );
+
+    if via_bus {
+        assert_eq!(*received.borrow(), vec![non_time_bar, bar]);
+        msgbus::unsubscribe_bars("data.bars.*".into(), &handler);
+    }
+
+    context.client.stop().unwrap();
+}
+
+#[rstest]
 fn test_process_bar_drops_precision_mismatch(
     trader_id: TraderId,
     account_id: AccountId,
@@ -5069,6 +5178,565 @@ async fn test_generate_mass_status_returns_empty_report(
     assert!(mass_status.order_reports().is_empty());
     assert!(mass_status.fill_reports().is_empty());
     assert!(mass_status.position_reports().is_empty());
+}
+
+#[rstest]
+#[case::client("client", true)]
+#[case::venue("venue", true)]
+#[case::both("both", true)]
+#[case::unknown("unknown", false)]
+#[case::mismatched_venue("mismatched_venue", false)]
+#[case::mismatched_client("mismatched_client", false)]
+#[case::mismatched_instrument("mismatched_instrument", false)]
+#[case::no_identity("none", false)]
+#[tokio::test]
+async fn test_generate_order_status_report(
+    instrument: InstrumentAny,
+    #[case] query: &str,
+    #[case] found: bool,
+) {
+    let (mut context, _rx, order) = order_report_context(&instrument);
+
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .client_order_id(match query {
+            "venue" | "none" => None,
+            "unknown" | "mismatched_client" => Some(ClientOrderId::from("UNKNOWN")),
+            _ => Some(order.client_order_id()),
+        })
+        .venue_order_id(match query {
+            "venue" | "both" | "mismatched_client" => order.venue_order_id(),
+            "mismatched_venue" => Some(VenueOrderId::from("UNKNOWN")),
+            _ => None,
+        })
+        .instrument_id((query == "mismatched_instrument").then(|| InstrumentId::from("OTHER.SIM")))
+        .build()
+        .unwrap();
+
+    let report = context
+        .client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap();
+
+    if found {
+        let report = report.unwrap();
+        let expected = OrderStatusReport::new(
+            account_id(),
+            instrument.id(),
+            Some(order.client_order_id()),
+            order.venue_order_id().unwrap(),
+            Some(OrderSide::Buy),
+            OrderType::Limit,
+            TimeInForce::Gtc,
+            OrderStatus::Accepted,
+            Quantity::from("1.000"),
+            Quantity::from("0.000"),
+            UnixNanos::from(11),
+            UnixNanos::from(11),
+            UnixNanos::from(23),
+            Some(report.report_id),
+        )
+        .with_price(Price::from("900.00"));
+        assert_eq!(report, expected);
+    } else {
+        assert_eq!(report, None);
+    }
+
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_preserves_fill(instrument: InstrumentAny) {
+    let (mut context, mut rx, order) = order_report_context(&instrument);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(31), true);
+    context
+        .client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 899.0, 900.0))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(43), true);
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .client_order_id(Some(order.client_order_id()))
+        .build()
+        .unwrap();
+    let report = context
+        .client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap()
+        .unwrap();
+    let expected = OrderStatusReport::new(
+        account_id(),
+        instrument.id(),
+        Some(order.client_order_id()),
+        order.venue_order_id().unwrap(),
+        Some(OrderSide::Buy),
+        OrderType::Limit,
+        TimeInForce::Gtc,
+        OrderStatus::Filled,
+        Quantity::from("1.000"),
+        Quantity::from("1.000"),
+        UnixNanos::from(11),
+        UnixNanos::from(31),
+        UnixNanos::from(43),
+        Some(report.report_id),
+    )
+    .with_price(Price::from("900.00"))
+    .with_avg_px(Decimal::from(900));
+
+    assert_eq!(report, expected);
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_status_report_preserves_metadata(instrument: InstrumentAny) {
+    let (mut context, _rx, _resting) = order_report_context(&instrument);
+    let mut order = OrderTestBuilder::new(OrderType::TrailingStopLimit)
+        .client_order_id(ClientOrderId::from("O-METADATA"))
+        .instrument_id(instrument.id())
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("3.456"))
+        .price(Price::from("952.25"))
+        .trigger_price(Price::from("950.75"))
+        .activation_price(Price::from("925.50"))
+        .trigger_type(TriggerType::LastPrice)
+        .limit_offset(Decimal::from_str_exact("1.50").unwrap())
+        .trailing_offset(Decimal::from_str_exact("7.25").unwrap())
+        .trailing_offset_type(TrailingOffsetType::Price)
+        .time_in_force(TimeInForce::Gtd)
+        .expire_time(UnixNanos::from(400))
+        .post_only(true)
+        .reduce_only(false)
+        .display_qty(Quantity::from("0.123"))
+        .order_list_id(OrderListId::from("OL-METADATA"))
+        .parent_order_id(ClientOrderId::from("O-PARENT"))
+        .linked_order_ids(vec![
+            ClientOrderId::from("O-LINK-1"),
+            ClientOrderId::from("O-LINK-2"),
+        ])
+        .contingency_type(ContingencyType::Oto)
+        .build();
+    order.set_position_id(Some(PositionId::from("P-LOCAL-METADATA")));
+    let submitted = TestOrderEventStubs::submitted(&order, account_id());
+    let accepted =
+        TestOrderEventStubs::accepted(&order, account_id(), VenueOrderId::from("V-METADATA"));
+    let triggered = OrderTriggeredSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .account_id(account_id())
+        .venue_order_id(VenueOrderId::from("V-METADATA"))
+        .ts_event(UnixNanos::from(7))
+        .ts_init(UnixNanos::from(8))
+        .build();
+    let canceled = OrderCanceledSpec::builder()
+        .trader_id(order.trader_id())
+        .strategy_id(order.strategy_id())
+        .instrument_id(order.instrument_id())
+        .client_order_id(order.client_order_id())
+        .account_id(account_id())
+        .venue_order_id(VenueOrderId::from("V-METADATA"))
+        .ts_event(UnixNanos::from(17))
+        .ts_init(UnixNanos::from(18))
+        .reason(Ustr::from("USER_REQUEST"))
+        .build();
+    context
+        .cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
+
+    for event in [
+        submitted,
+        accepted,
+        OrderEventAny::Triggered(triggered),
+        OrderEventAny::Canceled(canceled),
+    ] {
+        context.cache.borrow_mut().update_order(&event).unwrap();
+    }
+
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .client_order_id(Some(ClientOrderId::from("O-METADATA")))
+        .build()
+        .unwrap();
+    let report = context
+        .client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap()
+        .unwrap();
+
+    let expected = OrderStatusReport {
+        account_id: account_id(),
+        instrument_id: instrument.id(),
+        client_order_id: Some(ClientOrderId::from("O-METADATA")),
+        venue_order_id: VenueOrderId::from("V-METADATA"),
+        order_side: Some(OrderSide::Buy),
+        order_type: OrderType::TrailingStopLimit,
+        time_in_force: TimeInForce::Gtd,
+        order_status: OrderStatus::Canceled,
+        quantity: Quantity::from("3.456"),
+        filled_qty: Quantity::from("0.000"),
+        report_id: report.report_id,
+        ts_accepted: UnixNanos::default(),
+        ts_last: UnixNanos::from(17),
+        ts_init: UnixNanos::from(23),
+        order_list_id: Some(OrderListId::from("OL-METADATA")),
+        venue_position_id: None,
+        linked_order_ids: Some(vec![
+            ClientOrderId::from("O-LINK-1"),
+            ClientOrderId::from("O-LINK-2"),
+        ]),
+        parent_order_id: Some(ClientOrderId::from("O-PARENT")),
+        contingency_type: Some(ContingencyType::Oto),
+        expire_time: Some(UnixNanos::from(400)),
+        price: Some(Price::from("952.25")),
+        activation_price: Some(Price::from("925.50")),
+        trigger_price: Some(Price::from("950.75")),
+        trigger_type: Some(TriggerType::LastPrice),
+        limit_offset: Some(Decimal::from_str_exact("1.50").unwrap()),
+        trailing_offset: Some(Decimal::from_str_exact("7.25").unwrap()),
+        trailing_offset_type: Some(TrailingOffsetType::Price),
+        avg_px: None,
+        display_qty: Some(Quantity::from("0.123")),
+        post_only: true,
+        reduce_only: false,
+        cancel_reason: Some("USER_REQUEST".to_string()),
+        ts_triggered: Some(UnixNanos::from(7)),
+    };
+
+    assert_eq!(report, expected);
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_order_reports_excludes_unacknowledged_record(instrument: InstrumentAny) {
+    let (mut context, _rx, accepted) = order_report_context(&instrument);
+    let order = resting_limit(
+        &instrument,
+        "O-UNACKNOWLEDGED",
+        "800.00",
+        UnixNanos::from(2),
+    );
+    let submitted = TestOrderEventStubs::submitted(&order, account_id());
+    context
+        .cache
+        .borrow_mut()
+        .add_order(order, None, None, false)
+        .unwrap();
+    context.cache.borrow_mut().update_order(&submitted).unwrap();
+    let command = GenerateOrderStatusReportBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .client_order_id(Some(ClientOrderId::from("O-UNACKNOWLEDGED")))
+        .build()
+        .unwrap();
+    let single = context
+        .client
+        .generate_order_status_report(&command)
+        .await
+        .unwrap();
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .open_only(false)
+        .build()
+        .unwrap();
+    let bulk = context
+        .client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+
+    assert_eq!(single, None);
+    assert_eq!(bulk.len(), 1);
+    assert_eq!(bulk[0].client_order_id, Some(accepted.client_order_id()));
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::history(false, None, None, true)]
+#[case::open_only(true, None, None, false)]
+#[case::closed_at_bounds(false, Some(31), Some(31), true)]
+#[case::closed_before_start(false, Some(32), None, false)]
+#[case::closed_after_end(false, None, Some(30), false)]
+#[tokio::test]
+async fn test_generate_order_status_reports_filters(
+    instrument: InstrumentAny,
+    #[case] open_only: bool,
+    #[case] start: Option<u64>,
+    #[case] end: Option<u64>,
+    #[case] include_closed: bool,
+) {
+    let (mut context, mut rx, closed) = order_report_context(&instrument);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(31), true);
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id(),
+            &closed,
+            UnixNanos::from(31),
+        ))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+    let open = resting_limit(&instrument, "O-REPORT-2", "800.00", UnixNanos::from(2));
+    submit_to_client(&context, trader_id(), &open);
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+
+    let mut foreign_reports = Vec::new();
+
+    for (id, owner, instrument_id) in [
+        (
+            "FOREIGN-ACCOUNT",
+            AccountId::from("OTHER-001"),
+            instrument.id(),
+        ),
+        (
+            "FOREIGN-VENUE",
+            account_id(),
+            InstrumentId::from("OTHER.SIM"),
+        ),
+    ] {
+        let order = OrderTestBuilder::new(OrderType::Limit)
+            .client_order_id(ClientOrderId::from(id))
+            .instrument_id(instrument_id)
+            .quantity(Quantity::from("2.000"))
+            .price(Price::from("700.00"))
+            .build();
+        let submitted = TestOrderEventStubs::submitted(&order, owner);
+        context
+            .cache
+            .borrow_mut()
+            .add_order(order, None, None, false)
+            .unwrap();
+        let order = context.cache.borrow_mut().update_order(&submitted).unwrap();
+        let accepted = TestOrderEventStubs::accepted(&order, owner, VenueOrderId::from(id));
+        context.cache.borrow_mut().update_order(&accepted).unwrap();
+        let command = GenerateOrderStatusReportBuilder::default()
+            .ts_init(UnixNanos::from(31))
+            .client_order_id(Some(order.client_order_id()))
+            .build()
+            .unwrap();
+        foreign_reports.push(
+            context
+                .client
+                .generate_order_status_report(&command)
+                .await
+                .unwrap(),
+        );
+    }
+
+    let command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .open_only(open_only)
+        .start(start.map(UnixNanos::from))
+        .end(end.map(UnixNanos::from))
+        .build()
+        .unwrap();
+    let mut reports = context
+        .client
+        .generate_order_status_reports(&command)
+        .await
+        .unwrap();
+    reports.sort_by_key(|report| report.client_order_id);
+    let actual: Vec<_> = reports
+        .iter()
+        .map(|report| (report.client_order_id.unwrap(), report.order_status))
+        .collect();
+    let mut expected = vec![(open.client_order_id(), OrderStatus::Accepted)];
+    if include_closed {
+        expected.insert(0, (closed.client_order_id(), OrderStatus::Canceled));
+    }
+
+    let instrument_command = GenerateOrderStatusReportsBuilder::default()
+        .ts_init(UnixNanos::from(19))
+        .open_only(false)
+        .instrument_id(Some(InstrumentId::from("MISSING.BINANCE")))
+        .build()
+        .unwrap();
+    let absent = context
+        .client
+        .generate_order_status_reports(&instrument_command)
+        .await
+        .unwrap();
+
+    assert_eq!(foreign_reports, [None, None]);
+    assert_eq!(actual, expected);
+    assert!(absent.is_empty());
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[case::unbounded(None, 1)]
+#[case::zero_window(Some(0), 0)]
+#[tokio::test]
+async fn test_generate_mass_status_respects_lookback(
+    instrument: InstrumentAny,
+    #[case] lookback: Option<u64>,
+    #[case] expected_orders: usize,
+) {
+    let (mut context, mut rx, order) = order_report_context(&instrument);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(31), true);
+    context
+        .client
+        .cancel_order(cancel_command(
+            context.client.client_id(),
+            trader_id(),
+            &order,
+            UnixNanos::from(31),
+        ))
+        .unwrap();
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(43), true);
+    let mass = context
+        .client
+        .generate_mass_status(lookback)
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(mass.order_reports().len(), expected_orders);
+    assert_eq!(mass.ts_init, UnixNanos::from(43));
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_generate_mass_status_includes_order_reports(instrument: InstrumentAny) {
+    let (mut context, _rx, order) = order_report_context(&instrument);
+    let mass = context
+        .client
+        .generate_mass_status(None)
+        .await
+        .unwrap()
+        .unwrap();
+    let reports = mass.order_reports();
+
+    assert_eq!(mass.client_id, context.client.client_id());
+    assert_eq!(mass.account_id, account_id());
+    assert_eq!(mass.venue, instrument.id().venue);
+    assert_eq!(mass.ts_init, UnixNanos::from(23));
+    assert_eq!(reports.len(), 1);
+    assert_eq!(
+        reports[&order.venue_order_id().unwrap()].client_order_id,
+        Some(order.client_order_id())
+    );
+    assert_eq!(
+        reports[&order.venue_order_id().unwrap()].order_status,
+        OrderStatus::Accepted
+    );
+    assert!(mass.fill_reports().is_empty());
+    assert!(mass.position_reports().is_empty());
+    context.client.stop().unwrap();
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_open_order_check_keeps_resting_sandbox_order(
+    instrument: InstrumentAny,
+    #[values(false, true)] cached_client: bool,
+    #[values(false, true)] open_only: bool,
+) {
+    let (mut context, _rx, order) = order_report_context(&instrument);
+    if cached_client {
+        context
+            .cache
+            .borrow_mut()
+            .claim_order_clients(&[(order.client_order_id(), context.client.client_id())])
+            .unwrap();
+    }
+
+    let config = ExecutionManagerConfig {
+        open_check_open_only: open_only,
+        open_check_threshold_ns: DurationNanos::ZERO,
+        open_check_missing_retries: 2,
+        single_order_query_delay_ms: 0,
+        ..Default::default()
+    };
+
+    let checks = config.open_check_missing_retries + 1;
+    let mut manager =
+        ExecutionManager::new(context.test_clock.clone(), context.cache.clone(), config).unwrap();
+    let mut events = Vec::new();
+
+    for _ in 0..checks {
+        let reported = manager.check_open_orders(&[&context.client]).await;
+        for event in &reported {
+            context.cache.borrow_mut().update_order(event).unwrap();
+        }
+
+        events.extend(reported);
+    }
+
+    let cache = context.cache.borrow();
+    let cached = cache.order(&order.client_order_id()).unwrap();
+    assert_eq!(cached.status(), OrderStatus::Accepted);
+    assert_eq!(cached.events(), order.events());
+    assert_eq!(manager.recon_check_retry_count(&order.client_order_id()), 0);
+    assert!(events.is_empty(), "Unexpected events: {events:?}");
+    drop(cached);
+    drop(cache);
+    context.client.stop().unwrap();
+}
+
+fn order_report_context(
+    instrument: &InstrumentAny,
+) -> (
+    TestContext,
+    tokio::sync::mpsc::UnboundedReceiver<ExecutionEvent>,
+    OrderAny,
+) {
+    let (context, mut rx) = setup_channel_context(
+        trader_id(),
+        account_id(),
+        instrument.id().venue,
+        instrument,
+        None,
+    );
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(11), true);
+    context
+        .client
+        .process_quote_tick(&create_quote_tick(instrument.id(), 1000.0, 1001.0))
+        .unwrap();
+    let order = resting_limit(instrument, "O-REPORT-1", "900.00", UnixNanos::from(1));
+    submit_to_client(&context, trader_id(), &order);
+    let _ = apply_order_events_from_channel(&context.cache, &mut rx);
+    let order = context
+        .cache
+        .borrow()
+        .order(&order.client_order_id())
+        .unwrap()
+        .clone();
+    context
+        .test_clock
+        .borrow_mut()
+        .advance_time(UnixNanos::from(23), true);
+    assert_eq!(order.status(), OrderStatus::Accepted);
+    (context, rx, order)
 }
 
 #[rstest]

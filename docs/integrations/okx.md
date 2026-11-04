@@ -537,7 +537,8 @@ Use `get_account_instruments` to read the typed `OKXRpiPermission` value:
 The public instrument endpoint does not return account permissions. Raw fee responses expose `rpiMaker` as an
 optional `Decimal`. An empty value means RPI is not applicable.
 
-Responses may contain both RPI and ELP field names during the transition. The adapter prefers `rpi`
+Responses may contain both RPI and ELP field names during the transition, which ends with OKX's
+October 31, 2026 ELP name deprecation deadline. The adapter prefers `rpi`
 and `rpiMaker`, reads `elp` and `elpMaker` as response aliases, and sends only RPI names. Raw trade
 messages describe `source: "1"` as an RPI order.
 
@@ -1433,6 +1434,45 @@ For historical funding rate requests, the adapter computes the interval from con
 funding timestamps returned by the
 [Get Funding Rate History](https://www.okx.com/docs-v5/en/#public-data-rest-api-get-funding-rate-history)
 endpoint.
+
+## Historical requests
+
+Bar, trade, and funding rate requests report whether OKX returned the whole requested window. The data
+client turns this coverage into one of three events:
+
+| Coverage   | Condition                                                  | Event                                      |
+| ---------- | ---------------------------------------------------------- | ------------------------------------------ |
+| Complete   | Pagination reached `start`.                                | Completed `DataResponseEnvelope`.          |
+| Truncated  | The page cap stopped pagination before `start` or `limit`. | `DataRequestFailed` with the rows fetched. |
+| Unverified | Any other result.                                          | Plain `DataResponse`.                      |
+
+A window the page cap did not stop is unverified when the request has no `start`, met its `limit`, or OKX
+returned no rows back to `start`.
+
+Only a complete window is written back to a catalog when the request sets `params={"update_catalog": True}`.
+The data engine rejects a request that sets both `update_catalog` and `limit` before it reaches OKX, so set
+`start` and leave `limit` unset. See [catalog write-back](../concepts/data/catalog.md#reading-data).
+
+A truncated request fails with the reason `OKX page limit reached before the start of the window`. For bars
+and funding rates, request the window again in smaller parts with both `start` and `end` set. An HTTP error,
+or a bar or funding rate that fails to parse, fails the request with the error as the reason and without rows.
+
+Each data type has its own page limits:
+
+- **Trades**: `GET /api/v5/market/history-trades` returns up to 100 trades a page. The adapter walks back
+  from the newest trade by trade ID and requests at most 500 pages, including pages newer than `end`. A
+  request therefore reaches at most the 50,000 most recent trades. A window older than that stays
+  truncated, and splitting it does not help. A trade that fails to parse makes an otherwise complete
+  window unverified.
+- **Bars**: the adapter walks back from `end`, or from the current time when `end` is not set. Pages less
+  than two hours old use `GET /api/v5/market/candles` with up to 300 bars a page. Older pages use
+  `GET /api/v5/market/history-candles` with up to 100 bars a page. The adapter requests at most 500 pages.
+  A window is complete when its oldest bar closes in the first bar slot at or after `start`. Monthly bars
+  and windows that hold an unconfirmed candle are never reported complete.
+- **Funding rates**: the adapter requests one page of `GET /api/v5/public/funding-rate-history`, up to
+  400 records, which is the OKX maximum and default. The window is complete when the page holds at least
+  two records and its oldest record is within one funding interval of `start`. A full page whose oldest
+  record is still after `start` is truncated. Any `limit` leaves the window unverified.
 
 ## Rate limiting
 

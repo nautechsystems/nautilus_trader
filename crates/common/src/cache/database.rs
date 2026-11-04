@@ -423,6 +423,20 @@ pub trait CacheDatabaseAdapter {
     /// Returns an error if adding an instrument fails.
     fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()>;
 
+    /// Persists a token instrument, checking legacy replacement before committing it.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if integrity or migration checks fail, or the backend lacks DeFi support.
+    #[cfg(feature = "defi")]
+    fn add_defi_instrument(
+        &self,
+        _instrument: &InstrumentAny,
+        _migration: crate::defi::cache::InstrumentMigration,
+    ) -> anyhow::Result<()> {
+        anyhow::bail!("DeFi instrument persistence is unsupported by this backend")
+    }
+
     /// Adds an instrument close to the cache, replacing any existing value for the instrument.
     /// Implementations must queue persistence without waiting for the database operation to
     /// complete.

@@ -352,8 +352,11 @@ pub(crate) fn parse_derive_position_to_report_with_precision(
         Some(position.average_price),
     );
 
-    // Perpetual averages include opening fees, which Nautilus books as fill commissions
-    if position.instrument_type == DeriveInstrumentType::Perp {
+    // Perpetual and option averages include opening fees, which Nautilus books as fill commissions
+    if matches!(
+        position.instrument_type,
+        DeriveInstrumentType::Perp | DeriveInstrumentType::Option
+    ) {
         Ok(report.with_avg_px_open_reconciliation(AvgPxReconciliation::OpeningOnly))
     } else {
         Ok(report)
@@ -1368,7 +1371,7 @@ mod tests {
 
     #[rstest]
     #[case::perp(DeriveInstrumentType::Perp, AvgPxReconciliation::OpeningOnly)]
-    #[case::option(DeriveInstrumentType::Option, AvgPxReconciliation::Match)]
+    #[case::option(DeriveInstrumentType::Option, AvgPxReconciliation::OpeningOnly)]
     #[case::spot(DeriveInstrumentType::Erc20, AvgPxReconciliation::Match)]
     fn test_parse_position_report_uses_instrument_precision(
         #[case] instrument_type: DeriveInstrumentType,

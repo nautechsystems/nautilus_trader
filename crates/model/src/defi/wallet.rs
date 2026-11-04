@@ -18,9 +18,8 @@ use std::{collections::HashSet, fmt::Display};
 use alloy_primitives::{Address, U256};
 
 use crate::{
-    defi::Token,
-    enums::CurrencyType,
-    types::{AccountBalance, Currency, Money, Quantity},
+    defi::{Token, currency::TokenCurrency},
+    types::{AccountBalance, Money, Quantity},
 };
 
 /// Represents the balance of a specific ERC-20 token held in a wallet.
@@ -58,13 +57,7 @@ impl TokenBalance {
     }
 
     fn as_money(&self) -> anyhow::Result<Money> {
-        let currency = Currency::new_checked(
-            &self.token.symbol,
-            self.token.decimals,
-            0,
-            &self.token.name,
-            CurrencyType::Crypto,
-        )?;
+        let currency = self.token.currency()?;
         Money::from_u256(self.amount, currency).map_err(Into::into)
     }
 
@@ -77,19 +70,20 @@ impl TokenBalance {
 impl Display for TokenBalance {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let quantity = self.as_quantity().unwrap_or_default();
+        let label = TokenCurrency::from(&self.token).code();
 
         match &self.amount_usd {
             Some(usd) => write!(
                 f,
                 "TokenBalance(token={}, amount={}, usd=${:.2})",
-                self.token.symbol,
+                label,
                 quantity.as_decimal(),
                 usd.as_f64()
             ),
             None => write!(
                 f,
                 "TokenBalance(token={}, amount={})",
-                self.token.symbol,
+                label,
                 quantity.as_decimal()
             ),
         }
@@ -182,8 +176,8 @@ impl WalletBalance {
         let native_currency = self
             .native_currency
             .ok_or_else(|| anyhow::anyhow!("Wallet balance snapshot has no native currency"))?;
-        let mut currencies = HashSet::new();
-        currencies.insert(native_currency.currency);
+        let mut symbols = HashSet::new();
+        symbols.insert(native_currency.currency.code.as_str());
 
         let mut balances = Vec::with_capacity(self.token_balances.len() + 1);
         balances.push(AccountBalance::new_checked(
@@ -193,13 +187,14 @@ impl WalletBalance {
         )?);
 
         for token_balance in token_balances {
-            let total = token_balance.as_money()?;
-            if !currencies.insert(total.currency) {
+            if !symbols.insert(token_balance.token.symbol.as_str()) {
                 anyhow::bail!(
                     "Wallet balance snapshot contains duplicate currency {}",
-                    total.currency
+                    token_balance.token.symbol,
                 );
             }
+
+            let total = token_balance.as_money()?;
             balances.push(AccountBalance::new_checked(
                 total,
                 Money::zero(total.currency),

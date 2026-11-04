@@ -483,7 +483,7 @@ name = "_backend"
 crate-type = ["cdylib"]
 
 [dependencies]
-pyo3 = { version = "=0.29.2", features = ["extension-module"] }
+pyo3 = { version = "=0.30.1", features = ["extension-module"] }
 
 [workspace]
 ```
@@ -501,7 +501,7 @@ build-backend = "maturin"
 [project]
 name = "external-adapter"
 version = "0.1.0"
-requires-python = ">=3.13,<3.15"
+requires-python = ">=3.13,<3.16"
 dependencies = ["nautilus-trader"]
 
 [tool.maturin]

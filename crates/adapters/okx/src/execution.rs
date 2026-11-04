@@ -26,13 +26,17 @@ use nautilus_common::{
     live::{
         dst::time::{self, Duration, Instant},
         runner::get_exec_event_sender,
+        sender::EventSender,
     },
-    messages::execution::{
-        BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
-        GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
-        GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
-        GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder, SubmitOrder,
-        SubmitOrderList,
+    messages::{
+        ExecutionEvent,
+        execution::{
+            BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
+            GenerateFillReportsBuilder, GenerateOrderStatusReport, GenerateOrderStatusReports,
+            GenerateOrderStatusReportsBuilder, GeneratePositionStatusReports,
+            GeneratePositionStatusReportsBuilder, ModifyOrder, QueryAccount, QueryOrder,
+            SubmitOrder, SubmitOrderList,
+        },
     },
 };
 use nautilus_core::{
@@ -89,7 +93,7 @@ use crate::{
     config::OKXExecutionClientConfig,
     http::{
         client::{
-            AlgoOrderReportSweep, FillHistory, OKXHttpClient, OKXPendingAlgoOrderReportsError,
+            AlgoOrderReportSweep, FillHistory, OKXActiveOrderReportError, OKXHttpClient,
             ReportInstrumentScope,
         },
         models::{OKXAmendAlgoOrderRequest, OKXCancelAlgoOrderRequest},
@@ -239,6 +243,10 @@ impl OKXExecutionClient {
         })
     }
 
+    pub(crate) fn set_event_sender(&mut self, sender: EventSender<ExecutionEvent>) {
+        self.emitter.set_sender(sender);
+    }
+
     fn derive_default_trade_mode(
         account_type: AccountType,
         config: &OKXExecutionClientConfig,
@@ -306,12 +314,11 @@ impl OKXExecutionClient {
     async fn collect_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
-        require_complete_active_coverage: bool,
         max_history_pages: Option<u32>,
     ) -> anyhow::Result<OrderReportSweep> {
         let sweep = self
             .report_client()
-            .collect_order_status_reports(cmd, require_complete_active_coverage, max_history_pages)
+            .collect_order_status_reports(cmd, max_history_pages)
             .await?;
         Ok(finish_order_report_sweep(&self.core, sweep, cmd))
     }
@@ -2019,7 +2026,7 @@ impl ExecutionClient for OKXExecutionClient {
         Some(ExecutionReportTask::new(
             async move {
                 let mut sweep = client
-                    .collect_order_status_reports(&collection_command, false, None)
+                    .collect_order_status_reports(&collection_command, None)
                     .await?;
                 sweep.regular_by_venue_order_id = AHashMap::new();
                 sweep.ambiguous_triggered_child_ids = AHashSet::new();
@@ -2070,10 +2077,7 @@ impl ExecutionClient for OKXExecutionClient {
         &self,
         cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        Ok(self
-            .collect_order_status_reports(cmd, false, None)
-            .await?
-            .reports)
+        Ok(self.collect_order_status_reports(cmd, None).await?.reports)
     }
 
     async fn generate_fill_reports(
@@ -2138,7 +2142,6 @@ impl ExecutionClient for OKXExecutionClient {
         ) = tokio::try_join!(
             self.collect_order_status_reports(
                 &order_cmd,
-                true,
                 self.config.max_reconciliation_history_pages,
             ),
             self.collect_fill_reports(
@@ -2161,7 +2164,7 @@ impl ExecutionClient for OKXExecutionClient {
                 &ambiguous_triggered_child_ids,
                 &regular_by_venue_order_id,
             )
-            .await;
+            .await?;
 
         if positions_complete {
             self.add_flat_derivative_position_reports(
@@ -2925,7 +2928,7 @@ impl OKXExecutionClient {
         reports: &mut Vec<OrderStatusReport>,
         ambiguous_triggered_child_ids: &AHashSet<VenueOrderId>,
         regular_by_venue_order_id: &AHashMap<VenueOrderId, OrderStatusReport>,
-    ) -> bool {
+    ) -> anyhow::Result<bool> {
         let mut fallback_parents = AHashMap::new();
         let complete = self
             .report_client()
@@ -2935,9 +2938,9 @@ impl OKXExecutionClient {
                 regular_by_venue_order_id,
                 &mut fallback_parents,
             )
-            .await;
+            .await?;
         retain_external_regular_order_fallbacks(&self.core, reports, &fallback_parents);
-        complete
+        Ok(complete)
     }
 }
 
@@ -3119,7 +3122,6 @@ impl OKXReportClient {
     async fn collect_order_status_reports(
         &self,
         cmd: &GenerateOrderStatusReports,
-        require_complete_active_coverage: bool,
         max_history_pages: Option<u32>,
     ) -> anyhow::Result<OrderReportSweep> {
         let instrument_types = Self::instrument_types(&self.instrument_types);
@@ -3143,6 +3145,7 @@ impl OKXReportClient {
                     end,
                     cmd.open_only,
                     None,
+                    true,
                     Some(scope),
                     max_history_pages,
                 )
@@ -3163,7 +3166,7 @@ impl OKXReportClient {
                     instrument_id.symbol.as_str(),
                 ))
             {
-                match self
+                let sweep = self
                     .http_client
                     .request_algo_order_status_reports_sweep(
                         self.account_id,
@@ -3175,34 +3178,16 @@ impl OKXReportClient {
                         None,
                         start,
                         end,
-                        require_complete_active_coverage,
+                        true,
                         max_history_pages,
                     )
-                    .await
-                {
-                    Ok(sweep) => {
-                        merge_algo_order_status_reports(
-                            &mut reports,
-                            sweep,
-                            &mut ambiguous_triggered_child_ids,
-                            &mut complete,
-                        );
-                    }
-                    Err(e)
-                        if require_complete_active_coverage
-                            && e.downcast_ref::<OKXPendingAlgoOrderReportsError>()
-                                .is_some() =>
-                    {
-                        return Err(e);
-                    }
-                    Err(e) if is_instrument_cache_miss(&e) => return Err(e),
-                    Err(e) => {
-                        log::warn!(
-                            "Failed to fetch algo order status reports for {instrument_id}: {e}"
-                        );
-                        complete = false;
-                    }
-                }
+                    .await?;
+                merge_algo_order_status_reports(
+                    &mut reports,
+                    sweep,
+                    &mut ambiguous_triggered_child_ids,
+                    &mut complete,
+                );
             }
         } else {
             for inst_type in &routing_types {
@@ -3216,6 +3201,7 @@ impl OKXReportClient {
                         end,
                         cmd.open_only,
                         None,
+                        true,
                         Some(scope),
                         max_history_pages,
                     )
@@ -3232,7 +3218,7 @@ impl OKXReportClient {
                 complete &= sweep.complete;
 
                 if supports_algo_orders(*inst_type) {
-                    match self
+                    let sweep = self
                         .http_client
                         .request_algo_order_status_reports_sweep(
                             self.account_id,
@@ -3244,40 +3230,22 @@ impl OKXReportClient {
                             None,
                             start,
                             end,
-                            require_complete_active_coverage,
+                            true,
                             max_history_pages,
                         )
-                        .await
-                    {
-                        Ok(sweep) => {
-                            merge_algo_order_status_reports(
-                                &mut reports,
-                                sweep,
-                                &mut ambiguous_triggered_child_ids,
-                                &mut complete,
-                            );
-                        }
-                        Err(e)
-                            if require_complete_active_coverage
-                                && e.downcast_ref::<OKXPendingAlgoOrderReportsError>()
-                                    .is_some() =>
-                        {
-                            return Err(e);
-                        }
-                        Err(e) if is_instrument_cache_miss(&e) => return Err(e),
-                        Err(e) => {
-                            log::warn!(
-                                "Failed to fetch algo order status reports for {inst_type:?}: {e}"
-                            );
-                            complete = false;
-                        }
-                    }
+                        .await?;
+                    merge_algo_order_status_reports(
+                        &mut reports,
+                        sweep,
+                        &mut ambiguous_triggered_child_ids,
+                        &mut complete,
+                    );
                 }
             }
         }
 
         if cmd.instrument_id.is_none() && self.load_spreads {
-            match self
+            let sweep = self
                 .http_client
                 .request_order_status_reports_scoped(
                     self.account_id,
@@ -3287,21 +3255,13 @@ impl OKXReportClient {
                     end,
                     cmd.open_only,
                     None,
+                    true,
                     Some(scope),
                     max_history_pages,
                 )
-                .await
-            {
-                Ok(sweep) => {
-                    reports.extend(sweep.reports);
-                    complete &= sweep.complete;
-                }
-                Err(e) if is_instrument_cache_miss(&e) => return Err(e),
-                Err(e) => {
-                    log::warn!("Failed to fetch spread order status reports: {e}");
-                    complete = false;
-                }
-            }
+                .await?;
+            reports.extend(sweep.reports);
+            complete &= sweep.complete;
         }
 
         let mut fallback_parents = AHashMap::new();
@@ -3314,7 +3274,7 @@ impl OKXReportClient {
                     &regular_by_venue_order_id,
                     &mut fallback_parents,
                 )
-                .await;
+                .await?;
         }
 
         Ok(OrderReportSweep {
@@ -3473,7 +3433,7 @@ impl OKXReportClient {
         ambiguous_triggered_child_ids: &AHashSet<VenueOrderId>,
         regular_by_venue_order_id: &AHashMap<VenueOrderId, OrderStatusReport>,
         fallback_parents: &mut AHashMap<usize, OrderStatusReport>,
-    ) -> bool {
+    ) -> anyhow::Result<bool> {
         let mut recovered = Vec::with_capacity(reports.len());
         let recovery_candidate_count = reports
             .iter()
@@ -3561,6 +3521,9 @@ impl OKXReportClient {
                     );
                     complete = false;
                 }
+                Err(e) if e.downcast_ref::<OKXActiveOrderReportError>().is_some() => {
+                    return Err(e);
+                }
                 Err(e) => {
                     log::warn!(
                         "Failed to recover triggered child order {} {}: {e}",
@@ -3579,7 +3542,7 @@ impl OKXReportClient {
         }
 
         *reports = recovered;
-        complete
+        Ok(complete)
     }
 
     fn push_external_regular_order_fallback(
@@ -4074,12 +4037,6 @@ fn query_order_route(
     }
 }
 
-fn is_instrument_cache_miss(error: &anyhow::Error) -> bool {
-    error
-        .chain()
-        .any(|cause| cause.to_string().contains("missing from cache"))
-}
-
 fn merge_algo_order_status_reports(
     reports: &mut Vec<OrderStatusReport>,
     sweep: AlgoOrderReportSweep,
@@ -4174,13 +4131,14 @@ mod tests {
     };
     use nautilus_common::{
         cache::Cache,
+        live::runner::replace_exec_event_sender,
         messages::{ExecutionEvent, ExecutionReport as CommonExecutionReport},
         testing::wait_until_async,
     };
     use nautilus_core::{AtomicMap, UUID4};
     use nautilus_model::{
         enums::{LiquiditySide, OrderSide, OrderStatus, TriggerType},
-        events::{OrderEventAny, OrderInitialized},
+        events::{OrderEventAny, OrderInitialized, order::spec::OrderSubmittedSpec},
         identifiers::{OrderListId, Symbol, TradeId, TraderId},
         instruments::{
             CryptoFuture, Instrument,
@@ -4864,6 +4822,49 @@ mod tests {
 
     fn build_test_exec_client() -> OKXExecutionClient {
         build_test_exec_client_with_cache().0
+    }
+
+    #[rstest]
+    fn test_start_replaces_sender_for_existing_emitter_clone() {
+        std::thread::spawn(|| {
+            let mut client = build_test_exec_client();
+            let emitter = client.emitter.clone();
+            let (sender, mut receiver) = tokio::sync::mpsc::unbounded_channel();
+            client.set_event_sender(sender.into());
+            let event = OrderEventAny::Submitted(
+                OrderSubmittedSpec::builder()
+                    .client_order_id(ClientOrderId::from("O-CLONED"))
+                    .build(),
+            );
+            emitter.send_order_event(event.clone());
+
+            let ExecutionEvent::Order(received) = receiver.try_recv().unwrap() else {
+                panic!("Expected order event");
+            };
+
+            assert_eq!(received, event);
+
+            let (sender_current, mut receiver_current) = tokio::sync::mpsc::unbounded_channel();
+            replace_exec_event_sender(sender_current);
+            client.start().unwrap();
+            emitter.send_order_event(event.clone());
+
+            let ExecutionEvent::Order(received) = receiver_current.try_recv().unwrap() else {
+                panic!("Expected order event");
+            };
+
+            assert_eq!(received, event);
+            assert_eq!(
+                receiver.try_recv().unwrap_err(),
+                tokio::sync::mpsc::error::TryRecvError::Disconnected
+            );
+            assert_eq!(
+                receiver_current.try_recv().unwrap_err(),
+                tokio::sync::mpsc::error::TryRecvError::Empty
+            );
+        })
+        .join()
+        .unwrap();
     }
 
     #[rstest]

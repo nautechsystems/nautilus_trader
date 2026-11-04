@@ -44,13 +44,13 @@ use nautilus_common::{
             GenerateFillReportsBuilder, GenerateOrderStatusReportBuilder,
             GenerateOrderStatusReports, GenerateOrderStatusReportsBuilder,
             GeneratePositionStatusReports, GeneratePositionStatusReportsBuilder, ModifyOrder,
-            QueryAccount, QueryOrder, SubmitOrder,
+            QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
         },
         system::SocketState,
     },
     testing::wait_until_async,
 };
-use nautilus_core::{UUID4, UnixNanos};
+use nautilus_core::{UUID4, UnixNanos, params::Params};
 use nautilus_live::{
     ExecutionClientCore, SocketReconnectRegistry, SocketReconnectRequestOutcome,
     manager::{ExecutionManager, ExecutionManagerConfig},
@@ -66,11 +66,14 @@ use nautilus_model::{
         OrderSubmitted,
     },
     identifiers::{
-        AccountId, ClientOrderId, InstrumentId, PositionId, StrategyId, TradeId, TraderId,
-        VenueOrderId,
+        AccountId, ClientOrderId, InstrumentId, OrderListId, PositionId, StrategyId, TradeId,
+        TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny, stubs::crypto_perpetual_ethusdt},
-    orders::{LimitOrder, Order, OrderAny, builder::OrderTestBuilder, stubs::TestOrderEventStubs},
+    orders::{
+        LimitOrder, Order, OrderAny, OrderList, builder::OrderTestBuilder,
+        stubs::TestOrderEventStubs,
+    },
     position::Position,
     reports::{ExecutionMassStatus, OrderStatusReport, PositionStatusReport},
     types::{Currency, Money, Price, Quantity},
@@ -4337,6 +4340,210 @@ async fn test_submit_order_denies_gtd_time_in_force() {
             assert_eq!(denied.client_order_id, client_order_id);
             assert!(
                 denied.reason.contains("Unsupported time in force"),
+                "reason was: {}",
+                denied.reason
+            );
+        }
+        other => panic!("expected OrderDenied, was {other:?}"),
+    }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_sends_custom_params_on_wire() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let client_order_id = ClientOrderId::from("O-ST-001");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(InstrumentId::from("EURUSD-PERP.AX"))
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from("100"))
+        .price(Price::from("1.1247"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+
+    let params = Params::new([("st".to_string(), serde_json::json!("CancelResting"))].into());
+    let mut submit_cmd = make_submit_order_cmd(&order);
+    submit_cmd.params = Some(params);
+    client
+        .submit_order(submit_cmd)
+        .expect("submit_order should not error");
+
+    wait_until_async(
+        || async { state.get_messages().await.iter().any(|m| m["t"] == "p") },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.get_messages().await;
+    let place = messages.iter().find(|m| m["t"] == "p").unwrap();
+    let cid = nautilus_architect_ax::common::parse::client_order_id_to_cid(&client_order_id);
+
+    assert_eq!(
+        place,
+        &serde_json::json!({
+            "rid": 1,
+            "t": "p",
+            "s": "EURUSD-PERP",
+            "d": "B",
+            "q": 100,
+            "p": "1.1247",
+            "tif": "GTC",
+            "po": false,
+            "st": "CancelResting",
+            "tag": "Nautilus",
+            "cid": cid,
+        }),
+    );
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_list_forwards_self_trade_param_to_each_order() {
+    let (addr, state) = start_test_server().await.unwrap();
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().unwrap();
+    client.connect().await.unwrap();
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+
+    let orders = ["OL-ST-001", "OL-ST-002"].map(|cid| {
+        OrderTestBuilder::new(OrderType::Limit)
+            .trader_id(TraderId::from("TESTER-001"))
+            .strategy_id(StrategyId::from("S-001"))
+            .instrument_id(instrument_id)
+            .client_order_id(ClientOrderId::from(cid))
+            .side(OrderSide::Buy)
+            .quantity(Quantity::from("100"))
+            .price(Price::from("1.1247"))
+            .time_in_force(TimeInForce::Gtc)
+            .build()
+    });
+
+    for order in &orders {
+        cache
+            .borrow_mut()
+            .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+            .unwrap();
+    }
+
+    let order_list = OrderList::new(
+        OrderListId::from("OL-ST-001"),
+        instrument_id,
+        StrategyId::from("S-001"),
+        orders.iter().map(OrderAny::client_order_id).collect(),
+        UnixNanos::default(),
+    );
+    let order_inits = orders
+        .iter()
+        .map(|order| order.init_event().clone())
+        .collect();
+    let params = Params::new([("st".to_string(), serde_json::json!("xb"))].into());
+
+    let cmd = SubmitOrderList::new(
+        TraderId::from("TESTER-001"),
+        Some(*AX_CLIENT_ID),
+        StrategyId::from("S-001"),
+        order_list,
+        order_inits,
+        None,
+        None,
+        Some(params),
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+    );
+
+    client
+        .submit_order_list(cmd)
+        .expect("submit_order_list should not error");
+
+    wait_until_async(
+        || async {
+            state
+                .get_messages()
+                .await
+                .iter()
+                .filter(|m| m["t"] == "p")
+                .count()
+                == 2
+        },
+        Duration::from_secs(5),
+    )
+    .await;
+
+    let messages = state.get_messages().await;
+    let places: Vec<_> = messages.iter().filter(|m| m["t"] == "p").collect();
+    assert_eq!(places.len(), 2);
+
+    for place in places {
+        assert_eq!(place["st"], "CancelBoth");
+        assert_eq!(place["tag"], "Nautilus");
+    }
+
+    client.disconnect().await.expect("Failed to disconnect");
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_submit_order_denies_invalid_self_trade_param() {
+    let (addr, _state) = start_test_server().await.unwrap();
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+
+    add_test_account_to_cache(&cache, AccountId::from("AX-001"));
+    client.start().expect("Failed to start");
+    drain_rx(&mut rx);
+
+    let instrument_id = InstrumentId::from("EURUSD-PERP.AX");
+    let client_order_id = ClientOrderId::from("O-ST-BAD");
+    let order = OrderTestBuilder::new(OrderType::Limit)
+        .trader_id(TraderId::from("TESTER-001"))
+        .strategy_id(StrategyId::from("S-001"))
+        .instrument_id(instrument_id)
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .price(Price::from("50000.00"))
+        .quantity(Quantity::from("10"))
+        .time_in_force(TimeInForce::Gtc)
+        .build();
+
+    cache
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(*AX_CLIENT_ID), false)
+        .unwrap();
+
+    let params = Params::new([("st".to_string(), serde_json::json!("cancel-resting"))].into());
+    let mut submit_cmd = make_submit_order_cmd(&order);
+    submit_cmd.params = Some(params);
+    client
+        .submit_order(submit_cmd)
+        .expect("submit_order should not error");
+
+    let event = tokio::time::timeout(std::time::Duration::from_secs(1), rx.recv())
+        .await
+        .expect("timeout waiting for denial")
+        .expect("channel closed");
+
+    match event {
+        ExecutionEvent::Order(OrderEventAny::Denied(denied)) => {
+            assert_eq!(denied.client_order_id, client_order_id);
+            assert!(
+                denied.reason.contains("Unsupported self-trade behavior"),
                 "reason was: {}",
                 denied.reason
             );

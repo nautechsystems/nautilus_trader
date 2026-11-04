@@ -53,6 +53,12 @@ pub fn parse_pool_created_event_hypersync(log: HypersyncLog) -> anyhow::Result<P
         // Data contains: [tick_spacing (32 bytes), pool_address (32 bytes)]
         let data_bytes = data.as_ref();
 
+        anyhow::ensure!(
+            data_bytes.len() >= 64,
+            "Pool created event data too short: expected at least 64 bytes, was {}",
+            data_bytes.len()
+        );
+
         // Extract tick_spacing (first 32 bytes)
         let tick_spacing_bytes: [u8; 32] = data_bytes[0..32].try_into()?;
         let tick_spacing = u32::from_be_bytes(tick_spacing_bytes[28..32].try_into()?);
@@ -307,6 +313,29 @@ mod tests {
         );
         assert_eq!(event.fee, Some(500));
         assert_eq!(event.tick_spacing, Some(10));
+    }
+
+    #[rstest]
+    #[case(1)]
+    #[case(32)]
+    #[case(63)]
+    fn test_parse_pool_created_hypersync_rejects_short_data(
+        hypersync_log_block_185: HypersyncLog,
+        #[case] byte_len: usize,
+    ) {
+        let mut malformed_log = hypersync_log_block_185.clone();
+        malformed_log.data = Some(vec![0_u8; byte_len].into());
+
+        let error = parse_pool_created_event_hypersync(malformed_log).unwrap_err();
+        let event = parse_pool_created_event_hypersync(hypersync_log_block_185).unwrap();
+
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Pool created event data too short: expected at least 64 bytes, was {byte_len}"
+            )
+        );
+        assert_eq!(event.block_number, 185);
     }
 
     #[rstest]

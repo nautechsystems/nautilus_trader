@@ -79,6 +79,9 @@ struct TestServerState {
     rpi_book_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     spread_queries: Arc<tokio::sync::Mutex<Vec<HashMap<String, String>>>>,
     fail_spreads: bool,
+    fail_instruments: bool,
+    fail_rpi_book: bool,
+    instrument_response: Option<Value>,
 }
 
 fn manifest_path() -> PathBuf {
@@ -117,7 +120,14 @@ fn create_router(state: TestServerState) -> Router {
                 let state = instruments_state.clone();
                 async move {
                     state.instrument_queries.lock().await.push(params);
-                    Json(load_test_data("http_get_instruments_spot.json")).into_response()
+                    if state.fail_instruments {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+
+                    let response = state
+                        .instrument_response
+                        .unwrap_or_else(|| load_test_data("http_get_instruments_spot.json"));
+                    Json(response).into_response()
                 }
             }),
         )
@@ -143,6 +153,10 @@ fn create_router(state: TestServerState) -> Router {
                 let state = rpi_book_state.clone();
                 async move {
                     state.rpi_book_queries.lock().await.push(params);
+                    if state.fail_rpi_book {
+                        return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+                    }
+
                     Json(load_test_data("http_get_rpi_order_book.json")).into_response()
                 }
             }),
@@ -669,6 +683,102 @@ async fn test_rpi_request_book_snapshot_routes_to_rpi_endpoint() {
         Some("BTC-USD")
     );
     assert_eq!(queries[0].get("sz").map(String::as_str), Some("2"));
+}
+
+#[rstest]
+#[case::http(true, "500")]
+#[case::definition(false, "instrument is in pre-open state")]
+#[tokio::test]
+async fn test_request_instrument_failure_completes_the_request(
+    #[case] http_failure: bool,
+    #[case] reason: &str,
+) {
+    let mut instrument_response = load_test_data("http_get_instruments_spot.json");
+    instrument_response["data"][0]["state"] = json!("preopen");
+
+    let state = TestServerState {
+        fail_instruments: http_failure,
+        instrument_response: Some(instrument_response),
+        ..TestServerState::default()
+    };
+
+    let addr = start_test_server(state).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let request = request_instrument("BTC-USD.OKX");
+    let request_id = request.request_id;
+
+    client.request_instrument(request).unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed instrument request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected instrument request failure, received {event:?}");
+    };
+
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.response.is_none());
+    assert!(failure.reason.starts_with("fetch instrument from API:"));
+    assert!(failure.reason.contains(reason), "{}", failure.reason);
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
+}
+
+#[rstest]
+#[case::standard(false)]
+#[case::rpi(true)]
+#[tokio::test]
+async fn test_request_book_snapshot_http_failure_completes_the_request(#[case] rpi: bool) {
+    let state = TestServerState {
+        fail_rpi_book: true,
+        ..TestServerState::default()
+    };
+
+    let addr = start_test_server(state).await;
+    let (client, mut rx) = create_test_data_client(addr, false);
+    let instruments_request = request_instruments();
+    let instruments_request_id = instruments_request.request_id;
+    client.request_instruments(instruments_request).unwrap();
+    collect_data_events_until_response(&mut rx, instruments_request_id, Duration::from_secs(5))
+        .await;
+
+    let params = Params::new([("rpi".to_string(), json!(rpi))].into());
+    let request_id = UUID4::new();
+    client
+        .request_book_snapshot(RequestBookSnapshot::new(
+            InstrumentId::from("BTC-USD.OKX"),
+            NonZeroUsize::new(2),
+            Some(*OKX_CLIENT_ID),
+            request_id,
+            UnixNanos::default(),
+            Some(params),
+        ))
+        .unwrap();
+
+    let event = tokio::time::timeout(Duration::from_secs(5), rx.recv())
+        .await
+        .expect("the failed book request was never completed")
+        .expect("data event channel closed");
+
+    let DataEvent::RequestFailed(failure) = event else {
+        panic!("expected book request failure, received {event:?}");
+    };
+
+    assert_eq!(failure.request_id, request_id);
+    assert!(failure.response.is_none());
+    assert!(
+        failure
+            .reason
+            .starts_with("failed to request book snapshot from OKX:")
+    );
+    assert_eq!(
+        rx.try_recv().unwrap_err(),
+        tokio::sync::mpsc::error::TryRecvError::Empty
+    );
 }
 
 #[rstest]

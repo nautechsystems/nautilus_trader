@@ -503,6 +503,7 @@ impl LighterDataClient {
                                 | NautilusWsMessage::PositionSnapshot { .. }
                                 | NautilusWsMessage::PositionUpdate { .. }
                                 | NautilusWsMessage::AccountState(_)
+                                | NautilusWsMessage::AccountTx { .. }
                                 | NautilusWsMessage::SendTxAck { .. }
                                 | NautilusWsMessage::SendTxRejected { .. }
                                 | NautilusWsMessage::SendTxBatchResult { .. }

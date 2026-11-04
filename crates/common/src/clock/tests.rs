@@ -118,6 +118,34 @@ fn test_timer_cancellation(mut test_clock: VirtualClock) {
 }
 
 #[rstest]
+fn test_next_event_time_ns(mut test_clock: VirtualClock) {
+    assert_eq!(test_clock.next_event_time_ns(), None);
+
+    test_clock
+        .set_time_alert_ns("later", UnixNanos::from(21), None, None)
+        .unwrap();
+    test_clock
+        .set_time_alert_ns("earlier", UnixNanos::from(11), None, None)
+        .unwrap();
+
+    assert_eq!(test_clock.next_event_time_ns(), Some(UnixNanos::from(11)));
+    assert_eq!(test_clock.timestamp_ns(), UnixNanos::default());
+
+    let events = test_clock.advance_time(UnixNanos::from(11), false);
+
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].name, "earlier");
+    assert_eq!(events[0].ts_event, UnixNanos::from(11));
+    assert_eq!(events[0].ts_init, UnixNanos::from(11));
+    assert_eq!(test_clock.next_event_time_ns(), Some(UnixNanos::from(21)));
+    assert_eq!(test_clock.timestamp_ns(), UnixNanos::default());
+
+    test_clock.cancel_timers();
+
+    assert_eq!(test_clock.next_event_time_ns(), None);
+}
+
+#[rstest]
 fn test_time_advancement(mut test_clock: VirtualClock) {
     let start_time = test_clock.timestamp_ns();
     test_clock

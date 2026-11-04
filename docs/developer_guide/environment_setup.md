@@ -84,6 +84,18 @@ test dependencies from the repository root:
 make sync
 ```
 
+For Python 3.15, exclude documentation dependencies. Set these variables before running sync, build,
+or test targets in the same shell:
+
+```bash
+export UV_PYTHON=3.15
+export UV_SYNC_FLAGS="--inexact --no-group docs"
+make sync
+```
+
+Documentation builds use Python 3.14. The `docs` dependency group supports Python 3.13 and 3.14
+because PyYAML does not yet publish Python 3.15 wheels.
+
 For frequent development, install a debug build of the package into `python/.venv`:
 
 ```bash

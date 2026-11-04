@@ -14,9 +14,167 @@
 // -------------------------------------------------------------------------------------------------
 
 use ahash::AHashSet;
+use nautilus_common::timer::TimeEventCallback;
 use nautilus_model::enums::BarIntervalType;
 
 use super::*;
+
+#[rstest]
+#[case::five_to_fifteen(&["5-MINUTE-LAST-INTERNAL", "15-MINUTE-LAST-INTERNAL@5-MINUTE-INTERNAL"], 300, 3)]
+#[case::minute_to_hour(&["1-MINUTE-LAST-INTERNAL", "1-HOUR-LAST-INTERNAL@1-MINUTE-INTERNAL"], 60, 60)]
+#[case::minute_to_five(&["1-MINUTE-LAST-INTERNAL", "5-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL"], 60, 5)]
+#[case::three_levels(&["1-MINUTE-LAST-INTERNAL", "5-MINUTE-LAST-INTERNAL@1-MINUTE-INTERNAL", "15-MINUTE-LAST-INTERNAL@5-MINUTE-INTERNAL"], 60, 15)]
+#[case::three_levels_pull(&["5-MINUTE-LAST-INTERNAL", "15-MINUTE-LAST-INTERNAL@5-MINUTE-INTERNAL", "1-HOUR-LAST-INTERNAL@15-MINUTE-INTERNAL"], 300, 12)]
+fn test_composite_time_bars_include_closing_source_bar(
+    #[case] chain: &[&str],
+    #[case] source_seconds: u64,
+    #[case] count: u64,
+    #[values(false, true)] composite_first: bool,
+    #[values(BarIntervalType::LeftOpen, BarIntervalType::RightOpen)] interval: BarIntervalType,
+    #[values(true, false)] timestamp_on_close: bool,
+    #[values(false, true)] batch_trades: bool,
+) {
+    let _ = stub_msgbus();
+    let audusd_sim = audusd_sim();
+    let clock = clock();
+    let cache = cache();
+    let client_id = client_id();
+    let venue = venue();
+    let start_ns = 3_600 * NANOSECONDS_IN_SECOND;
+    clock.borrow_mut().set_time(UnixNanos::from(start_ns + 1));
+    let instrument_id = audusd_sim.id;
+    cache
+        .borrow_mut()
+        .add_instrument(InstrumentAny::CurrencyPair(audusd_sim))
+        .unwrap();
+
+    let config = DataEngineConfig {
+        time_bars_interval_type: interval,
+        time_bars_timestamp_on_close: timestamp_on_close,
+        ..DataEngineConfig::default()
+    };
+
+    let mut engine = DataEngine::new(
+        Rc::clone(&clock) as Rc<RefCell<dyn Clock>>,
+        Rc::clone(&cache),
+        Some(config),
+    );
+    let recorder = Rc::new(RefCell::new(Vec::new()));
+    register_mock_client(
+        Rc::clone(&clock),
+        Rc::clone(&cache),
+        client_id,
+        venue,
+        None,
+        &recorder,
+        &mut engine,
+    );
+    let mut bar_types: Vec<_> = chain
+        .iter()
+        .map(|suffix| BarType::from(format!("{instrument_id}-{suffix}").as_str()))
+        .collect();
+    let source_type = bar_types[0];
+    let target_type = *bar_types.last().unwrap();
+    if composite_first {
+        bar_types.reverse();
+    }
+
+    for bar_type in bar_types {
+        engine
+            .execute_subscribe(SubscribeCommand::Bars(SubscribeBars::new(
+                bar_type,
+                Some(client_id),
+                Some(venue),
+                UUID4::new(),
+                UnixNanos::from(start_ns + 1),
+                None,
+                None,
+            )))
+            .unwrap();
+    }
+
+    let (handler, saver) = get_typed_message_saving_handler::<Bar>(None);
+    let topic = switchboard::get_bars_topic(target_type.standard());
+    msgbus::subscribe_bars(topic.into(), handler, None);
+    let (handler, source_saver) = get_typed_message_saving_handler::<Bar>(None);
+    let topic = switchboard::get_bars_topic(source_type);
+    msgbus::subscribe_bars(topic.into(), handler, None);
+    let engine = Rc::new(RefCell::new(engine));
+
+    for i in 0..2 * count {
+        let ts = start_ns + (i * source_seconds + 1) * NANOSECONDS_IN_SECOND;
+        let trade = make_trade(
+            instrument_id,
+            &format!("{}.00000", i + 1),
+            1,
+            &i.to_string(),
+            ts,
+        );
+
+        if batch_trades {
+            let engine = Rc::clone(&engine);
+            let callback = TimeEventCallback::RustLocal(Rc::new(move |_| {
+                engine.borrow_mut().process_data(Data::Trade(trade));
+            }));
+
+            clock
+                .borrow_mut()
+                .set_time_alert_ns(&format!("TRADE_{i}"), ts.into(), Some(callback), None)
+                .unwrap();
+        } else {
+            let advance_ns = ts - clock.borrow().timestamp_ns().as_u64();
+            advance_clock_and_dispatch(&clock, advance_ns);
+            engine.borrow_mut().process_data(Data::Trade(trade));
+        }
+    }
+
+    let end_ns = start_ns + 2 * count * source_seconds * NANOSECONDS_IN_SECOND;
+    let advance_ns = end_ns - clock.borrow().timestamp_ns().as_u64();
+    advance_clock_and_dispatch(&clock, advance_ns);
+
+    advance_clock_and_dispatch(&clock, 2 * count * source_seconds * NANOSECONDS_IN_SECOND);
+
+    let expected: Vec<_> = (0..4)
+        .map(|i| {
+            let (open, close, volume) = if i < 2 {
+                (
+                    Price::from(format!("{}.00000", i * count + 1).as_str()),
+                    Price::from(format!("{}.00000", (i + 1) * count).as_str()),
+                    Quantity::from(count),
+                )
+            } else {
+                let close = Price::from(format!("{}.00000", 2 * count).as_str());
+                (close, close, Quantity::from(0))
+            };
+
+            let open_ns = start_ns + i * count * source_seconds * NANOSECONDS_IN_SECOND;
+            let close_ns = start_ns + (i + 1) * count * source_seconds * NANOSECONDS_IN_SECOND;
+            let ts_event = if interval == BarIntervalType::LeftOpen && timestamp_on_close {
+                close_ns
+            } else {
+                open_ns
+            };
+
+            Bar::new(
+                target_type.standard(),
+                open,
+                close,
+                open,
+                close,
+                volume,
+                UnixNanos::from(ts_event),
+                UnixNanos::from(close_ns),
+            )
+        })
+        .collect();
+
+    assert_eq!(saver.get_messages(), expected);
+    assert_eq!(source_saver.get_messages().len(), (4 * count) as usize);
+    assert_eq!(
+        cache.borrow().bars(&target_type.standard()).unwrap(),
+        expected.iter().rev().copied().collect::<Vec<_>>(),
+    );
+}
 
 #[rstest]
 #[case::ts_event_regression(2_000, 2_000, 1_000, 1_000, false)]

@@ -157,10 +157,7 @@ pub(super) struct WsMessageContext {
 fn is_terminal_condition(ctx: &WsMessageContext, instrument_id: InstrumentId) -> bool {
     crate::providers::extract_condition_id(&instrument_id).is_ok_and(|condition_id| {
         ctx.pending_resolutions.contains_key(&condition_id)
-            || crate::data::runtime::is_condition_closed(
-                &ctx.subscriptions.closed_condition_ids,
-                &condition_id,
-            )
+            || ctx.subscriptions.is_condition_closed(&condition_id)
     })
 }
 
@@ -566,7 +563,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
             };
 
             let mut resolved = Vec::with_capacity(quotes.price_changes.len());
-            let mut groups: Vec<(TokenMeta, Vec<&PolymarketQuote>)> = Vec::new();
+            let mut groups: Vec<Vec<&PolymarketQuote>> = Vec::new();
             let mut group_indices = AHashMap::with_capacity(quotes.price_changes.len());
 
             for change in &quotes.price_changes {
@@ -583,12 +580,13 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     Some(index) => *index,
                     None => {
                         let index = groups.len();
-                        groups.push((meta, Vec::new()));
+                        groups.push(Vec::new());
                         group_indices.insert(meta.instrument_id, index);
                         index
                     }
                 };
-                groups[group_index].1.push(change);
+
+                groups[group_index].push(change);
                 resolved.push((group_index, meta, change));
             }
 
@@ -608,7 +606,7 @@ fn handle_market_message(message: MarketWsMessage, ctx: &WsMessageContext) {
                     continue;
                 }
 
-                let changes = std::mem::take(&mut groups[group_index].1);
+                let changes = std::mem::take(&mut groups[group_index]);
                 if !changes.is_empty()
                     && ctx.subscriptions.active_delta_subs.contains(&instrument_id)
                 {
@@ -6010,6 +6008,71 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    async fn auto_load_reports_closed_receiver_and_keeps_instruments() {
+        if super::super::test_logging::run_in_isolated_process() {
+            return;
+        }
+
+        let _capture = super::super::test_logging::capture_logs().await;
+        let state = TestServerState::default();
+        *state.gamma_response.lock().await =
+            Some(serde_json::json!([gamma_market_recheck_fixture_value()]));
+        let addr = start_mock_server(state).await;
+        let (mut client, data_rx) = create_test_client(addr);
+        drop(data_rx);
+        client.config.auto_load_debounce_ms = 0;
+        client.config.auto_load_max_retries = 0;
+        let instrument_id = fixture_yes_instrument_id();
+
+        client
+            .subscribe_quotes(SubscribeQuotes::new(
+                instrument_id,
+                Some(client.client_id),
+                None,
+                UUID4::new(),
+                UnixNanos::default(),
+                None,
+                None,
+            ))
+            .unwrap();
+        wait_until_async(
+            || async { client.tasks.all_finished() },
+            StdDuration::from_secs(3),
+        )
+        .await;
+        client.ws_client.disconnect().await.unwrap();
+
+        let expected_ids =
+            AHashSet::from_iter([fixture_yes_instrument_id(), fixture_no_instrument_id()]);
+        let cached_ids = client
+            .instruments
+            .load()
+            .keys()
+            .copied()
+            .collect::<AHashSet<_>>();
+        let mut errors = super::super::test_logging::messages()
+            .into_iter()
+            .filter_map(|(level, message)| (level == log::Level::Error).then_some(message))
+            .collect::<Vec<_>>();
+        errors.sort();
+        let mut expected_errors = expected_ids
+            .iter()
+            .map(|id| format!("Failed to emit auto-loaded instrument {id}: channel closed"))
+            .collect::<Vec<_>>();
+        expected_errors.sort();
+
+        assert_eq!(cached_ids, expected_ids);
+        assert_eq!(errors, expected_errors);
+        assert!(
+            client
+                .subscriptions
+                .active_quote_subs
+                .contains(&instrument_id)
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
     async fn auto_load_closed_future_instrument_retires_without_retrying() {
         let filter_calls = Arc::new(AtomicUsize::new(0));
         let state = ExpiredAutoLoadServerState {
@@ -6504,10 +6567,9 @@ mod tests {
         let deadline = std::time::Instant::now() + StdDuration::from_secs(3);
 
         while active_delta_subs_observer.contains(&instrument_id)
-            || !crate::data::runtime::is_condition_closed(
-                &closed_condition_ids_observer,
-                TEST_CONDITION_ID,
-            )
+            || !closed_condition_ids_observer
+                .lock()
+                .contains(TEST_CONDITION_ID)
         {
             assert!(
                 std::time::Instant::now() < deadline,

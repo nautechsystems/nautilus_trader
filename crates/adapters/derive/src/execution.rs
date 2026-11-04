@@ -4576,6 +4576,10 @@ fn emit_modify_failure(
 }
 
 fn ws_rejection_reason(error: &DeriveWsError) -> (String, bool) {
+    if let Some(reason) = error.session_key_expiry_reason() {
+        return (reason, false);
+    }
+
     match error {
         DeriveWsError::JsonRpc { code, message, .. } => (
             format!("{code}: {}", strategy_rejection_reason(message))

@@ -353,6 +353,9 @@ pub const BINANCE_FUTURES_DUAL_SIDE_SYNC_REJECT_CODE: i64 = -4531;
 /// This message is specific to post-only (LIMIT_MAKER) orders that would match immediately.
 pub const BINANCE_SPOT_POST_ONLY_REJECT_MSG: &str = "Order would immediately match and take.";
 
+/// Maximum depth of a Binance partial order book snapshot.
+pub const BINANCE_PARTIAL_BOOK_DEPTH: usize = 20;
+
 /// Valid order book depth levels for Binance.
 pub const BINANCE_BOOK_DEPTHS: [u32; 7] = [5, 10, 20, 50, 100, 500, 1000];
 

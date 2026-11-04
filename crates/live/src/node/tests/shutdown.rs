@@ -17,7 +17,11 @@ use nautilus_common::{
     clients::ExecutionReportTask,
     component::component_state,
     enums::ComponentState,
-    messages::execution::{CancelOrder, QueryOrder},
+    messages::{
+        data::UnsubscribeCommand,
+        execution::{CancelOrder, QueryOrder},
+    },
+    msgbus::stubs::get_any_saving_handler,
 };
 #[cfg(feature = "python")]
 use pyo3::{prelude::*, types::PyDict};
@@ -25,6 +29,65 @@ use pyo3::{prelude::*, types::PyDict};
 use super::*;
 #[cfg(feature = "python")]
 use crate::python::node::PyLiveNode;
+
+#[tokio::test]
+async fn test_final_drain_blocks_subscriptions_and_preserves_data_and_cleanup() {
+    let client_id = ClientId::from("EXTERNAL");
+
+    let config = LiveNodeConfig {
+        data_engine: crate::config::LiveDataEngineConfig {
+            external_clients: Some(vec![client_id]),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let mut node = LiveNode::build("FinalDrainNode".to_string(), Some(config)).unwrap();
+    let topic = format!("commands.data.{client_id}");
+    let (handler, subscribes) = get_any_saving_handler::<SubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+
+    let subscribe = |instrument_id| {
+        SubscribeCommand::Quotes(SubscribeQuotes::new(
+            instrument_id,
+            Some(client_id),
+            Some(Venue::from("SIM")),
+            UUID4::new(),
+            UnixNanos::from(40),
+            None,
+            None,
+        ))
+    };
+
+    let active = subscribe(InstrumentId::from("AUD/USD.SIM"));
+    node.kernel
+        .data_engine
+        .borrow_mut()
+        .execute(DataCommand::Subscribe(active));
+    assert_eq!(subscribes.get_messages().len(), 1);
+
+    node.finalize_stop().await.unwrap();
+    let blocked = subscribe(InstrumentId::from("EUR/USD.SIM"));
+    let sender = nautilus_common::runner::get_data_cmd_sender();
+    sender.execute(DataCommand::Subscribe(blocked.clone()));
+    get_data_event_sender().send(stub_data_event()).unwrap();
+    node.drain_runner_pending();
+
+    assert_eq!(subscribes.get_messages().len(), 1);
+    assert_eq!(node.kernel.data_engine().command_count(), 2);
+    assert_eq!(node.kernel.data_engine().data_count(), 1);
+
+    let (handler, unsubscribes) = get_any_saving_handler::<UnsubscribeCommand>(None);
+    msgbus::subscribe_any(topic.as_str().into(), handler, None);
+    let unsubscribe = blocked.into_unsubscribe(UUID4::new(), UnixNanos::from(41), None);
+    sender.execute(DataCommand::Unsubscribe(unsubscribe.clone()));
+    node.drain_runner_pending();
+    assert_eq!(
+        serde_json::to_value(unsubscribes.get_messages()).unwrap(),
+        serde_json::to_value([unsubscribe]).unwrap()
+    );
+    node.dispose();
+}
 
 #[cfg(not(madsim))]
 #[rstest]

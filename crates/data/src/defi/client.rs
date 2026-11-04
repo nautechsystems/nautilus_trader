@@ -71,6 +71,21 @@ impl DataClientAdapter {
             return;
         }
 
+        if self.is_stopped {
+            log::debug!(
+                "Skipped DeFi subscribe after stop: client_id={}, command_id={}",
+                self.client_id(),
+                cmd.command_id()
+            );
+
+            if retain_on_failure {
+                self.subscriptions_active_defi
+                    .retain(key, cmd.command_id(), cmd);
+            }
+
+            return;
+        }
+
         let command_id = cmd.command_id();
         let retained = cmd.clone();
         #[rustfmt::skip]

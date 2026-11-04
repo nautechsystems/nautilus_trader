@@ -546,7 +546,7 @@ pub(crate) fn posted_limit_share_quantity(
 ) -> Result<Decimal, String> {
     let (maker_amount, taker_amount) =
         limit_order_maker_taker_amounts(side, price, quantity, order_type, tick_decimals)?;
-    Ok(human_share_quantity(maker_amount, taker_amount, side))
+    Ok(signed_base_quantity(maker_amount, taker_amount, side))
 }
 
 /// Signs an immediate base-sized BUY as a cent budget plus derived shares.
@@ -642,7 +642,7 @@ fn limit_order_maker_taker_amounts(
     }
 }
 
-fn human_share_quantity(
+pub(super) fn signed_base_quantity(
     maker_amount: Decimal,
     taker_amount: Decimal,
     side: PolymarketOrderSide,
@@ -669,17 +669,12 @@ pub fn compute_market_maker_taker_amounts(
     side: PolymarketOrderSide,
     tick_decimals: u32,
 ) -> (Decimal, Decimal) {
-    let precision = tick_decimals + LOT_SIZE_SCALE;
-    let amt = amount.trunc_with_scale(LOT_SIZE_SCALE);
-
     match side {
         PolymarketOrderSide::Buy => {
             compute_quote_buy_maker_taker_amounts(price, amount, tick_decimals)
         }
         PolymarketOrderSide::Sell => {
-            let maker_amount = to_fixed_decimal(amt);
-            let taker_amount = to_fixed_decimal((amt * price).trunc_with_scale(precision));
-            (maker_amount, taker_amount)
+            compute_maker_taker_amounts(price, amount, side, tick_decimals)
         }
     }
 }

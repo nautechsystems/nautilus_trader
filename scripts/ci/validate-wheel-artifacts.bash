@@ -11,6 +11,7 @@ fi
 manifest=$1
 version="${PUBLISH_WHEEL_VERSION:?PUBLISH_WHEEL_VERSION is required}"
 matrix="${PUBLISH_WHEEL_MATRIX:?PUBLISH_WHEEL_MATRIX is required}"
+python_tags=(cp313 cp314 cp315)
 
 case "$matrix" in
   development)
@@ -75,13 +76,10 @@ while IFS= read -r path; do
     exit 1
   fi
 
-  case "$python_tag" in
-    cp313 | cp314) ;;
-    *)
-      echo "Error: Wheel ${filename} has unsupported Python tag ${python_tag}" >&2
-      exit 1
-      ;;
-  esac
+  if [[ " ${python_tags[*]} " != *" ${python_tag} "* ]]; then
+    echo "Error: Wheel ${filename} has unsupported Python tag ${python_tag}" >&2
+    exit 1
+  fi
 
   case "$platform_tag" in
     manylinux*_x86_64)
@@ -109,7 +107,7 @@ while IFS= read -r path; do
 done < "$files"
 
 : > "$expected"
-for python_tag in cp313 cp314; do
+for python_tag in "${python_tags[@]}"; do
   {
     printf '%s\t%s\n' "$python_tag" "linux_x86_64"
     if [[ "$matrix" == "nightly" || "$matrix" == "stable" ]]; then

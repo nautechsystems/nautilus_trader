@@ -13,12 +13,19 @@
 //  limitations under the License.
 // -------------------------------------------------------------------------------------------------
 
-use nautilus_common::actor::DataActor;
+use std::{cell::RefCell, rc::Rc};
+
+use nautilus_common::{
+    actor::DataActor,
+    cache::Cache,
+    clock::{Clock, VirtualClock},
+    component::Component,
+};
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas},
     enums::{BookAction, OrderSide},
-    identifiers::{ActorId, InstrumentId},
+    identifiers::{ActorId, InstrumentId, TraderId},
     types::{Price, Quantity},
 };
 use rstest::rstest;
@@ -54,6 +61,14 @@ fn instrument_a() -> InstrumentId {
 
 fn instrument_b() -> InstrumentId {
     InstrumentId::from("1.123-200.BETFAIR")
+}
+
+fn register_actor(actor: &mut BookImbalanceActor) {
+    let clock: Rc<RefCell<dyn Clock>> = Rc::new(RefCell::new(VirtualClock::new()));
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    actor
+        .register(TraderId::from("TESTER-001"), clock, cache)
+        .unwrap();
 }
 
 #[rstest]
@@ -283,4 +298,30 @@ fn test_from_config_creates_actor() {
     let actor = BookImbalanceActor::from_config(config);
     assert!(actor.states().is_empty());
     assert_eq!(actor.actor_id(), ActorId::from("MY_ACTOR-001"));
+}
+
+#[rstest]
+fn test_on_reset_restores_constructor_state() {
+    let id = instrument_a();
+    let mut actor = BookImbalanceActor::new(vec![id], 50, None);
+    register_actor(&mut actor);
+    let deltas = make_deltas(
+        id,
+        vec![
+            make_delta(id, OrderSide::Buy, "2.50", "100", 1_000_000),
+            make_delta(id, OrderSide::Sell, "2.52", "40", 1_000_000),
+        ],
+    );
+    actor.on_book_deltas(&deltas).unwrap();
+
+    let state = &actor.states()[&id];
+    assert_eq!(state.update_count, 1);
+    assert_eq!(state.bid_volume_total, 100.0);
+    assert_eq!(state.ask_volume_total, 40.0);
+
+    actor.reset().unwrap();
+
+    assert!(actor.states().is_empty());
+    assert_eq!(actor.actor_id(), ActorId::from("BOOK_IMBALANCE-001"));
+    assert!(actor.is_ready());
 }

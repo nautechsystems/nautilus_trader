@@ -893,8 +893,7 @@ impl SettlementRegistry {
         inner.records.values().any(|record| {
             !record.blocks_order_status()
                 && record.legs.iter().any(|leg| {
-                    &leg.venue_order_id == venue_order_id
-                        && leg_only_awaits_application(record, leg)
+                    &leg.venue_order_id == venue_order_id && record.leg_awaits_application(leg)
                 })
         })
     }
@@ -1521,15 +1520,6 @@ impl RetainedFailedFill {
             }),
         }
     }
-}
-
-fn leg_only_awaits_application(record: &SettlementRecord, leg: &SettlementLeg) -> bool {
-    matches!(
-        leg.application,
-        LegApplication::FillPending | LegApplication::VoidPending
-    ) || (!record.settlement.is_rest_terminal()
-        && leg.application == LegApplication::Absent
-        && !leg.report_routed)
 }
 
 fn faulted_record_touches_order(record: &SettlementRecord, venue_order_id: &VenueOrderId) -> bool {

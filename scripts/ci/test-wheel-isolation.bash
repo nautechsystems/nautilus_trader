@@ -42,13 +42,13 @@ fi
 
 case "$1" in
   sync)
-    [[ "$*" == "sync --project $3 --python $case_root_native/source/python/.venv/bin/python --frozen --group test --no-install-package nautilus-trader" ]] || exit 82
+    [[ "$*" == "sync --project $3 --python $case_root_native/source/python/.venv/bin/python --frozen --group test --extra visualization --no-install-package nautilus-trader" ]] || exit 82
     mkdir -p "$environment"
     ;;
   pip)
     [[ "$3" == '--python' && "$4" == "$case_root_native"/temp/nautilus-wheel.*/python/.venv/bin/python ]] || exit 83
     if [[ "$5" == --reinstall ]]; then
-      [[ "$6" == "$case_root_native/source/dist/package.whl[visualization]" ]] || exit 89
+      [[ "$6" == --no-deps && "$7" == "$case_root_native/source/dist/package.whl[visualization]" ]] || exit 89
     fi
     ;;
   run)

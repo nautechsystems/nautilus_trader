@@ -15,6 +15,7 @@
 
 use ahash::AHashSet;
 use indexmap::IndexMap;
+use nautilus_model::enums::OrderSide;
 
 use super::*;
 
@@ -190,48 +191,57 @@ fn test_emit_quotes_from_book_depths_publishes_top_of_book(stub_msgbus: Rc<RefCe
 
     let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
-    let depth = stub_depth10();
+    let mut depth = stub_depth10();
+    depth.bids[0].size = Quantity::from("120");
+    depth.asks[0].size = Quantity::from("230");
+    depth.ts_event = UnixNanos::from(123);
+    depth.ts_init = UnixNanos::from(456);
     let instrument_id = depth.instrument_id;
 
     let (handler, saver) = get_typed_message_saving_handler::<QuoteTick>(None);
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
+    let expected = QuoteTick::new(
+        instrument_id,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from("120"),
+        Quantity::from("230"),
+        UnixNanos::from(123),
+        UnixNanos::from(456),
+    );
     data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
 
-    let messages = saver.get_messages();
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut unchanged = depth;
+    unchanged.ts_event = UnixNanos::from(124);
+    unchanged.ts_init = UnixNanos::from(457);
+    data_engine.process_data(Data::BookDepth(Box::new(unchanged.clone())));
+
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut changed = unchanged;
+    changed.bids[0].price = Price::from("99.50");
+    changed.ts_event = UnixNanos::from(125);
+    changed.ts_init = UnixNanos::from(458);
+    data_engine.process_data(Data::BookDepth(Box::new(changed)));
+
+    let expected_changed = QuoteTick {
+        bid_price: Price::from("99.50"),
+        ts_event: UnixNanos::from(125),
+        ts_init: UnixNanos::from(458),
+        ..expected
+    };
+
+    assert_eq!(saver.get_messages(), vec![expected, expected_changed]);
     assert_eq!(
-        messages.len(),
-        1,
-        "depth should emit exactly one synthetic quote",
+        cache.borrow().quote(&instrument_id),
+        Some(&expected_changed)
     );
-    let cached_quote = cache.borrow().quote(&instrument_id).copied();
-    assert!(cached_quote.is_some(), "synthetic quote should be cached",);
-
-    // Same top-of-book: must not republish
-    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
-    assert_eq!(saver.get_messages().len(), 1);
-
-    // Shifted top-of-book: must republish
-    let mut shifted = depth.clone();
-
-    shifted.bids[0] = BookOrder::new(
-        depth.bids[0].side,
-        Price::new(98.50, 2),
-        depth.bids[0].size,
-        depth.bids[0].order_id,
-    );
-    shifted.ts_event = UnixNanos::from(depth.ts_event.as_u64() + 1);
-    shifted.ts_init = UnixNanos::from(depth.ts_init.as_u64() + 1);
-    data_engine.process_data(Data::BookDepth(Box::new(shifted)));
-
-    let messages = saver.get_messages();
-    assert_eq!(
-        messages.len(),
-        2,
-        "different top-of-book must republish the synthetic quote",
-    );
-    assert_eq!(messages[1].bid_price, Price::new(98.50, 2));
 }
 
 #[rstest]
@@ -862,7 +872,16 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
 
     let mut data_engine = DataEngine::new(clock, Rc::clone(&cache), Some(config));
 
-    let deltas = stub_deltas();
+    let mut deltas = stub_deltas();
+    for delta in &mut deltas.deltas {
+        delta.ts_event = UnixNanos::from(123);
+        delta.ts_init = UnixNanos::from(456);
+        if delta.order.side == Some(OrderSide::Buy) {
+            delta.order.size = Quantity::from("120");
+        }
+    }
+
+    let deltas = OrderBookDeltas::new(deltas.instrument_id, deltas.deltas);
     let instrument_id = deltas.instrument_id;
     let venue = instrument_id.venue;
 
@@ -870,7 +889,7 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache,
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -896,18 +915,56 @@ fn test_emit_quotes_from_book_publishes_on_delta_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    let deltas = Box::new(deltas);
-    data_engine.process_data(Data::BookDeltas(deltas.clone()));
-
-    assert_eq!(
-        saver.get_messages().len(),
-        1,
-        "managed BookDeltas with emit_quotes_from_book must publish a top-of-book quote",
+    let expected = QuoteTick::new(
+        instrument_id,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from("120"),
+        Quantity::from("100"),
+        UnixNanos::from(123),
+        UnixNanos::from(456),
     );
+    data_engine.process_data(Data::BookDeltas(Box::new(deltas.clone())));
 
-    // Same deltas, same top-of-book: idempotent
-    data_engine.process_data(Data::BookDeltas(deltas));
-    assert_eq!(saver.get_messages().len(), 1);
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut unchanged = deltas;
+    for delta in &mut unchanged.deltas {
+        delta.ts_event = UnixNanos::from(124);
+        delta.ts_init = UnixNanos::from(457);
+    }
+
+    let unchanged = OrderBookDeltas::new(instrument_id, unchanged.deltas);
+    data_engine.process_data(Data::BookDeltas(Box::new(unchanged.clone())));
+
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut changed = unchanged;
+    for delta in &mut changed.deltas {
+        delta.ts_event = UnixNanos::from(125);
+        delta.ts_init = UnixNanos::from(458);
+        if delta.order.side == Some(OrderSide::Buy) {
+            delta.order.size = Quantity::from("130");
+        }
+    }
+
+    let changed = OrderBookDeltas::new(instrument_id, changed.deltas);
+    data_engine.process_data(Data::BookDeltas(Box::new(changed)));
+
+    let expected_changed = QuoteTick {
+        bid_size: Quantity::from("130"),
+        ts_event: UnixNanos::from(125),
+        ts_init: UnixNanos::from(458),
+        ..expected
+    };
+
+    assert_eq!(saver.get_messages(), vec![expected, expected_changed]);
+    assert_eq!(
+        cache.borrow().quote(&instrument_id),
+        Some(&expected_changed)
+    );
 }
 
 #[rstest]
@@ -926,7 +983,11 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
 
     let mut data_engine = DataEngine::new(Rc::clone(&clock), Rc::clone(&cache), Some(config));
 
-    let depth = stub_depth10();
+    let mut depth = stub_depth10();
+    depth.bids[0].size = Quantity::from("120");
+    depth.asks[0].size = Quantity::from("230");
+    depth.ts_event = UnixNanos::from(123);
+    depth.ts_init = UnixNanos::from(456);
     let instrument_id = depth.instrument_id;
     let venue = instrument_id.venue;
 
@@ -934,7 +995,7 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     let recorder: Rc<RefCell<Vec<DataCommand>>> = Rc::new(RefCell::new(Vec::new()));
     register_mock_client(
         test_clock,
-        cache,
+        Rc::clone(&cache),
         client_id,
         venue,
         None,
@@ -960,13 +1021,45 @@ fn test_emit_quotes_from_book_publishes_on_depth_apply(
     let quote_topic = switchboard::get_quotes_topic(instrument_id);
     msgbus::subscribe_quotes(quote_topic.into(), handler, None);
 
-    data_engine.process_data(Data::BookDepth(Box::new(depth)));
+    let expected = QuoteTick::new(
+        instrument_id,
+        Price::from("99.00"),
+        Price::from("100.00"),
+        Quantity::from("120"),
+        Quantity::from("230"),
+        UnixNanos::from(123),
+        UnixNanos::from(456),
+    );
+    data_engine.process_data(Data::BookDepth(Box::new(depth.clone())));
 
-    let messages = saver.get_messages();
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut unchanged = depth;
+    unchanged.ts_event = UnixNanos::from(124);
+    unchanged.ts_init = UnixNanos::from(457);
+    data_engine.process_data(Data::BookDepth(Box::new(unchanged.clone())));
+
+    assert_eq!(saver.get_messages(), vec![expected]);
+    assert_eq!(cache.borrow().quote(&instrument_id), Some(&expected));
+
+    let mut changed = unchanged;
+    changed.bids[0].price = Price::from("99.50");
+    changed.ts_event = UnixNanos::from(125);
+    changed.ts_init = UnixNanos::from(458);
+    data_engine.process_data(Data::BookDepth(Box::new(changed)));
+
+    let expected_changed = QuoteTick {
+        bid_price: Price::from("99.50"),
+        ts_event: UnixNanos::from(125),
+        ts_init: UnixNanos::from(458),
+        ..expected
+    };
+
+    assert_eq!(saver.get_messages(), vec![expected, expected_changed]);
     assert_eq!(
-        messages.len(),
-        1,
-        "managed depth subscription with emit_quotes_from_book must publish a top-of-book quote",
+        cache.borrow().quote(&instrument_id),
+        Some(&expected_changed)
     );
 }
 

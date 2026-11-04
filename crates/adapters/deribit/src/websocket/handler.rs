@@ -20,7 +20,7 @@
 //! processes commands from the client via an unbounded channel.
 
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     sync::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
@@ -29,6 +29,7 @@ use std::{
 
 use ahash::AHashMap;
 use futures_util::future::BoxFuture;
+use indexmap::IndexMap;
 use nautilus_common::cache::fifo::{FifoCache, FifoCacheMap};
 use nautilus_core::{
     AtomicSet, AtomicTime, UUID4, UnixNanos,
@@ -46,27 +47,35 @@ use nautilus_model::{
         AccountId, ClientOrderId, InstrumentId, StrategyId, Symbol, TradeId, TraderId, VenueOrderId,
     },
     instruments::{Instrument, InstrumentAny},
+    reports::FillReport,
+    types::Currency,
 };
 use nautilus_network::{
     RECONNECTED,
+    error::SendError,
     retry::{RetryManager, create_websocket_retry_manager},
     websocket::{AuthTracker, SubscriptionState, WebSocketClient},
 };
 use parking_lot::Mutex;
 use rust_decimal::Decimal;
+use serde_json::value::RawValue;
 use tokio_tungstenite::tungstenite::Message;
 use ustr::Ustr;
 
 use super::{
     enums::{DeribitBookMsgType, DeribitHeartbeatType, DeribitWsChannel, DeribitWsMethod},
     error::DeribitWsError,
+    failure::{
+        REASON_CANCELED, classify_deribit_command_failure, classify_deribit_venue_error,
+        sanitize_strategy_reason, terminal_reason,
+    },
     messages::{
         DeribitAuthResult, DeribitBookMsg, DeribitCancelAllByInstrumentParams, DeribitCancelParams,
         DeribitChartMsg, DeribitEditParams, DeribitHeartbeatParams, DeribitInstrumentStateMsg,
-        DeribitJsonRpcRequest, DeribitOrderMsg, DeribitOrderParams, DeribitOrderResponse,
-        DeribitPerpetualMsg, DeribitPortfolioMsg, DeribitQuoteMsg, DeribitSubscribeParams,
-        DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg, DeribitVolatilityIndexMsg,
-        DeribitWsMessage, NautilusWsMessage, parse_raw_message,
+        DeribitJsonRpcRequest, DeribitJsonRpcResponse, DeribitOrderMsg, DeribitOrderParams,
+        DeribitOrderResponse, DeribitPerpetualMsg, DeribitPortfolioMsg, DeribitQuoteMsg,
+        DeribitSubscribeParams, DeribitTickerMsg, DeribitTradeMsg, DeribitUserTradeMsg,
+        DeribitVolatilityIndexMsg, DeribitWsMessage, NautilusWsMessage, parse_raw_message,
     },
     parse::{
         OrderEventType, determine_order_event_type, parse_book_depth, parse_book_msg,
@@ -79,10 +88,7 @@ use super::{
 };
 use crate::{
     common::{
-        consts::{
-            DERIBIT_POST_ONLY_ERROR_CODE, DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE,
-            DERIBIT_WS_SUBSCRIPTION_KEY,
-        },
+        consts::{DERIBIT_RATE_LIMIT_KEY_ORDER, DERIBIT_VENUE, DERIBIT_WS_SUBSCRIPTION_KEY},
         enums::DeribitInstrumentState,
         parse::{parse_portfolio_to_account_state, use_cost_for_bar_volume},
     },
@@ -238,6 +244,12 @@ pub struct OrderContext {
     pub last_order_signature: Option<OrderSignature>,
 }
 
+#[derive(Debug, Clone)]
+struct TerminalOrderContext {
+    context: OrderContext,
+    late_fills_as_reports: bool,
+}
+
 /// Order fields used to identify a venue amendment.
 pub type OrderSignature = (Decimal, Option<Decimal>, Option<Decimal>);
 
@@ -268,8 +280,8 @@ pub struct DeribitWsFeedHandler {
     order_contexts: AHashMap<VenueOrderId, OrderContext>,
     submitted_order_contexts: FifoCacheMap<ClientOrderId, OrderContext, 10_000>,
 
-    // Retain recent terminal identities so late trade frames stay on the order-event path
-    terminal_order_contexts: FifoCacheMap<VenueOrderId, OrderContext, 10_000>,
+    // Retain terminal ownership and whether later fills require report recovery
+    terminal_order_contexts: FifoCacheMap<VenueOrderId, TerminalOrderContext, 10_000>,
 
     emitted_trades: FifoCache<(VenueOrderId, TradeId), 10_000>,
     pending_bars: AHashMap<String, Bar>,
@@ -392,85 +404,12 @@ impl DeribitWsFeedHandler {
         let payload = match payload {
             Ok(payload) => payload,
             Err(e) => {
-                self.deny_unsent_request(request_id, &e.to_string());
+                self.pending_requests.remove(&request_id);
                 return Err(e);
             }
         };
 
-        let result = self.send_with_retry(payload, rate_limit_keys).await;
-
-        if matches!(&result, Err(DeribitWsError::NotConnected))
-            && matches!(
-                self.pending_requests.get(&request_id),
-                Some(PendingRequestType::Edit { .. } | PendingRequestType::Cancel { .. })
-            )
-        {
-            self.deny_unsent_request(request_id, "WebSocket not connected");
-        }
-
-        result
-    }
-
-    fn deny_unsent_request(&mut self, request_id: u64, reason: &str) {
-        let Some(pending) = self.pending_requests.remove(&request_id) else {
-            return;
-        };
-
-        let ts_init = self.ts_init();
-
-        let message = match pending {
-            PendingRequestType::Edit {
-                venue_order_id,
-                causation_id,
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-            } => {
-                let mut event = OrderModifyDenied::new(
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    reason.into(),
-                    UUID4::new(),
-                    ts_init,
-                    ts_init,
-                    venue_order_id,
-                    self.account_id,
-                );
-                event.causation_id = causation_id;
-                Some(NautilusWsMessage::OrderModifyDenied(event))
-            }
-            PendingRequestType::Cancel {
-                venue_order_id,
-                causation_id,
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-            } => {
-                let mut event = OrderCancelDenied::new(
-                    trader_id,
-                    strategy_id,
-                    instrument_id,
-                    client_order_id,
-                    reason.into(),
-                    UUID4::new(),
-                    ts_init,
-                    ts_init,
-                    venue_order_id,
-                    self.account_id,
-                );
-                event.causation_id = causation_id;
-                Some(NautilusWsMessage::OrderCancelDenied(event))
-            }
-            _ => None,
-        };
-
-        if let Some(message) = message {
-            self.pending_outgoing.push_back(message);
-        }
+        self.send_with_retry(payload, rate_limit_keys).await
     }
 
     /// Sends a message over the WebSocket with retry logic.
@@ -515,6 +454,328 @@ impl DeribitWsFeedHandler {
                 .execute()
                 .await
         })
+    }
+
+    /// Sends one order command on the current connection.
+    ///
+    /// The returned future does not borrow the handler. A failure before the write starts is a
+    /// typed not-sent error. A write that may have started stays a transport error whose delivery
+    /// is unknown.
+    fn send_order_once(&self, payload: String) -> BoxFuture<'static, Result<(), DeribitWsError>> {
+        if self.signal.load(Ordering::Acquire) {
+            return Box::pin(async { Err(DeribitWsError::CanceledBeforeSend) });
+        }
+
+        let Some(client) = self.inner.clone() else {
+            return Box::pin(async { Err(DeribitWsError::NotConnected) });
+        };
+
+        if client.is_reconnecting() {
+            return Box::pin(async {
+                Err(DeribitWsError::TransportSend(SendError::ConnectionChanged))
+            });
+        }
+
+        let connection_epoch = client.connection_epoch();
+        let keys = *DERIBIT_RATE_LIMIT_KEY_ORDER;
+        Box::pin(async move {
+            client
+                .send_text_on_connection(payload, Some(keys.as_slice()), connection_epoch)
+                .await
+                .map_err(DeribitWsError::TransportSend)
+        })
+    }
+
+    fn terminal_command_reason(&self, error: &DeribitWsError) -> Option<String> {
+        let failure = classify_deribit_command_failure(error);
+
+        let Some(reason) = terminal_reason(&failure) else {
+            log::warn!("Ambiguous order command outcome, awaiting reconciliation: {error}");
+            return None;
+        };
+
+        log::warn!("Order command was not sent: {error}");
+        Some(reason.to_string())
+    }
+
+    fn venue_command_reason(
+        code: i64,
+        message: &str,
+        data: Option<&serde_json::Value>,
+    ) -> Option<(String, bool)> {
+        log::warn!("Venue order command result: code={code}, message={message}, data={data:?}");
+        let (failure, due_post_only) = classify_deribit_venue_error(code, message);
+
+        let Some(reason) = terminal_reason(&failure) else {
+            log::warn!(
+                "Ambiguous venue order command outcome, awaiting reconciliation: code={code}, message={message}, data={data:?}"
+            );
+            return None;
+        };
+
+        Some((reason.to_string(), due_post_only))
+    }
+
+    fn should_track_command(&self, sent: &Result<(), DeribitWsError>) -> bool {
+        match sent {
+            Ok(()) => true,
+            Err(e) => terminal_reason(&classify_deribit_command_failure(e)).is_none(),
+        }
+    }
+
+    fn track_submit(&mut self, request_id: u64, context: OrderContext) {
+        let pending = match context.order_side {
+            OrderSide::Buy => PendingRequestType::Buy {
+                client_order_id: context.client_order_id,
+                trader_id: context.trader_id,
+                strategy_id: context.strategy_id,
+                instrument_id: context.instrument_id,
+                order_side: context.order_side,
+                order_type: context.order_type,
+            },
+            OrderSide::Sell => PendingRequestType::Sell {
+                client_order_id: context.client_order_id,
+                trader_id: context.trader_id,
+                strategy_id: context.strategy_id,
+                instrument_id: context.instrument_id,
+                order_side: context.order_side,
+                order_type: context.order_type,
+            },
+        };
+
+        self.submitted_order_contexts
+            .insert(context.client_order_id, context);
+        self.pending_requests.insert(request_id, pending);
+    }
+
+    fn order_rejected(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        reason: &str,
+        due_post_only: bool,
+    ) -> OrderRejected {
+        let ts_init = self.ts_init();
+
+        OrderRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            self.account_id.unwrap_or(AccountId::new("DERIBIT-UNKNOWN")),
+            ustr::ustr(reason),
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            false,
+            due_post_only,
+        )
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "event construction preserves order identity and command correlation"
+    )]
+    fn order_modify_denied(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        causation_id: Option<UUID4>,
+        reason: &str,
+    ) -> OrderModifyDenied {
+        let ts_init = self.ts_init();
+
+        let mut event = OrderModifyDenied::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            venue_order_id,
+            self.account_id,
+        );
+        event.causation_id = causation_id;
+        event
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "event construction preserves order identity and command correlation"
+    )]
+    fn order_cancel_denied(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        causation_id: Option<UUID4>,
+        reason: &str,
+    ) -> OrderCancelDenied {
+        let ts_init = self.ts_init();
+
+        let mut event = OrderCancelDenied::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            reason.into(),
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            venue_order_id,
+            self.account_id,
+        );
+        event.causation_id = causation_id;
+        event
+    }
+
+    fn order_modify_rejected(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        reason: &str,
+    ) -> OrderModifyRejected {
+        let ts_init = self.ts_init();
+
+        OrderModifyRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            ustr::ustr(reason),
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            false,
+            venue_order_id,
+            self.account_id,
+        )
+    }
+
+    fn fail_unsent_order_commands(&mut self) {
+        self.cmd_rx.close();
+        let mut commands = Vec::new();
+        if let Some(command) = self.pending_command.take() {
+            commands.push(command);
+        }
+
+        while let Ok(command) = self.cmd_rx.try_recv() {
+            commands.push(command);
+        }
+
+        for command in commands {
+            match command {
+                HandlerCommand::Buy {
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    ..
+                }
+                | HandlerCommand::Sell {
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    ..
+                } => {
+                    let _ =
+                        self.out_tx
+                            .send(NautilusWsMessage::OrderRejected(self.order_rejected(
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                REASON_CANCELED,
+                                false,
+                            )));
+                }
+                HandlerCommand::Edit {
+                    causation_id,
+                    params,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                } => {
+                    let _ = self.out_tx.send(NautilusWsMessage::OrderModifyDenied(
+                        self.order_modify_denied(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            VenueOrderId::new_checked(params.order_id).ok(),
+                            causation_id,
+                            REASON_CANCELED,
+                        ),
+                    ));
+                }
+                HandlerCommand::Cancel {
+                    causation_id,
+                    params,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                } => {
+                    let _ = self.out_tx.send(NautilusWsMessage::OrderCancelDenied(
+                        self.order_cancel_denied(
+                            trader_id,
+                            strategy_id,
+                            instrument_id,
+                            client_order_id,
+                            VenueOrderId::new_checked(params.order_id).ok(),
+                            causation_id,
+                            REASON_CANCELED,
+                        ),
+                    ));
+                }
+                HandlerCommand::CancelAllByInstrument { instrument_id, .. } => {
+                    log::warn!(
+                        "Cancel all by instrument canceled before transmission for {instrument_id}"
+                    );
+                }
+                _ => {}
+            }
+        }
+    }
+
+    fn order_cancel_rejected(
+        &self,
+        trader_id: TraderId,
+        strategy_id: StrategyId,
+        instrument_id: InstrumentId,
+        client_order_id: ClientOrderId,
+        venue_order_id: Option<VenueOrderId>,
+        reason: &str,
+    ) -> OrderCancelRejected {
+        let ts_init = self.ts_init();
+
+        OrderCancelRejected::new(
+            trader_id,
+            strategy_id,
+            instrument_id,
+            client_order_id,
+            ustr::ustr(reason),
+            UUID4::new(),
+            ts_init,
+            ts_init,
+            false,
+            venue_order_id,
+            self.account_id,
+        )
     }
 
     async fn handle_authenticate(&mut self, auth_params: SecretString) {
@@ -705,40 +966,28 @@ impl DeribitWsFeedHandler {
 
         let request =
             DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Buy.as_method_str(), params);
-
-        // Serialize before tracking so a local failure leaves no stale order context
         let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
-
-        self.submitted_order_contexts.insert(
-            client_order_id,
-            OrderContext {
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                order_side: OrderSide::Buy,
-                order_type,
-                accepted: false,
-                last_order_signature: Some(order_signature),
-            },
-        );
-
-        self.pending_requests.insert(
-            request_id,
-            PendingRequestType::Buy {
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                order_side: OrderSide::Buy,
-                order_type,
-            },
-        );
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
 
         log::debug!("Sending buy order: request_id={request_id}");
-        self.send_with_retry(payload, Some(DERIBIT_RATE_LIMIT_KEY_ORDER.as_slice()))
-            .await
+        let sent = self.send_order_once(payload).await;
+        if self.should_track_command(&sent) {
+            self.track_submit(
+                request_id,
+                OrderContext {
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    order_side: OrderSide::Buy,
+                    order_type,
+                    accepted: false,
+                    last_order_signature: Some(order_signature),
+                },
+            );
+        }
+
+        sent
     }
 
     /// Handles a sell order command.
@@ -756,40 +1005,28 @@ impl DeribitWsFeedHandler {
 
         let request =
             DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Sell.as_method_str(), params);
-
-        // Serialize before tracking so a local failure leaves no stale order context
         let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()))?;
-
-        self.submitted_order_contexts.insert(
-            client_order_id,
-            OrderContext {
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                order_side: OrderSide::Sell,
-                order_type,
-                accepted: false,
-                last_order_signature: Some(order_signature),
-            },
-        );
-
-        self.pending_requests.insert(
-            request_id,
-            PendingRequestType::Sell {
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-                order_side: OrderSide::Sell,
-                order_type,
-            },
-        );
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
 
         log::debug!("Sending sell order: request_id={request_id}");
-        self.send_with_retry(payload, Some(DERIBIT_RATE_LIMIT_KEY_ORDER.as_slice()))
-            .await
+        let sent = self.send_order_once(payload).await;
+        if self.should_track_command(&sent) {
+            self.track_submit(
+                request_id,
+                OrderContext {
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                    order_side: OrderSide::Sell,
+                    order_type,
+                    accepted: false,
+                    last_order_signature: Some(order_signature),
+                },
+            );
+        }
+
+        sent
     }
 
     /// Handles an edit order command.
@@ -804,32 +1041,29 @@ impl DeribitWsFeedHandler {
     ) -> Result<(), DeribitWsError> {
         let request_id = self.next_request_id();
         let order_id = params.order_id.clone();
-
-        self.pending_requests.insert(
-            request_id,
-            PendingRequestType::Edit {
-                venue_order_id: VenueOrderId::new_checked(order_id.clone()).ok(),
-                causation_id,
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-            },
-        );
-
+        let venue_order_id = VenueOrderId::new_checked(order_id.clone()).ok();
         let request =
             DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Edit.as_method_str(), params);
-
         let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
 
         log::debug!("Sending edit order: request_id={request_id}, order_id={order_id}");
-        self.send_tracked_request(
-            request_id,
-            payload,
-            Some(DERIBIT_RATE_LIMIT_KEY_ORDER.as_slice()),
-        )
-        .await
+        let sent = self.send_order_once(payload).await;
+        if self.should_track_command(&sent) {
+            self.pending_requests.insert(
+                request_id,
+                PendingRequestType::Edit {
+                    causation_id,
+                    venue_order_id,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                },
+            );
+        }
+
+        sent
     }
 
     /// Handles a cancel order command.
@@ -844,32 +1078,29 @@ impl DeribitWsFeedHandler {
     ) -> Result<(), DeribitWsError> {
         let request_id = self.next_request_id();
         let order_id = params.order_id.clone();
-
-        self.pending_requests.insert(
-            request_id,
-            PendingRequestType::Cancel {
-                venue_order_id: VenueOrderId::new_checked(order_id.clone()).ok(),
-                causation_id,
-                client_order_id,
-                trader_id,
-                strategy_id,
-                instrument_id,
-            },
-        );
-
+        let venue_order_id = VenueOrderId::new_checked(order_id.clone()).ok();
         let request =
             DeribitJsonRpcRequest::new(request_id, DeribitWsMethod::Cancel.as_method_str(), params);
-
         let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
 
         log::debug!("Sending cancel order: request_id={request_id}, order_id={order_id}");
-        self.send_tracked_request(
-            request_id,
-            payload,
-            Some(DERIBIT_RATE_LIMIT_KEY_ORDER.as_slice()),
-        )
-        .await
+        let sent = self.send_order_once(payload).await;
+        if self.should_track_command(&sent) {
+            self.pending_requests.insert(
+                request_id,
+                PendingRequestType::Cancel {
+                    causation_id,
+                    venue_order_id,
+                    client_order_id,
+                    trader_id,
+                    strategy_id,
+                    instrument_id,
+                },
+            );
+        }
+
+        sent
     }
 
     /// Handles cancel all orders by instrument command.
@@ -881,30 +1112,26 @@ impl DeribitWsFeedHandler {
         let request_id = self.next_request_id();
         let instrument_name = params.instrument_name.clone();
 
-        // Track this request for response correlation
-        self.pending_requests.insert(
-            request_id,
-            PendingRequestType::CancelAllByInstrument { instrument_id },
-        );
-
         let request = DeribitJsonRpcRequest::new(
             request_id,
             DeribitWsMethod::CancelAllByInstrument.as_method_str(),
             params,
         );
-
         let payload =
-            serde_json::to_string(&request).map_err(|e| DeribitWsError::Json(e.to_string()));
+            serde_json::to_string(&request).map_err(|e| DeribitWsError::Encode(e.to_string()))?;
 
         log::debug!(
             "Sending cancel_all_by_instrument: request_id={request_id}, instrument={instrument_name}"
         );
-        self.send_tracked_request(
-            request_id,
-            payload,
-            Some(DERIBIT_RATE_LIMIT_KEY_ORDER.as_slice()),
-        )
-        .await
+        let sent = self.send_order_once(payload).await;
+        if self.should_track_command(&sent) {
+            self.pending_requests.insert(
+                request_id,
+                PendingRequestType::CancelAllByInstrument { instrument_id },
+            );
+        }
+
+        sent
     }
 
     /// Handles get order state command.
@@ -1016,8 +1243,18 @@ impl DeribitWsFeedHandler {
                         instrument_id,
                     )
                     .await
+                    && let Some(reason) = self.terminal_command_reason(&e)
                 {
-                    log::error!("Buy order failed: {e}");
+                    let _ =
+                        self.out_tx
+                            .send(NautilusWsMessage::OrderRejected(self.order_rejected(
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                &reason,
+                                false,
+                            )));
                 }
             }
             HandlerCommand::Sell {
@@ -1036,8 +1273,18 @@ impl DeribitWsFeedHandler {
                         instrument_id,
                     )
                     .await
+                    && let Some(reason) = self.terminal_command_reason(&e)
                 {
-                    log::error!("Sell order failed: {e}");
+                    let _ =
+                        self.out_tx
+                            .send(NautilusWsMessage::OrderRejected(self.order_rejected(
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                &reason,
+                                false,
+                            )));
                 }
             }
             HandlerCommand::Edit {
@@ -1048,6 +1295,8 @@ impl DeribitWsFeedHandler {
                 strategy_id,
                 instrument_id,
             } => {
+                let venue_order_id = VenueOrderId::new_checked(params.order_id.clone()).ok();
+
                 if let Err(e) = self
                     .handle_edit(
                         params,
@@ -1058,8 +1307,20 @@ impl DeribitWsFeedHandler {
                         causation_id,
                     )
                     .await
+                    && let Some(reason) = self.terminal_command_reason(&e)
                 {
-                    log::error!("Edit order failed: {e}");
+                    self.pending_outgoing
+                        .push_back(NautilusWsMessage::OrderModifyDenied(
+                            self.order_modify_denied(
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                venue_order_id,
+                                causation_id,
+                                &reason,
+                            ),
+                        ));
                 }
             }
             HandlerCommand::Cancel {
@@ -1070,6 +1331,8 @@ impl DeribitWsFeedHandler {
                 strategy_id,
                 instrument_id,
             } => {
+                let venue_order_id = VenueOrderId::new_checked(params.order_id.clone()).ok();
+
                 if let Err(e) = self
                     .handle_cancel(
                         params,
@@ -1080,8 +1343,20 @@ impl DeribitWsFeedHandler {
                         causation_id,
                     )
                     .await
+                    && let Some(reason) = self.terminal_command_reason(&e)
                 {
-                    log::error!("Cancel order failed: {e}");
+                    self.pending_outgoing
+                        .push_back(NautilusWsMessage::OrderCancelDenied(
+                            self.order_cancel_denied(
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                client_order_id,
+                                venue_order_id,
+                                causation_id,
+                                &reason,
+                            ),
+                        ));
                 }
             }
             HandlerCommand::CancelAllByInstrument {
@@ -1092,7 +1367,9 @@ impl DeribitWsFeedHandler {
                     .handle_cancel_all_by_instrument(params, instrument_id)
                     .await
                 {
-                    log::error!("Cancel all by instrument failed: {e}");
+                    log::warn!(
+                        "Cancel all by instrument failed for {instrument_id}, awaiting reconciliation: {e}"
+                    );
                 }
             }
             HandlerCommand::GetOrderState {
@@ -1201,42 +1478,23 @@ impl DeribitWsFeedHandler {
                                     error.code, error.message,
                                 ));
                             } else {
-                                // Confirm each channel in the subscription
-                                for ch in &channels {
-                                    self.subscriptions_state.confirm_subscribe(ch);
+                                let acknowledged = self.subscription_acknowledgements(
+                                    request_id,
+                                    &channels,
+                                    response.result.as_deref(),
+                                    true,
+                                );
+
+                                for ch in acknowledged {
+                                    self.subscriptions_state.confirm_subscribe(&ch);
                                     log::debug!("Subscription confirmed: {ch}");
                                 }
                             }
                         }
                         PendingRequestType::Unsubscribe { channels } => {
-                            if let Some(error) = &response.error {
-                                log::error!(
-                                    "Unsubscribe failed: code={}, message={}, channels={:?}, request_id={}",
-                                    error.code,
-                                    error.message,
-                                    channels,
-                                    request_id
-                                );
-                            } else {
-                                for ch in &channels {
-                                    self.subscriptions_state.confirm_unsubscribe(ch);
-                                    log::debug!("Unsubscription confirmed: {ch}");
-                                }
-                            }
-
-                            // Resubscribe channels pending book resync (kept in
-                            // pending_book_resync until a fresh snapshot arrives)
-                            if !self.pending_book_resync.is_empty() {
-                                let resync: Vec<String> = channels
-                                    .iter()
-                                    .filter(|ch| self.pending_book_resync.contains(ch))
-                                    .cloned()
-                                    .collect();
-
-                                if !resync.is_empty() {
-                                    let _ = self.handle_subscribe(resync);
-                                }
-                            }
+                            self.handle_unsubscribe_acknowledgement(
+                                request_id, &channels, &response,
+                            );
                         }
                         PendingRequestType::SetHeartbeat => {
                             if let Some(error) = &response.error {
@@ -1340,6 +1598,7 @@ impl DeribitWsFeedHandler {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        true,
                                                     );
                                                 }
                                                 return Some(NautilusWsMessage::OrderCanceled(
@@ -1355,25 +1614,18 @@ impl DeribitWsFeedHandler {
                                     }
                                 }
                             } else if let Some(error) = &response.error {
-                                log::warn!(
-                                    "Cancel rejected: code={}, message={}, client_order_id={}",
+                                let (reason, _) = Self::venue_command_reason(
                                     error.code,
-                                    error.message,
-                                    client_order_id
-                                );
-
-                                let mut event = OrderCancelRejected::new(
+                                    &error.message,
+                                    error.data.as_ref(),
+                                )?;
+                                let mut event = self.order_cancel_rejected(
                                     trader_id,
                                     strategy_id,
                                     instrument_id,
                                     client_order_id,
-                                    ustr::ustr(&format!("code={}: {}", error.code, error.message)),
-                                    UUID4::new(),
-                                    ts_init,
-                                    ts_init,
-                                    false,
                                     venue_order_id,
-                                    self.account_id,
+                                    &reason,
                                 );
                                 event.causation_id = causation_id;
                                 return Some(NautilusWsMessage::OrderCancelRejected(event));
@@ -1393,11 +1645,12 @@ impl DeribitWsFeedHandler {
                                     }
                                 }
                             } else if let Some(error) = &response.error {
-                                log::error!(
-                                    "Cancel all by instrument rejected: code={}, message={}, instrument_id={}",
+                                log::warn!(
+                                    "Cancel all by instrument left in flight for {instrument_id}: code={}, message={}, data={:?}, class={:?}",
                                     error.code,
                                     error.message,
-                                    instrument_id
+                                    error.data,
+                                    classify_deribit_venue_error(error.code, &error.message).0
                                 );
                             }
                         }
@@ -1417,125 +1670,23 @@ impl DeribitWsFeedHandler {
                             order_side,
                             order_type,
                         } => {
-                            if let Some(result) = &response.result {
-                                match serde_json::from_str::<DeribitOrderResponse>(result.get()) {
-                                    Ok(order_response) => {
-                                        let venue_order_id_str = &order_response.order.order_id;
-                                        let venue_order_id =
-                                            VenueOrderId::new(venue_order_id_str.as_str());
-                                        let order_state = &order_response.order.order_state;
-                                        log::debug!(
-                                            "Order response: venue_order_id={venue_order_id}, client_order_id={client_order_id}, state={order_state}"
-                                        );
+                            let submit_context = OrderContext {
+                                client_order_id,
+                                trader_id,
+                                strategy_id,
+                                instrument_id,
+                                order_side,
+                                order_type,
+                                accepted: false,
+                                last_order_signature: None,
+                            };
 
-                                        let mut context = self
-                                            .find_order_context(
-                                                venue_order_id,
-                                                Some(client_order_id),
-                                            )
-                                            .unwrap_or(OrderContext {
-                                                client_order_id,
-                                                trader_id,
-                                                strategy_id,
-                                                instrument_id,
-                                                order_side,
-                                                order_type,
-                                                accepted: false,
-                                                last_order_signature: Some(Self::order_signature(
-                                                    &order_response.order,
-                                                )),
-                                            });
-                                        context.last_order_signature =
-                                            Some(Self::order_signature(&order_response.order));
-                                        self.bind_order_context(venue_order_id, context.clone());
-
-                                        if !order_response.trades.is_empty() {
-                                            let outgoing = self
-                                                .route_user_trades(&order_response.trades, ts_init);
-                                            self.pending_outgoing.extend(outgoing);
-                                        } else if order_state == "filled" {
-                                            log::debug!(
-                                                "Deferring acceptance for fast-filled order until its trade arrives: venue_order_id={venue_order_id}, client_order_id={client_order_id}"
-                                            );
-                                            self.finish_order_context(venue_order_id, &context);
-                                        } else if context.accepted {
-                                            log::trace!(
-                                                "Skipping duplicate OrderAccepted response: venue_order_id={venue_order_id}"
-                                            );
-                                        } else {
-                                            let instrument_name_ustr = Ustr::from(
-                                                order_response.order.instrument_name.as_str(),
-                                            );
-
-                                            if let Some(instrument) =
-                                                self.instruments_cache.get(&instrument_name_ustr)
-                                            {
-                                                if let Some(account_id) = self.account_id {
-                                                    let event =
-                                                        parse_order_accepted_with_client_order_id(
-                                                            &order_response.order,
-                                                            instrument,
-                                                            account_id,
-                                                            trader_id,
-                                                            strategy_id,
-                                                            client_order_id,
-                                                            ts_init,
-                                                        );
-                                                    context.accepted = true;
-                                                    self.bind_order_context(
-                                                        venue_order_id,
-                                                        context,
-                                                    );
-                                                    return Some(NautilusWsMessage::OrderAccepted(
-                                                        event,
-                                                    ));
-                                                } else {
-                                                    log::warn!(
-                                                        "Cannot create OrderAccepted: account_id not set"
-                                                    );
-                                                }
-                                            } else {
-                                                log::warn!(
-                                                    "Instrument {instrument_name_ustr} not found in cache for order response"
-                                                );
-                                            }
-                                        }
-                                    }
-                                    Err(e) => {
-                                        log::error!(
-                                            "Failed to parse order response: request_id={request_id}, error={e}"
-                                        );
-                                    }
-                                }
-                            } else if let Some(error) = &response.error {
-                                let due_post_only = error.code == DERIBIT_POST_ONLY_ERROR_CODE;
-                                let reason = if let Some(data) = &error.data {
-                                    format!(
-                                        "code={}: {} (data: {})",
-                                        error.code, error.message, data
-                                    )
-                                } else {
-                                    format!("code={}: {}", error.code, error.message)
-                                };
-
-                                log::debug!(
-                                    "Order rejected: {reason}, client_order_id={client_order_id}"
-                                );
-                                self.submitted_order_contexts.remove(&client_order_id);
-                                return Some(NautilusWsMessage::OrderRejected(OrderRejected::new(
-                                    trader_id,
-                                    strategy_id,
-                                    instrument_id,
-                                    client_order_id,
-                                    self.account_id.unwrap_or(AccountId::new("DERIBIT-UNKNOWN")),
-                                    ustr::ustr(&reason),
-                                    UUID4::new(),
-                                    ts_init,
-                                    ts_init,
-                                    false,
-                                    due_post_only,
-                                )));
-                            }
+                            return self.handle_order_submit_response(
+                                &submit_context,
+                                request_id,
+                                &response,
+                                ts_init,
+                            );
                         }
                         PendingRequestType::Edit {
                             venue_order_id,
@@ -1619,6 +1770,7 @@ impl DeribitWsFeedHandler {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        false,
                                                     );
                                                 } else {
                                                     self.bind_order_context(
@@ -1653,25 +1805,18 @@ impl DeribitWsFeedHandler {
                                     }
                                 }
                             } else if let Some(error) = &response.error {
-                                log::warn!(
-                                    "Order modify rejected: code={}, message={}, client_order_id={}",
+                                let (reason, _) = Self::venue_command_reason(
                                     error.code,
-                                    error.message,
-                                    client_order_id
-                                );
-
-                                let mut event = OrderModifyRejected::new(
+                                    &error.message,
+                                    error.data.as_ref(),
+                                )?;
+                                let mut event = self.order_modify_rejected(
                                     trader_id,
                                     strategy_id,
                                     instrument_id,
                                     client_order_id,
-                                    ustr::ustr(&format!("code={}: {}", error.code, error.message)),
-                                    UUID4::new(),
-                                    ts_init,
-                                    ts_init,
-                                    false,
                                     venue_order_id,
-                                    self.account_id,
+                                    &reason,
                                 );
                                 event.causation_id = causation_id;
                                 return Some(NautilusWsMessage::OrderModifyRejected(event));
@@ -2301,7 +2446,11 @@ impl DeribitWsFeedHandler {
                                                 log::debug!(
                                                     "Emitting OrderCanceled: venue_order_id={venue_order_id}"
                                                 );
-                                                self.finish_order_context(venue_order_id, &context);
+                                                self.finish_order_context(
+                                                    venue_order_id,
+                                                    &context,
+                                                    true,
+                                                );
                                                 outgoing
                                                     .push(NautilusWsMessage::OrderCanceled(event));
                                             }
@@ -2345,7 +2494,11 @@ impl DeribitWsFeedHandler {
                                                 log::debug!(
                                                     "Emitting OrderExpired: venue_order_id={venue_order_id}"
                                                 );
-                                                self.finish_order_context(venue_order_id, &context);
+                                                self.finish_order_context(
+                                                    venue_order_id,
+                                                    &context,
+                                                    true,
+                                                );
                                                 outgoing
                                                     .push(NautilusWsMessage::OrderExpired(event));
                                             }
@@ -2401,6 +2554,7 @@ impl DeribitWsFeedHandler {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        false,
                                                     );
                                                 } else if order.order_state == "rejected" {
                                                     log::debug!(
@@ -2409,11 +2563,13 @@ impl DeribitWsFeedHandler {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        true,
                                                     );
                                                 } else if was_terminal {
                                                     self.finish_order_context(
                                                         venue_order_id,
                                                         &context,
+                                                        false,
                                                     );
                                                 } else {
                                                     log::trace!(
@@ -2564,6 +2720,107 @@ impl DeribitWsFeedHandler {
             }
             DeribitWsMessage::Reconnected => Some(NautilusWsMessage::Reconnected),
         }
+    }
+
+    fn handle_unsubscribe_acknowledgement(
+        &mut self,
+        request_id: u64,
+        channels: &[String],
+        response: &DeribitJsonRpcResponse<Box<RawValue>>,
+    ) {
+        if let Some(error) = &response.error {
+            log::error!(
+                "Unsubscribe failed: code={}, message={}, channels={:?}, request_id={}",
+                error.code,
+                error.message,
+                channels,
+                request_id
+            );
+            return;
+        }
+
+        let acknowledged = self.subscription_acknowledgements(
+            request_id,
+            channels,
+            response.result.as_deref(),
+            false,
+        );
+
+        for ch in &acknowledged {
+            self.subscriptions_state.confirm_unsubscribe(ch);
+            log::debug!("Unsubscription confirmed: {ch}");
+        }
+
+        if !self.pending_book_resync.is_empty() {
+            let desired = self.subscriptions_state.all_topics();
+            let resync: Vec<String> = acknowledged
+                .into_iter()
+                .filter(|ch| self.pending_book_resync.contains(ch) && desired.contains(ch))
+                .collect();
+
+            if !resync.is_empty() {
+                let _ = self.handle_subscribe(resync);
+            }
+        }
+    }
+
+    fn subscription_acknowledgements(
+        &self,
+        request_id: u64,
+        requested: &[String],
+        result: Option<&RawValue>,
+        subscribe: bool,
+    ) -> Vec<String> {
+        let operation = if subscribe {
+            "Subscribe"
+        } else {
+            "Unsubscribe"
+        };
+
+        let parsed = result
+            .ok_or_else(|| "missing result".to_string())
+            .and_then(|result| {
+                serde_json::from_str::<Vec<String>>(result.get()).map_err(|e| e.to_string())
+            });
+
+        let returned = match parsed {
+            Ok(channels) => channels,
+            Err(e) => {
+                let reason =
+                    format!("{operation} acknowledgement invalid: {e}, request_id={request_id}");
+                log::error!("{reason}");
+
+                if subscribe {
+                    self.subscribe_errors.lock().push(reason);
+                }
+
+                return Vec::new();
+            }
+        };
+
+        let mut returned: HashSet<String> = returned.into_iter().collect();
+        let mut requested_unique = HashSet::new();
+        let acknowledged: Vec<String> = requested
+            .iter()
+            .filter(|ch| requested_unique.insert(ch.as_str()) && returned.remove(ch.as_str()))
+            .cloned()
+            .collect();
+
+        if acknowledged.len() != requested_unique.len() || !returned.is_empty() {
+            let reason = format!(
+                "{operation} acknowledgement incomplete or unrelated: confirmed={} requested={} unrelated={}, request_id={request_id}",
+                acknowledged.len(),
+                requested_unique.len(),
+                returned.len(),
+            );
+            log::error!("{reason}");
+
+            if subscribe {
+                self.subscribe_errors.lock().push(reason);
+            }
+        }
+
+        acknowledged
     }
 
     async fn handle_book_message(
@@ -2727,6 +2984,139 @@ impl DeribitWsFeedHandler {
         let _ = self.handle_unsubscribe(book_channels);
     }
 
+    fn handle_order_submit_response(
+        &mut self,
+        submit_context: &OrderContext,
+        request_id: u64,
+        response: &DeribitJsonRpcResponse<Box<RawValue>>,
+        ts_init: UnixNanos,
+    ) -> Option<NautilusWsMessage> {
+        let client_order_id = submit_context.client_order_id;
+        let trader_id = submit_context.trader_id;
+        let strategy_id = submit_context.strategy_id;
+        let instrument_id = submit_context.instrument_id;
+
+        let Some(result) = &response.result else {
+            let error = response.error.as_ref()?;
+            let (reason, due_post_only) =
+                Self::venue_command_reason(error.code, &error.message, error.data.as_ref())?;
+            self.submitted_order_contexts.remove(&client_order_id);
+            return Some(NautilusWsMessage::OrderRejected(self.order_rejected(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                &reason,
+                due_post_only,
+            )));
+        };
+
+        let order_response = match serde_json::from_str::<DeribitOrderResponse>(result.get()) {
+            Ok(order_response) => order_response,
+            Err(e) => {
+                log::error!("Failed to parse order response: request_id={request_id}, error={e}");
+                return None;
+            }
+        };
+
+        let venue_order_id_str = &order_response.order.order_id;
+        let venue_order_id = VenueOrderId::new(venue_order_id_str.as_str());
+        let order_state = &order_response.order.order_state;
+        log::debug!(
+            "Order response: venue_order_id={venue_order_id}, client_order_id={client_order_id}, state={order_state}"
+        );
+
+        let was_terminal = self.terminal_order_contexts.contains_key(&venue_order_id);
+
+        let mut context = self
+            .find_order_context(venue_order_id, Some(client_order_id))
+            .unwrap_or_else(|| OrderContext {
+                last_order_signature: Some(Self::order_signature(&order_response.order)),
+                ..submit_context.clone()
+            });
+
+        context.last_order_signature = Some(Self::order_signature(&order_response.order));
+        if was_terminal {
+            self.finish_order_context(venue_order_id, &context, false);
+        } else {
+            self.bind_order_context(venue_order_id, context.clone());
+        }
+
+        if order_state == "rejected" {
+            self.submitted_order_contexts.remove(&client_order_id);
+            self.finish_order_context(venue_order_id, &context, true);
+            let due_post_only =
+                order_response.order.reject_reason.as_deref() == Some("post_only_reject");
+            let reason = sanitize_strategy_reason(
+                order_response.order.reject_reason.as_deref().unwrap_or(""),
+            );
+            log::warn!(
+                "Venue rejected order in result: client_order_id={client_order_id}, reason={reason}"
+            );
+            return Some(NautilusWsMessage::OrderRejected(self.order_rejected(
+                trader_id,
+                strategy_id,
+                instrument_id,
+                client_order_id,
+                &reason,
+                due_post_only,
+            )));
+        }
+
+        if !order_response.trades.is_empty() {
+            let outgoing = self.route_user_trades(&order_response.trades, ts_init);
+            self.pending_outgoing.extend(outgoing);
+            return None;
+        }
+
+        if order_state == "filled" {
+            log::debug!(
+                "Deferring acceptance for fast-filled order until its trade arrives: venue_order_id={venue_order_id}, client_order_id={client_order_id}"
+            );
+            self.finish_order_context(venue_order_id, &context, false);
+            return None;
+        }
+
+        if was_terminal {
+            log::debug!(
+                "Skipping OrderAccepted for terminal order: client_order_id={client_order_id}"
+            );
+            return None;
+        }
+
+        if context.accepted {
+            log::trace!(
+                "Skipping duplicate OrderAccepted response: venue_order_id={venue_order_id}"
+            );
+            return None;
+        }
+
+        let instrument_name_ustr = order_response.order.instrument_name;
+
+        let Some(instrument) = self.instruments_cache.get(&instrument_name_ustr) else {
+            log::warn!("Instrument {instrument_name_ustr} not found in cache for order response");
+            return None;
+        };
+
+        let Some(account_id) = self.account_id else {
+            log::warn!("Cannot create OrderAccepted: account_id not set");
+            return None;
+        };
+
+        let event = parse_order_accepted_with_client_order_id(
+            &order_response.order,
+            instrument,
+            account_id,
+            trader_id,
+            strategy_id,
+            client_order_id,
+            ts_init,
+        );
+        context.accepted = true;
+        self.bind_order_context(venue_order_id, context);
+        Some(NautilusWsMessage::OrderAccepted(event))
+    }
+
     fn order_signature(order: &DeribitOrderMsg) -> OrderSignature {
         (order.amount, order.price, order.trigger_price)
     }
@@ -2738,7 +3128,11 @@ impl DeribitWsFeedHandler {
     ) -> Option<OrderContext> {
         self.order_contexts
             .get(&venue_order_id)
-            .or_else(|| self.terminal_order_contexts.get(&venue_order_id))
+            .or_else(|| {
+                self.terminal_order_contexts
+                    .get(&venue_order_id)
+                    .map(|terminal| &terminal.context)
+            })
             .cloned()
             .or_else(|| {
                 client_order_id.and_then(|client_order_id| {
@@ -2754,12 +3148,28 @@ impl DeribitWsFeedHandler {
         self.order_contexts.insert(venue_order_id, context);
     }
 
-    fn finish_order_context(&mut self, venue_order_id: VenueOrderId, context: &OrderContext) {
+    fn finish_order_context(
+        &mut self,
+        venue_order_id: VenueOrderId,
+        context: &OrderContext,
+        late_fills_as_reports: bool,
+    ) {
         self.order_contexts.remove(&venue_order_id);
         self.submitted_order_contexts
             .remove(&context.client_order_id);
+        let late_fills_as_reports = late_fills_as_reports
+            || self
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .is_some_and(|terminal| terminal.late_fills_as_reports);
+
+        let terminal = TerminalOrderContext {
+            context: context.clone(),
+            late_fills_as_reports,
+        };
+
         self.terminal_order_contexts
-            .insert(venue_order_id, context.clone());
+            .insert(venue_order_id, terminal);
     }
 
     fn route_user_trades(
@@ -2774,6 +3184,7 @@ impl DeribitWsFeedHandler {
 
         let mut outgoing = Vec::with_capacity(trades.len() + 1);
         let mut reports = Vec::new();
+        let mut completed_contexts = IndexMap::new();
 
         for trade in trades {
             let instrument_name = trade.instrument_name;
@@ -2798,87 +3209,139 @@ impl DeribitWsFeedHandler {
                     continue;
                 }
             };
-            let venue_order_id = report.venue_order_id;
-            let was_terminal = self.terminal_order_contexts.contains_key(&venue_order_id);
-            let Some(mut context) = self.find_order_context(venue_order_id, report.client_order_id)
-            else {
-                log::debug!(
-                    "Parsed external fill report: {} @ {}",
-                    report.trade_id,
-                    report.last_px
-                );
-                reports.push(report);
-                continue;
-            };
 
-            if !context.accepted {
-                outgoing.push(NautilusWsMessage::OrderAccepted(OrderAccepted::new(
-                    context.trader_id,
-                    context.strategy_id,
-                    context.instrument_id,
-                    context.client_order_id,
-                    venue_order_id,
-                    account_id,
-                    UUID4::new(),
-                    report.ts_event,
-                    report.ts_init,
-                    false,
-                )));
-                context.accepted = true;
+            self.route_user_trade(
+                trade,
+                report,
+                quote_currency,
+                &mut outgoing,
+                &mut reports,
+                &mut completed_contexts,
+            );
+        }
+
+        for (venue_order_id, context) in completed_contexts {
+            self.finish_order_context(venue_order_id, &context, true);
+        }
+
+        if !reports.is_empty() {
+            outgoing.push(NautilusWsMessage::FillReports(reports));
+        }
+
+        // Preserve order-context updates before suppressing duplicate trade output
+        outgoing.retain_mut(|message| match message {
+            NautilusWsMessage::OrderFilled(fill) => self
+                .emitted_trades
+                .insert((fill.venue_order_id, fill.trade_id)),
+            NautilusWsMessage::FillReports(reports) => {
+                reports.retain(|report| {
+                    self.emitted_trades
+                        .insert((report.venue_order_id, report.trade_id))
+                });
+
+                !reports.is_empty()
             }
+            _ => true,
+        });
 
+        outgoing
+    }
+
+    fn route_user_trade(
+        &mut self,
+        trade: &DeribitUserTradeMsg,
+        mut report: FillReport,
+        quote_currency: Currency,
+        outgoing: &mut Vec<NautilusWsMessage>,
+        reports: &mut Vec<FillReport>,
+        completed_contexts: &mut IndexMap<VenueOrderId, OrderContext>,
+    ) {
+        let venue_order_id = report.venue_order_id;
+        let terminal = self.terminal_order_contexts.get(&venue_order_id);
+        let was_terminal = terminal.is_some();
+        let late_fills_as_reports = terminal.is_some_and(|terminal| terminal.late_fills_as_reports);
+
+        let Some(mut context) = self.find_order_context(venue_order_id, report.client_order_id)
+        else {
             log::debug!(
-                "Parsed tracked fill event: {} @ {}",
+                "Parsed external fill report: {} @ {}",
                 report.trade_id,
                 report.last_px
             );
-            outgoing.push(NautilusWsMessage::OrderFilled(OrderFilled::new(
+            reports.push(report);
+            return;
+        };
+
+        if late_fills_as_reports {
+            report.client_order_id = Some(context.client_order_id);
+            log::debug!(
+                "Parsed post-terminal fill report: {} @ {}",
+                report.trade_id,
+                report.last_px
+            );
+            reports.push(report);
+            return;
+        }
+
+        if !reports.is_empty() {
+            outgoing.push(NautilusWsMessage::FillReports(std::mem::take(reports)));
+        }
+
+        let account_id = report.account_id;
+
+        if !context.accepted {
+            outgoing.push(NautilusWsMessage::OrderAccepted(OrderAccepted::new(
                 context.trader_id,
                 context.strategy_id,
                 context.instrument_id,
                 context.client_order_id,
                 venue_order_id,
                 account_id,
-                report.trade_id,
-                context.order_side,
-                context.order_type,
-                report.last_qty,
-                report.last_px,
-                quote_currency,
-                report.liquidity_side,
                 UUID4::new(),
                 report.ts_event,
                 report.ts_init,
                 false,
-                report.venue_position_id,
-                Some(report.commission),
-                None,
             )));
-
-            if was_terminal || trade.state == "filled" {
-                self.finish_order_context(venue_order_id, &context);
-            } else {
-                self.bind_order_context(venue_order_id, context);
-            }
+            context.accepted = true;
         }
 
-        // Preserve order-context updates before suppressing duplicate trade output
-        outgoing.retain(|message| match message {
-            NautilusWsMessage::OrderFilled(fill) => self
-                .emitted_trades
-                .insert((fill.venue_order_id, fill.trade_id)),
-            _ => true,
-        });
+        log::debug!(
+            "Parsed tracked fill event: {} @ {}",
+            report.trade_id,
+            report.last_px
+        );
+        outgoing.push(NautilusWsMessage::OrderFilled(OrderFilled::new(
+            context.trader_id,
+            context.strategy_id,
+            context.instrument_id,
+            context.client_order_id,
+            venue_order_id,
+            account_id,
+            report.trade_id,
+            context.order_side,
+            context.order_type,
+            report.last_qty,
+            report.last_px,
+            quote_currency,
+            report.liquidity_side,
+            UUID4::new(),
+            report.ts_event,
+            report.ts_init,
+            false,
+            report.venue_position_id,
+            Some(report.commission),
+            None,
+        )));
 
-        reports.retain(|report| {
-            self.emitted_trades
-                .insert((report.venue_order_id, report.trade_id))
-        });
-
-        if !reports.is_empty() {
-            outgoing.push(NautilusWsMessage::FillReports(reports));
+        if trade.state == "filled" {
+            completed_contexts.insert(venue_order_id, context.clone());
         }
-        outgoing
+
+        if was_terminal {
+            self.finish_order_context(venue_order_id, &context, false);
+        } else {
+            self.bind_order_context(venue_order_id, context);
+        }
     }
 
     /// Main message processing loop.
@@ -2888,12 +3351,6 @@ impl DeribitWsFeedHandler {
     /// Data messages are sent directly to `out_tx` for the user stream.
     pub async fn next(&mut self) -> Option<NautilusWsMessage> {
         loop {
-            if self.signal.load(Ordering::Relaxed) {
-                self.subscription_send = None;
-                self.process_command(HandlerCommand::Disconnect).await;
-                return None;
-            }
-
             if let Some(msg) = self.pending_outgoing.pop_front() {
                 match msg {
                     NautilusWsMessage::Reconnected
@@ -2906,6 +3363,13 @@ impl DeribitWsFeedHandler {
                         continue;
                     }
                 }
+            }
+
+            if self.signal.load(Ordering::Relaxed) {
+                self.subscription_send = None;
+                self.fail_unsent_order_commands();
+                self.process_command(HandlerCommand::Disconnect).await;
+                return None;
             }
 
             if self.subscription_send.is_none()
@@ -3352,6 +3816,7 @@ mod tests {
                 .terminal_order_contexts
                 .get(&VenueOrderId::from("ETH-584830574"))
                 .unwrap()
+                .context
                 .accepted
         );
 
@@ -3533,36 +3998,41 @@ mod tests {
         handler.process_raw_message(&replay_update).await;
         let second = handler.pending_outgoing.pop_front().unwrap();
 
-        let fills = [first, second].map(|message| match message {
-            NautilusWsMessage::OrderFilled(fill) => {
-                assert!(tracked);
-                assert_eq!(fill.client_order_id, client_order_id);
-                (
-                    fill.trade_id,
-                    fill.last_qty,
-                    fill.last_px,
-                    fill.commission.unwrap(),
-                )
-            }
-            NautilusWsMessage::FillReports(mut reports) => {
-                assert!(!tracked);
-                assert_eq!(reports.len(), 1);
-                let report = reports.pop().unwrap();
-                (
-                    report.trade_id,
-                    report.last_qty,
-                    report.last_px,
-                    report.commission,
-                )
-            }
-            message => panic!("unexpected fill message: {message:?}"),
-        });
+        let fills: Vec<_> = [first, second]
+            .into_iter()
+            .enumerate()
+            .map(|(index, message)| match message {
+                NautilusWsMessage::OrderFilled(fill) => {
+                    assert!(tracked && index == 0);
+                    assert_eq!(fill.client_order_id, client_order_id);
+                    (
+                        fill.trade_id,
+                        fill.last_qty,
+                        fill.last_px,
+                        fill.commission.unwrap(),
+                    )
+                }
+                NautilusWsMessage::FillReports(mut reports) => {
+                    assert!(!tracked || index == 1);
+                    assert_eq!(reports.len(), 1);
+                    let report = reports.pop().unwrap();
+                    assert_eq!(report.client_order_id, Some(client_order_id));
+                    (
+                        report.trade_id,
+                        report.last_qty,
+                        report.last_px,
+                        report.commission,
+                    )
+                }
+                message => panic!("unexpected fill message: {message:?}"),
+            })
+            .collect();
 
         assert!(matches!(reconnected, Some(NautilusWsMessage::Reconnected)));
         assert!(handler.pending_outgoing.is_empty());
         assert_eq!(
             fills,
-            [
+            vec![
                 (
                     TradeId::from("ETH-2696068"),
                     Quantity::from(1),
@@ -3720,7 +4190,11 @@ mod tests {
     #[case("filled")]
     #[case("open")]
     #[tokio::test]
-    async fn late_fill_after_cancel_stays_on_tracked_event_path(#[case] trade_state: &str) {
+    async fn late_fill_after_terminal_status_uses_report_recovery(
+        #[case] trade_state: &str,
+        #[values("cancelled", "expired", "rejected")] terminal_state: &str,
+        #[values(None, Some("STALE-CLIENT-ID"))] label: Option<&str>,
+    ) {
         let mut handler = routing_test_handler();
         let venue_order_id = VenueOrderId::from("ETH-584830574");
         let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
@@ -3741,11 +4215,65 @@ mod tests {
         handler
             .process_raw_message(&subscription(
                 "user.orders.any.any.raw",
-                &serde_json::json!([order_data("cancelled", false)]),
+                &serde_json::json!([order_data(terminal_state, false)]),
             ))
             .await;
         let mut trade = trade_data();
         trade["state"] = serde_json::Value::String(trade_state.to_string());
+
+        trade["label"] = match label {
+            Some(label) => serde_json::json!(label),
+            None => serde_json::Value::Null,
+        };
+
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade.clone(), trade.clone()]),
+            ))
+            .await;
+
+        match terminal_state {
+            "cancelled" | "expired" => {
+                let terminal = handler.pending_outgoing.pop_front().unwrap();
+                assert!(
+                    matches!(
+                        (terminal_state, terminal),
+                        ("cancelled", NautilusWsMessage::OrderCanceled(_))
+                            | ("expired", NautilusWsMessage::OrderExpired(_))
+                    ),
+                    "unexpected terminal message for {terminal_state}",
+                );
+            }
+            "rejected" => {}
+            _ => unreachable!(),
+        }
+
+        let message = handler.pending_outgoing.pop_front().unwrap();
+
+        let NautilusWsMessage::FillReports(reports) = message else {
+            panic!("expected late fill reports, was {message:?}");
+        };
+
+        assert_eq!(reports.len(), 1);
+        let report = &reports[0];
+        assert_eq!(report.account_id, AccountId::from("DERIBIT-001"));
+        assert_eq!(
+            report.instrument_id,
+            InstrumentId::from("BTC-PERPETUAL.DERIBIT")
+        );
+        assert_eq!(report.venue_order_id, venue_order_id);
+        assert_eq!(report.trade_id, TradeId::from("ETH-2696068"));
+        assert_eq!(report.order_side, OrderSide::Buy);
+        assert_eq!(report.last_qty, Quantity::from(2));
+        assert_eq!(report.last_px, Price::from("203.8"));
+        assert_eq!(report.commission, Money::from("0.00073602 USDT"));
+        assert_eq!(report.liquidity_side, LiquiditySide::Taker);
+        assert_eq!(report.client_order_id, Some(client_order_id));
+        assert_eq!(report.venue_position_id, None);
+        assert_eq!(report.avg_px, None);
+        assert_eq!(report.ts_event, UnixNanos::from(1_590_480_712_800_000_000));
+
         handler
             .process_raw_message(&subscription(
                 "user.trades.any.any.raw",
@@ -3753,22 +4281,668 @@ mod tests {
             ))
             .await;
 
-        assert!(matches!(
-            handler.pending_outgoing.pop_front().unwrap(),
-            NautilusWsMessage::OrderCanceled(event)
-                if event.client_order_id == client_order_id
-        ));
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+    }
+
+    #[rstest]
+    #[case("cancelled")]
+    #[case("rejected")]
+    #[tokio::test]
+    async fn late_fill_after_command_response_uses_report_recovery(#[case] terminal_state: &str) {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("BTC-PERPETUAL.DERIBIT");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        let pending = if terminal_state == "cancelled" {
+            PendingRequestType::Cancel {
+                venue_order_id: Some(venue_order_id),
+                causation_id: None,
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+            }
+        } else {
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+            }
+        };
+
+        handler.pending_requests.insert(42, pending);
+
+        let result = if terminal_state == "cancelled" {
+            order_data(terminal_state, false)
+        } else {
+            serde_json::json!({
+                "order": order_data(terminal_state, false),
+                "trades": []
+            })
+        };
+
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "result": result,
+        });
+
+        let terminal = handler.process_raw_message(&response.to_string()).await;
+
+        assert!(
+            matches!(
+                (terminal_state, terminal),
+                ("cancelled", Some(NautilusWsMessage::OrderCanceled(_)))
+                    | ("rejected", Some(NautilusWsMessage::OrderRejected(_)))
+            ),
+            "unexpected terminal response for {terminal_state}",
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade_data()]),
+            ))
+            .await;
+
+        let message = handler.pending_outgoing.pop_front().unwrap();
+
+        let NautilusWsMessage::FillReports(reports) = message else {
+            panic!("expected late fill reports, was {message:?}");
+        };
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].venue_order_id, venue_order_id);
+        assert_eq!(reports[0].client_order_id, Some(client_order_id));
+        assert_eq!(reports[0].trade_id, TradeId::from("ETH-2696068"));
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+    }
+
+    #[rstest]
+    #[case::direct_stream("direct_stream")]
+    #[case::venue_status("venue_status")]
+    #[case::submit_response("submit_response")]
+    #[tokio::test]
+    async fn final_trade_routing_handles_batches_and_split_delivery(#[case] delivery: &str) {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        let mut first_trade = trade_data();
+        first_trade["amount"] = serde_json::json!(1);
+        let mut second_trade = trade_data();
+        second_trade["trade_id"] = serde_json::json!("ETH-2696069");
+        second_trade["amount"] = serde_json::json!(1);
+        second_trade["price"] = serde_json::json!(204.1);
+        second_trade["fee"] = serde_json::json!(0.00083602);
+
+        match delivery {
+            "direct_stream" => {
+                handler
+                    .process_raw_message(&subscription(
+                        "user.trades.any.any.raw",
+                        &serde_json::json!([first_trade.clone(), second_trade.clone()]),
+                    ))
+                    .await;
+            }
+            "venue_status" => {
+                handler
+                    .process_raw_message(&subscription(
+                        "user.orders.any.any.raw",
+                        &serde_json::json!([order_data("filled", false)]),
+                    ))
+                    .await;
+                assert!(handler.pending_outgoing.is_empty());
+                handler
+                    .process_raw_message(&subscription(
+                        "user.trades.any.any.raw",
+                        &serde_json::json!([first_trade.clone(), second_trade.clone()]),
+                    ))
+                    .await;
+            }
+            "submit_response" => {
+                handler.pending_requests.insert(
+                    42,
+                    PendingRequestType::Buy {
+                        client_order_id,
+                        trader_id: TraderId::from("TRADER-001"),
+                        strategy_id: StrategyId::from("S-001"),
+                        instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                        order_side: OrderSide::Buy,
+                        order_type: OrderType::Market,
+                    },
+                );
+
+                let response = serde_json::json!({
+                    "jsonrpc": "2.0",
+                    "id": 42,
+                    "result": {
+                        "order": order_data("filled", false),
+                        "trades": [first_trade.clone()],
+                    }
+                });
+                handler.process_raw_message(&response.to_string()).await;
+                handler
+                    .process_raw_message(&subscription(
+                        "user.trades.any.any.raw",
+                        &serde_json::json!([second_trade.clone()]),
+                    ))
+                    .await;
+            }
+            _ => unreachable!(),
+        }
+
         assert!(matches!(
             handler.pending_outgoing.pop_front().unwrap(),
             NautilusWsMessage::OrderFilled(event)
                 if event.client_order_id == client_order_id
+                    && event.trade_id == TradeId::from("ETH-2696068")
+                    && event.last_qty == Quantity::from(1)
+                    && event.last_px == Price::from("203.8")
+                    && event.commission == Some(Money::from("0.00073602 USDT"))
+        ));
+        let second_message = handler.pending_outgoing.pop_front().unwrap();
+
+        match delivery {
+            "direct_stream" | "venue_status" => {
+                assert!(matches!(
+                    second_message,
+                    NautilusWsMessage::OrderFilled(event)
+                        if event.client_order_id == client_order_id
+                            && event.trade_id == TradeId::from("ETH-2696069")
+                            && event.last_qty == Quantity::from(1)
+                            && event.last_px == Price::from("204.1")
+                            && event.commission == Some(Money::from("0.00083602 USDT"))
+                ));
+            }
+            "submit_response" => {
+                let NautilusWsMessage::FillReports(reports) = second_message else {
+                    panic!("expected split-delivery fill report, was {second_message:?}");
+                };
+
+                assert_eq!(reports.len(), 1);
+                assert_eq!(reports[0].client_order_id, Some(client_order_id));
+                assert_eq!(reports[0].trade_id, TradeId::from("ETH-2696069"));
+                assert_eq!(reports[0].last_qty, Quantity::from(1));
+                assert_eq!(reports[0].last_px, Price::from("204.1"));
+                assert_eq!(reports[0].commission, Money::from("0.00083602 USDT"));
+            }
+            _ => unreachable!(),
+        }
+
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+
+        let mut late_trade = trade_data();
+        late_trade["trade_id"] = serde_json::json!("ETH-2696070");
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([first_trade, late_trade]),
+            ))
+            .await;
+
+        let message = handler.pending_outgoing.pop_front().unwrap();
+
+        let NautilusWsMessage::FillReports(reports) = message else {
+            panic!("expected post-terminal fill reports, was {message:?}");
+        };
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].client_order_id, Some(client_order_id));
+        assert_eq!(reports[0].trade_id, TradeId::from("ETH-2696070"));
+        assert!(handler.pending_outgoing.is_empty());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn venue_filled_status_before_trade_keeps_first_fill_typed() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("filled", false)]),
+            ))
+            .await;
+
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(
+            !handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade_data()]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderFilled(event)
+                if event.client_order_id == client_order_id
+                    && event.trade_id == TradeId::from("ETH-2696068")
         ));
         assert!(handler.pending_outgoing.is_empty());
         assert!(!handler.order_contexts.contains_key(&venue_order_id));
         assert!(
             handler
                 .terminal_order_contexts
-                .contains_key(&venue_order_id)
+                .get(&venue_order_id)
+                .unwrap()
+                .late_fills_as_reports
+        );
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn mixed_late_report_and_tracked_fill_preserve_trade_order() {
+        let mut handler = routing_test_handler();
+        let terminal_venue_order_id = VenueOrderId::from("ETH-584830574");
+        let terminal_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            terminal_venue_order_id,
+            OrderContext {
+                client_order_id: terminal_client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        handler
+            .process_raw_message(&subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("cancelled", false)]),
+            ))
+            .await;
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderCanceled(_)
+        ));
+
+        let active_venue_order_id = VenueOrderId::from("ETH-584830575");
+        let active_client_order_id = ClientOrderId::from("O-19700101-000000-001-001-2");
+        handler.order_contexts.insert(
+            active_venue_order_id,
+            OrderContext {
+                client_order_id: active_client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: true,
+                last_order_signature: None,
+            },
+        );
+
+        let mut late_trade = trade_data();
+        late_trade["state"] = serde_json::json!("open");
+        let mut active_trade = trade_data();
+        active_trade["order_id"] = serde_json::json!(active_venue_order_id.to_string());
+        active_trade["trade_id"] = serde_json::json!("ETH-2696069");
+        active_trade["label"] = serde_json::json!(active_client_order_id.to_string());
+
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([late_trade, active_trade]),
+            ))
+            .await;
+
+        let late_message = handler.pending_outgoing.pop_front().unwrap();
+
+        let NautilusWsMessage::FillReports(reports) = late_message else {
+            panic!("expected late report first, was {late_message:?}");
+        };
+
+        assert_eq!(reports.len(), 1);
+        assert_eq!(reports[0].venue_order_id, terminal_venue_order_id);
+        assert_eq!(reports[0].client_order_id, Some(terminal_client_order_id));
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderFilled(event)
+                if event.venue_order_id == active_venue_order_id
+                    && event.client_order_id == active_client_order_id
+                    && event.trade_id == TradeId::from("ETH-2696069")
+        ));
+        assert!(handler.pending_outgoing.is_empty());
+    }
+
+    #[rstest]
+    #[case::filled_terminal_first("filled", true)]
+    #[case::cancelled_terminal_first("cancelled", true)]
+    #[case::filled_response_first("filled", false)]
+    #[case::cancelled_response_first("cancelled", false)]
+    #[tokio::test]
+    async fn delayed_open_submit_response_preserves_terminal_context(
+        #[case] terminal_state: &str,
+        #[case] terminal_first: bool,
+    ) {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.order_contexts.insert(
+            venue_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler.pending_requests.insert(
+            42,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+            },
+        );
+
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "result": { "order": order_data("open", false), "trades": [] }
+        })
+        .to_string();
+
+        let terminal_update = if terminal_state == "filled" {
+            subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade_data()]),
+            )
+        } else {
+            subscription(
+                "user.orders.any.any.raw",
+                &serde_json::json!([order_data("cancelled", false)]),
+            )
+        };
+
+        let mut new_trade = trade_data();
+        new_trade["trade_id"] = serde_json::json!("ETH-2696069");
+        let new_trade_update =
+            subscription("user.trades.any.any.raw", &serde_json::json!([new_trade]));
+        let mut events = Vec::new();
+
+        if terminal_first {
+            handler.process_raw_message(&terminal_update).await;
+            events.extend(handler.pending_outgoing.drain(..));
+            assert!(
+                handler
+                    .terminal_order_contexts
+                    .contains_key(&venue_order_id)
+            );
+
+            let result = handler.process_raw_message(&response).await;
+
+            assert!(result.is_none());
+            events.extend(handler.pending_outgoing.drain(..));
+            assert!(!handler.order_contexts.contains_key(&venue_order_id));
+            assert!(
+                handler
+                    .terminal_order_contexts
+                    .contains_key(&venue_order_id)
+            );
+
+            // Replayed terminal evidence stays suppressed
+            handler.process_raw_message(&terminal_update).await;
+            events.extend(handler.pending_outgoing.drain(..));
+
+            // New trade evidence uses terminal report recovery
+            handler.process_raw_message(&new_trade_update).await;
+            events.extend(handler.pending_outgoing.drain(..));
+        } else {
+            let result = handler.process_raw_message(&response).await;
+            events.extend(result);
+            events.extend(handler.pending_outgoing.drain(..));
+            handler.process_raw_message(&terminal_update).await;
+            events.extend(handler.pending_outgoing.drain(..));
+        }
+
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .context
+                .accepted
+        );
+
+        let kinds: Vec<&str> = events
+            .iter()
+            .map(|event| match event {
+                NautilusWsMessage::OrderAccepted(_) => "accepted",
+                NautilusWsMessage::OrderFilled(_) => "filled",
+                NautilusWsMessage::FillReports(_) => "fill_report",
+                NautilusWsMessage::OrderCanceled(_) => "canceled",
+                other => panic!("unexpected message: {other:?}"),
+            })
+            .collect();
+
+        let expected: &[&str] = match (terminal_state, terminal_first) {
+            ("filled", true) => &["accepted", "filled", "fill_report"],
+            ("cancelled", true) => &["accepted", "canceled", "fill_report"],
+            ("filled", false) => &["accepted", "filled"],
+            ("cancelled", false) => &["accepted", "canceled"],
+            _ => unreachable!(),
+        };
+
+        assert_eq!(kinds, expected);
+
+        if terminal_first {
+            assert!(matches!(
+                events.last(),
+                Some(NautilusWsMessage::FillReports(reports))
+                    if reports.len() == 1
+                        && reports[0].trade_id == TradeId::from("ETH-2696069")
+                        && reports[0].client_order_id == Some(client_order_id)
+            ));
+        }
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn delayed_open_submit_response_after_fast_fill_keeps_terminal() {
+        let mut handler = routing_test_handler();
+        let venue_order_id = VenueOrderId::from("ETH-584830574");
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+
+        let context = OrderContext {
+            client_order_id,
+            trader_id: TraderId::from("TRADER-001"),
+            strategy_id: StrategyId::from("S-001"),
+            instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            order_side: OrderSide::Buy,
+            order_type: OrderType::Market,
+            accepted: false,
+            last_order_signature: None,
+        };
+
+        handler
+            .submitted_order_contexts
+            .insert(client_order_id, context.clone());
+        handler.pending_requests.insert(
+            42,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: context.trader_id,
+                strategy_id: context.strategy_id,
+                instrument_id: context.instrument_id,
+                order_side: context.order_side,
+                order_type: context.order_type,
+            },
+        );
+
+        let filled_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "result": { "order": order_data("filled", false), "trades": [] }
+        });
+        handler
+            .process_raw_message(&filled_response.to_string())
+            .await;
+        assert!(
+            !handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .context
+                .accepted
+        );
+
+        // The delayed open acknowledgement arrives after the fast fill terminalized the order
+        handler.pending_requests.insert(
+            43,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: context.trader_id,
+                strategy_id: context.strategy_id,
+                instrument_id: context.instrument_id,
+                order_side: context.order_side,
+                order_type: context.order_type,
+            },
+        );
+
+        let open_response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 43,
+            "result": { "order": order_data("open", false), "trades": [] }
+        });
+
+        let result = handler
+            .process_raw_message(&open_response.to_string())
+            .await;
+
+        assert!(result.is_none());
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            !handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .context
+                .accepted
+        );
+
+        // Fast-fill acceptance ordering is preserved when the trade arrives
+        handler
+            .process_raw_message(&subscription(
+                "user.trades.any.any.raw",
+                &serde_json::json!([trade_data()]),
+            ))
+            .await;
+
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderAccepted(event)
+                if event.client_order_id == client_order_id
+        ));
+        assert!(matches!(
+            handler.pending_outgoing.pop_front().unwrap(),
+            NautilusWsMessage::OrderFilled(event)
+                if event.client_order_id == client_order_id
+                    && event.trade_id == TradeId::from("ETH-2696068")
+        ));
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(!handler.order_contexts.contains_key(&venue_order_id));
+        assert!(
+            handler
+                .terminal_order_contexts
+                .get(&venue_order_id)
+                .unwrap()
+                .context
+                .accepted
         );
     }
 
@@ -3976,8 +5150,13 @@ mod tests {
             };
 
             handler.pending_requests.insert(1, pending);
+            let response = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "error": {"code": 10004, "message": "order_not_found", "data": null}
+            });
             handler
-                .process_raw_message(&load_test_json("ws_error.json"))
+                .process_raw_message(&response.to_string())
                 .await
                 .expect("venue refusal produces a rejection")
         };
@@ -4020,13 +5199,51 @@ mod tests {
         assert_eq!(ts_init, UnixNanos::from(17));
         assert_eq!(cause, Some(causation_id));
         assert_eq!(
-            reason,
+            reason.as_str(),
             if not_sent {
-                "WebSocket not connected"
+                "not connected"
             } else {
-                "code=10028: too_many_requests"
+                "order_not_found"
             }
         );
+        assert!(handler.pending_requests.is_empty());
+        assert!(handler.pending_outgoing.is_empty());
+    }
+
+    #[rstest]
+    #[case::modify(false)]
+    #[case::cancel(true)]
+    #[tokio::test]
+    async fn ambiguous_venue_code_emits_no_command_event(#[case] cancel: bool) {
+        let mut handler = routing_test_handler();
+        let client_order_id = ClientOrderId::from("O-AMBIGUOUS");
+
+        let pending = if cancel {
+            PendingRequestType::Cancel {
+                venue_order_id: Some(VenueOrderId::from("ETH-584830574")),
+                causation_id: Some(UUID4::new()),
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            }
+        } else {
+            PendingRequestType::Edit {
+                venue_order_id: Some(VenueOrderId::from("ETH-584830574")),
+                causation_id: Some(UUID4::new()),
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            }
+        };
+
+        handler.pending_requests.insert(1, pending);
+        let message = handler
+            .process_raw_message(&load_test_json("ws_error.json"))
+            .await;
+
+        assert!(message.is_none());
         assert!(handler.pending_requests.is_empty());
         assert!(handler.pending_outgoing.is_empty());
     }
@@ -4129,6 +5346,7 @@ mod tests {
                 .terminal_order_contexts
                 .get(&venue_order_id)
                 .unwrap()
+                .context
                 .last_order_signature
                 .is_some(),
         );
@@ -4251,10 +5469,11 @@ mod tests {
         assert!(updated.is_none());
 
         match filled {
-            Some(NautilusWsMessage::OrderFilled(event)) => {
+            Some(NautilusWsMessage::FillReports(reports)) => {
                 assert!(new_trade);
-                assert_eq!(event.client_order_id, client_order_id);
-                assert_eq!(event.trade_id, TradeId::from("ETH-2696069"));
+                assert_eq!(reports.len(), 1);
+                assert_eq!(reports[0].client_order_id, Some(client_order_id));
+                assert_eq!(reports[0].trade_id, TradeId::from("ETH-2696069"));
             }
             None => assert!(!new_trade),
             message => panic!("unexpected fill message: {message:?}"),
@@ -4797,29 +6016,381 @@ mod tests {
         };
 
         // `serde_json/arbitrary_precision` keeps a number's text, so the amount serializes
+        // and the missing client proves the command was not sent.
         if "0.10".parse::<serde_json::Number>().unwrap().to_string() == "0.10" {
             assert!(matches!(result, Err(DeribitWsError::NotConnected)));
-            assert!(
-                handler
-                    .submitted_order_contexts
-                    .get(&client_order_id)
-                    .is_some()
-            );
-            assert_eq!(handler.pending_requests.len(), 1);
         } else {
             assert!(matches!(
                 result,
-                Err(DeribitWsError::Json(message))
+                Err(DeribitWsError::Encode(message))
                     if message == "exact decimal number serialization requires serde_json/arbitrary_precision"
             ));
-            assert!(
-                handler
-                    .submitted_order_contexts
-                    .get(&client_order_id)
-                    .is_none()
-            );
-            assert!(handler.pending_requests.is_empty());
         }
+
+        assert!(
+            handler
+                .submitted_order_contexts
+                .get(&client_order_id)
+                .is_none()
+        );
+        assert!(handler.pending_requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn stop_before_write_rejects_queued_submit() {
+        let signal = Arc::new(AtomicBool::new(true));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = DeribitWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new('.'),
+            Arc::new(AtomicSet::new()),
+            Arc::new(AtomicSet::new()),
+            Arc::new(AtomicSet::new()),
+            Some(AccountId::from("DERIBIT-001")),
+            true,
+            Arc::new(Mutex::new(Vec::new())),
+        );
+        let client_order_id = ClientOrderId::new("stop-before-write-001");
+        cmd_tx
+            .send(HandlerCommand::Buy {
+                params: DeribitOrderParams {
+                    instrument_name: "BTC-PERPETUAL".to_string(),
+                    amount: Decimal::new(1, 0),
+                    order_type: "limit".to_string(),
+                    label: Some(client_order_id.to_string()),
+                    price: Some(Decimal::new(50_000, 0)),
+                    time_in_force: Some("good_til_cancelled".to_string()),
+                    post_only: None,
+                    reject_post_only: None,
+                    reduce_only: None,
+                    trigger_price: None,
+                    trigger: None,
+                    max_show: None,
+                    valid_until: None,
+                },
+                client_order_id,
+                trader_id: TraderId::from("TESTER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            })
+            .unwrap();
+
+        assert!(handler.next().await.is_none());
+        let message = out_rx.try_recv().expect("queued submit rejection");
+
+        let NautilusWsMessage::OrderRejected(rejected) = message else {
+            panic!("expected OrderRejected, was {message:?}");
+        };
+
+        assert_eq!(rejected.client_order_id, client_order_id);
+        assert_eq!(rejected.reason.as_str(), "canceled before transmission");
+        assert!(!rejected.due_post_only);
+        assert!(out_rx.try_recv().is_err());
+        assert!(cmd_tx.send(HandlerCommand::Disconnect).is_err());
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    #[tokio::test]
+    async fn stop_before_write_denies_queued_modify_or_cancel(#[case] cancel: bool) {
+        let signal = Arc::new(AtomicBool::new(true));
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = DeribitWsFeedHandler::new(
+            signal,
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new('.'),
+            Arc::new(AtomicSet::new()),
+            Arc::new(AtomicSet::new()),
+            Arc::new(AtomicSet::new()),
+            Some(AccountId::from("DERIBIT-001")),
+            true,
+            Arc::new(Mutex::new(Vec::new())),
+        );
+        let client_order_id = ClientOrderId::new("stop-before-write-002");
+        let venue_order_id = VenueOrderId::from("DERIBIT-ORDER-1");
+        let causation_id = UUID4::new();
+
+        let command = if cancel {
+            HandlerCommand::Cancel {
+                causation_id: Some(causation_id),
+                params: DeribitCancelParams {
+                    order_id: venue_order_id.to_string(),
+                },
+                client_order_id,
+                trader_id: TraderId::from("TESTER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            }
+        } else {
+            HandlerCommand::Edit {
+                causation_id: Some(causation_id),
+                params: DeribitEditParams {
+                    order_id: venue_order_id.to_string(),
+                    amount: Decimal::new(1, 0),
+                    price: Some(Decimal::new(50_000, 0)),
+                    post_only: None,
+                    reject_post_only: None,
+                    reduce_only: None,
+                    trigger_price: None,
+                },
+                client_order_id,
+                trader_id: TraderId::from("TESTER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            }
+        };
+
+        cmd_tx.send(command).unwrap();
+        assert!(handler.next().await.is_none());
+        let message = out_rx.try_recv().expect("queued command denial");
+
+        let (id, reason, venue, cause) = match message {
+            NautilusWsMessage::OrderCancelDenied(event) if cancel => (
+                event.client_order_id,
+                event.reason,
+                event.venue_order_id,
+                event.causation_id,
+            ),
+            NautilusWsMessage::OrderModifyDenied(event) if !cancel => (
+                event.client_order_id,
+                event.reason,
+                event.venue_order_id,
+                event.causation_id,
+            ),
+            other => panic!("expected one denial, was {other:?}"),
+        };
+
+        assert_eq!(id, client_order_id);
+        assert_eq!(reason.as_str(), "canceled before transmission");
+        assert_eq!(venue, Some(venue_order_id));
+        assert_eq!(cause, Some(causation_id));
+        assert!(out_rx.try_recv().is_err());
+        assert!(cmd_tx.send(HandlerCommand::Disconnect).is_err());
+    }
+
+    #[rstest]
+    #[case(true)]
+    #[case(false)]
+    #[tokio::test]
+    async fn stopping_handler_flushes_queued_modify_or_cancel_denial(#[case] cancel: bool) {
+        let signal = Arc::new(AtomicBool::new(false));
+        let (_cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
+        let (out_tx, mut out_rx) = tokio::sync::mpsc::unbounded_channel();
+
+        let mut handler = DeribitWsFeedHandler::new(
+            signal.clone(),
+            cmd_rx,
+            raw_rx,
+            out_tx,
+            AuthTracker::new(),
+            SubscriptionState::new('.'),
+            Arc::new(AtomicSet::new()),
+            Arc::new(AtomicSet::new()),
+            Arc::new(AtomicSet::new()),
+            Some(AccountId::from("DERIBIT-001")),
+            true,
+            Arc::new(Mutex::new(Vec::new())),
+        );
+        let client_order_id = ClientOrderId::new("flush-denial-001");
+        let venue_order_id = VenueOrderId::from("DERIBIT-ORDER-1");
+        let causation_id = UUID4::new();
+
+        let command = if cancel {
+            HandlerCommand::Cancel {
+                causation_id: Some(causation_id),
+                params: DeribitCancelParams {
+                    order_id: venue_order_id.to_string(),
+                },
+                client_order_id,
+                trader_id: TraderId::from("TESTER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            }
+        } else {
+            HandlerCommand::Edit {
+                causation_id: Some(causation_id),
+                params: DeribitEditParams {
+                    order_id: venue_order_id.to_string(),
+                    amount: Decimal::new(1, 0),
+                    price: Some(Decimal::new(50_000, 0)),
+                    post_only: None,
+                    reject_post_only: None,
+                    reduce_only: None,
+                    trigger_price: None,
+                },
+                client_order_id,
+                trader_id: TraderId::from("TESTER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+            }
+        };
+
+        signal.store(true, Ordering::Relaxed);
+        handler.process_command(command).await;
+        assert!(handler.next().await.is_none());
+
+        let message = out_rx.try_recv().expect("shutdown should flush the denial");
+
+        let id = match message {
+            NautilusWsMessage::OrderCancelDenied(event) if cancel => event.client_order_id,
+            NautilusWsMessage::OrderModifyDenied(event) if !cancel => event.client_order_id,
+            other => panic!("expected one denial, was {other:?}"),
+        };
+
+        assert_eq!(id, client_order_id);
+        assert!(out_rx.try_recv().is_err());
+    }
+
+    #[tokio::test]
+    async fn ambiguous_submit_error_keeps_order_context() {
+        let mut handler = routing_test_handler();
+        let client_order_id = ClientOrderId::from("O-AMBIGUOUS-SUBMIT");
+        handler.submitted_order_contexts.insert(
+            client_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler.pending_requests.insert(
+            1,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+        );
+
+        let message = handler
+            .process_raw_message(&load_test_json("ws_error.json"))
+            .await;
+
+        assert!(message.is_none());
+        assert!(
+            handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+        assert!(handler.pending_requests.is_empty());
+    }
+
+    #[tokio::test]
+    async fn submit_error_response_emits_order_rejected() {
+        let mut handler = routing_test_handler();
+        let client_order_id = ClientOrderId::from("O-19700101-000000-001-001-1");
+        handler.submitted_order_contexts.insert(
+            client_order_id,
+            OrderContext {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+                accepted: false,
+                last_order_signature: None,
+            },
+        );
+
+        handler.pending_requests.insert(
+            42,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id: TraderId::from("TRADER-001"),
+                strategy_id: StrategyId::from("S-001"),
+                instrument_id: InstrumentId::from("BTC-PERPETUAL.DERIBIT"),
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Market,
+            },
+        );
+
+        let response = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": 42,
+            "error": { "code": 11050, "message": "bad_request" }
+        });
+
+        let event = handler.process_raw_message(&response.to_string()).await;
+
+        let Some(NautilusWsMessage::OrderRejected(rejected)) = event else {
+            panic!("expected OrderRejected, was {event:?}");
+        };
+
+        assert_eq!(rejected.client_order_id, client_order_id);
+        assert_eq!(rejected.reason.as_str(), "bad_request");
+        assert!(!rejected.due_post_only);
+        assert!(handler.pending_outgoing.is_empty());
+        assert!(
+            !handler
+                .submitted_order_contexts
+                .contains_key(&client_order_id)
+        );
+    }
+
+    #[tokio::test]
+    async fn submit_result_rejected_sets_due_post_only() {
+        let mut handler = routing_test_handler();
+        let client_order_id = ClientOrderId::from("routed-904");
+        let trader_id = TraderId::from("TRADER-001");
+        let strategy_id = StrategyId::from("S-001");
+        let instrument_id = InstrumentId::from("BTC_USDC.DERIBIT");
+        handler.pending_requests.insert(
+            42,
+            PendingRequestType::Buy {
+                client_order_id,
+                trader_id,
+                strategy_id,
+                instrument_id,
+                order_side: OrderSide::Buy,
+                order_type: OrderType::Limit,
+            },
+        );
+
+        let mut messages: Vec<serde_json::Value> = serde_json::from_str(include_str!(
+            "../../test_data/ws_routed_spot_execution.json"
+        ))
+        .unwrap();
+        messages[0]["id"] = 42.into();
+        messages[0]["result"]["order"]["order_state"] = "rejected".into();
+        messages[0]["result"]["order"]["reject_reason"] = "post_only_reject".into();
+
+        let event = handler
+            .process_raw_message(&messages[0].to_string())
+            .await
+            .expect("rejected result should emit");
+
+        let NautilusWsMessage::OrderRejected(rejected) = event else {
+            panic!("expected OrderRejected, was {event:?}");
+        };
+
+        assert_eq!(rejected.client_order_id, client_order_id);
+        assert_eq!(rejected.reason.as_str(), "post_only_reject");
+        assert!(rejected.due_post_only);
     }
 
     #[rstest]
@@ -4926,6 +6497,353 @@ mod tests {
                 .get_reference_count(&channels[0]),
             1
         );
+    }
+
+    #[rstest]
+    #[case::full("full")]
+    #[case::partial("partial")]
+    #[case::empty("empty")]
+    #[case::missing("missing")]
+    #[case::null("null")]
+    #[case::object("object")]
+    #[case::scalar("scalar")]
+    #[case::mixed_types("mixed_types")]
+    #[case::unrelated("unrelated")]
+    #[case::mixed_unrelated("mixed_unrelated")]
+    #[case::duplicates("duplicates")]
+    #[case::full_duplicates("full_duplicates")]
+    #[tokio::test]
+    async fn subscription_acknowledgements_correlate_batches(
+        #[case] response_kind: &str,
+        #[values(true, false)] subscribe: bool,
+    ) {
+        let mut handler = routing_test_handler();
+        let channels: Vec<String> = (0..1500)
+            .map(|i| format!("book.BTC-27DEC30-{}-C.none.20.100ms", 100000 + i))
+            .collect();
+
+        for channel in &channels {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+            if !subscribe {
+                handler.subscriptions_state.confirm_subscribe(channel);
+                handler.subscriptions_state.remove_reference(channel);
+                handler.subscriptions_state.remove_reference(channel);
+                handler.subscriptions_state.mark_unsubscribe(channel);
+            }
+        }
+
+        handler
+            .queue_subscription_requests(channels.clone(), subscribe)
+            .unwrap();
+        let requests: Vec<_> = handler.subscription_requests.drain(..).collect();
+        assert_eq!(requests.len(), 2);
+        let mut acknowledged = Vec::new();
+
+        for (index, (request_id, payload)) in requests.iter().enumerate().rev() {
+            let request: serde_json::Value = serde_json::from_str(payload).unwrap();
+            let batch: Vec<String> =
+                serde_json::from_value(request["params"]["channels"].clone()).unwrap();
+            let other: serde_json::Value = serde_json::from_str(&requests[1 - index].1).unwrap();
+            let unrelated = other["params"]["channels"][0].as_str().unwrap();
+            let mut full = batch.clone();
+            full.reverse();
+
+            let result = match response_kind {
+                "full" => serde_json::json!(full),
+                "partial" => serde_json::json!([batch[0]]),
+                "empty" | "missing" => serde_json::json!([]),
+                "null" => serde_json::Value::Null,
+                "object" => serde_json::json!({"channels": batch}),
+                "scalar" => serde_json::json!("ok"),
+                "mixed_types" => serde_json::json!([batch[0], 17]),
+                "unrelated" => serde_json::json!([unrelated]),
+                "mixed_unrelated" => serde_json::json!([batch[0], unrelated]),
+                "duplicates" => serde_json::json!([batch[0], batch[0]]),
+                "full_duplicates" => {
+                    full.push(batch[0].clone());
+                    serde_json::json!(full)
+                }
+                _ => unreachable!(),
+            };
+
+            let mut response = serde_json::json!({
+                "jsonrpc": "2.0", "id": request_id, "result": result,
+            });
+
+            if response_kind == "missing" {
+                response.as_object_mut().unwrap().remove("result");
+            }
+
+            match response_kind {
+                "full" | "full_duplicates" => acknowledged.extend(batch),
+                "partial" | "mixed_unrelated" | "duplicates" => {
+                    acknowledged.push(batch[0].clone());
+                }
+                _ => {}
+            }
+
+            handler.process_raw_message(&response.to_string()).await;
+        }
+
+        let mut expected_pending: Vec<_> = channels
+            .iter()
+            .filter(|ch| !acknowledged.contains(ch))
+            .cloned()
+            .collect();
+        expected_pending.sort();
+
+        let mut pending = if subscribe {
+            handler.subscriptions_state.pending_subscribe_topics()
+        } else {
+            handler.subscriptions_state.pending_unsubscribe_topics()
+        };
+
+        pending.sort();
+
+        assert_eq!(pending, expected_pending);
+        assert_eq!(
+            handler.subscriptions_state.len(),
+            if subscribe { acknowledged.len() } else { 0 }
+        );
+        assert!(handler.pending_requests.is_empty());
+        let expected_errors =
+            usize::from(subscribe && !matches!(response_kind, "full" | "full_duplicates"))
+                * requests.len();
+        assert_eq!(handler.subscribe_errors.lock().len(), expected_errors);
+
+        for (error, (request_id, _)) in handler
+            .subscribe_errors
+            .lock()
+            .iter()
+            .zip(requests.iter().rev())
+        {
+            assert!(error.starts_with("Subscribe acknowledgement "));
+            assert!(error.ends_with(&format!("request_id={request_id}")));
+        }
+
+        for channel in &channels {
+            assert_eq!(
+                handler.subscriptions_state.get_reference_count(channel),
+                if subscribe { 2 } else { 0 }
+            );
+        }
+
+        let mut replay = handler.subscriptions_state.reset_after_reconnect();
+        replay.sort();
+        assert_eq!(replay, if subscribe { channels } else { Vec::new() });
+    }
+
+    #[tokio::test]
+    async fn subscription_acknowledgements_accept_duplicate_requests() {
+        let mut handler = routing_test_handler();
+        let first = "ticker.BTC-PERPETUAL.100ms".to_string();
+        let last = "ticker.ETH-PERPETUAL.100ms".to_string();
+        for channel in [&first, &last] {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+        }
+
+        let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
+        handler.cmd_rx = cmd_rx;
+        cmd_tx
+            .send(HandlerCommand::Subscribe {
+                channels: vec![first.clone(), last.clone()],
+            })
+            .unwrap();
+
+        let coalesced = handler.coalesce_subscriptions(vec![first.clone()]);
+        assert_eq!(coalesced, [first.clone(), first.clone(), last.clone()]);
+        handler.handle_subscribe(coalesced.clone()).unwrap();
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        let ack =
+            serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [last, first, first]});
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert_eq!(handler.subscriptions_state.len(), 2);
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+        assert!(handler.subscribe_errors.lock().is_empty());
+        assert_eq!(handler.subscriptions_state.get_reference_count(&first), 2);
+        assert_eq!(handler.subscriptions_state.get_reference_count(&last), 2);
+
+        for channel in [&first, &last] {
+            handler.subscriptions_state.mark_failure(channel);
+        }
+
+        handler.pending_book_resync = vec![first.clone(), last.clone()];
+        handler.handle_unsubscribe(coalesced).unwrap();
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [last, first]});
+        handler.process_raw_message(&ack.to_string()).await;
+        let (_, payload) = handler.subscription_requests.pop_front().unwrap();
+        let replay: serde_json::Value = serde_json::from_str(&payload).unwrap();
+
+        assert_eq!(
+            replay["params"]["channels"],
+            serde_json::json!([first, last])
+        );
+        assert_eq!(handler.subscription_requests.len(), 0);
+        assert_eq!(handler.subscriptions_state.get_reference_count(&first), 2);
+        assert_eq!(handler.subscriptions_state.get_reference_count(&last), 2);
+    }
+
+    #[tokio::test]
+    async fn subscription_acknowledgements_preserve_cancellation_and_replay() {
+        let mut handler = routing_test_handler();
+        let retained = "ticker.BTC-PERPETUAL.100ms".to_string();
+        let canceled = "ticker.ETH-PERPETUAL.100ms".to_string();
+        for channel in [&retained, &canceled] {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+        }
+
+        handler
+            .handle_subscribe(vec![retained.clone(), canceled.clone()])
+            .unwrap();
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": []});
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert!(!handler.subscriptions_state.remove_reference(&retained));
+        assert!(!handler.subscriptions_state.remove_reference(&canceled));
+        assert!(handler.subscriptions_state.remove_reference(&canceled));
+        handler.subscriptions_state.mark_unsubscribe(&canceled);
+        handler.process_raw_message(RECONNECTED).await;
+        let replay = handler.subscriptions_state.reset_after_reconnect();
+        handler.handle_subscribe(replay.clone()).unwrap();
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        let ack = serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [retained]});
+        handler.process_raw_message(&ack.to_string()).await;
+
+        assert_eq!(replay, [retained.as_str()]);
+        assert_eq!(
+            handler.subscriptions_state.all_topics(),
+            [retained.as_str()]
+        );
+        assert_eq!(handler.subscriptions_state.len(), 1);
+        assert_eq!(
+            handler.subscriptions_state.get_reference_count(&retained),
+            1
+        );
+        assert_eq!(
+            handler.subscriptions_state.get_reference_count(&canceled),
+            0
+        );
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_subscribe_topics()
+                .is_empty()
+        );
+        assert!(
+            handler
+                .subscriptions_state
+                .pending_unsubscribe_topics()
+                .is_empty()
+        );
+    }
+
+    #[rstest]
+    #[case::full("full")]
+    #[case::partial("partial")]
+    #[case::empty("empty")]
+    #[case::malformed("malformed")]
+    #[case::error("error")]
+    #[tokio::test]
+    async fn subscription_acknowledgements_gate_book_resync(
+        #[case] response_kind: &str,
+        #[values(false, true)] cancel: bool,
+    ) {
+        let mut handler = routing_test_handler();
+        let channels = [
+            BOOK_CHANNEL.to_string(),
+            "book.BTC-PERPETUAL.raw".to_string(),
+        ];
+
+        for channel in &channels {
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.add_reference(channel);
+            handler.subscriptions_state.mark_subscribe(channel);
+            handler.subscriptions_state.confirm_subscribe(channel);
+        }
+
+        handler.resync_book(Ustr::from("BTC-PERPETUAL")).await;
+        let (request_id, _) = handler.subscription_requests.pop_front().unwrap();
+        if cancel {
+            handler.subscriptions_state.remove_reference(&channels[0]);
+            handler.subscriptions_state.remove_reference(&channels[0]);
+            handler.subscriptions_state.mark_unsubscribe(&channels[0]);
+        }
+
+        let response = match response_kind {
+            "full" => serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": channels}),
+            "partial" => {
+                serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": [channels[0]]})
+            }
+            "empty" => serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": []}),
+            "malformed" => serde_json::json!({"jsonrpc": "2.0", "id": request_id, "result": "ok"}),
+            "error" => {
+                serde_json::json!({"jsonrpc": "2.0", "id": request_id, "error": {"code": 10028, "message": "too_many_requests"}})
+            }
+            _ => unreachable!(),
+        };
+
+        handler.process_raw_message(&response.to_string()).await;
+
+        let mut resubscribed: Vec<String> = handler
+            .pending_requests
+            .values()
+            .flat_map(|request| match request {
+                PendingRequestType::Subscribe { channels } => channels.clone(),
+                _ => panic!("unexpected request: {request:?}"),
+            })
+            .collect();
+
+        resubscribed.sort();
+
+        let mut expected = match (response_kind, cancel) {
+            ("full", false) => channels.to_vec(),
+            ("full", true) => vec![channels[1].clone()],
+            ("partial", false) => vec![channels[0].clone()],
+            _ => Vec::new(),
+        };
+
+        expected.sort();
+        let mut pending = handler.subscriptions_state.pending_subscribe_topics();
+        pending.sort();
+
+        let mut desired = if cancel {
+            vec![channels[1].clone()]
+        } else {
+            channels.to_vec()
+        };
+
+        desired.sort();
+
+        assert_eq!(resubscribed, expected);
+        assert_eq!(pending, desired);
+        assert_eq!(handler.subscriptions_state.len(), 0);
+        assert_eq!(
+            handler
+                .subscriptions_state
+                .get_reference_count(&channels[0]),
+            if cancel { 0 } else { 2 }
+        );
+        assert_eq!(
+            handler
+                .subscriptions_state
+                .get_reference_count(&channels[1]),
+            2
+        );
+        assert_eq!(handler.pending_book_resync.len(), 2);
     }
 
     #[rstest]
@@ -5046,18 +6964,9 @@ mod tests {
         }
 
         handler.subscriptions_state.add_reference(&channels[0]);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(20), handler.next())
-                .await
-                .is_err()
-        );
+        assert!(futures_util::poll!(Box::pin(handler.next())).is_pending());
         assert!(handler.subscription_send.is_some());
         assert_eq!(handler.subscription_requests.len(), 1);
-        assert!(
-            tokio::time::timeout(Duration::from_millis(20), socket.next())
-                .await
-                .is_err()
-        );
 
         let incoming = serde_json::json!({"value":17});
         socket

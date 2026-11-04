@@ -27,7 +27,8 @@ integration, scheduled checks, and publication.
 ## Workflows (`.github/workflows`)
 
 - [`build.yml`](workflows/build.yml): plans CI scope, runs lint and test jobs, builds wheels, and
-  publishes Python packages, Rust crates, and stable release assets.
+  publishes Python packages, Rust crates, and stable release assets. Python builds and tests cover
+  3.13, 3.14, and 3.15.
 - [`build-docs.yml`](workflows/build-docs.yml): dispatches documentation builds from `master` and
   `nightly`.
 - [`cli-binaries.yml`](workflows/cli-binaries.yml): builds and publishes CLI archives for Linux,
@@ -51,7 +52,7 @@ integration, scheduled checks, and publication.
 - [`security-audit.yml`](workflows/security-audit.yml): provides the change-aware supply-chain audit
   used by `build.yml`, plus non-`develop` pull request, scheduled, manual, and `test-security` runs.
 - [`test.yml`](workflows/test.yml): runs pre-commit, Python tests, and Rust tests on Linux x86 with
-  Python 3.14 for pushes to the protected `test` branch.
+  Python tests on 3.14 and 3.15 for pushes to the protected `test` branch. Rust tests use Python 3.14.
 
 ## Security
 

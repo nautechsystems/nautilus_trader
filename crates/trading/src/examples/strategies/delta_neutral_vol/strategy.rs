@@ -894,4 +894,26 @@ impl DataActor for DeltaNeutralVol {
 
         Ok(())
     }
+
+    fn on_reset(&mut self) -> anyhow::Result<()> {
+        self.call_instrument_id = None;
+        self.put_instrument_id = None;
+        self.subscribed_greeks.clear();
+        self.call_delta = 0.0;
+        self.put_delta = 0.0;
+        self.call_mark_iv = None;
+        self.put_mark_iv = None;
+        self.call_quote = None;
+        self.put_quote = None;
+        self.call_greeks = None;
+        self.put_greeks = None;
+        self.call_delta_ready = false;
+        self.put_delta_ready = false;
+        self.call_position = 0.0;
+        self.put_position = 0.0;
+        self.hedge_position = 0.0;
+        self.hedge_pending = false;
+        self.entry_attempted = false;
+        Ok(())
+    }
 }

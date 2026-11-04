@@ -30,7 +30,7 @@ use nautilus_common::{
         execution::{
             BatchCancelOrders, CancelAllOrders, CancelOrder, GenerateFillReports,
             GenerateOrderStatusReport, GenerateOrderStatusReports, GeneratePositionStatusReports,
-            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList,
+            ModifyOrder, QueryAccount, QueryOrder, SubmitOrder, SubmitOrderList, TradingCommand,
         },
         system::SocketState,
     },
@@ -53,8 +53,8 @@ use nautilus_model::{
         OrderStatus, OrderType, PositionSide, TimeInForce, TriggerType,
     },
     events::{
-        AccountState, OrderDeniedReason, OrderEventAny, OrderPendingCancel, OrderPendingUpdate,
-        OrderUpdated,
+        AccountState, OrderDeniedReason, OrderEventAny, OrderFilled, OrderPendingCancel,
+        OrderPendingUpdate, OrderUpdated,
         order::{
             OrderEventType,
             spec::{OrderFillVoidedSpec, OrderFilledSpec},
@@ -3250,6 +3250,418 @@ async fn test_startup_reconciliation_applies_closed_order_fills_with_commissions
         ]),
     );
     assert_eq!(position.commissions(), vec![Money::from("0.330380 pUSD")]);
+}
+
+#[rstest]
+#[case::fresh_cache(false)]
+#[case::retained_cache(true)]
+#[tokio::test]
+async fn test_startup_cancel_replace_recovers_exposure_and_successor(#[case] retained: bool) {
+    let state = cancel_replace_recovery_state(60).await;
+    let addr = start_mock_server(state.clone()).await;
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("POLYMARKET-001");
+    add_test_account_to_cache(&cache, account_id);
+    let instrument_id =
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET").as_str());
+    add_instrument_to_cache_with_tick_and_taker_fee(&cache, instrument_id, "0.01", 4, dec!(0.05));
+    let instrument = cache.borrow().instrument(&instrument_id).unwrap().clone();
+    client.on_instrument(instrument.clone());
+    client.start().unwrap();
+
+    let client_order_id = if retained {
+        let order = cache_replaced_order(&cache, &instrument, "2.0000", "3.0000", false);
+
+        let fills: Vec<_> = order
+            .events()
+            .into_iter()
+            .filter_map(|event| match event {
+                OrderEventAny::Filled(fill) => Some(fill.clone()),
+                _ => None,
+            })
+            .collect();
+
+        let mut position = Position::new(&instrument, fills[0].clone());
+        position.apply(&fills[1]);
+        cache
+            .borrow_mut()
+            .add_position(&position, OmsType::Netting)
+            .unwrap();
+        order.client_order_id()
+    } else {
+        assert!(
+            cache
+                .borrow()
+                .orders(None, None, None, None, None)
+                .is_empty()
+        );
+        assert!(
+            cache
+                .borrow()
+                .positions(None, None, None, None, None)
+                .is_empty()
+        );
+        ClientOrderId::from("0xreplacement")
+    };
+
+    let mass = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let engine = Rc::new(RefCell::new(engine));
+    let mut recovered = None;
+
+    for _ in 0..2 {
+        let mut manager = ExecutionManager::new(
+            clock.clone(),
+            cache.clone(),
+            ExecutionManagerConfig::default(),
+        )
+        .unwrap();
+        assert!(mass.reports_complete());
+        let reports = mass.order_reports();
+        let report = &reports[&VenueOrderId::from("0xreplacement")];
+        assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+        assert_eq!(
+            report.quantity,
+            Quantity::from(if retained { "12.0000" } else { "9.0000" })
+        );
+        assert_eq!(
+            report.filled_qty,
+            Quantity::from(if retained { "5.0000" } else { "2.0000" })
+        );
+        assert_eq!(report.client_order_id, retained.then_some(client_order_id));
+        let result = manager.reconcile_execution_mass_status(&mass, &engine);
+        assert!(result.unresolved_positions.is_empty());
+        let events = reconciliation_events(&cache.borrow());
+
+        if let Some(expected) = &recovered {
+            assert_eq!(&events, expected);
+        } else {
+            recovered = Some(events);
+        }
+    }
+
+    let strategy_id = {
+        let cache = cache.borrow();
+        assert_eq!(
+            cache.orders(None, None, None, None, None).len(),
+            if retained { 1 } else { 2 }
+        );
+        let order = cache.order(&client_order_id).unwrap();
+        assert_eq!(
+            order.venue_order_id(),
+            Some(VenueOrderId::from("0xreplacement"))
+        );
+        assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+        assert_eq!(
+            order.quantity(),
+            Quantity::from(if retained { "12.0000" } else { "9.0000" })
+        );
+        assert_eq!(
+            order.filled_qty(),
+            Quantity::from(if retained { "5.0000" } else { "2.0000" })
+        );
+        assert_eq!(order.price(), Some(Price::from("0.6000")));
+        assert_eq!(
+            order.trade_ids().into_iter().copied().collect::<Vec<_>>(),
+            if retained {
+                vec![TradeId::from("prior-leg"), TradeId::from("current-leg")]
+            } else {
+                vec![TradeId::from("current-leg")]
+            }
+        );
+
+        if !retained {
+            let prior = cache.order(&ClientOrderId::from("0xoriginal")).unwrap();
+            assert_eq!(
+                prior.venue_order_id(),
+                Some(VenueOrderId::from("0xoriginal"))
+            );
+            assert_eq!(prior.status(), OrderStatus::Filled);
+            assert_eq!(prior.quantity(), Quantity::from("3.0000"));
+            assert_eq!(prior.filled_qty(), Quantity::from("3.0000"));
+            assert_eq!(prior.trade_ids(), vec![&TradeId::from("prior-leg")]);
+            assert_eq!(prior.order_type(), OrderType::Market);
+            assert_eq!(
+                prior.commissions().values().copied().collect::<Vec<_>>(),
+                vec![Money::from("0.037500 pUSD")]
+            );
+        }
+
+        assert_eq!(
+            order.commissions().values().copied().collect::<Vec<_>>(),
+            vec![Money::from(if retained {
+                "0.066990 pUSD"
+            } else {
+                "0.024000 pUSD"
+            })]
+        );
+        let positions =
+            cache.positions_open(None, Some(&instrument_id), None, Some(&account_id), None);
+        assert_eq!(positions.len(), 1);
+        let position = &positions[0];
+        assert_eq!(position.quantity, Quantity::from("5.0000"));
+        assert_eq!(position.avg_px_open, dec!(0.54));
+        assert_eq!(position.events.len(), 2);
+        assert_eq!(
+            position.trade_ids.iter().copied().collect::<HashSet<_>>(),
+            HashSet::from([TradeId::from("prior-leg"), TradeId::from("current-leg"),])
+        );
+        assert_eq!(
+            position.commissions(),
+            vec![Money::from(if retained {
+                "0.066990 pUSD"
+            } else {
+                "0.061500 pUSD"
+            })]
+        );
+        order.strategy_id()
+    };
+
+    let query = QueryOrder::new(
+        TraderId::from("TESTER-001"),
+        Some(*POLYMARKET_CLIENT_ID),
+        strategy_id,
+        instrument_id,
+        client_order_id,
+        None,
+        UUID4::new(),
+        UnixNanos::default(),
+        None,
+        None,
+    );
+    state.single_order_request_gate.enable();
+    engine.borrow().execute(TradingCommand::QueryOrder(query));
+    wait_until_async(
+        || async { state.single_order_request_gate.started() == 1 },
+        Duration::from_secs(5),
+    )
+    .await;
+    assert_eq!(*state.last_path.lock().await, "/data/order/0xreplacement");
+    state.single_order_request_gate.release();
+    let report = recv_execution_event(&mut rx).await;
+
+    let ExecutionEvent::Report(ExecutionReport::Order(report)) = report else {
+        panic!("Expected order status report");
+    };
+
+    assert_eq!(report.client_order_id, Some(client_order_id));
+    assert_eq!(report.venue_order_id, VenueOrderId::from("0xreplacement"));
+    assert_eq!(report.order_status, OrderStatus::PartiallyFilled);
+    assert_eq!(
+        report.quantity,
+        Quantity::from(if retained { "12.0000" } else { "9.0000" })
+    );
+    assert_eq!(
+        report.filled_qty,
+        Quantity::from(if retained { "5.0000" } else { "2.0000" })
+    );
+    assert_eq!(state.single_order_get_count.load(Ordering::Acquire), 1);
+    engine
+        .borrow_mut()
+        .reconcile_execution_report(&ExecutionReport::Order(report));
+    assert_eq!(reconciliation_events(&cache.borrow()), recovered.unwrap());
+
+    let mut cancel = make_cancel_cmd(client_order_id.as_str(), instrument_id);
+    cancel.strategy_id = strategy_id;
+    engine.borrow().execute(TradingCommand::CancelOrder(cancel));
+    let canceled = assert_order_event(recv_execution_event(&mut rx).await, "Canceled");
+    assert_eq!(canceled.client_order_id(), client_order_id);
+    assert_eq!(
+        state.last_body.lock().await.as_ref().unwrap()["orderID"],
+        "0xreplacement"
+    );
+    assert_eq!(*state.cancel_delete_count.lock().await, 1);
+    engine.borrow_mut().process(&canceled);
+    let cache = cache.borrow();
+    let order = cache.order(&client_order_id).unwrap();
+    assert_eq!(
+        order.venue_order_id(),
+        Some(VenueOrderId::from("0xreplacement"))
+    );
+    assert_eq!(order.status(), OrderStatus::Canceled);
+    assert_eq!(
+        order.filled_qty(),
+        Quantity::from(if retained { "5.0000" } else { "2.0000" })
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_startup_cancel_replace_incomplete_history_does_not_invent_predecessor() {
+    let state = cancel_replace_recovery_state(7200).await;
+    let addr = start_mock_server(state).await;
+    let (mut client, _rx, cache) = create_test_execution_client(addr);
+    let account_id = AccountId::from("POLYMARKET-001");
+    add_test_account_to_cache(&cache, account_id);
+    let instrument_id =
+        InstrumentId::from(format!("{TEST_CONDITION_ID}-{TEST_TOKEN_ID}.POLYMARKET").as_str());
+    add_instrument_to_cache_with_tick_and_taker_fee(&cache, instrument_id, "0.01", 4, dec!(0.05));
+    client.on_instrument(cache.borrow().instrument(&instrument_id).unwrap().clone());
+    let mass = client
+        .generate_mass_status(Some(60))
+        .await
+        .unwrap()
+        .unwrap();
+    let reports = mass.order_reports();
+    assert!(mass.reports_complete());
+    assert_eq!(reports.len(), 1);
+    let report = &reports[&VenueOrderId::from("0xreplacement")];
+    assert_eq!(report.client_order_id, None);
+    assert_eq!(report.quantity, Quantity::from("9.0000"));
+    assert_eq!(report.filled_qty, Quantity::from("2.0000"));
+    let fills = mass.fill_reports();
+    assert_eq!(fills.len(), 1);
+    assert_eq!(fills[&VenueOrderId::from("0xreplacement")].len(), 1);
+    assert_eq!(
+        fills[&VenueOrderId::from("0xreplacement")][0].trade_id,
+        TradeId::from("current-leg")
+    );
+
+    let clock = Rc::new(RefCell::new(VirtualClock::new()));
+    let mut engine = ExecutionEngine::new(clock.clone(), cache.clone(), None);
+    engine.register_client(Box::new(client)).unwrap();
+    let engine = Rc::new(RefCell::new(engine));
+
+    let mut recovered = None;
+
+    for _ in 0..2 {
+        let mut manager = ExecutionManager::new(
+            clock.clone(),
+            cache.clone(),
+            ExecutionManagerConfig::default(),
+        )
+        .unwrap();
+        let result = manager.reconcile_execution_mass_status(&mass, &engine);
+        assert!(result.unresolved_positions.is_empty());
+        let events = reconciliation_events(&cache.borrow());
+
+        if let Some(expected) = &recovered {
+            assert_eq!(&events, expected);
+        } else {
+            recovered = Some(events);
+        }
+    }
+
+    let cache = cache.borrow();
+    let order = cache.order(&ClientOrderId::from("0xreplacement")).unwrap();
+    assert_eq!(
+        order.venue_order_id(),
+        Some(VenueOrderId::from("0xreplacement"))
+    );
+    assert_eq!(order.status(), OrderStatus::PartiallyFilled);
+    assert_eq!(order.quantity(), Quantity::from("9.0000"));
+    assert_eq!(order.filled_qty(), Quantity::from("2.0000"));
+    assert!(
+        cache
+            .client_order_id(&VenueOrderId::from("0xoriginal"))
+            .is_none()
+    );
+    assert!(
+        cache
+            .order(&ClientOrderId::from("O-REPLACED-RESTART"))
+            .is_none()
+    );
+    let positions = cache.positions_open(None, Some(&instrument_id), None, Some(&account_id), None);
+    assert_eq!(positions.len(), 1);
+    let position = &positions[0];
+    assert_eq!(position.quantity, Quantity::from("5.0000"));
+    assert_eq!(position.avg_px_open, dec!(0.54));
+    assert!(!position.trade_ids.contains(&TradeId::from("prior-leg")));
+    assert_eq!(position.events.len(), 2);
+    assert_eq!(position.trade_ids.len(), 2);
+    assert!(position.trade_ids.contains(&TradeId::from("current-leg")));
+    assert_eq!(
+        position
+            .events
+            .iter()
+            .map(|fill| fill.commission)
+            .collect::<Vec<_>>(),
+        vec![
+            Some(Money::zero(Currency::pUSD())),
+            Some(Money::from("0.024000 pUSD")),
+        ]
+    );
+}
+
+fn reconciliation_events(
+    cache: &Cache,
+) -> (
+    IndexMap<ClientOrderId, Vec<OrderEventAny>>,
+    IndexMap<PositionId, Vec<OrderFilled>>,
+) {
+    let orders = cache
+        .orders(None, None, None, None, None)
+        .iter()
+        .map(|order| {
+            (
+                order.client_order_id(),
+                order.events().into_iter().cloned().collect(),
+            )
+        })
+        .collect();
+
+    let positions = cache
+        .positions(None, None, None, None, None)
+        .iter()
+        .map(|position| (position.id, position.events.clone()))
+        .collect();
+    (orders, positions)
+}
+
+async fn cancel_replace_recovery_state(predecessor_age: u64) -> TestServerState {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let state = TestServerState::default();
+    state.trades_filter_after.store(true, Ordering::Release);
+    let mut successor = load_json("http_open_orders_page.json")["data"][0].clone();
+    successor["id"] = json!("0xreplacement");
+    successor["original_size"] = json!("9.0000");
+    successor["size_matched"] = json!("2.0000");
+    successor["associate_trades"] = json!(["current-leg"]);
+    successor["created_at"] = json!(now - 40);
+
+    let trades: Vec<Value> = [
+        (
+            "0xoriginal",
+            "prior-leg",
+            "3.0000",
+            "0.5000",
+            predecessor_age,
+        ),
+        ("0xreplacement", "current-leg", "2.0000", "0.6000", 20),
+    ]
+    .into_iter()
+    .map(|(venue_order_id, trade_id, qty, price, age)| {
+        let mut trade = recovery_trades_response(venue_order_id, qty, price)["data"][0].clone();
+        trade["id"] = json!(trade_id);
+        trade["match_time"] = json!((now - age).to_string());
+        trade
+    })
+    .collect();
+
+    *state.orders_response_override.lock().await =
+        Some(json!({"data": [successor.clone()], "next_cursor": "LTE="}));
+    *state.single_order_response.lock().await = Some(successor);
+    *state.trades_response_override.lock().await =
+        Some(json!({"data": trades, "next_cursor": "LTE="}));
+    *state.positions_response_override.lock().await = Some(json!([{
+        "token_id": TEST_TOKEN_ID,
+        "condition_id": TEST_CONDITION_ID,
+        "current_size": "5.0000",
+        "avg_price": "0.5400",
+    }]));
+    *state.cancel_response.lock().await = Some(json!({
+        "canceled": ["0xreplacement"], "not_canceled": {},
+    }));
+    state
 }
 
 #[rstest]

@@ -338,7 +338,7 @@ def _fixture(root: Path) -> None:
     )
     (root / "python/pyproject.toml").write_text('[project]\nversion = "1.2.3"\n')
     (root / "crate").write_bytes(b"published crate\n")
-    for py in ("cp313", "cp314"):
+    for py in ("cp313", "cp314", "cp315"):
         for platform in (
             "manylinux_2_34_x86_64",
             "manylinux_2_34_aarch64",
@@ -783,7 +783,7 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
         for tool, args in _calls(success)
         if tool == "gh" and args[:2] == ["attestation", "verify"] and "--help" not in args
     ]
-    assert len(verified) == 9
+    assert len(verified) == 13
     assert all("--bundle" in args for args in verified)
     downloads = [
         args
@@ -804,7 +804,7 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
     ]
     assert len(bodies) == 1
     assert json.loads((success / "state.json").read_text())["isDraft"] is False
-    assert len(list((success / "remote").iterdir())) == 39
+    assert len(list((success / "remote").iterdir())) == 55
     manifest = json.loads((success / "remote/dist-manifest.json").read_text())
     packages = sorted(
         [
@@ -889,7 +889,7 @@ with tempfile.TemporaryDirectory(prefix="release-recovery-test-") as directory:
         '--predicate-type "https://nautilustrader.io/attestations/release-recovery/v1"'
         in published["body"]
     )
-    assert len(list((publication_recovery / "remote").iterdir())) == 39
+    assert len(list((publication_recovery / "remote").iterdir())) == 55
     writes_before = len(_writes(publication_recovery))
     _invoke(
         publication_recovery,

@@ -15,10 +15,7 @@
 
 //! Provides the HTTP client for the Polymarket CLOB REST API.
 
-use std::{
-    collections::HashMap, convert::Infallible, result::Result as StdResult, str::from_utf8,
-    sync::Arc,
-};
+use std::{collections::HashMap, result::Result as StdResult, str::from_utf8, sync::Arc};
 
 use nautilus_core::time::{AtomicTime, get_atomic_clock_realtime};
 use nautilus_model::{
@@ -470,7 +467,7 @@ impl PolymarketClobHttpClient {
             .next_cursor
             .clone()
             .unwrap_or_else(|| CURSOR_START.to_string());
-        let protocol = CursorProtocol::<Infallible>::clob(PATH_ORDERS, initial_cursor, CURSOR_END);
+        let protocol = CursorProtocol::clob(PATH_ORDERS, initial_cursor, CURSOR_END);
         let paginator = Paginator::new(PATH_ORDERS, protocol, CollectAll::new());
         let completed = paginator
             .run(
@@ -481,7 +478,7 @@ impl PolymarketClobHttpClient {
                     async move {
                         let page: PaginatedResponse<PolymarketOpenOrder> =
                             self.send_get(PATH_ORDERS, Some(&request), true).await?;
-                        Ok(FetchOutcome::Page {
+                        Ok(FetchOutcome {
                             rows: page.data,
                             wire: page.next_cursor,
                         })
@@ -519,7 +516,7 @@ impl PolymarketClobHttpClient {
             .next_cursor
             .clone()
             .unwrap_or_else(|| CURSOR_START.to_string());
-        let protocol = CursorProtocol::<Infallible>::clob(PATH_TRADES, initial_cursor, CURSOR_END);
+        let protocol = CursorProtocol::clob(PATH_TRADES, initial_cursor, CURSOR_END);
         let paginator = Paginator::new(PATH_TRADES, protocol, CollectAll::new());
         let completed = paginator
             .run(
@@ -530,7 +527,7 @@ impl PolymarketClobHttpClient {
                     async move {
                         let page: PaginatedResponse<PolymarketTradeReport> =
                             self.send_get(PATH_TRADES, Some(&request), true).await?;
-                        Ok(FetchOutcome::Page {
+                        Ok(FetchOutcome {
                             rows: page.data,
                             wire: page.next_cursor,
                         })

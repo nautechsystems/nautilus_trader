@@ -148,11 +148,11 @@ use crate::{
             derive_market_order_price_ticks, evict_terminal_mappings, fills_for_order,
             lookup_create_order_status_report, nautilus_to_lighter_order_type,
             nautilus_to_lighter_tif, order_expiry_for, parse_http_order_to_report, price_to_ticks,
-            quantity_to_ticks,
+            quantity_to_ticks, tx_hash_matches,
         },
         messages::{
             AccountStream, ExecutionReport as LighterExecutionReport, LighterWsChannel,
-            NautilusWsMessage, SendTxRejectionSource, TX_BATCH_ID_PREFIX,
+            LighterWsTx, NautilusWsMessage, SendTxRejectionSource, TX_BATCH_ID_PREFIX,
         },
         parse::{
             LighterCommissionError, OpenFrameContext, ParsedOrderEvent, is_order_triggered,
@@ -1178,17 +1178,7 @@ impl LighterExecutionClient {
                     .await
                     .map_err(|e| anyhow::anyhow!("failed to set Lighter execution context: {e}"))?;
 
-                // Subscribe to the five account-scoped streams the consumption
-                // loop converts into typed reports. The handler merges
-                // `account_all_assets` and `user_stats` into a single
-                // AccountState (see websocket/account_state.rs).
-                let channels = [
-                    LighterWsChannel::AccountAllOrders(account_index),
-                    LighterWsChannel::AccountAllTrades(account_index),
-                    LighterWsChannel::AccountAllPositions(account_index),
-                    LighterWsChannel::AccountAllAssets(account_index),
-                    LighterWsChannel::UserStats(account_index),
-                ];
+                let channels = auth_token_rotation_channels(account_index);
 
                 for channel in channels {
                     ws_guard
@@ -1343,6 +1333,10 @@ impl LighterExecutionClient {
                                                 trader_id,
                                                 clock_for_loop.get_time_ns(),
                                             );
+
+                                            if let Some(context) = &child_context {
+                                                confirm_executed_modify(&order, context);
+                                            }
                                         }
                                         LighterExecutionReport::Fill(trade) => {
                                             fill_count += 1;
@@ -1366,6 +1360,11 @@ impl LighterExecutionClient {
                                 log::debug!(
                                     "Lighter execution batch: orders={order_count} fills={fill_count}",
                                 );
+                            }
+                            Some(NautilusWsMessage::AccountTx { connection_epoch, txs }) => {
+                                if let Some(context) = &child_context {
+                                    handle_account_tx(connection_epoch, &txs, context);
+                                }
                             }
                             Some(NautilusWsMessage::PositionSnapshot {
                                 reports,
@@ -2461,6 +2460,7 @@ impl LighterExecutionClient {
                         &pending,
                         &failure,
                         clock.get_time_ns(),
+                        false,
                     );
                 }
             }
@@ -2920,12 +2920,13 @@ impl NonceRefreshRetry {
     }
 }
 
-fn auth_token_rotation_channels(account_index: i64) -> [LighterWsChannel; 5] {
+fn auth_token_rotation_channels(account_index: i64) -> [LighterWsChannel; 6] {
     [
         LighterWsChannel::AccountAllOrders(account_index),
         LighterWsChannel::AccountAllTrades(account_index),
         LighterWsChannel::AccountAllPositions(account_index),
         LighterWsChannel::AccountAllAssets(account_index),
+        LighterWsChannel::AccountTx(account_index),
         LighterWsChannel::UserStats(account_index),
     ]
 }
@@ -4737,6 +4738,89 @@ struct AckedOrderProbeContext {
     pending_tasks: TaskSpawner,
 }
 
+fn handle_account_tx(connection_epoch: u64, txs: &[LighterWsTx], context: &AckedOrderProbeContext) {
+    if connection_epoch != context.connection_epoch.load(Ordering::Acquire) {
+        return;
+    }
+
+    for tx in txs {
+        let Some(pending) = context.dispatch.pending_modify_by_hash(&tx.hash) else {
+            continue;
+        };
+
+        let PendingSendTxKind::Modify {
+            client_order_id, ..
+        } = pending.kind
+        else {
+            unreachable!("pending modification owns a modify transaction")
+        };
+
+        let failure = match tx_application_error(tx.status, &tx.event_info) {
+            Ok(failure) => failure,
+            Err(e) => {
+                log::warn!("Lighter transaction update unavailable: {e}");
+                continue;
+            }
+        };
+
+        if failure.is_none() && tx.status != LighterTxStatus::Executed {
+            continue;
+        }
+
+        let _ = context.dispatch.nonce_manager.ack_success(
+            context.credential.account_index(),
+            pending.api_key_index,
+            pending.nonce,
+        );
+
+        if let Some(detail) = failure {
+            let reason = format!("Lighter modify transaction failed: {detail}");
+            reject_modify_order(
+                &context.dispatch,
+                &context.emitter,
+                &pending,
+                &CommandFailure::venue_rejected(&reason),
+                context.clock.get_time_ns(),
+                true,
+            );
+            continue;
+        }
+
+        context
+            .dispatch
+            .set_pending_modify_executed(&client_order_id, &pending);
+        let order = context
+            .dispatch
+            .order_events
+            .lock()
+            .get(&client_order_id)
+            .and_then(|events| events.order.clone());
+
+        if let Some(order) = order {
+            confirm_executed_modify(&order, context);
+        }
+    }
+}
+
+fn confirm_executed_modify(order: &LighterOrder, context: &AckedOrderProbeContext) {
+    let venue_order_id = VenueOrderId::new(&order.order_id);
+
+    let Some(cloid) = context
+        .dispatch
+        .resolve_client_order_index_for_venue(order.client_order_index, venue_order_id)
+    else {
+        return;
+    };
+
+    let Some(pending) = context.dispatch.pending_modify_executed(&cloid) else {
+        return;
+    };
+
+    if let Err(e) = confirm_modify_order(&pending, context, order) {
+        log::debug!("Lighter executed modification awaits matching order state: {e}");
+    }
+}
+
 async fn probe_acked_action(
     pending: &PendingSendTx,
     context: &AckedOrderProbeContext,
@@ -4827,18 +4911,8 @@ async fn resolve_acked_action(
         return Ok(true);
     }
 
-    let event = match parse_acked_tx_event(&tx.event_info) {
-        Ok(event) => event,
-        Err(e) if tx.status == LighterTxStatus::Failed => {
-            log::warn!("Lighter failed transaction carried invalid event_info: {e}");
-            AckedTxEvent::default()
-        }
-        Err(e) => return Err(e),
-    };
-
-    if tx.status == LighterTxStatus::Failed || !event.app_error.is_empty() {
+    if let Some(detail) = tx_application_error(tx.status, &tx.event_info)? {
         let action = if is_modify { "modify" } else { "cancel" };
-        let detail = acked_tx_error_detail(&event.app_error);
         let reason = format!("Lighter {action} transaction failed: {detail}");
         log::warn!("{reason} for nonce={}", pending.nonce);
 
@@ -4849,6 +4923,7 @@ async fn resolve_acked_action(
                 pending,
                 &CommandFailure::venue_rejected(&reason),
                 context.clock.get_time_ns(),
+                true,
             ),
             PendingSendTxKind::Cancel { .. } => reject_cancel_order(
                 &context.dispatch,
@@ -5436,24 +5511,31 @@ fn validate_acked_create_tx(
     Ok(())
 }
 
-fn tx_hash_matches(left: &str, right: &str) -> bool {
-    let left = left
-        .strip_prefix("0x")
-        .or_else(|| left.strip_prefix("0X"))
-        .unwrap_or(left);
-    let right = right
-        .strip_prefix("0x")
-        .or_else(|| right.strip_prefix("0X"))
-        .unwrap_or(right);
-    left.eq_ignore_ascii_case(right)
-}
-
 fn parse_acked_tx_event(event_info: &str) -> anyhow::Result<AckedTxEvent> {
     if event_info.trim().is_empty() {
         return Ok(AckedTxEvent::default());
     }
 
     serde_json::from_str(event_info).context("failed to parse Lighter transaction event")
+}
+
+fn tx_application_error(
+    status: LighterTxStatus,
+    event_info: &str,
+) -> anyhow::Result<Option<String>> {
+    let event = match parse_acked_tx_event(event_info) {
+        Ok(event) => event,
+        Err(e) if status == LighterTxStatus::Failed => {
+            log::warn!("Lighter failed transaction carried invalid event_info: {e}");
+            AckedTxEvent::default()
+        }
+        Err(e) => return Err(e),
+    };
+
+    Ok(
+        (status == LighterTxStatus::Failed || !event.app_error.is_empty())
+            .then(|| acked_tx_error_detail(&event.app_error).to_owned()),
+    )
 }
 
 fn acked_tx_error_detail(app_error: &str) -> &str {
@@ -5621,7 +5703,7 @@ fn reject_pending_sendtx(
             reject_cancel_order(dispatch, emitter, pending, failure, now);
         }
         PendingSendTxKind::Modify { .. } => {
-            reject_modify_order(dispatch, emitter, pending, failure, now);
+            reject_modify_order(dispatch, emitter, pending, failure, now, false);
         }
         PendingSendTxKind::Other => {}
     }
@@ -5677,6 +5759,7 @@ fn reject_modify_order(
     pending: &PendingSendTx,
     failure: &CommandFailure,
     now: UnixNanos,
+    require_pending: bool,
 ) {
     let PendingSendTxKind::Modify {
         command_id,
@@ -5695,6 +5778,10 @@ fn reject_modify_order(
         pending.connection_epoch,
         pending.nonce,
     );
+
+    if require_pending && !current {
+        return;
+    }
 
     match failure {
         CommandFailure::NotSent(reason) => emitter.emit_order_modify_denied_event(
@@ -11863,6 +11950,7 @@ mod tests {
                 LighterWsChannel::AccountAllTrades(TEST_ACCOUNT_INDEX_I64),
                 LighterWsChannel::AccountAllPositions(TEST_ACCOUNT_INDEX_I64),
                 LighterWsChannel::AccountAllAssets(TEST_ACCOUNT_INDEX_I64),
+                LighterWsChannel::AccountTx(TEST_ACCOUNT_INDEX_I64),
                 LighterWsChannel::UserStats(TEST_ACCOUNT_INDEX_I64),
             ],
         );
@@ -19018,12 +19106,15 @@ mod tests {
     }
 
     #[rstest]
-    #[case::confirmed(true, false)]
-    #[case::confirmed_stale_http(true, true)]
-    #[case::rejected(false, false)]
+    #[case::confirmed(true, false, false)]
+    #[case::confirmed_stale_http(true, true, false)]
+    #[case::rejected(false, false, false)]
+    #[case::confirmed_stream(true, false, true)]
+    #[case::rejected_stream(false, false, true)]
     fn cancel_overlap_preserves_amendment_and_real_fill(
         #[case] confirmed: bool,
         #[case] stale_http: bool,
+        #[case] via_stream: bool,
     ) {
         let mut rig = dispatcher_rig("AMEND-CANCEL-FILL");
         let mut cached = OrderTestBuilder::new(OrderType::Limit)
@@ -19133,7 +19224,7 @@ mod tests {
             batch_id: None,
             connection_epoch: 0,
             kind: PendingSendTxKind::Modify {
-                command_id: UUID4::default(),
+                command_id: command.command_id,
                 strategy_id: strategy_id(),
                 instrument_id: rig.instrument_id,
                 client_order_id: rig.cloid,
@@ -19145,26 +19236,47 @@ mod tests {
             tx_hash: "amend-cancel".to_string(),
         };
 
-        if confirmed {
-            let (client, _, _) = create_execution_client();
-            let mut context = acked_probe_context(&client);
-            context.dispatch = rig.dispatch.clone();
-            context.registry = rig.registry.clone();
-            context.emitter = rig.emitter.clone();
-            let mut http = raw;
-            if stale_http {
-                http.status = LighterOrderStatus::Open;
-            }
+        let (client, _, _) = create_execution_client();
+        let mut context = acked_probe_context(&client);
+        context.dispatch = rig.dispatch.clone();
+        context.registry = rig.registry.clone();
+        context.emitter = rig.emitter.clone();
 
-            confirm_modify_order(&pending, &context, &http).unwrap();
-        } else {
-            reject_modify_order(
-                &rig.dispatch,
-                &rig.emitter,
-                &pending,
-                &CommandFailure::venue_rejected("amendment failed"),
-                UnixNanos::from(5),
-            );
+        match (via_stream, confirmed) {
+            (true, _) => {
+                rig.dispatch.enqueue_pending_sendtx(pending.clone());
+                handle_account_tx(
+                    0,
+                    &[LighterWsTx {
+                        hash: pending.tx_hash,
+                        status: if confirmed {
+                            LighterTxStatus::Executed
+                        } else {
+                            LighterTxStatus::Failed
+                        },
+                        event_info: String::new(),
+                    }],
+                    &context,
+                );
+            }
+            (false, true) => {
+                let mut http = raw;
+                if stale_http {
+                    http.status = LighterOrderStatus::Open;
+                }
+
+                confirm_modify_order(&pending, &context, &http).unwrap();
+            }
+            (false, false) => {
+                reject_modify_order(
+                    &rig.dispatch,
+                    &rig.emitter,
+                    &pending,
+                    &CommandFailure::venue_rejected("amendment failed"),
+                    UnixNanos::from(5),
+                    false,
+                );
+            }
         }
 
         let events = drain_events(&mut rig.rx);
@@ -19178,7 +19290,14 @@ mod tests {
             }
             ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) if !confirmed => {
                 assert_eq!(rejected.client_order_id, rig.cloid);
-                assert_eq!(rejected.reason.as_str(), "amendment failed");
+                assert_eq!(
+                    rejected.reason.as_str(),
+                    if via_stream {
+                        "Lighter modify transaction failed: transaction failed without an application error"
+                    } else {
+                        "amendment failed"
+                    }
+                );
             }
             other => panic!("expected amendment resolution before fill, was {other:?}"),
         }
@@ -20866,6 +20985,157 @@ mod tests {
                 .unwrap(),
             nonce + 1
         );
+    }
+
+    #[rstest]
+    #[case::unknown_hash("unmatched", 0, LighterTxStatus::Failed, "")]
+    #[case::old_connection("hash17", 1, LighterTxStatus::Failed, "")]
+    #[case::pending("hash17", 0, LighterTxStatus::Pending, "")]
+    #[case::pending_final("hash17", 0, LighterTxStatus::PendingFinal, "")]
+    #[case::malformed_success("hash17", 0, LighterTxStatus::Executed, "invalid json")]
+    fn account_tx_preserves_unconfirmed_modification(
+        #[case] hash: &str,
+        #[case] connection_epoch: u64,
+        #[case] status: LighterTxStatus,
+        #[case] event_info: &str,
+    ) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let id = ClientOrderId::from("STREAM-UNCONFIRMED");
+        enqueue_modify(&client, instrument, id, VenueOrderId::from("789"), 23);
+        handle_account_tx(
+            connection_epoch,
+            &[LighterWsTx {
+                hash: hash.to_owned(),
+                status,
+                event_info: event_info.to_owned(),
+            }],
+            &acked_probe_context(&client),
+        );
+
+        assert_eq!(client.dispatch.pending_modify_nonce(&id), Some((0, 23)));
+        assert!(client.dispatch.pending_modify_executed(&id).is_none());
+        assert_eq!(client.dispatch.pending_sendtx_len(), 1);
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    #[case::executed(LighterTxStatus::Executed)]
+    #[case::failed(LighterTxStatus::Failed)]
+    fn account_tx_preserves_ack_attribution(#[case] status: LighterTxStatus) {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let id_a = ClientOrderId::from("STREAM-ACK-A");
+        let id_b = ClientOrderId::from("STREAM-ACK-B");
+        let nonce_a = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        enqueue_modify(
+            &client,
+            instrument,
+            id_a,
+            VenueOrderId::from("789"),
+            nonce_a,
+        );
+        let nonce_b = client
+            .dispatch
+            .nonce_manager
+            .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+            .unwrap();
+        let command_b = enqueue_modify(
+            &client,
+            instrument,
+            id_b,
+            VenueOrderId::from("790"),
+            nonce_b,
+        );
+        handle_account_tx(
+            0,
+            &[LighterWsTx {
+                hash: format!("hash{nonce_a:02x}"),
+                status,
+                event_info: String::new(),
+            }],
+            &acked_probe_context(&client),
+        );
+
+        let stream_events = drain_events(&mut rx);
+        assert_eq!(
+            stream_events.len(),
+            usize::from(status == LighterTxStatus::Failed)
+        );
+        assert!(
+            handle_send_tx_ack_for_connection(
+                &client.dispatch,
+                Some(TEST_ACCOUNT_INDEX_I64),
+                0,
+                200,
+                None,
+            )
+            .is_none()
+        );
+        handle_send_tx_rejection(
+            &client.dispatch,
+            &client.emitter,
+            Some(TEST_ACCOUNT_INDEX_I64),
+            UnixNanos::from(5),
+            SendTxRejectionSource::Ack,
+            Some(21702),
+            "B rejected",
+            Some(&format!("hash{nonce_b:02x}")),
+        );
+
+        let ExecutionEvent::Order(OrderEventAny::ModifyRejected(rejected)) = rx.try_recv().unwrap()
+        else {
+            panic!("expected rejection of the second command");
+        };
+
+        assert_eq!(rejected.client_order_id, id_b);
+        assert_eq!(rejected.trader_id, trader_id());
+        assert_eq!(rejected.strategy_id, strategy_id());
+        assert_eq!(rejected.instrument_id, instrument);
+        assert_eq!(rejected.account_id, Some(account_id()));
+        assert_eq!(rejected.venue_order_id, Some(VenueOrderId::from("790")));
+        assert_eq!(rejected.causation_id, Some(command_b));
+        assert_eq!(rejected.reason.as_str(), "LIGHTER_21702: B rejected");
+        assert_eq!(client.dispatch.pending_modify_nonce(&id_b), None);
+        assert_eq!(client.dispatch.pending_sendtx_len(), 1);
+        assert_eq!(
+            client
+                .dispatch
+                .nonce_manager
+                .next_nonce(TEST_ACCOUNT_INDEX_I64, TEST_API_KEY_INDEX)
+                .unwrap(),
+            nonce_b
+        );
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[rstest]
+    fn account_tx_rejection_cannot_publish_after_modification_resolves() {
+        let (client, cache, mut rx) = create_execution_client();
+        let instrument = register_test_instrument(&client, &cache);
+        let id = ClientOrderId::from("STREAM-STALE-REJECTION");
+        let venue = VenueOrderId::from("789");
+        enqueue_modify(&client, instrument, id, venue, 23);
+        let pending = client.dispatch.pop_pending_sendtx_head().unwrap();
+        assert!(client.dispatch.clear_pending_modify_if_nonce(&id, 0, 23));
+        enqueue_modify(&client, instrument, id, venue, 24);
+        reject_modify_order(
+            &client.dispatch,
+            &client.emitter,
+            &pending,
+            &CommandFailure::venue_rejected("stale execution failure"),
+            UnixNanos::from(5),
+            true,
+        );
+        client.dispatch.set_pending_modify_executed(&id, &pending);
+        assert_eq!(client.dispatch.pending_modify_nonce(&id), Some((0, 24)));
+        assert!(client.dispatch.pending_modify_executed(&id).is_none());
+        assert_eq!(client.dispatch.pending_sendtx_len(), 1);
+        assert!(rx.try_recv().is_err());
     }
 
     #[rstest]

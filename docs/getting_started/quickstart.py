@@ -8,12 +8,14 @@
 # %% [markdown]
 # ## Prerequisites
 #
-# - Python 3.13-3.14
+# - Python 3.13-3.15
 # - NautilusTrader 2.x installed (`pip install -U --pre nautilus_trader`). The `--pre`
 #   flag is required while 2.x ships as `2.0.0rcN`; without it pip installs the 1.x
 #   line, whose Python API differs and cannot run this page.
 # - NumPy and pandas (`pip install numpy pandas`). The wheel declares no runtime
 #   dependencies, so it does not pull them in.
+#
+# Python 3.15 requires a [source build](installation.md#from-source) or a development wheel until the next PyPI release.
 
 # %% [markdown]
 # ## Write a strategy

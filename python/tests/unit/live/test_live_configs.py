@@ -275,6 +275,28 @@ def test_live_exec_engine_config_defaults() -> None:
 
 
 @pytest.mark.parametrize(
+    ("kwargs", "expected"),
+    [
+        pytest.param({}, 60, id="omitted"),
+        pytest.param({"open_check_lookback_mins": None}, None, id="unbounded"),
+        pytest.param({"open_check_lookback_mins": 120}, 120, id="explicit"),
+    ],
+)
+def test_live_exec_engine_config_open_check_lookback(
+    kwargs: dict[str, int | None],
+    expected: int | None,
+) -> None:
+    """
+    Test omitted and explicit lookbacks survive engine and node configuration.
+    """
+    config = LiveExecutionEngineConfig(**kwargs)
+    node_config = LiveNodeConfig(exec_engine=config)
+
+    assert config.open_check_lookback_mins == expected
+    assert node_config.exec_engine.open_check_lookback_mins == expected
+
+
+@pytest.mark.parametrize(
     ("policy", "expected"),
     [
         (None, SubmissionRecoveryPolicy.RESOLVE_LOCALLY),

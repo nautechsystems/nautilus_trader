@@ -30,7 +30,6 @@ use async_trait::async_trait;
 use dashmap::DashMap;
 use indexmap::IndexMap;
 use nautilus_common::{
-    cache::fifo::FifoCache,
     clients::ExecutionClient,
     enums::LogLevel,
     live::runner::get_exec_event_sender,
@@ -116,6 +115,7 @@ use crate::{
             BinanceProductType, BinanceSide, BinanceTimeInForce, BinanceWorkingType,
         },
         failure::{classify_futures_http_failure, sanitize_reason},
+        instruments::BinanceInstrumentSelector,
         symbol::{format_binance_symbol, format_instrument_id},
         urls::{get_usdm_ws_route_base_url, get_ws_private_base_url},
     },
@@ -1397,6 +1397,75 @@ impl BinanceFuturesExecutionClient {
         Ok(reports)
     }
 
+    async fn generate_order_history(
+        &self,
+        instrument_id: InstrumentId,
+        start: UnixNanos,
+        end: UnixNanos,
+    ) -> anyhow::Result<Vec<OrderStatusReport>> {
+        let instrument = self
+            .http_client
+            .instrument_reconciliation(&instrument_id)
+            .context("unresolved Binance Futures history instrument")?;
+        let (orders, algo_orders) = self
+            .http_client
+            .query_order_history(instrument_id, start, end)
+            .await?;
+
+        let mut reports = IndexMap::new();
+
+        for order in orders.values() {
+            let report = order.to_order_status_report(
+                self.core.account_id,
+                instrument_id,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                self.config.treat_expired_as_canceled,
+                end,
+            )?;
+            let venue_position_id = make_venue_position_id(
+                self.config.use_position_ids,
+                instrument_id,
+                order.position_side,
+            )?;
+            reports.insert(
+                report.venue_order_id,
+                with_venue_position_id(report, venue_position_id),
+            );
+        }
+
+        for algo in algo_orders.into_values() {
+            let actual =
+                if let Some(id) = algo.actual_order_id.as_deref().filter(|id| !id.is_empty()) {
+                    let id = id.parse::<i64>().context("invalid algo actual order ID")?;
+                    if let Some(order) = orders.get(&id) {
+                        Some(order.clone())
+                    } else {
+                        self.http_client
+                            .query_algo_order_actual(instrument_id, id)
+                            .await?
+                    }
+                } else {
+                    None
+                };
+
+            let result = BinanceFuturesAlgoOrderQueryResult { algo, actual };
+            let report = create_algo_order_status_report(
+                &result,
+                self.core.account_id,
+                instrument_id,
+                instrument.price_precision(),
+                instrument.size_precision(),
+                self.config.treat_expired_as_canceled,
+                self.config.use_position_ids,
+                end,
+            )?;
+            reports.insert(report.venue_order_id, report);
+        }
+
+        Ok(reports.into_values().collect())
+    }
+
     async fn apply_futures_config(&self) -> anyhow::Result<()> {
         if let Some(ref leverages) = self.config.futures_leverages {
             for (symbol, leverage) in leverages {
@@ -1779,6 +1848,7 @@ fn binance_futures_order_type_wire(order_type: BinanceFuturesOrderType) -> &'sta
 fn binance_time_in_force_wire(time_in_force: BinanceTimeInForce) -> &'static str {
     match time_in_force {
         BinanceTimeInForce::Gtc => "GTC",
+        BinanceTimeInForce::GteGtc => "GTE_GTC",
         BinanceTimeInForce::Ioc => "IOC",
         BinanceTimeInForce::Fok => "FOK",
         BinanceTimeInForce::Gtx => "GTX",
@@ -1982,8 +2052,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
         let (recovery_tx, recovery_rx) = tokio::sync::mpsc::unbounded_channel::<()>();
         self.recovery_tx = Some(recovery_tx.clone());
 
-        let seen_trade_ids: Arc<Mutex<FifoCache<(ustr::Ustr, i64), 10_000>>> =
-            Arc::new(Mutex::new(FifoCache::new()));
+        let seen_trade_ids = self.dispatch_state.seen_trade_ids();
 
         let dispatch_ctx = Arc::new(DispatchCtx {
             emitter: self.emitter.clone(),
@@ -2975,6 +3044,7 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             .collect();
         {
             let cache = self.core.cache();
+            instrument_ids.extend(cache.external_order_claim_instrument_ids(None));
             instrument_ids.extend(
                 cache
                     .orders_open(
@@ -3017,9 +3087,27 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 })
             });
         }
+
+        let selector =
+            BinanceInstrumentSelector::new(&self.config.instrument_provider, self.product_type)?;
+        instrument_ids.extend(
+            self.http_client
+                .instrument_ids_reconciliation()
+                .into_iter()
+                .filter(|id| selector.is_explicit(*id, &format_binance_symbol(id))),
+        );
+
+        instrument_ids.retain(|id| {
+            id.venue == *BINANCE_VENUE && !self.config.instrument_provider.excludes(*id)
+        });
+
         instrument_ids.sort_unstable();
         instrument_ids.dedup();
 
+        let mut order_reports: IndexMap<_, _> = order_reports
+            .into_iter()
+            .map(|report| (report.venue_order_id, report))
+            .collect();
         let mut fill_reports = Vec::new();
 
         for instrument_id in instrument_ids {
@@ -3040,18 +3128,39 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
                 }
                 continue;
             }
+
+            match self
+                .generate_order_history(instrument_id, report_start, ts_now)
+                .await
+            {
+                Ok(history) => crate::common::execution::merge_order_history(
+                    &mut order_reports,
+                    history,
+                    Some(report_start),
+                    ts_now,
+                ),
+
+                Err(e) => {
+                    log::warn!(
+                        "Failed to recover Binance Futures history for {instrument_id}: {e}"
+                    );
+                    reports_complete = false;
+                }
+            }
+
             let fill_cmd = GenerateFillReportsBuilder::default()
                 .log_receipt_level(LogLevel::Off)
                 .ts_init(ts_now)
                 .instrument_id(Some(instrument_id))
                 .start(fill_start)
+                .end(fill_start.map(|_| ts_now))
                 .build()
                 .map_err(|e| anyhow::anyhow!("{e}"))?;
             fill_reports.extend(
                 self.generate_fill_reports(fill_cmd)
                     .await?
                     .into_iter()
-                    .filter(|report| report.ts_event >= report_start),
+                    .filter(|report| report.ts_event >= report_start && report.ts_event <= ts_now),
             );
         }
 
@@ -3067,7 +3176,9 @@ impl ExecutionClient for BinanceFuturesExecutionClient {
             None,
         );
 
-        mass_status.add_order_reports(order_reports);
+        self.dispatch_state
+            .restore_terminal_fills(&order_reports, &fill_reports);
+        mass_status.add_order_reports(order_reports.into_values().collect());
         mass_status.add_fill_reports(fill_reports);
         mass_status.add_position_reports(position_reports);
         mass_status.set_report_window(Some(report_start), reports_complete);

@@ -18864,6 +18864,122 @@ fn test_reconcile_fill_report_applies_fill_event(mut execution_engine: Execution
 }
 
 #[rstest]
+#[case(OrderStatus::Canceled)]
+#[case(OrderStatus::Expired)]
+fn test_reconcile_fill_report_recovers_terminal_fill_once(
+    mut execution_engine: ExecutionEngine,
+    #[case] terminal_status: OrderStatus,
+) {
+    let instrument = audusd_sim();
+    let client_order_id = ClientOrderId::from("O-LATE-001");
+    let venue_order_id = VenueOrderId::from("V-LATE-001");
+    let trade_id = TradeId::from("T-LATE-001");
+
+    let stub_client = StubExecutionClient::new(
+        ClientId::from("STUB"),
+        AccountId::test_default(),
+        Venue::test_default(),
+        OmsType::Netting,
+        None,
+    );
+    execution_engine
+        .register_client(Box::new(stub_client))
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_instrument(instrument.clone().into())
+        .unwrap();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_account(CashAccount::default().into())
+        .unwrap();
+
+    let order = OrderTestBuilder::new(OrderType::Market)
+        .instrument_id(instrument.id())
+        .client_order_id(client_order_id)
+        .side(OrderSide::Buy)
+        .quantity(Quantity::from(100_000))
+        .build();
+    execution_engine
+        .cache()
+        .borrow_mut()
+        .add_order(order.clone(), None, Some(ClientId::from("STUB")), true)
+        .unwrap();
+    execution_engine.process(&TestOrderEventStubs::submitted(
+        &order,
+        AccountId::test_default(),
+    ));
+    execution_engine.process(&TestOrderEventStubs::accepted(
+        &order,
+        AccountId::test_default(),
+        venue_order_id,
+    ));
+
+    let terminal_event = match terminal_status {
+        OrderStatus::Canceled => {
+            TestOrderEventStubs::canceled(&order, AccountId::test_default(), Some(venue_order_id))
+        }
+        OrderStatus::Expired => OrderEventAny::Expired(build_order_expired(
+            order.trader_id(),
+            order.strategy_id(),
+            instrument.id(),
+            client_order_id,
+            venue_order_id,
+            AccountId::test_default(),
+        )),
+        _ => unreachable!(),
+    };
+
+    execution_engine.process(&terminal_event);
+    let report = create_fill_report(
+        instrument.id(),
+        Some(client_order_id),
+        venue_order_id,
+        trade_id,
+        Quantity::from(50_000),
+        Price::from("1.00000"),
+    );
+
+    execution_engine.reconcile_fill_report(&report);
+
+    let order_event_count = {
+        let cache = execution_engine.cache().borrow();
+        let recovered_order = cache.order(&client_order_id).unwrap();
+        assert_eq!(recovered_order.status(), terminal_status);
+        assert_eq!(recovered_order.client_order_id(), client_order_id);
+        assert_eq!(recovered_order.filled_qty(), Quantity::from(50_000));
+        assert_eq!(recovered_order.leaves_qty(), Quantity::from(50_000));
+        assert_eq!(
+            recovered_order.commissions().get(&Currency::USD()).copied(),
+            Some(Money::from("0.1 USD"))
+        );
+        assert!(cache.is_order_closed(&client_order_id));
+        assert!(!cache.is_order_open(&client_order_id));
+        let positions = cache.positions(None, None, None, None, None);
+        assert_eq!(positions.len(), 1);
+        assert_eq!(positions[0].quantity, Quantity::from(50_000));
+        assert_eq!(positions[0].commissions(), vec![Money::from("0.1 USD")]);
+        assert_eq!(positions[0].trade_ids, AHashSet::from_iter([trade_id]));
+        recovered_order.events().len()
+    };
+
+    execution_engine.reconcile_fill_report(&report);
+
+    let cache = execution_engine.cache().borrow();
+    let replayed_order = cache.order(&client_order_id).unwrap();
+    assert_eq!(replayed_order.events().len(), order_event_count);
+    assert_eq!(replayed_order.status(), terminal_status);
+    assert_eq!(replayed_order.filled_qty(), Quantity::from(50_000));
+    let positions = cache.positions(None, None, None, None, None);
+    assert_eq!(positions.len(), 1);
+    assert_eq!(positions[0].quantity, Quantity::from(50_000));
+    assert_eq!(positions[0].commissions(), vec![Money::from("0.1 USD")]);
+    assert_eq!(positions[0].trade_ids, AHashSet::from_iter([trade_id]));
+}
+
+#[rstest]
 fn test_reconcile_fill_report_finds_order_by_venue_order_id(mut execution_engine: ExecutionEngine) {
     let instrument = audusd_sim();
     let client_order_id = ClientOrderId::from("O-001");

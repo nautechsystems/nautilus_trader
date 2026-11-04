@@ -1351,7 +1351,8 @@ pub fn parse_position_status_report(
         Some(report_id),
         None, // No venue_position_id for netting positions
         avg_px_open,
-    ))
+    )
+    .with_avg_px_open_precision(instrument.price_precision()))
 }
 
 /// Parse a spot token balance into a [`PositionStatusReport`] against the spot instrument.
@@ -1393,6 +1394,7 @@ pub fn parse_spot_position_status_report(
 
 #[cfg(test)]
 mod tests {
+    use nautilus_execution::reconciliation::position_prices_match;
     use rstest::rstest;
     use rust_decimal_macros::dec;
 
@@ -1408,6 +1410,83 @@ mod tests {
     fn test_parse_fill_side() {
         assert_eq!(parse_fill_side(&HyperliquidSide::Buy), OrderSide::Buy,);
         assert_eq!(parse_fill_side(&HyperliquidSide::Sell), OrderSide::Sell,);
+    }
+
+    #[rstest]
+    #[case::meme("MEME", PositionSide::Long, "43917117", dec!(0.000471), 6, false)]
+    #[case::bigtime("BIGTIME", PositionSide::Short, "6059690", dec!(0.006712), 6, false)]
+    #[case::btc("BTC", PositionSide::Long, "0.09354", dec!(78152.9), 1, true)]
+    #[case::eth("ETH", PositionSide::Long, "2.4242", dec!(2288.79), 2, true)]
+    #[case::atom("ATOM", PositionSide::Long, "11055.03", dec!(1.4666), 4, true)]
+    fn test_parse_position_status_report_precision(
+        #[case] coin: &str,
+        #[case] position_side: PositionSide,
+        #[case] qty: &str,
+        #[case] avg_px_open: Decimal,
+        #[case] expected_precision: u8,
+        #[case] matches_without_precision: bool,
+    ) {
+        let meta: PerpMeta = load_test_data("http_meta_position_precision.json");
+        let defs = parse_perp_instruments(&meta, 0).unwrap();
+        let def = defs
+            .iter()
+            .find(|def| def.raw_symbol.as_str() == coin)
+            .unwrap();
+        let instrument = create_instrument_from_def(def, UnixNanos::default()).unwrap();
+        let positions: Vec<Value> = load_test_data("http_positions_precision.json");
+        let position_data = positions
+            .iter()
+            .find(|row| row["position"]["coin"] == coin)
+            .unwrap();
+        let position: AssetPosition = serde_json::from_value(position_data.clone()).unwrap();
+        let position = position.position;
+
+        let sign = if position.szi.is_sign_positive() {
+            Decimal::ONE
+        } else {
+            -Decimal::ONE
+        };
+
+        let cached_avg_px =
+            (position.position_value - position.unrealized_pnl * sign) / position.szi.abs();
+        let account_id = AccountId::from("HYPERLIQUID-001");
+        let ts_init = UnixNanos::from(1_700_000_003_000_000_000);
+
+        let report =
+            parse_position_status_report(position_data, &instrument, account_id, ts_init).unwrap();
+        let expected = PositionStatusReport::new(
+            account_id,
+            instrument.id(),
+            position_side,
+            Quantity::from(qty),
+            ts_init,
+            ts_init,
+            Some(report.report_id),
+            None,
+            Some(avg_px_open),
+        )
+        .with_avg_px_open_precision(expected_precision);
+        let beyond_allowance = avg_px_open
+            + avg_px_open * dec!(0.0001)
+            + Decimal::new(2, u32::from(expected_precision));
+
+        assert_eq!(report, expected);
+        assert_eq!(
+            position_prices_match(cached_avg_px, avg_px_open, None, None),
+            matches_without_precision,
+        );
+        assert!(position_prices_match(
+            cached_avg_px,
+            avg_px_open,
+            None,
+            report.avg_px_open_precision,
+        ));
+        assert!(!position_prices_match(
+            beyond_allowance,
+            avg_px_open,
+            None,
+            report.avg_px_open_precision,
+        ));
     }
 
     #[rstest]

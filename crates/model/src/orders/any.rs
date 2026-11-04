@@ -502,14 +502,26 @@ mod tests {
     #[case::stop_market(OrderType::StopMarket)]
     #[case::trailing_stop_limit(OrderType::TrailingStopLimit)]
     #[case::trailing_stop_market(OrderType::TrailingStopMarket)]
-    fn test_order_any_from_events_preserves_init_reconciliation(#[case] order_type: OrderType) {
+    fn test_order_any_from_events_preserves_init_metadata(
+        #[case] order_type: OrderType,
+        #[values(false, true)] reconciliation: bool,
+        #[values(None, Some(UUID4::from("775e3ce7-e768-43ad-859a-14b42d8a4ab0")))]
+        causation_id: Option<UUID4>,
+    ) {
         let mut init = order_for_list_id_test(order_type).init_event().clone();
-        init.reconciliation = true;
+        init.ts_init = UnixNanos::from(987_654_321);
+        init.reconciliation = reconciliation;
+        init.causation_id = causation_id;
 
+        let converted = OrderAny::try_from(init.clone()).unwrap();
         let order = OrderAny::from_events(vec![OrderEventAny::Initialized(init.clone())]).unwrap();
 
-        assert!(order.init_event().reconciliation);
+        assert_eq!(converted.init_event(), &init);
         assert_eq!(order.init_event(), &init);
+        assert_eq!(converted.ts_init(), init.ts_event);
+        assert_eq!(order.ts_init(), init.ts_event);
+        assert_eq!(converted.ts_last(), init.ts_event);
+        assert_eq!(order.ts_last(), init.ts_event);
     }
 
     fn assert_last_event_views(order: &OrderAny) {

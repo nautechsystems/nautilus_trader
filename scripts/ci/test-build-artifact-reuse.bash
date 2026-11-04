@@ -152,8 +152,8 @@ nightly_doctest_job=$(awk '
   }
 ' "$REPO_ROOT/.github/workflows/nightly-tests.yml")
 [[ -n "$nightly_doctest_job" ]] || fail "Nightly tests do not define a Rust doctest job"
-[[ "$nightly_doctest_job" == *$'        python-version:\n          - "3.13"\n          - "3.14"'* ]] ||
-  fail "Nightly Rust doctests do not cover Python 3.13 and 3.14"
+[[ "$nightly_doctest_job" == *$'        python-version:\n          - "3.13"\n          - "3.14"\n          - "3.15"'* ]] ||
+  fail "Nightly Rust doctests do not cover Python 3.13, 3.14, and 3.15"
 [[ "$nightly_doctest_job" == *'make cargo-test-doc'* ]] ||
   fail "Nightly tests do not run Rust doctests"
 [[ "$nightly_doctest_job" == *'EXTRA_FEATURES="hypersync,nautilus-common/sbe,nautilus-infrastructure/postgres"'* ]] ||

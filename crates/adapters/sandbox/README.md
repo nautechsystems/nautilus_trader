@@ -22,6 +22,9 @@ paper trading and strategy testing in real-time without actual order execution o
 - Account balance and position tracking.
 - Support for both cash and margin account types.
 
+For L1 books with `bar_execution=true`, only externally aggregated time bars drive matching.
+The sandbox logs a warning and skips external non-time bars for execution; subscribers still receive them.
+
 For `L2_MBP` and `L3_MBO`, feed each instrument with deltas or depth snapshots, not both.
 Each depth snapshot replaces the book, so mixing the streams can drop current levels or restore stale liquidity.
 

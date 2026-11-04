@@ -625,7 +625,6 @@ async fn start_ws_server(state: Arc<TestServerState>) -> SocketAddr {
             .expect("websocket server failed");
     });
 
-    tokio::time::sleep(Duration::from_millis(50)).await;
     addr
 }
 
@@ -709,7 +708,7 @@ async fn test_wait_until_active_timeout() {
 }
 
 #[tokio::test]
-async fn test_order_command_send_failure_does_not_emit_rejection() {
+async fn test_order_command_send_failure_emits_one_rejection() {
     let signal = Arc::new(AtomicBool::new(false));
     let (cmd_tx, cmd_rx) = tokio::sync::mpsc::unbounded_channel();
     let (_raw_tx, raw_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -754,20 +753,22 @@ async fn test_order_command_send_failure_does_not_emit_rejection() {
         })
         .unwrap();
 
-    let message = tokio::time::timeout(Duration::from_millis(300), out_rx.recv()).await;
-    if let Ok(Some(message)) = message {
-        assert!(
-            !matches!(
-                message,
-                NautilusWsMessage::OrderRejected(_)
-                    | NautilusWsMessage::OrderCancelRejected(_)
-                    | NautilusWsMessage::OrderModifyDenied(_)
-                    | NautilusWsMessage::OrderModifyRejected(_)
-                    | NautilusWsMessage::OrderCancelDenied(_)
-            ),
-            "send failure emitted rejection: {message:?}"
-        );
-    }
+    let message = tokio::time::timeout(Duration::from_millis(300), out_rx.recv())
+        .await
+        .expect("handler send failure should emit")
+        .expect("event channel closed");
+
+    let NautilusWsMessage::OrderRejected(rejected) = message else {
+        panic!("expected one OrderRejected, was {message:?}");
+    };
+
+    assert_eq!(rejected.client_order_id.as_str(), "ws-send-fail-test-001");
+    assert_eq!(rejected.reason.as_str(), "not connected");
+    assert!(!rejected.due_post_only);
+    assert!(
+        out_rx.try_recv().is_err(),
+        "handler send failure should emit one rejection"
+    );
 
     signal.store(true, Ordering::Relaxed);
     assert!(handle.await.unwrap().is_none());

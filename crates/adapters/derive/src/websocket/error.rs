@@ -110,7 +110,9 @@ impl DeriveWsError {
 
     pub(crate) fn redacted_message(&self) -> String {
         match self {
-            Self::JsonRpc { code, .. } => format!("JSON-RPC error {code}"),
+            Self::JsonRpc { code, .. } => self
+                .session_key_expiry_reason()
+                .unwrap_or_else(|| format!("JSON-RPC error {code}")),
             Self::RateLimited { retry_after } => {
                 format!("rate limited, retry after {retry_after:?}")
             }
@@ -123,6 +125,35 @@ impl DeriveWsError {
             Self::MissingCredentials { .. } => "missing credentials".to_string(),
             Self::NotConnected => "not connected".to_string(),
         }
+    }
+
+    pub(crate) fn session_key_expiry_reason(&self) -> Option<String> {
+        let Self::JsonRpc {
+            code: -32602,
+            data: Some(Value::String(detail)),
+            ..
+        } = self
+        else {
+            return None;
+        };
+
+        let detail = detail.lines().next()?;
+        let expiries = detail.strip_prefix(
+            "Error 14038: Action expiry exceeds session key expiry. Data: signature expires at ",
+        )?;
+        let (signature_expiry, key_expiry) =
+            expiries.split_once("s but the signing session key expires at ")?;
+        let signature_expiry = signature_expiry.parse::<u64>().ok()?;
+        let key_expiry = key_expiry.strip_suffix('s')?.parse::<u64>().ok()?;
+
+        if signature_expiry <= key_expiry {
+            return None;
+        }
+
+        Some(format!(
+            "14038: Signature expires at {signature_expiry}s, session key expires at {key_expiry}s; \
+             use a key valid through the signature expiry",
+        ))
     }
 }
 
@@ -150,6 +181,93 @@ mod tests {
         let rendered = err.to_string();
         assert!(rendered.contains("-32601"));
         assert!(rendered.contains("Method not found"));
+    }
+
+    #[rstest]
+    fn test_session_key_expiry_reason_is_safe_for_logs(#[values(false, true)] backtrace: bool) {
+        let mut response: Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_error_session_key_expiry.json"
+        ))
+        .unwrap();
+
+        if !backtrace {
+            let detail = response["error"]["data"].as_str().unwrap();
+            response["error"]["data"] = json!(detail.lines().next().unwrap());
+        }
+
+        let error = DeriveWsError::JsonRpc {
+            code: response["error"]["code"].as_i64().unwrap(),
+            message: response["error"]["message"].as_str().unwrap().to_string(),
+            data: Some(response["error"]["data"].clone()),
+        };
+
+        let expected = "14038: Signature expires at 1796263075s, session key expires at 1793728835s; use a key valid through the signature expiry";
+
+        assert_eq!(error.session_key_expiry_reason().as_deref(), Some(expected));
+        assert_eq!(error.redacted_message(), expected);
+    }
+
+    #[rstest]
+    #[case::missing(None)]
+    #[case::null(Some(Value::Null))]
+    #[case::empty(Some(json!("")))]
+    #[case::object(Some(json!({"detail": "opaque sensitive detail"})))]
+    #[case::other_error(Some(json!("Error 14030: Session key expired")))]
+    #[case::later_line(Some(json!("opaque sensitive detail\nError 14038: Action expiry exceeds session key expiry. Data: signature expires at 1796263075s but the signing session key expires at 1793728835s")))]
+    #[case::signature_not_numeric(Some(json!("Error 14038: Action expiry exceeds session key expiry. Data: signature expires at secret-sig but the signing session key expires at 1793728835s")))]
+    #[case::key_not_numeric(Some(json!("Error 14038: Action expiry exceeds session key expiry. Data: signature expires at 1796263075s but the signing session key expires at secret-key-s")))]
+    #[case::overflow(Some(json!("Error 14038: Action expiry exceeds session key expiry. Data: signature expires at 18446744073709551616s but the signing session key expires at 1793728835s")))]
+    #[case::key_overflow(Some(json!("Error 14038: Action expiry exceeds session key expiry. Data: signature expires at 18446744073709551615s but the signing session key expires at 18446744073709551616s")))]
+    #[case::missing_suffix(Some(json!("Error 14038: Action expiry exceeds session key expiry. Data: signature expires at 1796263075s but the signing session key expires at 1793728835")))]
+    #[case::trailing_text(Some(json!("Error 14038: Action expiry exceeds session key expiry. Data: signature expires at 1796263075s but the signing session key expires at 1793728835s secret")))]
+    #[case::not_exceeded(Some(json!("Error 14038: Action expiry exceeds session key expiry. Data: signature expires at 1793728835s but the signing session key expires at 1796263075s")))]
+    #[case::equal_expiries(Some(json!("Error 14038: Action expiry exceeds session key expiry. Data: signature expires at 1793728835s but the signing session key expires at 1793728835s")))]
+    fn test_session_key_expiry_reason_keeps_unrecognized_data_redacted(
+        #[case] data: Option<Value>,
+    ) {
+        let error = DeriveWsError::JsonRpc {
+            code: -32602,
+            message: "Invalid params".into(),
+            data,
+        };
+
+        assert_eq!(error.session_key_expiry_reason(), None);
+        assert_eq!(error.redacted_message(), "JSON-RPC error -32602");
+    }
+
+    #[rstest]
+    fn test_session_key_expiry_reason_requires_invalid_params_code() {
+        let response: Value = serde_json::from_str(include_str!(
+            "../../test_data/ws_error_session_key_expiry.json"
+        ))
+        .unwrap();
+
+        let error = DeriveWsError::JsonRpc {
+            code: -32603,
+            message: "Internal error".into(),
+            data: Some(response["error"]["data"].clone()),
+        };
+
+        assert_eq!(error.session_key_expiry_reason(), None);
+        assert_eq!(error.redacted_message(), "JSON-RPC error -32603");
+    }
+
+    #[rstest]
+    fn test_session_key_expiry_reason_bounds_numeric_output() {
+        let error = DeriveWsError::JsonRpc {
+            code: -32602,
+            message: "Invalid params".into(),
+            data: Some(json!(format!(
+                "Error 14038: Action expiry exceeds session key expiry. Data: signature expires at {}s but the signing session key expires at {}s",
+                u64::MAX,
+                u64::MAX - 1,
+            ))),
+        };
+
+        let expected = "14038: Signature expires at 18446744073709551615s, session key expires at 18446744073709551614s; use a key valid through the signature expiry";
+
+        assert_eq!(error.session_key_expiry_reason().as_deref(), Some(expected));
+        assert!(expected.len() <= crate::common::parse::STRATEGY_REASON_MAX_CHARS);
     }
 
     #[rstest]

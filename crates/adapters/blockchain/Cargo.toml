@@ -51,7 +51,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 [dependencies]
 nautilus-common = { workspace = true, features = ["defi", "live"] }
 nautilus-core = { workspace = true }
-nautilus-infrastructure = { workspace = true, features = ["postgres"] }
+nautilus-infrastructure = { workspace = true, features = ["defi", "postgres"] }
 nautilus-live = { workspace = true, features = ["defi"] }
 nautilus-model = { workspace = true, features = ["defi"] }
 nautilus-network = { workspace = true, features = ["transport-sockudo"] }
@@ -89,6 +89,7 @@ turmoil = { workspace = true, optional = true }
 
 [dev-dependencies]
 nautilus-model = { workspace = true, features = ["test-support"] }
+nautilus-portfolio = { workspace = true }
 
 axum = { workspace = true }
 rstest = { workspace = true }

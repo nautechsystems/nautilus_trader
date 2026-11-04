@@ -146,6 +146,10 @@ Python class names. Python does not expose a factory registration API for separa
 - Startup does not restore bounded market-data histories or the running process.
 - A backing does not provide a complete event archive or synchronize nodes. Each node owns its
   in-memory cache, even when nodes share a database namespace.
+- With the `defi` feature, Redis and Postgres restore full token currency definitions before dependent
+  instruments. Instrument writes wait for persistent conflict checks, including legacy updates. Integrity
+  conflicts fail recovery. See [token currency recovery](../integrations/blockchain.md#token-currency-identity-and-recovery)
+  for legacy-data and instrument-replacement rules.
 
 #### Explicit database operations
 
@@ -461,7 +465,7 @@ class MarketDataStrategy(Strategy):
 
 Query orders by venue, strategy, instrument, account, or order side.
 
-##### Basic order access
+**Basic order access**:
 
 ```python
 # Get a specific order by its client order ID
@@ -480,7 +484,7 @@ orders_for_strategy = self.cache.orders(strategy_id=strategy_id)
 orders_for_instrument = self.cache.orders(instrument_id=instrument_id)
 ```
 
-##### Order state queries
+**Order state queries**:
 
 ```python
 # Orders currently active at the venue
@@ -518,7 +522,7 @@ order = self.cache.order(client_order_id)
 is_active_local = order is not None and order.is_active_local
 ```
 
-##### Order statistics
+**Order statistics**:
 
 ```python
 # Number of open orders
@@ -550,7 +554,7 @@ venue_orders_count = self.cache.orders_total_count(venue=venue)
 
 The `Cache` keeps positions until they are purged or reset and provides several ways to query them.
 
-##### Position access
+**Position access**:
 
 ```python
 # Get a specific position by its ID
@@ -578,7 +582,7 @@ strategy_positions = self.cache.positions(strategy_id=strategy_id)
 long_positions = self.cache.positions(side=PositionSide.LONG)
 ```
 
-##### Position state queries
+**Position state queries**:
 
 ```python
 # Checks if a position with the given ID exists
@@ -597,7 +601,7 @@ orders = self.cache.orders_for_position(position_id)
 position = self.cache.position_for_order(client_order_id)
 ```
 
-##### Position statistics
+**Position statistics**:
 
 ```python
 # Number of currently open positions

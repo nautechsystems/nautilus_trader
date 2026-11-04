@@ -67,12 +67,14 @@ pub extern "C" fn currency_hash(currency: &Currency) -> u64 {
 }
 
 /// Registers a currency in the global map for FFI.
+///
+/// Conflicting DeFi definitions are logged and leave the registered definition unchanged.
 #[unsafe(no_mangle)]
 pub extern "C" fn currency_register(currency: Currency) {
     abort_on_panic(|| {
-        CURRENCY_MAP
-            .lock()
-            .insert(currency.code.to_string(), currency);
+        if let Err(e) = Currency::register(currency, true) {
+            log::error!("Failed to register currency: {e}");
+        }
     });
 }
 

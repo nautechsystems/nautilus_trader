@@ -31,7 +31,7 @@ use nautilus_common::{
 use nautilus_core::UUID4;
 use nautilus_model::{
     defi::{
-        Blockchain, DefiData, PoolProfiler,
+        Blockchain, DefiData, Pool, PoolProfiler,
         data::{DexPoolData, block::BlockPosition},
         pool_analysis::PoolSnapshot,
     },
@@ -254,26 +254,7 @@ impl DataEngine {
                 let topic = defi::switchboard::get_defi_blocks_topic(block.chain());
                 msgbus::publish_defi_block(topic, &block);
             }
-            DefiData::Pool(pool) => {
-                if let Err(e) = self.cache().borrow_mut().add_pool(pool.clone()) {
-                    log::error!("Failed to add Pool to cache: {e}");
-                }
-
-                match CurrencyPair::try_from(&pool) {
-                    Ok(instrument) => {
-                        self.handle_instrument(&InstrumentAny::CurrencyPair(instrument));
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "Failed to create instrument for Pool {}: {e}",
-                            pool.instrument_id
-                        );
-                    }
-                }
-
-                let topic = defi::switchboard::get_defi_pool_topic(pool.instrument_id);
-                msgbus::publish_defi_pool(topic, &pool);
-            }
+            DefiData::Pool(pool) => self.handle_pool(&pool),
             DefiData::PoolSnapshot(snapshot) => {
                 // Replayed snapshots carry no request identity, so any pending bootstrap accepts them
                 if !self
@@ -394,6 +375,33 @@ impl DataEngine {
                 msgbus::publish_defi_flash(topic, &flash);
             }
         }
+    }
+
+    fn handle_pool(&mut self, pool: &Pool) {
+        let instrument = match CurrencyPair::try_from(pool) {
+            Ok(instrument) => InstrumentAny::CurrencyPair(instrument),
+            Err(e) => {
+                log::error!(
+                    "Failed to create instrument for Pool {}: {e}",
+                    pool.instrument_id
+                );
+                return;
+            }
+        };
+
+        if !self.cache_instrument(&instrument) {
+            return;
+        }
+
+        if let Err(e) = self.cache().borrow_mut().add_pool(pool.clone()) {
+            log::error!("Failed to add Pool to cache: {e}");
+            return;
+        }
+
+        self.publish_instrument(&instrument);
+
+        let topic = defi::switchboard::get_defi_pool_topic(pool.instrument_id);
+        msgbus::publish_defi_pool(topic, pool);
     }
 
     pub(crate) fn handle_pool_snapshot_response(&mut self, response: &PoolSnapshotResponse) {

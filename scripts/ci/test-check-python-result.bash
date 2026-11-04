@@ -12,6 +12,7 @@ run_case() {
 
   RUN_TESTS="$3" BUILD_RESULT="$4" PLAN_RESULT="$5" \
     PRE_COMMIT_RESULT="$6" SCRIPT_TESTS_RESULT="$7" \
+    BUILD_PYTHON314_RESULT="${8-$4}" BUILD_PYTHON315_RESULT="${9-$4}" \
     bash "$repo_root/scripts/ci/check-python-result.bash" > "$case_root/output" 2>&1 || status=$?
 
   if [ "$status" -ne "$expected_status" ] || [ "$(cat "$case_root/output")" != "$expected_output" ]; then
@@ -23,7 +24,7 @@ run_case() {
   fi
 }
 
-run_case 0 "Python 3.13 build, tests, and generated file checks passed" true success success success success
+run_case 0 "Python 3.13, 3.14, and 3.15 builds, tests, and generated file checks passed" true success success success success
 run_case 0 "Python build and tests intentionally skipped" false skipped success success success
 
 for result in failure cancelled skipped ""; do
@@ -35,6 +36,20 @@ for result in failure cancelled skipped ""; do
     run_case 1 "::error::Python check prerequisites did not succeed" \
       "$run_tests" skipped success success "$result"
   done
+done
+
+for result in failure cancelled skipped ""; do
+  run_case 1 "::error::Unexpected Python build result: run-tests=true, build=${result:-unset}" \
+    true success success success success "$result" success
+  run_case 1 "::error::Unexpected Python build result: run-tests=true, build=${result:-unset}" \
+    true success success success success success "$result"
+done
+
+for result in failure cancelled success ""; do
+  run_case 1 "::error::Unexpected Python build result: run-tests=false, build=${result:-unset}" \
+    false skipped success success success "$result" skipped
+  run_case 1 "::error::Unexpected Python build result: run-tests=false, build=${result:-unset}" \
+    false skipped success success success skipped "$result"
 done
 
 for run_tests in true false; do

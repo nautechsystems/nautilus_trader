@@ -1,6 +1,6 @@
 version = 1
 repository = "https://github.com/nautechsystems/nautilus_engineering"
-revision = "00d5e325dc85464229ee8a6d80336027faeb0a8f"
+revision = "92e309ea4904d58e02e3ac2a38d8617564835e3b"
 manifest_sha256 = "c118a09137ee947a24ab3d5d22650719f90b2954878e6c6a656c5ad8b7f19def"
 marker_file = ".nautilus-engineering.syncing"
 profiles = ["sync"]
@@ -44,7 +44,7 @@ executable = false
 [[file]]
 artifact = "shared-tool-catalog"
 path = ".nautilus-engineering/tools.toml"
-sha256 = "a97392e6864584e349be85abf8472bd7f4f17564383b6394725de31884e480a3"
+sha256 = "1701cc3d98a5ba539ae499b1a5eb44e41ab21c91755cf660d3b4012b80241f9e"
 executable = false
 
 [[file]]
@@ -62,7 +62,7 @@ executable = false
 [[file]]
 artifact = "markdown-standard"
 path = "docs/developer_guide/markdown_style.md"
-sha256 = "8b3ef01847dbb0799c22d7f7a11810fac9e5e92bbce0de990a774b6997e1ac19"
+sha256 = "a01a90dbc5e70cc44d9a5cf688a27c8024316ac9778b66dd1cdb6285d451abb6"
 executable = false
 
 [[file]]

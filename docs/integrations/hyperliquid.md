@@ -1547,6 +1547,13 @@ reconstructed from held balances (long-only). HIP-4 side tokens reconcile agains
 `BinaryOption` instruments. See [HIP-3 reconciliation](#open-order-and-position-reconciliation) for per-dex
 open-order and position fan-out.
 
+Perpetual position reports retain the venue's `entryPx` as `avg_px_open` and set
+`avg_px_open_precision` to the instrument's price precision.
+[Average-price comparisons](../concepts/execution/reconciliation.md#reported-entry-averages) allow one unit
+at that precision in addition to the default 0.01% relative tolerance. This accounts for truncated venue
+averages. When the cached average matches within this allowance, same-side quantity adjustments use it
+as the reconciliation fill price. With matching quantities, larger price differences fail startup.
+
 :::note
 Leverage is managed directly through the Hyperliquid web UI or API, not through the adapter.
 Set your desired leverage per instrument on Hyperliquid before trading.

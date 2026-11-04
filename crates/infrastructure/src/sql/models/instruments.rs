@@ -127,7 +127,7 @@ impl<'r> FromRow<'r, PgRow> for InstrumentAnyRow {
             )))
         } else if kind == "CURRENCY_PAIR" {
             Ok(Self(InstrumentAny::CurrencyPair(
-                CurrencyPairRow::from_row(row).unwrap().0,
+                CurrencyPairRow::from_row(row)?.0,
             )))
         } else if kind == "EQUITY" {
             Ok(Self(InstrumentAny::Equity(

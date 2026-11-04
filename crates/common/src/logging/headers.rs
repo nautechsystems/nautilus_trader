@@ -76,7 +76,13 @@ pub fn register_allocator_mimalloc() {
 /// Logs the Nautilus startup header with system, identifier, and version details.
 #[rustfmt::skip]
 pub fn log_header(trader_id: TraderId, machine_id: &str, instance_id: UUID4, component: Ustr) {
-    let mut sys = System::new();
+    let mut sys = match System::new() {
+        Ok(sys) => sys,
+        Err(e) => {
+            log::warn!("Failed to query system information: {e}");
+            return;
+        }
+    };
     sys.refresh_cpu_all();
     sys.refresh_memory();
 
@@ -321,7 +327,13 @@ fn python_available() -> bool {
 /// Logs current memory and swap usage.
 #[rustfmt::skip]
 pub fn log_sysinfo(component: Ustr) {
-    let mut sys = System::new();
+    let mut sys = match System::new() {
+        Ok(sys) => sys,
+        Err(e) => {
+            log::warn!("Failed to query system information: {e}");
+            return;
+        }
+    };
     sys.refresh_memory();
 
     let c = component;

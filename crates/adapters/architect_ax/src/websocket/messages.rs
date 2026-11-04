@@ -34,7 +34,7 @@ use crate::{
         enums::{
             AxCancelReason, AxCancelRejectionReason, AxCandleWidth, AxInstrumentState,
             AxMarketDataLevel, AxMdRequestType, AxOrderRequestType, AxOrderSide, AxOrderStatus,
-            AxOrderWsMessageType, AxTimeInForce,
+            AxOrderWsMessageType, AxSelfTradeBehavior, AxTimeInForce,
         },
         parse::{deserialize_decimal_or_zero, deserialize_optional_decimal_from_str},
     },
@@ -453,6 +453,9 @@ pub struct AxWsPlaceOrder {
     /// Optional client order ID.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cid: Option<u64>,
+    /// Optional self-trade prevention behavior.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub st: Option<AxSelfTradeBehavior>,
     /// Optional order tag (max 10 alphanumeric characters).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tag: Option<String>,
@@ -1166,6 +1169,7 @@ mod tests {
             p: dec!(50000.50),
             tif: AxTimeInForce::Gtc,
             po: false,
+            st: None,
             tag: Some("Nautilus".to_string()),
             cid: Some(1234567890),
         };
@@ -1185,6 +1189,31 @@ mod tests {
         assert_eq!(parsed["cid"], 1234567890);
         assert!(parsed.get("order_type").is_none());
         assert!(parsed.get("trigger_price").is_none());
+        assert!(parsed.get("st").is_none());
+    }
+
+    #[rstest]
+    fn test_ws_place_order_serialization_includes_self_trade_behavior() {
+        let msg = AxWsPlaceOrder {
+            rid: 2,
+            t: AxOrderRequestType::PlaceOrder,
+            s: Ustr::from("EURUSD-PERP"),
+            d: AxOrderSide::Sell,
+            q: 1,
+            p: dec!(1.12),
+            tif: AxTimeInForce::Gtc,
+            po: true,
+            st: Some(AxSelfTradeBehavior::CancelResting),
+            tag: Some("arb01".to_string()),
+            cid: None,
+        };
+
+        let json = serde_json::to_string(&msg).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(parsed["st"], "CancelResting");
+        assert_eq!(parsed["tag"], "arb01");
+        assert!(parsed.get("cid").is_none());
     }
 
     #[rstest]

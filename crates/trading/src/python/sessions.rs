@@ -45,7 +45,7 @@ impl ForexSession {
     fn __repr__(&self) -> String {
         format!(
             "<{}.{}: '{}'>",
-            stringify!(PositionSide),
+            stringify!(ForexSession),
             self.name(),
             self.value(),
         )

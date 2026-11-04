@@ -535,7 +535,8 @@ impl NautilusKernel {
     }
 
     fn determine_machine_id() -> anyhow::Result<String> {
-        sysinfo::System::host_name().ok_or_else(|| anyhow::anyhow!("Failed to determine hostname"))
+        sysinfo::System::host_name()
+            .map_err(|e| anyhow::anyhow!("Failed to determine hostname: {e}"))
     }
 
     fn initialize_logging(

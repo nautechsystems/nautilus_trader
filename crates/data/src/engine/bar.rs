@@ -863,7 +863,56 @@ impl DataEngine {
             }
         }
 
+        if !historical && request_id.is_none() {
+            self.connect_time_bar_sources(bar_type);
+        }
+
         Ok(())
+    }
+
+    fn connect_time_bar_sources(&self, bar_type: BarType) {
+        let bar_types = self
+            .subscriptions_bar_aggregation
+            .values()
+            .map(|subscription| {
+                subscription
+                    .command
+                    .single_bar_type()
+                    .expect("retained aggregation has one bar type")
+            })
+            .chain(std::iter::once(bar_type));
+
+        for bar_type in bar_types {
+            if !bar_type.is_composite()
+                || !bar_type.spec().is_time_aggregated()
+                || !bar_type.composite().is_internally_aggregated()
+                || !bar_type.composite().spec().is_time_aggregated()
+            {
+                continue;
+            }
+
+            let Some(source) = self
+                .bar_aggregators
+                .get(&bar_aggregator_key(bar_type.composite(), None))
+            else {
+                continue;
+            };
+
+            let Some(aggregator) = self
+                .bar_aggregators
+                .get(&bar_aggregator_key(bar_type, None))
+            else {
+                continue;
+            };
+
+            if let Some(aggregator) = aggregator
+                .borrow_mut()
+                .as_any_mut()
+                .downcast_mut::<TimeBarAggregator>()
+            {
+                aggregator.set_timer_source(Rc::downgrade(source));
+            }
+        }
     }
 
     fn unsubscribe_bar_aggregator(&mut self, cmd: &UnsubscribeBars) {

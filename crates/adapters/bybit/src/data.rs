@@ -77,7 +77,8 @@ use crate::{
     },
     common::{
         consts::{
-            BYBIT_BOOK_DEPTHS, BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_QUOTE_DEPTH, BYBIT_VENUE,
+            BYBIT_BOOK_DEPTHS, BYBIT_DEFAULT_ORDERBOOK_DEPTH, BYBIT_OPTION_BOOK_DEPTHS,
+            BYBIT_OPTION_DEFAULT_ORDERBOOK_DEPTH, BYBIT_QUOTE_DEPTH, BYBIT_VENUE,
         },
         enums::BybitProductType,
         instruments::diff_and_emit_instruments,
@@ -451,9 +452,15 @@ fn send_data(sender: &EventSender<DataEvent>, data: Data) {
     }
 }
 
-fn validate_orderbook_depth(depth: u32) -> anyhow::Result<()> {
-    if !BYBIT_BOOK_DEPTHS.contains(&depth) {
-        anyhow::bail!("invalid depth {depth}; valid values are {BYBIT_BOOK_DEPTHS:?}");
+fn validate_orderbook_depth(depth: u32, product_type: BybitProductType) -> anyhow::Result<()> {
+    let valid_depths: &[u32] = if product_type == BybitProductType::Option {
+        &BYBIT_OPTION_BOOK_DEPTHS
+    } else {
+        &BYBIT_BOOK_DEPTHS
+    };
+
+    if !valid_depths.contains(&depth) {
+        anyhow::bail!("invalid depth {depth}; valid values are {valid_depths:?}");
     }
 
     Ok(())
@@ -1286,15 +1293,19 @@ impl DataClient for BybitDataClient {
                 anyhow::bail!("Bybit only supports L2_MBP order book deltas");
             }
 
-            let depth = cmd
-                .depth
-                .map_or(BYBIT_DEFAULT_ORDERBOOK_DEPTH, |d| d.get() as u32);
-
-            validate_orderbook_depth(depth)?;
-
             let product_type = self
                 .get_product_type_for_instrument(instrument_id)
                 .unwrap_or(BybitProductType::Linear);
+
+            let default_depth = if product_type == BybitProductType::Option {
+                BYBIT_OPTION_DEFAULT_ORDERBOOK_DEPTH
+            } else {
+                BYBIT_DEFAULT_ORDERBOOK_DEPTH
+            };
+
+            let depth = cmd.depth.map_or(default_depth, |d| d.get() as u32);
+
+            validate_orderbook_depth(depth, product_type)?;
 
             let ws_client = self
                 .get_ws_client_for_product(product_type)
@@ -2424,7 +2435,7 @@ pub(crate) mod tests {
     #[path = "quotes/mod.rs"]
     pub(crate) mod benchmarks;
 
-    use std::{process::Command, sync::Arc, time::Duration};
+    use std::{num::NonZeroUsize, process::Command, sync::Arc, time::Duration};
 
     use ahash::{AHashMap, AHashSet};
     use dashmap::DashMap;
@@ -2675,7 +2686,7 @@ pub(crate) mod tests {
             BYBIT_OPTION_SUBSCRIPTION_LIMIT + 1,
         );
         assert_eq!(
-            ws.subscribe_orderbook(instrument_id, 50)
+            ws.subscribe_orderbook(instrument_id, 25)
                 .await
                 .unwrap_err()
                 .to_string(),
@@ -2706,7 +2717,7 @@ pub(crate) mod tests {
             .await;
             assert!(!client.book_depths.contains_key(&instrument_id));
             assert_eq!(
-                ws.subscribe_orderbook(instrument_id, 50)
+                ws.subscribe_orderbook(instrument_id, 25)
                     .await
                     .unwrap_err()
                     .to_string(),
@@ -2906,18 +2917,85 @@ pub(crate) mod tests {
     }
 
     #[rstest]
-    fn test_validate_orderbook_depth_accepts_1000() {
-        assert!(validate_orderbook_depth(1000).is_ok());
+    #[case::linear_1(BybitProductType::Linear, 1)]
+    #[case::linear_50(BybitProductType::Linear, 50)]
+    #[case::linear_200(BybitProductType::Linear, 200)]
+    #[case::linear_1000(BybitProductType::Linear, 1000)]
+    #[case::inverse_1(BybitProductType::Inverse, 1)]
+    #[case::inverse_50(BybitProductType::Inverse, 50)]
+    #[case::inverse_200(BybitProductType::Inverse, 200)]
+    #[case::inverse_1000(BybitProductType::Inverse, 1000)]
+    #[case::spot_1(BybitProductType::Spot, 1)]
+    #[case::spot_50(BybitProductType::Spot, 50)]
+    #[case::spot_200(BybitProductType::Spot, 200)]
+    #[case::spot_1000(BybitProductType::Spot, 1000)]
+    #[case::option_25(BybitProductType::Option, 25)]
+    #[case::option_100(BybitProductType::Option, 100)]
+    fn test_validate_orderbook_depth_accepts_supported(
+        #[case] product_type: BybitProductType,
+        #[case] depth: u32,
+    ) {
+        assert!(validate_orderbook_depth(depth, product_type).is_ok());
     }
 
     #[rstest]
-    fn test_validate_orderbook_depth_rejects_500() {
-        let e = validate_orderbook_depth(500).unwrap_err();
+    #[case::linear_25(BybitProductType::Linear, 25, "[1, 50, 200, 1000]")]
+    #[case::inverse_100(BybitProductType::Inverse, 100, "[1, 50, 200, 1000]")]
+    #[case::spot_500(BybitProductType::Spot, 500, "[1, 50, 200, 1000]")]
+    #[case::option_1(BybitProductType::Option, 1, "[25, 100]")]
+    #[case::option_50(BybitProductType::Option, 50, "[25, 100]")]
+    #[case::option_200(BybitProductType::Option, 200, "[25, 100]")]
+    #[case::option_1000(BybitProductType::Option, 1000, "[25, 100]")]
+    #[case::option_500(BybitProductType::Option, 500, "[25, 100]")]
+    fn test_validate_orderbook_depth_rejects_unsupported(
+        #[case] product_type: BybitProductType,
+        #[case] depth: u32,
+        #[case] valid_depths: &str,
+    ) {
+        let e = validate_orderbook_depth(depth, product_type).unwrap_err();
 
         assert_eq!(
             e.to_string(),
-            "invalid depth 500; valid values are [1, 50, 200, 1000]"
+            format!("invalid depth {depth}; valid values are {valid_depths}")
         );
+    }
+
+    #[tokio::test]
+    async fn test_option_book_subscription_rejects_invalid_depth_before_registration() {
+        let (tx, _rx) = tokio::sync::mpsc::unbounded_channel();
+        set_data_event_sender(tx);
+
+        let config = BybitDataClientConfig {
+            product_types: vec![BybitProductType::Option],
+            ..Default::default()
+        };
+
+        let mut client = BybitDataClient::new(*BYBIT_CLIENT_ID, config).unwrap();
+        let instrument_id = InstrumentId::from("ETH-26JUN26-16000-P-OPTION.BYBIT");
+        client
+            .instruments
+            .insert(instrument_id, option_instrument());
+
+        let command = SubscribeBookDeltas::new(
+            instrument_id,
+            BookType::L2_MBP,
+            Some(*BYBIT_CLIENT_ID),
+            None,
+            UUID4::new(),
+            UnixNanos::default(),
+            NonZeroUsize::new(50),
+            false,
+            None,
+            None,
+        );
+
+        let e = client.subscribe_book_deltas(command).unwrap_err();
+
+        assert_eq!(
+            e.to_string(),
+            "invalid depth 50; valid values are [25, 100]"
+        );
+        assert!(!client.book_depths.contains_key(&instrument_id));
     }
 
     #[rstest]

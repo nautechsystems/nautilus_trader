@@ -150,9 +150,12 @@ impl DecodeFromRecordBatch for TradeTick {
                 .iter()
                 .enumerate()
                 .map(|(i, id)| {
-                    id.map(TradeId::from).ok_or_else(|| {
+                    let id = id.ok_or_else(|| {
                         EncodingError::ParseError("trade_id", format!("NULL value at row {i}"))
-                    })
+                    })?;
+
+                    TradeId::new_checked(id)
+                        .map_err(|e| EncodingError::ParseError("trade_id", format!("row {i}: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         } else {
@@ -160,9 +163,12 @@ impl DecodeFromRecordBatch for TradeTick {
                 .iter()
                 .enumerate()
                 .map(|(i, id)| {
-                    id.map(TradeId::from).ok_or_else(|| {
+                    let id = id.ok_or_else(|| {
                         EncodingError::ParseError("trade_id", format!("NULL value at row {i}"))
-                    })
+                    })?;
+
+                    TradeId::new_checked(id)
+                        .map_err(|e| EncodingError::ParseError("trade_id", format!("row {i}: {e}")))
                 })
                 .collect::<Result<Vec<_>, _>>()?
         };
@@ -213,8 +219,9 @@ mod tests {
     use std::sync::Arc;
 
     use arrow::array::{Array, Decimal128Array, TimestampNanosecondArray, UInt64Array};
-    use nautilus_model::types::{
-        Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw,
+    use nautilus_model::{
+        data::stubs::stub_trade_ethusdt_buy,
+        types::{Price, Quantity, fixed::FIXED_SCALAR, price::PriceRaw, quantity::QuantityRaw},
     };
     use rstest::rstest;
 
@@ -406,55 +413,73 @@ mod tests {
     }
 
     #[rstest]
-    fn test_decode_batch_null_trade_id_returns_error() {
-        use arrow::datatypes::Field;
+    #[case::valid(Some("trade-2"), None)]
+    #[case::max_length(Some("12345678-1234-1234-1234-123456789012"), None)]
+    #[case::empty(Some(""), Some("row 1: String is empty"))]
+    #[case::overlength(
+        Some("12345678-1234-1234-1234-1234567890123"),
+        Some("row 1: String exceeds maximum length of 36 characters, was 37")
+    )]
+    #[case::non_ascii(Some("é"), Some("row 1: String contains non-ASCII character"))]
+    #[case::whitespace(Some(" "), Some("row 1: String contains only whitespace"))]
+    #[case::interior_nul(Some("a\0b"), Some("row 1: String contains interior NUL byte"))]
+    #[case::null(None, Some("NULL value at row 1"))]
+    fn test_decode_batch_trade_ids(
+        #[case] trade_id: Option<&str>,
+        #[case] expected_error: Option<&str>,
+        #[values(false, true)] string_view: bool,
+    ) {
+        let tick1 = TradeTick {
+            price: Price::from("1234.56"),
+            size: Quantity::from("1.23456"),
+            ts_event: 12.into(),
+            ts_init: 34.into(),
+            ..stub_trade_ethusdt_buy()
+        };
 
-        let instrument_id = InstrumentId::from("AAPL.XNAS");
-        let metadata = TradeTick::get_metadata(&instrument_id, 2, 0);
+        let mut tick2 = TradeTick {
+            price: Price::from("2345.67"),
+            size: Quantity::from("8.90123"),
+            aggressor_side: AggressorSide::Sell,
+            trade_id: TradeId::new("trade-2"),
+            ts_event: 123.into(),
+            ts_init: 456.into(),
+            ..tick1
+        };
 
-        let raw_price = (100.00 * FIXED_SCALAR) as PriceRaw;
-        let price =
-            crate::arrow::test_support::decimal_array_from_bytes(vec![&raw_price.to_le_bytes()]);
-        let size = crate::arrow::test_support::decimal_array_from_bytes(vec![
-            &((1000.0 * FIXED_SCALAR) as QuantityRaw).to_le_bytes(),
-        ]);
-        let aggressor_side = enum_dictionary_array([AggressorSide::NoAggressor]).unwrap();
+        let metadata = TradeTick::get_metadata(&tick1.instrument_id, 2, 5);
+        let batch = TradeTick::encode_batch(&metadata, &[tick1, tick2]).unwrap();
+        let ids = vec![Some(tick1.trade_id.as_str()), trade_id];
+        let ids: Arc<dyn Array> = if string_view {
+            Arc::new(StringViewArray::from(ids))
+        } else {
+            Arc::new(StringArray::from(ids))
+        };
 
-        let trade_id: StringArray = vec![None::<&str>].into();
-        let ts_event = UInt64Array::from(vec![1]);
-        let ts_init = UInt64Array::from(vec![2]);
+        let mut fields = batch.schema().fields().to_vec();
+        fields[3] = Arc::new(Field::new("trade_id", ids.data_type().clone(), true));
+        let schema = Schema::new_with_metadata(fields, batch.schema().metadata().clone());
+        let mut columns = batch.columns().to_vec();
+        columns[3] = ids;
+        let batch = RecordBatch::try_new(Arc::new(schema), columns).unwrap();
 
-        // Create schema with nullable trade_id to simulate external data source
-        let fields = vec![
-            Field::new("price", fixed_decimal_data_type(), false),
-            Field::new("size", fixed_decimal_data_type(), false),
-            Field::new("aggressor_side", enum_dictionary_data_type(), false),
-            Field::new("trade_id", DataType::Utf8, true), // nullable
-            Field::new("ts_event", crate::arrow::timestamp_data_type(), false),
-            Field::new("ts_init", crate::arrow::timestamp_data_type(), false),
-        ];
-        let schema = Schema::new_with_metadata(fields, metadata.clone());
+        let result = TradeTick::decode_batch(&metadata, batch);
 
-        let record_batch = crate::arrow::record_batch_with_timestamps(
-            schema.into(),
-            vec![
-                Arc::new(price),
-                Arc::new(size),
-                Arc::new(aggressor_side),
-                Arc::new(trade_id),
-                Arc::new(ts_event),
-                Arc::new(ts_init),
-            ],
-        )
-        .unwrap();
-
-        let result = TradeTick::decode_batch(&metadata, record_batch);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(
-            err.to_string().contains("NULL value at row 0"),
-            "Expected NULL error, was: {err}"
-        );
+        if let Some(expected_error) = expected_error {
+            assert!(matches!(
+                result,
+                Err(EncodingError::ParseError("trade_id", ref message))
+                    if message == expected_error
+            ));
+        } else {
+            tick2.trade_id = TradeId::new(trade_id.unwrap());
+            let decoded = result.unwrap();
+            assert_eq!(decoded, vec![tick1, tick2]);
+            assert_eq!(decoded[0].price.precision, 2);
+            assert_eq!(decoded[0].size.precision, 5);
+            assert_eq!(decoded[1].price.precision, 2);
+            assert_eq!(decoded[1].size.precision, 5);
+        }
     }
 
     #[rstest]

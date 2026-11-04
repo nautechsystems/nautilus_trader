@@ -46,7 +46,10 @@ repository exclusions.
 
 ## Headings
 
-- Use ATX headings (`#`, `##`, `###`, and so on).
+- Use ATX headings (`#`, `##`, `###`, and `####`).
+- Do not use H5 or H6. Deep heading hierarchies make documents harder to follow.
+- If a section needs more depth, use a list or split it into smaller linked documents, as
+  recommended in [MDN's heading guidance](https://developer.mozilla.org/en-US/docs/MDN/Writing_guidelines/Writing_style_guide#heading_levels).
 - Use one H1 as the first Markdown heading.
 - Use title case for H1.
 - Use sentence case for H2 and below.

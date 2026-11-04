@@ -354,6 +354,19 @@ position fails, `generate_position_status_reports` returns an error with the fai
 of an incomplete report set. See
 [instrument availability](../concepts/execution/reconciliation.md#instrument-availability).
 
+#### Futures margin calculations
+
+USD-M and COIN-M Futures instruments use an initial margin factor of `1`. With the default
+`LeveragedMarginModel`, local initial margin equals notional divided by the cached account leverage.
+
+Margin accounts start at 1x leverage and require the full notional until their cached leverage changes.
+Setting `futures_leverages` requests venue leverage but does not update the cached account leverage.
+
+Local maintenance margin equals notional divided by cached account leverage, multiplied by the
+`margin_maint` factor of `0.1`. This calculation does not model Binance's bracket-specific maintenance ratios
+for [USD-M](https://developers.binance.com/docs/derivatives/usds-margined-futures/account/rest-api/Notional-and-Leverage-Brackets)
+or [COIN-M](https://developers.binance.com/docs/derivatives/coin-margined-futures/account/rest-api/Notional-Bracket-for-Pair).
+
 ### Risk events
 
 | Feature              | Spot | USDT Futures | Coin Futures | Notes                              |
@@ -420,7 +433,36 @@ formula does not account for contract size. Configure `default_taker_fee` on
 | Order status updates | ✓    | ✓            | ✓            | Real-time order state changes. |
 | Trade history        | ✓    | ✓            | ✓            | Execution and fill reports.    |
 
-#### Futures trade-history retention
+#### Startup recovery
+
+Mass status combines open orders with available closed-order history for orders created within the
+reconciliation lookback window. Orders created before that window can be missed even if they fill within it.
+Historical USD-M conditional orders retain their original client order IDs and order types when their parent
+orders appear in the queried history.
+
+For instruments without open orders or saved state, select them through `load_ids` with `load_all=False`,
+the provider's `symbols` filter, or `external_order_instrument_ids`. Broad `bases`, `quotes`, and
+`contract_types` filters do not initiate catalog-wide history scans.
+
+History requests run sequentially per instrument. Long lookbacks, many instruments, or heavy order activity
+can exceed the node's default 30-second `timeout_reconciliation`. Use a bounded `reconciliation_lookback_mins`
+and increase that timeout when needed. With no lookback, Spot scans all available order history; Futures
+applies the 88-day window described below.
+
+An order-history failure drops that instrument's historical orders and marks the snapshot incomplete.
+Open orders, positions, fills, and other instruments' historical orders remain available. A failed
+fill-history request fails mass status.
+
+Spot startup history updates order facts only, including when `reconciliation_lookback_mins` is unset.
+Position recovery requires saved owned orders and positions in the configured cache backing store.
+Wallet balances do not establish ownership of individual positions. Startup history does not create missing
+Spot positions or advance stale saved positions.
+
+#### Futures history retention
+
+Binance omits canceled or expired Futures orders with no fills once their creation time is more than three
+days old. It also omits orders created more than 90 days ago. Recovery depends on the history Binance retains;
+`reports_complete` does not detect orders removed by these venue limits.
 
 Binance retains USD-M and COIN-M account trades for the past three months. Binance does not define whether
 this means calendar months or a fixed duration. Thus, the adapter uses the most recent 88 days as its complete
@@ -719,6 +761,14 @@ with these flags:
 
 - Every snapshot delta carries `F_SNAPSHOT`, and the final delta carries `F_SNAPSHOT | F_LAST`.
 - A snapshot without levels is a lone `Clear` that empties the book.
+
+Native `OrderBookDepth` subscriptions require `L2_MBP` and support up to 20 levels per side, with
+10 levels by default. They use the 20-level partial-book stream and limit each published snapshot
+to the requested depth. Native depth and delta subscriptions share that stream when both request
+20-level source data; unsubscribing either consumer leaves the other active. A conflicting delta
+depth or update speed requires unsubscribing before changing the stream.
+Native depth also publishes companion snapshot deltas. It cannot share an instrument with an
+`L1_MBP` delta subscription.
 
 ### Futures L2 subscriptions
 

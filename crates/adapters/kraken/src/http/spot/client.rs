@@ -16,7 +16,7 @@
 //! HTTP client for the Kraken Spot REST API.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     fmt::Debug,
     num::NonZeroU32,
     sync::{
@@ -2504,6 +2504,127 @@ impl KrakenSpotHttpClient {
         }
     }
 
+    /// Requests wallet position reports for the startup mass status, adding a FLAT report for
+    /// each of `flat_candidates` whose base asset the `Balance` read establishes as flat.
+    ///
+    /// Every row that counts toward a candidate's base, suffixed and staked rows included, must
+    /// parse and be non-negative. A candidate is flat when the sum of its base's rows rounds to
+    /// zero at the instrument's size precision, so an absent, zero or dust balance qualifies. A
+    /// nonzero sum with no LONG report withholds the FLAT with a warning. Tokenized assets never
+    /// get a FLAT, since their `Balance` key and units are undocumented.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the request fails, or if a row that counts toward a candidate's base
+    /// cannot be parsed or is negative.
+    pub(crate) async fn request_wallet_position_reports_with_flats(
+        &self,
+        account_id: AccountId,
+        quote_currency: Ustr,
+        flat_candidates: &[InstrumentId],
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
+        let balances_raw = self.inner.get_balance().await?;
+        let ts_init = self.generate_ts_init();
+
+        let mut candidates: Vec<(InstrumentId, Ustr, u8)> = Vec::new();
+
+        for instrument_id in flat_candidates {
+            let Some((instrument, base_currency)) = self
+                .get_cached_instrument(&instrument_id.symbol.inner())
+                .and_then(|instrument| {
+                    wallet_report_base_currency(&instrument, quote_currency)
+                        .map(|base_currency| (instrument, base_currency))
+                })
+            else {
+                log::warn!(
+                    "Withholding flat position report for {instrument_id}: not covered by the wallet read"
+                );
+                continue;
+            };
+
+            if matches!(instrument, InstrumentAny::TokenizedAsset(_)) {
+                log::warn!(
+                    "Withholding flat position report for {instrument_id}: tokenized asset balances are not read"
+                );
+                continue;
+            }
+
+            candidates.push((
+                *instrument_id,
+                base_currency.code,
+                instrument.size_precision(),
+            ));
+        }
+
+        let candidate_bases: HashSet<Ustr> = candidates.iter().map(|(_, base, _)| *base).collect();
+        let mut rows_by_base: HashMap<Ustr, Vec<(&str, Decimal)>> = HashMap::new();
+
+        for (key, amount) in &balances_raw {
+            let Some(base) = covered_balance_base(key, &candidate_bases) else {
+                continue;
+            };
+            let amount = Decimal::from_str_exact(amount)
+                .with_context(|| format!("Balance: failed to parse '{amount}' for {key}"))?;
+            anyhow::ensure!(
+                amount >= Decimal::ZERO,
+                "Balance: negative balance '{amount}' for {key}"
+            );
+            rows_by_base
+                .entry(base)
+                .or_default()
+                .push((key.as_str(), amount));
+        }
+
+        let mut reports = self.spot_position_reports_from_balances(
+            &balances_raw,
+            account_id,
+            None,
+            quote_currency,
+            ts_init,
+        )?;
+
+        for (instrument_id, base, size_precision) in candidates {
+            let rows = rows_by_base
+                .get(&base)
+                .map(Vec::as_slice)
+                .unwrap_or_default();
+            let total: Decimal = rows.iter().map(|(_, amount)| *amount).sum();
+            let held = Quantity::from_decimal_dp(total, size_precision)?;
+
+            if !held.is_zero() {
+                if !reports
+                    .iter()
+                    .any(|report| report.instrument_id == instrument_id)
+                {
+                    let keys: Vec<&str> = rows
+                        .iter()
+                        .filter(|(_, amount)| !amount.is_zero())
+                        .map(|(key, _)| *key)
+                        .collect();
+                    log::warn!(
+                        "Withholding flat position report for {instrument_id}: {base} balance {held} held in {}",
+                        keys.join(", "),
+                    );
+                }
+                continue;
+            }
+
+            reports.push(PositionStatusReport::new(
+                account_id,
+                instrument_id,
+                PositionSide::Flat,
+                Quantity::zero(size_precision),
+                ts_init,
+                ts_init,
+                None,
+                None,
+                None,
+            ));
+        }
+
+        Ok(reports)
+    }
+
     /// Returns whether a bulk position read covers `instrument_id`, so that an absent report is
     /// evidence the position is flat.
     ///
@@ -2695,9 +2816,10 @@ impl KrakenSpotHttpClient {
 
     /// Generates SPOT position reports from wallet balances.
     ///
-    /// Kraken spot balances are simple totals (no borrowing concept).
-    /// Positive balances are reported as LONG positions.
-    /// Zero balances are reported as FLAT.
+    /// Kraken spot balances are simple totals (no borrowing concept). A requested instrument is
+    /// reported LONG for a positive balance and FLAT otherwise. The bulk read reports LONG for each
+    /// covered instrument whose balance is nonzero at its size precision and omits every other
+    /// instrument.
     async fn generate_spot_position_reports_from_wallet(
         &self,
         account_id: AccountId,
@@ -2706,9 +2828,26 @@ impl KrakenSpotHttpClient {
     ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let balances_raw = self.inner.get_balance().await?;
         let ts_init = self.generate_ts_init();
+        self.spot_position_reports_from_balances(
+            &balances_raw,
+            account_id,
+            instrument_id,
+            quote_currency,
+            ts_init,
+        )
+    }
+
+    fn spot_position_reports_from_balances(
+        &self,
+        balances_raw: &BalanceResponse,
+        account_id: AccountId,
+        instrument_id: Option<InstrumentId>,
+        quote_currency: Ustr,
+        ts_init: UnixNanos,
+    ) -> anyhow::Result<Vec<PositionStatusReport>> {
         let mut wallet_by_coin: HashMap<Ustr, Decimal> = HashMap::new();
 
-        for (currency_code, amount_str) in &balances_raw {
+        for (currency_code, amount_str) in balances_raw {
             let balance = match Decimal::from_str_exact(amount_str) {
                 Ok(b) => b,
                 Err(_) => continue,
@@ -3478,6 +3617,28 @@ fn wallet_report_base_currency(
     instrument.base_currency()
 }
 
+/// Returns the covered base currency that a `Balance` row counts toward, or `None`.
+///
+/// The whole key matches first, so a dotted code such as `BRK.Bx` stays whole. Otherwise a dotted
+/// key counts toward the code before its last dot, as is or with trailing digits stripped, so
+/// `XBT.F`, `L3.F`, `DOT28.S` and `EUR.HOLD` count toward `BTC`, `L3`, `DOT` and `EUR`.
+fn covered_balance_base(key: &str, covered_bases: &HashSet<Ustr>) -> Option<Ustr> {
+    let whole = Ustr::from(normalize_currency_code(key));
+    if covered_bases.contains(&whole) {
+        return Some(whole);
+    }
+
+    let (code, _) = key.rsplit_once('.')?;
+    let base = Ustr::from(normalize_currency_code(code));
+    if covered_bases.contains(&base) {
+        return Some(base);
+    }
+
+    let stripped = code.trim_end_matches(|c: char| c.is_ascii_digit());
+    let base = Ustr::from(normalize_currency_code(stripped));
+    covered_bases.contains(&base).then_some(base)
+}
+
 /// Parses an optional `BalanceEx` credit amount, treating an absent field as zero.
 ///
 /// Kraken only includes `credit` and `credit_used` for accounts holding a credit line, so their
@@ -3943,6 +4104,42 @@ mod tests {
         assert!(legacy);
         assert!(standard);
         assert!(!other);
+    }
+
+    /// A `Balance` row counts toward the covered base it names, in any spelling or suffix, and a
+    /// dotted base code stays whole when it is itself covered.
+    #[rstest]
+    #[case::legacy("XXBT", &["BTC"], Some("BTC"))]
+    #[case::standard("XBT", &["BTC"], Some("BTC"))]
+    #[case::suffixed("XBT.F", &["BTC"], Some("BTC"))]
+    #[case::legacy_suffixed("XXBT.F", &["BTC"], Some("BTC"))]
+    #[case::margin_suffix("XBT.M", &["BTC"], Some("BTC"))]
+    #[case::staked("DOT.S", &["DOT"], Some("DOT"))]
+    #[case::staked_term("DOT28.S", &["DOT"], Some("DOT"))]
+    #[case::staked_digit_code("ETH2.S", &["ETH"], Some("ETH"))]
+    #[case::staked_term_atom("ATOM21.S", &["ATOM"], Some("ATOM"))]
+    #[case::hold("EUR.HOLD", &["EUR"], Some("EUR"))]
+    #[case::hold_uncovered("EUR.HOLD", &["BTC"], None)]
+    #[case::bare_digit_code("ETH2", &["ETH"], None)]
+    #[case::bare_digit_code_luna("LUNA2", &["LUNA"], None)]
+    #[case::fee_credit("KFEE", &["BTC"], None)]
+    #[case::uncovered("XXBT", &["ETH"], None)]
+    #[case::digit_base_suffixed("L3.F", &["L3"], Some("L3"))]
+    #[case::digit_base_before_stripped("LUNA2.S", &["LUNA2", "LUNA"], Some("LUNA2"))]
+    #[case::digit_base_stripped("LUNA2.S", &["LUNA"], Some("LUNA"))]
+    #[case::dotted_base_whole("BRK.Bx", &["BRK.Bx", "BRK"], Some("BRK.Bx"))]
+    #[case::dotted_base_prefix("BRK.Bx", &["BRK"], Some("BRK"))]
+    fn test_covered_balance_base(
+        #[case] key: &str,
+        #[case] covered: &[&str],
+        #[case] expected: Option<&str>,
+    ) {
+        let covered_bases: HashSet<Ustr> = covered.iter().map(|code| Ustr::from(code)).collect();
+
+        assert_eq!(
+            covered_balance_base(key, &covered_bases),
+            expected.map(Ustr::from)
+        );
     }
 
     fn cache_test_spot_instrument(client: &KrakenSpotHttpClient) -> InstrumentId {

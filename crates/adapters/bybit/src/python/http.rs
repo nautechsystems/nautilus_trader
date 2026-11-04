@@ -538,8 +538,8 @@ impl BybitHttpClient {
     /// Request instruments for a given product type.
     ///
     /// When `base_coin` is provided, the request is narrowed to that base coin.
-    /// This is required for `Option`: Bybit's API returns only `BTC` options when
-    /// `baseCoin` is omitted.
+    /// `Option` requests with neither `symbol` nor `base_coin` load all listed
+    /// base coins.
     ///
     /// # Errors
     ///

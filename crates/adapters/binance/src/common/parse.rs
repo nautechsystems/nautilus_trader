@@ -360,8 +360,7 @@ pub(crate) fn parse_usdm_instrument_with_fees(
 
     let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
 
-    // Default margin (0.1 = 10x leverage)
-    let default_margin = Decimal::new(1, 1);
+    let margin_maint = Decimal::new(1, 1);
 
     match contract_kind {
         ContractKind::TradFi(asset_class) => {
@@ -383,8 +382,8 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_notional(min_notional)
                 .maybe_max_price(max_price)
                 .maybe_min_price(min_price)
-                .margin_init(default_margin)
-                .margin_maint(default_margin)
+                .margin_init(Decimal::ONE)
+                .margin_maint(margin_maint)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()?;
@@ -408,8 +407,8 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_notional(min_notional)
                 .maybe_max_price(max_price)
                 .maybe_min_price(min_price)
-                .margin_init(default_margin)
-                .margin_maint(default_margin)
+                .margin_init(Decimal::ONE)
+                .margin_maint(margin_maint)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -438,8 +437,8 @@ pub(crate) fn parse_usdm_instrument_with_fees(
                 .maybe_min_notional(min_notional)
                 .maybe_max_price(max_price)
                 .maybe_min_price(min_price)
-                .margin_init(default_margin)
-                .margin_maint(default_margin)
+                .margin_init(Decimal::ONE)
+                .margin_maint(margin_maint)
                 .ts_event(ts_event)
                 .ts_init(ts_init)
                 .build()
@@ -529,8 +528,7 @@ pub(crate) fn parse_coinm_instrument_with_fees(
 
     let min_notional = parse_futures_min_notional(&symbol.filters, quote_currency);
 
-    // Default margin (0.1 = 10x leverage)
-    let default_margin = Decimal::new(1, 1);
+    let margin_maint = Decimal::new(1, 1);
 
     if is_perpetual {
         let instrument = CryptoPerpetual::builder()
@@ -551,8 +549,8 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_notional(min_notional)
             .maybe_max_price(max_price)
             .maybe_min_price(min_price)
-            .margin_init(default_margin)
-            .margin_maint(default_margin)
+            .margin_init(Decimal::ONE)
+            .margin_maint(margin_maint)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -581,8 +579,8 @@ pub(crate) fn parse_coinm_instrument_with_fees(
             .maybe_min_notional(min_notional)
             .maybe_max_price(max_price)
             .maybe_min_price(min_price)
-            .margin_init(default_margin)
-            .margin_maint(default_margin)
+            .margin_init(Decimal::ONE)
+            .margin_maint(margin_maint)
             .ts_event(ts_event)
             .ts_init(ts_init)
             .build()
@@ -2130,6 +2128,37 @@ mod tests {
 
     fn sample_account_id() -> AccountId {
         AccountId::from("BINANCE-SPOT-001")
+    }
+
+    #[rstest]
+    #[case::usdm_perpetual(BinanceProductType::UsdM, CONTRACT_TYPE_PERPETUAL)]
+    #[case::usdm_delivery(BinanceProductType::UsdM, CONTRACT_TYPE_CURRENT_QUARTER)]
+    #[case::usdm_tradfi(BinanceProductType::UsdM, CONTRACT_TYPE_TRADIFI_PERPETUAL)]
+    #[case::coinm_perpetual(BinanceProductType::CoinM, CONTRACT_TYPE_PERPETUAL)]
+    #[case::coinm_delivery(BinanceProductType::CoinM, CONTRACT_TYPE_CURRENT_QUARTER)]
+    fn test_futures_initial_margin_factor(
+        #[case] product: BinanceProductType,
+        #[case] contract_type: &str,
+    ) {
+        let ts = UnixNanos::default();
+
+        let instrument = if product == BinanceProductType::UsdM {
+            let mut symbol = if contract_type == CONTRACT_TYPE_TRADIFI_PERPETUAL {
+                sample_tradifi_usdm_symbol("XAUUSDT", "XAU", Some("COMMODITY"))
+            } else {
+                sample_usdm_symbol()
+            };
+
+            symbol.contract_type = contract_type.to_string();
+            parse_usdm_instrument(&symbol, ts, ts).unwrap()
+        } else {
+            let mut symbol = sample_coinm_symbol();
+            symbol.contract_type = contract_type.to_string();
+            parse_coinm_instrument(&symbol, ts, ts).unwrap()
+        };
+
+        assert_eq!(instrument.margin_init(), Decimal::ONE);
+        assert_eq!(instrument.margin_maint(), dec!(0.1));
     }
 
     #[rstest]

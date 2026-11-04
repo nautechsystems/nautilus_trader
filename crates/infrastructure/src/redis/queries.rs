@@ -19,6 +19,8 @@ use ahash::AHashMap;
 use bytes::Bytes;
 use futures::future::join_all;
 use jiff::Timestamp;
+#[cfg(feature = "defi")]
+use nautilus_common::{cache::CacheSnapshotRef, defi::cache::InstrumentMigration};
 use nautilus_common::{
     cache::database::{CacheMap, register_loaded_currencies},
     enums::SerializationEncoding,
@@ -34,12 +36,21 @@ use nautilus_model::{
     position::Position,
     types::Currency,
 };
+#[cfg(feature = "defi")]
+use nautilus_model::{
+    defi::currency::{self, TokenCurrency},
+    events::OrderSnapshot,
+    instruments::Instrument,
+    orders::Order,
+};
 use redis::{AsyncCommands, aio::ConnectionManager};
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use ustr::Ustr;
 
 use super::get_index_key;
+#[cfg(feature = "defi")]
+use crate::defi::{contract_conflict, integrity_error, validate_marker};
 
 /// Persisted representation of a [`Currency`].
 ///
@@ -53,6 +64,12 @@ pub(crate) struct CurrencyRecord {
     pub iso4217: u16,
     pub name: String,
     pub currency_type: CurrencyType,
+    #[cfg(feature = "defi")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub defi: Option<TokenCurrency>,
+    #[cfg(not(feature = "defi"))]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub defi: Option<Value>,
 }
 
 impl From<&Currency> for CurrencyRecord {
@@ -63,6 +80,10 @@ impl From<&Currency> for CurrencyRecord {
             iso4217: currency.iso4217,
             name: currency.name.to_string(),
             currency_type: currency.currency_type,
+            #[cfg(feature = "defi")]
+            defi: currency::lookup(currency.code).map(|(_, metadata)| metadata),
+            #[cfg(not(feature = "defi"))]
+            defi: None,
         }
     }
 }
@@ -71,14 +92,31 @@ impl TryFrom<CurrencyRecord> for Currency {
     type Error = anyhow::Error;
 
     fn try_from(record: CurrencyRecord) -> Result<Self, Self::Error> {
-        Self::new_checked(
+        let currency = Self::new_checked(
             record.code.as_str(),
             record.precision,
             record.iso4217,
             record.name.as_str(),
             record.currency_type,
         )
-        .map_err(|e| anyhow::anyhow!("Invalid currency record: {e}"))
+        .map_err(|e| anyhow::anyhow!("Invalid currency record: {e}"))?;
+
+        #[cfg(feature = "defi")]
+        if let Some(metadata) = record.defi {
+            return currency::register(currency, metadata).map_err(integrity_error);
+        } else if currency::lookup(currency.code).is_some() {
+            return Err(integrity_error(format!(
+                "Missing token metadata for {}",
+                currency.code
+            )));
+        }
+
+        #[cfg(not(feature = "defi"))]
+        if record.defi.is_some() {
+            anyhow::bail!("DeFi currency records require the defi feature");
+        }
+
+        Ok(currency)
     }
 }
 
@@ -175,6 +213,482 @@ impl DatabaseQueries {
 
         serde_json::from_value(value)
             .map_err(|e| anyhow::anyhow!("Failed to convert value to target type: {e}"))
+    }
+
+    #[cfg(feature = "defi")]
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "the atomic write checks token definitions and all instrument currency roles"
+    )]
+    pub(crate) async fn write_defi(
+        con: &mut ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        key: &str,
+        codes: &[String],
+        payloads: &[Bytes],
+        references: &[String],
+        migration: Option<&InstrumentMigration>,
+    ) -> anyhow::Result<()> {
+        let instrument = key.starts_with("instruments:");
+        if payloads.len() != codes.len() + usize::from(instrument) {
+            return Err(integrity_error("Invalid DeFi write payload count"));
+        }
+
+        let mut keys = codes
+            .iter()
+            .map(|code| format!("{trader_key}:currencies:{code}"))
+            .collect::<Vec<_>>();
+
+        if instrument {
+            keys.push(format!("{trader_key}:{key}"));
+        }
+
+        let contracts = Self::contract_bindings(trader_key, encoding, &payloads[..codes.len()])?;
+        let contract_offset = keys.len();
+        keys.extend(contracts.iter().map(|(key, _)| key.clone()));
+        let write_count = keys.len();
+        let references = references
+            .iter()
+            .filter(|code| !codes.contains(code))
+            .collect::<Vec<_>>();
+        let reference_offset = keys.len();
+        keys.extend(
+            references
+                .iter()
+                .map(|code| format!("{trader_key}:currencies:{code}")),
+        );
+
+        for _ in 0..4 {
+            let previous = Self::read_bulk(con, &keys).await.map_err(integrity_error)?;
+            let mut replacement =
+                Self::check_currency_records(encoding, codes, payloads, &previous)?;
+
+            Self::check_contract_bindings(
+                con,
+                trader_key,
+                encoding,
+                &contracts,
+                &previous[contract_offset..reference_offset],
+            )
+            .await?;
+
+            Self::check_currency_references(encoding, &previous[reference_offset..])?;
+
+            if instrument {
+                Self::check_instrument_replacement(
+                    con,
+                    trader_key,
+                    encoding,
+                    previous[codes.len()].as_ref(),
+                    &payloads[codes.len()],
+                    codes,
+                    migration,
+                )
+                .await?;
+                replacement.push(payloads[codes.len()].clone());
+            }
+
+            replacement.extend(
+                contracts
+                    .iter()
+                    .map(|(_, code)| Bytes::copy_from_slice(code.as_bytes())),
+            );
+
+            replacement.resize(keys.len(), Bytes::new());
+            // Compare every snapshot before the single MSET, so a conflict writes nothing
+            let mut command = redis::cmd("EVAL");
+            command
+                .arg(
+                    "for i = 1, #KEYS do
+                    local value = redis.call('GET', KEYS[i])
+                    local offset = 1 + (i - 1) * 3
+                    if ARGV[offset + 1] == '0' then
+                        if value then return 0 end
+                    elseif value ~= ARGV[offset + 2] then
+                        return 0
+                    end
+                end
+                local values = {}
+                for i = 1, tonumber(ARGV[1]) do
+                    values[#values + 1] = KEYS[i]
+                    values[#values + 1] = ARGV[(i - 1) * 3 + 4]
+                end
+                redis.call('MSET', unpack(values))
+                return 1
+            ",
+                )
+                .arg(keys.len())
+                .arg(&keys)
+                .arg(write_count);
+
+            for (old, new) in previous.iter().zip(&replacement) {
+                command
+                    .arg(if old.is_some() { "1" } else { "0" })
+                    .arg(old.as_deref().unwrap_or_default())
+                    .arg(new.as_ref());
+            }
+
+            let written: i32 = command.query_async(con).await.map_err(integrity_error)?;
+            if written == 1 {
+                return Ok(());
+            }
+        }
+
+        Err(integrity_error(
+            "Token dependencies changed concurrently; retry the write",
+        ))
+    }
+
+    #[cfg(feature = "defi")]
+    fn check_currency_references(
+        encoding: SerializationEncoding,
+        previous: &[Option<Bytes>],
+    ) -> anyhow::Result<()> {
+        for bytes in previous.iter().flatten() {
+            let value: Value =
+                Self::deserialize_payload(encoding, bytes).map_err(integrity_error)?;
+
+            if value.get("defi").is_some_and(|value| !value.is_null()) {
+                return Err(integrity_error(
+                    "Instrument token dependencies differ from persisted currency definitions",
+                ));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn contract_bindings(
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        payloads: &[Bytes],
+    ) -> anyhow::Result<Vec<(String, String)>> {
+        let mut bindings = Vec::new();
+
+        for payload in payloads {
+            let record: CurrencyRecord =
+                Self::deserialize_payload(encoding, payload).map_err(integrity_error)?;
+
+            if let Some(metadata) = record.defi {
+                bindings.push((Self::contract_key(trader_key, &metadata), record.code));
+            }
+        }
+
+        Ok(bindings)
+    }
+
+    #[cfg(feature = "defi")]
+    fn contract_key(trader_key: &str, metadata: &TokenCurrency) -> String {
+        format!(
+            "{trader_key}:defi:contracts:{}:{}",
+            metadata.chain_id, metadata.address
+        )
+    }
+
+    #[cfg(feature = "defi")]
+    async fn check_contract_bindings(
+        con: &mut ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        bindings: &[(String, String)],
+        previous: &[Option<Bytes>],
+    ) -> anyhow::Result<()> {
+        let mut missing = AHashMap::new();
+
+        for ((key, code), old) in bindings.iter().zip(previous) {
+            if let Some(old) = old {
+                let stored = std::str::from_utf8(old).map_err(integrity_error)?;
+                if stored != code {
+                    return Err(contract_conflict(stored));
+                }
+            } else {
+                missing.insert(key.as_str(), code.as_str());
+            }
+        }
+
+        if missing.is_empty() {
+            return Ok(());
+        }
+
+        Self::check_unindexed_contracts(con, trader_key, encoding, &missing).await
+    }
+
+    #[cfg(feature = "defi")]
+    async fn check_unindexed_contracts(
+        con: &mut ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        missing: &AHashMap<&str, &str>,
+    ) -> anyhow::Result<()> {
+        let keys = Self::scan_keys(con, format!("{trader_key}:currencies:*"))
+            .await
+            .map_err(integrity_error)?;
+
+        for bytes in Self::read_bulk(con, &keys)
+            .await
+            .map_err(integrity_error)?
+            .into_iter()
+            .flatten()
+        {
+            let value: Value =
+                Self::deserialize_payload(encoding, &bytes).map_err(integrity_error)?;
+
+            if value.get("defi").is_none_or(Value::is_null) {
+                continue;
+            }
+
+            let record: CurrencyRecord = serde_json::from_value(value).map_err(integrity_error)?;
+            let metadata = record
+                .defi
+                .ok_or_else(|| integrity_error("Missing token metadata"))?;
+            let key = Self::contract_key(trader_key, &metadata);
+            if let Some(code) = missing.get(key.as_str())
+                && *code != record.code
+            {
+                return Err(contract_conflict(&record.code));
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    fn check_currency_records(
+        encoding: SerializationEncoding,
+        codes: &[String],
+        payloads: &[Bytes],
+        previous: &[Option<Bytes>],
+    ) -> anyhow::Result<Vec<Bytes>> {
+        let mut replacement = payloads[..codes.len()].to_vec();
+        for (i, code) in codes.iter().enumerate() {
+            let incoming: CurrencyRecord =
+                Self::deserialize_payload(encoding, &payloads[i]).map_err(integrity_error)?;
+
+            if incoming.code != *code {
+                return Err(integrity_error(format!(
+                    "Invalid currency record for {code}"
+                )));
+            }
+
+            let token = incoming.defi.is_some();
+            Currency::try_from(incoming).map_err(integrity_error)?;
+
+            let Some(bytes) = &previous[i] else {
+                continue;
+            };
+
+            let value: Value =
+                Self::deserialize_payload(encoding, bytes).map_err(integrity_error)?;
+
+            if !token && value.as_str() == Some(code.as_str()) {
+                continue;
+            }
+
+            let stored: CurrencyRecord = serde_json::from_value(value).map_err(integrity_error)?;
+
+            if stored.code != *code || stored.defi.is_some() != token {
+                return Err(integrity_error(format!(
+                    "Currency provenance conflicts at token code {code}"
+                )));
+            }
+
+            Currency::try_from(stored).map_err(integrity_error)?;
+
+            if token {
+                replacement[i] = bytes.clone();
+            }
+        }
+
+        Ok(replacement)
+    }
+
+    #[cfg(feature = "defi")]
+    async fn check_instrument_replacement(
+        con: &mut ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        previous: Option<&Bytes>,
+        incoming: &Bytes,
+        codes: &[String],
+        migration: Option<&InstrumentMigration>,
+    ) -> anyhow::Result<()> {
+        let Some(bytes) = previous else {
+            return Ok(());
+        };
+
+        let value: Value = Self::deserialize_payload(encoding, bytes).map_err(integrity_error)?;
+        if value.get("instrument").is_some() || value.get("defi_currency_codes").is_some() {
+            let record: crate::defi::InstrumentRecord =
+                serde_json::from_value(value).map_err(integrity_error)?;
+
+            if record.defi_currency_codes != codes {
+                return Err(integrity_error(
+                    "Cannot change a persisted token instrument's currency identities",
+                ));
+            }
+
+            let previous: InstrumentAny =
+                serde_json::from_value(record.instrument).map_err(integrity_error)?;
+            let record: crate::defi::InstrumentRecord =
+                Self::deserialize_payload(encoding, incoming).map_err(integrity_error)?;
+            let incoming: InstrumentAny =
+                serde_json::from_value(record.instrument).map_err(integrity_error)?;
+
+            if previous.base_currency() != incoming.base_currency()
+                || previous.quote_currency() != incoming.quote_currency()
+                || previous.settlement_currency() != incoming.settlement_currency()
+            {
+                return Err(integrity_error(
+                    "Cannot change a persisted token instrument's currency identities",
+                ));
+            }
+
+            return Ok(());
+        }
+
+        if codes.is_empty() {
+            return Ok(());
+        }
+
+        let legacy: InstrumentAny = serde_json::from_value(value).map_err(integrity_error)?;
+        migration
+            .ok_or_else(|| {
+                integrity_error("Historical replacement requires the cache migration check")
+            })?
+            .validate()
+            .map_err(integrity_error)?;
+
+        Self::check_legacy_replacement(con, trader_key, encoding, legacy.id()).await
+    }
+
+    #[cfg(feature = "defi")]
+    async fn check_legacy_replacement(
+        con: &mut ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        Self::check_position_history(con, trader_key, encoding, instrument_id).await?;
+
+        let prefix = format!("{trader_key}:orders:");
+
+        for key in Self::scan_keys(con, format!("{prefix}*"))
+            .await
+            .map_err(integrity_error)?
+        {
+            let code = key
+                .strip_prefix(&prefix)
+                .ok_or_else(|| integrity_error("Invalid order key"))?;
+            let id = ClientOrderId::new_checked(code).map_err(integrity_error)?;
+            let order = Self::load_order(con, trader_key, &id, encoding)
+                .await
+                .map_err(integrity_error)?
+                .ok_or_else(|| integrity_error(format!("Missing order state at {key}")))?;
+
+            if order.instrument_id() == instrument_id && !order.is_closed() {
+                return Err(integrity_error(format!(
+                    "Instrument {instrument_id} has nonterminal orders"
+                )));
+            }
+        }
+
+        let prefix = format!("{trader_key}:snapshots:orders:");
+
+        for key in Self::scan_keys(con, format!("{prefix}*"))
+            .await
+            .map_err(integrity_error)?
+        {
+            let values: Vec<Vec<u8>> = con.lrange(&key, 0, -1).await.map_err(integrity_error)?;
+            for bytes in values {
+                let snapshot: OrderSnapshot =
+                    Self::deserialize_payload(encoding, &bytes).map_err(integrity_error)?;
+
+                if snapshot.instrument_id == instrument_id && !snapshot.status.is_closed() {
+                    return Err(integrity_error(format!(
+                        "Instrument {instrument_id} has nonterminal order snapshots"
+                    )));
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    #[cfg(feature = "defi")]
+    async fn check_position_history(
+        con: &mut ConnectionManager,
+        trader_key: &str,
+        encoding: SerializationEncoding,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        let expected_id = instrument_id.to_string();
+
+        for collection in ["positions", "snapshots:positions"] {
+            let prefix = format!("{trader_key}:{collection}:");
+
+            for key in Self::scan_keys(con, format!("{prefix}*"))
+                .await
+                .map_err(integrity_error)?
+            {
+                let values: Vec<Vec<u8>> =
+                    con.lrange(&key, 0, -1).await.map_err(integrity_error)?;
+
+                if values.is_empty() {
+                    return Err(integrity_error(format!(
+                        "Unreadable position history at {key}"
+                    )));
+                }
+
+                for bytes in values {
+                    let value: Value =
+                        Self::deserialize_payload(encoding, &bytes).map_err(integrity_error)?;
+
+                    let id = value
+                        .get("instrument_id")
+                        .and_then(Value::as_str)
+                        .ok_or_else(|| {
+                            integrity_error(format!(
+                                "Missing instrument ID in position history at {key}"
+                            ))
+                        })?;
+
+                    if id == expected_id {
+                        return Err(integrity_error(format!(
+                            "Instrument {instrument_id} has position history; retain its legacy currencies"
+                        )));
+                    }
+                }
+            }
+        }
+
+        Self::check_position_archives(con, trader_key, instrument_id).await
+    }
+
+    #[cfg(feature = "defi")]
+    async fn check_position_archives(
+        con: &mut ConnectionManager,
+        trader_key: &str,
+        instrument_id: InstrumentId,
+    ) -> anyhow::Result<()> {
+        let prefix = format!("{trader_key}:general:{}", CacheSnapshotRef::POSITION_PREFIX);
+
+        for key in Self::scan_keys(con, format!("{prefix}*"))
+            .await
+            .map_err(integrity_error)?
+        {
+            let blob: Vec<u8> = con.get(&key).await.map_err(integrity_error)?;
+            if CacheSnapshotRef::position_instrument_id(&blob).map_err(integrity_error)?
+                == instrument_id
+            {
+                return Err(integrity_error(format!(
+                    "Instrument {instrument_id} has position history; retain its legacy currencies"
+                )));
+            }
+        }
+
+        Ok(())
     }
 
     /// Scans Redis for keys matching the given `pattern`.
@@ -356,7 +870,17 @@ impl DatabaseQueries {
             },
             Err(record_err) => match Self::deserialize_payload::<String>(encoding, value_bytes) {
                 Ok(code) => match Currency::try_from_str(&code) {
-                    Some(currency) => CurrencyDecode::Currency(currency),
+                    Some(currency) => {
+                        #[cfg(feature = "defi")]
+                        if currency::lookup(currency.code).is_some() {
+                            return CurrencyDecode::InvalidRecord(integrity_error(format!(
+                                "Missing token metadata for {}",
+                                currency.code,
+                            )));
+                        }
+
+                        CurrencyDecode::Currency(currency)
+                    }
                     None => CurrencyDecode::Undecodable(anyhow::anyhow!(
                         "bare currency code {code} is not registered"
                     )),
@@ -471,18 +995,23 @@ impl DatabaseQueries {
 
                     let Ok(instrument_id) = instrument_id else {
                         log::error!("Failed to parse InstrumentId from Redis key: {key}");
-                        return None;
+                        return Ok::<_, anyhow::Error>(None);
                     };
 
                     match Self::load_instrument(&con, trader_key, &instrument_id, encoding).await {
-                        Ok(Some(instrument)) => Some((instrument_id, instrument)),
+                        Ok(Some(instrument)) => Ok(Some((instrument_id, instrument))),
                         Ok(None) => {
                             log::error!("Instrument not found: {instrument_id}");
-                            None
+                            Ok(None)
                         }
                         Err(e) => {
+                            #[cfg(feature = "defi")]
+                            if e.is::<crate::defi::IntegrityError>() {
+                                return Err(e);
+                            }
+
                             log::error!("Failed to load instrument {instrument_id}: {e}");
-                            None
+                            Ok(None)
                         }
                     }
                 }
@@ -490,7 +1019,10 @@ impl DatabaseQueries {
             .collect();
 
         // Insert all Instrument_id (key) and Instrument (value) into the HashMap, filtering out None values.
-        instruments.extend(join_all(futures).await.into_iter().flatten());
+        for result in join_all(futures).await {
+            instruments.extend(result?);
+        }
+
         log::debug!("Loaded {} instruments(s)", instruments.len());
 
         Ok(instruments)
@@ -925,7 +1457,47 @@ impl DatabaseQueries {
             return Ok(None);
         }
 
+        #[cfg(feature = "defi")]
+        {
+            let value: Value = Self::deserialize_payload(encoding, &result[0])?;
+            if value.get("defi_currency_codes").is_some() || value.get("instrument").is_some() {
+                let record: crate::defi::InstrumentRecord =
+                    serde_json::from_value(value).map_err(integrity_error)?;
+
+                if record.defi_currency_codes.is_empty() {
+                    return Err(integrity_error("Empty DeFi instrument dependency marker"));
+                }
+
+                for code in &record.defi_currency_codes {
+                    let currency =
+                        Self::load_currency(con, trader_key, &Ustr::from(code), encoding)
+                            .await
+                            .map_err(integrity_error)?
+                            .ok_or_else(|| {
+                                integrity_error(format!("Missing token currency {code}"))
+                            })?;
+
+                    if currency::lookup(currency.code).is_none() {
+                        return Err(integrity_error(format!(
+                            "Missing token metadata for {code}"
+                        )));
+                    }
+                }
+
+                let instrument: InstrumentAny =
+                    serde_json::from_value(record.instrument).map_err(integrity_error)?;
+                validate_marker(&instrument, &record.defi_currency_codes)?;
+                if instrument.id() != *instrument_id {
+                    return Err(integrity_error("DeFi instrument key and payload ID differ"));
+                }
+
+                return Ok(Some(instrument));
+            }
+        }
+
         let instrument: InstrumentAny = Self::deserialize_payload(encoding, &result[0])?;
+        #[cfg(feature = "defi")]
+        validate_marker(&instrument, &[])?;
         Ok(Some(instrument))
     }
 
@@ -1261,6 +1833,7 @@ mod tests {
             iso4217: 0,
             name: "ZZQ1".to_string(),
             currency_type: CurrencyType::Crypto,
+            defi: None,
         };
         let bytes = Bytes::from(DatabaseQueries::serialize_payload(encoding, &record).unwrap());
 

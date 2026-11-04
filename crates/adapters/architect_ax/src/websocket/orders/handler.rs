@@ -638,6 +638,7 @@ mod tests {
                         p: Decimal::from(50000),
                         tif: AxTimeInForce::Gtc,
                         po: false,
+                        st: None,
                         tag: None,
                         cid: Some(cid),
                     },

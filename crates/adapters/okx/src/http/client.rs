@@ -169,6 +169,10 @@ impl OKXInstrumentDefinitionError {
 }
 
 #[derive(Debug, Error)]
+#[error("Failed to parse active order report: {0}")]
+pub(crate) struct OKXActiveOrderReportError(#[source] anyhow::Error);
+
+#[derive(Debug, Error)]
 #[error("Failed to fetch pending algo order reports: {source}")]
 pub(crate) struct OKXPendingAlgoOrderReportsError {
     #[source]
@@ -4726,6 +4730,7 @@ impl OKXHttpClient {
                 end,
                 open_only,
                 limit,
+                false,
                 None,
                 None,
             )
@@ -4743,6 +4748,7 @@ impl OKXHttpClient {
         end: Option<Timestamp>,
         open_only: bool,
         limit: Option<u32>,
+        allow_history_failure: bool,
         scope: Option<ReportInstrumentScope<'_>>,
         max_history_pages: Option<u32>,
     ) -> anyhow::Result<ReportSweep<OrderStatusReport>> {
@@ -4757,6 +4763,7 @@ impl OKXHttpClient {
                     end,
                     open_only,
                     limit,
+                    allow_history_failure,
                     scope,
                     max_history_pages,
                 )
@@ -4789,12 +4796,14 @@ impl OKXHttpClient {
         }
         let pending_base = pending_base.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let (combined_resp, mut complete) = if open_only {
-            let pending = self.paginate_orders_pending(&pending_base, limit).await?;
-            (pending.items, pending.complete)
+        let (pending, history) = if open_only {
+            (
+                self.paginate_orders_pending(&pending_base, limit).await?,
+                None,
+            )
         } else {
             let (history, pending) = Box::pin(async {
-                tokio::try_join!(
+                tokio::join!(
                     self.paginate_orders_history(
                         &history_base,
                         limit,
@@ -4803,40 +4812,56 @@ impl OKXHttpClient {
                     self.paginate_orders_pending(&pending_base, limit),
                 )
             })
-            .await?;
-            let mut combined_resp = history.items;
-            combined_resp.extend(pending.items);
-            (combined_resp, history.complete && pending.complete)
+            .await;
+
+            (pending?, Some(history))
         };
+
+        anyhow::ensure!(
+            pending.complete,
+            "Pending orders did not establish complete coverage"
+        );
+
+        let (history, mut complete) = match history {
+            Some(Ok(history)) => (history.items, history.complete),
+            Some(Err(e)) if !allow_history_failure => return Err(e),
+            Some(Err(e)) => {
+                log::warn!("Failed to fetch order history: {e}");
+                (Vec::new(), false)
+            }
+            None => (Vec::new(), true),
+        };
+
+        let capacity = pending.items.len() + history.len();
+        let orders = pending
+            .items
+            .into_iter()
+            .map(|order| (order, true))
+            .chain(history.into_iter().map(|order| (order, false)));
 
         // Prepare time range filter
         let start_ns = start.map(UnixNanos::from);
         let end_ns = end.map(UnixNanos::from);
 
         let ts_init = self.generate_ts_init();
-        let mut reports = Vec::with_capacity(combined_resp.len());
+        let mut reports = Vec::with_capacity(capacity);
 
         // Use a seen filter in case pending orders are within the histories "2hr reserve window"
         let mut seen: AHashSet<String> = AHashSet::new();
 
-        for order in combined_resp {
-            let seen_key = if !order.cl_ord_id.is_empty() {
-                order.cl_ord_id.as_str().to_string()
-            } else if let Some(algo_cl_ord_id) = order
-                .algo_cl_ord_id
-                .as_ref()
-                .filter(|value| !value.as_str().is_empty())
-            {
-                algo_cl_ord_id.as_str().to_string()
-            } else if let Some(algo_id) = order
-                .algo_id
-                .as_ref()
-                .filter(|value| !value.as_str().is_empty())
-            {
-                algo_id.as_str().to_string()
-            } else {
-                order.ord_id.as_str().to_string()
-            };
+        for (order, from_pending_source) in orders {
+            let active = is_open_okx_order(order.state, from_pending_source);
+            let seen_key = [
+                Some(order.cl_ord_id.as_str()),
+                order.algo_cl_ord_id.as_ref().map(Ustr::as_str),
+                order.algo_id.as_ref().map(Ustr::as_str),
+                Some(order.ord_id.as_str()),
+            ]
+            .into_iter()
+            .flatten()
+            .find(|value| !value.is_empty())
+            .unwrap_or_default()
+            .to_string();
 
             if !seen.insert(seen_key) {
                 continue; // Reserved pending already reported
@@ -4844,9 +4869,7 @@ impl OKXHttpClient {
 
             // Open orders are authoritative regardless of age; only closed
             // history respects the report window.
-            if report_ts_outside_window(order.u_time, start_ns, end_ns)
-                && !is_open_okx_order(order.state)
-            {
+            if report_ts_outside_window(order.u_time, start_ns, end_ns) && !active {
                 continue;
             }
 
@@ -4854,7 +4877,7 @@ impl OKXHttpClient {
                 order.inst_id,
                 order.inst_type,
                 false,
-                is_open_okx_order(order.state),
+                active,
                 scope,
             )? {
                 InstrumentResolution::Found(inst) => inst,
@@ -4874,26 +4897,13 @@ impl OKXHttpClient {
                 ts_init,
             ) {
                 Ok(report) => report,
+                Err(e) if active => return Err(e),
                 Err(e) => {
                     log::warn!("Failed to parse order status report: {e}");
                     complete = false;
                     continue;
                 }
             };
-
-            if let Some(start_ns) = start_ns
-                && report.ts_last < start_ns
-                && report.order_status.is_closed()
-            {
-                continue;
-            }
-
-            if let Some(end_ns) = end_ns
-                && report.ts_last > end_ns
-                && report.order_status.is_closed()
-            {
-                continue;
-            }
 
             reports.push(report);
         }
@@ -4993,6 +5003,7 @@ impl OKXHttpClient {
         }
 
         let ts_init = self.generate_ts_init();
+
         let mut report = parse_order_status_report(
             order,
             account_id,
@@ -5000,7 +5011,15 @@ impl OKXHttpClient {
             instrument.price_precision(),
             instrument.size_precision(),
             ts_init,
-        )?;
+        )
+        .map_err(|e| {
+            if is_open_okx_order(order.state, false) {
+                OKXActiveOrderReportError(e).into()
+            } else {
+                e
+            }
+        })?;
+
         let post_only_rejected = order.state == OKXOrderStatus::Canceled
             && report.filled_qty.is_zero()
             && (order.cancel_source == OKX_POST_ONLY_CANCEL_SOURCE
@@ -5041,6 +5060,7 @@ impl OKXHttpClient {
                 end,
                 open_only,
                 limit,
+                false,
                 None,
                 None,
             )
@@ -5057,6 +5077,7 @@ impl OKXHttpClient {
         end: Option<Timestamp>,
         open_only: bool,
         limit: Option<u32>,
+        allow_history_failure: bool,
         scope: Option<ReportInstrumentScope<'_>>,
         max_history_pages: Option<u32>,
     ) -> anyhow::Result<ReportSweep<OrderStatusReport>> {
@@ -5085,14 +5106,15 @@ impl OKXHttpClient {
         let pending_base = pending_builder.build().map_err(|e| anyhow::anyhow!(e))?;
         let history_base = history_builder.build().map_err(|e| anyhow::anyhow!(e))?;
 
-        let (combined_resp, mut complete) = if open_only {
-            let pending = self
-                .paginate_spread_orders_pending(&pending_base, limit)
-                .await?;
-            (pending.items, pending.complete)
+        let (pending, history) = if open_only {
+            (
+                self.paginate_spread_orders_pending(&pending_base, limit)
+                    .await?,
+                None,
+            )
         } else {
             let (history, pending) = Box::pin(async {
-                tokio::try_join!(
+                tokio::join!(
                     self.paginate_spread_orders_history(
                         &history_base,
                         limit,
@@ -5101,19 +5123,41 @@ impl OKXHttpClient {
                     self.paginate_spread_orders_pending(&pending_base, limit),
                 )
             })
-            .await?;
-            let mut combined_resp = history.items;
-            combined_resp.extend(pending.items);
-            (combined_resp, history.complete && pending.complete)
+            .await;
+
+            (pending?, Some(history))
         };
+
+        anyhow::ensure!(
+            pending.complete,
+            "Pending spread orders did not establish complete coverage"
+        );
+
+        let (history, mut complete) = match history {
+            Some(Ok(history)) => (history.items, history.complete),
+            Some(Err(e)) if !allow_history_failure => return Err(e),
+            Some(Err(e)) => {
+                log::warn!("Failed to fetch spread order history: {e}");
+                (Vec::new(), false)
+            }
+            None => (Vec::new(), true),
+        };
+
+        let capacity = pending.items.len() + history.len();
+        let orders = pending
+            .items
+            .into_iter()
+            .map(|order| (order, true))
+            .chain(history.into_iter().map(|order| (order, false)));
 
         let start_ns = start.map(UnixNanos::from);
         let end_ns = end.map(UnixNanos::from);
         let ts_init = self.generate_ts_init();
-        let mut reports = Vec::with_capacity(combined_resp.len());
+        let mut reports = Vec::with_capacity(capacity);
         let mut seen: AHashSet<String> = AHashSet::new();
 
-        for order in combined_resp {
+        for (order, from_pending_source) in orders {
+            let active = is_open_okx_order(order.state, from_pending_source);
             let seen_key = if order.cl_ord_id.is_empty() {
                 order.ord_id.as_str().to_string()
             } else {
@@ -5126,9 +5170,14 @@ impl OKXHttpClient {
 
             // Open spread orders are authoritative regardless of age; only
             // closed history respects the report window.
-            if let Some(ts) = order.u_time.or(order.c_time)
-                && report_ts_outside_window(ts, start_ns, end_ns)
-                && !is_open_okx_order(order.state)
+            let ts_last = order
+                .u_time
+                .or(order.c_time)
+                .map_or(ts_init, parse_millisecond_timestamp);
+
+            if !active
+                && (start_ns.is_some_and(|start| ts_last < start)
+                    || end_ns.is_some_and(|end| ts_last > end))
             {
                 continue;
             }
@@ -5137,7 +5186,7 @@ impl OKXHttpClient {
                 order.sprd_id,
                 OKXInstrumentType::Any,
                 true,
-                is_open_okx_order(order.state),
+                active,
                 scope,
             )? {
                 InstrumentResolution::Found(inst) => inst,
@@ -5157,26 +5206,13 @@ impl OKXHttpClient {
                 ts_init,
             ) {
                 Ok(report) => report,
+                Err(e) if active => return Err(e),
                 Err(e) => {
                     log::warn!("Failed to parse spread order status report: {e}");
                     complete = false;
                     continue;
                 }
             };
-
-            if let Some(start_ns) = start_ns
-                && report.ts_last < start_ns
-                && report.order_status.is_closed()
-            {
-                continue;
-            }
-
-            if let Some(end_ns) = end_ns
-                && report.ts_last > end_ns
-                && report.order_status.is_closed()
-            {
-                continue;
-            }
 
             reports.push(report);
         }
@@ -7685,9 +7721,8 @@ impl OKXHttpClient {
                         if !order.ord_id.is_empty() && child_order_id != &order.ord_id
                 );
 
-            // Pending-source records are authoritative regardless of age or
-            // mapped state; only terminal history respects the report window.
-            if !from_pending_source
+            // An unknown pending state cannot establish that the order is terminal
+            if !(from_pending_source && order.state == OKXAlgoOrderStatus::Unknown)
                 && report_ts_outside_window(order.u_time, start_ns, end_ns)
                 && !is_open_okx_algo(order.state)
             {
@@ -7716,28 +7751,32 @@ impl OKXHttpClient {
                 }
             };
 
-            match parse_http_algo_order(order, account_id, &instrument, ts_init) {
-                Ok(report) => {
-                    if has_ambiguous_children && report.order_status == OrderStatus::Triggered {
-                        log::warn!(
-                            "Algo order {} has ambiguous child order identifiers",
-                            order.algo_id,
-                        );
-                        ambiguous_triggered_child_ids.insert(report.venue_order_id);
-                    }
-
-                    if let Some(index) = seen.get(&key).copied() {
-                        if is_order_status_report_more_advanced(&report, &reports[index]) {
-                            reports[index] = report;
-                        }
-                    } else {
-                        seen.insert(key, reports.len());
-                        reports.push(report);
-                    }
-                }
+            let report = match parse_http_algo_order(order, account_id, &instrument, ts_init) {
+                Ok(report) => report,
+                Err(e) if !from_pending_source && is_open_okx_algo(order.state) => return Err(e),
                 Err(e) => {
                     log::warn!("Failed to parse algo order report: {e}");
                     complete = false;
+                    continue;
+                }
+            };
+
+            if has_ambiguous_children && report.order_status == OrderStatus::Triggered {
+                log::warn!(
+                    "Algo order {} has ambiguous child order identifiers",
+                    order.algo_id,
+                );
+                ambiguous_triggered_child_ids.insert(report.venue_order_id);
+            }
+
+            match seen.get(&key).copied() {
+                Some(index) if is_order_status_report_more_advanced(&report, &reports[index]) => {
+                    reports[index] = report;
+                }
+                Some(_) => {}
+                None => {
+                    seen.insert(key, reports.len());
+                    reports.push(report);
                 }
             }
         }
@@ -7857,11 +7896,11 @@ fn parse_historical_candlestick(
     Ok(bar)
 }
 
-fn is_open_okx_order(state: OKXOrderStatus) -> bool {
+fn is_open_okx_order(state: OKXOrderStatus, from_pending_source: bool) -> bool {
     matches!(
         state,
         OKXOrderStatus::Live | OKXOrderStatus::PartiallyFilled
-    )
+    ) || (from_pending_source && state == OKXOrderStatus::Unknown)
 }
 
 fn fill_quantity_is_positive(value: &str) -> Result<bool, rust_decimal::Error> {

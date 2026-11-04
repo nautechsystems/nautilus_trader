@@ -699,7 +699,7 @@ impl TryFrom<OrderInitialized> for TrailingStopLimitOrder {
             event.event_id,
             event.ts_event,
         )?;
-        order.set_init_reconciliation(event.reconciliation);
+        order.set_init_metadata(event.reconciliation, event.causation_id, event.ts_init);
         Ok(order)
     }
 }

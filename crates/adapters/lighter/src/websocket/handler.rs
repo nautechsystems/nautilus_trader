@@ -60,8 +60,8 @@ use super::{
     messages::{
         AccountStream, ExecutionReport, LighterAsset, LighterPosition, LighterUserStats,
         LighterWsCandle, LighterWsChannel, LighterWsChannelKind, LighterWsFrame,
-        LighterWsOrderBook, LighterWsRequest, NautilusWsMessage, SendTxRejectionSource,
-        TX_BATCH_ID_PREFIX,
+        LighterWsOrderBook, LighterWsRequest, LighterWsTx, NautilusWsMessage,
+        SendTxRejectionSource, TX_BATCH_ID_PREFIX,
     },
     parse::{
         parse_ws_bar, parse_ws_funding_rate_update, parse_ws_index_price_update,
@@ -1401,6 +1401,8 @@ impl FeedHandler {
                 liquidation_trades,
                 ..
             } => self.handle_trades(&trades, &liquidation_trades, ts_init),
+            LighterWsFrame::AccountTxSubscribed { .. } => Vec::new(),
+            LighterWsFrame::AccountTx { channel, txs } => self.handle_account_tx(channel, txs),
             LighterWsFrame::AccountOrders { ref orders, .. }
             | LighterWsFrame::AccountAllOrders { ref orders, .. } => {
                 if self.exec_account.is_none() {
@@ -1509,6 +1511,22 @@ impl FeedHandler {
             LighterWsFrame::Shutdown { .. } => Vec::new(),
             LighterWsFrame::Height { .. } => raw_message(&frame),
         }
+    }
+
+    fn handle_account_tx(&self, channel: Ustr, txs: Vec<LighterWsTx>) -> Vec<NautilusWsMessage> {
+        let Some((_, account_index)) = self.exec_account else {
+            return raw_message(&LighterWsFrame::AccountTx { channel, txs });
+        };
+
+        if channel.as_str() != format!("account_tx:{account_index}") {
+            log::warn!("Ignoring Lighter transaction update for unexpected channel {channel}");
+            return Vec::new();
+        }
+
+        vec![NautilusWsMessage::AccountTx {
+            connection_epoch: 0,
+            txs,
+        }]
     }
 
     fn handle_order_book(
@@ -2396,7 +2414,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        common::enums::{LighterCandleResolution, LighterTxType},
+        common::enums::{LighterCandleResolution, LighterTxStatus, LighterTxType},
         websocket::messages::{LighterMarketSelection, LighterWsCandle, LighterWsChannel},
     };
 
@@ -3304,6 +3322,68 @@ mod tests {
             msgs.pop();
         }
         msgs
+    }
+
+    #[rstest]
+    #[case::execution_context(true)]
+    #[case::raw_without_context(false)]
+    fn account_tx_routes_execution_results(#[case] execution_context: bool) {
+        let mut handler = make_handler_with_account();
+        if !execution_context {
+            handler.exec_account = None;
+        }
+
+        let frame: LighterWsFrame =
+            serde_json::from_str(include_str!("../../test_data/ws_account_tx_update.json"))
+                .unwrap();
+        let messages = handler.handle_frame(frame.clone(), UnixNanos::from(11));
+        assert_eq!(messages.len(), 1);
+        let message = messages
+            .into_iter()
+            .next()
+            .unwrap()
+            .with_connection_epoch(7);
+
+        if execution_context {
+            let NautilusWsMessage::AccountTx {
+                connection_epoch,
+                txs,
+            } = message
+            else {
+                panic!("expected account transaction results");
+            };
+
+            assert_eq!(connection_epoch, 7);
+            assert_eq!(
+                txs,
+                vec![LighterWsTx {
+                    hash: "abc123".to_string(),
+                    status: LighterTxStatus::Executed,
+                    event_info: "{\"ae\":\"\"}".to_string(),
+                }]
+            );
+        } else {
+            let NautilusWsMessage::Raw(value) = message else {
+                panic!("expected raw transaction update");
+            };
+
+            assert_eq!(value, serde_json::to_value(frame).unwrap());
+        }
+    }
+
+    #[rstest]
+    fn account_tx_rejects_wrong_account_channel() {
+        let mut handler = make_handler_with_account();
+        let mut frame: LighterWsFrame =
+            serde_json::from_str(include_str!("../../test_data/ws_account_tx_update.json"))
+                .unwrap();
+
+        let LighterWsFrame::AccountTx { channel, .. } = &mut frame else {
+            unreachable!()
+        };
+
+        *channel = Ustr::from("account_tx:1235");
+        assert!(handler.handle_frame(frame, UnixNanos::from(11)).is_empty());
     }
 
     #[rstest]

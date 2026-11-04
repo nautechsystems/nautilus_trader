@@ -931,6 +931,66 @@ pub enum AxCancelRejectionReason {
     Unknown,
 }
 
+/// Self-trade prevention behavior for order placement.
+///
+/// The venue accepts the short input aliases `xi`, `xr`, and `xb` for place-order
+/// requests, and always emits the long form.
+#[derive(
+    Clone, Copy, Debug, Display, Eq, PartialEq, Hash, AsRefStr, EnumIter, Serialize, Deserialize,
+)]
+#[serde(rename_all = "PascalCase")]
+#[strum(serialize_all = "PascalCase")]
+#[cfg_attr(
+    feature = "python",
+    pyo3_stub_gen::derive::gen_stub_pyclass_enum(module = "nautilus_trader.adapters.architect_ax")
+)]
+#[cfg_attr(
+    feature = "python",
+    pyo3::pyclass(
+        eq,
+        eq_int,
+        frozen,
+        module = "nautilus_trader.adapters.architect_ax",
+        from_py_object,
+        rename_all = "SCREAMING_SNAKE_CASE",
+    )
+)]
+pub enum AxSelfTradeBehavior {
+    /// Cancel the incoming aggressor order; resting orders remain on the book.
+    CancelIncoming,
+    /// Cancel resting orders that would self-match; allow the incoming aggressor order.
+    CancelResting,
+    /// Cancel both the resting orders and the incoming aggressor order.
+    CancelBoth,
+}
+
+impl AxSelfTradeBehavior {
+    /// Parses a venue self-trade behavior name, accepting the short input aliases.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the value is not a venue self-trade behavior name.
+    pub fn parse_wire(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "CancelIncoming" | "xi" => Ok(Self::CancelIncoming),
+            "CancelResting" | "xr" => Ok(Self::CancelResting),
+            "CancelBoth" | "xb" => Ok(Self::CancelBoth),
+            other => anyhow::bail!(
+                "Unsupported self-trade behavior: {other}, expected \
+                CancelIncoming, CancelResting, or CancelBoth"
+            ),
+        }
+    }
+}
+
+impl std::str::FromStr for AxSelfTradeBehavior {
+    type Err = anyhow::Error;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        Self::parse_wire(s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use rstest::rstest;
@@ -1276,6 +1336,40 @@ mod tests {
         assert_eq!(
             TimeInForce::try_from(tif).unwrap_err().to_string(),
             "Unmapped AX time in force"
+        );
+    }
+
+    #[rstest]
+    #[case(AxSelfTradeBehavior::CancelIncoming, "\"CancelIncoming\"")]
+    #[case(AxSelfTradeBehavior::CancelResting, "\"CancelResting\"")]
+    #[case(AxSelfTradeBehavior::CancelBoth, "\"CancelBoth\"")]
+    fn test_self_trade_behavior_serializes_to_wire_names(
+        #[case] behavior: AxSelfTradeBehavior,
+        #[case] expected: &str,
+    ) {
+        assert_eq!(serde_json::to_string(&behavior).unwrap(), expected);
+    }
+
+    #[rstest]
+    #[case("CancelIncoming", AxSelfTradeBehavior::CancelIncoming)]
+    #[case("CancelResting", AxSelfTradeBehavior::CancelResting)]
+    #[case("CancelBoth", AxSelfTradeBehavior::CancelBoth)]
+    #[case("xi", AxSelfTradeBehavior::CancelIncoming)]
+    #[case("xr", AxSelfTradeBehavior::CancelResting)]
+    #[case("xb", AxSelfTradeBehavior::CancelBoth)]
+    fn test_self_trade_behavior_parses_wire_names_and_aliases(
+        #[case] value: &str,
+        #[case] expected: AxSelfTradeBehavior,
+    ) {
+        assert_eq!(AxSelfTradeBehavior::parse_wire(value).unwrap(), expected);
+    }
+
+    #[rstest]
+    fn test_self_trade_behavior_rejects_unknown_value() {
+        let err = AxSelfTradeBehavior::parse_wire("cancel-incoming").unwrap_err();
+        assert!(
+            err.to_string()
+                .starts_with("Unsupported self-trade behavior")
         );
     }
 }

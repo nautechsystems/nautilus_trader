@@ -472,6 +472,10 @@ or `Quantity` (for example, a value beyond their range), the adapter automatical
 During resync, the strategy will not receive stale or incomplete book updates. A user-initiated
 unsubscribe while a resync is pending cancels the resubscribe instead of reopening the channel.
 
+If a recovery unsubscribe fails, returns an invalid result, or omits a channel, the adapter logs an
+error and keeps that channel pending resync. It suppresses deltas for the instrument until a valid
+snapshot clears the pending resync or the client reconnects.
+
 A grouped book channel (`book.{instrument}.{group}.{depth}.{interval}`) sends a full snapshot every interval,
 so the adapter never resyncs it. It drops a snapshot that fails conversion. The next snapshot replaces the
 book.
@@ -662,8 +666,9 @@ Deribit offers two post-only modes:
 2. **Reject mode**: Order is immediately rejected if it would cross the spread.
 
 The Nautilus adapter uses **reject mode** (`reject_post_only=true`) for deterministic behavior.
-When Deribit returns error code `11054`, the adapter emits `OrderRejected` with `due_post_only=true`.
-Other rejection codes set this flag to `false`, including rejections forwarded from Coinbase Exchange.
+The adapter emits `OrderRejected` with `due_post_only=true` for error code `11054` or an order result
+with `order_state="rejected"` and `reject_reason="post_only_reject"`. Other rejections set this flag to
+`false`. These rules also apply to rejections forwarded from Coinbase Exchange.
 
 This allows strategies to differentiate between:
 

@@ -1815,13 +1815,17 @@ impl OrderCore {
         self.events.splice(..0, events);
     }
 
-    /// Sets the `reconciliation` flag on the stored [`OrderInitialized`] event.
-    ///
-    /// The order constructors always build their init event with `reconciliation = false`,
-    /// so conversions from an [`OrderInitialized`] use this to keep the source event's flag.
-    pub(crate) fn set_init_reconciliation(&mut self, reconciliation: bool) {
+    /// Restores metadata omitted by order constructors when converting an [`OrderInitialized`].
+    pub(crate) fn set_init_metadata(
+        &mut self,
+        reconciliation: bool,
+        causation_id: Option<UUID4>,
+        ts_init: UnixNanos,
+    ) {
         if let Some(OrderEventAny::Initialized(init)) = self.events.first_mut() {
             init.reconciliation = reconciliation;
+            init.causation_id = causation_id;
+            init.ts_init = ts_init;
         }
     }
 

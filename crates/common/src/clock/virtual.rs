@@ -135,6 +135,15 @@ impl VirtualClock {
         events
     }
 
+    /// Returns the earliest queued timer deadline, if any.
+    ///
+    /// Canceled or replaced timers can leave stale deadlines until [`Self::advance_time`]
+    /// removes them. Advancing to a deadline can also expire a timer without an event.
+    #[must_use]
+    pub fn next_event_time_ns(&self) -> Option<UnixNanos> {
+        self.timer_queue.peek().map(|entry| entry.0.ts_event)
+    }
+
     /// Matches time events with their registered callbacks, preserving input order.
     ///
     /// A named callback takes precedence over the default callback for each event.

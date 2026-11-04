@@ -25,9 +25,8 @@ use strum::{Display, EnumIter, EnumString};
 
 use crate::{
     defi::{amm::Pool, chain::Chain, validation::validate_address},
-    enums::CurrencyType,
     instruments::{Instrument, any::InstrumentAny, currency_pair::CurrencyPair},
-    types::{currency::Currency, fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
+    types::{fixed::FIXED_PRECISION, price::Price, quantity::Quantity},
 };
 
 /// Represents different types of Automated Market Makers (AMMs) in DeFi protocols.
@@ -271,20 +270,8 @@ impl TryFrom<&Pool> for CurrencyPair {
             Price::from_mantissa_exponent(1, -price_precision.cast_signed(), price_precision);
         let size_increment =
             Quantity::from_mantissa_exponent(1, -size_precision.cast_signed(), size_precision);
-        let base_currency = Currency::new_checked(
-            base_token.symbol.as_str(),
-            size_precision,
-            0,
-            base_token.name.as_str(),
-            CurrencyType::Crypto,
-        )?;
-        let quote_currency = Currency::new_checked(
-            quote_token.symbol.as_str(),
-            price_precision,
-            0,
-            quote_token.name.as_str(),
-            CurrencyType::Crypto,
-        )?;
+        let base_currency = base_token.currency()?;
+        let quote_currency = quote_token.currency()?;
         let pair = Self::builder()
             .instrument_id(p.instrument_id)
             .raw_symbol(p.instrument_id.symbol)
@@ -297,15 +284,6 @@ impl TryFrom<&Pool> for CurrencyPair {
             .ts_event(p.ts_event)
             .ts_init(p.ts_init)
             .build()?;
-
-        for currency in [base_currency, quote_currency] {
-            if let Err(e) = Currency::register(currency, false) {
-                log::error!(
-                    "Failed to register DeFi token currency '{}': {e}",
-                    currency.code
-                );
-            }
-        }
 
         Ok(pair)
     }
@@ -325,15 +303,32 @@ impl From<Pool> for InstrumentAny {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
+
+    use alloy_primitives::Address;
     use nautilus_core::correctness::CorrectnessError;
-    use rstest::rstest;
+    use rstest::{fixture, rstest};
 
     use super::{CurrencyPair, DexType};
     use crate::{
-        defi::{SharedPool, stubs::rain_pool},
+        defi::{Pool, SharedPool, stubs::rain_pool},
         enums::CurrencyType,
         types::{Price, Quantity, currency::Currency, fixed::FIXED_PRECISION},
     };
+
+    #[fixture]
+    fn currency_pool(rain_pool: SharedPool) -> Pool {
+        static NEXT_ADDRESS: AtomicU32 = AtomicU32::new(1);
+        let mut pool = (*rain_pool).clone();
+        for token in [&mut pool.token0, &mut pool.token1] {
+            let mut address = [0xfa; 20];
+            address[16..]
+                .copy_from_slice(&NEXT_ADDRESS.fetch_add(1, Ordering::Relaxed).to_be_bytes());
+            token.address = Address::from(address);
+        }
+
+        pool
+    }
 
     #[rstest]
     fn test_dex_type_from_dex_name_valid() {
@@ -434,27 +429,37 @@ mod tests {
         #[case] price_precision: u8,
         #[case] expected_size_precision: u8,
         #[case] expected_price_precision: u8,
-        rain_pool: SharedPool,
+        currency_pool: Pool,
     ) {
-        let mut pool = (*rain_pool).clone();
-        pool.token0.symbol = "BTC".to_string();
-        pool.token1.symbol = "USDC".to_string();
+        let mut pool = currency_pool;
+        pool.token0.symbol = format!("BASE{size_precision}");
+        pool.token1.symbol = format!("QUOTE{price_precision}");
         pool.token0.decimals = size_precision;
         pool.token1.decimals = price_precision;
 
         let expected_id = pool.instrument_id;
         let expected_ts_event = pool.ts_event;
         let expected_ts_init = pool.ts_init;
+        let expected_base_code = format!(
+            "{}@{}",
+            pool.get_base_token().symbol,
+            pool.get_base_token().chain.name.to_string().to_uppercase()
+        );
+        let expected_quote_code = format!(
+            "{}@{}",
+            pool.get_quote_token().symbol,
+            pool.get_quote_token().chain.name.to_string().to_uppercase()
+        );
         let pair = CurrencyPair::from(pool);
         let price_scale_exponent = u32::from(FIXED_PRECISION - expected_price_precision);
         let size_scale_exponent = u32::from(FIXED_PRECISION - expected_size_precision);
 
         assert_eq!(pair.id, expected_id);
         assert_eq!(pair.raw_symbol, expected_id.symbol);
-        assert_eq!(pair.base_currency.code, "BTC");
-        assert_eq!(pair.base_currency.precision, expected_size_precision);
-        assert_eq!(pair.quote_currency.code, "USDC");
-        assert_eq!(pair.quote_currency.precision, expected_price_precision);
+        assert_eq!(pair.base_currency.code, expected_base_code);
+        assert_eq!(pair.base_currency.precision, size_precision);
+        assert_eq!(pair.quote_currency.code, expected_quote_code);
+        assert_eq!(pair.quote_currency.precision, price_precision);
         assert_eq!(pair.price_precision, expected_price_precision);
         assert_eq!(pair.size_precision, expected_size_precision);
         assert_eq!(
@@ -469,8 +474,15 @@ mod tests {
     }
 
     #[rstest]
-    fn test_pool_to_currency_pair_orients_inverted_pool_by_token_priority(rain_pool: SharedPool) {
-        let mut pool = (*rain_pool).clone();
+    fn test_pool_to_currency_pair_orients_inverted_pool_by_token_priority(currency_pool: Pool) {
+        let mut pool = currency_pool;
+
+        let chain = std::sync::Arc::new(crate::defi::Chain::new(
+            crate::defi::Blockchain::GaladrielDevnet,
+            812_330,
+        ));
+        pool.token0.chain = std::sync::Arc::clone(&chain);
+        pool.token1.chain = chain;
         pool.token0.symbol = "USDC".to_string();
         pool.token0.name = "USD Coin".to_string();
         pool.token0.decimals = 6;
@@ -479,12 +491,22 @@ mod tests {
         pool.token1.decimals = 8;
         assert!(pool.is_base_quote_inverted());
 
+        let expected_base_code = format!(
+            "{}@{}",
+            pool.get_base_token().symbol,
+            pool.get_base_token().chain.name.to_string().to_uppercase()
+        );
+        let expected_quote_code = format!(
+            "{}@{}",
+            pool.get_quote_token().symbol,
+            pool.get_quote_token().chain.name.to_string().to_uppercase()
+        );
         let pair = CurrencyPair::from(pool);
 
-        assert_eq!(pair.base_currency.code, "WETH");
+        assert_eq!(pair.base_currency.code, expected_base_code);
         assert_eq!(pair.base_currency.name, "Wrapped Ether");
         assert_eq!(pair.base_currency.precision, 8);
-        assert_eq!(pair.quote_currency.code, "USDC");
+        assert_eq!(pair.quote_currency.code, expected_quote_code);
         assert_eq!(pair.quote_currency.name, "USD Coin");
         assert_eq!(pair.quote_currency.precision, 6);
         assert_eq!(pair.size_precision, 8);
@@ -494,8 +516,8 @@ mod tests {
     }
 
     #[rstest]
-    fn test_pool_to_currency_pair_registers_token_currencies(rain_pool: SharedPool) {
-        let mut pool = (*rain_pool).clone();
+    fn test_pool_to_currency_pair_registers_token_currencies(currency_pool: Pool) {
+        let mut pool = currency_pool;
         pool.token0.symbol = "ENG444BASE".to_string();
         pool.token0.name = "ENG-444 Base Token".to_string();
         pool.token0.decimals = 8;
@@ -503,16 +525,26 @@ mod tests {
         pool.token1.name = "ENG-444 Quote Token".to_string();
         pool.token1.decimals = 6;
 
+        let base_code = format!(
+            "{}@{}",
+            pool.token0.symbol,
+            pool.token0.chain.name.to_string().to_uppercase()
+        );
+        let quote_code = format!(
+            "{}@{}",
+            pool.token1.symbol,
+            pool.token1.chain.name.to_string().to_uppercase()
+        );
         let _ = CurrencyPair::from(pool);
 
-        let base = Currency::try_from_str("ENG444BASE").unwrap();
-        let quote = Currency::try_from_str("ENG444QUOTE").unwrap();
-        assert_eq!(base.code, "ENG444BASE");
+        let base = Currency::try_from_str(&base_code).unwrap();
+        let quote = Currency::try_from_str(&quote_code).unwrap();
+        assert_eq!(base.code, base_code);
         assert_eq!(base.precision, 8);
         assert_eq!(base.iso4217, 0);
         assert_eq!(base.name, "ENG-444 Base Token");
         assert_eq!(base.currency_type, CurrencyType::Crypto);
-        assert_eq!(quote.code, "ENG444QUOTE");
+        assert_eq!(quote.code, quote_code);
         assert_eq!(quote.precision, 6);
         assert_eq!(quote.iso4217, 0);
         assert_eq!(quote.name, "ENG-444 Quote Token");
@@ -535,13 +567,13 @@ mod tests {
         assert_eq!(
             missing_symbol_result.unwrap_err(),
             CorrectnessError::EmptyString {
-                param: "code".to_string(),
+                param: "symbol".to_string(),
             }
         );
         assert_eq!(
             blank_symbol_result.unwrap_err(),
             CorrectnessError::WhitespaceString {
-                param: "code".to_string(),
+                param: "symbol".to_string(),
             }
         );
         assert_eq!(

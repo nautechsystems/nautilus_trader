@@ -384,32 +384,12 @@ impl PolymarketWebSocketClient {
             );
 
             loop {
-                match handler.next().await {
+                let msg = match handler.next().await {
                     Some(PolymarketWsMessage::Reconnected { .. }) => {
                         log::info!("Polymarket WebSocket reconnected");
-
-                        if handler
-                            .send(PolymarketWsMessage::Reconnected { shard_id: None })
-                            .is_err()
-                        {
-                            if handler.is_stopped() {
-                                log::debug!("Output channel closed, stopping handler");
-                            } else {
-                                log::error!("Output channel closed, stopping handler");
-                            }
-                            break;
-                        }
+                        PolymarketWsMessage::Reconnected { shard_id: None }
                     }
-                    Some(msg) => {
-                        if handler.send(msg).is_err() {
-                            if handler.is_stopped() {
-                                log::debug!("Output channel closed, stopping handler");
-                            } else {
-                                log::error!("Output channel closed, stopping handler");
-                            }
-                            break;
-                        }
-                    }
+                    Some(msg) => msg,
                     None => {
                         if handler.is_stopped() {
                             log::debug!("Stop signal received, ending handler task");
@@ -418,6 +398,16 @@ impl PolymarketWebSocketClient {
                         }
                         break;
                     }
+                };
+
+                if handler.send(msg).is_err() {
+                    if handler.is_stopped() {
+                        log::debug!("Output channel closed, stopping handler");
+                    } else {
+                        log::error!("Output channel closed, stopping handler");
+                    }
+
+                    break;
                 }
             }
             log::debug!("Polymarket WebSocket handler task completed");

@@ -553,12 +553,20 @@ async fn send_command_response(
     response_kind: CommandResponse,
     success_result: &Value,
 ) -> bool {
-    let Some(response) = command_response(id, response_kind, success_result) else {
-        return true;
-    };
+    if let Some(response) = command_response(id, response_kind, success_result)
+        && socket
+            .send(Message::Text(response.to_string().into()))
+            .await
+            .is_err()
+    {
+        return false;
+    }
 
+    // The portfolio update marks the end of this command's ordered event stream
     socket
-        .send(Message::Text(response.to_string().into()))
+        .send(Message::Text(
+            load_json("ws_portfolio.json").to_string().into(),
+        ))
         .await
         .is_ok()
 }
@@ -1308,9 +1316,87 @@ async fn test_explicit_venue_submit_rejection_emits_order_rejected() {
         ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
             assert_eq!(event.client_order_id, client_order_id);
             assert!(event.reason.contains("post_only_reject"));
+            assert!(!event.due_post_only);
         }
         other => panic!("Expected Rejected event, was {other:?}"),
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_post_only_venue_code_sets_due_post_only_once() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::VenueReject {
+                code: 11054,
+                message: "post_only_reject",
+            },
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("post-only-code-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    match recv_until(&mut rx, |event| {
+        matches!(
+            event,
+            ExecutionEvent::Order(OrderEventAny::Rejected(event))
+                if event.client_order_id == client_order_id
+        )
+    })
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::Rejected(event)) => {
+            assert_eq!(event.reason.as_str(), "post_only_reject");
+            assert!(event.due_post_only);
+        }
+        other => panic!("Expected Rejected event, was {other:?}"),
+    }
+
+    assert_eq!(request_count.load(Ordering::Relaxed), 1);
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::Rejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
+}
+
+#[rstest]
+#[tokio::test]
+async fn test_rate_limit_submit_stays_in_flight() {
+    let (client, mut rx, cache, request_count) =
+        connected_client_with_command_responses(CommandResponses {
+            submit: CommandResponse::VenueReject {
+                code: 10028,
+                message: "too_many_requests",
+            },
+            ..Default::default()
+        })
+        .await;
+
+    let client_order_id = ClientOrderId::new("rate-limit-submit-001");
+    let order_any = add_limit_order_to_cache(&cache, client_order_id, TimeInForce::Gtc);
+
+    client
+        .submit_order(submit_order_command(&order_any))
+        .unwrap();
+
+    wait_for_command_requests(&request_count, 1).await;
+    assert_eq!(request_count.load(Ordering::Relaxed), 1);
+    assert_no_order_event_matching(&mut rx, |event| {
+        matches!(
+            event,
+            OrderEventAny::Rejected(event) if event.client_order_id == client_order_id
+        )
+    })
+    .await;
 }
 
 #[rstest]
@@ -1692,7 +1778,8 @@ async fn test_ambiguous_cancel_failure_does_not_emit_cancel_rejected() {
     assert_no_order_event_matching(&mut rx, |event| {
         matches!(
             event,
-            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+            OrderEventAny::CancelRejected(_) | OrderEventAny::CancelDenied(_)
+                if event.client_order_id() == client_order_id
         )
     })
     .await;
@@ -1737,7 +1824,7 @@ async fn test_explicit_venue_cancel_rejection_emits_cancel_rejected() {
 
 #[rstest]
 #[tokio::test]
-async fn test_local_cancel_validation_failure_does_not_emit_cancel_rejected() {
+async fn test_local_cancel_validation_failure_emits_cancel_denied() {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
@@ -1747,20 +1834,30 @@ async fn test_local_cancel_validation_failure_does_not_emit_cancel_rejected() {
     let result = client.cancel_order(cancel_order_command_without_venue_order_id(client_order_id));
     assert!(result.is_ok());
 
-    assert_no_order_event_matching(&mut rx, |event| {
+    match recv_until(&mut rx, |event| {
         matches!(
             event,
-            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+            ExecutionEvent::Order(OrderEventAny::CancelDenied(event))
+                if event.client_order_id == client_order_id
         )
     })
-    .await;
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) => {
+            assert_eq!(
+                event.reason.as_str(),
+                "venue_order_id required for cancel_order"
+            );
+        }
+        other => panic!("Expected CancelDenied event, was {other:?}"),
+    }
 
     assert_eq!(request_count.load(Ordering::Relaxed), 0);
 }
 
 #[rstest]
 #[tokio::test]
-async fn test_local_batch_cancel_validation_failure_does_not_emit_cancel_rejected() {
+async fn test_local_batch_cancel_validation_failure_emits_cancel_denied() {
     let (client, mut rx, cache, request_count) =
         connected_client_with_command_responses(CommandResponses::default()).await;
 
@@ -1780,13 +1877,23 @@ async fn test_local_batch_cancel_validation_failure_does_not_emit_cancel_rejecte
     ));
     assert!(result.is_ok());
 
-    assert_no_order_event_matching(&mut rx, |event| {
+    match recv_until(&mut rx, |event| {
         matches!(
             event,
-            OrderEventAny::CancelRejected(event) if event.client_order_id == client_order_id
+            ExecutionEvent::Order(OrderEventAny::CancelDenied(event))
+                if event.client_order_id == client_order_id
         )
     })
-    .await;
+    .await
+    {
+        ExecutionEvent::Order(OrderEventAny::CancelDenied(event)) => {
+            assert_eq!(
+                event.reason.as_str(),
+                "venue_order_id required for cancel_order"
+            );
+        }
+        other => panic!("Expected CancelDenied event, was {other:?}"),
+    }
 
     assert_eq!(request_count.load(Ordering::Relaxed), 0);
 }
@@ -1813,7 +1920,8 @@ async fn test_ambiguous_modify_failure_does_not_emit_modify_rejected() {
     assert_no_order_event_matching(&mut rx, |event| {
         matches!(
             event,
-            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+            OrderEventAny::ModifyRejected(_) | OrderEventAny::ModifyDenied(_)
+                if event.client_order_id() == client_order_id
         )
     })
     .await;
@@ -1841,7 +1949,8 @@ async fn test_modify_response_parse_failure_does_not_emit_modify_rejected() {
     assert_no_order_event_matching(&mut rx, |event| {
         matches!(
             event,
-            OrderEventAny::ModifyRejected(event) if event.client_order_id == client_order_id
+            OrderEventAny::ModifyRejected(_) | OrderEventAny::ModifyDenied(_)
+                if event.client_order_id() == client_order_id
         )
     })
     .await;
@@ -1998,7 +2107,10 @@ async fn test_whole_cancel_all_failure_does_not_emit_per_order_cancel_rejected()
     wait_for_command_requests(&request_count, 1).await;
 
     assert_no_order_event_matching(&mut rx, |event| {
-        matches!(event, OrderEventAny::CancelRejected(_))
+        matches!(
+            event,
+            OrderEventAny::CancelRejected(_) | OrderEventAny::CancelDenied(_)
+        )
     })
     .await;
 }
@@ -2014,9 +2126,12 @@ async fn connected_client_with_command_responses(
     let (addr, state) = start_test_server().await.unwrap();
     *state.command_responses.lock().await = responses;
     let request_count = state.command_request_count.clone();
-    let (mut client, rx, cache) = create_test_execution_client(addr);
+    let (mut client, mut rx, cache) = create_test_execution_client(addr);
     add_test_account_to_cache(&cache, AccountId::from("DERIBIT-001"));
     client.connect().await.unwrap();
+
+    while rx.try_recv().is_ok() {}
+
     (client, rx, cache, request_count)
 }
 
@@ -2309,21 +2424,27 @@ async fn assert_no_order_event_matching<F>(
 ) where
     F: Fn(&OrderEventAny) -> bool,
 {
-    let unexpected = tokio::time::timeout(Duration::from_millis(500), async {
+    tokio::time::timeout(Duration::from_secs(5), async {
         loop {
             let event = rx.recv().await.expect("Execution event channel closed");
             if let ExecutionEvent::Order(order_event) = &event
                 && predicate(order_event)
             {
-                return event;
+                panic!("Unexpected order event: {event:?}");
+            }
+
+            if let ExecutionEvent::Account(state) = event
+                && state
+                    .balances
+                    .iter()
+                    .any(|balance| balance.total == Money::from("55.00055 USDT"))
+            {
+                return;
             }
         }
     })
-    .await;
-
-    if let Ok(event) = unexpected {
-        panic!("Unexpected order event: {event:?}");
-    }
+    .await
+    .expect("Timed out waiting for the command's portfolio update");
 }
 
 async fn recv_until<F>(

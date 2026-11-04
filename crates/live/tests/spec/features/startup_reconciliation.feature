@@ -162,3 +162,71 @@ Feature: Startup reconciliation
         | entrypoint |
         | start      |
         | run        |
+
+  Rule: Closing executions recover retained exposure when the venue cannot report positions
+    A close executed while the node is offline must update the retained position,
+    its realized profit, and its fees before the strategy starts.
+    A cached order already belongs to the strategy. An externally placed order
+    must be explicitly claimed by that strategy.
+    A missing position report does not by itself prove that the position is flat.
+
+    @retained_close
+    Scenario Outline: Recover an offline close from a <source> order
+      Given the execution client uses NETTING accounting
+      And a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee
+      And the client cannot provide complete position coverage
+      And the closing order is <source>
+      And the bounded history starts after the opening trade
+      And the venue reports a filled closing order and no position
+      And the venue reports these closing executions
+        | quantity | price   | fee  |
+        | 0.400    | 3100.00 | 0.25 |
+        | 0.600    | 3120.00 | 0.37 |
+      When the live node starts using start
+      Then startup succeeds
+      And the closing order is FILLED
+      And the retained position is flat with realized profit of 110.78 USDT and total fees of 1.22 USDT when the strategy starts
+      And exactly one position is cached
+      And the portfolio exposes 0 ETH when the strategy starts
+      And the actor and strategy each start once
+
+      Examples:
+        | source  |
+        | cached  |
+        | claimed |
+
+    @retained_close @incomplete
+    Scenario: Incomplete history cannot establish a safe position reduction
+      Given the execution client uses NETTING accounting
+      And a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee
+      And the client cannot provide complete position coverage
+      And the closing order is cached
+      And the bounded history starts after the opening trade
+      And the venue reports a filled closing order and no position
+      And the venue reports these closing executions
+        | quantity | price   | fee  |
+        | 0.400    | 3100.00 | 0.25 |
+        | 0.600    | 3120.00 | 0.37 |
+      But the venue marks the history incomplete
+      When the live node starts using start
+      Then startup succeeds
+      And the closing order is FILLED
+      And the retained position remains long 1.000 ETH with realized profit of -0.60 USDT and total fees of 0.60 USDT when the strategy starts
+      And exactly one position is cached
+      And the portfolio exposes 1.000 ETH when the strategy starts
+
+    @retained_close @no_executions
+    Scenario: A filled order report alone does not recover closing profit
+      Given the execution client uses NETTING accounting
+      And a retained long position holds 1.000 ETH bought at 3000.00 USDT with a 0.60 USDT fee
+      And the client cannot provide complete position coverage
+      And the closing order is cached
+      And the bounded history starts after the opening trade
+      And the venue reports a filled closing order and no position
+      But the venue supplies no closing executions
+      When the live node starts using start
+      Then startup succeeds
+      And the closing order is FILLED
+      And the retained position remains long 1.000 ETH with realized profit of -0.60 USDT and total fees of 0.60 USDT when the strategy starts
+      And exactly one position is cached
+      And the portfolio exposes 1.000 ETH when the strategy starts

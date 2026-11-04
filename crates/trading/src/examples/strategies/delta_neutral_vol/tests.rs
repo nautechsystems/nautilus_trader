@@ -874,3 +874,60 @@ fn test_mark_iv_default_none() {
     assert!(strategy.call_mark_iv.is_none());
     assert!(strategy.put_mark_iv.is_none());
 }
+
+#[rstest]
+fn test_on_reset_restores_constructor_state() {
+    use nautilus_common::component::Component;
+
+    let mut strategy = create_initialized_strategy();
+    let expected_config = format!("{:?}", strategy.config);
+    register_strategy(&mut strategy);
+    strategy.initialize().unwrap();
+    let call_id = strategy.call_instrument_id.unwrap();
+    let put_id = strategy.put_instrument_id.unwrap();
+    strategy.subscribed_greeks = vec![call_id, put_id];
+    strategy.call_delta = 0.31;
+    strategy.put_delta = -0.42;
+    strategy.call_mark_iv = Some(0.55);
+    strategy.put_mark_iv = Some(0.60);
+    strategy.call_quote = Some(quote_tick(call_id, "100.0", "101.0"));
+    strategy.put_quote = Some(quote_tick(put_id, "90.0", "91.0"));
+    strategy.call_greeks = Some(OptionGreeks {
+        instrument_id: call_id,
+        ..Default::default()
+    });
+
+    strategy.put_greeks = Some(OptionGreeks {
+        instrument_id: put_id,
+        ..Default::default()
+    });
+
+    strategy.call_position = -2.0;
+    strategy.put_position = -3.0;
+    strategy.hedge_position = 4.0;
+    strategy.hedge_pending = true;
+    strategy.entry_attempted = true;
+
+    strategy.reset().unwrap();
+
+    assert_eq!(strategy.call_instrument_id, None);
+    assert_eq!(strategy.put_instrument_id, None);
+    assert!(strategy.subscribed_greeks.is_empty());
+    assert_eq!(strategy.call_delta, 0.0);
+    assert_eq!(strategy.put_delta, 0.0);
+    assert_eq!(strategy.call_mark_iv, None);
+    assert_eq!(strategy.put_mark_iv, None);
+    assert_eq!(strategy.call_quote, None);
+    assert_eq!(strategy.put_quote, None);
+    assert_eq!(strategy.call_greeks, None);
+    assert_eq!(strategy.put_greeks, None);
+    assert!(!strategy.call_delta_ready);
+    assert!(!strategy.put_delta_ready);
+    assert_eq!(strategy.call_position, 0.0);
+    assert_eq!(strategy.put_position, 0.0);
+    assert_eq!(strategy.hedge_position, 0.0);
+    assert!(!strategy.hedge_pending);
+    assert!(!strategy.entry_attempted);
+    assert_eq!(format!("{:?}", strategy.config), expected_config);
+    assert!(strategy.is_ready());
+}

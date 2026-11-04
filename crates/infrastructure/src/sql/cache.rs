@@ -17,6 +17,8 @@ use std::{collections::VecDeque, fmt::Debug, ops::ControlFlow, pin::Pin, time::D
 
 use ahash::AHashMap;
 use bytes::Bytes;
+#[cfg(feature = "defi")]
+use nautilus_common::defi::cache::InstrumentMigration;
 use nautilus_common::{
     cache::{
         CacheConfig,
@@ -201,6 +203,14 @@ pub struct PostgresCacheDatabase {
 )]
 #[derive(Debug, Clone)]
 pub enum DatabaseQuery {
+    #[cfg(feature = "defi")]
+    DefiCurrency(Currency, std::sync::mpsc::SyncSender<anyhow::Result<()>>),
+    #[cfg(feature = "defi")]
+    DefiInstrument(
+        InstrumentAny,
+        Option<InstrumentMigration>,
+        std::sync::mpsc::SyncSender<anyhow::Result<()>>,
+    ),
     Close,
     Add(String, Vec<u8>),
     Delete(String),
@@ -272,6 +282,25 @@ impl PostgresCacheDatabase {
             tx,
             handle,
         })
+    }
+
+    #[cfg(feature = "defi")]
+    fn write_defi(
+        &self,
+        query: impl FnOnce(std::sync::mpsc::SyncSender<anyhow::Result<()>>) -> DatabaseQuery,
+    ) -> anyhow::Result<()> {
+        let (reply, receiver) = std::sync::mpsc::sync_channel(1);
+        self.tx
+            .send(query(reply))
+            .map_err(crate::defi::integrity_error)?;
+        let on_runtime = tokio::runtime::Handle::try_current()
+            .is_ok_and(|handle| handle.id() == get_runtime().handle().id());
+
+        if on_runtime {
+            tokio::task::block_in_place(|| receiver.recv()).map_err(crate::defi::integrity_error)?
+        } else {
+            receiver.recv().map_err(crate::defi::integrity_error)?
+        }
     }
 
     /// Returns the trader that loads, writes and flushes are scoped to.
@@ -429,6 +458,12 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
             ('position_event', 'reconciliation'),
             ('position_event', 'info'),
             ('position_event', 'causation_id')
+            UNION ALL
+            SELECT * FROM (VALUES
+                ('instrument', 'defi_currency_codes'),
+                ('defi_currency', 'currency_id')
+            ) AS defi(table_name, column_name)
+            WHERE $1
         ) AS required(table_name, column_name)
         WHERE NOT EXISTS (
             SELECT 1
@@ -439,6 +474,7 @@ async fn check_schema_migrated(pool: &PgPool) -> Result<(), sqlx::Error> {
         )
         ORDER BY 1",
     )
+    .bind(cfg!(feature = "defi"))
     .fetch_all(pool)
     .await?;
 
@@ -529,6 +565,29 @@ async fn handle_query(
     let Some(msg) = maybe_msg else {
         log::debug!("Command channel closed");
         return ControlFlow::Break(());
+    };
+
+    #[cfg(feature = "defi")]
+    let msg = match msg {
+        DatabaseQuery::DefiCurrency(currency, reply) => {
+            if !buffer.is_empty() {
+                drain_buffer(pool, trader_id, buffer).await;
+            }
+
+            let result = DatabaseQueries::add_currency(pool, currency).await;
+            let _ = reply.send(result);
+            return ControlFlow::Continue(());
+        }
+        DatabaseQuery::DefiInstrument(instrument, migration, reply) => {
+            if !buffer.is_empty() {
+                drain_buffer(pool, trader_id, buffer).await;
+            }
+
+            let result = DatabaseQueries::add_defi_instrument(pool, instrument, migration).await;
+            let _ = reply.send(result);
+            return ControlFlow::Continue(());
+        }
+        other => other,
     };
 
     if matches!(msg, DatabaseQuery::Close) {
@@ -683,59 +742,39 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_currencies(&self) -> anyhow::Result<AHashMap<Ustr, Currency>> {
-        let pool = self.pool.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        tokio::spawn(async move {
-            let result = DatabaseQueries::load_currencies(&pool).await;
-            match result {
-                Ok(currencies) => {
-                    let mapping = currencies
-                        .into_iter()
-                        .map(|currency| (currency.code, currency))
-                        .collect();
-
-                    if let Err(e) = tx.send(mapping) {
-                        log::error!("Failed to send currencies: {e:?}");
-                    }
+        match DatabaseQueries::load_currencies(&self.pool).await {
+            Ok(items) => Ok(items
+                .into_iter()
+                .map(|currency| (currency.code, currency))
+                .collect()),
+            Err(e) => {
+                #[cfg(feature = "defi")]
+                if e.is::<crate::defi::IntegrityError>() {
+                    return Err(e);
                 }
-                Err(e) => {
-                    log::error!("Failed to load currencies: {e:?}");
-                    if let Err(e) = tx.send(AHashMap::new()) {
-                        log::error!("Failed to send empty currencies: {e:?}");
-                    }
-                }
+
+                log::error!("Failed to load_currencies: {e}");
+                Ok(AHashMap::new())
             }
-        });
-        Ok(rx.recv()?)
+        }
     }
 
     async fn load_instruments(&self) -> anyhow::Result<AHashMap<InstrumentId, InstrumentAny>> {
-        let pool = self.pool.clone();
-        let (tx, rx) = std::sync::mpsc::channel();
-
-        tokio::spawn(async move {
-            let result = DatabaseQueries::load_instruments(&pool).await;
-            match result {
-                Ok(instruments) => {
-                    let mapping = instruments
-                        .into_iter()
-                        .map(|instrument| (instrument.id(), instrument))
-                        .collect();
-
-                    if let Err(e) = tx.send(mapping) {
-                        log::error!("Failed to send instruments: {e:?}");
-                    }
+        match DatabaseQueries::load_instruments(&self.pool).await {
+            Ok(items) => Ok(items
+                .into_iter()
+                .map(|instrument| (instrument.id(), instrument))
+                .collect()),
+            Err(e) => {
+                #[cfg(feature = "defi")]
+                if e.is::<crate::defi::IntegrityError>() {
+                    return Err(e);
                 }
-                Err(e) => {
-                    log::error!("Failed to load instruments: {e:?}");
-                    if let Err(e) = tx.send(AHashMap::new()) {
-                        log::error!("Failed to send empty instruments: {e:?}");
-                    }
-                }
+
+                log::error!("Failed to load_instruments: {e}");
+                Ok(AHashMap::new())
             }
-        });
-        Ok(rx.recv()?)
+        }
     }
 
     async fn load_instrument_closes(
@@ -903,27 +942,18 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     async fn load_currency(&self, code: &Ustr) -> anyhow::Result<Option<Currency>> {
-        let pool = self.pool.clone();
-        let code = code.to_owned(); // Clone the code
-        let (tx, rx) = std::sync::mpsc::channel();
+        match DatabaseQueries::load_currency(&self.pool, code).await {
+            Ok(items) => Ok(items),
+            Err(e) => {
+                #[cfg(feature = "defi")]
+                if e.is::<crate::defi::IntegrityError>() {
+                    return Err(e);
+                }
 
-        tokio::spawn(async move {
-            let result = DatabaseQueries::load_currency(&pool, &code).await;
-            match result {
-                Ok(currency) => {
-                    if let Err(e) = tx.send(currency) {
-                        log::error!("Failed to send currency {code}: {e:?}");
-                    }
-                }
-                Err(e) => {
-                    log::error!("Failed to load currency {code}: {e:?}");
-                    if let Err(e) = tx.send(None) {
-                        log::error!("Failed to send None for currency {code}: {e:?}");
-                    }
-                }
+                log::error!("Failed to load_currency: {e}");
+                Ok(None)
             }
-        });
-        Ok(rx.recv()?)
+        }
     }
 
     async fn load_instrument(
@@ -1087,6 +1117,15 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_currency(&self, currency: &Currency) -> anyhow::Result<()> {
+        #[cfg(feature = "defi")]
+        if nautilus_model::defi::currency::check(*currency)
+            .map_err(crate::defi::integrity_error)?
+            .is_some()
+            || currency.code.contains('@')
+        {
+            return self.write_defi(|reply| DatabaseQuery::DefiCurrency(*currency, reply));
+        }
+
         let query = DatabaseQuery::AddCurrency(*currency);
         self.tx.send(query).map_err(|e| {
             anyhow::anyhow!("Failed to query add_currency to database message handler: {e}")
@@ -1094,9 +1133,30 @@ impl CacheDatabaseAdapter for PostgresCacheDatabase {
     }
 
     fn add_instrument(&self, instrument: &InstrumentAny) -> anyhow::Result<()> {
-        let query = DatabaseQuery::AddInstrument(instrument.clone());
-        self.tx.send(query).map_err(|e| {
-            anyhow::anyhow!("Failed to send query add_instrument to database message handler: {e}")
+        #[cfg(feature = "defi")]
+        {
+            self.write_defi(|reply| DatabaseQuery::DefiInstrument(instrument.clone(), None, reply))
+        }
+
+        #[cfg(not(feature = "defi"))]
+        {
+            let query = DatabaseQuery::AddInstrument(instrument.clone());
+            self.tx.send(query).map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to send query add_instrument to database message handler: {e}"
+                )
+            })
+        }
+    }
+
+    #[cfg(feature = "defi")]
+    fn add_defi_instrument(
+        &self,
+        instrument: &InstrumentAny,
+        migration: InstrumentMigration,
+    ) -> anyhow::Result<()> {
+        self.write_defi(|reply| {
+            DatabaseQuery::DefiInstrument(instrument.clone(), Some(migration), reply)
         })
     }
 
@@ -1586,13 +1646,13 @@ fn position_last_event(position: &Position) -> anyhow::Result<OrderFilled> {
         .ok_or_else(|| anyhow::anyhow!("Cannot persist position with no events: {}", position.id))
 }
 
-#[expect(
-    clippy::too_many_lines,
-    reason = "database command dispatch enumerates each cache query variant explicitly"
-)]
 async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque<DatabaseQuery>) {
     for cmd in buffer.drain(..) {
         let result: anyhow::Result<()> = match cmd {
+            #[cfg(feature = "defi")]
+            DatabaseQuery::DefiCurrency(..) | DatabaseQuery::DefiInstrument(..) => {
+                unreachable!("DeFi writes execute before buffering")
+            }
             DatabaseQuery::Close => Ok(()),
             DatabaseQuery::Add(key, value) => DatabaseQueries::add(pool, key, value).await,
             DatabaseQuery::Delete(key) => DatabaseQueries::delete(pool, &key).await,
@@ -1605,88 +1665,9 @@ async fn drain_buffer(pool: &PgPool, trader_id: &TraderId, buffer: &mut VecDeque
             DatabaseQuery::AddCurrency(currency) => {
                 DatabaseQueries::add_currency(pool, currency).await
             }
-            DatabaseQuery::AddInstrument(instrument_any) => match instrument_any {
-                InstrumentAny::Betting(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "BETTING", Box::new(instrument)).await
-                }
-                InstrumentAny::BinaryOption(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "BINARY_OPTION", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::CryptoFuture(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "CRYPTO_FUTURE", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::CryptoFuturesSpread(instrument) => {
-                    DatabaseQueries::add_instrument(
-                        pool,
-                        "CRYPTO_FUTURES_SPREAD",
-                        Box::new(instrument),
-                    )
-                    .await
-                }
-                InstrumentAny::CryptoOption(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "CRYPTO_OPTION", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::CryptoOptionSpread(instrument) => {
-                    DatabaseQueries::add_instrument(
-                        pool,
-                        "CRYPTO_OPTION_SPREAD",
-                        Box::new(instrument),
-                    )
-                    .await
-                }
-                InstrumentAny::CryptoPerpetual(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "CRYPTO_PERPETUAL", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::CurrencyPair(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "CURRENCY_PAIR", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::Equity(equity) => {
-                    DatabaseQueries::add_instrument(pool, "EQUITY", Box::new(equity)).await
-                }
-                InstrumentAny::FuturesContract(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "FUTURES_CONTRACT", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::FuturesSpread(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "FUTURES_SPREAD", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::OptionContract(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "OPTION_CONTRACT", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::Commodity(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "COMMODITY", Box::new(instrument)).await
-                }
-                InstrumentAny::IndexInstrument(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "INDEX_INSTRUMENT", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::Cfd(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "CFD", Box::new(instrument)).await
-                }
-                InstrumentAny::OptionSpread(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "OPTION_SPREAD", Box::new(instrument))
-                        .await
-                }
-                InstrumentAny::PerpetualContract(instrument) => {
-                    DatabaseQueries::add_instrument(
-                        pool,
-                        "PERPETUAL_CONTRACT",
-                        Box::new(instrument),
-                    )
-                    .await
-                }
-                InstrumentAny::TokenizedAsset(instrument) => {
-                    DatabaseQueries::add_instrument(pool, "TOKENIZED_ASSET", Box::new(instrument))
-                        .await
-                }
-            },
+            DatabaseQuery::AddInstrument(instrument) => {
+                DatabaseQueries::add_instrument_any(pool, instrument).await
+            }
             DatabaseQuery::AddInstrumentClose(close) => {
                 DatabaseQueries::add_instrument_close(pool, &close).await
             }

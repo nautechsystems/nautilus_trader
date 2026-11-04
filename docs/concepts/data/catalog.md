@@ -218,7 +218,9 @@ Source schemas can change sampling or trade IDs, but catalog keys do not disting
 Set `params={"update_catalog": True}` to write successful source responses back to the catalog.
 Use `"catalog_name"` to select a registered catalog explicitly.
 
-Write-back requires a client that reports completion explicitly, such as Databento or a Python adapter.
+Write-back requires a client that reports completion explicitly, such as Databento, OKX, or a Python adapter.
+OKX reports completion only for bar, trade, and funding rate windows it returned in full; see
+[OKX historical requests](../../integrations/okx.md#historical-requests).
 Other clients return data without updating the catalog and log why write-back is skipped.
 
 Write-back applies these coverage rules:

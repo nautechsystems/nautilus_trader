@@ -176,10 +176,11 @@ log can accumulate each fill ever applied to that ID. The
   fill from a prior cycle. Without the carried log, the engine finds no matching position fragment
   and rejects the correction.
 
-Realized-PnL snapshots follow the correction. A fill void that reaches an earlier cycle rebuilds the position
-across the cycle boundary. This moves the boundaries its archived snapshots describe. Thus, the engine settles
-those snapshots into the corrected history's own closed cycles, and realized PnL counts each cycle once. A
-void confined to the current cycle leaves the archive intact. See
+A fill void updates the closed-cycle archive when it increases the voided quantity of a trade from an earlier
+cycle or rolls the position back into an already archived cycle. The engine replaces the archive with the
+corrected PnL of closed cycles before the current one, or removes it if no such cycles remain. The archive
+and current position each contribute their own PnL once. Voiding a current-cycle fill leaves the archive intact
+unless the rebuild rolls back into an earlier cycle. See
 [Position snapshotting](../positions.md#position-snapshotting).
 
 ## Risk engine

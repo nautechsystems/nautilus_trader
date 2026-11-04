@@ -22,3 +22,5 @@ pub mod error;
 pub mod handler;
 pub mod messages;
 pub mod parse;
+
+pub(crate) mod failure;

@@ -15,6 +15,7 @@
 
 //! Deribit WebSocket client error types.
 
+use nautilus_network::error::SendError;
 use thiserror::Error;
 use tokio_tungstenite::tungstenite;
 
@@ -30,6 +31,19 @@ pub enum DeribitWsError {
     /// Failed to send message over WebSocket.
     #[error("Send error: {0}")]
     Send(String),
+    /// The handler command channel was closed before the order command was queued.
+    #[error("Order command channel closed")]
+    AdmissionClosed,
+    /// The handler was stopping, so the order command was not written.
+    #[error("Order command canceled before transmission")]
+    CanceledBeforeSend,
+    /// Order-command encoding failed before a write started.
+    #[error("Failed to encode order command: {0}")]
+    Encode(String),
+    /// Order-command send failure. `WriteTimeout` and `BrokenPipe` can follow a started write;
+    /// other variants fail before the write.
+    #[error(transparent)]
+    TransportSend(SendError),
     /// JSON serialization/deserialization error.
     #[error("JSON error: {0}")]
     Json(String),
@@ -99,7 +113,11 @@ pub fn should_retry_deribit_ws_error(error: &DeribitWsError) -> bool {
             )
         }
         DeribitWsError::Json(_)
+        | DeribitWsError::Encode(_)
         | DeribitWsError::Authentication(_)
+        | DeribitWsError::AdmissionClosed
+        | DeribitWsError::CanceledBeforeSend
+        | DeribitWsError::TransportSend(_)
         | DeribitWsError::ClientError(_)
         | DeribitWsError::ParsingError(_)
         | DeribitWsError::TungsteniteError(_)

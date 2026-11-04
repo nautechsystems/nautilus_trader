@@ -845,25 +845,27 @@ With `spot_account_type=AccountType.MARGIN`:
   margin trading).
 
 :::warning
-A leveraged position closed while the node was down is not recovered from its closing fill when
-`reconciliation_lookback_mins` is set. A fully closed lot is absent from `OpenPositions`, so the instrument
-carries no position report. Thus, the engine projects that order's fill as order-only. The order reaches
-`FILLED`, but the cached position keeps both its quantity and realized PnL. The closing PnL is never recorded.
+A position closed while the node was down can recover from explicit closing fills even when
+`reconciliation_lookback_mins` excludes its opening trade. A fully closed margin lot is absent from
+`OpenPositions`, but a complete bounded history can still close its retained position when the closing
+order's normal routing resolves to that position. The fills record closing PnL and fees.
 
-This is the shared engine's documented behavior for an instrument with no in-scope position report, not a
-Kraken rule. See
-[Order-only fill projection](../concepts/execution/reconciliation.md#order-only-fill-projection). Removing the
-synthetic FLAT is what exposes Kraken spot margin to it, because the sweep previously supplied an explicit
-FLAT.
+This uses the shared engine's
+[retained closing recovery](../concepts/execution/reconciliation.md#retained-closing-recovery) rules.
+An incomplete mass status withholds recovery. Eligible closing fills apply independently; other skipped or
+inferred executions do not veto them. Offline additions to a position, re-entry, corrections, and mixed
+explicit/inferred histories may require manual reconciliation.
 
-A periodic position check does not recover it either, since margin mode declares no bulk position
-coverage, and that skip is logged at debug level. The condition also persists across restarts: the
-closing order is then cached as `FILLED` and matches the venue exactly, so reconciliation treats it
-as already in sync.
+When recovery is withheld, the order can reach `FILLED` while the cached position and its economics remain
+unchanged. Startup then logs a warning naming the account, the pair, and the position, where one resolves. A
+periodic position check does not recover that close: margin mode declares no bulk position coverage, so the
+check skips the instrument and logs at debug level. The mismatch can persist across restarts because the
+closing order is already in sync, and a restart with the order cached does not repeat the warning. Reconcile
+such a position manually.
 
-Leaving `reconciliation_lookback_mins` unset avoids the projection. A closing order already in the cache, such
-as a strategy exit submitted before the outage, then recovers into its position. The fill applies to the
-cached order and closes its position.
+Leaving `reconciliation_lookback_mins` unset avoids bounded order-only projection. A closing order already in
+the cache, such as a strategy exit submitted before the outage, then recovers into its position. The fill
+applies to the cached order and closes its position.
 
 It is not a general remedy, because a closing order absent from the cache is attributed to the `EXTERNAL`
 strategy and keys a netting position by instrument and strategy. Unless the cached position is
@@ -871,19 +873,23 @@ strategy and keys a netting position by instrument and strategy. Unless the cach
 second, opposite position. It does not close the cached one. Net exposure reaches zero, but the stale position
 and its realized PnL remain.
 
-Until this is addressed, reconcile a margin position closed during downtime manually. Cash mode does not avoid
-it:
+Cash-mode recovery also depends on position-report coverage:
 
 - With `use_spot_position_reports=False`, the default, or for an instrument outside
-  `spot_positions_quote_currency`, the client declares no bulk position coverage. The closing fill is
-  projected order-only and the periodic check skips the instrument, as in margin mode.
-- For a covered instrument, a sale that leaves a zero wallet balance gets no wallet report, so startup still
-  projects the closing fill order-only: that projection keys on the report, not on coverage. A periodic
-  position check, when enabled, does not apply the fill either. With `generate_missing_orders` enabled (the
-  default), it falls back to a synthetic order at the cached average entry price, attributed as above, so it
-  opens an offsetting `EXTERNAL` position under the same conditions.
+  `spot_positions_quote_currency`, the client declares no bulk position coverage. Eligible explicit closing
+  fills recover retained exposure and economics only when the instrument passes the rules above.
+  Otherwise, its fills remain order-only. The periodic check skips the instrument.
+- For a covered instrument, startup reports a cached open `LONG` position as `FLAT` when the wallet shows its
+  base asset as flat (see [Spot position reports (cash mode)](#spot-position-reports-cash-mode)). A closing
+  fill in the startup reports then closes the position with its PnL and fees when the closing order is cached
+  or claimed by the position's strategy. A closing order that is neither cached nor claimed opens an
+  offsetting `EXTERNAL` position instead, as above. A closing fill the reports miss, because it predates the
+  lookback window or its row cannot be parsed, is inferred from the order report without a fee.
+- Where startup withholds that `FLAT`, the instrument carries no position report, so startup projects the
+  closing fill order-only. A periodic position check, when enabled, does not apply the fill either. With
+  `generate_missing_orders` enabled (the default), it falls back to a synthetic order at the cached average
+  entry price, attributed as above, so the closing PnL and fees are not recorded.
 
-Either way the closing PnL and fees are not recorded.
 :::
 
 ### Futures reconciliation
@@ -1054,6 +1060,29 @@ independently of this option (see [Spot margin trading](#spot-margin-trading)).
   so an instrument quoted in anything else is never reconciled to flat from a missing report.
 - This prevents duplicate reports when the same asset is available with multiple
   quote currencies (e.g., BTC/USD, BTC/USDT, BTC/EUR).
+- At startup, the mass status also reports `FLAT` for each cached open `LONG` position on a covered
+  instrument whose base asset the
+  [`POST /0/private/Balance`](https://docs.kraken.com/api-reference/account-data/get-account-balance) read
+  shows as flat: the base has no row, or its rows sum to an amount that rounds to zero at the instrument's
+  size precision. Every row of the base counts: its code in either spelling (`XXBT`, `XBT`), and a dotted
+  code whose part before the last dot names the base, as is or once trailing digits are removed, such as
+  `XBT.F`, `DOT28.S`, or `EUR.HOLD` for BTC, DOT, or EUR.
+- Kraken documents that read as net of pending withdrawals, so a withdrawal reduces it while still pending.
+- The `FLAT` is withheld, with a warning, when the rows of the base sum to a nonzero amount that no `LONG`
+  report carries, such as a suffixed (`XBT.F`), staking (`DOT.S`), or hold (`EUR.HOLD`) balance. It is also
+  withheld when an order report shows a `SELL` on the instrument that is not terminal, when a cached open or
+  in-flight `SELL` on the instrument has no matching order report, when the instrument is missing from the
+  cache, and for tokenized assets (xStocks), whose `Balance` key and units are not documented.
+- A row that counts toward the base of a position that can get this `FLAT` fails the startup mass status
+  when it cannot be parsed or is negative. Other rows that cannot be parsed are skipped.
+- Periodic position checks get no such report, since a missing report there already means flat for a
+  covered instrument.
+- A position reported `FLAT` with no closing fill in the startup reports, as after a withdrawal or a sale of
+  the base through another pair, reconciles as a discrepancy, with or without a lookback. With
+  `generate_missing_orders` enabled (the default), a position whose strategy claims the instrument closes at
+  its cached average entry price, with no closing PnL or fee. Otherwise the synthetic order belongs to
+  `EXTERNAL` and opens an offsetting position next to the strategy's. With `generate_missing_orders`
+  disabled, startup stops on the unresolved position.
 
 **Configuration**:
 
@@ -1176,8 +1205,9 @@ read would actually enumerate: cash mode with `use_spot_position_reports=True`, 
 instrument quoted in `spot_positions_quote_currency` (see Spot position reports, which applies
 the same filter). Under `spot_account_type=AccountType.MARGIN` the source is `OpenPositions`, which omits
 unleveraged lots, and cash mode without wallet-derived reports returns nothing at all. Wherever
-coverage is not declared, an absent report leaves the cached position untouched instead of
-closing it.
+coverage is not declared, an absent report alone leaves the cached position untouched. Startup can still
+apply eligible explicit closing fills under the
+[retained closing recovery](../concepts/execution/reconciliation.md#retained-closing-recovery) rules.
 
 ## Funding rates
 

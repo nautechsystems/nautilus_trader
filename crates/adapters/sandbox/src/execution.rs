@@ -21,7 +21,7 @@ use ahash::{AHashMap, AHashSet};
 use async_trait::async_trait;
 use nautilus_common::{
     cache::Cache,
-    clients::ExecutionClient,
+    clients::{ExecutionClient, generate_mass_status},
     clock::Clock,
     factories::OrderEventFactory,
     live::try_get_exec_event_sender,
@@ -76,6 +76,9 @@ const EXPIRED_ENGINE_SWEEP_INTERVAL: DurationNanos = DurationNanos::from_mins(1)
 /// The `SandboxExecutionClient` simulates order execution using the `OrderMatchingEngine`
 /// to match orders against market data. This enables strategy testing in real-time
 /// without actual order execution on exchanges.
+///
+/// Order status reports use cached orders with a venue order ID for this account and venue.
+/// Full-history requests include retained closed orders.
 pub struct SandboxExecutionClient {
     core: RefCell<ExecutionClientCore>,
     factory: OrderEventFactory,
@@ -882,18 +885,62 @@ impl ExecutionClient for SandboxExecutionClient {
 
     async fn generate_order_status_report(
         &self,
-        _cmd: &GenerateOrderStatusReport,
+        cmd: &GenerateOrderStatusReport,
     ) -> anyhow::Result<Option<OrderStatusReport>> {
-        // Sandbox orders are tracked internally
-        Ok(None)
+        let cache = self.cache.borrow();
+
+        let client_order_id = cmd.client_order_id.or_else(|| {
+            cmd.venue_order_id
+                .and_then(|id| cache.client_order_id(&id).copied())
+        });
+
+        let Some(order) = client_order_id.and_then(|id| cache.order(&id)) else {
+            return Ok(None);
+        };
+
+        if order.account_id() != Some(self.core.borrow().account_id)
+            || order.instrument_id().venue != self.config.venue
+            || cmd
+                .instrument_id
+                .is_some_and(|id| id != order.instrument_id())
+            || cmd
+                .venue_order_id
+                .is_some_and(|id| Some(id) != order.venue_order_id())
+        {
+            return Ok(None);
+        }
+
+        let ts_init = self.clock.borrow().timestamp_ns();
+        Ok(order_status_report(&order, ts_init))
     }
 
     async fn generate_order_status_reports(
         &self,
-        _cmd: &GenerateOrderStatusReports,
+        cmd: &GenerateOrderStatusReports,
     ) -> anyhow::Result<Vec<OrderStatusReport>> {
-        // Sandbox orders are tracked internally
-        Ok(Vec::new())
+        let account_id = self.core.borrow().account_id;
+        let ts_init = self.clock.borrow().timestamp_ns();
+        let cache = self.cache.borrow();
+
+        let reports = cache
+            .orders_refs(
+                Some(&self.config.venue),
+                cmd.instrument_id.as_ref(),
+                None,
+                Some(&account_id),
+                None,
+            )
+            .into_iter()
+            .filter(|order| !cmd.open_only || order.is_open() || order.is_inflight())
+            .filter(|order| {
+                !order.is_closed()
+                    || (cmd.start.is_none_or(|start| order.ts_last() >= start)
+                        && cmd.end.is_none_or(|end| order.ts_last() <= end))
+            })
+            .filter_map(|order| order_status_report(&order, ts_init))
+            .collect();
+
+        Ok(reports)
     }
 
     async fn generate_fill_reports(
@@ -914,18 +961,25 @@ impl ExecutionClient for SandboxExecutionClient {
 
     async fn generate_mass_status(
         &self,
-        _lookback_mins: Option<u64>,
+        lookback_mins: Option<u64>,
     ) -> anyhow::Result<Option<ExecutionMassStatus>> {
-        let core = self.core.borrow();
         let ts_init = self.clock.borrow().timestamp_ns();
-        Ok(Some(ExecutionMassStatus::new(
-            core.client_id,
-            core.account_id,
-            core.venue,
-            ts_init,
-            None,
-        )))
+        generate_mass_status(self, lookback_mins, ts_init).await
     }
+}
+
+fn order_status_report(order: &OrderAny, ts_init: UnixNanos) -> Option<OrderStatusReport> {
+    let mut report = order.to_order_status_report(None)?;
+    report.ts_init = ts_init;
+    report.venue_position_id = None;
+
+    for event in order.events() {
+        if let OrderEventAny::Canceled(event) = event {
+            report.cancel_reason = event.reason.map(|reason| reason.to_string());
+        }
+    }
+
+    Some(report)
 }
 
 // Wrapped in `Rc<RefCell<>>` so message handlers can hold weak references
