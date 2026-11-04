@@ -6,7 +6,7 @@
 
 [prek]
 kind = "tool"
-version = "0.5.7"
+version = "0.5.9"
 ci = true
 releases = "pypi:prek"
 
@@ -84,7 +84,7 @@ releases = "crates:cargo-audit"
 
 [cargo-binstall]
 kind = "tool"
-version = "1.26.1"
+version = "1.26.2"
 releases = "crates:cargo-binstall"
 
 [cargo-deny]
@@ -109,7 +109,7 @@ releases = "crates:cargo-hack"
 
 [cargo-hawk]
 kind = "tool"
-version = "0.1.15"
+version = "0.1.17"
 releases = "crates:cargo-hawk"
 
 [cargo-llvm-cov]
@@ -139,7 +139,7 @@ releases = "crates:rust-code-analysis-cli"
 
 [uv]
 kind = "tool"
-version = "0.13.5"
+version = "0.13.6"
 releases = "pypi:uv"
 
 [pip-audit]

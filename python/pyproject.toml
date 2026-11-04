@@ -155,12 +155,12 @@ no-build-package = [
 ]
 
 [dependency-groups]
-dev = ["maturin==1.15.0", "ruff>=0.17.3", "ty>=0.0.91"]
+dev = ["maturin==1.15.0", "ruff>=0.17.3", "ty>=0.0.92"]
 test = [
   "pyarrow>=26.0.0",
   "polars",
-  "pytest>=9.1.1",
-  "pytest-asyncio>=1.4.0",
+  "pytest>=9.2.0",
+  "pytest-asyncio>=1.4.1",
   "pytest-cov>=7.1.0",
   "pytest-memray>=1.10.0; sys_platform == 'darwin' or sys_platform == 'linux'",
   "pytest-xdist[psutil]>=3.8.0",

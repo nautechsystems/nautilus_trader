@@ -174,14 +174,24 @@ Released on TBD (UTC).
 - Standardized module ordering checks to place unconditional modules before cfg-gated modules
 - Refined Polymarket limit submit responses and venue order ID lookup
 - Optimized empty command-queue drains and L1 order-book quote replacement
+- Upgraded `cargo-binstall` tool to v1.26.2
 - Upgraded `cargo-codspeed` tool to v6.0.0
+- Upgraded `cargo-hawk` tool to v0.1.17
 - Upgraded `cargo-nextest` tool to v0.9.150
+- Upgraded `prek` tool to v0.5.9
 - Upgraded `socket-cli` tool to v1.11.1
+- Upgraded `uv` tool to v0.13.6
+- Upgraded `uv` pre-commit hook to v0.13.6
 - Upgraded `arrow` and `parquet` crates to v59.3.2
 - Upgraded `aws-lc-rs` crate to v1.19.0
 - Upgraded `hypersync-client` crate to v2.0.0
+- Upgraded `log` crate to v0.4.35
+- Upgraded `redis` crate to v1.8.1
+- Upgraded `sysinfo` crate to v0.40.1
+- Upgraded `pytest` package (test) to v9.2.0
+- Upgraded `pytest-asyncio` package (test) to v1.4.1
 - Upgraded `ruff` package (dev) to v0.17.3
-- Upgraded `ty` package (dev) to v0.0.91
+- Upgraded `ty` package (dev) to v0.0.92
 
 ### Documentation Updates
 

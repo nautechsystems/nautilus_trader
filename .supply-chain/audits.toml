@@ -3666,6 +3666,12 @@ criteria = "safe-to-deploy"
 delta = "0.4.33 -> 0.4.34"
 notes = "Reviewed the published 0.4.33 -> 0.4.34 crate. Adds alloc-gated boxed logger support, with std enabling alloc; this workspace enables std. No new unsafe, build script, filesystem, network, process, credential, or data-exfiltration behavior."
 
+[[audits.log]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.4.34 -> 0.4.35"
+notes = "Reviewed the checksum-verified published delta. Removes only the stale html_root_url documentation attribute and its version-maintenance comment. Runtime source and dependencies are unchanged."
+
 [[audits.lru]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4283,6 +4289,13 @@ delta = "1.7.1 -> 1.8.0"
 importable = false
 notes = "Reviewed published enabled Tokio, connection-manager, pubsub, Sentinel, and rustls changes. Subscription commands await all confirmations, tuple decoding checks arity, and Debug redacts secrets. Sentinel lookup tries later configured sentinels, validates ROLE before caching, and bounds concurrency. Native-TLS, cluster, and unfinished search additions are outside the enabled graph. No new unsafe code or build script."
 
+[[audits.redis]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "1.8.0 -> 1.8.1"
+importable = false
+notes = "Reviewed the checksum-verified published delta. Corrects XINFO radix-tree-keys decoding, skips queued RESP2 pubsub messages while unsubscribing, and excludes push messages from late-reply accounting. Cache invalidation fixes remain outside the enabled graph. No new dependencies, unsafe code, build script, endpoints, or credential behavior."
+
 [[audits.redox_syscall]]
 who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
@@ -4781,6 +4794,13 @@ who = "Nautech Systems <info@nautechsystems.io>"
 criteria = "safe-to-deploy"
 delta = "0.39.2 -> 0.39.3"
 notes = "Two bug fixes: Unix Network::mac_addr retrieval; Linux process-info retrieval race when a process terminates mid-read."
+
+[[audits.sysinfo]]
+who = "Nautech Systems <info@nautechsystems.io>"
+criteria = "safe-to-deploy"
+delta = "0.39.6 -> 0.40.1"
+importable = false
+notes = "Reviewed the checksum-verified system-feature delta for startup CPU, memory, OS, and hostname queries on Linux, macOS, and Windows. Constructors and metadata queries return Result; existing OS-read buffers and FFI ownership remain bounded by their platform APIs. Windows PDH counters use query-owned handles; Linux removes the file-limit mutation. GPU, user, network, and disk features are disabled, and process enumeration is not called by this workspace. No build script, subprocess, network, or credential access is added to the used paths. MIT license is unchanged."
 
 [[audits.tabled]]
 who = "Nautech Systems <info@nautechsystems.io>"
