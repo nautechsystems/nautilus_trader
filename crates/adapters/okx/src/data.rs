@@ -1929,11 +1929,8 @@ fn instrument_definitions_match(a: &InstrumentAny, b: &InstrumentAny) -> bool {
 /// Summary of a single instrument reconciliation pass.
 #[derive(Debug)]
 struct InstrumentReconciliation {
-    /// Instruments returned by the REST API after filtering.
     fetched: usize,
-    /// New or materially changed definitions published downstream.
     changed: usize,
-    /// Cached instruments absent from the REST response, retained in place.
     missing: usize,
 }
 

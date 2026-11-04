@@ -215,6 +215,12 @@ pub(crate) struct PendingOrderInfo {
 }
 
 /// Provides a WebSocket client for connecting to [OKX](https://okx.com).
+///
+/// Instruments with the same base pair share one `index-tickers` subscription.
+/// Only the first subscriber triggers a venue subscribe, and only the last triggers
+/// a venue unsubscribe. Reference count updates and venue sends are serialized so
+/// concurrent subscription changes cannot leave the venue unsubscribed while local
+/// subscribers remain.
 #[derive(Clone)]
 pub struct OKXWebSocketClient {
     clock: &'static AtomicTime,
@@ -243,21 +249,9 @@ pub struct OKXWebSocketClient {
     pub(crate) pending_amends: Arc<DashMap<String, PendingOrderInfo>>,
     pub(crate) pending_command_ids: Arc<DashMap<String, Vec<(ClientOrderId, UUID4)>>>,
     option_greeks_subs: Arc<AtomicMap<InstrumentId, AHashSet<OKXGreeksType>>>,
-    /// Per-base-pair refcount for the `index-tickers` channel. Multiple
-    /// instruments commonly share one base pair (e.g. `BTC-USDT-SWAP` and
-    /// `BTC-USDT-240628` both depend on `BTC-USDT`), so the venue
-    /// (un)subscribe must only fire on the 0↔1 transitions. Without this
-    /// refcount, a Python caller unsubscribing one instrument would tear
-    /// down the channel for every other subscriber on the same pair.
     index_pair_subscribers: Arc<DashMap<Ustr, usize>>,
-    /// Serializes index-tickers transitions so a concurrent
-    /// subscribe/unsubscribe pair on the same base pair cannot interleave
-    /// the refcount check with the venue send and leave the channel
-    /// unsubscribed while the local count says it is live.
     index_pair_transition: Arc<tokio::sync::Mutex<()>>,
-    /// WebSocket transport backend (defaults to `Tungstenite`).
     transport_backend: TransportBackend,
-    /// Optional proxy URL for the WebSocket transport.
     proxy_url: Option<SecretString>,
     cancellation_token: CancellationToken,
     socket_control: Option<Arc<SocketControl>>,
