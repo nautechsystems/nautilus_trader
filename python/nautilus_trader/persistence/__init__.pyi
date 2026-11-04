@@ -158,6 +158,20 @@ class ParquetDataCatalog:
         storage_options: typing.Mapping[str, str] | None = None,
         dry_run: bool = False,
     ) -> int: ...
+    def write_order_book_deltas(
+        self,
+        data: typing.Sequence[model.OrderBookDelta],
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
+    ) -> str: ...
+    def write_order_book_depths(
+        self,
+        data: typing.Sequence[model.OrderBookDepth],
+        start: int | None = None,
+        end: int | None = None,
+        skip_disjoint_check: bool = False,
+    ) -> str: ...
     def write_quote_ticks(
         self,
         data: typing.Sequence[model.QuoteTick],
@@ -172,23 +186,9 @@ class ParquetDataCatalog:
         end: int | None = None,
         skip_disjoint_check: bool = False,
     ) -> str: ...
-    def write_order_book_deltas(
-        self,
-        data: typing.Sequence[model.OrderBookDelta],
-        start: int | None = None,
-        end: int | None = None,
-        skip_disjoint_check: bool = False,
-    ) -> str: ...
     def write_bars(
         self,
         data: typing.Sequence[model.Bar],
-        start: int | None = None,
-        end: int | None = None,
-        skip_disjoint_check: bool = False,
-    ) -> str: ...
-    def write_order_book_depths(
-        self,
-        data: typing.Sequence[model.OrderBookDepth],
         start: int | None = None,
         end: int | None = None,
         skip_disjoint_check: bool = False,
@@ -423,6 +423,20 @@ class ParquetDataCatalog:
         files: typing.Sequence[str] | None = None,
         optimize_file_loading: bool = True,
     ) -> list[typing.Any]: ...
+    def query_order_book_deltas(
+        self,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[model.OrderBookDelta]: ...
+    def query_order_book_depths(
+        self,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[model.OrderBookDepth]: ...
     def query_quote_ticks(
         self,
         identifiers: typing.Sequence[str] | None = None,
@@ -437,13 +451,6 @@ class ParquetDataCatalog:
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[model.TradeTick]: ...
-    def query_order_book_deltas(
-        self,
-        identifiers: typing.Sequence[str] | None = None,
-        start: int | None = None,
-        end: int | None = None,
-        where_clause: str | None = None,
-    ) -> list[model.OrderBookDelta]: ...
     def query_bars(
         self,
         identifiers: typing.Sequence[str] | None = None,
@@ -451,13 +458,6 @@ class ParquetDataCatalog:
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[model.Bar]: ...
-    def query_order_book_depths(
-        self,
-        identifiers: typing.Sequence[str] | None = None,
-        start: int | None = None,
-        end: int | None = None,
-        where_clause: str | None = None,
-    ) -> list[model.OrderBookDepth]: ...
     def query_mark_price_updates(
         self,
         identifiers: typing.Sequence[str] | None = None,
@@ -486,6 +486,20 @@ class ParquetDataCatalog:
         end: int | None = None,
         where_clause: str | None = None,
     ) -> list[model.OptionGreeks]: ...
+    def query_instrument_statuses(
+        self,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[model.InstrumentStatus]: ...
+    def query_instrument_closes(
+        self,
+        identifiers: typing.Sequence[str] | None = None,
+        start: int | None = None,
+        end: int | None = None,
+        where_clause: str | None = None,
+    ) -> list[model.InstrumentClose]: ...
     def list_data_types(
         self,
     ) -> list[model.NautilusDataType | model.NautilusRecordType | model.NautilusInstrumentType]: ...

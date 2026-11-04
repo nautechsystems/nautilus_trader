@@ -347,6 +347,155 @@ def test_funding_rate_updates_round_trip(tmp_path: Path) -> None:
     ] == [second.to_dict()]
 
 
+@pytest.mark.parametrize("kind", ["statuses", "closes"])
+@pytest.mark.parametrize(
+    ("query_kwargs", "expected_indices"),
+    [
+        ({}, [0, 1, 2, 3]),
+        ({"identifiers": ["ETHUSDT.BINANCE"]}, [0, 1, 3]),
+        ({"identifiers": ["BTCUSDT.BINANCE"]}, [2]),
+        ({"identifiers": ["MISSING.BINANCE"]}, []),
+        ({"start": 2_002}, [1, 2, 3]),
+        ({"end": 2_002}, [0, 1]),
+        ({"start": 2_002, "end": 2_002}, [1]),
+        (
+            {"identifiers": ["ETHUSDT.BINANCE"], "start": 1_500, "end": 2_600},
+            [1],
+        ),
+        ({"where_clause": "ts_event = TIMESTAMP '1970-01-01 00:00:00.000000200'"}, [1]),
+        ({"start": 4_000}, []),
+    ],
+)
+def test_instrument_typed_queries_match_generic_query(
+    tmp_path: Path,
+    kind: str,
+    query_kwargs: dict[str, Any],
+    expected_indices: list[int],
+) -> None:
+    """
+    Preserve every instrument status and close field through typed queries and filters.
+    """
+    catalog = ParquetDataCatalog(str(tmp_path))
+    first_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+    second_id = InstrumentId.from_str("BTCUSDT.BINANCE")
+
+    if kind == "statuses":
+        data_type = NautilusDataType.InstrumentStatus
+        records = [
+            InstrumentStatus(
+                first_id,
+                MarketStatusAction.TRADING,
+                100,
+                1_001,
+                reason="Normal trading",
+                trading_event="MARKET_OPEN",
+                is_trading=True,
+                is_quoting=False,
+                is_short_sell_restricted=True,
+            ),
+            InstrumentStatus(
+                first_id,
+                MarketStatusAction.HALT,
+                200,
+                2_002,
+                reason="Trading halt",
+                trading_event="MARKET_HALT",
+                is_trading=False,
+                is_quoting=True,
+                is_short_sell_restricted=False,
+            ),
+            InstrumentStatus(second_id, MarketStatusAction.TRADING, 250, 2_504),
+            InstrumentStatus(
+                first_id,
+                MarketStatusAction.TRADING,
+                300,
+                3_003,
+                is_short_sell_restricted=False,
+            ),
+        ]
+    else:
+        data_type = NautilusDataType.InstrumentClose
+        records = [
+            InstrumentClose(
+                first_id,
+                Price.from_str("100.25"),
+                InstrumentCloseType.END_OF_SESSION,
+                100,
+                1_001,
+            ),
+            InstrumentClose(
+                first_id,
+                Price.from_str("101.375"),
+                InstrumentCloseType.CONTRACT_EXPIRED,
+                200,
+                2_002,
+            ),
+            InstrumentClose(
+                second_id,
+                Price.from_str("200.50"),
+                InstrumentCloseType.END_OF_SESSION,
+                250,
+                2_504,
+            ),
+            InstrumentClose(
+                first_id,
+                Price.from_str("102.5"),
+                InstrumentCloseType.END_OF_SESSION,
+                300,
+                3_003,
+            ),
+        ]
+
+    for record in records:
+        getattr(catalog, f"write_instrument_{kind}")([record])
+    expected = [records[index].to_dict() for index in expected_indices]
+    typed = getattr(catalog, f"query_instrument_{kind}")(**query_kwargs)
+    positional = getattr(catalog, f"query_instrument_{kind}")(
+        query_kwargs.get("identifiers"),
+        query_kwargs.get("start"),
+        query_kwargs.get("end"),
+        query_kwargs.get("where_clause"),
+    )
+    generic = catalog.query(data_type, **query_kwargs)
+
+    assert [type(item) for item in typed] == [type(records[0])] * len(expected)
+    assert [item.to_dict() for item in typed] == expected
+    assert [item.to_dict() for item in positional] == expected
+    assert [item.to_dict() for item in generic] == expected
+
+
+@pytest.mark.parametrize("kind", ["statuses", "closes"])
+def test_instrument_typed_queries_preserve_query_errors(tmp_path: Path, kind: str) -> None:
+    """
+    Report invalid SQL through the same I/O error boundary as generic queries.
+    """
+    catalog = ParquetDataCatalog(str(tmp_path))
+    instrument_id = InstrumentId.from_str("ETHUSDT.BINANCE")
+
+    if kind == "statuses":
+        data_type = NautilusDataType.InstrumentStatus
+        record = InstrumentStatus(instrument_id, MarketStatusAction.TRADING, 100, 1_001)
+    else:
+        data_type = NautilusDataType.InstrumentClose
+        record = InstrumentClose(
+            instrument_id,
+            Price.from_str("100.25"),
+            InstrumentCloseType.END_OF_SESSION,
+            100,
+            1_001,
+        )
+    getattr(catalog, f"write_instrument_{kind}")([record])
+
+    with pytest.raises(OSError, match="Failed to query data") as typed_error:
+        getattr(catalog, f"query_instrument_{kind}")(where_clause="nonexistent_column = 1")
+    with pytest.raises(OSError, match="Query failed") as generic_error:
+        catalog.query(data_type, where_clause="nonexistent_column = 1")
+
+    assert str(typed_error.value).removeprefix("Failed to query data: ") == str(
+        generic_error.value,
+    ).removeprefix("Query failed: ")
+
+
 @pytest.mark.parametrize("backend", ["parquet"])
 @pytest.mark.parametrize("transport", ["bytes", "stream"])
 def test_raw_multi_identity_query_uses_truthful_ipc_schema(

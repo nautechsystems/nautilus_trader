@@ -138,15 +138,17 @@ catalog.write_bars(bars, skip_disjoint_check=True)
 
 The built-in market-data writers are:
 
-- `write_quote_ticks`
-- `write_trade_ticks`
 - `write_order_book_deltas`
 - `write_order_book_depths`
+- `write_quote_ticks`
+- `write_trade_ticks`
 - `write_bars`
 - `write_mark_price_updates`
 - `write_index_price_updates`
 - `write_funding_rate_updates`
 - `write_option_greeks`
+- `write_instrument_statuses`
+- `write_instrument_closes`
 
 Each writer accepts optional `start` and `end` overrides as UNIX nanoseconds. The data in one call
 must have one identity, such as one instrument ID or bar type, and must be ordered by `ts_init`.
@@ -244,10 +246,10 @@ returned data.
 
 ### Core parameters
 
-- `data_type` is a `NautilusDataType` value: `QuoteTick`, `TradeTick`, `Bar`, `OrderBookDelta`,
-  `OrderBookDepth`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `InstrumentStatus`,
-  `OptionGreeks`, `InstrumentClose`, or `Instrument`. `Instrument` loads each instrument class the catalog
-  holds for the selected identifiers.
+- `data_type` is a `NautilusDataType` value: `Instrument`, `OrderBookDelta`, `OrderBookDepth`, `QuoteTick`,
+  `TradeTick`, `Bar`, `MarkPriceUpdate`, `IndexPriceUpdate`, `FundingRateUpdate`, `OptionGreeks`,
+  `InstrumentStatus`, or `InstrumentClose`. `Instrument` loads each instrument class the catalog holds
+  for the selected identifiers.
 - `catalog` is a required `DataCatalogConfig` that supplies the source for instrument and replay data loading.
 - One of `instrument_id`, `instrument_ids`, or `bar_types` is required.
 - `start_time` and `end_time` are optional UNIX nanosecond bounds.
@@ -520,8 +522,8 @@ catalog.consolidate_data(
 Split data files into fixed periods. Durations and time bounds use nanoseconds. Both methods accept
 optional bounds. Supply an identifier to the data-type method for data partitioned by instrument.
 
-- **Catalog-wide method**: Processes quotes, trades, order book deltas, order book depths, bars,
-  index prices, mark prices, instrument closes, and registered custom types. It logs a warning
+- **Catalog-wide method**: Processes order book deltas, order book depths, quotes, trades, bars,
+  mark prices, index prices, instrument closes, and registered custom types. It logs a warning
   and skips other types.
 - **Data-type method**: Rejects instrument and record selectors, which have no period-typed rewrite. Use
   `consolidate_data(...)` for those.
@@ -562,7 +564,8 @@ instrument ID for data partitioned by instrument. The time bounds work as follow
 - Omitting `end` extends the range to the end.
 - For `delete_data_range(...)`, omitting both bounds removes all matching data.
 
-`delete_data_range(...)` supports quotes, trades, bars, order book deltas, order book depth, and
+`delete_data_range(...)` supports order book deltas, order book depth, quotes, trades, bars, mark prices,
+index prices, funding rate updates, option Greeks, instrument status updates, instrument closes, and
 registered custom types. Pass `NautilusDataType.OrderBookDepth` for order book depth and
 `NautilusDataType.Custom("MarketTickPython")` for a custom data type.
 

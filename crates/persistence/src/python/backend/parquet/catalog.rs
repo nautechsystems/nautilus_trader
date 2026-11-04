@@ -217,6 +217,68 @@ impl PyParquetDataCatalog {
         .map_err(to_pyio_err)
     }
 
+    /// Write order book delta data to Parquet files.
+    ///
+    /// # Parameters
+    ///
+    /// - `data`: Vector of order book deltas to write
+    /// - `start`: Optional start timestamp override (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp override (nanoseconds since Unix epoch)
+    ///
+    /// # Returns
+    ///
+    /// Returns the path of the created file as a string.
+    #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
+    pub fn write_order_book_deltas(
+        &self,
+        py: Python<'_>,
+        data: Vec<OrderBookDelta>,
+        start: Option<u64>,
+        end: Option<u64>,
+        skip_disjoint_check: bool,
+    ) -> PyResult<String> {
+        write_parquet_data(
+            py,
+            self,
+            data,
+            start,
+            end,
+            skip_disjoint_check,
+            "order book deltas",
+        )
+    }
+
+    /// Write order book depth data to Parquet files.
+    ///
+    /// # Parameters
+    ///
+    /// - `data`: Vector of order book depths to write
+    /// - `start`: Optional start timestamp override (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp override (nanoseconds since Unix epoch)
+    ///
+    /// # Returns
+    ///
+    /// Returns the path of the created file as a string.
+    #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
+    pub fn write_order_book_depths(
+        &self,
+        py: Python<'_>,
+        data: Vec<OrderBookDepth>,
+        start: Option<u64>,
+        end: Option<u64>,
+        skip_disjoint_check: bool,
+    ) -> PyResult<String> {
+        write_parquet_data(
+            py,
+            self,
+            data,
+            start,
+            end,
+            skip_disjoint_check,
+            "order book depths",
+        )
+    }
+
     /// Write quote tick data to Parquet files.
     ///
     /// # Parameters
@@ -279,37 +341,6 @@ impl PyParquetDataCatalog {
         )
     }
 
-    /// Write order book delta data to Parquet files.
-    ///
-    /// # Parameters
-    ///
-    /// - `data`: Vector of order book deltas to write
-    /// - `start`: Optional start timestamp override (nanoseconds since Unix epoch)
-    /// - `end`: Optional end timestamp override (nanoseconds since Unix epoch)
-    ///
-    /// # Returns
-    ///
-    /// Returns the path of the created file as a string.
-    #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
-    pub fn write_order_book_deltas(
-        &self,
-        py: Python<'_>,
-        data: Vec<OrderBookDelta>,
-        start: Option<u64>,
-        end: Option<u64>,
-        skip_disjoint_check: bool,
-    ) -> PyResult<String> {
-        write_parquet_data(
-            py,
-            self,
-            data,
-            start,
-            end,
-            skip_disjoint_check,
-            "order book deltas",
-        )
-    }
-
     /// Write bar data to Parquet files.
     ///
     /// # Parameters
@@ -331,37 +362,6 @@ impl PyParquetDataCatalog {
         skip_disjoint_check: bool,
     ) -> PyResult<String> {
         write_parquet_data(py, self, data, start, end, skip_disjoint_check, "bars")
-    }
-
-    /// Write order book depth data to Parquet files.
-    ///
-    /// # Parameters
-    ///
-    /// - `data`: Vector of order book depths to write
-    /// - `start`: Optional start timestamp override (nanoseconds since Unix epoch)
-    /// - `end`: Optional end timestamp override (nanoseconds since Unix epoch)
-    ///
-    /// # Returns
-    ///
-    /// Returns the path of the created file as a string.
-    #[pyo3(signature = (data, start=None, end=None, skip_disjoint_check=false))]
-    pub fn write_order_book_depths(
-        &self,
-        py: Python<'_>,
-        data: Vec<OrderBookDepth>,
-        start: Option<u64>,
-        end: Option<u64>,
-        skip_disjoint_check: bool,
-    ) -> PyResult<String> {
-        write_parquet_data(
-            py,
-            self,
-            data,
-            start,
-            end,
-            skip_disjoint_check,
-            "order book depths",
-        )
     }
 
     /// Write mark price update data to Parquet files.
@@ -1526,17 +1526,6 @@ impl PyParquetDataCatalog {
         }
 
         let data = match data_type {
-            NautilusDataType::QuoteTick => typed!(QuoteTick),
-            NautilusDataType::TradeTick => typed!(TradeTick),
-            NautilusDataType::Bar => typed!(Bar),
-            NautilusDataType::OrderBookDelta => typed!(OrderBookDelta),
-            NautilusDataType::OrderBookDepth => typed!(OrderBookDepth),
-            NautilusDataType::IndexPriceUpdate => typed!(IndexPriceUpdate),
-            NautilusDataType::MarkPriceUpdate => typed!(MarkPriceUpdate),
-            NautilusDataType::FundingRateUpdate => typed!(FundingRateUpdate),
-            NautilusDataType::OptionGreeks => typed!(OptionGreeks),
-            NautilusDataType::InstrumentStatus => typed!(InstrumentStatus),
-            NautilusDataType::InstrumentClose => typed!(InstrumentClose),
             NautilusDataType::Custom { type_name } => py
                 .detach(|| {
                     self.inner.query_custom_data_dynamic(
@@ -1567,6 +1556,17 @@ impl PyParquetDataCatalog {
                     .map(|instrument| instrument_any_to_pyobject(py, instrument))
                     .collect();
             }
+            NautilusDataType::OrderBookDelta => typed!(OrderBookDelta),
+            NautilusDataType::OrderBookDepth => typed!(OrderBookDepth),
+            NautilusDataType::QuoteTick => typed!(QuoteTick),
+            NautilusDataType::TradeTick => typed!(TradeTick),
+            NautilusDataType::Bar => typed!(Bar),
+            NautilusDataType::MarkPriceUpdate => typed!(MarkPriceUpdate),
+            NautilusDataType::IndexPriceUpdate => typed!(IndexPriceUpdate),
+            NautilusDataType::FundingRateUpdate => typed!(FundingRateUpdate),
+            NautilusDataType::OptionGreeks => typed!(OptionGreeks),
+            NautilusDataType::InstrumentStatus => typed!(InstrumentStatus),
+            NautilusDataType::InstrumentClose => typed!(InstrumentClose),
             #[cfg(feature = "defi")]
             NautilusDataType::Defi => {
                 return Err(to_pytype_err("Defi data is not supported by query"));
@@ -1585,6 +1585,76 @@ impl PyParquetDataCatalog {
         }
 
         Ok(python_objects)
+    }
+
+    /// Query order book delta data from Parquet files.
+    ///
+    /// # Parameters
+    ///
+    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
+    ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
+    ///   For bars, partial matching is supported.
+    /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
+    /// - `where_clause`: Optional SQL WHERE clause for additional filtering
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `OrderBookDelta` objects matching the query criteria.
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
+    pub fn query_order_book_deltas(
+        &mut self,
+        py: Python<'_>,
+        identifiers: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        where_clause: Option<&str>,
+    ) -> PyResult<Vec<OrderBookDelta>> {
+        query_parquet_data::<OrderBookDelta>(
+            py,
+            &mut self.inner,
+            identifiers,
+            start,
+            end,
+            where_clause,
+            None,
+            true,
+            "Failed to query data",
+        )
+    }
+
+    /// Query order book depth data from Parquet files.
+    ///
+    /// # Parameters
+    ///
+    /// - `identifiers`: Optional list of identifiers to filter by.
+    /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
+    /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
+    /// - `where_clause`: Optional SQL WHERE clause for additional filtering
+    ///
+    /// # Returns
+    ///
+    /// Returns a vector of `OrderBookDepth` objects matching the query criteria.
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
+    pub fn query_order_book_depths(
+        &mut self,
+        py: Python<'_>,
+        identifiers: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        where_clause: Option<&str>,
+    ) -> PyResult<Vec<OrderBookDepth>> {
+        query_parquet_data::<OrderBookDepth>(
+            py,
+            &mut self.inner,
+            identifiers,
+            start,
+            end,
+            where_clause,
+            None,
+            true,
+            "Failed to query data",
+        )
     }
 
     /// Query quote tick data from Parquet files.
@@ -1659,42 +1729,6 @@ impl PyParquetDataCatalog {
         )
     }
 
-    /// Query order book delta data from Parquet files.
-    ///
-    /// # Parameters
-    ///
-    /// - `identifiers`: Optional list of identifiers to filter by. Can be `instrument_id` strings
-    ///   (e.g., "EUR/USD.SIM") or `bar_type` strings (e.g., "EUR/USD.SIM-1-MINUTE-LAST-EXTERNAL").
-    ///   For bars, partial matching is supported.
-    /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
-    /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
-    /// - `where_clause`: Optional SQL WHERE clause for additional filtering
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of `OrderBookDelta` objects matching the query criteria.
-    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
-    pub fn query_order_book_deltas(
-        &mut self,
-        py: Python<'_>,
-        identifiers: Option<Vec<String>>,
-        start: Option<u64>,
-        end: Option<u64>,
-        where_clause: Option<&str>,
-    ) -> PyResult<Vec<OrderBookDelta>> {
-        query_parquet_data::<OrderBookDelta>(
-            py,
-            &mut self.inner,
-            identifiers,
-            start,
-            end,
-            where_clause,
-            None,
-            true,
-            "Failed to query data",
-        )
-    }
-
     /// Query bar data from Parquet files.
     ///
     /// # Parameters
@@ -1719,40 +1753,6 @@ impl PyParquetDataCatalog {
         where_clause: Option<&str>,
     ) -> PyResult<Vec<Bar>> {
         query_parquet_data::<Bar>(
-            py,
-            &mut self.inner,
-            identifiers,
-            start,
-            end,
-            where_clause,
-            None,
-            true,
-            "Failed to query data",
-        )
-    }
-
-    /// Query order book depth data from Parquet files.
-    ///
-    /// # Parameters
-    ///
-    /// - `identifiers`: Optional list of identifiers to filter by.
-    /// - `start`: Optional start timestamp (nanoseconds since Unix epoch)
-    /// - `end`: Optional end timestamp (nanoseconds since Unix epoch)
-    /// - `where_clause`: Optional SQL WHERE clause for additional filtering
-    ///
-    /// # Returns
-    ///
-    /// Returns a vector of `OrderBookDepth` objects matching the query criteria.
-    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
-    pub fn query_order_book_depths(
-        &mut self,
-        py: Python<'_>,
-        identifiers: Option<Vec<String>>,
-        start: Option<u64>,
-        end: Option<u64>,
-        where_clause: Option<&str>,
-    ) -> PyResult<Vec<OrderBookDepth>> {
-        query_parquet_data::<OrderBookDepth>(
             py,
             &mut self.inner,
             identifiers,
@@ -1878,6 +1878,52 @@ impl PyParquetDataCatalog {
         where_clause: Option<&str>,
     ) -> PyResult<Vec<OptionGreeks>> {
         query_parquet_data::<OptionGreeks>(
+            py,
+            &mut self.inner,
+            identifiers,
+            start,
+            end,
+            where_clause,
+            None,
+            true,
+            "Failed to query data",
+        )
+    }
+
+    /// Queries instrument status data from Parquet files.
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
+    pub fn query_instrument_statuses(
+        &mut self,
+        py: Python<'_>,
+        identifiers: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        where_clause: Option<&str>,
+    ) -> PyResult<Vec<InstrumentStatus>> {
+        query_parquet_data::<InstrumentStatus>(
+            py,
+            &mut self.inner,
+            identifiers,
+            start,
+            end,
+            where_clause,
+            None,
+            true,
+            "Failed to query data",
+        )
+    }
+
+    /// Queries instrument close data from Parquet files.
+    #[pyo3(signature = (identifiers=None, start=None, end=None, where_clause=None))]
+    pub fn query_instrument_closes(
+        &mut self,
+        py: Python<'_>,
+        identifiers: Option<Vec<String>>,
+        start: Option<u64>,
+        end: Option<u64>,
+        where_clause: Option<&str>,
+    ) -> PyResult<Vec<InstrumentClose>> {
+        query_parquet_data::<InstrumentClose>(
             py,
             &mut self.inner,
             identifiers,
