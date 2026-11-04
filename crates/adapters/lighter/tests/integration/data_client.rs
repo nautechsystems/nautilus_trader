@@ -599,6 +599,49 @@ async fn test_connect_disconnect_lifecycle() {
 }
 
 #[rstest]
+#[case::private_key(12_345, 5, "not-hex")]
+#[case::api_key_index(12_345, 255, PRIVATE_KEY_HEX)]
+#[case::account_index(u64::MAX, 5, PRIVATE_KEY_HEX)]
+#[tokio::test]
+async fn test_connect_ignores_unused_invalid_credentials(
+    #[case] account_index: u64,
+    #[case] api_key_index: u8,
+    #[case] private_key: &str,
+) {
+    let (addr, state) = start_server().await;
+
+    let config = LighterDataClientConfig {
+        account_index: Some(account_index),
+        api_key_index: Some(api_key_index),
+        private_key: Some(private_key.into()),
+        ..build_config(addr)
+    };
+
+    let (mut client, mut rx) = build_client(config);
+
+    client.connect().await.expect("public data must connect");
+
+    let event = next_event_matching(&mut rx, Duration::from_secs(2), |event| {
+        matches!(event, DataEvent::Data(Data::Instrument(_)))
+    })
+    .await
+    .expect("public instrument metadata must arrive");
+
+    assert!(client.is_connected());
+    assert!(client.has_credentials());
+
+    let DataEvent::Data(Data::Instrument(instrument)) = event else {
+        unreachable!("event predicate requires an instrument")
+    };
+
+    assert_eq!(instrument.id(), eth_perp_id());
+    await_connection_count(&state, 1).await;
+
+    client.disconnect().await.expect("disconnect");
+    await_connection_count(&state, 0).await;
+}
+
+#[rstest]
 #[tokio::test]
 async fn test_stop_disconnects_websocket_client() {
     let (addr, state) = start_server().await;

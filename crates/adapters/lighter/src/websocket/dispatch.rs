@@ -4750,6 +4750,8 @@ mod tests {
     #[case::sell_floor(Decimal::new(7_915_055, 2), false, 2, 1, 7_914_263)]
     #[case::zero_bps_buy(Decimal::new(123_456, 2), true, 2, 0, 123_456)]
     #[case::zero_bps_sell(Decimal::new(123_456, 2), false, 2, 0, 123_456)]
+    #[case::maximum_bps_buy(Decimal::new(10_000, 2), true, 2, 9_999, 19_999)]
+    #[case::maximum_bps_sell(Decimal::new(10_000, 2), false, 2, 9_999, 1)]
     fn derive_market_order_price_ticks_cases(
         #[case] base: Decimal,
         #[case] is_buy: bool,

@@ -115,6 +115,7 @@ impl HttpClient {
     ///
     /// Returns an error if:
     /// - Shared rate limiters are combined with quota configuration.
+    /// - The timeout exceeds the monotonic clock range.
     /// - The proxy URL is malformed.
     /// - `NAUTILUS_HTTP2_ADAPTIVE_WINDOW` is set to a value other than `true` or `false`.
     /// - The certificate directory does not contain a matching client certificate and private key.
@@ -203,6 +204,8 @@ impl HttpClient {
         max_decompressed_bytes: usize,
         certs_dir: Option<&str>,
     ) -> Result<Self, HttpClientError> {
+        let timeout = timeout_secs.map(Duration::from_secs);
+        request_deadline(timeout)?;
         install_cryptographic_provider();
 
         let mut header_map = HeaderMap::new();
@@ -256,7 +259,7 @@ impl HttpClient {
             #[cfg(not(all(feature = "simulation", madsim)))]
             client,
             headers: header_map,
-            timeout: timeout_secs.map(Duration::from_secs),
+            timeout,
             redact_url,
             #[cfg(not(all(feature = "simulation", madsim)))]
             redirect_policy,
@@ -277,7 +280,8 @@ impl HttpClient {
     ///
     /// # Errors
     ///
-    /// Returns an error if unable to send request or times out.
+    /// Returns an error if the timeout exceeds the monotonic clock range, the request cannot be sent,
+    /// or it times out.
     ///
     /// # Examples
     ///
@@ -743,7 +747,7 @@ impl InnerHttpClient {
         let origin = (!self.redact_url).then(|| url.origin().ascii_serialization());
 
         let duration = timeout_secs.map(Duration::from_secs).or(self.timeout);
-        let deadline = duration.map(|duration| crate::dst::time::Instant::now() + duration);
+        let deadline = request_deadline(duration)?;
 
         let operation = async {
             #[cfg(all(feature = "simulation", madsim))]
@@ -856,6 +860,20 @@ impl InnerHttpClient {
 enum RequestBody {
     Plain(Vec<u8>),
     Secret(SecretString),
+}
+
+fn request_deadline(
+    timeout: Option<Duration>,
+) -> Result<Option<crate::dst::time::Instant>, HttpClientError> {
+    timeout
+        .map(|duration| {
+            crate::dst::time::Instant::now()
+                .checked_add(duration)
+                .ok_or_else(|| {
+                    HttpClientError::Error("HTTP request timeout exceeds clock range".into())
+                })
+        })
+        .transpose()
 }
 
 async fn decode_content_encoding(
@@ -1862,6 +1880,41 @@ mod tests {
         let result = HttpClient::builder().build();
 
         assert!(result.is_ok());
+    }
+
+    #[rstest]
+    fn test_http_client_rejects_timeout_overflow() {
+        let result = HttpClient::builder().timeout_secs(u64::MAX).build();
+
+        assert!(matches!(
+            result,
+            Err(HttpClientError::Error(message)) if message == "HTTP request timeout exceeds clock range"
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_http_request_rejects_timeout_override_overflow() {
+        let client = HttpClient::builder()
+            .use_system_proxy(false)
+            .timeout_secs(1)
+            .build()
+            .unwrap();
+        let result = client
+            .request(
+                Method::GET,
+                "http://127.0.0.1:1/".to_string(),
+                None,
+                None,
+                None,
+                Some(u64::MAX),
+                None,
+            )
+            .await;
+
+        assert!(matches!(
+            result,
+            Err(HttpClientError::Error(message)) if message == "HTTP request timeout exceeds clock range"
+        ));
     }
 
     #[rstest]

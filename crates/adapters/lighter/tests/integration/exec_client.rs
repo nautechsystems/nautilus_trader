@@ -2859,6 +2859,67 @@ async fn test_submit_reduce_only_flag_propagates_to_sendtx() {
 }
 
 #[rstest]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn test_submit_order_list_applies_slippage_override_to_each_price() {
+    let (addr, state) = start_server().await;
+    let (mut client, mut rx, cache) = build_client(addr);
+    client.connect().await.expect("connect");
+
+    let orders = [
+        make_stop_market_order(
+            "O-SLIPPAGE-BUY",
+            OrderSide::Buy,
+            Quantity::from("0.0050"),
+            Price::from("2400.00"),
+        ),
+        make_stop_market_order(
+            "O-SLIPPAGE-SELL",
+            OrderSide::Sell,
+            Quantity::from("0.0100"),
+            Price::from("2300.00"),
+        ),
+    ];
+
+    for order in &orders {
+        cache_order(&cache, order.clone());
+    }
+
+    let mut command = submit_order_list_command(&orders, "OL-SLIPPAGE");
+    command.params =
+        Some(serde_json::from_value(json!({"market_order_slippage_bps": 37})).unwrap());
+
+    client.submit_order_list(command).expect("submit list");
+    await_send_tx_count(&state, 1).await;
+    let frames = state.send_txs().await;
+    let infos = batch_tx_infos(&frames[0]);
+
+    for order in &orders {
+        match next_order_event(&mut rx, Duration::from_secs(2))
+            .await
+            .unwrap()
+        {
+            OrderEventAny::Submitted(event) => {
+                assert_eq!(event.client_order_id, order.client_order_id());
+            }
+            event => panic!("expected submitted event, was {event:?}"),
+        }
+    }
+
+    assert_eq!(frames.len(), 1);
+    assert_eq!(infos.len(), 2);
+    assert_eq!(infos[0]["Price"], 240_888);
+    assert_eq!(infos[0]["TriggerPrice"], 240_000);
+    assert_eq!(infos[0]["BaseAmount"], 50);
+    assert_eq!(infos[0]["IsAsk"], 0);
+    assert_eq!(infos[1]["Price"], 229_149);
+    assert_eq!(infos[1]["TriggerPrice"], 230_000);
+    assert_eq!(infos[1]["BaseAmount"], 100);
+    assert_eq!(infos[1]["IsAsk"], 1);
+
+    client.disconnect().await.expect("disconnect");
+}
+
+#[rstest]
 #[tokio::test(flavor = "multi_thread")]
 async fn test_submit_stop_market_order_uses_ioc_priced_with_slippage() {
     let (addr, state) = start_server().await;
@@ -11440,6 +11501,7 @@ async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
         serde_json::from_value(json!({
             "self_trade_behavior_mode": "expire_taker",
             "self_trade_equality_mode": "master_account_index",
+            "market_order_slippage_bps": 37,
         }))
         .unwrap()
     });
@@ -11486,7 +11548,10 @@ async fn test_native_otoco_uses_one_transaction_and_rejects_all_legs(
     assert_eq!(legs[0]["Price"], 236_131);
     assert_eq!(legs[0]["BaseAmount"], 1_000);
     assert_eq!(legs[1]["Type"], 2);
-    assert_eq!(legs[1]["Price"], 228_850);
+    assert_eq!(
+        legs[1]["Price"],
+        if override_modes { 229_149 } else { 228_850 }
+    );
     assert_eq!(legs[1]["TriggerPrice"], 230_000);
     assert_eq!(legs[2]["Type"], 5);
     assert_eq!(legs[2]["Price"], 239_000);

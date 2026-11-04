@@ -69,6 +69,9 @@ Released on TBD (UTC).
 - Changed `DeribitInstrument` literals; add `is_cbe_routed: None` and `is_csr: None`
 - Changed Derive endpoint overrides to `SecretString`; pass strings to builders or use `.into()` in struct literals
 - Changed Lighter WebSocket enums with account transaction variants; update exhaustive matches
+- Changed Lighter execution to reject `readonly=true` URLs; use only a data client for read-only access
+- Changed Lighter `proxy_url` to require `http://` or `https://`; replace SOCKS proxy URLs
+- Changed Lighter slippage settings and overrides to require integers in `[0, 10_000)`; lower larger values
 - Changed Interactive Brokers futures IDs to two-digit years by default; use `futures_year_digits=1`, thanks @faysou
 - Changed Interactive Brokers futures-option IDs and underlyings to match `futures_year_digits`
 - Changed Interactive Brokers provider config literals; add `futures_year_digits: FuturesYearDigits::Two`
@@ -98,6 +101,7 @@ Released on TBD (UTC).
 - Fixed Redis order and position deletion leaving routine snapshots and restoring purged positions
 - Fixed built-in Redis cache records ignoring `timestamps_as_iso8601`; disabled now writes nanosecond strings
 - Fixed external message bus payloads ignoring `timestamps_as_iso8601`
+- Fixed HTTP timeout overflow panicking instead of returning an error for excessive timeouts
 - Fixed Redis cache bulk loads ignoring `bulk_read_batch_size`
 - Fixed Redis cache decoding of v1 Cython currencies, instruments, accounts, and component state
 - Fixed Redis cache replay of v1 Cython order and position histories, including transformed orders
@@ -163,6 +167,9 @@ Released on TBD (UTC).
 - Fixed Hyperliquid startup reconciliation failing on truncated entry prices (#5530), thanks for reporting @mark1lah
 - Fixed Kraken Futures order-update cancellations closing tracked orders before their fills arrive
 - Fixed Lighter modification confirmation delay (#5517), thanks for reporting @AlphaTraderK
+- Fixed Lighter slippage overrides silently accepting invalid types and overflowing integers
+- Fixed Lighter public data startup failing on unused malformed credentials
+- Fixed Lighter execution config credential checks ignoring environment fallback
 - Fixed OKX order status reports accepting incomplete active coverage and discarding valid partial history
 - Fixed OKX order commands rejected before being written during WebSocket reconnects
 - Fixed OKX repeated logins preventing authentication recovery after interrupted reconnects
