@@ -166,10 +166,7 @@ pub enum HandlerCommand {
     /// Disconnect the WebSocket.
     Disconnect,
     /// Authenticate with credentials.
-    Authenticate {
-        /// Serialized auth params (DeribitAuthParams or DeribitRefreshTokenParams).
-        auth_params: SecretString,
-    },
+    Authenticate { auth_params: SecretString },
     /// Enable heartbeat with interval.
     SetHeartbeat { interval: u64 },
     /// Initialize the instrument cache.
