@@ -2781,6 +2781,7 @@ mod tests {
     #[rstest]
     #[case::completed("20260924 12:02:04 UTC", 1_790_251_324_000_000_000)]
     #[case::open("", 7)]
+    #[case::unparsable("20260924 12:02:04 Unknown/Timezone", 7)]
     fn test_parse_order_data_to_report_uses_completed_time(
         #[case] completed_time: &str,
         #[case] expected_ts_last: u64,
