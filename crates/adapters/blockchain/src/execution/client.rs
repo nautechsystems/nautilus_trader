@@ -746,6 +746,7 @@ impl BlockchainExecutionClient {
         let executor = self.transaction_executor()?;
         let included = executor
             .transact(
+                SystemTime::now(),
                 self.weth_address,
                 amount_wei,
                 Bytes::from(calldata),
@@ -829,6 +830,7 @@ impl BlockchainExecutionClient {
         let executor = self.transaction_executor()?;
         let included = executor
             .transact(
+                SystemTime::now(),
                 token,
                 U256::ZERO,
                 Bytes::from(calldata),
@@ -2147,12 +2149,17 @@ impl TransactionExecutor {
     /// Order of operations: claim the in-flight slot, chain ID verification, nonce and fee and
     /// gas policy checks, local signing, persist-before-broadcast, broadcast, inclusion
     /// observation. The persisted record guarantees a signed transaction is never forgotten.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Transaction fields and trusted clock input stay explicit"
+    )]
     #[allow(
         clippy::large_futures,
         reason = "keeps transaction verification futures inline without additional boxing"
     )]
     async fn transact(
         &self,
+        now: SystemTime,
         to: Address,
         value: U256,
         input: Bytes,
@@ -2161,7 +2168,15 @@ impl TransactionExecutor {
         authorization: TransactionAuthorization,
     ) -> anyhow::Result<IncludedTransaction> {
         self.claim_slot(purpose)?;
-        let now_unix_secs = current_unix_secs()?;
+
+        let now_unix_secs = match unix_secs_since_epoch(now) {
+            Ok(now_unix_secs) => now_unix_secs,
+            Err(e) => {
+                release_preparing_slot(&self.in_flight);
+                return Err(e);
+            }
+        };
+
         let decision_header = match required_verification(
             self.verification
                 .verify_decision_header(now_unix_secs)
@@ -3658,8 +3673,11 @@ fn replacement_scan_range(from_block: u64, head_block: u64) -> anyhow::Result<Ra
 }
 
 fn current_unix_secs() -> anyhow::Result<u64> {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
+    unix_secs_since_epoch(SystemTime::now())
+}
+
+fn unix_secs_since_epoch(now: SystemTime) -> anyhow::Result<u64> {
+    now.duration_since(UNIX_EPOCH)
         .map_err(|_| anyhow::anyhow!("Trusted host clock precedes the Unix epoch"))
         .map(|duration| duration.as_secs())
 }
@@ -15057,6 +15075,91 @@ mod tests {
         assert_eq!(broadcasts, 0);
 
         drop_execution_schema(&admin_pool, &schema).await;
+    }
+
+    #[tokio::test]
+    async fn clock_error_releases_preparing_slot_and_allows_retry() {
+        let state = broadcast_rpc_state().with_call_response(BALANCE_OF_SELECTOR, CALL_BALANCE);
+
+        let Some((admin_pool, schema, client, state)) =
+            execution_client_with_database("execution_clock_error_test", state).await
+        else {
+            return;
+        };
+
+        let executor = client.transaction_executor().unwrap();
+        let value = U256::from(1_000_000_000_000_000u64);
+        let input = Bytes::from(WETH9::depositCall {}.abi_encode());
+        let authorization = TransactionAuthorization::Wrap { weth: WETH_ADDRESS };
+
+        let error = executor
+            .transact(
+                UNIX_EPOCH - Duration::from_secs(1),
+                WETH_ADDRESS,
+                value,
+                input.clone(),
+                TransactionPurpose::Wrap,
+                None,
+                authorization,
+            )
+            .await
+            .unwrap_err();
+        let slot_after_error = *client.in_flight.lock();
+        let requests_after_error = state.recorded_requests();
+        let intent_count_after_error: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let retry = executor
+            .transact(
+                SystemTime::now(),
+                WETH_ADDRESS,
+                value,
+                input,
+                TransactionPurpose::Wrap,
+                None,
+                authorization,
+            )
+            .await;
+        let slot_after_retry = *client.in_flight.lock();
+        let requests_after_retry = state.recorded_requests();
+        let intent_count_after_retry: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
+            "SELECT COUNT(*) FROM {schema}.execution_intent"
+        )))
+        .fetch_one(&admin_pool)
+        .await
+        .unwrap();
+        let expected_hash = expected_wrap_tx_hash(value).await;
+
+        drop_execution_schema(&admin_pool, &schema).await;
+
+        assert_eq!(
+            error.to_string(),
+            "Trusted host clock precedes the Unix epoch"
+        );
+        assert!(slot_after_error.is_none(), "was: {slot_after_error:?}");
+        assert!(
+            requests_after_error.is_empty(),
+            "was: {requests_after_error:?}"
+        );
+        assert_eq!(intent_count_after_error, 0);
+        let included = retry.unwrap();
+        assert_eq!(included.nonce, 7);
+        assert_eq!(included.tx_hash, expected_hash);
+        assert!(matches!(
+            slot_after_retry,
+            Some(InFlightSlot::AwaitingFinality(_))
+        ));
+        assert_eq!(intent_count_after_retry, 1);
+        assert_eq!(
+            requests_after_retry
+                .iter()
+                .filter(|request| request["method"] == "eth_sendRawTransaction")
+                .count(),
+            1
+        );
     }
 
     #[tokio::test]
