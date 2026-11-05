@@ -1447,6 +1447,25 @@ impl<'a> CacheApi<'a> {
         self.cache().mark_price(instrument_id).copied()
     }
 
+    /// Returns the mark price update at `index` for the `instrument_id` (if found).
+    ///
+    /// Index 0 is the most recently added update. See [`Cache::mark_price_at_index`] for
+    /// ordering and out-of-range behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn mark_price_at_index(
+        &self,
+        instrument_id: &InstrumentId,
+        index: usize,
+    ) -> Option<MarkPriceUpdate> {
+        self.cache()
+            .mark_price_at_index(instrument_id, index)
+            .copied()
+    }
+
     /// Returns the most recently added index price update for the `instrument_id` (if found).
     ///
     /// # Panics
@@ -1457,6 +1476,25 @@ impl<'a> CacheApi<'a> {
         self.cache().index_price(instrument_id).copied()
     }
 
+    /// Returns the index price update at `index` for the `instrument_id` (if found).
+    ///
+    /// Index 0 is the most recently added update. See [`Cache::index_price_at_index`] for
+    /// ordering and out-of-range behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn index_price_at_index(
+        &self,
+        instrument_id: &InstrumentId,
+        index: usize,
+    ) -> Option<IndexPriceUpdate> {
+        self.cache()
+            .index_price_at_index(instrument_id, index)
+            .copied()
+    }
+
     /// Returns the most recently added funding rate update for the `instrument_id` (if found).
     ///
     /// # Panics
@@ -1465,6 +1503,25 @@ impl<'a> CacheApi<'a> {
     #[must_use]
     pub fn funding_rate(&self, instrument_id: &InstrumentId) -> Option<FundingRateUpdate> {
         self.cache().funding_rate(instrument_id).copied()
+    }
+
+    /// Returns the funding rate update at `index` for the `instrument_id` (if found).
+    ///
+    /// Index 0 is the most recently added update. See [`Cache::funding_rate_at_index`] for
+    /// ordering and out-of-range behavior.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the cache is already mutably borrowed.
+    #[must_use]
+    pub fn funding_rate_at_index(
+        &self,
+        instrument_id: &InstrumentId,
+        index: usize,
+    ) -> Option<FundingRateUpdate> {
+        self.cache()
+            .funding_rate_at_index(instrument_id, index)
+            .copied()
     }
 
     /// Returns the most recently added instrument status update for the `instrument_id` (if found).
