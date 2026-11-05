@@ -2497,14 +2497,22 @@ impl OrderMatchingEngine {
         let original_bid = self.core.bid;
         let original_ask = self.core.ask;
 
+        // Without an L1 quote on the passive side the latest trade defines that
+        // side, so it takes the trade price instead of keeping the previous trade's
+        let is_l1 = self.book_type == BookType::L1_MBP;
+
         match aggressor_side {
             AggressorSide::Sell => {
-                if original_ask.is_some_and(|ask| trade.price < ask) {
+                if (is_l1 && self.last_quote_ask.is_none())
+                    || original_ask.is_some_and(|ask| trade.price < ask)
+                {
                     self.core.set_ask_raw(trade.price);
                 }
             }
             AggressorSide::Buy => {
-                if original_bid.is_some_and(|bid| trade.price > bid) {
+                if (is_l1 && self.last_quote_bid.is_none())
+                    || original_bid.is_some_and(|bid| trade.price > bid)
+                {
                     self.core.set_bid_raw(trade.price);
                 }
             }

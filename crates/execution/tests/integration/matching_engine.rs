@@ -15791,6 +15791,89 @@ fn test_l1_trade_only_no_initial_quote_ask_tracks_price(
 }
 
 #[rstest]
+#[case::sell_prints_against_buy_limit(OrderSide::Buy, AggressorSide::Sell, ["1010.00", "995.00", "1025.00"])]
+#[case::buy_prints_against_sell_limit(OrderSide::Sell, AggressorSide::Buy, ["990.00", "1005.00", "975.00"])]
+fn test_l1_trade_passive_side_does_not_match_previous_trade_price(
+    account_id: AccountId,
+    instrument_eth_usdt: InstrumentAny,
+    #[case] side: OrderSide,
+    #[case] aggressor: AggressorSide,
+    #[case] prices: [&str; 3],
+    #[values(false, true)] with_quote: bool,
+    #[values(false, true)] liquidity_consumption: bool,
+) {
+    // The second trade crosses the limit and fills one lot. The third trade is
+    // on the far side of the limit, so it must not fill the order again at the
+    // second trade's price. With a quote the passive side comes from the quote.
+    let cache = Rc::new(RefCell::new(Cache::default()));
+    let handler = order_event_handler_with_cache(Rc::clone(&cache));
+    let config = OrderMatchingEngineConfig {
+        trade_execution: true,
+        liquidity_consumption,
+        ..Default::default()
+    };
+    let mut engine = get_order_matching_engine(
+        instrument_eth_usdt.clone(),
+        None,
+        Some(cache),
+        Some(AccountType::Margin),
+        Some(config),
+    );
+
+    if with_quote {
+        engine.process_quote_tick(&QuoteTick::new(
+            instrument_eth_usdt.id(),
+            Price::from("990.00"),
+            Price::from("1010.00"),
+            Quantity::from("100.000"),
+            Quantity::from("100.000"),
+            UnixNanos::default(),
+            UnixNanos::default(),
+        ));
+    }
+
+    let trade = |i: usize| {
+        TradeTick::new(
+            instrument_eth_usdt.id(),
+            Price::from(prices[i]),
+            Quantity::from("1.000"),
+            aggressor,
+            TradeId::new(format!("{}", i + 1)),
+            UnixNanos::from((i + 1) as u64),
+            UnixNanos::from((i + 1) as u64),
+        )
+    };
+
+    engine.process_trade_tick(&trade(0));
+
+    let mut order = OrderTestBuilder::new(OrderType::Limit)
+        .instrument_id(instrument_eth_usdt.id())
+        .side(side)
+        .price(Price::from("1000.00"))
+        .quantity(Quantity::from("3.000"))
+        .submit(true)
+        .build();
+    engine.process_order(&mut order, account_id);
+    clear_order_event_handler_messages(&handler);
+
+    engine.process_trade_tick(&trade(1));
+    engine.process_trade_tick(&trade(2));
+
+    let fills: Vec<(Price, Quantity)> = get_order_event_handler_messages(&handler)
+        .into_iter()
+        .filter_map(|event| match event {
+            OrderEventAny::Filled(f) => Some((f.last_px, f.last_qty)),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        fills,
+        vec![(Price::from("1000.00"), Quantity::from("1.000"))]
+    );
+}
+
+#[rstest]
 #[case::buy_inside_spread(OrderSide::Buy, "1500.50")]
 #[case::buy_at_bid(OrderSide::Buy, "1500.00")]
 #[case::sell_inside_spread(OrderSide::Sell, "1500.50")]
