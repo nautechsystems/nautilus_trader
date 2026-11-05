@@ -51,57 +51,46 @@ const EMPTY: &str = include_str!("../../test_data/empty.json");
 const MARKET_ID: &str = "TEST-OUTCOME_NO";
 
 #[rstest]
-#[case("Closed", "activity", false)]
-#[case("Resolved", "activity", true)]
-#[case("Closed", "book", true)]
-#[case("Resolved", "book", false)]
-#[case("Closed", "periods", false)]
-#[case("Resolved", "periods", true)]
-#[case("Closed", "bars", true)]
-#[case("Resolved", "bars", false)]
+#[case("Closed", "activity", false, false)]
+#[case("Resolved", "activity", true, false)]
+#[case("Closed", "book", true, false)]
+#[case("Resolved", "book", false, false)]
+#[case("Closed", "periods", false, false)]
+#[case("Resolved", "periods", true, false)]
+#[case("Closed", "bars", true, false)]
+#[case("Resolved", "bars", false, false)]
+#[case("Resolved", "book", false, true)]
 #[cfg_attr(all(feature = "simulation", madsim), madsim::test)]
 #[cfg_attr(not(all(feature = "simulation", madsim)), tokio::test)]
 async fn terminal_refresh_cancels_all_feeds_and_retains_history_across_reconnect(
     #[case] status: &str,
     #[case] inflight: &str,
     #[case] list: bool,
+    #[case] restart: bool,
 ) {
-    let terminal = metadata(status);
-    let mut replies = vec![EXCHANGES.to_owned(), MARKET.to_owned()];
-    if inflight == "bars" {
-        replies.push(PERIODS.to_owned());
-    }
-
-    let blocked = replies.len();
-    replies.push(
-        match inflight {
-            "activity" => ACTIVITY,
-            "book" => BOOK,
-            "periods" => PERIODS,
-            "bars" => include_str!("../../test_data/client-bars.json"),
-            _ => unreachable!(),
-        }
-        .to_owned(),
-    );
-
-    replies.extend([
-        terminal.clone(),
-        terminal.clone(),
-        EMPTY.to_owned(),
-        EXCHANGES.to_owned(),
-        terminal,
-    ]);
-    let (peer, http, mut observed, release) = refresh_peer(replies, blocked).await;
+    let blocked = 2 + usize::from(inflight == "bars");
+    let (peer, http, mut observed, release) = terminal_peer(metadata(status), inflight).await;
     let (mut client, mut receiver) = connected_selection(http, vec![MARKET_ID.into()], 100).await;
     subscribe(&mut client, inflight).unwrap();
-    if inflight == "activity" {
+    if inflight == "activity" && !restart {
         subscribe(&mut client, "trade").unwrap();
-    } else if inflight == "book" {
+    } else if inflight == "book" && !restart {
         subscribe(&mut client, "depth").unwrap();
     }
 
     for index in 0..=blocked {
         assert_eq!(observed.recv().await.unwrap(), index);
+    }
+
+    if restart {
+        subscribe(&mut client, "depth").unwrap();
+        assert_eq!(
+            time::timeout(Duration::from_secs(3), observed.recv())
+                .await
+                .unwrap()
+                .unwrap(),
+            blocked + 1,
+        );
     }
 
     for feed in ["activity", "trade", "book", "depth", "bars"] {
@@ -155,15 +144,28 @@ async fn terminal_refresh_cancels_all_feeds_and_retains_history_across_reconnect
         .unwrap()
         .unwrap();
     client.disconnect().await.unwrap();
-    assert_eq!(requests.len(), blocked + 6);
-    assert!(receiver.try_recv().is_err());
-    assert!(requests[blocked].contains(match inflight {
+
+    let poll_path = match inflight {
         "activity" => "/latest?limit=100",
         "book" => "/current",
         "periods" => "/ohlcv/periods",
         "bars" => "/latest?period_id=1SEC&limit=101",
         _ => unreachable!(),
-    }));
+    };
+
+    let polls = requests.iter().filter(|r| r.contains(poll_path)).count();
+
+    if restart {
+        assert_eq!(polls, 2);
+    } else if matches!(inflight, "activity" | "book") {
+        assert!((1..=2).contains(&polls));
+    } else {
+        assert_eq!(polls, 1);
+    }
+
+    assert_eq!(requests.len(), blocked + 5 + polls);
+    assert!(receiver.try_recv().is_err());
+    assert!(requests[blocked].contains(poll_path));
 }
 
 #[rstest]
@@ -560,6 +562,105 @@ fn metadata(status: &str) -> String {
 
 fn id() -> InstrumentId {
     to_instrument_id("POLYMARKET", MARKET_ID).unwrap()
+}
+
+async fn terminal_peer(
+    terminal: String,
+    inflight: &str,
+) -> (
+    task::JoinHandle<Vec<String>>,
+    FinFeedHttpConfig,
+    tokio::sync::mpsc::UnboundedReceiver<usize>,
+    tokio::sync::oneshot::Sender<()>,
+) {
+    let (listener, address) = bind_peer().await;
+
+    let config = FinFeedHttpConfig {
+        base_url: format!("http://{address}/v1/").into(),
+        min_request_interval_ms: 1,
+        max_concurrent_requests: 2,
+        ..Default::default()
+    };
+
+    let (observed, receiver) = tokio::sync::mpsc::unbounded_channel();
+    let (release, mut released) = tokio::sync::oneshot::channel();
+    let inflight = inflight.to_owned();
+
+    let peer = task::spawn(async move {
+        let mut requests = Vec::new();
+        let mut pending = Vec::new();
+        let mut release_received = false;
+        let mut definitions = 0;
+
+        while definitions < 4 {
+            let (mut stream, _) = tokio::select! {
+                biased;
+                result = &mut released, if !release_received => {
+                    result.unwrap();
+                    release_received = true;
+
+                    for (mut stream, body) in pending.drain(..) {
+                        send_response(&mut stream, body).await;
+                    }
+                    continue;
+                },
+                accepted = listener.accept() => accepted.unwrap(),
+            };
+            let request = read_request(&mut stream).await;
+            let target = request.split_whitespace().nth(1).unwrap();
+
+            let (body, poll) = if target == "/v1/exchanges" {
+                (EXCHANGES, false)
+            } else if target == format!("/v1/markets/POLYMARKET/{MARKET_ID}") {
+                definitions += 1;
+                (
+                    if definitions == 1 {
+                        MARKET
+                    } else {
+                        terminal.as_str()
+                    },
+                    false,
+                )
+            } else if target.starts_with(&format!(
+                "/v1/activity/POLYMARKET/{MARKET_ID}/history/quotes?"
+            )) {
+                (EMPTY, false)
+            } else if target == "/v1/ohlcv/periods" {
+                (PERIODS, inflight != "bars")
+            } else if target == format!("/v1/activity/POLYMARKET/{MARKET_ID}/latest?limit=100") {
+                (ACTIVITY, true)
+            } else if target == format!("/v1/orderbook/POLYMARKET/{MARKET_ID}/current") {
+                (BOOK, true)
+            } else if target
+                == format!("/v1/ohlcv/POLYMARKET/{MARKET_ID}/latest?period_id=1SEC&limit=101")
+            {
+                (include_str!("../../test_data/client-bars.json"), true)
+            } else {
+                panic!("unexpected lifecycle request: {target}");
+            };
+
+            observed.send(requests.len()).unwrap();
+            requests.push(request);
+
+            if poll && !release_received {
+                pending.push((stream, body));
+            } else {
+                send_response(&mut stream, body).await;
+            }
+        }
+
+        assert!(release_received);
+        assert!(pending.is_empty());
+        assert!(
+            time::timeout(Duration::from_millis(250), listener.accept())
+                .await
+                .is_err(),
+            "unexpected poll after lifecycle update"
+        );
+        requests
+    });
+
+    (peer, config, receiver, release)
 }
 
 async fn refresh_peer(

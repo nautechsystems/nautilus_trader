@@ -34,13 +34,14 @@ If you are new to NautilusTrader, complete these tutorials in order:
 
 ## Backtesting
 
-| Tutorial                                                                      | Description                                    | Language | Data requirement        |
-| :---------------------------------------------------------------------------- | :--------------------------------------------- | :------- | :---------------------- |
-| [Backtest with FX Bar Data][backtest_fx_bars]                                 | EMA cross on FX bars with rollover simulation. | Python   | Sample                  |
-| [Backtest with Order Book Depth Data (Binance)][backtest_orderbook_binance]   | Order book imbalance strategy on depth data.   | Python   | Sample or user-provided |
-| [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]       | Order book imbalance strategy on depth data.   | Python   | Sample or user-provided |
-| [Backtest with Pre-IPO Order Book Data (CoinAPI)][backtest_orderbook_coinapi] | Order book imbalance on ANTHROPIC-PERP.        | Python   | CoinAPI Flat Files key  |
-| [Book Imbalance Backtest (Betfair)](backtest_book_imbalance_betfair)          | Book imbalance actor on Betfair L2 data.       | Rust     | User-provided           |
+| Tutorial                                                                         | Description                                    | Language | Data requirement        |
+| :------------------------------------------------------------------------------- | :--------------------------------------------- | :------- | :---------------------- |
+| [Backtest with FX Bar Data][backtest_fx_bars]                                    | EMA cross on FX bars with rollover simulation. | Python   | Sample                  |
+| [Backtest with Order Book Depth Data (Binance)][backtest_orderbook_binance]      | Order book imbalance strategy on depth data.   | Python   | Sample or user-provided |
+| [Backtest with Order Book Depth Data (Bybit)][backtest_orderbook_bybit]          | Order book imbalance strategy on depth data.   | Python   | Sample or user-provided |
+| [Backtest with Pre-IPO Order Book Data (CoinAPI)][backtest_orderbook_coinapi]    | Order book imbalance on ANTHROPIC-PERP.        | Python   | CoinAPI Flat Files key  |
+| [Backtest with Polymarket Order Book Data (FinFeed)][backtest_orderbook_finfeed] | Order book imbalance on Bitcoin Yes shares.    | Python   | FinFeed historical key  |
+| [Book Imbalance Backtest (Betfair)](backtest_book_imbalance_betfair)             | Book imbalance actor on Betfair L2 data.       | Rust     | User-provided           |
 
 ## Data workflows
 
@@ -73,5 +74,6 @@ For task-oriented data recipes, see the [how-to guides](../how_to/):
 [backtest_orderbook_binance]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_binance.py
 [backtest_orderbook_bybit]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_bybit.py
 [backtest_orderbook_coinapi]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_coinapi.py
+[backtest_orderbook_finfeed]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_finfeed.py
 [loading_external_data]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/how_to/loading_external_data.py
 [data_catalog_databento]: https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/how_to/data_catalog_databento.py

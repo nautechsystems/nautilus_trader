@@ -70,10 +70,10 @@ impl Default for ImbalanceState {
 
 /// Actor that tracks bid/ask quoted volume imbalance from order book deltas.
 ///
-/// On start, subscribes to [`OrderBookDeltas`] for each configured instrument.
+/// On start or resume, subscribes to [`OrderBookDeltas`] for each configured instrument.
 /// On each update, sums the resting size at each updated level per side and
 /// accumulates running totals. Logs the cumulative imbalance at a configurable
-/// interval. On stop, prints a per-instrument summary.
+/// interval. On stop, unsubscribes from deltas and prints a per-instrument summary.
 pub struct BookImbalanceActor {
     core: DataActorCore,
     instrument_ids: Vec<InstrumentId>,
@@ -168,8 +168,17 @@ impl DataActor for BookImbalanceActor {
     }
 
     fn on_stop(&mut self) -> anyhow::Result<()> {
+        let ids = self.instrument_ids.clone();
+        for instrument_id in ids {
+            self.unsubscribe_book_deltas(instrument_id, None, None);
+        }
+
         self.print_summary();
         Ok(())
+    }
+
+    fn on_resume(&mut self) -> anyhow::Result<()> {
+        DataActor::on_start(self)
     }
 
     fn on_book_deltas(&mut self, deltas: &OrderBookDeltas) -> anyhow::Result<()> {

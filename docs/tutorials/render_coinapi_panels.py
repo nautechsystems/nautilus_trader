@@ -20,18 +20,17 @@ from pathlib import Path
 
 import pandas as pd
 import plotly.graph_objects as go
+from orderbook_panels import COLORS
+from orderbook_panels import apply_layout
 from plotly.subplots import make_subplots
 
 from nautilus_trader.analysis.tearsheet import _hex_to_rgba
 from nautilus_trader.analysis.tearsheet import _padded_range
 from nautilus_trader.analysis.tearsheet import _write_figure
-from nautilus_trader.analysis.themes import get_theme
 
 
 TUTORIAL_DIR = Path(__file__).resolve().parent
 OUT = TUTORIAL_DIR / "assets" / "backtest_orderbook_coinapi"
-THEME = get_theme("nautilus_dark")
-COLORS = THEME["colors"]
 NEGATIVE_FILL = _hex_to_rgba(COLORS["negative"], 0.14)
 
 
@@ -275,22 +274,12 @@ def _apply_layout(
     height: int = 520,
 ) -> None:
     figure.update_layout(
-        template=THEME["template"],
         title={
             "text": title,
-            "font": {"size": 21},
-            "subtitle": {"text": subtitle, "font": {"size": 14}},
-            "x": 0.06,
-            "xanchor": "left",
+            "subtitle": {"text": subtitle},
         },
-        paper_bgcolor=COLORS["background"],
-        plot_bgcolor=COLORS["background"],
-        font={"family": "Inter, system-ui, sans-serif", "size": 13, "color": COLORS["text"]},
-        margin={"l": 85, "r": 35, "t": 115, "b": 65},
-        width=1200,
-        height=height,
-        legend={"orientation": "h", "x": 1, "xanchor": "right", "y": 1.02, "yanchor": "bottom"},
     )
+    apply_layout(figure, height=height)
     figure.update_xaxes(
         title_text="Time (UTC)",
         tickformat="%H:%M",
@@ -299,10 +288,7 @@ def _apply_layout(
             book.index[0].floor("h") - pd.Timedelta(seconds=45),
             book.index[-1].ceil("min") + pd.Timedelta(seconds=45),
         ],
-        gridcolor=COLORS["grid"],
-        zeroline=False,
     )
-    figure.update_yaxes(gridcolor=COLORS["grid"], zerolinecolor=COLORS["muted"])
 
 
 if __name__ == "__main__":

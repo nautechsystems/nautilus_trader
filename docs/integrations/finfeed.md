@@ -51,6 +51,9 @@ Start with [Python configuration](#python-configuration) or the [examples](#exam
 
 ## Examples
 
+The [Polymarket order book backtest tutorial](https://github.com/nautechsystems/nautilus_trader/blob/develop/docs/tutorials/backtest_orderbook_finfeed.py)
+collects paginated historical L2 data, caches it in Parquet, and runs an imbalance strategy with plotted results.
+
 ### Running the examples
 
 Before running:

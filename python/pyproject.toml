@@ -334,7 +334,7 @@ dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
   "T20",
   "TC003",
 ] # TODO: Remove legacy exemptions as these tutorials are updated
-"docs/tutorials/backtest_orderbook_coinapi.py" = [
+"docs/tutorials/{backtest_orderbook_coinapi.py,backtest_orderbook_finfeed.py}" = [
   "S101",
   "T201",
 ] # Snapshot assertions and visible reports are part of the lesson

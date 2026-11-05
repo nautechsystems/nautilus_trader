@@ -20,11 +20,16 @@ use nautilus_common::{
     cache::Cache,
     clock::{Clock, VirtualClock},
     component::Component,
+    messages::data::{DataCommand, SubscribeCommand, UnsubscribeCommand},
+    msgbus::{
+        self, MessageBus, MessagingSwitchboard, get_message_bus,
+        stubs::get_typed_into_message_saving_handler, switchboard::get_book_deltas_topic,
+    },
 };
 use nautilus_core::UnixNanos;
 use nautilus_model::{
     data::{BookOrder, OrderBookDelta, OrderBookDeltas},
-    enums::{BookAction, OrderSide},
+    enums::{BookAction, BookType, OrderSide},
     identifiers::{ActorId, InstrumentId, TraderId},
     types::{Price, Quantity},
 };
@@ -77,6 +82,100 @@ fn test_new_actor_starts_with_empty_states() {
 
     assert!(actor.states().is_empty());
     assert_eq!(actor.actor_id(), ActorId::from("BOOK_IMBALANCE-001"));
+}
+
+#[rstest]
+#[case::single_stop(1, false)]
+#[case::restart_after_reset(2, false)]
+#[case::resume_after_stop(2, true)]
+fn test_stop_releases_each_book_subscription(#[case] cycles: usize, #[case] resume: bool) {
+    *get_message_bus().borrow_mut() = MessageBus::default();
+    let ids = [instrument_a(), InstrumentId::from("BTCUSDT.BINANCE")];
+    let mut actor = BookImbalanceActor::new(ids.to_vec(), 0, None);
+    register_actor(&mut actor);
+    let (handler, saver) = get_typed_into_message_saving_handler::<DataCommand>(None);
+    msgbus::register_data_command_endpoint(
+        MessagingSwitchboard::data_engine_queue_execute(),
+        handler,
+    );
+
+    for cycle in 0..cycles {
+        if cycle > 0 && !resume {
+            actor.reset().unwrap();
+        }
+
+        saver.clear();
+
+        if cycle > 0 && resume {
+            actor.resume().unwrap();
+        } else {
+            actor.start().unwrap();
+        }
+
+        for id in ids {
+            let topic = get_book_deltas_topic(id);
+            assert_eq!(msgbus::subscriber_count_deltas(topic), 1);
+        }
+
+        let deltas = make_deltas(
+            ids[0],
+            vec![
+                make_delta(ids[0], OrderSide::Buy, "2.50", "13", 1_000_000),
+                make_delta(ids[0], OrderSide::Sell, "2.52", "7", 1_000_000),
+            ],
+        );
+        actor.on_book_deltas(&deltas).unwrap();
+        actor.stop().unwrap();
+
+        let commands = saver.get_messages();
+        assert_eq!(commands.len(), 2 * ids.len());
+
+        for (index, id) in ids.iter().enumerate() {
+            let DataCommand::Subscribe(SubscribeCommand::BookDeltas(subscribe)) = &commands[index]
+            else {
+                panic!("expected book deltas subscribe, was {:?}", commands[index]);
+            };
+
+            let DataCommand::Unsubscribe(UnsubscribeCommand::BookDeltas(unsubscribe)) =
+                &commands[index + ids.len()]
+            else {
+                panic!(
+                    "expected book deltas unsubscribe, was {:?}",
+                    commands[index + ids.len()]
+                );
+            };
+
+            assert_eq!(subscribe.instrument_ids, vec![*id]);
+            assert_eq!(subscribe.book_type, BookType::L2_MBP);
+            assert_eq!(subscribe.depth, None);
+            assert_eq!(subscribe.client_id, None);
+            assert_eq!(subscribe.venue, Some(id.venue));
+            assert!(!subscribe.managed);
+            assert_eq!(subscribe.ts_init, UnixNanos::default());
+            assert_eq!(subscribe.correlation_id, None);
+            assert_eq!(subscribe.params, None);
+            assert_eq!(unsubscribe.instrument_ids, subscribe.instrument_ids);
+            assert_eq!(unsubscribe.client_id, subscribe.client_id);
+            assert_eq!(unsubscribe.venue, subscribe.venue);
+            assert_eq!(unsubscribe.ts_init, UnixNanos::default());
+            assert_eq!(unsubscribe.correlation_id, Some(subscribe.command_id));
+            assert_eq!(unsubscribe.params, subscribe.params);
+        }
+
+        assert!(actor.is_stopped());
+
+        let update_count = if resume { cycle as u64 + 1 } else { 1 };
+        let state = &actor.states()[&ids[0]];
+        assert_eq!(state.update_count, update_count);
+        assert_eq!(state.bid_volume_total, 13.0 * update_count as f64);
+        assert_eq!(state.ask_volume_total, 7.0 * update_count as f64);
+        assert_eq!(state.imbalance(), 0.3);
+
+        for id in ids {
+            let topic = get_book_deltas_topic(id);
+            assert_eq!(msgbus::subscriber_count_deltas(topic), 0);
+        }
+    }
 }
 
 #[rstest]
