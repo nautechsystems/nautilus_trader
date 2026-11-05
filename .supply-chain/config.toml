@@ -82,6 +82,9 @@ audit-as-crates-io = false
 [policy.nautilus-execution]
 audit-as-crates-io = false
 
+[policy.nautilus-finfeed]
+audit-as-crates-io = false
+
 [policy.nautilus-hyperliquid]
 audit-as-crates-io = false
 

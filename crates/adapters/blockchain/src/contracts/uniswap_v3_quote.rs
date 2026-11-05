@@ -23,7 +23,6 @@ use alloy::{
 };
 
 sol! {
-    #[sol(rpc)]
     contract UniswapV3QuoterV2 {
         struct QuoteExactInputSingleParams {
             address tokenIn;

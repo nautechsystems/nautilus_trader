@@ -58,7 +58,13 @@ nautilus-network = { workspace = true, features = ["transport-sockudo"] }
 nautilus-system = { workspace = true, optional = true }
 
 ahash = { workspace = true }
-alloy = { workspace = true, features = ["contract", "signer-local"] }
+alloy = { workspace = true, features = [
+  "consensus",
+  "dyn-abi",
+  "eips",
+  "sol-types",
+  "signer-local",
+] }
 anyhow = { workspace = true }
 async-stream = { workspace = true }
 async-trait = { workspace = true }

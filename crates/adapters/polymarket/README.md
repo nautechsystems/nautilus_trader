@@ -23,6 +23,7 @@ event-driven architecture, providing research-to-live semantic parity.
 
 This crate provides feature flags to control source code inclusion during compilation:
 
+- `allowances`: Enables the `polymarket-set-allowances` binary.
 - `examples`: Enables the crate's example binaries.
 - `extension-module`: Builds as a Python extension module.
 - `high-precision` (default): Enables

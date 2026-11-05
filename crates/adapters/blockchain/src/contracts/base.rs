@@ -22,7 +22,6 @@ use nautilus_model::defi::validation::validate_address;
 use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient};
 
 sol! {
-    #[sol(rpc)]
     contract Multicall3 {
         struct Call {
             address target;

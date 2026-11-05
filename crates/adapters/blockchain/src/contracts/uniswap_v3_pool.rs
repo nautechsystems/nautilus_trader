@@ -38,7 +38,6 @@ use super::base::{BaseContract, ContractCall, Multicall3};
 use crate::rpc::{error::BlockchainRpcClientError, http::BlockchainHttpRpcClient};
 
 sol! {
-    #[sol(rpc)]
     contract UniswapV3Pool {
         /// Packed struct containing core pool state
         struct Slot0Data {

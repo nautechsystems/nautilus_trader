@@ -22,13 +22,13 @@
 //! # Usage
 //!
 //! ```sh
-//! POLYMARKET_PK=0x... cargo run -p nautilus-polymarket --bin polymarket-set-allowances
+//! POLYMARKET_PK=0x... cargo run -p nautilus-polymarket --features allowances --bin polymarket-set-allowances
 //! ```
 //!
 //! Set an explicit V2 pUSD limit, including BUY fees:
 //!
 //! ```sh
-//! cargo run -p nautilus-polymarket --bin polymarket-set-allowances -- --v2-pusd-limit 5
+//! cargo run -p nautilus-polymarket --features allowances --bin polymarket-set-allowances -- --v2-pusd-limit 5
 //! ```
 
 use std::str::FromStr;

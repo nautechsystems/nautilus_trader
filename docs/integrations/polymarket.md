@@ -177,7 +177,7 @@ only when the funding wallet is the signer (`PolymarketSignatureType::Eoa`). Fun
 `POLYMARKET_PK`, and run:
 
 ```bash
-cargo run -p nautilus-polymarket --bin polymarket-set-allowances
+cargo run -p nautilus-polymarket --features allowances --bin polymarket-set-allowances
 ```
 
 The command grants maximum pUSD and CTF approvals to the CTF Exchange, Neg Risk CTF Exchange, and
@@ -213,7 +213,7 @@ restarting; a restart does not cancel a signed batch.
 The allowance command accepts an explicit pUSD limit:
 
 ```bash
-cargo run -p nautilus-polymarket --bin polymarket-set-allowances -- --v2-pusd-limit 5
+cargo run -p nautilus-polymarket --features allowances --bin polymarket-set-allowances -- --v2-pusd-limit 5
 ```
 
 With `POLYMARKET_FUNDER` different from the signer address, this mode attempts submission from a verified Deposit
