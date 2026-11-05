@@ -499,28 +499,27 @@ impl DockerizedIBGateway {
 
     async fn wait_until_ready(&self, wait: Option<u64>) -> anyhow::Result<()> {
         let wait_time = wait.unwrap_or(self.config.timeout);
-        let mut waited = 0u64;
 
-        while waited < wait_time {
-            if matches!(self.container_status().await, Ok(ContainerStatus::Ready)) {
-                tracing::debug!(
-                    "Gateway `{}` ready. VNC port is {:?}",
-                    self.container_name,
-                    self.config.vnc_port
-                );
-                return Ok(());
+        tokio::time::timeout(Duration::from_secs(wait_time), async {
+            while !matches!(self.container_status().await, Ok(ContainerStatus::Ready)) {
+                tracing::debug!("Waiting for IB Gateway to start");
+                tokio::time::sleep(Duration::from_secs(1)).await;
             }
+        })
+        .await
+        .with_context(|| {
+            format!(
+                "Gateway `{}` not ready after {} seconds",
+                self.container_name, wait_time
+            )
+        })?;
 
-            tracing::debug!("Waiting for IB Gateway to start");
-            tokio::time::sleep(Duration::from_secs(1)).await;
-            waited += 1;
-        }
-
-        anyhow::bail!(
-            "Gateway `{}` not ready after {} seconds",
+        tracing::debug!(
+            "Gateway `{}` ready. VNC port is {:?}",
             self.container_name,
-            wait_time
-        )
+            self.config.vnc_port
+        );
+        Ok(())
     }
 
     /// Stop and remove the gateway container.
